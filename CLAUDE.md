@@ -9,15 +9,29 @@ commands** yet. Do not invent any of those — check before claiming a command
 exists.
 
 - **Product**: Seleric Voice Node V1 — a Raspberry Pi voice assistant that
-  turns certified Seleric business metrics into at most three deterministic,
-  evidence-backed founder priorities, plus meeting → commitment →
-  verification tracking.
+  turns certified Seleric business metrics into at most three evidence-backed
+  founder priorities, plus meeting → commitment → verification tracking.
 - **Primary user**: founder/executive at Tilting Heads (`brand_id = 20`).
 - **Target**: working physical prototype by **2026-09-30**.
-- **Non-negotiable design rule**: no LLM in the business-reasoning path.
-  Metric selection, health calculation, ranking, and fact creation are
-  deterministic. An optional future language adapter may only summarize
-  already-validated structured output.
+- **Reasoning path (superseded 2026-08-31, see doc 01/03)**: business
+  reasoning is now an LLM agent swarm (Seleric Swarm Layer), not a
+  deterministic pipeline. A multi-agent debate (Observer, Anomaly,
+  Diagnostic, Prediction, Strategy, Experiment, Skeptic — doc 05 §37-39),
+  orchestrated by LangGraph and coordinated without a permanent leader,
+  investigates candidate problems and produces founder priorities. Every
+  claim in a conclusion must still be evidence-grounded — it traces to a
+  certified MCP query or a prior Blackboard artifact and carries a
+  confidence score — but the reasoning path that produced it is **not
+  guaranteed reproducible bit-for-bit on rerun**. Accountability comes from
+  the Blackboard (the full agent debate is permanently recorded), not from
+  determinism. Metric ingestion, state derivation, and candidate eligibility
+  upstream of the swarm are still deterministic — only the
+  selection/ranking/consolidation step changed. All agent tool calls
+  (MCP queries, writes, proposals) are mediated by the **Seleric Governor**,
+  which sits outside the swarm, is not recruitable/overridable by any agent,
+  and fails closed. Agents may only *propose* actions; execution still
+  requires the same human/policy gate the original "no automatic
+  campaign/budget write" rule required.
 
 ## Where to read what (repo map)
 
@@ -44,24 +58,33 @@ exists.
 
 - **Backend**: Python 3.12, FastAPI + Pydantic v2, SQLAlchemy 2 (async) + Alembic
 - **Edge**: OpenVoiceOS on Raspberry Pi 5 (`ovos-core`, custom `SelericBridgeSkill`), openWakeWord, Silero VAD
-- **Data**: PostgreSQL 16 (config/audit/jobs/meetings/decisions), existing ClickHouse (analytics history), existing Seleric MCP/Cube (certified metrics — the only source of truth for business facts)
+- **Data**: PostgreSQL 16 (config/audit/jobs/meetings/decisions/Blackboard/Agent Registry/LangGraph checkpoints — see doc 14 §10a/§11a), existing ClickHouse (analytics history), existing Seleric MCP/Cube (certified metrics — the only source of truth for business facts)
+- **Swarm reasoning**: LangGraph (orchestration, agent handoffs, PostgreSQL-backed checkpointing), `pgvector` (no new vector DB) — scoped strictly to control flow; agents never call MCP directly or hold standing write permission, everything is mediated by typed tool ports and the Governor
 - **Object storage**: S3-compatible (Azure Blob or MinIO)
-- **Task queue**: Procrastinate over PostgreSQL — **no Kafka/Redis/Temporal in V1**
+- **Task queue**: Procrastinate over PostgreSQL — **no Kafka/Redis/Temporal in V1** (LangGraph's own checkpointer covers swarm durability at V1 case volume — this is not a reason to add Temporal)
 - **Meeting NLP**: WhisperX/Faster Whisper, pyannote.audio, spaCy (EntityRuler/Matcher/DependencyMatcher), deterministic date parsing
 - **Admin UI**: Appsmith Community Edition, API-only writes (no direct table access)
 - **Observability**: OpenTelemetry → Grafana stack or Azure App Insights
 
 Six services total: `voice-orchestrator`, `business-state-service`,
 `insight-decision-service`, `meeting-intelligence-service`,
-`control-plane-service`, `admin-ui` (Appsmith). Do not propose a seventh
-without checking doc 03 and doc 01 first.
+`control-plane-service`, `admin-ui` (Appsmith). The swarm (Coordinator,
+Agent Registry, task market, seven agents, Governor) lives **inside**
+`insight-decision-service` — it is not a seventh service. Do not propose an
+actual seventh service without checking doc 03 and doc 01 first.
 
 ## Architecture rules (from doc 01 / doc 03 — do not relitigate without reading them first)
 
 - Certified facts flow one direction: MCP metrics → versioned business
-  objects → derived state → eligible candidates → root-driver consolidation
-  → deterministic ranking → template response → action/commitment →
-  verification. No step invents unsupported facts.
+  objects → derived state → eligible candidates → swarm case investigation
+  (Observer notices a candidate → Coordinator opens a case → agent debate,
+  recorded on the Blackboard → Skeptic-reviewed conclusion → founder brief)
+  → action/commitment → verification. No step invents unsupported facts;
+  every swarm conclusion must cite a certified MCP query or prior Blackboard
+  artifact and carry a confidence score.
+- Swarm case investigation is asynchronous — a live agent debate is not a
+  sub-second operation. Voice Orchestrator never triggers a case
+  synchronously; it only reads whatever the swarm has already concluded.
 - The Seleric MCP is the only trusted metric source. Anything MCP doesn't
   expose (goals, escalation rules, ontology health, forecasts, meetings,
   commitments) is an explicit V1 platform object, not an assumption.
@@ -69,13 +92,19 @@ without checking doc 03 and doc 01 first.
   never expose it).
 - Provider abstractions (STT/TTS, forecast, anomaly, causal) are Protocol
   interfaces with a registered adapter ID in config — never an arbitrary
-  import path from config.
+  import path from config. The same discipline applies to every agent tool
+  call in the swarm — typed ports only, gated by the Governor, never
+  free-form LLM access to arbitrary tools/SQL.
+- The **Seleric Governor** is not a swarm agent: no agent can recruit,
+  override, or retry around it, and it fails closed on policy-fetch failure.
+  It is the sole gate on agents proposing/committing actions.
 - Appsmith writes only through the Control Plane API — never direct DB.
-- Explicitly rejected for V1 (see doc 01 §2, doc 04 §5–7): feature store,
-  graph database, model-serving platform, Kafka/Redis/Temporal, TOPSIS
-  ranking, fixed 3-sigma anomaly rule, one-model-per-node. Don't reintroduce
-  these without a documented trigger being met (each rejection lists its
-  adoption trigger).
+- Explicitly rejected for V1 (see doc 01 §2/§3a, doc 04 §5–7): feature
+  store, graph database, model-serving platform, Kafka/Redis/Temporal
+  (including for swarm durability), TOPSIS ranking, fixed 3-sigma anomaly
+  rule, one-model-per-node, a standalone vector database, Governor-as-agent.
+  Don't reintroduce these without a documented trigger being met (each
+  rejection lists its adoption trigger).
 
 ## Engineering rules
 
@@ -103,4 +132,5 @@ manually run / not yet verified).
 Once a service has CI, a ticket is DONE only when: implementation matches
 the relevant contract doc, its own tests pass, acceptance criteria have
 evidence, and (for security-sensitive work — auth, secrets, PII, audio/PII
-retention) a security review found no blocking issues.
+retention, Governor policy/tool-grant changes, or any change to what an
+agent can call) a security review found no blocking issues.
