@@ -1,0 +1,41 @@
+flowchart TB
+    subgraph Edge[Edge]
+        OVOS[OpenVoiceOS]
+        Bridge[Seleric Bridge Skill]
+        Rec[Meeting Recorder]
+        OVOS --> Bridge
+        OVOS --> Rec
+    end
+
+    subgraph Services[Backend Services]
+        VO[Voice Orchestrator]
+        BS[Business State]
+        ID[Insight Decision]
+        MI[Meeting Intelligence]
+        CP[Control Plane]
+        AU[Appsmith]
+    end
+
+    subgraph Platform[Shared Platform]
+        MCP[Seleric MCP]
+        PG[(PostgreSQL)]
+        CH[(ClickHouse)]
+        OBJ[(Object Storage)]
+        Q[PostgreSQL Task Queue]
+    end
+
+    Bridge <--> VO
+    Rec --> MI
+    VO --> ID
+    ID --> BS
+    BS --> MCP
+    BS --> CH
+    BS --> PG
+    ID --> PG
+    MI --> PG
+    MI --> OBJ
+    CP --> PG
+    AU --> CP
+    BS --> Q
+    ID --> Q
+    MI --> Q

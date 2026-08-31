@@ -1,0 +1,27 @@
+flowchart LR
+    Scheduler[PostgreSQL Job Scheduler]
+    Control[Published Runtime Bundle]
+    Planner[Metric Query Planner]
+    MCP[Seleric MCP]
+    Raw[Certified Metric Series + Provenance]
+    Features[Feature Calculators]
+    Forecast[Forecast Strategies]
+    Detect[Anomaly / Change Strategies]
+    Health[Node Health Evaluator]
+    CH[(ClickHouse State History)]
+    PG[(PostgreSQL Latest State)]
+    Event[BusinessStateRefreshed]
+
+    Scheduler --> Control
+    Scheduler --> Planner --> MCP --> Raw
+    Raw --> Features
+    Features --> Forecast
+    Features --> Detect
+    Features --> Health
+    Forecast --> Health
+    Detect --> Health
+    Features --> CH
+    Forecast --> CH
+    Detect --> CH
+    Health --> CH
+    Health --> PG --> Event

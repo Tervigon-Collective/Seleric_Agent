@@ -1,0 +1,20 @@
+flowchart TB
+    Pi[Office Pi]
+    subgraph Azure[Azure]
+        ACA[Container Apps]
+        Services[Five Seleric Services + Appsmith]
+        PG[(PostgreSQL Flexible Server)]
+        Blob[(Blob Storage)]
+        KV[Key Vault]
+        Obs[Application Insights]
+        ACR[Container Registry]
+        ACA --> Services
+        Services --> PG
+        Services --> Blob
+        KV --> Services
+        Obs -. telemetry .-> Services
+        ACR --> ACA
+    end
+    MCP[Seleric MCP]
+    Pi --> ACA
+    Services --> MCP

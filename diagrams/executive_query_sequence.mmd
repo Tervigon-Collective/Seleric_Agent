@@ -1,0 +1,37 @@
+sequenceDiagram
+    actor Founder
+    participant Edge as Edge Voice Node
+    participant Speech as Speech Adapter
+    participant Voice as Voice Orchestrator
+    participant Insight as Insight Decision Service
+    participant State as Business State Service
+    participant Control as Control Plane Service
+    participant MCP as Seleric MCP
+
+    Founder->>Edge: Wake word + utterance
+    Edge->>Speech: Audio after local activation
+    Speech-->>Edge: Transcript + confidence
+    Edge->>Voice: VoiceTurnCommand + auth + trace
+    Voice->>Voice: Classify bounded intent + resolve references
+    alt Low confidence
+        Voice-->>Edge: Repeat/clarify response
+    else Supported intent
+        Voice->>Insight: Typed executive query
+        Insight->>Control: Runtime bundle if cache miss
+        Insight->>State: Latest state/health snapshot
+        alt Snapshot valid
+            State-->>Insight: State + freshness + evidence
+        else Bounded refresh allowed
+            State->>MCP: Certified metric query
+            MCP-->>State: Values + provenance + freshness
+            State->>State: Derive and persist state
+            State-->>Insight: Refreshed state
+        else Refresh outside latency budget
+            State-->>Insight: STALE/UNAVAILABLE + last-valid timestamp
+        end
+        Insight->>Insight: Decision policy or health assembly
+        Insight-->>Voice: Typed response + trace ID
+        Voice->>Speech: Strict rendered text/SSML
+        Speech-->>Edge: Audio
+        Edge-->>Founder: Spoken answer
+    end

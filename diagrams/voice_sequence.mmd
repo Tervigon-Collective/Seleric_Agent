@@ -1,0 +1,27 @@
+sequenceDiagram
+    actor Founder
+    participant Edge as Pi / OpenVoiceOS
+    participant Conv as Voice Orchestrator
+    participant Insight as Insight Decision Service
+    participant State as Business State Service
+    participant MCP as Seleric MCP
+    participant TTS as TTS Adapter
+
+    Founder->>Edge: "Hey Seleric, how are we doing?"
+    Edge->>Edge: Local wake word + VAD
+    Edge->>Conv: audio/transcript + device/session context
+    Conv->>Conv: Resolve bounded intent
+    Conv->>Insight: get_company_health(brand, as_of)
+    Insight->>State: get_latest_health_snapshot()
+    alt Snapshot valid
+        State-->>Insight: health + evidence + freshness
+    else Snapshot missing/stale within bounded policy
+        State->>MCP: certified metric query
+        MCP-->>State: values + query_id + catalogue version + freshness
+        State->>State: derive state and persist snapshot
+        State-->>Insight: health + evidence + freshness
+    end
+    Insight-->>Conv: typed executive response
+    Conv->>TTS: rendered text
+    TTS-->>Edge: audio stream/file
+    Edge-->>Founder: spoken answer

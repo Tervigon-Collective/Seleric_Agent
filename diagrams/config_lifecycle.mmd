@@ -1,0 +1,13 @@
+stateDiagram-v2
+    [*] --> Draft
+    Draft --> Validating
+    Validating --> Draft: errors
+    Validating --> Validated: passed
+    Validated --> AwaitingApproval
+    AwaitingApproval --> Draft: rejected
+    AwaitingApproval --> Approved
+    Approved --> Published
+    Published --> Retired
+    Published --> Published: runtime reads immutable version
+    Published --> RolledBack: rollback command
+    RolledBack --> Retired

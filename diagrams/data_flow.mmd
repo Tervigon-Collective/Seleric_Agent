@@ -1,0 +1,26 @@
+flowchart LR
+    A[Certified Metrics<br/>Seleric MCP/Cube]
+    B[Published Runtime Bundle]
+    C[Metric Query Planner]
+    D[Feature / Forecast / Detector Strategies]
+    E[(Executive State Mart)]
+    F[Node Health and Graph Resolver]
+    G[Candidate Factory]
+    H[Eligibility Pipeline]
+    I[Root Driver Dedupe]
+    J[Ranking Policy]
+    K[(Founder Brief + Decision Trace)]
+    L[Jinja2 Response Renderer]
+    M[Voice Orchestrator]
+    N[Edge TTS / Speaker]
+
+    B --> C
+    B --> D
+    B --> F
+    B --> G
+    B --> H
+    B --> J
+    A --> C --> D --> E
+    E --> F --> G --> H --> I --> J --> K
+    K --> L --> M --> N
+    K --> M
