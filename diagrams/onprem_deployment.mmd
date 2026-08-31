@@ -2,8 +2,8 @@ flowchart TB
     Pi[Office Pi]
     subgraph Host[Linux Docker Host]
         Caddy[Caddy]
-        Services[Seleric Services]
-        PG[(PostgreSQL)]
+        Services[Seleric Services\nInsight Decision hosts Swarm + Governor enforcement]
+        PG[(PostgreSQL + pgvector)]
         MinIO[(MinIO)]
         STT[OVOS STT + Faster Whisper]
         TTS[OVOS TTS + phoonnx]
@@ -13,7 +13,9 @@ flowchart TB
         Services --> MinIO
     end
     MCP[Seleric MCP]
+    LLM[LLM Provider]
     Pi --> Caddy
     Pi <--> STT
     Pi <--> TTS
     Services --> MCP
+    Services <--> LLM

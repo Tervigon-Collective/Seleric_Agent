@@ -2,8 +2,8 @@ flowchart TB
     Pi[Office Pi]
     subgraph Azure[Azure]
         ACA[Container Apps]
-        Services[Five Seleric Services + Appsmith]
-        PG[(PostgreSQL Flexible Server)]
+        Services[Five Seleric Services + Appsmith\nInsight Decision hosts Swarm + Governor enforcement]
+        PG[(PostgreSQL Flexible Server + pgvector)]
         Blob[(Blob Storage)]
         KV[Key Vault]
         Obs[Application Insights]
@@ -16,5 +16,7 @@ flowchart TB
         ACR --> ACA
     end
     MCP[Seleric MCP]
+    LLM[LLM Provider]
     Pi --> ACA
     Services --> MCP
+    Services <--> LLM

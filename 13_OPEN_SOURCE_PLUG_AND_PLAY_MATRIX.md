@@ -28,6 +28,15 @@ REJECT_V1   does not match the physical-room or deterministic V1 requirement
 | Managed Deepgram/Azure speech | Low-setup streaming STT/TTS | ADAPTER | Credential-isolated provider behind Voice Orchestrator | Useful fallback/primary during prototype; not a source of business reasoning |
 | Faster Whisper + Piper/phoonnx | Self-hosted speech stack | ADAPTER | OVOS STT/TTS server profile | Low recurring cost; benchmark office latency and vocabulary before making it default |
 
+## 2a. Agent orchestration and swarm reasoning [new, 2026-08-31]
+
+| System | Existing capability | Decision | V1 integration | Why not build it ourselves / key caveat |
+|---|---|---|---|---|
+| **LangGraph** | Graph-based agent orchestration, `Command`-based handoffs, PostgreSQL-backed checkpointing, subgraphs | **ADOPT** | Swarm Coordinator inside `insight-decision-service`; orchestrates agent turns, never gains standing MCP/DB/write credentials | Was REJECT_V1 in the pre-2026-08-31 baseline because the six intents were deterministic; that premise changed. Replaces what would otherwise be a bespoke handoff/checkpoint state machine — a meaningfully larger build than any other adopted dependency in this matrix. |
+| **`pgvector` (PostgreSQL extension)** | Vector similarity search inside PostgreSQL | **ADOPT (embed)** | Case-embedding storage and `find_similar_cases` query for collective memory | Not a new datastore to operate/back up/secure separately — an extension on the existing PostgreSQL, same category of decision as NetworkX-over-PostgreSQL for the ontology. |
+| **Google Agent2Agent (A2A) protocol** | Cross-organization agent discovery/communication standard | **DEFER — tracked future adoption** | None in V1 | Solves cross-business agent-to-agent communication; V1's swarm is entirely internal to one brand's Insight Decision Service instance. **Adoption trigger:** a concrete cross-business agent-to-agent use case exists. The internal Agent Registry is shaped (`exposure_scope` field) so this is additive later, not a rewrite (doc 01 §3a.10). |
+| LLM reasoning provider (Azure OpenAI / Anthropic / self-hosted OpenAI-compatible) | Managed or self-hosted LLM completion API | **ADAPTER** | `ReasoningProvider` port, Governor-scoped per call, no standing credential to platform data (doc 04 §4a) | Provider-agnostic by design; never given MCP, database, or write access — same discipline as STT/TTS provider adapters. |
+
 ## 3. Time-series, ML and state tooling
 
 | System | Existing capability | Decision | V1 role | Adoption trigger / caveat |
@@ -39,7 +48,7 @@ REJECT_V1   does not match the physical-room or deterministic V1 requirement
 | Feast | Offline/online feature registry and materialization | DEFER | Future `FeatureProvider` adapter | Existing ClickHouse/state mart is sufficient until multiple online consumers need the same features |
 | MLflow | Model lineage, versions, aliases, artifacts and serving | DEFER/ADAPTER | Future model-registry repository | V1 PostgreSQL registry + object store is enough for a small model set |
 | DoWhy / pgmpy | Causal estimation and probabilistic graphs | DEFER | Only approved causal subgraphs after assumptions/data are validated | Declared dependency edges must not be presented as causal proof |
-| TOPSIS/PyMCDM/scikit-criteria | MCDA algorithms | DEFER/PLUGIN | Future ranking strategy | V1 hard eligibility plus explicit weighted factors is simpler to audit |
+| TOPSIS/PyMCDM/scikit-criteria | MCDA algorithms | REJECT_V1 (unchanged) | None | The deterministic ranking formula this would have plugged into is itself retired in favor of agent-swarm prioritization (doc 01 §2.6) — adding a second numeric formula does not address why the founder replaced the first one. |
 
 ## 4. Ontology and data systems
 
@@ -77,11 +86,14 @@ REJECT_V1   does not match the physical-room or deterministic V1 requirement
 
 ## 7. Agent-development accelerators
 
+**Changed 2026-08-31:** LangGraph is no longer grouped with the rejected runtime frameworks below — it is production-adopted (§2a) as the Seleric Swarm Layer's orchestration engine, since the trigger for that adoption (a real agent-swarm decision path) is now met. Dify and Flowise remain out of scope; they are visual/no-code agent builders aimed at a different problem than a code-owned, Governor-controlled internal swarm.
+
 | System | Decision | Use |
 |---|---|---|
 | DeepSeek Harness | EVALUATE only | Replay voice scenarios, compare optional language models, generate tests and inspect trajectories; never a production dependency while it remains a developer preview |
 | NVIDIA labs OO Agents | EVALUATE / design reference | Typed object-oriented agent experiments and extraction prototypes; generated-code execution stays isolated and credential-free |
-| LLM framework stacks (LangGraph/Dify/Flowise) | REJECT_V1 runtime | The six executive intents are bounded and deterministic; adding another agent state machine would duplicate Voice Orchestrator and decision policy |
+| Dify / Flowise (no-code agent builders) | REJECT_V1 | Aimed at visually-assembled agent flows for general use cases; the Seleric swarm needs code-owned agent roles, a typed Blackboard, and a Governor enforcement point that these tools do not provide as a primitive |
+| LangGraph | **See §2a — ADOPT, production dependency** | Moved out of this rejected group on 2026-08-31; retained here only as a pointer so this section's history is legible |
 
 ## 8. Final reuse composition
 
@@ -93,6 +105,7 @@ raspOVOS/OpenVoiceOS
   + existing Seleric MCP/Cube/ClickHouse
   + PostgreSQL/NetworkX
   + Polars + robust rules + StatsForecast (selected metrics)
+  + LangGraph (swarm orchestration) + pgvector (case retrieval)      [new, 2026-08-31]
   + WhisperX/pyannote/spaCy/dateparser
   + Procrastinate
   + Appsmith
@@ -100,7 +113,7 @@ raspOVOS/OpenVoiceOS
   + OpenTelemetry
 ```
 
-The custom Seleric core is intentionally limited to ontology/goals/configuration, state policies, intervention eligibility/ranking, evidence/decision traces, meeting semantics and commitment verification. Those are the differentiating business objects that no off-the-shelf project can supply correctly for Tilting Heads.
+The custom Seleric core is intentionally limited to ontology/goals/configuration, state policies, the Blackboard/agent-role definitions and Governor policy, meeting semantics and commitment verification. Those are the differentiating business objects that no off-the-shelf project can supply correctly for Tilting Heads — and, as of 2026-08-31, the Governor and the ontology-grounded agent-communication design specifically are Seleric's stated differentiator versus a generic agent framework (doc 01 §3a.7, §3a.11).
 
 ## 9. Official references
 
@@ -125,3 +138,7 @@ The custom Seleric core is intentionally limited to ontology/goals/configuration
 - OpenTelemetry: https://opentelemetry.io/docs/
 - DeepSeek Harness: https://github.com/deepseek-ai/DeepSeek-Harness
 - NVIDIA labs OO Agents: https://github.com/NVIDIA-NeMo/labs-OO-Agents
+- LangGraph: https://langchain-ai.github.io/langgraph/
+- LangGraph swarm pattern: https://github.com/langchain-ai/langgraph-swarm-py
+- pgvector: https://github.com/pgvector/pgvector
+- Agent2Agent (A2A) protocol (deferred): https://github.com/google-a2a/A2A

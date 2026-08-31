@@ -4,9 +4,9 @@ sequenceDiagram
     participant Speech as Speech Adapter
     participant Voice as Voice Orchestrator
     participant Insight as Insight Decision Service
+    participant BB as Blackboard
     participant State as Business State Service
-    participant Control as Control Plane Service
-    participant MCP as Seleric MCP
+    participant TTS as TTS Provider
 
     Founder->>Edge: Wake word + utterance
     Edge->>Speech: Audio after local activation
@@ -15,23 +15,18 @@ sequenceDiagram
     Voice->>Voice: Classify bounded intent + resolve references
     alt Low confidence
         Voice-->>Edge: Repeat/clarify response
-    else Supported intent
-        Voice->>Insight: Typed executive query
-        Insight->>Control: Runtime bundle if cache miss
+    else Company health (deterministic path)
+        Voice->>Insight: GET company health
         Insight->>State: Latest state/health snapshot
-        alt Snapshot valid
-            State-->>Insight: State + freshness + evidence
-        else Bounded refresh allowed
-            State->>MCP: Certified metric query
-            MCP-->>State: Values + provenance + freshness
-            State->>State: Derive and persist state
-            State-->>Insight: Refreshed state
-        else Refresh outside latency budget
-            State-->>Insight: STALE/UNAVAILABLE + last-valid timestamp
-        end
-        Insight->>Insight: Decision policy or health assembly
+        State-->>Insight: State + freshness + evidence
         Insight-->>Voice: Typed response + trace ID
-        Voice->>Speech: Strict rendered text/SSML
-        Speech-->>Edge: Audio
-        Edge-->>Founder: Spoken answer
+    else Founder priorities / risks / opportunities (swarm path)
+        Voice->>Insight: GET latest brief
+        Insight->>BB: Read latest CONVERGED case for brand
+        Note over Insight,BB: No live agent debate runs here.<br/>The swarm investigates and converges on its own schedule (see swarm_loop_sequence.mmd).
+        BB-->>Insight: Case conclusion, confidence, evidence refs
+        Insight-->>Voice: Typed response + case_id + confidence
     end
+    Voice->>Speech: Strict rendered text/SSML
+    Speech-->>Edge: Audio
+    Edge-->>Founder: Spoken answer, confidence disclosed where applicable

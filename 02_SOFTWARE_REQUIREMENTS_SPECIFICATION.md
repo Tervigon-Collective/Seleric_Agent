@@ -3,9 +3,13 @@
 ## Project: Seleric Voice Node V1
 
 **Target delivery:** September 30, 2026  
-**System type:** Physical executive voice interface, business-state and deterministic decision platform, meeting commitment verification system  
+**System type:** Physical executive voice interface, business-state platform with agent-swarm business reasoning under a Governor safety boundary, meeting commitment verification system  
 **Primary organization:** Tilting Heads  
-**Document status:** Implementation baseline
+**Document status:** Implementation baseline (rewritten 2026-08-31 — business reasoning is agent-swarm-driven, not deterministic; see §0)
+
+## 0. What changed on 2026-08-31
+
+This SRS previously specified metric selection, health calculation, ranking, and fact creation as deterministic computation with no LLM in the business-reasoning path. The founder has replaced that model: everything from metric/candidate selection through root-cause diagnosis and action proposal now runs through a swarm of LLM agents operating over the Seleric Blackboard, governed by a non-recruitable Seleric Governor. The Seleric MCP remains the sole certified-metrics source; Business State Service remains a fully deterministic evidence producer; Voice Orchestrator and Meeting Intelligence Service are untouched. Requirements below are marked **[SWARM]** where agent reasoning replaces a formerly deterministic computation, and the system guarantee in §6 is restated accordingly. Determinism/reproducibility of the *decision output* is no longer a system guarantee; evidence-grounding, confidence scoring, and full audit-trail completeness are the replacement guarantees.
 
 ---
 
@@ -59,15 +63,19 @@ The source requirements define a deterministic and auditable executive node, phy
 
 # 6. Guiding principles
 
-- **Certified truth first:** Business values come from certified Seleric metric contracts.
-- **Observed versus inferred separation:** Raw observations, derived state, predictions and decisions are stored separately.
-- **No free-form business reasoning:** Decision outputs are computed by registered strategies and templates.
-- **Configurable, not arbitrary:** Admins select and parameterize pre-registered capabilities; admin configuration cannot execute arbitrary code.
-- **Version everything:** Configuration, features, models, policies, templates and extraction rules are versioned.
-- **Human approval at side-effect boundaries:** Meeting commitments and future operational actions require authorization.
-- **Graceful uncertainty:** Missing targets, stale data or low confidence reduce eligibility rather than being filled by assumptions.
-- **Portable infrastructure:** Domain services use interfaces for storage, voice, models and identity.
-- **Microservice discipline:** Split only when latency, scaling, security or lifecycle differs.
+- **Certified truth first:** Business values come from certified Seleric metric contracts. **Unchanged** — the swarm cannot query anything MCP does not expose, and every agent hypothesis must cite an evidence reference back to a certified query or a prior Blackboard artifact.
+- **Observed versus inferred separation:** Raw observations, derived state, predictions and decisions are stored separately. **Unchanged.**
+- **Evidence-grounded, not free-form, business reasoning [SWARM]:** the "no free-form business reasoning" rule is replaced by a narrower one — agent reasoning is bounded by typed tool ports, the declared ontology (agents must cite real node/edge IDs, not free text), and Governor-granted permissions. Agents may debate and hypothesize in natural language, but every conclusion that becomes a founder-facing fact must resolve to cited evidence, and every action proposal must pass Governor policy before execution.
+- **Configurable, not arbitrary:** Admins select and parameterize pre-registered capabilities; admin configuration cannot execute arbitrary code. **Unchanged**, and now also covers `AgentDefinition` and Governor policy objects.
+- **Version everything:** Configuration, features, models, policies, templates and extraction rules are versioned. **Unchanged**, and now also covers Governor policy and agent-registry capability declarations. The swarm's *reasoning path* is not versioned/reproducible the way a formula was — see the new guarantee below.
+- **Human approval at side-effect boundaries:** Meeting commitments and operational actions require authorization. **Unchanged**, and the Governor is now the enforcement point for this rule inside the swarm.
+- **Graceful uncertainty:** Missing targets, stale data or low confidence reduce eligibility rather than being filled by assumptions. **Unchanged** — now enforced by the Skeptic agent role in addition to eligibility rules.
+- **Portable infrastructure:** Domain services use interfaces for storage, voice, models and identity. **Unchanged**, and now includes the LLM provider as a replaceable adapter.
+- **Microservice discipline:** Split only when latency, scaling, security or lifecycle differs. **Unchanged** — see doc 03 §3.4/§14 for why the swarm did not earn a seventh service.
+
+**Restated system guarantee (replaces the former "zero unsupported fact, fully deterministic" guarantee):**
+
+> Every founder-facing conclusion is evidence-grounded (traceable to a certified MCP query or a prior Blackboard artifact) and carries an explicit confidence score. The reasoning path that produced it is not guaranteed reproducible on rerun. The complete agent debate that produced any conclusion — every message, hypothesis, challenge, and Governor decision — is permanently recorded on the Blackboard, and that record is the accountability mechanism in place of determinism.
 
 # 7. System context and target interactions
 
@@ -185,46 +193,77 @@ Supported paraphrases are configured in the intent catalogue. Unsupported reques
 | ML-009 | Failed or poorly calibrated models shall fall back to the approved baseline and mark the forecast confidence accordingly. |
 | ML-010 | Model artifacts shall be stored in object storage and referenced by immutable checksum. |
 
-## 8.8 Health and root-driver analysis
+## 8.8 Health and root-driver analysis [SWARM — replaces the former deterministic root-driver resolver]
 
 | ID | Requirement |
 |---|---|
-| RCA-001 | The system shall separate observed anomaly, downstream impact and suspected root driver. |
-| RCA-002 | V1 root-driver scoring shall combine graph ancestry, temporal precedence, anomaly concurrence, configured influence weight and contribution magnitude. |
-| RCA-003 | The system shall consolidate multiple downstream symptoms under one root-driver key. |
-| RCA-004 | Explanations shall disclose when the result is dependency-based rather than causally identified. |
-| RCA-005 | A DoWhy strategy may be enabled only for graph revisions marked causal-approved and datasets passing validation. |
-| RCA-006 | Alternative drivers considered and excluded shall be retained in the decision trace. |
+| RCA-001 | The swarm shall separate observed anomaly, downstream impact and suspected root driver in every hypothesis it records. |
+| RCA-002 | The Diagnostic agent's root-driver hypotheses shall cite graph ancestry, temporal precedence, anomaly concurrence and configured influence weight as evidence, the same evidence classes the former deterministic scorer used — the swarm reasons over this evidence rather than combining it in a fixed formula. |
+| RCA-003 | The Coordinator shall consolidate multiple downstream symptoms proposed by different agents under one root-driver key before an action is proposed (doc 06 §9.4). |
+| RCA-004 | Every hypothesis and every founder-facing explanation shall disclose whether the result is dependency-based (`DECLARED_DEPENDENCY`) or causally identified (`VALIDATED_CAUSAL`); agents are prohibited from asserting causal language the ontology does not support — this is a specific, checked responsibility of the Skeptic agent. |
+| RCA-005 | A DoWhy strategy may be enabled only for graph revisions marked causal-approved and datasets passing validation, and its output is consumed by agents as evidence, not bypassed. |
+| RCA-006 | Alternative hypotheses considered and rejected during debate shall be retained on the Blackboard and in the resulting decision/audit trace. |
+| RCA-007 **[new]** | Every hypothesis shall carry an explicit numeric confidence score assigned by its proposing agent and, where challenged, an updated score reflecting the Skeptic's challenge outcome. |
 
-## 8.9 Intervention generation and ranking
+## 8.9 Intervention generation and prioritization [SWARM — replaces deterministic eligibility/ranking]
 
 | ID | Requirement |
 |---|---|
-| DEC-001 | Interventions shall originate from versioned templates bound to node types, states or anomalies. |
-| DEC-002 | Templates shall define action text, default owner, founder-required policy, preconditions, expected impact method and verification method. |
-| DEC-003 | Candidate eligibility shall evaluate freshness, confidence, materiality, goal relevance, actionability, ownership, current status and founder leverage. |
-| DEC-004 | Ineligible candidates shall be stored with rejection reasons for audit. |
-| DEC-005 | Candidate scoring shall use a configured ranking strategy and normalized factors. |
-| DEC-006 | Default factors shall include severity, financial exposure, urgency, evidence confidence, data confidence and founder leverage. |
-| DEC-007 | Hard vetoes shall execute before ranking. |
-| DEC-008 | Candidate ranking shall be deterministic for identical inputs and configuration. |
-| DEC-009 | Root-driver duplicates shall be consolidated before selecting the top list. |
-| DEC-010 | The founder brief shall contain zero to three eligible interventions; the system shall never pad the list. |
-| DEC-011 | Each selected intervention shall include expected impact range or explicitly state that impact is unavailable. |
-| DEC-012 | Recommendations dependent on unavailable inventory/procurement state shall contain an unmet precondition and shall not be stated as immediately executable. |
+| DEC-001 | Action proposals shall originate from agent reasoning grounded in the ontology and evidence on the Blackboard, not from unconstrained free text; a proposal must reference the case, hypothesis, and evidence that support it. |
+| DEC-002 **[was: templates]** | An action proposal shall include action text, proposed owner, founder-required judgment, preconditions, expected-impact estimate (or explicit "impact unavailable"), and requested verification approach. |
+| DEC-003 | Every action proposal is subject to Governor policy (tool/spend/write/PII checks) before it can be marked executable, in addition to the swarm's own debate-based scrutiny. |
+| DEC-004 | Rejected or superseded candidate hypotheses/actions shall be stored with the debate messages that led to rejection, for audit — this replaces "rejection reasons" as a formula output with rejection reasons as a recorded agent conclusion. |
+| DEC-005 | Prioritization among surviving candidates is reached by agent debate/consensus under Coordinator supervision (doc 06 §9), not a fixed weighted-score formula. |
+| DEC-006 | Factors agents must consider and record when justifying priority (severity, financial exposure, urgency, evidence confidence, data confidence, founder leverage) are unchanged from the deterministic model's factor list — the swarm still has to reason about the same dimensions, it just does not combine them by fixed formula. |
+| DEC-007 | Governor-enforced hard limits (spend, write scope, PII, external communication) execute before any action can be marked executable, and are non-negotiable regardless of swarm confidence. |
+| DEC-008 **[changed from "deterministic ranking"]** | Candidate prioritization is not guaranteed reproducible for identical inputs; every prioritization decision carries a debate trace instead. |
+| DEC-009 | Root-driver duplicates shall be consolidated (by the Coordinator, informed by the Skeptic) before selecting the top list. |
+| DEC-010 | The founder brief shall contain zero to three converged, Governor-cleared interventions; the swarm shall never pad the list to reach three. |
+| DEC-011 | Each selected intervention shall include expected impact range/estimate with confidence, or explicitly state that impact is unavailable. |
+| DEC-012 | Recommendations dependent on unavailable inventory/procurement state shall contain an unmet precondition and shall not be stated as immediately executable — the Skeptic agent is specifically responsible for catching precondition gaps other agents' debate momentum might paper over. |
+| DEC-013 **[new]** | No agent conclusion may execute a production write, spend budget, access PII, or communicate externally without a check against Governor policy passing first. |
 
 ## 8.10 Executive responses
 
 | ID | Requirement |
 |---|---|
-| RESP-001 | Response text shall be produced from versioned Jinja2 templates and typed data objects. |
+| RESP-001 | Response text shall be produced from versioned Jinja2 templates and typed data objects — **unchanged**; the template renderer still receives a finished, validated typed DTO (`FounderBrief`, `Explanation`, etc.) from Insight Decision Service and does not itself reason or call the LLM. |
 | RESP-002 | Templates shall support locale, tone, maximum duration and compact/expanded modes. |
-| RESP-003 | “How are we doing?” shall summarize company status, strongest/weakest monitored areas and freshness. |
-| RESP-004 | “What should I do today?” shall state only selected founder interventions and no unrelated dashboard metrics. |
-| RESP-005 | “Why?” shall include observed change, baseline, suspected driver, impact, confidence, freshness and founder requirement. |
-| RESP-006 | “What are you worried about?” shall separate observed deterioration, forecast risk, commitment risk and data-quality risk. |
-| RESP-007 | “What opportunity are we missing?” shall return eligible positive-variance candidates and operational preconditions. |
-| RESP-008 | No template shall suppress material uncertainty, stale data or missing prerequisites. |
+| RESP-003 | "How are we doing?" shall summarize company status, strongest/weakest monitored areas, freshness, **and swarm confidence for any conclusion that is not a direct goal-attainment fact**. |
+| RESP-004 | "What should I do today?" shall state only selected founder interventions, their confidence scores, and no unrelated dashboard metrics. |
+| RESP-005 | "Why?" shall include observed change, baseline, suspected driver, impact, confidence, freshness, founder requirement, **and (on explicit follow-up) may summarize the agent debate that reached the conclusion**. |
+| RESP-006 | "What are you worried about?" shall separate observed deterioration, forecast risk, commitment risk and data-quality risk. |
+| RESP-007 | "What opportunity are we missing?" shall return eligible positive-variance candidates and operational preconditions. |
+| RESP-008 | No template shall suppress material uncertainty, stale data, missing prerequisites, or a below-threshold swarm confidence score. |
+
+## 8.10a Seleric Swarm Layer [new]
+
+| ID | Requirement |
+|---|---|
+| SWARM-001 | The Blackboard shall record, for every case, an observation, evidence, urgency, hypotheses, active agents, open tasks, proposed actions, outcome and confidence (doc 05 §34, doc 14 §10a). |
+| SWARM-002 | Every Blackboard write (message, hypothesis, bid, handoff, action proposal, Governor decision) shall be immutable and attributed to its originating agent and case. |
+| SWARM-003 | The Coordinator shall have no permanent leader agent; control shall transfer based on which agent's declared capability matches the investigation's current need (doc 06 §9.2). |
+| SWARM-004 | V1 shall launch with exactly seven agent roles: Observer, Anomaly, Diagnostic, Prediction, Strategy, Experiment, Skeptic. Adding or retiring a role is a Control-Plane-published `AgentDefinition` configuration change, not a code change, once the base agent-execution machinery is implemented. |
+| SWARM-005 | The Skeptic agent shall be invoked in every case that reaches a proposed action, and its challenge/confidence-adjustment shall be recorded before an action can be marked Governor-eligible; a case shall not converge on its first plausible hypothesis without a recorded Skeptic pass. |
+| SWARM-006 | The Agent Registry shall record each agent's capabilities, available tools, cost profile, and historical reliability, and it shall be readable by the Coordinator and by other agents for recruitment (doc 05 §36). The registry is internal-only in V1 — no external agent may query or register (see doc 01 §3a.10 for the A2A deferral). |
+| SWARM-007 | Problems shall be postable to a task market; agents shall bid with confidence, estimated cost and expected information gain; the Coordinator shall select investigations using the documented selection rule (doc 06 §9.3). |
+| SWARM-008 | Agents shall be able to hand off directly to another agent without returning to the Coordinator for every step, using LangGraph's handoff mechanism; every handoff shall still be recorded on the Blackboard. |
+| SWARM-009 | Agent reasoning shall be grounded in the existing business ontology: a hypothesis or message that names a business concept shall reference a real node/edge ID, not free text only. |
+| SWARM-010 | Closed cases shall be retrievable as precedent for new cases via similarity search (doc 06 §9.6); a new case shall surface similar prior cases to the recruited agents before they start independent investigation. |
+| SWARM-011 | Agent reputation (accuracy, calibration, false-positive rate, cost, speed) shall be tracked per agent per problem class and updated when case outcomes are confirmed; the Coordinator/bidding selection shall use reputation as an input. |
+| SWARM-012 | For a broad problem, the Coordinator may open multiple independent agent coalitions against the same case; their conclusions shall be reconciled (not silently averaged) before an action is proposed. |
+| SWARM-013 | No swarm case shall be published as a founder-facing brief item without a recorded confidence score and a complete, retrievable debate trace. |
+
+## 8.10b Seleric Governor [new]
+
+| ID | Requirement |
+|---|---|
+| GOV-001 | The Governor shall enforce, for every agent action: tool permissions, financial spend limits, PII access rules, external-communication restrictions, production-write restrictions, API spend limits, agent-spawning limits, maximum iteration counts, and human-approval gates. |
+| GOV-002 | The Governor shall not be recruitable by any agent and shall not have an `agent_id` in the Agent Registry. |
+| GOV-003 | A Governor denial shall be terminal for that action in that turn; no automated retry-with-different-approach path shall bypass a denial. Only an explicit human-approved policy exception, applied through the existing Control Plane approval workflow, may permit the action. |
+| GOV-004 | Governor policy shall be versioned Control Plane configuration using the same draft/validate/simulate/approve/publish/rollback lifecycle as every other configuration object. |
+| GOV-005 | Every Governor decision (grant or deny) shall be recorded on the Blackboard and in the platform audit trail with the policy version evaluated. |
+| GOV-006 | If Governor policy cannot be fetched or is stale beyond its validity window, the enforcement point shall fail closed: no tool call, spawn, spend, or write shall be permitted; read-only reasoning against already-fetched evidence may continue. |
 
 ## 8.11 Proactive notifications
 
@@ -328,7 +367,7 @@ Supported paraphrases are configured in the intent catalogue. Unsupported reques
 | STT result after end of utterance P95 | <= 1.5 s using selected primary profile |
 | Precomputed company/brief API P95 | <= 400 ms |
 | Fresh bounded analysis API P95 | <= 3 s |
-| First audible response for precomputed query P95 | <= 2.5 s |
+| First audible response for precomputed query P95 | <= 2.5 s (reads the swarm's latest published case; no live agent debate runs synchronously in the voice path — doc 03 §5, §9) |
 | Meeting start acknowledgement P95 | <= 1 s |
 | Post-meeting transcript for 30-minute recording | <= 10 minutes on selected compute profile |
 
@@ -370,6 +409,9 @@ Provider-specific behavior shall be isolated behind adapters.
 9. HealthPolicy and NodeHealthSnapshot
 10. InterventionTemplate and InterventionCandidate
 11. FounderBrief and DecisionTrace
+11a. **[new]** SwarmCase, Hypothesis, AgentMessage, SwarmTask/Bid, ProposedAction, Coalition (the Blackboard)
+11b. **[new]** AgentDefinition, AgentRegistryEntry, AgentReputation
+11c. **[new]** GovernorPolicy, ToolPermission, SpendLimit, ApprovalGate, AgentSpawnLimit
 12. ResponseTemplate and Notification
 13. Meeting, AudioPart, Participant and TranscriptSegment
 14. ExtractedDecision, CommitmentDraft and Commitment
@@ -381,24 +423,27 @@ Provider-specific behavior shall be isolated behind adapters.
 | Interaction | Primary service | Required data/objects | Failure response |
 |---|---|---|---|
 | How are we doing? | Voice Orchestrator -> Insight Decision | Latest company health summary, freshness, strongest/weakest nodes | State unavailable/stale with exact scope |
-| Three things today | Voice Orchestrator -> Insight Decision | Latest eligible founder brief, goals, candidates, ranking trace | Zero-to-three valid items; never fabricate |
-| Why? | Voice Orchestrator -> Insight Decision | Current dialogue reference, decision trace, evidence | Ask which item when reference is ambiguous |
-| Worried about? | Insight Decision | Negative state, forecast risk, breached commitments, data risks | Separate unavailable categories |
-| Missing opportunity? | Insight Decision | Positive variance candidates, preconditions, goal relevance | State operational prerequisites explicitly |
+| Three things today | Voice Orchestrator -> Insight Decision (reads latest published swarm case, does not trigger live debate) | Latest converged founder brief, goals, candidates, Blackboard debate trace, confidence scores | Zero-to-three valid items; never fabricate; disclose confidence |
+| Why? | Voice Orchestrator -> Insight Decision | Current dialogue reference, Blackboard debate trace, evidence | Ask which item when reference is ambiguous |
+| Worried about? | Insight Decision (swarm) | Negative state, forecast risk, breached commitments, data risks | Separate unavailable categories |
+| Missing opportunity? | Insight Decision (swarm) | Positive variance candidates, preconditions, goal relevance | State operational prerequisites explicitly |
 | Start meeting | Voice Orchestrator -> Meeting Service + Edge recorder | Device/session, participant context, recording policy | Refuse/announce failure if recording cannot be guaranteed |
 
 # 12. V1 acceptance criteria
 
-1. Physical node reliably detects “Hey Seleric” at normal table distance under agreed office noise.
+1. Physical node reliably detects "Hey Seleric" at normal table distance under agreed office noise.
 2. The six interactions run against real TH data/configuration, not mocked business responses.
-3. Each spoken business response is linked to an immutable response payload and decision trace.
-4. Founder priorities contain no more than three distinct root-driver interventions.
+3. Each spoken business response is linked to an immutable response payload and a complete Blackboard debate trace (replaces "decision trace" as a formula-audit artifact with a debate-audit artifact — see doc 05 §34).
+4. Founder priorities contain no more than three distinct root-driver interventions, each with a disclosed confidence score.
 5. Stale/provisional data is clearly identified.
-6. `WHY` references the prior selected intervention correctly in multi-turn tests.
-7. Admin can create and publish a new metric binding, goal, intervention template and response template without service code change.
-8. One active ontology revision loads and validates successfully.
-9. At least one forecast profile passes backtesting and produces a monitored output; other nodes can use deterministic baselines.
-10. One 30-minute one-to-one meeting is captured, transcribed, diarized and reviewed.
-11. At least one approved commitment is subsequently VERIFIED, BREACHED or UNVERIFIABLE through a registered rule.
-12. Device/service/config/decision/meeting audit records are queryable.
+6. `WHY` references the prior selected intervention correctly in multi-turn tests, and can retrieve the debate that produced it.
+7. Admin can create and publish a new metric binding, goal, `AgentDefinition`, Governor policy and response template without service code change.
+8. One active ontology revision loads and validates successfully, and agent hypotheses referencing it resolve to real node/edge IDs.
+9. At least one forecast profile passes backtesting and produces a monitored output feeding the swarm as evidence; other nodes can use deterministic baselines.
+10. One 30-minute one-to-one meeting is captured, transcribed, diarized and reviewed (unchanged, deterministic).
+11. At least one approved commitment is subsequently VERIFIED, BREACHED or UNVERIFIABLE through a registered rule (unchanged, deterministic).
+12. Device/service/config/decision/meeting/**Governor** audit records are queryable.
 13. An on-prem Docker deployment and an Azure deployment mapping are documented and reproducible.
+14. **[new]** At least one swarm case demonstrates the full loop: Observer notices a candidate problem, at least two agents debate (one of which is the Skeptic), a hypothesis converges with a recorded confidence score, and a proposed action is either Governor-approved or Governor-denied with a recorded reason.
+15. **[new]** At least one Governor denial is demonstrated end-to-end: an agent attempts an out-of-policy action (e.g., a write beyond its granted scope) and the Governor blocks it, with the denial visible in the audit trail.
+16. **[new]** Case-retrieval precedent works: a second, similar case surfaces the first case's resolution to the recruited agents before independent investigation restarts from zero.

@@ -3,13 +3,15 @@
 **Scope:** Physical and logical persistence blueprint for Seleric Voice Node V1  
 **Primary principle:** Reuse the existing Seleric metric plane; persist only the new ontology, goal, state, decision, voice, meeting, and control-plane objects required by this platform.
 
+**Changed 2026-08-31:** the agent-swarm reasoning model requires new persistent structures — the Seleric Blackboard (case records, hypotheses, agent messages, task/bid records, proposed actions), the Agent Registry and reputation tracking, and Governor policy. All of it lives in the existing PostgreSQL instance; no new datastore is introduced (doc 01 §3a). §6.9 and §10a below are the new schema; meetings/commitments/config-versioning (§7, §9, §11) are unaffected and preserved as-is.
+
 ## 1. Persistence Decisions
 
 V1 uses three persistence classes:
 
 | Persistence class | Selected system | Purpose |
 |---|---|---|
-| Transactional and configuration state | PostgreSQL | Service-owned aggregates, configuration revisions, current snapshots, jobs, outbox, audit, meetings, commitments |
+| Transactional and configuration state | PostgreSQL (with the `pgvector` extension enabled) | Service-owned aggregates, configuration revisions, current snapshots, jobs, outbox, audit, meetings, commitments, and — new — the Seleric Blackboard (cases/hypotheses/messages/tasks/bids), Agent Registry, agent reputation, and Governor policy |
 | High-volume analytical history | Existing ClickHouse | Metric-state history, detector/forecast history, node-health history, decision-performance history |
 | Binary and large immutable artifacts | S3-compatible object storage or Azure Blob | Meeting audio, transcript artifacts, model artifacts, evaluation sets, exports |
 
@@ -272,6 +274,29 @@ active
 ```
 
 Actual secret values live in Key Vault/Vault/environment secret stores and are referenced by opaque secret IDs.
+
+### 6.9 `control.governor_policy` [new]
+
+Versioned Governor policy — uses the identical `config_object`/`config_revision` lifecycle as every other configuration object (§6.1-6.2); this table stores the resolved, publishable payload shape for clarity.
+
+```text
+governor_policy_id
+brand_id
+config_revision_id          -- FK to control.config_revision; publish/rollback reuses §6.2 machinery
+tool_permissions JSONB       -- {agent_role: {problem_class: [tool_id, ...]}}
+spend_limits JSONB           -- {per_case, per_day, per_agent_role, currency_code}
+pii_access_rules JSONB       -- {agent_role: [field_class, ...]}
+external_comm_allowed BOOLEAN DEFAULT FALSE
+production_write_allowlist JSONB   -- explicit allowed write operation types, empty by default
+api_spend_limits JSONB       -- LLM token/cost ceilings, per case/day/role
+agent_spawn_limits JSONB     -- {max_concurrent_per_case, max_concurrent_system_wide}
+max_iteration_count INTEGER NOT NULL
+approval_gates JSONB         -- {action_type: required_approval_role}
+hard_ceiling_version TEXT NOT NULL   -- references the platform-code-enforced maximum this policy cannot exceed
+active BOOLEAN
+```
+
+Validation (doc 08 §3.17): every `tool_permissions` entry must reference a real registered tool port; no policy revision may set any limit above its `hard_ceiling_version` ceiling regardless of admin input; removing an existing `approval_gates` entry for a previously gated action requires two-person approval.
 
 ## 7. Voice Orchestrator Schema
 
@@ -647,6 +672,8 @@ Because some Seleric cost facts become final after a lag, a later refresh append
 
 ## 10. Insight Decision Schema
 
+**Changed 2026-08-31:** §10.2-10.6 below (`analysis_run`, `root_driver_hypothesis`, `intervention_candidate`, `eligibility_evaluation`, `consolidation_group`) described the retired deterministic pipeline's working tables. They are superseded by the Blackboard schema in §10a (`swarm_case` replaces `analysis_run`, `swarm_hypothesis` replaces `root_driver_hypothesis`, `proposed_action` replaces the eligible/selected slice of `intervention_candidate`). They are kept below, unmodified, only as a historical reference for anyone reading old data or old traces created before this cutover — no new rows are written to them. `decision.founder_brief` and `decision.founder_brief_item` (§10.7-10.8) are **not** retired: their shape is unchanged, only `decision_trace_id` now points at a `swarm_case`/message-trace bundle instead of a formula `decision_trace` row (§10.9 is likewise kept for historical rows; new traces are the message log in `decision.swarm_message`, §10a.4).
+
 ### 10.1 Configuration projections
 
 #### `decision.intervention_template_projection`
@@ -789,14 +816,16 @@ consolidation_strategy_version
 brief_id
 brand_id
 as_of_ts
-analysis_run_id
+case_id              -- was analysis_run_id; FK to decision.swarm_case (§10a.1)
 state_run_id
 status                GENERATED | PUBLISHED | SUPERSEDED | EXPIRED
 summary_status
+confidence            -- new: case.final_confidence carried onto the published brief
 runtime_bundle_version
+governor_policy_version   -- new
 catalogue_version
 data_freshness JSONB
-decision_trace_id
+decision_trace_id      -- kept for historical rows predating 2026-08-31; new rows use case_id as the trace anchor
 published_at
 expires_at
 ```
@@ -859,6 +888,197 @@ expires_at
 acknowledged_by
 acknowledged_at
 ```
+
+## 10a. Seleric Blackboard, Agent Registry, and Reputation Schema [new, 2026-08-31]
+
+All tables below are in the existing `decision.*` schema, owned exclusively by `insight-decision-service`, following the same ownership rules as §3. LangGraph's own PostgreSQL checkpointer manages its own internal tables (graph-state snapshots keyed by `thread_id`/checkpoint) the same way Procrastinate manages its own queue tables (§12.1) — `decision.swarm_case.case_id` is used as the LangGraph `thread_id` so a case's checkpoint history and its Blackboard record are joinable by the same key without a foreign key across library boundaries.
+
+### 10a.1 `decision.swarm_case`
+
+The case aggregate root (doc 06 §9.2a).
+
+```text
+case_id
+brand_id
+status                CaseStatus: OPEN | INVESTIGATING | CONVERGED | INCONCLUSIVE | ABANDONED
+trigger_type          STATE_CHANGE | SCHEDULE | MANUAL | COMMITMENT_RISK | PRECEDENT_FOLLOWUP
+observation            TEXT
+urgency                URGENCY_LOW | URGENCY_MEDIUM | URGENCY_HIGH | URGENCY_CRITICAL
+problem_class          TEXT  -- used for reputation/bid tie-break bucketing
+opened_at
+closed_at NULL
+final_confidence NULL
+outcome JSONB NULL      -- populated on close; later updated by outcome-confirmation job
+outcome_confirmed_at NULL
+resolution_summary TEXT NULL   -- feeds the embedding below
+resolution_embedding VECTOR(1536) NULL   -- pgvector column; populated on close
+runtime_bundle_version
+governor_policy_version
+langgraph_thread_id     -- equals case_id; documented alias for clarity at the LangGraph boundary
+trace_id
+```
+
+Indexes:
+
+```text
+(brand_id, status, opened_at DESC)
+(brand_id, problem_class, status)
+ivfflat or hnsw index on resolution_embedding for pgvector similarity search
+```
+
+`resolution_embedding` is only populated on a closed case (`CONVERGED`/`INCONCLUSIVE`/`ABANDONED`) — an open case is never a valid precedent, since its own resolution is not yet known.
+
+### 10a.2 `decision.swarm_evidence`
+
+```text
+evidence_id
+case_id
+brand_id
+evidence_type          STATE_SNAPSHOT | MCP_QUERY | MEETING_UTTERANCE | COMMITMENT_RISK | PRECEDENT_CASE
+source_reference        -- e.g. state.metric_state_current.state_id, or another swarm_case.case_id for precedent
+value_snapshot JSONB
+attached_by_agent_id NULL   -- null if attached by the system when the case opened
+attached_at
+```
+
+Every `decision.swarm_hypothesis.evidence_refs` entry must resolve to a row here — this is the storage-level backing for the `HypothesisWithoutEvidence` invariant (doc 06 §9.2a).
+
+### 10a.3 `decision.swarm_hypothesis`
+
+```text
+hypothesis_id
+case_id
+brand_id
+proposing_agent_id
+statement TEXT
+hypothesis_type         DECLARED_DEPENDENCY | VALIDATED_CAUSAL | CORRELATIONAL   -- unchanged vocabulary from the retired deterministic RootDriverHypothesis
+target_node_id
+supporting_node_ids TEXT[]     -- ontology-grounded citations, SWARM-009
+evidence_refs JSONB NOT NULL   -- must be non-empty; see 10a.2
+confidence NUMERIC NOT NULL
+status                   PROPOSED | CHALLENGED | SUPPORTED | REJECTED | ADOPTED
+created_at
+```
+
+Check constraint: `evidence_refs` must not be an empty array — enforced at the database level in addition to the application-layer aggregate invariant, since this is the guarantee the entire "evidence-grounded, not free-form" principle (doc 02 §6) depends on.
+
+### 10a.4 `decision.swarm_message`
+
+The append-only agent-to-agent communication log — the core of the audit trail (doc 05 §34, doc 09 §9).
+
+```text
+message_id
+case_id
+brand_id
+from_agent_id            -- 'governor' and 'coordinator' are valid pseudo-agent values for system messages
+to_agent_id NULL          -- null = broadcast to all active agents on the case
+message_type             OBSERVATION | HYPOTHESIS | CHALLENGE | RECRUIT | BID | VOTE | HANDOFF | GOVERNOR_DECISION | CONVERGENCE
+payload JSONB
+related_hypothesis_id NULL
+related_evidence_ids JSONB NULL
+created_at
+```
+
+Index: `(case_id, created_at)` — the full case debate trace is reconstructed by ordering this table by `created_at` for a `case_id`, which is exactly what the Admin swarm inspector (doc 08 §3.18) and the "Why?" explanation flow (doc 07 §4) read.
+
+### 10a.5 `decision.swarm_task` and `decision.swarm_bid`
+
+The task market (doc 06 §9.3a).
+
+```text
+-- decision.swarm_task
+task_id
+case_id
+brand_id
+description TEXT
+problem_class
+status              OPEN | BIDDING | ASSIGNED | DONE | ABANDONED
+posted_by            -- 'coordinator' or an agent_id if an agent recruits sub-help
+posted_at
+assigned_bid_id NULL
+```
+
+```text
+-- decision.swarm_bid
+bid_id
+task_id
+agent_id
+confidence NUMERIC
+estimated_cost NUMERIC
+expected_information_gain NUMERIC
+expected_value NUMERIC        -- computed and stored at submission time for audit (doc 06 §9.3a formula)
+submitted_at
+selected BOOLEAN DEFAULT FALSE
+```
+
+Unselected bids are retained, not deleted — they are part of the audit trail showing what the Coordinator considered and why it did not pick them.
+
+### 10a.6 `decision.proposed_action`
+
+```text
+action_id
+case_id
+brand_id
+proposing_agent_id
+hypothesis_id
+action_text_structured JSONB
+expected_outcome JSONB
+owner_ref
+governor_check_request JSONB
+governor_decision              GRANT | DENY | PENDING_APPROVAL
+governor_decision_reason_code
+governor_policy_version
+approved_by NULL                -- populated only if governor_decision was PENDING_APPROVAL and a human later approved
+created_at
+executed_at NULL
+outcome_ref NULL
+```
+
+### 10a.7 `decision.coalition`
+
+Temporary coalitions for broad problems (doc 06 §9.3a coalition path, SWARM-012).
+
+```text
+coalition_id
+case_id
+brand_id
+member_agent_ids TEXT[]
+formed_at
+converged_at NULL
+conclusion_summary NULL
+reconciled_with_case BOOLEAN DEFAULT FALSE   -- true once the Coordinator has reconciled this coalition's output with the parent case
+```
+
+### 10a.8 `decision.agent_registry`
+
+```text
+agent_id                 -- e.g. 'observer', 'anomaly', 'diagnostic', 'prediction', 'strategy', 'experiment', 'skeptic'
+brand_id
+role                      -- one of the 7 initial roles; extensible via AgentDefinition config (SWARM-004)
+capabilities TEXT[]
+tool_ports TEXT[]
+cost_profile JSONB
+exposure_scope            INTERNAL  -- fixed to INTERNAL in V1; see doc 01 §3a.10 for the A2A-future field
+config_version
+active BOOLEAN
+```
+
+### 10a.9 `decision.agent_reputation`
+
+```text
+agent_id
+problem_class
+brand_id
+accuracy NUMERIC
+calibration NUMERIC
+false_positive_rate NUMERIC
+avg_cost NUMERIC
+avg_speed_seconds NUMERIC
+sample_count INTEGER
+updated_at
+```
+
+Unique index: `(agent_id, problem_class, brand_id)`. Updated by a scheduled task-queue job that reads newly outcome-confirmed cases since the last run and applies the formula in doc 05 §39 — this is a read-model recomputation, not a hand-maintained field.
 
 ## 11. Meeting Intelligence Schema
 
@@ -1215,11 +1435,16 @@ Core events:
 ```text
 ConfigPublished
 ConfigRolledBack
+GovernorPolicyPublished          -- new
 DeviceEnrolled
 DeviceRevoked
 StateRefreshCompleted
 MetricStateChanged
 NodeHealthChanged
+SwarmCaseOpened                  -- new
+SwarmCaseConverged               -- new
+SwarmCaseInconclusive            -- new
+GovernorDenied                   -- new
 FounderBriefPublished
 ProactiveNotificationCreated
 MeetingStarted
@@ -1501,14 +1726,20 @@ erDiagram
     BUSINESS_NODE_PROJECTION ||--|| NODE_HEALTH_CURRENT : has
     STATE_REFRESH_RUN ||--o{ METRIC_STATE_CURRENT : publishes
 
-    ANALYSIS_RUN ||--o{ ROOT_DRIVER_HYPOTHESIS : generates
-    ANALYSIS_RUN ||--o{ INTERVENTION_CANDIDATE : generates
-    ROOT_DRIVER_HYPOTHESIS ||--o{ INTERVENTION_CANDIDATE : supports
-    INTERVENTION_CANDIDATE ||--o{ ELIGIBILITY_EVALUATION : evaluated_by
-    ANALYSIS_RUN ||--o| FOUNDER_BRIEF : publishes
+    SWARM_CASE ||--o{ SWARM_EVIDENCE : accumulates
+    SWARM_CASE ||--o{ SWARM_HYPOTHESIS : generates
+    SWARM_CASE ||--o{ SWARM_MESSAGE : records
+    SWARM_CASE ||--o{ SWARM_TASK : posts
+    SWARM_TASK ||--o{ SWARM_BID : receives
+    SWARM_CASE ||--o{ PROPOSED_ACTION : produces
+    SWARM_CASE ||--o{ COALITION : may_open
+    SWARM_HYPOTHESIS ||--o{ PROPOSED_ACTION : supports
+    SWARM_CASE ||--o| FOUNDER_BRIEF : publishes
     FOUNDER_BRIEF ||--o{ FOUNDER_BRIEF_ITEM : contains
-    INTERVENTION_CANDIDATE ||--o| FOUNDER_BRIEF_ITEM : selected_as
-    FOUNDER_BRIEF ||--|| DECISION_TRACE : audited_by
+    PROPOSED_ACTION ||--o| FOUNDER_BRIEF_ITEM : selected_as
+    AGENT_REGISTRY ||--o{ SWARM_BID : submitted_by
+    AGENT_REGISTRY ||--o{ AGENT_REPUTATION : tracked_as
+    GOVERNOR_POLICY ||--o{ PROPOSED_ACTION : governs
 
     DIALOGUE_SESSION ||--o{ DIALOGUE_TURN : contains
     DIALOGUE_SESSION ||--o{ SESSION_REFERENCE : remembers
@@ -1537,6 +1768,10 @@ erDiagram
 - Unbounded conversation memory.
 - Large audio blobs in PostgreSQL.
 - Features in an online feature store solely for architectural symmetry.
+- **[new]** A dedicated vector database for case retrieval — `pgvector` on the existing PostgreSQL is sufficient at V1 scale.
+- **[new]** A separate "swarm database" or event-sourcing platform for agent messages — `decision.swarm_message` is an ordinary append-only table, not a specialized event store.
+- **[new]** An external-facing agent directory (A2A Agent Cards) — the registry is internal-only until the deferred trigger is met (doc 01 §3a.10).
+- **[new]** LLM chain-of-thought or raw provider request/response logs beyond what `decision.swarm_message` needs for audit — the message log stores the agent's structured conclusion and cited evidence, not a verbatim model transcript.
 
 ## 26. Extension Path
 
@@ -1548,5 +1783,7 @@ The design supports later extraction without changing core identities:
 - Move outbox events to Kafka/Event Hubs by replacing the relay, while preserving event envelopes.
 - Add MLflow as the model registry while retaining `model_profile_id` and `model_version` contracts.
 - Add online actions by creating a separately authorized action-execution bounded context; do not overload the decision service.
+- **[new]** Add an A2A-facing agent directory by extending `decision.agent_registry.exposure_scope` and adding an external API surface — the schema does not need to change shape, only a new read path and authentication boundary.
+- **[new]** Add a dedicated vector database by implementing the same `find_similar_cases` port (doc 06 §9.1a) against a new backend, if `pgvector` ever stops meeting case-retrieval latency/scale needs.
 
 The V1 persistence design is therefore minimal in deployed products but explicit in domain ownership, auditability, and replacement boundaries.

@@ -4,20 +4,22 @@ flowchart LR
     Device[Seleric Voice Node\nRaspberry Pi + OpenVoiceOS]
     Voice[Voice Orchestrator]
     State[Business State Service]
-    Insight[Insight Decision Service]
+    Insight[Insight Decision Service\n+ Seleric Swarm Layer]
     Meeting[Meeting Intelligence Service]
-    Control[Control Plane Service]
+    Control[Control Plane Service\n+ Governor Policy]
     AdminUI[Appsmith Admin UI]
     MCP[Seleric MCP]
     Data[(Cube / ClickHouse)]
-    PG[(PostgreSQL)]
+    PG[(PostgreSQL + pgvector)]
     Obj[(Object Storage)]
+    LLM[LLM Provider]
 
     Founder <--> Device
     Admin --> AdminUI --> Control
     Device <--> Voice
     Device --> Meeting
     Voice --> Insight --> State --> MCP --> Data
+    Insight <--> LLM
     Meeting --> PG
     Meeting --> Obj
     Control --> PG

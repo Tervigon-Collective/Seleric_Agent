@@ -37,8 +37,9 @@ sequenceDiagram
             State-->>Insight: STALE/UNAVAILABLE status + last valid timestamp
         end
 
-        Insight->>Insight: Candidate/eligibility/dedupe/ranking or health assembly
-        Insight-->>Voice: Typed response + decision trace ID
+        Note over Insight: Company-health assembly reads state directly (unchanged).<br/>Founder-priority/risk/opportunity queries read the swarm's<br/>latest CONVERGED case; no live agent debate runs here (doc 03 §5).
+        Insight->>Insight: Health assembly, or read latest converged swarm case
+        Insight-->>Voice: Typed response + case/trace ID + confidence
         Voice->>Voice: Render strict versioned response template
         Voice->>Speech: Text/SSML
         Speech-->>Edge: Audio stream/file
@@ -125,62 +126,42 @@ UNKNOWN_DATA
 
 `UNKNOWN_DATA` is never treated as healthy.
 
-## 3. Founder Priority Workflow
+## 3. Founder Priority Workflow — the Seleric Swarm Loop [replaces the deterministic pipeline]
+
+**Changed 2026-08-31.** The founder priority workflow no longer runs a deterministic eligibility/ranking pipeline. It runs the swarm loop the founder specified: business state → agents notice problems → agents create hypotheses → agents recruit other agents → agents debate → agents propose actions → controlled execution → outcome returns → swarm learns. This is a fully asynchronous, precompute-first workflow (doc 03 §5) — a live voice query never triggers a new case synchronously; it reads the most recent case the swarm has already converged.
 
 ```mermaid
 flowchart TD
-    S[Materialized Metric and Node State]
+    S[Materialized Metric and Node State<br/>from Business State Service]
     C[Open Commitment and Data Risks]
-    H[Material Negative/Positive Nodes]
-    R[Suspected Root-Driver Hypotheses]
-    T[Intervention Template Matching]
-    E[Hard Eligibility Gates]
-    D[Root Driver and Action Consolidation]
-    P[Deterministic Priority Ranking]
-    L[Minimum Score + 0-to-3 Limit]
-    B[Founder Brief + Decision Trace]
+    Prec[Precedent Case Retrieval<br/>pgvector similarity]
+    Obs[Observer notices candidate problem<br/>opens/updates SwarmCase]
+    Task[Coordinator posts SwarmTask]
+    Bid[Agents submit bids:<br/>confidence, cost, expected info gain]
+    Sel[Coordinator selects bid /<br/>opens coalition for broad problems]
+    Deb[Debate loop:<br/>hypothesize, challenge, recruit, hand off]
+    Gov{Governor check<br/>on every tool/spend/write/spawn}
+    Skep[Mandatory Skeptic pass]
+    Conv[Coordinator marks case CONVERGED<br/>confidence + evidence refs]
+    Pub[Founder Brief / Risk Brief / Opportunity Brief<br/>+ full debate trace]
 
-    S --> H
-    C --> T
-    H --> R --> T --> E --> D --> P --> L --> B
+    S --> Obs
+    C --> Obs
+    Obs --> Prec --> Task --> Bid --> Sel --> Deb
+    Deb <--> Gov
+    Deb --> Skep --> Conv --> Pub
 ```
 
-### 3.1 Eligibility pseudocode
+### 3.1 Governor gate replaces “hard eligibility gates”
 
-```text
-for candidate in candidates:
-    if not candidate.data_is_current:
-        reject(STALE_DATA)
-    elif candidate.data_quality_failed:
-        reject(DATA_QUALITY_FAILED)
-    elif candidate.data_confidence < policy.min_data_confidence:
-        reject(LOW_DATA_CONFIDENCE)
-    elif candidate.evidence_confidence < policy.min_evidence_confidence:
-        reject(LOW_EVIDENCE_CONFIDENCE)
-    elif candidate.materiality < policy.min_materiality:
-        reject(IMMATERIAL)
-    elif not candidate.has_action:
-        reject(NO_ACTION)
-    elif candidate.owner_is_handling and not candidate.requires_escalation:
-        reject(ALREADY_OWNED)
-    elif not candidate.founder_required:
-        reject(DELEGABLE)
-    elif not prerequisites_satisfied(candidate):
-        reject(MISSING_PREREQUISITE)
-    elif candidate.in_cooldown:
-        reject(COOLDOWN)
-    else:
-        accept()
-```
+The deterministic pipeline's hard vetoes (stale data, low confidence, immateriality, no action, already owned, not founder-required, missing prerequisite, cooldown, duplicate root cause) are not deleted — they become things agents are required to *reason about and cite* rather than a formula that silently rejects a candidate. Two things now enforce what the formula used to:
 
-### 3.2 Consolidation order
+1. **The Skeptic agent** is specifically responsible for catching materiality, precondition, and duplicate-root-cause problems during debate (doc 05 §37) — this is judgment, not a fixed threshold, and it is auditable because the challenge is a recorded Blackboard message.
+2. **The Governor** enforces the subset of vetoes that are genuinely non-negotiable regardless of agent confidence: no production write, spend, PII access, or external communication without policy permission (doc 05 §40). A Governor `DENY` is unconditional — no amount of agent confidence overrides it.
 
-1. Explicit configured root-driver key.
-2. Same suspected root node plus intervention category.
-3. Same action object and owner.
-4. Configured mutually exclusive group.
+### 3.2 Consolidation — now a Coordinator responsibility, not a formula step
 
-Rejected duplicates remain in `DecisionTrace` as linked symptoms.
+The Coordinator consolidates candidate hypotheses under one root-driver key using the same criteria the deterministic dedupe step used (explicit configured root-driver key; same suspected root node plus category; same action object and owner; configured mutually exclusive group) — but the consolidation itself is a Coordinator decision informed by the Skeptic's challenges, not a pure key-matching function. Rejected duplicates remain on the Blackboard as linked symptoms, exactly as they remained in the old `DecisionTrace`.
 
 ## 4. “Why?” Workflow
 
@@ -189,23 +170,23 @@ sequenceDiagram
     actor Founder
     participant Voice as Voice Orchestrator
     participant Insight as Insight Decision Service
-    participant Trace as Decision Trace Store
+    participant BB as Blackboard
 
     Founder->>Voice: Why?
     Voice->>Voice: Resolve last brief/intervention reference
     alt No valid reference
         Voice-->>Founder: Ask which item should be explained
     else Reference resolved
-        Voice->>Insight: explain(decision_trace_id, intervention_id)
-        Insight->>Trace: Read original trace
-        Trace-->>Insight: Evidence, alternatives, score, exclusions
+        Voice->>Insight: explain(case_id, intervention_id)
+        Insight->>BB: Read original case debate trace
+        BB-->>Insight: Evidence, hypotheses, challenges, alternatives, confidence, Governor decisions
         Insight-->>Voice: Explanation DTO
         Voice->>Voice: Render explanation template
-        Voice-->>Founder: Evidence-backed explanation
+        Voice-->>Founder: Evidence-backed explanation, with confidence disclosed
     end
 ```
 
-The explanation reads the original evidence. It does not silently recalculate with newer data unless the founder explicitly requests an update.
+The explanation reads the original case's recorded debate. It does not silently recalculate with newer data or re-run the agents unless the founder explicitly requests an update — and re-running produces a new case, not a silent edit to the old one, because Blackboard records are append-only (doc 05 §34).
 
 ## 5. Risk Workflow
 
@@ -225,11 +206,13 @@ Business State snapshots
   + forecast/anomaly evidence
   + material commitment state
   + data-quality/freshness state
-  -> risk candidates
-  -> eligibility and consolidation
-  -> deterministic risk ranking
-  -> risk brief
+  -> swarm case opened (Observer)
+  -> agent debate and Skeptic pass (§3)
+  -> Coordinator convergence
+  -> risk brief with confidence + debate trace
 ```
+
+Risk generation uses the same swarm loop as founder priorities (§3), scoped to `problem_class = RISK`. It is not a separate deterministic pipeline.
 
 A forecast risk requires horizon, estimate/probability, uncertainty or calibration state, model version, backtest status and freshness.
 
@@ -314,30 +297,35 @@ FAILED_QUALITY
 
 A value can be available and still provisional because costs, returns or settlements lag.
 
-## 8. Insight Decision Data Flow
+## 8. Insight Decision Data Flow — Seleric Swarm Layer
 
 ```mermaid
 flowchart LR
-    Trigger[Voice Request / State Event / Schedule]
+    Trigger[State Event / Schedule<br/>never a synchronous voice request]
     State[Business State API]
     Control[Published Ontology + Policies]
+    GovPolicy[Published Governor Policy]
     Commit[Material Commitment Risks]
-    Graph[Declared Graph Resolver]
-    Candidate[Intervention Factory]
-    Eligible[Eligibility Pipeline]
-    Dedupe[Consolidation]
-    Rank[Ranking Policy]
-    Brief[(Brief + Decision Trace)]
+    Prec[pgvector Precedent Retrieval]
+    BB[(Blackboard: SwarmCase)]
+    Task[Task Market]
+    Agents[Recruited Agents / Coalitions]
+    Gov{Governor Enforcement Point}
+    Skep[Skeptic Pass]
+    Conv[Convergence]
+    Brief[(FounderBrief + Case Debate Trace)]
     Notify[Proactive Notification]
 
     Trigger --> State
     Trigger --> Control
     Trigger --> Commit
-    State --> Graph
-    Control --> Graph
-    Graph --> Candidate
-    Commit --> Candidate
-    Candidate --> Eligible --> Dedupe --> Rank --> Brief
+    State --> BB
+    Control --> BB
+    Commit --> BB
+    BB --> Prec --> Task --> Agents
+    Agents <--> Gov
+    GovPolicy --> Gov
+    Agents --> Skep --> Conv --> Brief
     Brief --> Notify
 ```
 
@@ -350,14 +338,17 @@ Admin command
   -> certified metric/dimension validation
   -> graph validation
   -> policy/adapter validation
+  -> Governor policy validation (tool/spend/PII/write/spawn/iteration bounds well-formed and non-contradictory)
   -> template compilation
   -> historical simulation/diff
   -> approval
   -> immutable published version
   -> ConfigPublished outbox event
   -> runtime bundle refresh
-  -> targeted state and brief recompute
+  -> targeted state and case recompute
 ```
+
+A published Governor policy change takes effect for the *next* agent turn in every open case, not retroactively for in-flight turns already granted — an in-flight grant is honored to completion, and the new policy applies starting the next check (doc 09 §5a).
 
 ## 10. Meeting Start and Capture Workflow
 
@@ -511,14 +502,17 @@ sequenceDiagram
 
 ```text
 BusinessStateRefreshed or CommitmentBreached
-  -> Insight Decision recomputes impacted candidate set
-  -> notification eligibility/cooldown policy
-  -> create Notification object with evidence
+  -> Observer agent evaluates impacted evidence, opens/updates a swarm case
+  -> case converges (§3) or remains open
+  -> on convergence: notification eligibility/cooldown policy
+  -> create Notification object with evidence + confidence
   -> Voice Orchestrator delivery queue
   -> enrolled device receives non-sensitive alert metadata
   -> device indicates alert; founder invokes playback
   -> delivery/acknowledgement recorded
 ```
+
+A notification is only created from a `CONVERGED` case with a completed Skeptic pass — an in-progress debate never reaches the founder as a proactive alert.
 
 V1 does not play sensitive business details without explicit user interaction.
 
@@ -572,6 +566,12 @@ approved deletion request
 - Retry with the configured fallback provider/profile.
 - Move to review-required after retry exhaustion.
 
+### LLM provider unavailable or Governor policy unfetchable [new]
+
+- Pause affected case investigations at the current LangGraph checkpoint; do not force a conclusion.
+- Voice Orchestrator continues serving the latest already-`CONVERGED` case with disclosed age.
+- Governor fails closed: no tool call, spend, write, or spawn proceeds without a successfully fetched, current policy (doc 03 §15, GOV-006).
+
 ### Verification adapter failure
 
 - Retry within policy.
@@ -591,10 +591,25 @@ insight_api
 config_bundle
 state_read_or_refresh
 mcp_query_if_needed
-decision_trace
+case_debate_trace   # was: decision_trace
 template_render
 tts_span
 device_playback
+```
+
+One swarm case trace links:
+
+```text
+case_opened
+precedent_retrieval
+task_posted
+bids_submitted
+bid_selected_or_coalition_opened
+agent_turn (repeated, one per handoff)
+governor_check (repeated, one per gated action)
+skeptic_challenge
+case_converged_or_inconclusive
+brief_published
 ```
 
 One meeting trace links:

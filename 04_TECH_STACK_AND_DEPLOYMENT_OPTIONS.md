@@ -36,7 +36,10 @@ A technology is selected for V1 only when it:
 | Optional anomaly | scikit-learn / PyOD strategy | Selected multivariate use only | Same | Same |
 | Runtime ontology | NetworkX | Simple directed graph and attributes | Same | Same |
 | Causal plugin | DoWhy, disabled by default | Explicit causal assumptions and anomaly attribution when validated | Same | Same |
-| NLG | Jinja2 | Reproducible and configurable spoken output | Same | Same |
+| **Agent orchestration** | **LangGraph** | **Swarm/handoff pattern for the Seleric Swarm Layer; PostgreSQL-backed checkpointer gives durable, resumable agent state without a new workflow engine (doc 01 §3a.1)** | **Container/worker** | **Container/worker** |
+| **Case similarity search** | **`pgvector` PostgreSQL extension** | **Collective memory / case retrieval without a new vector database (doc 01 §3a.6)** | **Enabled on Azure PostgreSQL Flexible Server** | **Enabled on self-hosted PostgreSQL** |
+| **LLM provider** | **Adapter-selected (e.g. Azure OpenAI, Anthropic); Governor-scoped per call** | **Agent reasoning only — never given MCP, database, or write credentials (doc 03 §7a)** | **Azure OpenAI** | **Self-hosted or hosted API, provider-agnostic adapter** |
+| NLG | Jinja2 | Reproducible and configurable spoken output — unchanged; renders the swarm's finished typed output, does not itself call the LLM | Same | Same |
 | Task queue | Procrastinate over PostgreSQL | Periodic/delayed jobs, retries and locks without Redis | PostgreSQL-backed worker in Container Apps Jobs/app | Worker container |
 | Meeting physical STT | WhisperX/Faster Whisper | Long-form ASR, word alignment, VAD | GPU VM/managed fallback | GPU/CPU server |
 | Speaker diarization | pyannote.audio Community-1 | Self-hosted diarization and known-speaker-count support | GPU VM or premium adapter | GPU/CPU server |
@@ -118,6 +121,32 @@ Configuration chooses a registered provider ID. It cannot specify arbitrary Pyth
 - spaCy `EntityRuler`, `Matcher` and `DependencyMatcher` for deterministic extraction.
 - A timezone-aware date parser for explicit/relative deadlines.
 - RapidFuzz for controlled entity resolution where exact aliases fail.
+
+## 4a. Agent stack (new — Seleric Swarm Layer)
+
+### Why LangGraph and not a bespoke agent loop
+
+Doc 13 §7 previously rejected LLM framework stacks for V1 because the six executive intents were bounded and deterministic. That premise changed on 2026-08-31 (doc 01 §3a.1). LangGraph is selected specifically for:
+
+- its swarm/handoff primitive: an agent's node function returns a `Command(goto=<next_agent>, update=<state>)`, giving direct agent-to-agent handoff without a mandatory round-trip through a central orchestrator (SWARM-008);
+- its checkpointer interface, backed by a PostgreSQL saver so in-flight case investigations survive a worker restart without adopting Temporal (doc 01 §2.9, §3a.1);
+- subgraph support, used for temporary coalitions (SWARM-012) — independent sub-investigations that checkpoint separately and join back into the parent case.
+
+LangGraph runs inside `insight-decision-service` as a library, not as a separately deployed control plane. It has no standing credential to MCP, PostgreSQL business tables, or object storage beyond what the service's own repository/port layer grants it — the same adapter discipline every other dependency in this document follows.
+
+### Why `pgvector` and not a dedicated vector database
+
+Collective memory (case retrieval) needs similarity search over closed-case summaries. `pgvector` is a PostgreSQL extension, not a new system to operate, secure, or back up separately — it satisfies "no new datastore" the same way NetworkX-over-PostgreSQL satisfied it for the ontology. Adoption trigger for a dedicated vector database: case volume or query-latency requirements `pgvector` cannot meet at the configured index type (unlikely at V1's case volume).
+
+### Why the LLM provider is an adapter, not a platform dependency
+
+```python
+class ReasoningProvider(Protocol):
+    async def complete(self, request: AgentTurnRequest, context: GovernorScope) -> AgentTurnResponse: ...
+    async def health(self) -> ProviderHealth: ...
+```
+
+Configuration selects a registered provider ID (Azure OpenAI, Anthropic, or a self-hosted OpenAI-compatible endpoint), exactly like `SpeechToTextProvider`/`TextToSpeechProvider` in §3. Every call carries a `GovernorScope` limiting what tools/data the completion may reference; the provider itself never receives MCP credentials, database access, or write capability.
 
 ## 5. Why no feature-store platform in V1
 
@@ -207,7 +236,11 @@ commitment_verification
 retention_cleanup
 ```
 
-All handlers are idempotent and accept immutable IDs. A future Temporal/Prefect migration can replace the adapter when workflow complexity justifies it.
+All handlers are idempotent and accept immutable IDs. A future Temporal/Prefect migration can replace the adapter when workflow complexity justifies it. Swarm case investigations use LangGraph's own PostgreSQL-backed checkpointing for in-agent-loop durability (§4a); the task queue is used to trigger case creation/resumption (e.g., `open_swarm_case`, `resume_swarm_case`) and to run Governor-scheduled housekeeping (reputation recompute, case-embedding refresh), not to drive individual agent turns.
+
+## 9a. A2A protocol — explicitly deferred
+
+Google's Agent2Agent (A2A) protocol is the mechanism for Seleric agents to negotiate with agents belonging to other businesses. It is **not implemented in V1** (doc 01 §3a.10). The internal Agent Registry (doc 14 §10a) is deliberately shaped — typed capability records, an `exposure_scope` field currently fixed to `INTERNAL` — so that adding an A2A-facing directory later does not require a schema rewrite. Adoption trigger: a concrete cross-business agent-to-agent use case exists. See doc 11 for research notes kept on file for when that trigger is met.
 
 ## 10. Azure low-cost mapping
 
@@ -286,3 +319,7 @@ The most practical September path is hybrid:
 - spaCy matching: `https://spacy.io/usage/rule-based-matching`
 - Appsmith: `https://docs.appsmith.com/`
 - Procrastinate: `https://github.com/procrastinate-org/procrastinate`
+- LangGraph: `https://langchain-ai.github.io/langgraph/`
+- LangGraph swarm pattern: `https://github.com/langchain-ai/langgraph-swarm-py`
+- pgvector: `https://github.com/pgvector/pgvector`
+- Agent2Agent (A2A) protocol (deferred, reference only): `https://github.com/google-a2a/A2A`

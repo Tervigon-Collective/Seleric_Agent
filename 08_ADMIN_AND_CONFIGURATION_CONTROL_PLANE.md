@@ -2,9 +2,11 @@
 
 ## 1. Purpose
 
-The admin system is a first-class part of V1. It allows authorized operators to add and change business objects, goals, metric bindings, policies, providers, intents, templates, meeting rules, and verification behavior without editing source code.
+The admin system is a first-class part of V1. It allows authorized operators to add and change business objects, goals, metric bindings, policies, providers, intents, templates, meeting rules, verification behavior, and — new since 2026-08-31 — Seleric Governor policy and agent-swarm definitions, without editing source code.
 
 Appsmith Community Edition is used as the initial UI. All writes go through domain APIs.
+
+**Reconciliation note:** the Seleric Governor (doc 03 §7a, doc 05 §40) is *policy authored here*, not a new admin subsystem. Every rule in §2 (the configuration lifecycle) applies to `GovernorPolicy` and `AgentDefinition` objects exactly as written — draft, validate, approve, publish, immutable versioning, rollback. §3.17-3.18 below extend the existing module list; they do not introduce a second approval workflow.
 
 ## 2. Configuration Lifecycle
 
@@ -196,32 +198,15 @@ Example:
 }
 ```
 
-### 3.8 Eligibility and Ranking
+### 3.8 Eligibility and Ranking — retired as a deterministic formula, replaced by 3.17/3.18
 
-Manage eligibility order and parameters:
+**Changed 2026-08-31.** This module no longer configures a weighted-ranking formula (there is no formula to configure). The dimensions it used to parameterize — freshness, confidence, materiality, actionability, ownership, founder leverage, prerequisites, cooldown, deduplication — are still real considerations, but they are now things the swarm's agents (particularly the Skeptic) reason about, not thresholds an admin tunes here. What remains admin-configurable in this space:
 
-```text
-freshness
-confidence
-materiality
-actionability
-ownership
-founder leverage
-prerequisites
-cooldown
-deduplication
-```
+- `max_founder_brief_items` (still 3 — hard-coded invariant, doc 06 §9.5a, not a tunable weight)
+- convergence confidence threshold (minimum confidence for a case to be considered `CONVERGED`, doc 06 §9.3a)
+- per-problem-class bid-selection cost/information-gain weighting (advanced; defaults are the documented formula in doc 06 §9.3a and should rarely need admin override)
 
-Manage ranking:
-
-- Strategy ID
-- Normalizers
-- Component weights
-- Minimum score
-- Maximum selected items
-- Tie-break order
-
-V1 maximum remains three for founder-priority intent.
+See §3.17-3.18 for where the substantive new controls live.
 
 ### 3.9 Intent Administration
 
@@ -361,6 +346,39 @@ Admin can inspect:
 - Rendered template
 - Commitment verification evidence
 
+### 3.17 Seleric Governor Policy [new]
+
+Manage, as versioned `GovernorPolicy` objects using the same lifecycle as every other config object:
+
+- **Tool permissions**: which registered tool ports each agent role may invoke, per problem class.
+- **Financial spend limits**: maximum spend an agent-proposed action may commit without a human-approval gate; hard ceiling above which no policy version may grant automatic approval.
+- **PII access rules**: which agent roles/tools may read fields classified as PII, and under what case conditions.
+- **External communication rules**: whether/which agents may send any message outside the platform (e.g., email, external API) — off by default.
+- **Production write restrictions**: which write operations are Governor-grantable at all in V1 (deliberately narrow — see doc 01 §5, "autonomous production writes without a Governor-approved action" remains rejected as a default).
+- **API spend limits**: LLM provider token/cost budget per case, per day, per agent role.
+- **Agent-spawning limits**: maximum concurrent agents and coalitions per case, and system-wide.
+- **Max iteration counts**: maximum debate turns before a case is forced to `INCONCLUSIVE` rather than looping indefinitely.
+- **Human-approval gates**: which action types require an explicit human approval before execution regardless of Governor policy otherwise permitting them.
+
+Validation (in addition to the standard schema/reference checks in §2):
+
+- No policy version may set spend/write/PII grants above the platform's hard ceilings (enforced independent of admin input — an admin cannot configure the Governor into an unsafe default).
+- Every `ToolPermission` must reference a real registered tool port; unregistered tool names are rejected the same way an unresolvable metric ID is rejected in §3.2.
+- A policy that removes all `ApprovalGate`s for a previously gated production-write action requires two-person approval (Business Goal Owner + Security Administrator or Platform Admin), reusing the existing separation-of-duties mechanism in §4.
+
+Publication of a new Governor policy version takes effect for the *next* agent turn in every open case; an already-granted, in-flight action is honored to completion (doc 07 §9).
+
+### 3.18 Swarm and Agent Administration [new]
+
+Manage:
+
+- `AgentDefinition` objects: agent role ID, capability tags, tool port bindings, default reasoning-provider profile, cost profile. Adding or retiring an agent role is a config change here, not a code change, once the base agent-execution machinery exists (SWARM-004).
+- Read-only **swarm case / debate inspector**: browse any case's full message history (observations, hypotheses, challenges, handoffs, bids, Governor decisions), the same way the old Decision Inspector (§3.16) browsed a formula's inputs/outputs — this is the audit-trail UI that replaces determinism as the accountability mechanism.
+- Read-only **agent reputation dashboard**: per-agent, per-problem-class accuracy, calibration, false-positive rate, cost, and speed (doc 05 §39).
+- Read-only **task market view**: open tasks, submitted bids, and the Coordinator's selection reasoning for a given case.
+
+No admin action here can directly instruct an agent to reach a specific conclusion — the admin surface configures the swarm's *boundaries and definitions*, not its live reasoning. Overriding a specific in-progress or published conclusion (e.g., dismissing a bad brief item) goes through the existing brief/notification suppression mechanism, not through agent instruction.
+
 ## 4. Admin Roles
 
 | Role | Primary permissions |
@@ -372,7 +390,8 @@ Admin can inspect:
 | Executive Policy Admin | Intervention, eligibility, ranking, notification policy |
 | Meeting Reviewer | Participant mapping, transcript correction, extraction review |
 | Commitment Approver | Approve commitments and verification rules |
-| Auditor | Read-only config, decision, access, and verification history |
+| **Governor Policy Approver** [new] | Approve/publish `GovernorPolicy`, `AgentDefinition`; required second signer for spend/write/PII grant increases |
+| Auditor | Read-only config, decision, swarm-debate, access, and verification history |
 
 Separation of duties can require two roles for publish operations.
 

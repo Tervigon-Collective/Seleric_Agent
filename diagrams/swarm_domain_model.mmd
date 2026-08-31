@@ -1,0 +1,128 @@
+classDiagram
+    class SwarmCase {
+      +CaseId case_id
+      +BrandId brand_id
+      +CaseStatus status
+      +str observation
+      +Urgency urgency
+      +str problem_class
+      +Instant opened_at
+      +Instant closed_at
+      +float final_confidence
+      +vector resolution_embedding
+      +record_message(AgentMessage)
+      +record_hypothesis(Hypothesis)
+      +require_skeptic_pass()
+      +converge(confidence, actions)
+    }
+    class SwarmEvidence {
+      +EvidenceId evidence_id
+      +CaseId case_id
+      +EvidenceType evidence_type
+      +str source_reference
+      +dict value_snapshot
+    }
+    class Hypothesis {
+      +HypothesisId id
+      +CaseId case_id
+      +str proposing_agent_id
+      +str statement
+      +HypothesisType hypothesis_type
+      +NodeId target_node_id
+      +list~EvidenceRef~ evidence_refs
+      +float confidence
+      +HypothesisStatus status
+    }
+    class AgentMessage {
+      +MessageId message_id
+      +CaseId case_id
+      +str from_agent_id
+      +str to_agent_id
+      +MessageType message_type
+      +dict payload
+      +Instant created_at
+    }
+    class SwarmTask {
+      +TaskId task_id
+      +CaseId case_id
+      +str problem_class
+      +TaskStatus status
+      +str posted_by
+    }
+    class SwarmBid {
+      +BidId bid_id
+      +TaskId task_id
+      +str agent_id
+      +float confidence
+      +float estimated_cost
+      +float expected_information_gain
+      +float expected_value
+      +bool selected
+    }
+    class ProposedAction {
+      +ActionId action_id
+      +CaseId case_id
+      +str proposing_agent_id
+      +HypothesisId hypothesis_id
+      +dict action_text_structured
+      +GovernorDecision governor_decision
+      +str governor_decision_reason_code
+      +Instant executed_at
+    }
+    class Coalition {
+      +CoalitionId coalition_id
+      +CaseId case_id
+      +list~str~ member_agent_ids
+      +Instant formed_at
+      +Instant converged_at
+    }
+    class AgentRegistryEntry {
+      +str agent_id
+      +AgentRole role
+      +list~str~ capabilities
+      +list~str~ tool_ports
+      +dict cost_profile
+      +ExposureScope exposure_scope
+    }
+    class AgentReputation {
+      +str agent_id
+      +str problem_class
+      +float accuracy
+      +float calibration
+      +float false_positive_rate
+      +float avg_cost
+      +float avg_speed_seconds
+      +int sample_count
+    }
+    class GovernorPolicy {
+      +PolicyId governor_policy_id
+      +dict tool_permissions
+      +dict spend_limits
+      +dict pii_access_rules
+      +bool external_comm_allowed
+      +list production_write_allowlist
+      +int max_iteration_count
+      +dict approval_gates
+      +check(GovernorCheckRequest) GovernorDecision
+    }
+    class FounderBrief {
+      +BriefId brief_id
+      +Instant as_of
+      +CaseId case_id
+      +float confidence
+      +list~ProposedAction~ selected
+    }
+
+    SwarmCase "1" --> "*" SwarmEvidence
+    SwarmCase "1" --> "*" Hypothesis
+    SwarmCase "1" --> "*" AgentMessage
+    SwarmCase "1" --> "*" SwarmTask
+    SwarmTask "1" --> "*" SwarmBid
+    SwarmCase "1" --> "*" ProposedAction
+    SwarmCase "1" --> "0..1" Coalition
+    Hypothesis "1" --> "*" ProposedAction
+    Hypothesis --> SwarmEvidence : cites
+    AgentRegistryEntry "1" --> "*" SwarmBid
+    AgentRegistryEntry "1" --> "*" AgentReputation
+    GovernorPolicy --> ProposedAction : clears or denies
+    SwarmCase --> FounderBrief : publishes on convergence

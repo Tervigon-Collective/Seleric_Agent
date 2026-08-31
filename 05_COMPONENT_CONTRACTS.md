@@ -18,8 +18,13 @@ This document defines what each V1 component exists to do, why it is explicitly 
 | Forecast/anomaly engine | Yes, lightweight | Expected range, risk horizon and statistical deviation |
 | Ontology runtime | Yes | Understands business parts, dependencies, owners and goals |
 | Health evaluator | Yes | Consistent node status with uncertainty and freshness |
-| Insight Decision Service | Yes | Candidate generation, root-driver consolidation and top-three ranking |
-| NLG renderer | Yes | Reproducible spoken output without generative reasoning |
+| Insight Decision Service | Yes | Hosts the Seleric Swarm Layer; candidate generation, root-driver consolidation and top-three prioritization via agent debate |
+| Seleric Blackboard | Yes | Persistent case memory and the audit trail for non-deterministic reasoning |
+| Swarm Coordinator | Yes | Leaderless handoff routing, task market, coalition management |
+| Agent Registry | Yes | Capability/tool/cost/reputation advertising for recruitment (internal-only in V1) |
+| Seven initial agents (Observer, Anomaly, Diagnostic, Prediction, Strategy, Experiment, Skeptic) | Yes | Bounded reasoning roles; Skeptic prevents premature convergence |
+| Seleric Governor | Yes | Non-recruitable safety boundary: tool/spend/PII/write/spawn/iteration/approval control |
+| NLG renderer | Yes | Reproducible spoken output rendering the swarm's finished typed conclusion; still not itself generative |
 | Proactive notification channel | Yes | Enables actionable alerts without manual query |
 | Meeting capture/transcription | Yes | Converts 1:1 audio into reviewable evidence |
 | Semantic extractor | Yes | Decisions, commitments, owners, deadlines and outcomes |
@@ -696,151 +701,253 @@ Health is not one mandatory global formula. Different metric types can use targe
 
 ## Purpose
 
-Produce auditable founder-level insights from state, goals, ontology, commitments and intervention policy.
+Host the Seleric Swarm Layer and produce auditable founder-level insights from state, goals, ontology, commitments and agent-swarm reasoning. **Changed 2026-08-31**: sections 17-19 below (formerly the deterministic Root-Driver Resolver, Candidate Generator, and Eligibility/Ranking Engine) are replaced by §34-40 (Blackboard, Coordinator, Registry, the seven agents, Governor enforcement point). This section's external API contract is unchanged; what changed is what computes the response.
 
-## APIs
+## APIs — unchanged
 
 ```text
 GET  /v1/company-health/latest
-POST /v1/founder-briefs
 GET  /v1/founder-briefs/latest
 GET  /v1/founder-briefs/{id}
 GET  /v1/founder-briefs/{id}/items/{rank}/explanation
 GET  /v1/risks/latest
 GET  /v1/opportunities/latest
-GET  /v1/decision-traces/{id}
+GET  /v1/decision-traces/{id}       # now resolves to a Blackboard case debate trace, not a formula trace
 ```
 
-## Internal pipeline
+`POST /v1/founder-briefs` is removed as a synchronous trigger — Voice Orchestrator never asks Insight Decision Service to compute a brief on demand; it always reads the latest already-published one (doc 03 §5, §9). Cases are opened by the swarm's own triggers (doc 07 §3), not by an inbound API call.
+
+## Internal pipeline — replaced
 
 ```text
-state selection
--> suspected root-driver attribution
--> intervention template matching
--> precondition evaluation
--> founder eligibility
--> materiality filters
--> root-key consolidation
--> ranking
--> top 0..3 selection
--> NLG rendering
+state/evidence ingestion onto Blackboard
+-> Observer notices candidate problem, opens/updates case
+-> Coordinator posts task, agents bid, bids selected (or coalition opened)
+-> agent debate: hypothesize, challenge, recruit, hand off (Governor-checked throughout)
+-> Skeptic pass (mandatory before any action proposal converges)
+-> Coordinator marks case CONVERGED with confidence + evidence refs
+-> Governor clears (or denies) any proposed action
+-> NLG rendering of the finished typed conclusion
 -> persistence and notification policy
 ```
 
 ## Inputs
 
-Latest valid state snapshot, graph revision, goals, owners, intervention templates, ranking policy, active commitments and response templates.
+Latest valid state snapshot (Business State Service), graph revision, goals, owners, active commitments, Governor policy bundle, agent registry, and — new — prior closed cases retrieved as precedent.
 
 ## Outputs
 
-CompanyHealthSummary, InterventionCandidate, FounderBrief, RiskBrief, OpportunityBrief, Explanation and DecisionTrace.
+CompanyHealthSummary, FounderBrief, RiskBrief, OpportunityBrief, Explanation — all unchanged DTOs, now additionally carrying a `confidence` field and a `case_id`/`debate_trace_id` instead of a formula-only `decision_trace_id`.
 
-# 17. Suspected Root-Driver Resolver
+## Failure behavior
 
-## Purpose
+If the swarm has no converged case within a brief's freshness policy, Insight Decision Service returns the latest still-valid brief with disclosed age, exactly as the deterministic pipeline did when computation failed — Voice Orchestrator's contract at this boundary is unaffected by the reasoning-model change (doc 03 §15).
 
-Avoid reporting downstream symptoms as separate priorities.
-
-## V1 score inputs
-
-- ancestor relationship and path length
-- edge semantics and configured influence weight
-- anomaly start time/temporal precedence
-- direction consistency
-- observed contribution to target change
-- independent anomaly versus inherited deviation
-- data/model confidence
-
-## Output
-
-```json
-{
-  "target_node_id": "net_revenue",
-  "suspected_driver_node_id": "checkout_conversion",
-  "method": "dependency_temporal_attribution_v1",
-  "score": 0.82,
-  "is_causally_verified": false,
-  "supporting_paths": ["checkout_conversion -> net_revenue"],
-  "alternatives": []
-}
-```
-
-## Extension
-
-`DoWhyRootCauseStrategy` implements the same interface but can run only when the graph/dataset has causal approval.
-
-# 18. Intervention Candidate Generator
+# 34. Seleric Blackboard
 
 ## Purpose
 
-Translate a state/driver into an allowed action candidate.
+Persistent, structured operational memory shared by every agent working a case, and — because determinism is gone — the platform's accountability mechanism. Every problem gets a case record: observation, evidence, urgency, hypotheses, active agents, open tasks, proposed actions, outcome, confidence. Every conclusion must be traceable to the specific agent messages that produced it.
 
-## Template input
+## Why needed
 
-```json
-{
-  "template_id": "checkout_conversion_degraded",
-  "applies_to": {
-    "node_type": "PROCESS",
-    "state": "RED",
-    "anomaly_direction": "NEGATIVE"
-  },
-  "action_template": "Ask {owner_name} to investigate {node_name} before {deadline_hint}.",
-  "default_owner_role": "Engineering Lead",
-  "founder_required_policy": "cross_function_or_exposure",
-  "preconditions": ["data_current", "financial_exposure_available"],
-  "verification_rule_id": "metric_recovery_v1"
-}
-```
+Without a shared, persistent workspace, agent-to-agent handoff would require re-explaining context on every hop, and there would be no way to reconstruct "why did the swarm conclude this" after the fact — which is the entire replacement for the deterministic decision trace.
 
-## Output
+## Working
 
-A candidate with evidence, owner, founder leverage, preconditions, expected impact, eligibility and root key.
+Backed by the existing PostgreSQL instance (`decision.*` schema, doc 14 §10a) — no new datastore. A case is opened by the Observer agent (or a scheduled/event trigger), accumulates evidence and agent messages as investigation proceeds, and is marked `CONVERGED`, `INCONCLUSIVE`, or `ABANDONED` by the Coordinator. Every row is append-only; corrections are new rows referencing the corrected one, never in-place edits — the same audit discipline the platform already applies to configuration and commitments (doc 09 §9).
 
-# 19. Eligibility and Ranking Engine
-
-## Purpose
-
-Select no more than three interventions through explicit policy.
-
-## Eligibility specification
+## Interface
 
 ```python
-class CandidateSpecification(Protocol):
-    def evaluate(self, candidate: InterventionCandidate, context: DecisionContext) -> RuleResult: ...
+class Blackboard(Protocol):
+    async def open_case(self, trigger: CaseTrigger) -> SwarmCase: ...
+    async def get_case(self, case_id: str) -> SwarmCase: ...
+    async def post_message(self, message: AgentMessage) -> None: ...
+    async def post_hypothesis(self, hypothesis: Hypothesis) -> None: ...
+    async def post_task(self, task: SwarmTask) -> None: ...
+    async def submit_bid(self, bid: SwarmBid) -> None: ...
+    async def propose_action(self, action: ProposedAction) -> None: ...
+    async def close_case(self, case_id: str, outcome: CaseOutcome) -> None: ...
+    async def find_similar_cases(self, observation: str, limit: int) -> list[SwarmCase]: ...
 ```
 
-Examples:
+## Inputs
 
-- `DataIsCurrent`
-- `EvidenceConfidenceAtLeast`
-- `GoalIsActive`
-- `FinancialExposureAtLeast`
-- `NotAlreadyResolved`
-- `NotDuplicateRootKey`
-- `FounderLeverageAtLeast`
-- `OperationalPreconditionsMet`
+Business State evidence, agent messages, hypotheses, bids, action proposals, Governor decisions, case-outcome confirmations.
 
-## Ranking interface
+## Outputs
+
+A queryable case record and its complete message history; a `find_similar_cases` result set (`pgvector` similarity search, doc 01 §3a.6) used for collective memory.
+
+## Failure behavior
+
+If the Blackboard write path is unavailable, no agent turn may proceed (an agent with nowhere to record its reasoning cannot act) — this fails closed the same way a Governor policy fetch failure does (doc 03 §15).
+
+# 35. Swarm Coordinator
+
+## Purpose
+
+Route control between agents based on which agent's domain the investigation currently touches — no permanent leader.
+
+## Why needed
+
+Without a coordinator, recruitment and handoff would either need a fixed pipeline order (which contradicts the founder's brief) or would have no selection mechanism between competing bids.
+
+## Working
+
+Implemented as a LangGraph graph whose nodes are agent turns; each agent node's return value is a `Command` that either hands off directly to a named agent or returns control to the Coordinator node when no agent claims the next step. The Coordinator's own responsibilities are narrower than "leader": it posts tasks to the task market, selects bids, opens/closes coalitions, and detects convergence or stagnation (doc 06 §9.2-9.3).
+
+## Interface
 
 ```python
-class RankingPolicy(Protocol):
-    def rank(self, candidates: list[InterventionCandidate],
-             policy: RankingProfile) -> list[RankedCandidate]: ...
+class SwarmCoordinator(Protocol):
+    async def post_task(self, case_id: str, description: str) -> SwarmTask: ...
+    async def select_bid(self, task_id: str) -> SwarmBid | None: ...
+    async def open_coalition(self, case_id: str, agent_ids: list[str]) -> Coalition: ...
+    async def detect_convergence(self, case_id: str) -> ConvergenceResult: ...
 ```
 
-## Default score
+## Task market / bidding
+
+Concrete selection rule (doc 06 §9.3): each bid carries `confidence`, `estimated_cost`, `expected_information_gain`. The Coordinator computes `expected_value = confidence * expected_information_gain / max(estimated_cost, epsilon)`, ranks bids descending, and ties break on `agent_reputation.calibration` for that problem class. The losing bidders' bids remain on the Blackboard for audit.
+
+## Failure behavior
+
+If no agent bids on a posted task within its timeout, the case is marked `INCONCLUSIVE` and surfaces as a data-gap risk rather than silently disappearing (the same "never silently drop" discipline as a failed state job, doc 03 §15).
+
+# 36. Agent Registry
+
+## Purpose
+
+Let agents (and the Coordinator) discover and recruit each other by capability, tool access, cost, and historical reliability.
+
+## Why needed
+
+Recruitment ("Diagnostic agent recruits Prediction agent because it needs a forecast") requires a place to look up who can do what — without it, recruitment would be hardcoded pipeline order, which is exactly what the swarm model replaces.
+
+## Working
+
+Rows in `decision.agent_registry` (doc 14 §10a), one per agent role, each declaring capability tags, available tool ports, a cost profile, and a link to its `agent_reputation` rows. **Internal-only in V1**: `exposure_scope = INTERNAL` on every row; there is no external-facing directory endpoint. The schema is intentionally shaped so a future A2A-facing directory can be added without a rewrite (doc 01 §3a.10) — this is the only concession to the future, and it costs nothing beyond one enum value today.
+
+## Interface
+
+```python
+class AgentRegistry(Protocol):
+    async def list_capable(self, capability: str) -> list[AgentRegistryEntry]: ...
+    async def get_reputation(self, agent_id: str, problem_class: str) -> AgentReputation: ...
+    async def register(self, entry: AgentRegistryEntry) -> None: ...
+```
+
+## Failure behavior
+
+A registry lookup failure blocks recruitment for that turn; the current agent completes its own reasoning and hands back to the Coordinator rather than guessing at a recruit.
+
+# 37. The Seven Initial Agents
+
+## Purpose
+
+Each agent is a bounded reasoning role with its own capability declaration, tool access (Governor-granted), and prompt/behavior contract. V1 starts at seven, not fifty (doc 01 §6).
+
+## Common contract
+
+```python
+class SwarmAgent(Protocol):
+    agent_id: str
+    role: AgentRole
+    capabilities: tuple[str, ...]
+
+    async def perceive(self, case: SwarmCase) -> Perception: ...
+    async def propose(self, perception: Perception) -> Hypothesis | SwarmBid | None: ...
+    async def act(self, hypothesis: Hypothesis, scope: GovernorScope) -> AgentTurnResult: ...
+```
+
+Every `act` call passes through the Governor enforcement point (§40) before any tool, spend, write, or external call executes.
+
+## Role summary
+
+| Agent | Primary responsibility | Typical evidence it consumes | Typical output |
+|---|---|---|---|
+| Observer | Notices candidate problems/opportunities from Business State evidence; opens cases | State/health snapshots, anomaly events | `CaseTrigger`, initial `OBSERVATION` message |
+| Anomaly | Interprets Business State's forecast-residual/interval evidence into a severity judgment | Anomaly/forecast output (doc 05 §12-13, unchanged) | Severity-labeled hypothesis input |
+| Diagnostic | Proposes root-driver hypotheses grounded in the ontology | Graph paths, temporal precedence, anomaly concurrence | `Hypothesis` with cited evidence |
+| Prediction | Estimates forward impact/expected outcome of a hypothesis or proposed action | Forecast models, historical case precedent | Impact estimate with confidence |
+| Strategy | Converts a supported hypothesis into a candidate action proposal | Ontology, owner/goal bindings, precedent cases | `ProposedAction` draft |
+| Experiment | Where policy allows, proposes a bounded test (e.g., a small controlled check) rather than a full commitment | Precedent cases, Governor policy on experiment scope | Experiment proposal (still Governor-gated) |
+| **Skeptic** | Challenges hypotheses and proposed actions before convergence; explicitly checks for premature convergence, unmet preconditions, and causal-language overreach | Every hypothesis/action in the case | `CHALLENGE` message; confidence adjustment; may force the case back to debate |
+
+## The Skeptic is load-bearing, not optional review
+
+Per the founder's brief, the Skeptic exists specifically to prevent the swarm from converging on a plausible-but-wrong story. It is not a post-hoc reviewer bolted onto a finished conclusion: SWARM-005 requires a recorded Skeptic pass on every case that reaches a proposed action, and RCA-004/DEC-012 make the Skeptic explicitly responsible for catching causal-language overreach and unmet-precondition gaps that debate momentum among the other six agents might otherwise paper over. Removing or downgrading the Skeptic to "optional" is a spec violation, not a simplification.
+
+## Failure behavior
+
+An agent that raises an unhandled error mid-turn does not corrupt the case: its partial state is discarded, the failure is recorded as a Blackboard message, and the Coordinator either retries the bid selection or marks the case `INCONCLUSIVE` — never silently drops the investigation.
+
+# 38. Task Market / Bidding — see §35
+
+Bidding mechanics are documented under Swarm Coordinator (§35) since the Coordinator is the bid-selecting party; agents are the bid-submitting party (§37).
+
+# 39. Collective Memory and Reputation
+
+## Collective memory
+
+`find_similar_cases` (Blackboard, §34) runs a `pgvector` cosine-similarity query over `decision.swarm_case.resolution_embedding` for closed cases, seeded before agents start independent investigation (SWARM-010). This is presented to recruited agents as additional evidence, not as a binding answer — the Skeptic may still challenge a precedent-based hypothesis.
+
+## Agent reputation
+
+Concrete formula (doc 06 §9.6): per `(agent_id, problem_class)`, updated when a case's outcome is later confirmed (via commitment verification where the case produced an action, or human confirmation otherwise):
 
 ```text
-severity_weighted
-x financial_exposure_weighted
-x urgency_weighted
-x evidence_confidence
-x data_confidence
-x founder_leverage
+accuracy      = correct_conclusions / total_confirmed_conclusions
+calibration   = 1 - mean(|stated_confidence - outcome_correctness|)   # Brier-like
+false_positive_rate = false_positives / total_flagged_problems
+avg_cost      = mean(estimated_cost across confirmed cases)
+avg_speed     = mean(wall-clock time from bid-selected to case-converged)
 ```
 
-Factors are normalized, capped and logged. A weighted-additive strategy is available when zero values should not eliminate a candidate. TOPSIS can be added as another registered strategy.
+Read by the Coordinator's bid-selection tie-break (§35) and surfaced in the Admin swarm inspector (doc 08 §3.18).
+
+# 40. Seleric Governor
+
+## Purpose
+
+Enforce every safety boundary above the swarm: tool permissions, financial limits, PII access, external communication, production writes, API spend, agent-spawning limits, max iteration counts, and human-approval gates. This is the actual safety boundary now that business logic isn't deterministic (doc 03 §7a).
+
+## Why needed
+
+Once conclusions are agent-derived rather than formula-derived, "the code is deterministic so it can't do anything unreviewed" is no longer true. The Governor is the component that keeps that promise true anyway.
+
+## Working
+
+A policy fetched from Control Plane (`control.governor_policy`, doc 08 §3.17) and an enforcement library that every agent's `act()` call passes through (§37) before a tool executes, a spend is committed, PII is accessed, an external message is sent, a production write occurs, or a new agent/coalition is spawned. It is not a swarm agent: it has no `agent_id`, cannot be recruited, and a denial cannot be appealed by the swarm itself — only by a human through the existing config-approval workflow (doc 03 §7a).
+
+## Interface
+
+```python
+class Governor(Protocol):
+    async def check(self, request: GovernorCheckRequest) -> GovernorDecision: ...
+    async def record_decision(self, decision: GovernorDecision) -> None: ...
+
+class GovernorCheckRequest(BaseModel):
+    case_id: str
+    agent_id: str
+    action_type: Literal["TOOL_CALL", "SPEND", "PII_ACCESS", "EXTERNAL_COMM", "PRODUCTION_WRITE", "AGENT_SPAWN"]
+    requested_scope: dict
+    iteration_count: int
+```
+
+## Inputs
+
+Current published Governor policy bundle, the requesting agent's identity and current case, the specific action requested.
+
+## Outputs
+
+`GRANT` or `DENY` with a policy version and reason code; every decision is written to the Blackboard (as a case message) and to `platform.audit_event` (doc 14 §12.4).
+
+## Failure behavior
+
+Fail closed: if policy cannot be fetched or is past its validity window, every check returns `DENY` for anything beyond read-only reasoning (GOV-006). This is the one place in the platform where "unavailable" and "denied" are deliberately the same outward behavior — a Governor that fails open would defeat its purpose.
 
 # 20. NLG Renderer
 

@@ -10,18 +10,23 @@ flowchart TB
     subgraph Services[Backend Services]
         VO[Voice Orchestrator]
         BS[Business State]
-        ID[Insight Decision]
+        subgraph ID[Insight Decision]
+            Swarm[Coordinator + 7 Agents]
+            BB[(Blackboard)]
+            Gov[Governor Enforcement]
+        end
         MI[Meeting Intelligence]
-        CP[Control Plane]
+        CP[Control Plane<br/>+ Governor Policy]
         AU[Appsmith]
     end
 
     subgraph Platform[Shared Platform]
         MCP[Seleric MCP]
-        PG[(PostgreSQL)]
+        PG[(PostgreSQL + pgvector)]
         CH[(ClickHouse)]
         OBJ[(Object Storage)]
         Q[PostgreSQL Task Queue]
+        LLM[LLM Provider]
     end
 
     Bridge <--> VO
@@ -32,6 +37,8 @@ flowchart TB
     BS --> CH
     BS --> PG
     ID --> PG
+    Swarm <--> LLM
+    Gov --> CP
     MI --> PG
     MI --> OBJ
     CP --> PG

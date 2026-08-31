@@ -12,14 +12,21 @@ erDiagram
     BUSINESS_NODE_PROJECTION ||--|| NODE_HEALTH_CURRENT : has
     STATE_REFRESH_RUN ||--o{ METRIC_STATE_CURRENT : publishes
 
-    ANALYSIS_RUN ||--o{ ROOT_DRIVER_HYPOTHESIS : generates
-    ANALYSIS_RUN ||--o{ INTERVENTION_CANDIDATE : generates
-    ROOT_DRIVER_HYPOTHESIS ||--o{ INTERVENTION_CANDIDATE : supports
-    INTERVENTION_CANDIDATE ||--o{ ELIGIBILITY_EVALUATION : evaluated_by
-    ANALYSIS_RUN ||--o| FOUNDER_BRIEF : publishes
+    SWARM_CASE ||--o{ SWARM_EVIDENCE : accumulates
+    SWARM_CASE ||--o{ SWARM_HYPOTHESIS : generates
+    SWARM_CASE ||--o{ SWARM_MESSAGE : records
+    SWARM_CASE ||--o{ SWARM_TASK : posts
+    SWARM_TASK ||--o{ SWARM_BID : receives
+    SWARM_CASE ||--o{ PROPOSED_ACTION : produces
+    SWARM_CASE ||--o{ COALITION : may_open
+    SWARM_HYPOTHESIS ||--o{ PROPOSED_ACTION : supports
+    SWARM_CASE ||--o| FOUNDER_BRIEF : publishes
     FOUNDER_BRIEF ||--o{ FOUNDER_BRIEF_ITEM : contains
-    INTERVENTION_CANDIDATE ||--o| FOUNDER_BRIEF_ITEM : selected_as
-    FOUNDER_BRIEF ||--|| DECISION_TRACE : audited_by
+    PROPOSED_ACTION ||--o| FOUNDER_BRIEF_ITEM : selected_as
+    AGENT_REGISTRY ||--o{ SWARM_BID : submitted_by
+    AGENT_REGISTRY ||--o{ AGENT_REPUTATION : tracked_as
+    GOVERNOR_POLICY ||--o{ PROPOSED_ACTION : governs
+    CONFIG_OBJECT ||--o{ GOVERNOR_POLICY : versions
 
     DIALOGUE_SESSION ||--o{ DIALOGUE_TURN : contains
     DIALOGUE_SESSION ||--o{ SESSION_REFERENCE : remembers

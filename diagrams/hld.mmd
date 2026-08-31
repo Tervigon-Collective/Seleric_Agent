@@ -27,9 +27,9 @@ flowchart LR
 
     subgraph Services[Seleric V1 Microservices]
         Voice[Voice Orchestrator]
-        Control[Control Plane]
+        Control[Control Plane<br/>+ Governor Policy]
         State[Business State]
-        Insight[Insight Decision]
+        Insight[Insight Decision<br/>+ Seleric Swarm Layer + Governor Enforcement]
         Meeting[Meeting Intelligence]
     end
 
@@ -49,6 +49,7 @@ flowchart LR
         ManagedSpeech[Managed STT/TTS]
         LocalSpeech[OVOS STT/TTS + Faster Whisper/Piper]
         Dia[WhisperX + pyannote]
+        LLM[LLM Provider - agent reasoning only]
     end
 
     Founder --> Mic
@@ -68,6 +69,7 @@ flowchart LR
     Voice <--> ManagedSpeech
     Skill <--> LocalSpeech
     Meeting --> Dia
+    Insight <--> LLM
     Voice --> PG
     Control --> PG
     State --> PG

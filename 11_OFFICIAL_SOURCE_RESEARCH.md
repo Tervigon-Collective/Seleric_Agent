@@ -1,19 +1,22 @@
 # Official Source Research: Open-Source and Plug-and-Play Systems
 
-**Research date:** August 25, 2026  
+**Research date:** August 25, 2026 (agent-swarm addendum: August 31, 2026)  
 **Decision lens:** Reuse mature plumbing; own the Seleric business-state, decision, configuration, and verification semantics.
 
 ## 1. Research conclusion
 
-There is no single open-source platform that delivers the complete Seleric requirement. The fastest reliable route is a composable stack:
+There is no single open-source platform that delivers the complete Seleric requirement. The route as of 2026-08-31 is a composable stack:
 
 ```text
 Open-source voice shell
 + existing Seleric certified data access
-+ small deterministic state/decision platform
-+ open-source meeting capture/transcription
-+ configurable admin/control plane
++ small deterministic state platform (Business State Service — unchanged)
++ LangGraph-orchestrated agent swarm under a Governor safety boundary (Insight Decision Service — changed 2026-08-31)
++ open-source meeting capture/transcription (unchanged)
++ configurable admin/control plane, now also hosting Governor policy
 ```
+
+The reasoning-path change does not alter the underlying research conclusion — it still holds that no single platform delivers the whole requirement, and Seleric still owns the decision, configuration, and verification semantics. What moved is *how* the decision semantics are computed for the metric-selection-through-action-proposal path: agent reasoning (LangGraph, §13.0) replaces the deterministic ranking research previously documented in §8, which is retained below for historical record since its ranking-quality considerations (§8.1-8.2) are still relevant input to how the Skeptic and Coordinator reason, even though no formula now executes them directly.
 
 The project should not fork a complete voice assistant or meeting product and then force business intelligence into it. It should use their stable interfaces as adapters around Seleric-owned domain services.
 
@@ -581,6 +584,46 @@ Selected for PostgreSQL persistence adapters and migrations. Domain objects rema
 Selected for traces, metrics, and log correlation. Export to Azure Application Insights or the on-prem Grafana stack.
 
 ## 13. Agent-development accelerators
+
+**Changed 2026-08-31:** LangGraph (§13.3) moves from "accelerator used in a lab" to an adopted production dependency — the founder's replacement of the deterministic decision path with an agent swarm is exactly the trigger doc 01 previously said this class of tool needed. DeepSeek Harness and NOOA (§13.1-13.2) remain lab-only for the reasons already documented; they are not the orchestration layer, LangGraph is.
+
+### 13.0 LangGraph [new, production adoption]
+
+**Official source**
+
+- https://langchain-ai.github.io/langgraph/
+- https://github.com/langchain-ai/langgraph
+- Swarm/handoff pattern: https://github.com/langchain-ai/langgraph-swarm-py
+
+**Provides**
+
+- A graph-based orchestration library for LLM agent applications: nodes are agent/tool steps, edges are control flow, and a node can return a `Command` object that both updates shared state and routes to the next node — the primitive used for direct agent-to-agent handoff without a mandatory return to a central orchestrator.
+- A `Checkpointer` interface with official adapters, including a PostgreSQL-backed saver, giving durable, resumable graph execution across process restarts without adopting a separate workflow engine.
+- Subgraphs, usable to implement independent parallel investigations (temporary coalitions) that checkpoint separately and join back into a parent graph.
+- A prebuilt "swarm" pattern (`langgraph-swarm`) demonstrating exactly the leaderless, capability-based handoff model the founder's brief describes: an active agent is tracked in shared state, and control transfers via handoff tools rather than a fixed pipeline.
+
+**Official status**
+
+Actively maintained by LangChain; the checkpointer and graph-state APIs are the stable, documented parts this platform depends on. Track the changelog for `Command`/checkpointer API changes as part of the standard SBOM/upgrade-cadence process (doc 01 §4).
+
+**Adoption decision**
+
+**Adopt** for the Seleric Swarm Layer inside `insight-decision-service` (doc 01 §3a.1, doc 03 §3.4, doc 04 §4a). Scope of use is intentionally narrow: LangGraph orchestrates control flow between agent turns; it does not gain MCP, database, or write access beyond what the service's own ports and the Governor enforcement point grant per turn. This is the same adapter discipline applied to every other dependency in doc 04 — LangGraph is swappable behind the `SwarmCoordinator`/agent-turn ports (doc 06 §9.1a) if a future orchestration need outgrows it.
+
+### 13.0a Google Agent2Agent (A2A) protocol [research on file, not implemented]
+
+**Official source**
+
+- https://github.com/google-a2a/A2A
+- https://a2a-protocol.org/ (protocol specification)
+
+**Provides**
+
+- A standardized protocol for independent AI agent systems (potentially built by different vendors/organizations) to discover each other's capabilities via an "Agent Card," and to communicate and collaborate on tasks across organizational boundaries.
+
+**Adoption decision**
+
+**Defer — explicitly not implemented in V1** (doc 01 §3a.10, doc 04 §9a). A2A solves cross-business agent communication; V1's swarm is entirely internal to one Insight Decision Service instance for one brand. This entry exists so that when the adoption trigger (a concrete cross-business agent-to-agent use case) is met, the research is already on file rather than needing to be redone — building it now, before the trigger, would be exactly the kind of speculative infrastructure doc 01 exists to prevent. The internal Agent Registry (doc 05 §36, doc 14 §10a) is shaped with an `exposure_scope` field so that adding an A2A-facing directory later is additive, not a rewrite.
 
 ### 13.1 DeepSeek Harness
 
