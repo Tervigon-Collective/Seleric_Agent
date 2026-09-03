@@ -1,11 +1,12 @@
 from __future__ import annotations
+
 from typing import Any
 
 
 def validate_claim(claim: dict[str, Any]) -> tuple[bool, list[str]]:
     problems: list[str] = []
     claim_type = claim.get("claim_type")
-    support = claim.get("support_refs", [])
+    support = claim.get("support_refs") or []
 
     if claim_type in {"numeric", "causal", "forecast", "recommendation"} and not support:
         problems.append("material claim has no support references")

@@ -1,0 +1,58 @@
+metrics:
+  - id: metric.net_sales
+    version: 1
+    owner: commerce
+    description: Gross sales minus returns and discounts under the commerce definition.
+    formula: gross_sales - returns - discounts_adjustment
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: commerce
+    mcp_capability: commerce.daily_sales
+    validation:
+      - non_negative
+
+  - id: metric.gross_sales
+    version: 1
+    owner: commerce
+    description: Gross merchandise value before returns.
+    formula: sum(order_gross)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: commerce
+    mcp_capability: commerce.daily_sales
+    validation:
+      - non_negative
+
+  - id: metric.cac
+    version: 1
+    owner: performance
+    description: Cost to acquire a purchase/order under the approved attribution definition.
+    formula: spend / attributed_orders
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+    mcp_capability: performance.daily_cac
+    unit: INR
+    validation:
+      - denominator_non_negative
+      - spend_non_negative
+
+  - id: metric.atc_rate
+    version: 1
+    owner: funnel
+    description: Add-to-cart sessions divided by eligible sessions.
+    formula: atc_sessions / eligible_sessions
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.atc_to_purchase_rate
+    version: 1
+    owner: funnel
+    description: Purchases divided by add-to-cart events/sessions according to funnel definition.
+    formula: purchases / add_to_cart
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel

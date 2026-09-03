@@ -1,0 +1,93 @@
+agents:
+  - id: coordinator_agent
+    type: control
+    version: "0.1.0"
+    capabilities: [query_decomposition, task_planning, routing, arbitration, synthesis]
+    write_actions: false
+
+  - id: performance_agent
+    type: domain
+    version: "0.1.0"
+    domains: [meta_ads, google_ads]
+    capabilities: [campaign_analysis, cac_analysis, roas_analysis, attribution_analysis]
+    mcp_capabilities: [meta.read, google_ads.read]
+    handoff_targets: [commerce_agent, funnel_agent, finance_agent]
+
+  - id: commerce_agent
+    type: domain
+    version: "0.1.0"
+    domains: [shopify, amazon, blinkit]
+    capabilities: [orders, products, pricing, returns, ecommerce_analysis]
+    mcp_capabilities: [commerce.daily_sales, shopify.read, amazon.read, blinkit.read]
+    allowed_metrics: [metric.net_sales, metric.gross_sales]
+    handoff_targets: [funnel_agent, finance_agent, inventory_agent]
+
+  - id: funnel_agent
+    type: domain
+    version: "0.1.0"
+    domains: [web_analytics, posthog]
+    capabilities: [funnel_analysis, journey_analysis, device_analysis]
+    mcp_capabilities: [posthog.read]
+    handoff_targets: [technical_agent, commerce_agent]
+
+  - id: finance_agent
+    type: domain
+    version: "0.1.0"
+    domains: [finance]
+    capabilities: [profitability, cogs, margin, cash]
+    mcp_capabilities: [finance.read]
+    handoff_targets: [commerce_agent, inventory_agent, procurement_agent]
+
+  - id: inventory_agent
+    type: domain
+    version: "0.1.0"
+    domains: [inventory]
+    capabilities: [stock_cover, stockout_risk, ageing]
+    mcp_capabilities: [inventory.read]
+    handoff_targets: [procurement_agent, commerce_agent]
+
+  - id: procurement_agent
+    type: domain
+    version: "0.1.0"
+    domains: [procurement]
+    capabilities: [vendor, po, moq, lead_time]
+    mcp_capabilities: [procurement.read]
+    handoff_targets: [inventory_agent, finance_agent]
+
+  - id: technical_agent
+    type: domain
+    version: "0.1.0"
+    domains: [web_reliability]
+    capabilities: [latency, errors, deployments, incident_analysis]
+    mcp_capabilities: [technical.read]
+    handoff_targets: [funnel_agent]
+
+  - id: observer_agent
+    type: intelligence
+    version: "0.1.0"
+    capabilities: [evidence_collection, metric_observation]
+
+  - id: anomaly_agent
+    type: intelligence
+    version: "0.1.0"
+    capabilities: [anomaly_analysis]
+
+  - id: diagnostic_agent
+    type: intelligence
+    version: "0.1.0"
+    capabilities: [hypothesis_generation, causal_diagnosis]
+
+  - id: prediction_agent
+    type: intelligence
+    version: "0.1.0"
+    capabilities: [forecasting, risk_prediction]
+
+  - id: strategy_agent
+    type: intelligence
+    version: "0.1.0"
+    capabilities: [intervention_design, scenario_analysis]
+
+  - id: skeptic_agent
+    type: intelligence
+    version: "0.1.0"
+    capabilities: [challenge, validation, contradiction_search]

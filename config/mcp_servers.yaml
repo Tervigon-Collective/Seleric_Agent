@@ -1,0 +1,30 @@
+servers:
+  performance_fixture:
+    capability_prefix: performance
+    transport: fixture
+    adapter: fixture_performance
+    fixture_path: data/fixtures/performance/daily_cac.json
+
+  commerce_fixture:
+    capability_prefix: commerce
+    transport: fixture
+    adapter: fixture_commerce
+    fixture_path: data/fixtures/commerce/daily_sales.json
+
+  meta:
+    capability_prefix: meta
+    transport: streamable_http
+    url_env: META_MCP_URL
+    auth_token_env: META_MCP_TOKEN
+
+  shopify:
+    capability_prefix: shopify
+    transport: streamable_http
+    url_env: SHOPIFY_MCP_URL
+    auth_token_env: SHOPIFY_MCP_TOKEN
+
+  posthog:
+    capability_prefix: posthog
+    transport: streamable_http
+    url_env: POSTHOG_MCP_URL
+    auth_token_env: POSTHOG_MCP_TOKEN

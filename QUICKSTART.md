@@ -58,6 +58,23 @@ Each metric must have a definition, grain, source, timezone and owner.
 
 ## 6. Run local API shell
 
+The package lives under `src/`. Bare `python -m uvicorn seleric_swarm.main:app` fails unless that interpreter has an editable install (or `PYTHONPATH=src`).
+
+**Windows (this repo's venv):**
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_dev.py
+```
+
+Or activate the venv, then:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn seleric_swarm.main:app --reload
+```
+
+**uv:**
+
 ```bash
 uv run uvicorn seleric_swarm.main:app --reload
 ```

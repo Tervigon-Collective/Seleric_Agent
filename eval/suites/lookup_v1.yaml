@@ -1,0 +1,20 @@
+suite: lookup_v1
+workflow: lookup_v1
+prompt_versions:
+  coordinator.classify: "1"
+  observer.metric_map: "1"
+  synthesizer.response: "1"
+datasets:
+  - eval/datasets/lookup_commerce.jsonl
+  - eval/datasets/coordinator_classify.jsonl
+  - eval/datasets/claim_gate.jsonl
+  - eval/datasets/injection_tool_text.jsonl
+gates:
+  numeric_exact_match: 1.0
+  schema_valid: 1.0
+  classify_exact_match: 0.95
+  claim_gate: 1.0
+llm_as_judge:
+  enabled_in_ci: false
+  applies_to: [synthesis_faithfulness]
+  never_applies_to: [numeric_value, routing, schema, dates]

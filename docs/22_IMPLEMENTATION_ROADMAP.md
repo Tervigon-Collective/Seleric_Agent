@@ -1,5 +1,18 @@
 # 22 - Phased Implementation Roadmap
 
+## V1 prototype gate (lookup_v1)
+
+The in-process `lookup_v1` workflow (Coordinator → Commerce → Observer → fixture MCP → Claim Gate → synthesizer) is the first production-minded slice. Observability and evaluation are part of this slice, not Phase 7.
+
+**Do not start Phase 2 (Anomaly) or later intelligence phases until:**
+
+- `eval/datasets/lookup_commerce.jsonl` numeric exact-match stays **100%**
+- schema validity stays **100%**
+- coordinator classify exact-match stays **≥ 95%**
+- baseline file `eval/baselines/lookup_v1.json` is regenerated via `make eval`
+
+Live merchant MCP, A2A HTTP, DoWhy, and write actions remain postponed until that bar holds.
+
 ## Phase 0 - Contracts and foundations
 
 Deliver:

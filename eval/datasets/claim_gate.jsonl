@@ -1,0 +1,10 @@
+{"id": "g1", "claim": {"claim_type": "numeric", "support_refs": []}, "expected": {"ok": false}}
+{"id": "g2", "claim": {"claim_type": "numeric", "support_refs": ["EV-1"]}, "expected": {"ok": true}}
+{"id": "g3", "claim": {"claim_type": "qualitative", "support_refs": []}, "expected": {"ok": true}}
+{"id": "g4", "claim": {"claim_type": "causal", "support_refs": ["EV-1"]}, "expected": {"ok": false}}
+{"id": "g5", "claim": {"claim_type": "causal", "support_refs": ["EV-1"], "causal_ref": "CA-1"}, "expected": {"ok": true}}
+{"id": "g6", "claim": {"claim_type": "forecast", "support_refs": ["EV-1"]}, "expected": {"ok": false}}
+{"id": "g7", "claim": {"claim_type": "forecast", "support_refs": ["EV-1"], "model_ref": "model.forecast.v1"}, "expected": {"ok": true}}
+{"id": "g8", "claim": {"claim_type": "recommendation", "support_refs": []}, "expected": {"ok": false}}
+{"id": "g9", "claim": {"claim_type": "recommendation", "support_refs": ["EV-1"]}, "expected": {"ok": true}}
+{"id": "g10", "claim": {"claim_type": "numeric", "support_refs": ["EV-abc"], "text": "net sales were 1"}, "expected": {"ok": true}}

@@ -1,0 +1,19 @@
+{
+  "currency": "INR",
+  "timezone": "Asia/Kolkata",
+  "source": "fixture.commerce.daily_sales",
+  "tool_version": "1.0.0",
+  "days": {
+    "2026-06-01": {"net_sales": 88000.0, "gross_sales": 100000.0, "returns": 12000.0},
+    "2026-08-01": {"net_sales": 125000.5, "gross_sales": 140000.0, "returns": 14999.5},
+    "2026-08-02": {"net_sales": 118250.0, "gross_sales": 132000.0, "returns": 13750.0},
+    "2026-08-03": {"net_sales": 121000.0, "gross_sales": 135500.0, "returns": 14500.0},
+    "2026-08-10": {"net_sales": 99000.0, "gross_sales": 110000.0, "returns": 11000.0},
+    "2026-08-15": {"net_sales": 150000.0, "gross_sales": 168000.0, "returns": 18000.0},
+    "2026-08-20": {"net_sales": 87500.25, "gross_sales": 99000.0, "returns": 11499.75},
+    "2026-08-25": {"net_sales": 102400.0, "gross_sales": 115000.0, "returns": 12600.0},
+    "2026-09-01": {"net_sales": 110000.0, "gross_sales": 124000.0, "returns": 14000.0},
+    "2026-09-02": {"net_sales": 98000.0, "gross_sales": 111000.0, "returns": 13000.0},
+    "2026-09-03": {"net_sales": 101500.0, "gross_sales": 114200.0, "returns": 12700.0}
+  }
+}

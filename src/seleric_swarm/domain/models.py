@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 TrustLabel = Literal["VERIFIED", "STRONG", "PROBABLE", "WEAK", "INSUFFICIENT"]
@@ -14,6 +16,9 @@ class EvidenceArtifact(BaseModel):
     dimensions: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, Any] = Field(default_factory=dict)
     quality_flags: list[str] = Field(default_factory=list)
+    retrieved_at: str | None = None
+    time_range: dict[str, Any] = Field(default_factory=dict)
+    freshness: str | None = None
 
 
 class LeadershipTransfer(BaseModel):
@@ -21,7 +26,7 @@ class LeadershipTransfer(BaseModel):
     from_agent: str
     requested_target: str
     reason: str
-    evidence_refs: list[str]
+    evidence_refs: list[str] = Field(min_length=1)
     unresolved_question: str
     requested_output: str | None = None
 
@@ -33,3 +38,6 @@ class Claim(BaseModel):
     support_refs: list[str] = Field(default_factory=list)
     contradiction_refs: list[str] = Field(default_factory=list)
     trust_label: TrustLabel
+    gate_status: str = "pending"
+    model_ref: str | None = None
+    causal_ref: str | None = None
