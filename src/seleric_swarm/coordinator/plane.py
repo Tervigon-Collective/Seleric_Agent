@@ -59,11 +59,13 @@ class ControlPlane:
             llm_domain_lead=llm_domain_lead,
             metric_hints=metric_hints,
             metrics=self.runtime.metrics,
+            agents=self.runtime.agents,
         )
         graph: TaskGraph = build_task_dag(
             query_class=query_class,
             mission_lead=lead.mission_lead,
             complexity=complexity,
+            metrics=self.runtime.metrics,
             metric_hints=metric_hints,
             guard=self.guard,
         )

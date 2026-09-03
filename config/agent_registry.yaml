@@ -2,69 +2,87 @@ agents:
   - id: coordinator_agent
     type: control
     version: "0.1.0"
+    enabled: true
     capabilities: [query_decomposition, task_planning, routing, arbitration, synthesis]
     write_actions: false
 
+  # `enabled` gates whether this agent gets a graph node, an MCP allowlist entry,
+  # and counts as "wired" for capability resolution/dispatch -- the one flag that
+  # decides whether a domain is live in this build. `seleric_module` pins the
+  # domain to a real Seleric MCP module (see modules_list); omit it when the
+  # catalogue has no module for this domain yet (inventory/procurement/technical).
   - id: performance_agent
     type: domain
     version: "0.1.0"
+    enabled: true
     domains: [meta_ads, google_ads]
+    seleric_module: paidmedia
     capabilities: [campaign_analysis, cac_analysis, roas_analysis, attribution_analysis]
-    mcp_capabilities: [meta.read, google_ads.read]
+    mcp_capabilities: [performance.daily_cac]
     handoff_targets: [commerce_agent, funnel_agent, finance_agent]
 
   - id: commerce_agent
     type: domain
     version: "0.1.0"
+    enabled: true
     domains: [shopify, amazon, blinkit]
+    seleric_module: commerce
     capabilities: [orders, products, pricing, returns, ecommerce_analysis]
-    mcp_capabilities: [commerce.daily_sales, shopify.read, amazon.read, blinkit.read]
+    mcp_capabilities: [commerce.daily_sales]
     allowed_metrics: [metric.net_sales, metric.gross_sales]
     handoff_targets: [funnel_agent, finance_agent, inventory_agent]
 
   - id: funnel_agent
     type: domain
     version: "0.1.0"
+    enabled: true
     domains: [web_analytics, posthog]
+    seleric_module: webanalytics
     capabilities: [funnel_analysis, journey_analysis, device_analysis]
-    mcp_capabilities: [posthog.read]
+    mcp_capabilities: []
     handoff_targets: [technical_agent, commerce_agent]
 
   - id: finance_agent
     type: domain
     version: "0.1.0"
+    enabled: true
     domains: [finance]
+    seleric_module: finance
     capabilities: [profitability, cogs, margin, cash]
-    mcp_capabilities: [finance.read]
+    mcp_capabilities: []
     handoff_targets: [commerce_agent, inventory_agent, procurement_agent]
 
   - id: inventory_agent
     type: domain
     version: "0.1.0"
+    enabled: false  # no Seleric MCP module for inventory yet
     domains: [inventory]
     capabilities: [stock_cover, stockout_risk, ageing]
-    mcp_capabilities: [inventory.read]
+    mcp_capabilities: []
     handoff_targets: [procurement_agent, commerce_agent]
 
   - id: procurement_agent
     type: domain
     version: "0.1.0"
+    enabled: false  # no Seleric MCP module for procurement yet
     domains: [procurement]
     capabilities: [vendor, po, moq, lead_time]
-    mcp_capabilities: [procurement.read]
+    mcp_capabilities: []
     handoff_targets: [inventory_agent, finance_agent]
 
   - id: technical_agent
     type: domain
     version: "0.1.0"
+    enabled: false  # no Seleric MCP module for technical/APM yet
     domains: [web_reliability]
     capabilities: [latency, errors, deployments, incident_analysis]
-    mcp_capabilities: [technical.read]
+    mcp_capabilities: []
     handoff_targets: [funnel_agent]
 
   - id: observer_agent
     type: intelligence
     version: "0.1.0"
+    enabled: true
     capabilities: [evidence_collection, metric_observation]
 
   - id: anomaly_agent

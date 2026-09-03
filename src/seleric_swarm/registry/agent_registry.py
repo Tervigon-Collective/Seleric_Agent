@@ -33,3 +33,17 @@ class AgentRegistry:
         if not agent:
             return default
         return str(agent.get("version") or default)
+
+    def domain_agents(self, *, enabled_only: bool = True) -> list[dict]:
+        """Domain agents declared in the registry (the domain/catalogue config)."""
+
+        return [
+            a
+            for a in self._agents
+            if a.get("type") == "domain" and (not enabled_only or a.get("enabled", False))
+        ]
+
+    def wired_agent_ids(self) -> frozenset[str]:
+        """Agents with a real execution path in this build (explicit ``enabled: true``)."""
+
+        return frozenset(a["id"] for a in self._agents if a.get("enabled") and a.get("id"))

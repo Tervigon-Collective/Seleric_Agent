@@ -5,15 +5,14 @@ Internal workflow only. A2A remains a typed envelope at process boundaries.
 
 from __future__ import annotations
 
+import importlib
 from typing import Any, Literal
 from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
-from seleric_swarm.agents.base import AgentContext
+from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.agents.coordinator import Agent as CoordinatorAgent
-from seleric_swarm.agents.domains.commerce import Agent as CommerceAgent
-from seleric_swarm.agents.domains.performance import Agent as PerformanceAgent
 from seleric_swarm.agents.intelligence.observer import Agent as ObserverAgent
 from seleric_swarm.coordinator import ControlPlane
 from seleric_swarm.leadership.manager import LeadershipManager
@@ -23,14 +22,17 @@ from seleric_swarm.orchestration.synthesize import synthesize_response
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.claim_gate import validate_claim
 
-V1_SUPPORTED = {
-    ("lookup", "commerce_agent"),
-    ("comparison", "commerce_agent"),
-    ("lookup", "performance_agent"),
-}
-Route = Literal["domain_commerce", "domain_performance", "finalize_unsupported", "finalize_error"]
+QUERY_CLASSES_SUPPORTED = {"lookup", "comparison"}
 AfterObserver = Literal["propose_handoff", "claim_gate"]
-AfterArbitrate = Literal["domain_commerce", "finalize_error"]
+
+
+def _load_domain_agent(agent_id: str, runtime: SwarmRuntime) -> SwarmAgent:
+    """Import agents/domains/<name>.py by convention -- adding a domain agent to
+    config/agent_registry.yaml with enabled: true is enough to wire it in."""
+
+    module_name = agent_id.removesuffix("_agent")
+    module = importlib.import_module(f"seleric_swarm.agents.domains.{module_name}")
+    return module.Agent(runtime)
 
 
 def _meta(runtime: SwarmRuntime, state: MissionState, agent_name: str) -> dict[str, Any]:
@@ -54,12 +56,14 @@ def _meta(runtime: SwarmRuntime, state: MissionState, agent_name: str) -> dict[s
 
 def build_graph(runtime: SwarmRuntime):
     coordinator = CoordinatorAgent(runtime)
-    commerce = CommerceAgent(runtime)
-    performance = PerformanceAgent(runtime)
     observer = ObserverAgent(runtime)
     leadership = LeadershipManager()
     plane = ControlPlane(runtime)
     tracing = runtime.settings.langsmith_tracing
+
+    domain_ids = [a["id"] for a in runtime.agents.domain_agents(enabled_only=True)]
+    domain_agents: dict[str, SwarmAgent] = {aid: _load_domain_agent(aid, runtime) for aid in domain_ids}
+    domain_node_names: dict[str, str] = {aid: f"domain_{aid}" for aid in domain_ids}
 
     def _budget_ok(
         _runtime: SwarmRuntime, state: MissionState, llm_needed: int = 0, tool_needed: int = 0
@@ -206,69 +210,44 @@ def build_graph(runtime: SwarmRuntime):
             )
             return result
 
-    def route_after_coordinator(state: MissionState) -> Route:
+    def route_after_coordinator(state: MissionState) -> str:
         if state.get("error_code") in {"LLM_UNAVAILABLE", "BUDGET_EXCEEDED", "TIMEOUT"}:
             return "finalize_error"
-        pair = (state.get("query_class"), state.get("mission_lead"))
-        if pair == ("lookup", "performance_agent"):
-            return "domain_performance"
-        if pair in V1_SUPPORTED:
-            return "domain_commerce"
+        lead = state.get("mission_lead")
+        if lead in domain_node_names and state.get("query_class") in QUERY_CLASSES_SUPPORTED:
+            return domain_node_names[lead]
         return "finalize_unsupported"
 
-    async def domain_performance_node(state: MissionState) -> dict[str, Any]:
-        with traced_span(
-            "node.performance",
-            _meta(runtime, state, "performance_agent"),
-            tracing,
-            inputs={"metric_hints": state.get("metric_hints"), "metric_id": state.get("metric_id")},
-        ) as span:
-            ctx = AgentContext(
-                mission_id=state["mission_id"],
-                task_id=state.get("task_id") or "",
-                question=state["user_query"],
-                mission_lead="performance_agent",
-                payload={
-                    "metric_hints": state.get("metric_hints") or [],
-                    "metric_id": state.get("metric_id"),
-                },
-            )
-            result = await performance.run(ctx)
-            span.set_outputs(
-                {
-                    "metric_id": result.get("metric_id"),
-                    "handoff_needed_metrics": result.get("handoff_needed_metrics"),
-                    "error_code": result.get("error_code"),
-                }
-            )
-            return result
+    def _make_domain_node(agent_id: str, agent: SwarmAgent):
+        async def _domain_node(state: MissionState) -> dict[str, Any]:
+            with traced_span(
+                f"node.{agent_id}",
+                _meta(runtime, state, agent_id),
+                tracing,
+                inputs={"metric_hints": state.get("metric_hints"), "metric_id": state.get("metric_id")},
+            ) as span:
+                ctx = AgentContext(
+                    mission_id=state["mission_id"],
+                    task_id=state.get("task_id") or "",
+                    question=state["user_query"],
+                    mission_lead=agent_id,
+                    payload={
+                        "metric_hints": state.get("metric_hints") or [],
+                        "metric_id": state.get("metric_id"),
+                    },
+                )
+                result = await agent.run(ctx)
+                span.set_outputs(
+                    {
+                        "metric_id": result.get("metric_id"),
+                        "allowed_metrics": result.get("allowed_metrics"),
+                        "handoff_needed_metrics": result.get("handoff_needed_metrics"),
+                        "error_code": result.get("error_code"),
+                    }
+                )
+                return result
 
-    async def domain_commerce_node(state: MissionState) -> dict[str, Any]:
-        with traced_span(
-            "node.commerce",
-            _meta(runtime, state, "commerce_agent"),
-            tracing,
-            inputs={"metric_hints": state.get("metric_hints"), "metric_id": state.get("metric_id")},
-        ) as span:
-            ctx = AgentContext(
-                mission_id=state["mission_id"],
-                task_id=state.get("task_id") or "",
-                question=state["user_query"],
-                mission_lead="commerce_agent",
-                payload={
-                    "metric_hints": state.get("metric_hints") or [],
-                    "metric_id": state.get("metric_id"),
-                },
-            )
-            result = await commerce.run(ctx)
-            span.set_outputs(
-                {
-                    "metric_id": result.get("metric_id"),
-                    "allowed_metrics": result.get("allowed_metrics"),
-                    "error_code": result.get("error_code"),
-                }
-            )
-            return result
+        return _domain_node
 
     async def observer_node(state: MissionState) -> dict[str, Any]:
         with traced_span(
@@ -285,10 +264,9 @@ def build_graph(runtime: SwarmRuntime):
             if over:
                 obs_span.set_outputs({"error_code": over, "reason": "Observer budget exceeded"})
                 return {"error_code": over, "error_message": "Observer budget exceeded", "status": "failed"}
-            lead = state.get("mission_lead") or "commerce_agent"
-            tool_name = (
-                "performance.daily_cac" if lead == "performance_agent" else "commerce.daily_sales"
-            )
+            lead = state.get("mission_lead") or (domain_ids[0] if domain_ids else "observer_agent")
+            metric_def = runtime.metrics.get(state["metric_id"]) if state.get("metric_id") else None
+            tool_name = (metric_def.mcp_capability if metric_def else None) or "unresolved"
             with traced_span(
                 f"tool.mcp.{tool_name}",
                 {**_meta(runtime, state, "observer_agent"), "tool_name": tool_name},
@@ -304,8 +282,7 @@ def build_graph(runtime: SwarmRuntime):
                     payload={
                         "request_id": state.get("request_id"),
                         "session_id": state.get("session_id"),
-                        "allowed_metrics": state.get("allowed_metrics")
-                        or ["metric.net_sales", "metric.gross_sales"],
+                        "allowed_metrics": state.get("allowed_metrics") or [],
                         "metric_hints": state.get("metric_hints") or [],
                         "metric_id": state.get("metric_id"),
                         "time_range": state.get("time_range") or {},
@@ -349,11 +326,18 @@ def build_graph(runtime: SwarmRuntime):
             )
             return result
 
+    def _owning_domain_agent(metric_id: str) -> str | None:
+        definition = runtime.metrics.get(metric_id)
+        if definition is None:
+            return None
+        candidate = f"{definition.domain}_agent"
+        return candidate if candidate in domain_agents else None
+
     def route_after_observer(state: MissionState) -> AfterObserver:
         needed = list(state.get("handoff_needed_metrics") or [])
         if (
             needed
-            and state.get("mission_lead") == "performance_agent"
+            and _owning_domain_agent(needed[0])
             and state.get("evidence")
             and state.get("error_code") != "INSUFFICIENT_EVIDENCE"
         ):
@@ -361,30 +345,32 @@ def build_graph(runtime: SwarmRuntime):
         return "claim_gate"
 
     def propose_handoff_node(state: MissionState) -> dict[str, Any]:
+        from_agent = state.get("mission_lead") or "coordinator_agent"
         with traced_span(
             "node.leadership_transfer",
-            _meta(runtime, state, "performance_agent"),
+            _meta(runtime, state, from_agent),
             tracing,
             inputs={
-                "current_lead": state.get("mission_lead"),
+                "current_lead": from_agent,
                 "handoff_needed_metrics": state.get("handoff_needed_metrics"),
                 "evidence_refs": state.get("evidence_refs"),
             },
         ) as span:
             needed = list(state.get("handoff_needed_metrics") or [])
+            to_agent = _owning_domain_agent(needed[0]) or from_agent
             refs = [row["evidence_id"] for row in (state.get("evidence") or [])]
             transfer = {
                 "mission_id": state.get("mission_id"),
-                "from_agent": "performance_agent",
-                "to_agent": "commerce_agent",
-                "requested_target": "commerce_agent",
+                "from_agent": from_agent,
+                "to_agent": to_agent,
+                "requested_target": to_agent,
                 "reason": (
-                    "Performance owns CAC but the unresolved question requires "
-                    f"{', '.join(needed)}, which is a commerce capability."
+                    f"{from_agent} does not own the unresolved question, which requires "
+                    f"{', '.join(needed)} -- a {to_agent} capability."
                 ),
                 "evidence_refs": refs,
                 "unresolved_question": f"Retrieve {', '.join(needed)} for the same time range",
-                "requested_output": "EvidenceBundle for commerce metrics",
+                "requested_output": f"EvidenceBundle for {to_agent} metrics",
             }
             span.set_outputs({"pending_transfer": transfer})
             return {"pending_transfer": transfer}
@@ -419,20 +405,22 @@ def build_graph(runtime: SwarmRuntime):
                     "leadership_epoch": decision["leadership_epoch"],
                 }
             )
+            needed = list(state.get("handoff_needed_metrics") or [])
             return {
                 "mission_lead": decision["mission_lead"],
                 "leadership_epoch": decision["leadership_epoch"],
                 "handoff_history": decision["handoff_history"],
                 "handoff_needed_metrics": [],
                 "pending_transfer": None,
-                "metric_id": (state.get("handoff_needed_metrics") or ["metric.net_sales"])[0],
+                "metric_id": needed[0] if needed else state.get("metric_id"),
                 "error_code": None,
             }
 
-    def route_after_arbitrate(state: MissionState) -> AfterArbitrate:
-        if state.get("error_code") or state.get("mission_lead") != "commerce_agent":
+    def route_after_arbitrate(state: MissionState) -> str:
+        lead = state.get("mission_lead")
+        if state.get("error_code") or lead not in domain_node_names:
             return "finalize_error"
-        return "domain_commerce"
+        return domain_node_names[lead]
 
     def claim_gate_node(state: MissionState) -> dict[str, Any]:
         with traced_span(
@@ -604,8 +592,8 @@ def build_graph(runtime: SwarmRuntime):
 
     graph = StateGraph(MissionState)
     graph.add_node("coordinator", coordinator_node)
-    graph.add_node("domain_performance", domain_performance_node)
-    graph.add_node("domain_commerce", domain_commerce_node)
+    for agent_id, node_name in domain_node_names.items():
+        graph.add_node(node_name, _make_domain_node(agent_id, domain_agents[agent_id]))
     graph.add_node("observer", observer_node)
     graph.add_node("propose_handoff", propose_handoff_node)
     graph.add_node("coordinator_arbitrate", coordinator_arbitrate_node)
@@ -615,18 +603,14 @@ def build_graph(runtime: SwarmRuntime):
     graph.add_node("finalize_error", finalize_error_node)
     graph.add_node("finalize", finalize_success_node)
     graph.add_edge(START, "coordinator")
+    domain_route_map = {name: name for name in domain_node_names.values()}
     graph.add_conditional_edges(
         "coordinator",
         route_after_coordinator,
-        {
-            "domain_commerce": "domain_commerce",
-            "domain_performance": "domain_performance",
-            "finalize_unsupported": "finalize_unsupported",
-            "finalize_error": "finalize_error",
-        },
+        {**domain_route_map, "finalize_unsupported": "finalize_unsupported", "finalize_error": "finalize_error"},
     )
-    graph.add_edge("domain_performance", "observer")
-    graph.add_edge("domain_commerce", "observer")
+    for node_name in domain_node_names.values():
+        graph.add_edge(node_name, "observer")
     graph.add_conditional_edges(
         "observer",
         route_after_observer,
@@ -636,7 +620,7 @@ def build_graph(runtime: SwarmRuntime):
     graph.add_conditional_edges(
         "coordinator_arbitrate",
         route_after_arbitrate,
-        {"domain_commerce": "domain_commerce", "finalize_error": "finalize_error"},
+        {**domain_route_map, "finalize_error": "finalize_error"},
     )
     graph.add_edge("claim_gate", "synthesize")
     graph.add_edge("synthesize", "finalize")

@@ -5,9 +5,9 @@
               + 0.10*HistoricalPerformance + 0.05*Availability
 
 The LLM classifier still proposes ``domain_lead``; this function is the
-deterministic check on it. When the proposal is a known domain agent it is kept
-(the gold set pins those values). When it is missing or unknown, the score
-picks a lead from metric ownership in the registry.
+deterministic check on it. When the proposal is a known, enabled domain agent
+it is kept (the gold set pins those values). When it is missing or unknown,
+the score picks a lead from metric ownership in the registry.
 """
 
 from __future__ import annotations
@@ -15,16 +15,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from seleric_swarm.registry.agent_registry import AgentRegistry
 from seleric_swarm.services.metrics import MetricRegistry
-
-_METRIC_OWNER_AGENT = {
-    "commerce": "commerce_agent",
-    "performance": "performance_agent",
-    "funnel": "funnel_agent",
-    "finance": "finance_agent",
-}
-
-_DOMAIN_AGENTS = frozenset(_METRIC_OWNER_AGENT.values())
 
 
 @dataclass
@@ -35,11 +27,14 @@ class LeadDecision:
     source: str  # "llm" | "metric_ownership" | "fallback"
 
 
-def _owner_agent(metric_ids: Sequence[str], metrics: MetricRegistry) -> str | None:
+def _owner_agent(metric_ids: Sequence[str], metrics: MetricRegistry, domain_agent_ids: frozenset[str]) -> str | None:
     for metric_id in metric_ids:
         definition = metrics.get(metric_id)
-        if definition and definition.domain in _METRIC_OWNER_AGENT:
-            return _METRIC_OWNER_AGENT[definition.domain]
+        if not definition:
+            continue
+        candidate = f"{definition.domain}_agent"
+        if candidate in domain_agent_ids:
+            return candidate
     return None
 
 
@@ -48,11 +43,13 @@ def select_initial_lead(
     llm_domain_lead: str | None,
     metric_hints: Sequence[str],
     metrics: MetricRegistry,
+    agents: AgentRegistry,
     fallback: str = "coordinator_agent",
 ) -> LeadDecision:
     hints = [m for m in metric_hints if m.startswith("metric.")]
+    domain_agent_ids = frozenset(a["id"] for a in agents.domain_agents(enabled_only=True))
 
-    if llm_domain_lead in _DOMAIN_AGENTS:
+    if llm_domain_lead in domain_agent_ids:
         return LeadDecision(
             mission_lead=llm_domain_lead,
             score=0.85,
@@ -60,7 +57,7 @@ def select_initial_lead(
             source="llm",
         )
 
-    owner = _owner_agent(hints, metrics)
+    owner = _owner_agent(hints, metrics, domain_agent_ids)
     if owner:
         return LeadDecision(
             mission_lead=owner,

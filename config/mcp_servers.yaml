@@ -11,20 +11,12 @@ servers:
     adapter: fixture_commerce
     fixture_path: data/fixtures/commerce/daily_sales.json
 
-  meta:
-    capability_prefix: meta
+  # One consolidated business-data gateway (catalogue + metrics_query/drilldown/
+  # explain) instead of per-platform MCPs. Domain scoping is a `module` argument
+  # the real server enforces itself (see modules_list) -- MCPGateway pins it per
+  # agent via AGENT_MODULE, it does not re-implement the catalogue's own policy.
+  seleric:
+    capability_prefix: seleric
     transport: streamable_http
-    url_env: META_MCP_URL
-    auth_token_env: META_MCP_TOKEN
-
-  shopify:
-    capability_prefix: shopify
-    transport: streamable_http
-    url_env: SHOPIFY_MCP_URL
-    auth_token_env: SHOPIFY_MCP_TOKEN
-
-  posthog:
-    capability_prefix: posthog
-    transport: streamable_http
-    url_env: POSTHOG_MCP_URL
-    auth_token_env: POSTHOG_MCP_TOKEN
+    url_env: SELERIC_MCP_URL
+    auth_token_env: SELERIC_MCP_TOKEN

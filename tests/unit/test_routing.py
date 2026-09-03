@@ -1,11 +1,14 @@
 from seleric_swarm.llm.adapters.fake import classify_lookup_query
-from seleric_swarm.orchestration.graph import V1_SUPPORTED
 
 
-def test_v1_routing_matrix():
-    assert ("lookup", "commerce_agent") in V1_SUPPORTED
-    assert ("comparison", "commerce_agent") in V1_SUPPORTED
-    assert ("lookup", "performance_agent") in V1_SUPPORTED
+def test_v1_routing_matrix(runtime):
+    # Domain support is data-driven: config/agent_registry.yaml's `enabled: true`
+    # is the single source of truth, not a hardcoded (query_class, agent) set.
+    enabled = {a["id"] for a in runtime.agents.domain_agents(enabled_only=True)}
+    assert {"commerce_agent", "performance_agent", "finance_agent", "funnel_agent"} <= enabled
+    assert "inventory_agent" not in enabled
+    assert "procurement_agent" not in enabled
+    assert "technical_agent" not in enabled
 
 
 def test_classify_unsupported_does_not_select_commerce_for_cac():

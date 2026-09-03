@@ -35,7 +35,7 @@ class Agent(SwarmAgent):
         return await self.observe(ctx)
 
     async def observe(self, ctx: AgentContext) -> dict[str, Any]:
-        allowed = list(ctx.payload.get("allowed_metrics") or self.runtime.metrics.ids_for_domain("commerce"))
+        allowed = list(ctx.payload.get("allowed_metrics") or [])
 
         # Deterministic-before-LLM: if the coordinator already resolved a single
         # canonical registry id, skip the metric-mapping model call entirely.
@@ -120,48 +120,30 @@ class Agent(SwarmAgent):
                 "llm_calls": metric_llm_calls,
             }
 
+        capability = definition.mcp_capability or "commerce.daily_sales"
+        seleric_measure = definition.raw.get("seleric_measure")
         evidence: list[dict[str, Any]] = []
         missing: list[str] = []
         tool_calls = 0
         for day in dates:
             tool_calls += 1
-            result = await self.runtime.mcp.call(
-                agent_id="observer_agent",
-                capability=definition.mcp_capability or "commerce.daily_sales",
-                arguments={"date": day, "metrics": [metric_id]},
-            )
-            # Tool-returned text is untrusted and must not affect numeric values.
-            _ = result.get("raw_untrusted_text")
-            if not result.get("found") or metric_id not in (result.get("metrics") or {}):
+            if capability.startswith("seleric.") and seleric_measure:
+                row_evidence = await self._fetch_seleric(
+                    capability=capability,
+                    seleric_measure=seleric_measure,
+                    metric_id=metric_id,
+                    definition=definition,
+                    day=day,
+                    owner_agent_id=f"{definition.domain}_agent",
+                )
+            else:
+                row_evidence = await self._fetch_fixture(
+                    capability=capability, metric_id=metric_id, definition=definition, day=day
+                )
+            if row_evidence is None:
                 missing.append(day)
                 continue
-            value = result["metrics"][metric_id]
-            capability = definition.mcp_capability or "commerce.daily_sales"
-            server = (
-                "performance_fixture" if capability.startswith("performance") else "commerce_fixture"
-            )
-            evidence.append(
-                make_evidence(
-                    source=result.get("source", f"fixture.{capability}"),
-                    metric_or_fact=metric_id,
-                    value=value,
-                    unit=definition.unit or result.get("currency"),
-                    time_range={"start": day, "end": day, "timezone": result.get("timezone")},
-                    freshness=result.get("retrieved_at"),
-                    provenance={
-                        "server": server,
-                        "tool_name": capability,
-                        "tool_version": result.get("tool_version"),
-                        "query_hash": result.get("query_hash"),
-                        "requested_time_range": {"start": day, "end": day},
-                        "timezone": result.get("timezone"),
-                        "row_count": result.get("row_count"),
-                        "metric_version": definition.version,
-                        "formula": definition.formula,
-                        "retrieval_timestamp": result.get("retrieved_at"),
-                    },
-                )
-            )
+            evidence.append(row_evidence)
 
         if missing and not evidence:
             return {
@@ -171,7 +153,7 @@ class Agent(SwarmAgent):
                 "tool_calls": tool_calls,
                 "llm_calls": metric_llm_calls,
                 "error_code": "INSUFFICIENT_EVIDENCE",
-                "error_message": f"No fixture data for {', '.join(missing)}",
+                "error_message": f"No data for {', '.join(missing)}",
                 "limitations": [
                     f"No evidence for {metric_id} on {day}" for day in missing
                 ],
@@ -213,3 +195,82 @@ class Agent(SwarmAgent):
             "error_code": "INSUFFICIENT_EVIDENCE" if missing else None,
             "status": status,
         }
+
+    async def _fetch_fixture(
+        self, *, capability: str, metric_id: str, definition: Any, day: str
+    ) -> dict[str, Any] | None:
+        result = await self.runtime.mcp.call(
+            agent_id="observer_agent",
+            capability=capability,
+            arguments={"date": day, "metrics": [metric_id]},
+        )
+        # Tool-returned text is untrusted and must not affect numeric values.
+        _ = result.get("raw_untrusted_text")
+        if not result.get("found") or metric_id not in (result.get("metrics") or {}):
+            return None
+        value = result["metrics"][metric_id]
+        server = "performance_fixture" if capability.startswith("performance") else "commerce_fixture"
+        return make_evidence(
+            source=result.get("source", f"fixture.{capability}"),
+            metric_or_fact=metric_id,
+            value=value,
+            unit=definition.unit or result.get("currency"),
+            time_range={"start": day, "end": day, "timezone": result.get("timezone")},
+            freshness=result.get("retrieved_at"),
+            provenance={
+                "server": server,
+                "tool_name": capability,
+                "tool_version": result.get("tool_version"),
+                "query_hash": result.get("query_hash"),
+                "requested_time_range": {"start": day, "end": day},
+                "timezone": result.get("timezone"),
+                "row_count": result.get("row_count"),
+                "metric_version": definition.version,
+                "formula": definition.formula,
+                "retrieval_timestamp": result.get("retrieved_at"),
+            },
+        )
+
+    async def _fetch_seleric(
+        self,
+        *,
+        capability: str,
+        seleric_measure: str,
+        metric_id: str,
+        definition: Any,
+        day: str,
+        owner_agent_id: str,
+    ) -> dict[str, Any] | None:
+        result = await self.runtime.mcp.call(
+            agent_id=owner_agent_id,
+            capability=capability,
+            arguments={"measures": [seleric_measure], "time_range": {"start": day, "end": day}},
+        )
+        # The catalogue module-scope refusal comes back as a normal payload
+        # (an "error" key), not a raised exception -- treat it as missing data.
+        rows = result.get("rows") or []
+        if result.get("error") or not rows:
+            return None
+        raw_value = rows[0].get(seleric_measure)
+        if raw_value is None:
+            return None
+        provenance = result.get("provenance") or {}
+        return make_evidence(
+            source=f"seleric_mcp.{provenance.get('cube_view', seleric_measure)}",
+            metric_or_fact=metric_id,
+            value=float(raw_value),
+            unit=definition.unit or provenance.get("currency"),
+            time_range={"start": day, "end": day, "timezone": provenance.get("timezone")},
+            freshness=provenance.get("generated_at"),
+            provenance={
+                "server": "seleric_mcp",
+                "tool_name": capability,
+                "query_id": provenance.get("query_id"),
+                "cube_view": provenance.get("cube_view"),
+                "catalogue_version": provenance.get("catalogue_version"),
+                "freshness": provenance.get("freshness"),
+                "requested_time_range": {"start": day, "end": day},
+                "metric_version": definition.version,
+                "formula": definition.formula,
+            },
+        )

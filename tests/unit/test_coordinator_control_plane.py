@@ -102,6 +102,7 @@ def test_build_task_dag_lookup_is_fully_dispatchable(runtime):
         query_class="lookup",
         mission_lead="commerce_agent",
         complexity=ComplexityLevel.L0,
+        metrics=runtime.metrics,
         metric_hints=["metric.net_sales"],
         guard=guard,
     )
@@ -118,6 +119,7 @@ def test_build_task_dag_cross_domain_adds_transfer_task(runtime):
         query_class="lookup",
         mission_lead="performance_agent",
         complexity=ComplexityLevel.L1,
+        metrics=runtime.metrics,
         metric_hints=["metric.cac", "metric.net_sales"],
         guard=guard,
     )
@@ -136,6 +138,7 @@ def test_build_task_dag_unsupported_is_blocked_with_reasons(runtime):
         query_class="unsupported",
         mission_lead="performance_agent",
         complexity=ComplexityLevel.L5,
+        metrics=runtime.metrics,
         metric_hints=["metric.cac"],
         guard=guard,
     )
@@ -161,6 +164,7 @@ def test_select_initial_lead_keeps_valid_llm_lead(runtime):
         llm_domain_lead="performance_agent",
         metric_hints=["metric.cac"],
         metrics=runtime.metrics,
+        agents=runtime.agents,
     )
     assert decision.mission_lead == "performance_agent"
     assert decision.source == "llm"
@@ -171,6 +175,7 @@ def test_select_initial_lead_falls_back_to_metric_ownership(runtime):
         llm_domain_lead=None,
         metric_hints=["metric.net_sales"],
         metrics=runtime.metrics,
+        agents=runtime.agents,
     )
     assert decision.mission_lead == "commerce_agent"
     assert decision.source == "metric_ownership"

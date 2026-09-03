@@ -16,12 +16,13 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     settings = settings or get_settings()
     configure_logging(settings)
     configure_langsmith_env(settings)
+    agents = AgentRegistry(str(repo_root() / "config" / "agent_registry.yaml"))
     return SwarmRuntime(
         settings=settings,
         llm=build_llm(settings),
         prompts=PromptRegistry(settings.prompts_dir, settings.prompt_versions_path),
-        mcp=MCPGateway(settings.mcp_config_path),
+        mcp=MCPGateway(settings.mcp_config_path, agents=agents),
         metrics=MetricRegistry(settings.metric_registry_path),
-        agents=AgentRegistry(str(repo_root() / "config" / "agent_registry.yaml")),
+        agents=agents,
         store=build_store(settings.persistence_backend, settings.database_url),
     )

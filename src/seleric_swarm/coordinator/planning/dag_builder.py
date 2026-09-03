@@ -13,14 +13,7 @@ from collections.abc import Sequence
 
 from seleric_swarm.coordinator.models import ComplexityLevel, Task, TaskGraph
 from seleric_swarm.coordinator.routing.dispatchability import DispatchGuard
-
-_COMMERCE_METRICS = {"metric.net_sales", "metric.gross_sales"}
-_PERFORMANCE_METRICS = {"metric.cac"}
-
-_DEFAULT_METRIC = {
-    "commerce_agent": "metric.net_sales",
-    "performance_agent": "metric.cac",
-}
+from seleric_swarm.services.metrics import MetricRegistry
 
 # Capabilities the upper analytical bands would require. None are wired in V1, so
 # tasks carrying them are emitted only to explain *why* a request is unsupported.
@@ -42,12 +35,22 @@ _BAND_CAPABILITIES: dict[ComplexityLevel, list[tuple[str, str, str]]] = {
 }
 
 
-def _resolve_metrics(mission_lead: str, metric_hints: Sequence[str]) -> list[str]:
+def _metrics_by_domain(metric_ids: Sequence[str], metrics: MetricRegistry) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
+    for metric_id in metric_ids:
+        definition = metrics.get(metric_id)
+        if definition and definition.domain:
+            grouped.setdefault(definition.domain, []).append(metric_id)
+    return grouped
+
+
+def _resolve_metrics(mission_lead: str, metric_hints: Sequence[str], metrics: MetricRegistry) -> list[str]:
     hints = [m for m in metric_hints if m.startswith("metric.")]
     if hints:
         return list(dict.fromkeys(hints))
-    default = _DEFAULT_METRIC.get(mission_lead)
-    return [default] if default else []
+    domain = mission_lead.removesuffix("_agent")
+    owned = metrics.ids_for_domain(domain)
+    return owned[:1]
 
 
 def build_task_dag(
@@ -55,19 +58,21 @@ def build_task_dag(
     query_class: str,
     mission_lead: str,
     complexity: ComplexityLevel,
+    metrics: MetricRegistry,
     metric_hints: Sequence[str] | None = None,
     guard: DispatchGuard | None = None,
 ) -> TaskGraph:
     metric_hints = list(metric_hints or [])
-    metrics = _resolve_metrics(mission_lead, metric_hints)
+    metric_ids = _resolve_metrics(mission_lead, metric_hints, metrics)
     tasks: list[Task] = []
     notes: list[str] = []
 
-    commerce_metrics = [m for m in metrics if m in _COMMERCE_METRICS]
-    performance_metrics = [m for m in metrics if m in _PERFORMANCE_METRICS]
+    lead_domain = mission_lead.removesuffix("_agent")
+    grouped = _metrics_by_domain(metric_ids, metrics)
+    primary_metrics = grouped.get(lead_domain) or metric_ids
+    foreign_domains = [d for d in grouped if d != lead_domain]
 
     if query_class in {"lookup", "comparison"}:
-        primary_metrics = performance_metrics or commerce_metrics or metrics
         observe = Task(
             id="T1",
             type="observe_metric",
@@ -80,22 +85,24 @@ def build_task_dag(
         )
         tasks.append(observe)
 
-        # Cross-domain lookup: performance lead, but commerce metrics still owed.
-        if performance_metrics and commerce_metrics:
+        # Cross-domain lookup: mission lead owns the primary metrics, but some
+        # requested metrics belong to other domains and are still owed.
+        for idx, domain in enumerate(foreign_domains, start=2):
+            foreign_metrics = grouped[domain]
             tasks.append(
                 Task(
-                    id="T2",
+                    id=f"T{idx}",
                     type="observe_metric",
-                    objective=f"Retrieve {', '.join(commerce_metrics)} after leadership transfers to commerce",
+                    objective=f"Retrieve {', '.join(foreign_metrics)} after leadership transfers to {domain}",
                     required_capabilities=["metric_observation", "evidence_collection"],
-                    metric_ids=list(commerce_metrics),
+                    metric_ids=list(foreign_metrics),
                     depends_on=["T1"],
                     expected_artifacts=["evidence_bundle"],
                     assigned_agent="observer_agent",
                     priority=8,
                 )
             )
-            notes.append("Cross-domain lookup: expect one leadership transfer performance -> commerce.")
+            notes.append(f"Cross-domain lookup: expect one leadership transfer {lead_domain} -> {domain}.")
 
         observe_ids = [t.id for t in tasks]
         tasks.append(
@@ -137,7 +144,7 @@ def build_task_dag(
             type="observe_metric",
             objective="Establish the baseline for the metric in question",
             required_capabilities=["metric_observation", "evidence_collection"],
-            metric_ids=list(metrics),
+            metric_ids=list(metric_ids),
             assigned_agent="observer_agent",
             priority=9,
         )

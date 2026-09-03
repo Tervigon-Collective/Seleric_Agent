@@ -9,7 +9,16 @@ from seleric_swarm.runtime import SwarmRuntime
 
 AGENT_VERSION = "0.1.0"
 ALLOWED_METRICS = {"metric.net_sales", "metric.gross_sales"}
-ALLOWED_CAPABILITIES = {"commerce.daily_sales"}
+ALLOWED_CAPABILITIES = {
+    "commerce.daily_sales",
+    "seleric.catalogue_search_metrics",
+    "seleric.catalogue_resolve_term",
+    "seleric.catalogue_get_metric",
+    "seleric.catalogue_list_dimensions",
+    "seleric.metrics_query",
+    "seleric.metrics_drilldown",
+    "seleric.insights_explain",
+}
 
 
 class Agent(SwarmAgent):

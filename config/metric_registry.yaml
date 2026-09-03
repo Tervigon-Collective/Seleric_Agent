@@ -44,9 +44,24 @@ metrics:
     owner: funnel
     description: Add-to-cart sessions divided by eligible sessions.
     formula: atc_sessions / eligible_sessions
+    unit: ratio
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+    mcp_capability: seleric.metrics_query
+    seleric_measure: session_atc_rate
+
+  - id: metric.net_profit
+    version: 1
+    owner: finance
+    description: Canonical net profit per the finance P&L definition.
+    formula: gross_profit - operating_cost
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+    mcp_capability: seleric.metrics_query
+    seleric_measure: net_profit
 
   - id: metric.atc_to_purchase_rate
     version: 1

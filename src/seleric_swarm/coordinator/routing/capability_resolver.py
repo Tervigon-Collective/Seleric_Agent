@@ -12,13 +12,6 @@ from dataclasses import dataclass, field
 from seleric_swarm.coordinator.models import Task
 from seleric_swarm.registry.agent_registry import AgentRegistry
 
-# Agents that currently have a node in orchestration/graph.py. Everything else in
-# config/agent_registry.yaml is a not_implemented stub, so a task routed to it can
-# never dispatch - the coordinator must know that at plan time, not run time.
-WIRED_AGENTS: frozenset[str] = frozenset(
-    {"coordinator_agent", "commerce_agent", "performance_agent", "observer_agent"}
-)
-
 
 @dataclass
 class CapabilityResolution:
@@ -32,9 +25,11 @@ class CapabilityResolution:
 
 
 class CapabilityResolver:
-    def __init__(self, registry: AgentRegistry, wired: frozenset[str] = WIRED_AGENTS) -> None:
+    def __init__(self, registry: AgentRegistry, wired: frozenset[str] | None = None) -> None:
         self._registry = registry
-        self._wired = wired
+        # Agents with a real execution path in this build: config/agent_registry.yaml's
+        # `enabled: true` is the single source of truth, not a hand-maintained list here.
+        self._wired = wired if wired is not None else registry.wired_agent_ids()
 
     def resolve(self, capability: str) -> CapabilityResolution:
         candidates = [str(a["id"]) for a in self._registry.find_by_capability(capability) if a.get("id")]
