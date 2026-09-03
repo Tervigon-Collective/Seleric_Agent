@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HypothesisArtifact",
+  "type": "object",
+  "required": ["artifact_id", "artifact_type", "mission_id", "created_by", "statement", "status"],
+  "properties": {
+    "artifact_id": { "type": "string" },
+    "artifact_type": { "const": "hypothesis" },
+    "mission_id": { "type": "string" },
+    "created_by": { "type": "string" },
+    "statement": { "type": "string" },
+    "domains": { "type": "array", "items": { "type": "string" } },
+    "status": { "enum": ["proposed", "testing", "retained", "rejected"] },
+    "supporting_evidence": { "type": "array", "items": { "type": "string" } },
+    "contradictory_evidence": { "type": "array", "items": { "type": "string" } },
+    "required_tests": { "type": "array", "items": { "type": "string" } },
+    "score": { "type": ["number", "null"] },
+    "data_origin": { "type": "string" },
+    "synthetic": { "type": "boolean" }
+  }
+}

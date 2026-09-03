@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CausalArtifact",
+  "type": "object",
+  "required": ["artifact_id", "artifact_type", "mission_id", "created_by", "treatment", "outcome", "passed"],
+  "properties": {
+    "artifact_id": { "type": "string" },
+    "artifact_type": { "const": "causal" },
+    "mission_id": { "type": "string" },
+    "created_by": { "type": "string" },
+    "hypothesis_ref": { "type": ["string", "null"] },
+    "treatment": { "type": "string" },
+    "outcome": { "type": "string" },
+    "common_causes": { "type": "array", "items": { "type": "string" } },
+    "graph_id": { "type": "string" },
+    "estimator": { "type": "string" },
+    "effect": { "type": ["number", "null"] },
+    "effect_ci": { "type": "array", "items": { "type": "number" } },
+    "refutations": { "type": "array", "items": { "type": "object" } },
+    "passed": { "type": "boolean" },
+    "data_origin": { "type": "string" },
+    "synthetic": { "type": "boolean" }
+  }
+}

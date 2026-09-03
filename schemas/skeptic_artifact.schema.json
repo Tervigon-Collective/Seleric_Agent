@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SkepticArtifact",
+  "type": "object",
+  "required": ["artifact_id", "artifact_type", "mission_id", "created_by", "verdict"],
+  "properties": {
+    "artifact_id": { "type": "string" },
+    "artifact_type": { "const": "skeptic" },
+    "mission_id": { "type": "string" },
+    "created_by": { "type": "string" },
+    "target_ref": { "type": ["string", "null"] },
+    "verdict": { "enum": ["PASS", "REVISE", "REJECT"] },
+    "attacks_run": { "type": "array", "items": { "type": "string" } },
+    "problems": { "type": "array", "items": { "type": "object" } },
+    "required_followups": { "type": "array", "items": { "type": "object" } },
+    "data_origin": { "type": "string" },
+    "synthetic": { "type": "boolean" }
+  }
+}

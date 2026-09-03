@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StrategyArtifact",
+  "type": "object",
+  "required": ["artifact_id", "artifact_type", "mission_id", "created_by", "options"],
+  "properties": {
+    "artifact_id": { "type": "string" },
+    "artifact_type": { "const": "strategy" },
+    "mission_id": { "type": "string" },
+    "created_by": { "type": "string" },
+    "problem_ref": { "type": ["string", "null"] },
+    "objective": { "type": "string" },
+    "options": { "type": "array", "items": { "type": "object" } },
+    "recommended": { "type": "array", "items": { "type": "string" } },
+    "rationale": { "type": "string" },
+    "data_origin": { "type": "string" },
+    "synthetic": { "type": "boolean" }
+  }
+}
