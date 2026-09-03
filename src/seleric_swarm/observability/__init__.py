@@ -1,4 +1,5 @@
 from seleric_swarm.observability.tracing import (
+    SpanHandle,
     configure_langsmith_env,
     configure_logging,
     redact_mapping,
@@ -6,6 +7,7 @@ from seleric_swarm.observability.tracing import (
 )
 
 __all__ = [
+    "SpanHandle",
     "configure_langsmith_env",
     "configure_logging",
     "redact_mapping",

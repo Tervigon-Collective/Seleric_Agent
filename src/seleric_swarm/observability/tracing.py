@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Literal
+
+RunType = Literal["tool", "chain", "llm", "retriever", "embedding", "prompt", "parser"]
 
 import structlog
 
@@ -157,23 +160,85 @@ def assert_required_metadata(
     return missing
 
 
+class SpanHandle:
+    """Lightweight handle yielded by :func:`traced_span`.
+
+    Callers attach the coordinator's work to the trace with ``set_outputs`` (what
+    the step produced). A no-op when tracing is off or LangSmith is unavailable,
+    so call sites never need to branch.
+    """
+
+    __slots__ = ("_outputs", "_run")
+
+    def __init__(self, run: Any = None) -> None:
+        self._run = run
+        self._outputs: dict[str, Any] | None = None
+
+    def set_outputs(self, outputs: dict[str, Any]) -> None:
+        self._outputs = outputs
+
+    def _flush(self) -> None:
+        if self._run is None or self._outputs is None:
+            return
+        try:
+            self._run.end(outputs=redact_mapping(self._outputs))
+        except Exception:
+            pass
+
+
 @contextmanager
-def traced_span(name: str, metadata: dict[str, Any], enabled: bool) -> Iterator[None]:
-    """Open a LangSmith span. Tracing failures never abort the mission."""
+def traced_span(
+    name: str,
+    metadata: dict[str, Any],
+    enabled: bool,
+    *,
+    inputs: dict[str, Any] | None = None,
+    run_type: RunType = "chain",
+    tags: list[str] | None = None,
+) -> Iterator[SpanHandle]:
+    """Open a LangSmith span. Tracing failures never abort the mission.
+
+    Yields a :class:`SpanHandle`; use ``.set_outputs({...})`` to record what the
+    step produced so the LangSmith run tree shows inputs and outputs, not just a
+    name.
+    """
     if not enabled:
-        yield
+        yield SpanHandle()
         return
     try:
         from langsmith import trace
 
-        with trace(name=name, metadata=redact_mapping(metadata)):
-            yield
-            return
+        cm = trace(
+            name=name,
+            run_type=run_type,
+            tags=tags,
+            metadata=redact_mapping(metadata),
+            inputs=redact_mapping(inputs or {}),
+        )
+        run = cm.__enter__()
     except Exception:
         logging.getLogger("seleric.observability").warning(
             "langsmith_span_failed", extra={"span": name}
         )
-        yield
+        yield SpanHandle()
+        return
+
+    handle = SpanHandle(run)
+    exc_info: tuple[Any, Any, Any] = (None, None, None)
+    try:
+        yield handle
+    except Exception:
+        exc_info = sys.exc_info()
+        raise
+    finally:
+        try:
+            handle._flush()
+        except Exception:
+            pass
+        try:
+            cm.__exit__(*exc_info)
+        except Exception:
+            pass
 
 
 def langsmith_run_url(project: str, run_id: str | None, org: str = "default") -> str | None:

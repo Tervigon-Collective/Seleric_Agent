@@ -39,6 +39,12 @@ class MCPGateway:
         }
         self.invocations: list[dict[str, Any]] = []
 
+    @property
+    def capabilities(self) -> set[str]:
+        """MCP capabilities with a live server in this process (executable today)."""
+
+        return set(self._servers)
+
     def _authorize(self, agent_id: str, capability: str) -> None:
         allowed = AGENT_ALLOWLIST.get(agent_id, set())
         if capability not in allowed:

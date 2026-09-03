@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     mission_timeout_s: float = 30.0
     max_llm_calls: int = 6
     max_tool_calls: int = 8
+    # Coordinator control-plane hard stops for the DECIDE -> EXECUTE cycle.
+    max_agent_calls: int = 30
+    max_leadership_transfers: int = 6
+    max_coordinator_iterations: int = 12
+    completion_threshold: float = 0.90
 
     allow_write_actions: bool = False
     require_skeptic_for_causal: bool = True

@@ -47,6 +47,7 @@ ignore = ["BLE001"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/seleric_swarm/orchestration/runner.py" = ["S110"]
+"src/seleric_swarm/observability/tracing.py" = ["S110"]
 "src/seleric_swarm/eval/evaluators.py" = ["SIM103"]
 "src/seleric_swarm/llm/adapters/fake.py" = ["TRY203", "DTZ005"]
 "src/seleric_swarm/services/time_range.py" = ["DTZ005"]

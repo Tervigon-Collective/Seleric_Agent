@@ -120,7 +120,12 @@ async def run_mission(
     )
     final_state: MissionState = initial
     try:
-        with traced_span("mission.lookup_v1", metadata, runtime.settings.langsmith_tracing):
+        with traced_span(
+            "mission.lookup_v1",
+            metadata,
+            runtime.settings.langsmith_tracing,
+            inputs={"query": query, "timezone": timezone, "as_of": as_of, "mode": mode},
+        ) as mission_span:
             try:
                 from langsmith.run_helpers import get_current_run_tree
 
@@ -143,6 +148,21 @@ async def run_mission(
                     "final_response": "Mission exceeded the configured timeout",
                     "limitations": ["Mission exceeded the configured timeout"],
                 }
+            mission_span.set_outputs(
+                {
+                    "status": final_state.get("status"),
+                    "query_class": final_state.get("query_class"),
+                    "mission_lead": final_state.get("mission_lead"),
+                    "initial_mission_lead": final_state.get("initial_mission_lead"),
+                    "leadership_epoch": final_state.get("leadership_epoch"),
+                    "complexity": final_state.get("complexity_label"),
+                    "completion_score": final_state.get("completion_score"),
+                    "completion_decision": final_state.get("completion_decision"),
+                    "evidence_refs": final_state.get("evidence_refs"),
+                    "error_code": final_state.get("error_code"),
+                    "final_response": final_state.get("final_response"),
+                }
+            )
     except Exception as exc:
         final_state = {
             **initial,

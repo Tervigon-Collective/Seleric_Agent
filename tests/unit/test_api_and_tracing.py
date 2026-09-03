@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 import seleric_swarm.main as main_mod
@@ -56,3 +57,16 @@ def test_langsmith_failure_does_not_fail_span():
     with traced_span("mission.lookup_v1", {"request_id": "x"}, enabled=True):
         ran = True
     assert ran
+
+
+def test_traced_span_yields_usable_handle_when_disabled():
+    from seleric_swarm.observability.tracing import SpanHandle
+
+    with traced_span("x", {"request_id": "x"}, enabled=False) as span:
+        assert isinstance(span, SpanHandle)
+        span.set_outputs({"k": "v"})  # no-op, must not raise
+
+
+def test_traced_span_reraises_body_errors_but_not_langsmith_errors():
+    with pytest.raises(ValueError), traced_span("x", {"request_id": "x"}, enabled=True):
+        raise ValueError("boom")

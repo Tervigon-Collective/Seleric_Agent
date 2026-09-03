@@ -15,6 +15,7 @@ from seleric_swarm.agents.coordinator import Agent as CoordinatorAgent
 from seleric_swarm.agents.domains.commerce import Agent as CommerceAgent
 from seleric_swarm.agents.domains.performance import Agent as PerformanceAgent
 from seleric_swarm.agents.intelligence.observer import Agent as ObserverAgent
+from seleric_swarm.coordinator import ControlPlane
 from seleric_swarm.leadership.manager import LeadershipManager
 from seleric_swarm.observability.tracing import mission_metadata, traced_span
 from seleric_swarm.orchestration.state import MissionState
@@ -51,24 +52,30 @@ def _meta(runtime: SwarmRuntime, state: MissionState, agent_name: str) -> dict[s
     )
 
 
-def _budget_ok(runtime: SwarmRuntime, state: MissionState, llm_needed: int = 0, tool_needed: int = 0) -> str | None:
-    if int(state.get("llm_calls") or 0) + llm_needed > runtime.settings.max_llm_calls:
-        return "BUDGET_EXCEEDED"
-    if int(state.get("tool_calls") or 0) + tool_needed > runtime.settings.max_tool_calls:
-        return "BUDGET_EXCEEDED"
-    return None
-
-
 def build_graph(runtime: SwarmRuntime):
     coordinator = CoordinatorAgent(runtime)
     commerce = CommerceAgent(runtime)
     performance = PerformanceAgent(runtime)
     observer = ObserverAgent(runtime)
     leadership = LeadershipManager()
+    plane = ControlPlane(runtime)
     tracing = runtime.settings.langsmith_tracing
 
+    def _budget_ok(
+        _runtime: SwarmRuntime, state: MissionState, llm_needed: int = 0, tool_needed: int = 0
+    ) -> str | None:
+        ok, code, _reason = plane.budget_verdict(
+            dict(state), llm_needed=llm_needed, tool_needed=tool_needed
+        )
+        return None if ok else (code or "BUDGET_EXCEEDED")
+
     async def coordinator_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.coordinator", _meta(runtime, state, "coordinator_agent"), tracing):
+        with traced_span(
+            "node.coordinator",
+            _meta(runtime, state, "coordinator_agent"),
+            tracing,
+            inputs={"query": state["user_query"], "timezone": state.get("timezone"), "as_of": state.get("as_of")},
+        ) as coord_span:
             ctx = AgentContext(
                 mission_id=state["mission_id"],
                 task_id=state.get("task_id") or f"T-{uuid4().hex[:8]}",
@@ -81,20 +88,122 @@ def build_graph(runtime: SwarmRuntime):
                     "session_id": state.get("session_id"),
                 },
             )
+            # The coordinator node owns the (future) DECIDE -> EXECUTE cycle, so it
+            # is the one place that checks the iteration / transfer / agent-call
+            # hard stops. Per-node checks stay spend-only.
+            hs_ok, hs_code, hs_reason = plane.hard_stop_verdict(dict(state))
+            if not hs_ok:
+                coord_span.set_outputs({"error_code": hs_code, "reason": hs_reason})
+                return {"error_code": hs_code, "error_message": hs_reason, "status": "failed"}
             over = _budget_ok(runtime, state, llm_needed=1)
             if over:
+                coord_span.set_outputs({"error_code": over, "reason": "LLM call budget exceeded"})
                 return {"error_code": over, "error_message": "LLM call budget exceeded", "status": "failed"}
-            result = await coordinator.classify(
-                query=state["user_query"],
-                timezone=state.get("timezone") or "Asia/Kolkata",
-                as_of=state.get("as_of"),
-                mission_id=state["mission_id"],
-                request_id=str(state.get("request_id")),
-                session_id=str(state.get("session_id")),
-                task_id=ctx.task_id,
-            )
+
+            # --- Understand: classify the business question -------------------
+            with traced_span(
+                "coordinator.classify",
+                _meta(runtime, state, "coordinator_agent"),
+                tracing,
+                inputs={"query": state["user_query"]},
+            ) as classify_span:
+                result = await coordinator.classify(
+                    query=state["user_query"],
+                    timezone=state.get("timezone") or "Asia/Kolkata",
+                    as_of=state.get("as_of"),
+                    mission_id=state["mission_id"],
+                    request_id=str(state.get("request_id")),
+                    session_id=str(state.get("session_id")),
+                    task_id=ctx.task_id,
+                )
+                classify_span.set_outputs(
+                    {
+                        "query_class": result.get("query_class"),
+                        "mission_lead": result.get("mission_lead"),
+                        "metric_hints": result.get("metric_hints"),
+                        "entities": result.get("entities"),
+                        "time_range": result.get("time_range"),
+                        "unsupported_reason": result.get("unsupported_reason"),
+                    }
+                )
             result["task_id"] = ctx.task_id
             result["llm_calls"] = int(state.get("llm_calls") or 0) + int(result.get("llm_calls") or 1)
+            result["coordinator_iterations"] = int(state.get("coordinator_iterations") or 0) + 1
+
+            # --- Plan: complexity, decomposition, DAG, lead, dispatchability --
+            # Deterministic control plane; never overrides the classifier's lead.
+            if not result.get("error_code"):
+                with traced_span(
+                    "coordinator.plan",
+                    _meta(runtime, state, "coordinator_agent"),
+                    tracing,
+                    inputs={
+                        "query_class": result.get("query_class"),
+                        "metric_hints": result.get("metric_hints"),
+                        "llm_domain_lead": result.get("mission_lead"),
+                    },
+                ) as plan_span:
+                    plan = plane.plan(
+                        query=state["user_query"],
+                        query_class=str(result.get("query_class") or "unsupported"),
+                        llm_domain_lead=result.get("mission_lead"),
+                        metric_hints=list(result.get("metric_hints") or []),
+                        entities=list(result.get("entities") or []),
+                    )
+                    result.update(plan)
+                    if result.get("query_class") == "unsupported":
+                        result["unsupported_reason"] = plane.unsupported_reason(
+                            plan,
+                            result.get("unsupported_reason")
+                            or "Query class or domain is not enabled in V1",
+                        )
+                    # Human-readable decomposition here; full per-task detail is
+                    # on the coordinator.plan.task.* child spans, so don't repeat
+                    # the whole DAG dict (keeps trace volume down).
+                    plan_span.set_outputs(
+                        {
+                            "complexity": plan["complexity_label"],
+                            "lead_selection": plan["lead_selection"],
+                            "decomposed_questions": plan["decomposed_questions"],
+                            "plan_dispatchable": plan["plan_dispatchable"],
+                            "blocked_reasons": plan["plan_blocked_reasons"],
+                            "dag_notes": plan["task_graph"].get("notes"),
+                        }
+                    )
+                    # One span per planned task so the run tree shows every
+                    # decomposed question and its dispatch verdict.
+                    for task in plan["task_graph"]["tasks"]:
+                        with traced_span(
+                            f"coordinator.plan.task.{task['id']}",
+                            {**_meta(runtime, state, "coordinator_agent"), "task_type": task["type"]},
+                            tracing,
+                            run_type="tool",
+                            inputs={
+                                "question": task["objective"],
+                                "depends_on": task["depends_on"],
+                                "required_capabilities": task["required_capabilities"],
+                                "metric_ids": task["metric_ids"],
+                            },
+                        ) as task_span:
+                            task_span.set_outputs(
+                                {
+                                    "assigned_agent": task["assigned_agent"],
+                                    "dispatchable": task["dispatchable"],
+                                    "blocked_reason": task["blocked_reason"],
+                                    "status": task["status"],
+                                }
+                            )
+
+            coord_span.set_outputs(
+                {
+                    "query_class": result.get("query_class"),
+                    "mission_lead": result.get("mission_lead"),
+                    "complexity": result.get("complexity_label"),
+                    "plan_dispatchable": result.get("plan_dispatchable"),
+                    "route_hint": (result.get("query_class"), result.get("mission_lead")),
+                    "unsupported_reason": result.get("unsupported_reason"),
+                }
+            )
             return result
 
     def route_after_coordinator(state: MissionState) -> Route:
@@ -108,7 +217,12 @@ def build_graph(runtime: SwarmRuntime):
         return "finalize_unsupported"
 
     async def domain_performance_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.performance", _meta(runtime, state, "performance_agent"), tracing):
+        with traced_span(
+            "node.performance",
+            _meta(runtime, state, "performance_agent"),
+            tracing,
+            inputs={"metric_hints": state.get("metric_hints"), "metric_id": state.get("metric_id")},
+        ) as span:
             ctx = AgentContext(
                 mission_id=state["mission_id"],
                 task_id=state.get("task_id") or "",
@@ -119,10 +233,23 @@ def build_graph(runtime: SwarmRuntime):
                     "metric_id": state.get("metric_id"),
                 },
             )
-            return await performance.run(ctx)
+            result = await performance.run(ctx)
+            span.set_outputs(
+                {
+                    "metric_id": result.get("metric_id"),
+                    "handoff_needed_metrics": result.get("handoff_needed_metrics"),
+                    "error_code": result.get("error_code"),
+                }
+            )
+            return result
 
     async def domain_commerce_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.commerce", _meta(runtime, state, "commerce_agent"), tracing):
+        with traced_span(
+            "node.commerce",
+            _meta(runtime, state, "commerce_agent"),
+            tracing,
+            inputs={"metric_hints": state.get("metric_hints"), "metric_id": state.get("metric_id")},
+        ) as span:
             ctx = AgentContext(
                 mission_id=state["mission_id"],
                 task_id=state.get("task_id") or "",
@@ -134,14 +261,29 @@ def build_graph(runtime: SwarmRuntime):
                 },
             )
             result = await commerce.run(ctx)
-            if result.get("error_code"):
-                return result
+            span.set_outputs(
+                {
+                    "metric_id": result.get("metric_id"),
+                    "allowed_metrics": result.get("allowed_metrics"),
+                    "error_code": result.get("error_code"),
+                }
+            )
             return result
 
     async def observer_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.observer", _meta(runtime, state, "observer_agent"), tracing):
+        with traced_span(
+            "node.observer",
+            _meta(runtime, state, "observer_agent"),
+            tracing,
+            inputs={
+                "mission_lead": state.get("mission_lead"),
+                "metric_id": state.get("metric_id"),
+                "time_range": state.get("time_range"),
+            },
+        ) as obs_span:
             over = _budget_ok(runtime, state, llm_needed=1, tool_needed=1)
             if over:
+                obs_span.set_outputs({"error_code": over, "reason": "Observer budget exceeded"})
                 return {"error_code": over, "error_message": "Observer budget exceeded", "status": "failed"}
             lead = state.get("mission_lead") or "commerce_agent"
             tool_name = (
@@ -151,7 +293,9 @@ def build_graph(runtime: SwarmRuntime):
                 f"tool.mcp.{tool_name}",
                 {**_meta(runtime, state, "observer_agent"), "tool_name": tool_name},
                 tracing,
-            ):
+                run_type="tool",
+                inputs={"capability": tool_name, "time_range": state.get("time_range")},
+            ) as tool_span:
                 ctx = AgentContext(
                     mission_id=state["mission_id"],
                     task_id=state.get("task_id") or "",
@@ -169,6 +313,19 @@ def build_graph(runtime: SwarmRuntime):
                     },
                 )
                 result = await observer.observe(ctx)
+                tool_span.set_outputs(
+                    {
+                        "metric_id": result.get("metric_id"),
+                        "evidence_rows": [
+                            {"metric": r.get("metric_or_fact"), "value": r.get("value"), "day": (r.get("time_range") or {}).get("start")}
+                            for r in (result.get("evidence") or [])
+                        ],
+                        "mcp_called": result.get("mcp_called"),
+                        "tool_calls": result.get("tool_calls"),
+                        "error_code": result.get("error_code"),
+                        "missing": result.get("limitations"),
+                    }
+                )
             prior = list(state.get("evidence") or [])
             new_rows = list(result.get("evidence") or [])
             merged = prior + new_rows
@@ -182,6 +339,14 @@ def build_graph(runtime: SwarmRuntime):
             result["limitations"] = prior_limits + [item for item in new_limits if item not in prior_limits]
             if result.get("error_code") == "INSUFFICIENT_EVIDENCE" and not new_rows:
                 result["status"] = "failed"
+            obs_span.set_outputs(
+                {
+                    "evidence_count": len(merged),
+                    "evidence_refs": result.get("evidence_refs"),
+                    "error_code": result.get("error_code"),
+                    "status": result.get("status"),
+                }
+            )
             return result
 
     def route_after_observer(state: MissionState) -> AfterObserver:
@@ -196,36 +361,64 @@ def build_graph(runtime: SwarmRuntime):
         return "claim_gate"
 
     def propose_handoff_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.leadership_transfer", _meta(runtime, state, "performance_agent"), tracing):
+        with traced_span(
+            "node.leadership_transfer",
+            _meta(runtime, state, "performance_agent"),
+            tracing,
+            inputs={
+                "current_lead": state.get("mission_lead"),
+                "handoff_needed_metrics": state.get("handoff_needed_metrics"),
+                "evidence_refs": state.get("evidence_refs"),
+            },
+        ) as span:
             needed = list(state.get("handoff_needed_metrics") or [])
             refs = [row["evidence_id"] for row in (state.get("evidence") or [])]
-            return {
-                "pending_transfer": {
-                    "mission_id": state.get("mission_id"),
-                    "from_agent": "performance_agent",
-                    "to_agent": "commerce_agent",
-                    "requested_target": "commerce_agent",
-                    "reason": (
-                        "Performance owns CAC but the unresolved question requires "
-                        f"{', '.join(needed)}, which is a commerce capability."
-                    ),
-                    "evidence_refs": refs,
-                    "unresolved_question": f"Retrieve {', '.join(needed)} for the same time range",
-                    "requested_output": "EvidenceBundle for commerce metrics",
-                }
+            transfer = {
+                "mission_id": state.get("mission_id"),
+                "from_agent": "performance_agent",
+                "to_agent": "commerce_agent",
+                "requested_target": "commerce_agent",
+                "reason": (
+                    "Performance owns CAC but the unresolved question requires "
+                    f"{', '.join(needed)}, which is a commerce capability."
+                ),
+                "evidence_refs": refs,
+                "unresolved_question": f"Retrieve {', '.join(needed)} for the same time range",
+                "requested_output": "EvidenceBundle for commerce metrics",
             }
+            span.set_outputs({"pending_transfer": transfer})
+            return {"pending_transfer": transfer}
 
     def coordinator_arbitrate_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.coordinator_arbitrate", _meta(runtime, state, "coordinator_agent"), tracing):
+        with traced_span(
+            "node.coordinator_arbitrate",
+            _meta(runtime, state, "coordinator_agent"),
+            tracing,
+            inputs={"proposal": dict(state.get("pending_transfer") or {})},
+        ) as span:
             proposal = dict(state.get("pending_transfer") or {})
             decision = leadership.decide(dict(state), proposal)
             if not decision.get("accepted"):
+                span.set_outputs(
+                    {
+                        "accepted": False,
+                        "error_code": decision.get("error_code"),
+                        "reason": decision.get("error_message"),
+                    }
+                )
                 return {
                     "error_code": decision.get("error_code") or "HANDOFF_REJECTED",
                     "error_message": decision.get("error_message") or "Handoff rejected",
                     "status": "failed",
                     "pending_transfer": None,
                 }
+            span.set_outputs(
+                {
+                    "accepted": True,
+                    "new_mission_lead": decision["mission_lead"],
+                    "leadership_epoch": decision["leadership_epoch"],
+                }
+            )
             return {
                 "mission_lead": decision["mission_lead"],
                 "leadership_epoch": decision["leadership_epoch"],
@@ -242,8 +435,14 @@ def build_graph(runtime: SwarmRuntime):
         return "domain_commerce"
 
     def claim_gate_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.claim_gate", _meta(runtime, state, "claim_gate"), tracing):
+        with traced_span(
+            "node.claim_gate",
+            _meta(runtime, state, "claim_gate"),
+            tracing,
+            inputs={"evidence_count": len(state.get("evidence") or [])},
+        ) as span:
             if state.get("error_code") == "INSUFFICIENT_EVIDENCE" and not state.get("evidence"):
+                span.set_outputs({"claims": [], "gate": "skipped_no_evidence"})
                 return {"claims": [], "status": "failed"}
             claims: list[dict[str, Any]] = []
             for ev in state.get("evidence") or []:
@@ -266,6 +465,7 @@ def build_graph(runtime: SwarmRuntime):
                 ok, problems = validate_claim(claim)
                 claim["gate_status"] = "passed" if ok else "rejected"
                 if not ok:
+                    span.set_outputs({"gate": "rejected", "problems": problems, "claim": claim})
                     return {
                         "claims": [claim],
                         "error_code": "CLAIM_REJECTED",
@@ -274,24 +474,45 @@ def build_graph(runtime: SwarmRuntime):
                     }
                 claims.append(claim)
             if not claims:
+                span.set_outputs({"gate": "empty", "claims": []})
                 return {
                     "claims": [],
                     "error_code": "INSUFFICIENT_EVIDENCE",
                     "error_message": "No claims passed the provenance gate",
                     "status": "failed",
                 }
+            span.set_outputs(
+                {
+                    "gate": "passed",
+                    "claims": [
+                        {"text": c["text"], "gate_status": c["gate_status"], "support_refs": c["support_refs"]}
+                        for c in claims
+                    ],
+                }
+            )
             return {"claims": claims}
 
     async def synthesize_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.synthesizer", _meta(runtime, state, "response_synthesizer"), tracing):
+        with traced_span(
+            "node.synthesizer",
+            _meta(runtime, state, "response_synthesizer"),
+            tracing,
+            inputs={
+                "claim_count": len(state.get("claims") or []),
+                "gated_claims": [c.get("text") for c in state.get("claims") or []],
+            },
+        ) as span:
             if state.get("error_code") and not state.get("claims"):
+                span.set_outputs({"skipped": True, "reason": state.get("error_code")})
                 return {}
             over = _budget_ok(runtime, state, llm_needed=1)
             if over:
                 from seleric_swarm.orchestration.synthesize import _table_fallback
 
+                fallback = _table_fallback(state.get("evidence") or [], state.get("claims") or [])
+                span.set_outputs({"synthesis_fallback": True, "final_response": fallback})
                 return {
-                    "final_response": _table_fallback(state.get("evidence") or [], state.get("claims") or []),
+                    "final_response": fallback,
                     "synthesis_fallback": True,
                     "error_code": None,
                 }
@@ -306,11 +527,31 @@ def build_graph(runtime: SwarmRuntime):
                 result["status"] = "partial"
             else:
                 result["status"] = "completed" if state.get("claims") else state.get("status") or "failed"
+            span.set_outputs(
+                {
+                    "status": result.get("status"),
+                    "final_response": result.get("final_response"),
+                    "limitations": result.get("limitations"),
+                }
+            )
             return result
 
     def finalize_unsupported_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.finalize", _meta(runtime, state, "coordinator_agent"), tracing):
+        with traced_span(
+            "node.finalize",
+            {**_meta(runtime, state, "coordinator_agent"), "outcome": "unsupported"},
+            tracing,
+            inputs={"query_class": state.get("query_class"), "complexity": state.get("complexity_label")},
+        ) as span:
             reason = state.get("unsupported_reason") or "Query class or domain is not enabled in V1"
+            span.set_outputs(
+                {
+                    "status": "failed",
+                    "error_code": state.get("error_code") or "ROUTING_UNSUPPORTED",
+                    "reason": reason,
+                    "blocked_reasons": state.get("plan_blocked_reasons"),
+                }
+            )
             return {
                 "status": "failed",
                 "error_code": state.get("error_code") or "ROUTING_UNSUPPORTED",
@@ -322,9 +563,14 @@ def build_graph(runtime: SwarmRuntime):
             }
 
     def finalize_error_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.finalize", _meta(runtime, state, "coordinator_agent"), tracing):
+        with traced_span(
+            "node.finalize",
+            {**_meta(runtime, state, "coordinator_agent"), "outcome": "error"},
+            tracing,
+        ) as span:
             code = state.get("error_code") or "LLM_UNAVAILABLE"
             message = state.get("error_message") or "Mission failed"
+            span.set_outputs({"status": "failed", "error_code": code, "error_message": message})
             return {
                 "status": "failed",
                 "error_code": code,
@@ -334,11 +580,27 @@ def build_graph(runtime: SwarmRuntime):
             }
 
     def finalize_success_node(state: MissionState) -> dict[str, Any]:
-        with traced_span("node.finalize", _meta(runtime, state, "coordinator_agent"), tracing):
+        with traced_span(
+            "node.finalize",
+            {**_meta(runtime, state, "coordinator_agent"), "outcome": "success"},
+            tracing,
+        ) as span:
             status = state.get("status") or "completed"
             if state.get("error_code") == "INSUFFICIENT_EVIDENCE" and not state.get("claims"):
                 status = "failed"
-            return {"status": status}
+            patch: dict[str, Any] = {"status": status}
+            completion = plane.completion(dict(state))
+            patch.update(completion)
+            span.set_outputs(
+                {
+                    "status": status,
+                    "completion_score": completion["completion_score"],
+                    "completion_decision": completion["completion_decision"],
+                    "completion_components": completion["completion_components"],
+                    "unresolved_questions": completion["unresolved_questions"],
+                }
+            )
+            return patch
 
     graph = StateGraph(MissionState)
     graph.add_node("coordinator", coordinator_node)
