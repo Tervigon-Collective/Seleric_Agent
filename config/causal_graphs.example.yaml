@@ -1,0 +1,26 @@
+graphs:
+  - id: causal.funnel_purchase.v1
+    domain: funnel
+    nodes:
+      - traffic_mix
+      - campaign
+      - device
+      - page_latency
+      - price
+      - stock
+      - discount
+      - payment_failure
+      - sessions
+      - add_to_cart
+      - purchase
+    edges:
+      - [traffic_mix, sessions]
+      - [campaign, traffic_mix]
+      - [device, page_latency]
+      - [page_latency, add_to_cart]
+      - [price, add_to_cart]
+      - [stock, purchase]
+      - [discount, add_to_cart]
+      - [payment_failure, purchase]
+      - [sessions, add_to_cart]
+      - [add_to_cart, purchase]

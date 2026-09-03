@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.env
+config/mcp_servers.local.yaml
+*.log
+.DS_Store
+artifacts/

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ForecastArtifact",
+  "type": "object",
+  "required": [
+    "forecast_id",
+    "target",
+    "horizon",
+    "model",
+    "prediction",
+    "evidence_refs"
+  ],
+  "properties": {
+    "forecast_id": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "horizon": {
+      "type": "string"
+    },
+    "model": {
+      "type": "object"
+    },
+    "prediction": {},
+    "interval": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "drift_status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

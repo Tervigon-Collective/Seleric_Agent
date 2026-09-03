@@ -1,0 +1,13 @@
+---
+description: Agent interface and handoff rules
+alwaysApply: true
+---
+
+# Agent Contract Rules
+
+1. Agents exchange structured artifacts/references, not uncontrolled prose histories.
+2. Handoffs require reason, evidence refs, unresolved question and requested output.
+3. Context sent to another agent must be minimized to what that agent needs.
+4. Every task/message must carry mission/task IDs and be idempotent where practical.
+5. Coordinator arbitration is required for handoff loops, unsupported transfers and permission-boundary changes.
+6. The Skeptic must be able to return PASS, REVISE or REJECT and create explicit follow-up work.

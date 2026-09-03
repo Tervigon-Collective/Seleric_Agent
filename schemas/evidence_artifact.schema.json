@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvidenceArtifact",
+  "type": "object",
+  "required": [
+    "evidence_id",
+    "source",
+    "retrieved_at",
+    "metric_or_fact",
+    "value",
+    "provenance"
+  ],
+  "properties": {
+    "evidence_id": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "retrieved_at": {
+      "type": "string"
+    },
+    "metric_or_fact": {
+      "type": "string"
+    },
+    "value": {},
+    "unit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dimensions": {
+      "type": "object"
+    },
+    "time_range": {
+      "type": "object"
+    },
+    "freshness": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provenance": {
+      "type": "object"
+    },
+    "quality_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+metrics:
+  - id: metric.cac
+    version: 1
+    owner: performance
+    description: Cost to acquire a purchase/order under the approved attribution definition.
+    formula: spend / attributed_orders
+    grain: day
+    timezone: Asia/Kolkata
+    validation:
+      - denominator_non_negative
+      - spend_non_negative
+
+  - id: metric.atc_rate
+    version: 1
+    owner: funnel
+    description: Add-to-cart sessions divided by eligible sessions.
+    formula: atc_sessions / eligible_sessions
+    grain: day
+    timezone: Asia/Kolkata
+
+  - id: metric.atc_to_purchase_rate
+    version: 1
+    owner: funnel
+    description: Purchases divided by add-to-cart events/sessions according to funnel definition.
+    formula: purchases / add_to_cart
+    grain: day
+    timezone: Asia/Kolkata

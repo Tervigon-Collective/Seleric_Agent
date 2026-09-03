@@ -1,0 +1,45 @@
+[project]
+name = "seleric-swarm"
+version = "0.1.0"
+description = "Dynamic multi-agent business intelligence swarm scaffold"
+requires-python = ">=3.11"
+dependencies = [
+  "a2a-sdk>=0.3",
+  "dowhy>=0.14",
+  "fastapi>=0.115",
+  "httpx>=0.28",
+  "langgraph>=1.2",
+  "mcp[cli]>=2.0",
+  "numpy>=2.0",
+  "orjson>=3.10",
+  "pandas>=2.2",
+  "pydantic>=2.10",
+  "pydantic-settings>=2.7",
+  "pyyaml>=6.0",
+  "redis>=5.2",
+  "scikit-learn>=1.6",
+  "sqlalchemy>=2.0",
+  "statsmodels>=0.14",
+  "structlog>=25.0",
+  "tenacity>=9.0",
+  "uvicorn[standard]>=0.34",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.25",
+  "ruff>=0.9",
+  "mypy>=1.14",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

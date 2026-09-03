@@ -1,0 +1,8 @@
+flowchart LR
+    MCP[MCP Result] --> N[Normalizer]
+    N --> E[Evidence Artifact]
+    E --> L[Evidence Ledger]
+    L --> C[Claim]
+    C --> P{Provenance policy}
+    P -- pass --> S[Synthesis]
+    P -- fail --> R[Re-fetch / Revise / Insufficient]

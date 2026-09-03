@@ -1,0 +1,22 @@
+flowchart LR
+    Q[User Question] --> PLAN[Coordinator Plan]
+    PLAN --> OBS[Observe]
+    OBS --> ANOM{Anomaly needed?}
+    ANOM -- yes --> A[Anomaly]
+    ANOM -- no --> DIAG
+    A --> DIAG{Diagnosis needed?}
+    DIAG -- yes --> D[Diagnostic]
+    DIAG -- no --> PRED
+    D --> H{Domain frontier changed?}
+    H -- yes --> X[Leadership Transfer]
+    X --> D
+    H -- no --> PRED{Prediction needed?}
+    PRED -- yes --> P[Prediction]
+    PRED -- no --> STRAT
+    P --> STRAT{Strategy needed?}
+    STRAT -- yes --> S[Strategy]
+    STRAT -- no --> SK[Skeptic / Claim Gate]
+    S --> SK
+    SK --> V{Pass?}
+    V -- revise --> OBS
+    V -- pass --> R[Verified Response]

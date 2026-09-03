@@ -1,0 +1,19 @@
+sequenceDiagram
+    participant C as Coordinator
+    participant P as Performance Lead
+    participant O as Observer/Anomaly
+    participant E as Commerce Lead
+    participant F as Funnel Lead
+    participant T as Technical Lead
+
+    C->>P: Mission: investigate CAC increase
+    P->>O: Analyze paid-media + downstream metrics
+    O-->>P: CPM/CTR/CPC stable; ATC sharply down
+    P->>C: Transfer request -> Commerce + evidence refs
+    C-->>E: Leadership epoch 2
+    E->>F: Mobile ATC degradation investigation
+    F-->>E: Mobile-only funnel issue
+    E->>C: Transfer request -> Funnel
+    C-->>F: Leadership epoch 3
+    F->>T: Investigate latency/error evidence
+    T-->>F: Deployment correlated with LCP + JS error increase

@@ -1,0 +1,14 @@
+---
+description: Core architecture rules for Seleric Intelligence Swarm
+alwaysApply: true
+---
+
+# Architecture Rules
+
+1. Keep LangGraph orchestration, A2A inter-agent communication and MCP tool/data access conceptually separate.
+2. Domain agents and intelligence specialist agents are different axes; do not duplicate specialist roles per domain without a strong reason.
+3. Persist `mission_lead` and `active_specialist` separately.
+4. Prefer deterministic services for metrics, statistics, ML, causal inference and optimization.
+5. No business-data direct connector may bypass the governed MCP/data gateway in production code.
+6. New agent capabilities must be added to the registry and have versioned contracts/tests.
+7. Do not introduce autonomous write actions in the intelligence milestone.

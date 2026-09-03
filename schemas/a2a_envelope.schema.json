@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SelericA2AEnvelope",
+  "type": "object",
+  "required": [
+    "mission_id",
+    "task_id",
+    "message_id",
+    "from_agent",
+    "intent"
+  ],
+  "properties": {
+    "mission_id": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "message_id": {
+      "type": "string"
+    },
+    "from_agent": {
+      "type": "string"
+    },
+    "to_agent": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "intent": {
+      "enum": [
+        "task_request",
+        "evidence_request",
+        "artifact_response",
+        "hypothesis_challenge",
+        "leadership_transfer",
+        "leadership_accept",
+        "leadership_reject",
+        "clarification_request",
+        "completion_candidate"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "payload": {
+      "type": "object"
+    },
+    "idempotency_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

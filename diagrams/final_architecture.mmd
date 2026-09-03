@@ -1,0 +1,146 @@
+flowchart TB
+    U["User / API / Dashboard"] --> C
+
+    subgraph CONTROL["SWARM CONTROL PLANE"]
+        C["Swarm Coordinator / Mission Controller"]
+        IC["Intent & Query Classifier"]
+        QD["Query Decomposer"]
+        DAG["Task DAG Builder"]
+        LS["Initial Lead Selector"]
+        TM["Task / Mission Manager"]
+        HT["Leadership & Handoff Manager"]
+        CG["Completion Gate"]
+        SYN["Final Response Synthesizer"]
+        C --> IC --> QD --> DAG --> LS --> TM
+        TM --> HT --> CG --> SYN
+    end
+
+    subgraph DOMAIN["DOMAIN AGENT MESH"]
+        PA["Performance Agent"]
+        CA["Commerce Agent"]
+        FA["Website Funnel Agent"]
+        FIA["Finance Agent"]
+        IA["Inventory Agent"]
+        PRA["Procurement Agent"]
+        TA["Technical Agent"]
+    end
+
+    subgraph INTEL["INTELLIGENCE SPECIALISTS"]
+        OA["Observer Agent\nWhat is happening?"]
+        AA["Anomaly Agent\nWhat changed?"]
+        DA["Diagnostic Agent\nWhy did it change?"]
+        PRED["Prediction Agent\nWhat happens next?"]
+        SA["Strategy Agent\nWhat should we do?"]
+        SK["Skeptic Agent\nIs it actually valid?"]
+    end
+
+    TM --> PA & CA & FA & FIA & IA & PRA & TA
+    TM --> OA & AA & DA & PRED & SA & SK
+
+    PA <-. A2A .-> OA
+    CA <-. A2A .-> OA
+    FA <-. A2A .-> DA
+    FIA <-. A2A .-> DA
+    IA <-. A2A .-> PRED
+    PRA <-. A2A .-> SA
+    TA <-. A2A .-> DA
+
+    OA <-. A2A .-> AA
+    AA <-. A2A .-> DA
+    DA <-. A2A .-> PRED
+    PRED <-. A2A .-> SA
+    SA <-. A2A .-> SK
+    SK <-. "Challenge / Re-open" .-> DA
+
+    PA -. handoff .-> CA
+    CA -. handoff .-> FA
+    FA -. handoff .-> TA
+    PA -. "leadership event" .-> HT
+    CA -. "leadership event" .-> HT
+    FA -. "leadership event" .-> HT
+    FIA -. "leadership event" .-> HT
+    IA -. "leadership event" .-> HT
+    PRA -. "leadership event" .-> HT
+    TA -. "leadership event" .-> HT
+
+    subgraph COMPUTE["DETERMINISTIC INTELLIGENCE / COMPUTE"]
+        MS["Semantic Metric Service"]
+        FE["Feature Engine / Store"]
+        ST["Statistical Engine"]
+        AML["Anomaly Models"]
+        PML["Prediction Models"]
+        CR["Causal Registry"]
+        DW["DoWhy"]
+        RF["Refutation Tests"]
+        OPT["Scenario Optimizer"]
+        BR["Business Rules"]
+    end
+
+    OA --> MS
+    AA --> AML
+    DA --> ST & CR
+    CR --> DW --> RF
+    PRED --> FE --> PML
+    SA --> OPT & BR
+    SK --> ST & RF & BR
+
+    subgraph DATA["MCP DATA / TOOL ACCESS"]
+        MCP["MCP Gateway"]
+        META["Meta Ads"]
+        GOOGLE["Google Ads"]
+        SHOP["Shopify"]
+        AMAZON["Amazon"]
+        BLINKIT["Blinkit"]
+        POST["PostHog"]
+        FIN["Finance"]
+        INV["Inventory / WMS"]
+        PROC["Procurement / ERP"]
+        TECH["Logs / APM"]
+        CONTEXT["Context Data"]
+        MCP --> META & GOOGLE & SHOP & AMAZON & BLINKIT & POST & FIN & INV & PROC & TECH & CONTEXT
+    end
+
+    PA --> MCP
+    CA --> MCP
+    FA --> MCP
+    FIA --> MCP
+    IA --> MCP
+    PRA --> MCP
+    TA --> MCP
+    OA --> MCP
+
+    subgraph STATE["SHARED STATE / TRUST"]
+        BB["Mission Blackboard"]
+        EL["Evidence Ledger"]
+        AGR["Agent Registry / Agent Cards"]
+        MR["Model Registry"]
+        MTR["Metric Registry"]
+        FR["Feature Registry"]
+        CCR["Causal Graph Registry"]
+        AUD["Audit / Provenance"]
+    end
+
+    TM --> BB
+    OA --> EL --> BB
+    LS --> AGR
+    HT --> AGR
+    AML --> MR
+    PML --> MR
+    MS --> MTR
+    FE --> FR
+    CR --> CCR
+    BB --> AUD
+
+    subgraph TRUST["VALIDATION GATES"]
+        PV["Provenance Validator"]
+        EQ["Evidence Quality"]
+        CV["Cross-source Validator"]
+        MV["Model Reliability / Drift"]
+        HC["Unsupported Claim Gate"]
+    end
+
+    EL --> PV --> EQ --> CV --> SK
+    PML --> MV --> SK
+    AML --> MV
+    SK --> HC --> CG
+    SYN --> OUT["Verified Intelligence Response"] --> U

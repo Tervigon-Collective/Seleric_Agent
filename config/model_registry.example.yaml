@@ -1,0 +1,23 @@
+models:
+  - id: anomaly.cac.seasonal_robust
+    version: 1
+    type: anomaly
+    status: candidate
+    owner: ml_platform
+    target: metric.cac
+    applicability:
+      minimum_history_days: 56
+      supports_seasonality: true
+    validation:
+      metric: precision_recall_on_incident_suite
+    fallback: null
+
+  - id: forecast.orders.daily
+    version: 1
+    type: forecast
+    status: candidate
+    owner: ml_platform
+    target: metric.orders
+    feature_set: features.orders.daily.v1
+    forecast_horizon_days: 7
+    drift_policy: block_if_red

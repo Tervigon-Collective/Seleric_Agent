@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LeadershipTransfer",
+  "type": "object",
+  "required": [
+    "mission_id",
+    "from_agent",
+    "requested_target",
+    "reason",
+    "evidence_refs",
+    "unresolved_question"
+  ],
+  "properties": {
+    "mission_id": {
+      "type": "string"
+    },
+    "from_agent": {
+      "type": "string"
+    },
+    "requested_target": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "unresolved_question": {
+      "type": "string"
+    },
+    "requested_output": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

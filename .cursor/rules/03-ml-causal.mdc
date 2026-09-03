@@ -1,0 +1,14 @@
+---
+description: ML, anomaly, prediction and causal-engine rules
+alwaysApply: true
+---
+
+# ML and Causal Rules
+
+1. Anomaly Agent routes to a quantitative detector when one is available.
+2. Prediction Agent uses only registered/validated models or approved statistical baselines.
+3. Every model output carries model version, applicability, validation/backtest and drift metadata.
+4. DoWhy requests must specify treatment, outcome, causal graph and confounder assumptions.
+5. Run causal refutation/sensitivity checks required by the causal registry.
+6. LLMs may propose derived features but cannot promote them directly into production.
+7. Detect and prevent temporal leakage in all predictive features.

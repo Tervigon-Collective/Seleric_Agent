@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AnomalyArtifact",
+  "type": "object",
+  "required": [
+    "anomaly_id",
+    "metric_id",
+    "observed",
+    "expected",
+    "detector",
+    "evidence_refs"
+  ],
+  "properties": {
+    "anomaly_id": {
+      "type": "string"
+    },
+    "metric_id": {
+      "type": "string"
+    },
+    "observed": {},
+    "expected": {},
+    "deviation_pct": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "score": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "detector": {
+      "type": "object"
+    },
+    "dimensions": {
+      "type": "object"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

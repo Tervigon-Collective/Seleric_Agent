@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Claim",
+  "type": "object",
+  "required": [
+    "claim_id",
+    "claim_type",
+    "text",
+    "support_refs",
+    "trust_label"
+  ],
+  "properties": {
+    "claim_id": {
+      "type": "string"
+    },
+    "claim_type": {
+      "enum": [
+        "numeric",
+        "causal",
+        "forecast",
+        "recommendation",
+        "qualitative"
+      ]
+    },
+    "text": {
+      "type": "string"
+    },
+    "support_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "contradiction_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "trust_label": {
+      "enum": [
+        "VERIFIED",
+        "STRONG",
+        "PROBABLE",
+        "WEAK",
+        "INSUFFICIENT"
+      ]
+    }
+  }
+}

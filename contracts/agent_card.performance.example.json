@@ -1,0 +1,21 @@
+{
+  "name": "Performance Agent",
+  "description": "Domain agent for paid-media and acquisition performance analysis.",
+  "url": "https://agents.example.internal/performance",
+  "version": "0.1.0",
+  "capabilities": {
+    "streaming": true
+  },
+  "skills": [
+    {
+      "id": "cac_analysis",
+      "name": "CAC Analysis",
+      "description": "Analyze CAC and acquisition drivers."
+    },
+    {
+      "id": "campaign_analysis",
+      "name": "Campaign Analysis",
+      "description": "Analyze campaign/adset/ad performance."
+    }
+  ]
+}
