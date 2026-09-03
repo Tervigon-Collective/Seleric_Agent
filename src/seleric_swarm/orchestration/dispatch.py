@@ -4,32 +4,39 @@ Simple retrieval / comparison stays on the fast ``lookup_v1`` graph; diagnostic,
 predictive and prescriptive questions enter the dynamic two-axis swarm. This is
 the "fold lookup_v1 into the coordinator as the L0/L1 fast path" wiring - the
 lookup graph and its tests are untouched, just no longer the only route.
+
+Not yet wired into ``main.py`` (the HTTP API still calls ``run_mission``
+directly); this is the intended future entrypoint. Callers branch on ``route``:
+``result`` is ``MissionResult.model_dump()`` for lookup, ``SwarmMissionResult``
+fields for swarm.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from seleric_swarm.coordinator.planning.complexity import classify_complexity
 from seleric_swarm.orchestration.runner import run_mission
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.swarm.orchestrator import classify_intents, run_swarm_mission
 
-_FAST_PATH = {"L0", "L1", "L2"}
+# Retrieval / comparison verbs that are safe for the lookup fast path.
+_LOOKUP_RE = ("what were", "what was", "what is", "how much", "compare", " vs ", "versus", "show me")
 
 
 async def route_for(runtime: SwarmRuntime, *, query: str) -> str:
-    """Return "lookup" or "swarm" for a query (cheap, deterministic, no LLM)."""
-    intents = classify_intents(query)
-    if intents - {"diagnostic"} or _looks_diagnostic(query):
+    """Return "lookup" or "swarm" (cheap, deterministic, no LLM).
+
+    Any diagnostic / predictive / prescriptive signal -> swarm. Otherwise, only a
+    plain retrieval / comparison phrasing stays on the lookup fast path.
+    """
+    q = query.lower().strip()
+    intents = classify_intents(query)  # never empty; defaults to {"diagnostic"}
+    diagnostic_signal = intents != {"diagnostic"} or any(
+        k in q for k in ("why", "root cause", "diagnose", "what changed", "caused", "explain", "driver of")
+    )
+    if diagnostic_signal:
         return "swarm"
-    level = classify_complexity(query_class="lookup", query=query, metric_hints=[], entities=[])
-    return "lookup" if level.name in _FAST_PATH else "swarm"
-
-
-def _looks_diagnostic(query: str) -> bool:
-    q = query.lower()
-    return any(k in q for k in ("why", "root cause", "diagnose", "what changed"))
+    return "lookup" if any(q.startswith(p) or p in q for p in _LOOKUP_RE) else "swarm"
 
 
 async def run_any_mission(
@@ -38,15 +45,34 @@ async def run_any_mission(
     query: str,
     timezone: str = "Asia/Kolkata",
     as_of: str | None = None,
-    **kw: Any,
+    session_id: str | None = None,
+    request_id: str | None = None,
+    **swarm_only: Any,
 ) -> dict[str, Any]:
     """Classify, then dispatch to the lookup fast path or the dynamic swarm.
 
-    Returns a uniform dict so callers do not need to know which route ran.
+    Shared kwargs (``session_id`` / ``request_id``) are forwarded to whichever
+    route runs. ``**swarm_only`` (e.g. ``providers``, ``scenario_id``) applies
+    only when the swarm route is taken and is ignored on the lookup route.
     """
     route = await route_for(runtime, query=query)
     if route == "lookup":
-        result = await run_mission(runtime, query=query, timezone=timezone, as_of=as_of)
+        result = await run_mission(
+            runtime,
+            query=query,
+            timezone=timezone,
+            as_of=as_of,
+            session_id=session_id,
+            request_id=request_id,
+        )
         return {"route": "lookup", "result": result.model_dump()}
-    swarm = await run_swarm_mission(runtime, query=query, timezone=timezone, as_of=as_of, **kw)
-    return {"route": "swarm", "result": swarm.__dict__}
+    swarm = await run_swarm_mission(
+        runtime,
+        query=query,
+        timezone=timezone,
+        as_of=as_of,
+        session_id=session_id,
+        request_id=request_id,
+        **swarm_only,
+    )
+    return {"route": "swarm", "result": swarm.as_dict()}

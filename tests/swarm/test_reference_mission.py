@@ -48,9 +48,6 @@ async def test_cac_reference_mission_transfers_leadership_on_evidence(runtime):
 @pytest.mark.asyncio
 async def test_reference_mission_retains_frontend_regression_hypothesis(runtime):
     res = await run_swarm_mission(runtime, query=QUERY, as_of="2026-09-03")
-    # pull the retained hypothesis out of the run
-    from seleric_swarm.swarm.orchestrator import run_swarm_mission as _  # noqa: F401
-
     assert res.artifacts["causal"], "a causal artifact was produced"
     # the synthesized answer names the mechanism and the recommended rollback
     text = res.final_response.lower()
@@ -60,9 +57,10 @@ async def test_reference_mission_retains_frontend_regression_hypothesis(runtime)
 
 
 @pytest.mark.asyncio
-async def test_no_anomaly_scenario_keeps_leadership(runtime, tmp_path, monkeypatch):
+async def test_no_anomaly_scenario_keeps_leadership(runtime):
     """If media metrics are NOT quiet, Performance should keep leadership - proving
-    the transfer is evidence-driven, not scripted."""
+    the transfer is evidence-driven, not scripted. ``load_scenario`` re-reads from
+    disk each call, so mutating the returned dict here does not leak."""
     from seleric_swarm.swarm.providers import fixtures as fx
 
     scenario = fx.load_scenario("cac_regression")

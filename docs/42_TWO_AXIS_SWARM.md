@@ -89,7 +89,17 @@ Performance keeps leadership - the transfer is produced by evidence, not a fixed
 ## What is NOT built yet (fill using the reference pattern)
 
 - Commerce / Finance / Inventory / Procurement domains: configs exist, no scenario
-  data or provider slices.
+  data or provider slices. Next increment: a second scenario (Finance -> Commerce
+  -> Funnel, per the net-profit example) - that stresses the reuse claim; a second
+  vertical on `cac_regression.json` re-tests the same handoff rules.
 - A2A-over-HTTP transport + Agent Cards (in-process only for v1).
-- Real LLM components inside specialists (hypothesis generation is template rules).
+- Real LLM components inside specialists (hypothesis generation is template rules;
+  every hypothesis is therefore marked `synthetic` for now).
 - Conflict Resolver, cross-domain direct A2A between two domain agents mid-mission.
+- **Provenance classification for derived artifacts.** `Blackboard.synthetic_summary()`
+  counts *all* artifact types. Derived artifacts (hypothesis / strategy / skeptic)
+  come from template code, so once a real `DataProvider` is wired, a real-data run
+  will still report `mixed` and keep showing the MIXED PROVENANCE banner. Fix:
+  compute `all_synthetic` from data-bearing types only
+  (`evidence` / `anomaly` / `causal` / `prediction`) and have derived types inherit
+  synthetic-ness from their `evidence_refs` instead of counting themselves.

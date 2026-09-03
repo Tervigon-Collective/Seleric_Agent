@@ -83,6 +83,19 @@ class Blackboard:
                 return True
         return False
 
+    def synthetic_summary(self) -> dict[str, Any]:
+        items = self._store.all()
+        synthetic = [a["artifact_id"] for a in items if a.get("synthetic")]
+        total = len(items)
+        return {
+            "total": total,
+            "synthetic": len(synthetic),
+            "ratio": (len(synthetic) / total) if total else 0.0,
+            "all_synthetic": total > 0 and len(synthetic) == total,
+            "mixed": 0 < len(synthetic) < total,
+            "synthetic_ids": synthetic,
+        }
+
     # -- leadership --------------------------------------------------------
     def apply_transfer(self, record: dict[str, Any]) -> None:
         self.mission_lead = record.get("to_agent") or record.get("requested_target")

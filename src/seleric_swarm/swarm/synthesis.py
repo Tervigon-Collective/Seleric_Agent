@@ -12,10 +12,22 @@ from __future__ import annotations
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission
 
-_BANNER = (
-    "PROTOTYPE OUTPUT - all evidence below is SYNTHETIC (fixture/template providers). "
+_BANNER_ALL = (
+    "PROTOTYPE OUTPUT - every artifact below is SYNTHETIC (fixture/template providers). "
     "Do not act on these numbers. Wire real MCP data and models, then re-run."
 )
+_BANNER_MIXED = (
+    "MIXED PROVENANCE - {synthetic}/{total} artifacts are SYNTHETIC (fixture/template). "
+    "Treat any claim resting on a synthetic artifact as unverified."
+)
+
+
+def _banner(summary: dict[str, object]) -> str | None:
+    if summary.get("all_synthetic"):
+        return _BANNER_ALL
+    if summary.get("mixed"):
+        return _BANNER_MIXED.format(synthetic=summary["synthetic"], total=summary["total"])
+    return None  # fully real run: no banner
 
 
 def _fmt_pct(x: object) -> str:
@@ -26,7 +38,12 @@ def _fmt_pct(x: object) -> str:
 
 
 def build_response(blackboard: Blackboard, mission: SwarmMission) -> str:
-    lines: list[str] = [_BANNER, "", f"Question: {mission.query}", ""]
+    summary = blackboard.synthetic_summary()
+    lines: list[str] = []
+    banner = _banner(summary)
+    if banner:
+        lines += [banner, ""]
+    lines += [f"Question: {mission.query}", ""]
 
     anomalies = blackboard.by_type("anomaly")
     retained = [h for h in blackboard.by_type("hypothesis") if h.get("status") == "retained"]
@@ -85,10 +102,18 @@ def build_response(blackboard: Blackboard, mission: SwarmMission) -> str:
             lines.append(f"  - {prob.get('type')}: {prob.get('description')}")
         lines.append("")
 
-    lines.append("Claim summary (trust_label: SYNTHETIC - not verified):")
-    if retained:
-        lines.append(f"  - {retained[0]['statement']} [SYNTHETIC]")
-    for p in predictions:
-        lines.append(f"  - {p['target']} projected {p.get('prediction')} in {p.get('horizon')} [SYNTHETIC]")
+    lines.append("Claim summary (trust_label per claim):")
+    for claim_text, art in _claims(retained, predictions):
+        label = "SYNTHETIC" if art.get("synthetic") else "VERIFIED"
+        lines.append(f"  - {claim_text} [{label}]")
 
     return "\n".join(lines).rstrip()
+
+
+def _claims(retained: list[dict], predictions: list[dict]) -> list[tuple[str, dict]]:
+    out: list[tuple[str, dict]] = []
+    if retained:
+        out.append((retained[0]["statement"], retained[0]))
+    for p in predictions:
+        out.append((f"{p['target']} projected {p.get('prediction')} in {p.get('horizon')}", p))
+    return out

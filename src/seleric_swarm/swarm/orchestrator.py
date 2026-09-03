@@ -228,6 +228,15 @@ async def run_swarm_mission(
             t: blackboard.refs_by_type(t)
             for t in ("evidence", "anomaly", "hypothesis", "causal", "prediction", "strategy", "skeptic")
         }
+        prov = blackboard.synthetic_summary()
+        if not prov["all_synthetic"] and limitations and limitations[0].startswith("PROTOTYPE"):
+            limitations = limitations[1:]
+        if prov["mixed"]:
+            limitations.insert(
+                0,
+                f"MIXED PROVENANCE: {prov['synthetic']}/{prov['total']} artifacts are synthetic; "
+                "claims resting on them are unverified.",
+            )
         span.set_outputs(
             {
                 "status": status,
@@ -235,6 +244,7 @@ async def run_swarm_mission(
                 "leadership_epoch": blackboard.leadership_epoch,
                 "handoffs": blackboard.handoff_history,
                 "artifact_counts": {k: len(v) for k, v in artifacts.items()},
+                "provenance": prov,
                 "a2a_messages": transport.log,
             }
         )
@@ -252,6 +262,6 @@ async def run_swarm_mission(
         artifacts=artifacts,
         final_response=final_response,
         limitations=limitations,
-        synthetic=True,
+        synthetic=bool(prov["synthetic"]),
         events=blackboard.events,
     )

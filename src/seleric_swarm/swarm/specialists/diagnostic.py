@@ -73,8 +73,10 @@ class DiagnosticAgent(SpecialistAgent):
                 required_tests=h["required_tests"],
                 evidence_refs=h["supporting_evidence"],
             )
-            if blackboard.has_synthetic_inputs(h["supporting_evidence"]):
-                art.mark_synthetic()
+            # Hypothesis generation is template rules in the prototype, so every
+            # hypothesis is synthetic. A real LLM generator would set this from
+            # its own inputs / grounding.
+            art.mark_synthetic()
             hid = blackboard.post(art)
             hyp_ids.append(hid)
             if h["primary"]:

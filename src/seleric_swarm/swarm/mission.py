@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -44,3 +44,6 @@ class SwarmMissionResult:
     synthetic: bool = True
     events: list[dict[str, Any]] = field(default_factory=list)
     error_code: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)

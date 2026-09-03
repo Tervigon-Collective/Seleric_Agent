@@ -93,3 +93,27 @@ async def test_dispatch_routes_lookup_vs_swarm(runtime):
 
     assert await route_for(runtime, query="What were net sales on 2026-08-01?") == "lookup"
     assert await route_for(runtime, query="Why did CAC increase and what should we do?") == "swarm"
+    assert await route_for(runtime, query="Compare net sales on 2026-08-01 and 2026-08-02") == "lookup"
+
+
+def test_synthetic_summary_and_banner_track_provenance():
+    from seleric_swarm.swarm.mission import SwarmMission
+    from seleric_swarm.swarm.synthesis import _banner, build_response
+
+    bb = Blackboard("MS-2")
+    real = Evidence.new(mission_id="MS-2", created_by="observer", metric_or_fact="metric.cac", value=1)
+    syn = Evidence.new(mission_id="MS-2", created_by="observer", metric_or_fact="metric.spend", value=2)
+    syn.mark_synthetic()
+    bb.post(real)
+    bb.post(syn)
+
+    s = bb.synthetic_summary()
+    assert s["total"] == 2 and s["synthetic"] == 1 and s["mixed"] is True and s["all_synthetic"] is False
+    assert "MIXED PROVENANCE" in (_banner(s) or "")
+
+    # fully real -> no banner
+    bb_real = Blackboard("MS-3")
+    bb_real.post(Evidence.new(mission_id="MS-3", created_by="observer", metric_or_fact="metric.cac", value=1))
+    assert _banner(bb_real.synthetic_summary()) is None
+    mission = SwarmMission(mission_id="MS-3", query="q", time_range={}, initial_lead="performance_agent")
+    assert "PROTOTYPE OUTPUT" not in build_response(bb_real, mission)
