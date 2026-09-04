@@ -44,7 +44,7 @@ Objective-based `CompletionDecision`. Claim-aware wording. Synthetic complete �
 
 ## K — Observability
 
-`MissionEventEmitter` envelope + family taxonomy; LangSmith mission spans with decomposition/lead/synthetic metadata.
+`MissionEventEmitter` envelope + family taxonomy; LangSmith mission spans with decomposition/lead/synthetic metadata. **v1.10:** child spans on every `swarm.activate.*` and `swarm.task.*` carry `task_id`, `subquestion_id`, `active_specialist`, `mission_lead`, `remediation_round`, `decomposition_id`/`version`, `leadership_epoch` (workflow_version 1.4.0).
 
 ## L — Persistence
 
@@ -73,5 +73,4 @@ Typed detection + deterministic arbitration; unresolved material conflicts block
 - Intake/decomposition modules combined vs plan file layout (behavior complete).
 - No unrestricted Coordinator MCP; domain agents own data tools.
 - No CrewAI/AutoGen/Temporal/Neo4j.
-- LangSmith per-task span fields (`task_id`/`subquestion_id`) remain mission-level for V1.
 - Score-delta hysteresis helper exists but is not enforced on causal-frontier handoffs (would break CAC path); recent-target hysteresis is enforced.

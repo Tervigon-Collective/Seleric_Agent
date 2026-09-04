@@ -92,3 +92,5 @@ class MissionState(TypedDict, total=False):
     team: list[dict[str, Any]]
     completion_detail: dict[str, Any]
     specialists_activated: int
+    langsmith_tracing: bool
+    trace_base: dict[str, Any]

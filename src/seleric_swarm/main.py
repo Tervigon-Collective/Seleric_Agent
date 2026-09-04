@@ -52,6 +52,9 @@ class MissionRequest(BaseModel):
     full_prediction: bool = True
     full_skeptic: bool = True
     scenario_id: str = "cac_regression"
+    # fixture = offline synthetic providers (default).
+    # staging/production = prefer MCPGateway for commerce/performance, fixture fallback.
+    execution_mode: str = "fixture"
 
     model_config = {
         "json_schema_extra": {
@@ -141,6 +144,11 @@ async def create_mission(req: MissionRequest) -> dict[str, Any]:
     runtime = get_runtime()
     if req.mode != "read_only":
         raise HTTPException(status_code=400, detail="Only read_only mode is allowed in V1")
+    if req.execution_mode not in {"fixture", "staging", "production"}:
+        raise HTTPException(
+            status_code=400,
+            detail="execution_mode must be one of: fixture, staging, production",
+        )
     query = (req.query or "").strip()
     if not query:
         raise HTTPException(status_code=400, detail="query must be a non-empty string")
@@ -158,6 +166,7 @@ async def create_mission(req: MissionRequest) -> dict[str, Any]:
             full_prediction=req.full_prediction,
             full_skeptic=req.full_skeptic,
             scenario_id=req.scenario_id,
+            execution_mode=req.execution_mode,
         )
     except Exception as exc:
         from seleric_swarm.swarm.providers.errors import ScenarioNotFoundError

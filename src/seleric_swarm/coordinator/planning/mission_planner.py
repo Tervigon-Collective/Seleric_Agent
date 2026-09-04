@@ -143,12 +143,15 @@ def append_remediation_tasks(
         # Normalize causal-graph gaps to registry resolve — not full diagnostic.
         objective = str(f.get("objective") or f.get("question") or "")
         question = str(f.get("question") or objective)
-        if "causal graph" in objective.lower() or "causal graph" in question.lower() or cap in {
-            "causal_diagnosis",
-            "causal_graph",
-        }:
-            if "missing" in objective.lower() or "missing" in question.lower() or "unavailable" in question.lower():
-                cap = "causal_graph_resolve"
+        _obj_l, _q_l = objective.lower(), question.lower()
+        _is_causal_graph = (
+            "causal graph" in _obj_l
+            or "causal graph" in _q_l
+            or cap in {"causal_diagnosis", "causal_graph"}
+        )
+        _is_missing = "missing" in _obj_l or "missing" in _q_l or "unavailable" in _q_l
+        if _is_causal_graph and _is_missing:
+            cap = "causal_graph_resolve"
         agent = _agent_for_capability(cap, f.get("preferred_domain"))
         key = _idempotency_key(mission_id, cap, f.get("task_id"), agent)
         if key in seen_keys:

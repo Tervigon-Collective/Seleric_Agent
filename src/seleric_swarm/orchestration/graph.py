@@ -6,6 +6,7 @@ Internal workflow only. A2A remains a typed envelope at process boundaries.
 from __future__ import annotations
 
 import importlib
+from collections.abc import Hashable
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -316,7 +317,8 @@ def build_graph(runtime: SwarmRuntime):
                 obs_span.set_outputs({"error_code": over, "reason": "Observer budget exceeded"})
                 return {"error_code": over, "error_message": "Observer budget exceeded", "status": "failed"}
             lead = state.get("mission_lead") or (domain_ids[0] if domain_ids else "observer_agent")
-            metric_def = runtime.metrics.get(state["metric_id"]) if state.get("metric_id") else None
+            _mid = state.get("metric_id")
+            metric_def = runtime.metrics.get(_mid) if _mid else None
             tool_name = "seleric.metrics_query" if metric_def else "unresolved"
             with traced_span(
                 f"tool.mcp.{tool_name}",
@@ -703,12 +705,11 @@ def build_graph(runtime: SwarmRuntime):
     graph.add_node("finalize_error", finalize_error_node)
     graph.add_node("finalize", finalize_success_node)
     graph.add_edge(START, "coordinator")
-    domain_route_map = {name: name for name in domain_node_names.values()}
-    graph.add_conditional_edges(
-        "coordinator",
-        route_after_coordinator,
-        {**domain_route_map, "finalize_unsupported": "finalize_unsupported", "finalize_error": "finalize_error"},
-    )
+    domain_route_map: dict[Hashable, str] = {name: name for name in domain_node_names.values()}
+    coordinator_routes: dict[Hashable, str] = dict(domain_route_map)
+    coordinator_routes["finalize_unsupported"] = "finalize_unsupported"
+    coordinator_routes["finalize_error"] = "finalize_error"
+    graph.add_conditional_edges("coordinator", route_after_coordinator, coordinator_routes)
     for node_name in domain_node_names.values():
         graph.add_edge(node_name, "observer")
     graph.add_conditional_edges(
@@ -717,11 +718,9 @@ def build_graph(runtime: SwarmRuntime):
         {"propose_handoff": "propose_handoff", "claim_gate": "claim_gate"},
     )
     graph.add_edge("propose_handoff", "coordinator_arbitrate")
-    graph.add_conditional_edges(
-        "coordinator_arbitrate",
-        route_after_arbitrate,
-        {**domain_route_map, "finalize_error": "finalize_error"},
-    )
+    arbitrate_routes: dict[Hashable, str] = dict(domain_route_map)
+    arbitrate_routes["finalize_error"] = "finalize_error"
+    graph.add_conditional_edges("coordinator_arbitrate", route_after_arbitrate, arbitrate_routes)
     graph.add_edge("claim_gate", "synthesize")
     graph.add_edge("synthesize", "finalize")
     graph.add_edge("finalize", END)

@@ -116,7 +116,7 @@ class MissionEventEmitter:
         return event
 
     def kinds(self) -> list[str]:
-        return [e.get("kind") for e in self.blackboard.events if e.get("kind")]
+        return [str(e["kind"]) for e in self.blackboard.events if e.get("kind")]
 
 
 def summarize_event_families(events: Iterable[dict[str, Any]]) -> dict[str, int]:

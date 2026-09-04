@@ -29,6 +29,7 @@ class Agent(SwarmAgent):
         self.runtime = runtime
 
     async def run(self, ctx: AgentContext) -> dict[str, Any]:
+        assert self.runtime is not None, "domain agent requires a runtime"
         allowed_metrics = self.runtime.metrics.ids_for_domain(DOMAIN)
         commerce_metrics = set(self.runtime.metrics.ids_for_domain(COMMERCE_DOMAIN))
         hints = list(ctx.payload.get("metric_hints") or [])

@@ -28,9 +28,12 @@ def _result_from_state(runtime: SwarmRuntime, state: MissionState) -> MissionRes
         url = langsmith_run_url(
             runtime.settings.langsmith_project, run_id, runtime.settings.langsmith_org
         )
+    status_val = state.get("status") or "failed"
+    if status_val not in {"completed", "partial", "failed"}:
+        status_val = "failed"
     return MissionResult(
         mission_id=state["mission_id"],
-        status=state.get("status") or "failed",
+        status=status_val,  # type: ignore[arg-type]
         query_class=state.get("query_class"),
         mission_lead=state.get("mission_lead"),
         initial_mission_lead=state.get("initial_mission_lead"),

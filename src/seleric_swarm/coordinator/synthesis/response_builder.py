@@ -118,10 +118,8 @@ def build_claim_aware_response(
         for a in sorted(anomalies, key=lambda x: abs(x.get("deviation_pct") or 0), reverse=True)[:5]:
             dims = a.get("dimensions") or {}
             tag = f" [{','.join(f'{k}={v}' for k, v in dims.items())}]" if dims else ""
-            try:
-                pct = f"{float(a.get('deviation_pct')):+.1f}%"
-            except (TypeError, ValueError):
-                pct = str(a.get("deviation_pct"))
+            _dev = a.get("deviation_pct")
+            pct = f"{float(_dev):+.1f}%" if isinstance(_dev, (int, float)) else str(_dev)
             lines.append(f"  {a.get('metric_id')}{tag}: {pct} ({a.get('direction')})")
         lines.append("")
 
@@ -158,9 +156,9 @@ def build_claim_aware_response(
         lines.append("Actions deferred: primary claim remains CHALLENGED.")
         lines.append("")
 
-    skeptic = blackboard.by_type("skeptic")
-    if skeptic:
-        k = skeptic[-1]
+    skeptic_arts = blackboard.by_type("skeptic")
+    if skeptic_arts:
+        k = skeptic_arts[-1]
         lines.append(f"Skeptic verdict: {k.get('verdict')}")
         if k.get("required_followups"):
             lines.append("  required follow-ups:")

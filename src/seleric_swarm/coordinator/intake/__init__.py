@@ -241,11 +241,14 @@ def normalize_query(
     unresolved: list[str] = []
     if primary is None and "lookup" in intents:
         unresolved.append("primary_metric_unresolved")
-    if primary is None and any(i in intents for i in ("diagnostic", "predictive", "prescriptive")):
-        # Causal / forecast questions without a resolvable metric still run, but
-        # surface the gap so synthesis/limitations can explain fixture fallback.
-        if not any(alias in query.lower() for alias in _METRIC_ALIASES):
-            unresolved.append("primary_metric_unresolved")
+    # Causal / forecast questions without a resolvable metric still run, but
+    # surface the gap so synthesis/limitations can explain fixture fallback.
+    if (
+        primary is None
+        and any(i in intents for i in ("diagnostic", "predictive", "prescriptive"))
+        and not any(alias in query.lower() for alias in _METRIC_ALIASES)
+    ):
+        unresolved.append("primary_metric_unresolved")
     return NormalizedQuery(
         original_query=query,
         intents=intents,

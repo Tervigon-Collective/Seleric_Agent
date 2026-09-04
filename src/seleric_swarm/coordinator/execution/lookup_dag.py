@@ -148,8 +148,12 @@ def mark_ready_tasks_done(
         # Fallback: first pending dispatchable observe with deps met
         done = {t.id for t in graph.tasks if t.status == "done"}
         for t in graph.tasks:
-            if t.type in (task_types or set()) and t.status in {"pending", "ready", "running"}:
-                if t.dispatchable and all(d in done for d in t.depends_on):
-                    target_ids.add(t.id)
-                    break
+            if (
+                t.type in (task_types or set())
+                and t.status in {"pending", "ready", "running"}
+                and t.dispatchable
+                and all(d in done for d in t.depends_on)
+            ):
+                target_ids.add(t.id)
+                break
     return mark_tasks(state, task_ids=target_ids, status="done", only_pending=True)

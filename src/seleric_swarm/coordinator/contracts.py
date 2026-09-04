@@ -74,7 +74,9 @@ class MissionObjective(BaseModel):
     description: str
     priority: int = 5
     status: Literal["pending", "satisfied", "unresolved", "blocked"] = "pending"
-    required_claim_states: list[ClaimState] = Field(default_factory=lambda: ["VALIDATED"])
+    required_claim_states: list[ClaimState] = Field(
+        default_factory=lambda: ["VALIDATED"]  # type: ignore[arg-type]
+    )
 
 
 class MissionScope(BaseModel):

@@ -133,19 +133,22 @@ def detect_conflicts(state: dict[str, Any]) -> list[dict[str, Any]]:
             by_metric.setdefault(mid, []).append(e)
     for mid, rows in by_metric.items():
         windows = {_time_key(r.get("time_range")) for r in rows if r.get("time_range")}
-        if len(windows) > 1 and len(rows) > 1:
-            # Only flag when values are compared as if contemporaneous (change_pct present)
-            if any(r.get("change_pct") is not None or r.get("baseline") is not None for r in rows):
-                add(
-                    {
-                        "conflict_id": _cid("time", mid, *sorted(windows)),
-                        "type": "TIME_RANGE_CONFLICT",
-                        "artifact_refs": [r.get("artifact_id") for r in rows if r.get("artifact_id")],
-                        "time_ranges": sorted(windows),
-                        "description": f"Incompatible time windows for {mid}: {sorted(windows)}",
-                        "blocking": False,  # informational unless values also contradict
-                    }
-                )
+        # Only flag when values are compared as if contemporaneous (change_pct present)
+        if (
+            len(windows) > 1
+            and len(rows) > 1
+            and any(r.get("change_pct") is not None or r.get("baseline") is not None for r in rows)
+        ):
+            add(
+                {
+                    "conflict_id": _cid("time", mid, *sorted(windows)),
+                    "type": "TIME_RANGE_CONFLICT",
+                    "artifact_refs": [r.get("artifact_id") for r in rows if r.get("artifact_id")],
+                    "time_ranges": sorted(windows),
+                    "description": f"Incompatible time windows for {mid}: {sorted(windows)}",
+                    "blocking": False,  # informational unless values also contradict
+                }
+            )
 
     # --- SOURCE_CONFLICT: same fact from FIXTURE vs MCP with disagreement -----
     for key, rows in by_key.items():

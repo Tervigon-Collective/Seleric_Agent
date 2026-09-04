@@ -95,6 +95,7 @@ from seleric_swarm.swarm.providers.fixtures import (
     build_fixture_bundle,
     load_scenario,
 )
+from seleric_swarm.swarm.providers.mcp_data import McpFetchStats, build_hybrid_bundle
 from seleric_swarm.swarm.specialists.anomaly import AnomalyAgent
 from seleric_swarm.swarm.specialists.diagnostic import DiagnosticAgent
 from seleric_swarm.swarm.specialists.observer import ObserverAgent
@@ -149,6 +150,7 @@ class SwarmV2Context:
     budget_exhausted: bool = False
     budget_reason: str | None = None
     emitter: MissionEventEmitter | None = None
+    mcp_stats: McpFetchStats | None = None
 
     def emit(self, kind: str, **data: Any) -> dict[str, Any]:
         if self.emitter is None:
@@ -673,7 +675,19 @@ def _make_remediate(ctx: SwarmV2Context):
             }.get(intent, Intent.TASK_REQUEST)
             if extra:
                 ctx.emit(REMEDIATION_ACTIVATED, agent=agent_id, **extra)
-            return await ctx.activate(agent_id, objective, intent_enum)
+            followup = (extra or {}).get("followup") if extra else None
+            task_id = None
+            subquestion_id = None
+            if isinstance(followup, dict):
+                task_id = followup.get("task_id")
+                subquestion_id = followup.get("subquestion_id")
+            return await ctx.activate(
+                agent_id,
+                objective,
+                intent_enum,
+                task_id=task_id,
+                subquestion_id=subquestion_id,
+            )
 
         await execute_targeted_remediation(plan=plan_rem, activate=_activate)
         ctx.remediation_round += 1
@@ -788,7 +802,7 @@ def _make_complete(ctx: SwarmV2Context):
             },
             synthetic_summary=prov,
             claim_refs=buckets.get("claim_refs"),
-            decomposition_refs=[d.get("decomposition_id") for d in ctx.decompositions],
+            decomposition_refs=[str(d.get("decomposition_id") or "") for d in ctx.decompositions],
         )
         event_kind = MISSION_COMPLETED if completion.complete and not ctx.budget_exhausted else MISSION_PARTIAL
         ctx.emit(
@@ -859,7 +873,17 @@ async def run_swarm_v2_mission(
             update={"budgets": policies.budgets.model_copy(update=budget_overrides)}
         )
     scenario = load_scenario(scenario_id)
-    providers = providers or build_fixture_bundle(scenario_id)
+    mode: Literal["production", "staging", "fixture"] = (
+        execution_mode if execution_mode in {"production", "staging", "fixture"} else "fixture"  # type: ignore[assignment]
+    )
+    mcp_stats: McpFetchStats | None = None
+    if providers is None:
+        if mode != "fixture":
+            providers, mcp_stats = build_hybrid_bundle(
+                scenario_id, mcp=runtime.mcp, execution_mode=mode
+            )
+        else:
+            providers = build_fixture_bundle(scenario_id)
     initial_lead = _initial_lead(query)
     time_range = dict(scenario.get("observation_window") or {"start": as_of, "end": as_of})
     time_range["timezone"] = timezone
@@ -867,7 +891,7 @@ async def run_swarm_v2_mission(
     request = MissionRequest(
         query=query,
         session_id=sid,
-        execution_mode=execution_mode if execution_mode in {"production", "staging", "fixture"} else "fixture",
+        execution_mode=mode,
     )
     normalized = normalize_query(query, timezone=timezone, as_of=as_of, metrics=runtime.metrics)
     # Single source of truth: intake intents (includes executive_health → diagnostic),
@@ -949,8 +973,39 @@ async def run_swarm_v2_mission(
 
         transport.register(spec.agent_id, _handler)
 
-    async def activate(agent_id: str, objective: str, intent: Intent = Intent.TASK_REQUEST) -> dict[str, Any]:
+    # Mutable holder so activate spans see live remediation_round / decomposition.
+    _live: dict[str, Any] = {"ctx": None}
+
+    async def activate(
+        agent_id: str,
+        objective: str,
+        intent: Intent = Intent.TASK_REQUEST,
+        *,
+        task_id: str | None = None,
+        subquestion_id: str | None = None,
+    ) -> dict[str, Any]:
         blackboard.active_specialist = agent_id
+        live_ctx: SwarmV2Context | None = _live.get("ctx")
+        decomp = live_ctx.decomposition if live_ctx is not None else decomposition
+        rem_round = live_ctx.remediation_round if live_ctx is not None else 0
+        meta = coordinator_task_metadata(
+            request_id=rid,
+            session_id=sid,
+            mission_id=mission_id,
+            workflow_name="swarm_v2",
+            workflow_version="1.4.0",
+            agent_name=agent_id,
+            agent_version="1.4.0",
+            task_id=task_id,
+            subquestion_id=subquestion_id,
+            active_specialist=agent_id,
+            mission_lead=blackboard.mission_lead or initial_lead,
+            remediation_round=rem_round,
+            decomposition_id=decomp.decomposition_id,
+            decomposition_version=decomp.version,
+            leadership_epoch=blackboard.leadership_epoch,
+            synthetic=True,
+        )
         msg = SwarmMessage.request(
             mission_id=mission_id,
             from_agent="coordinator_agent",
@@ -960,12 +1015,32 @@ async def run_swarm_v2_mission(
             scope=time_range,
             mission_context={
                 **blackboard.leadership_state(),
-                "decomposition_id": decomposition.decomposition_id,
-                "decomposition_version": decomposition.version,
-                "workflow_version": "swarm_v2",
+                "decomposition_id": decomp.decomposition_id,
+                "decomposition_version": decomp.version,
+                "workflow_version": "1.4.0",
+                "task_id": task_id,
+                "subquestion_id": subquestion_id,
+                "remediation_round": rem_round,
             },
         )
-        return await transport.send(msg)
+        with traced_span(
+            f"swarm.activate.{agent_id}",
+            meta,
+            runtime.settings.langsmith_tracing,
+            inputs={"objective": objective, "intent": str(intent), "task_id": task_id},
+            tags=["swarm_v2", "activate", agent_id],
+        ) as span:
+            reply = await transport.send(msg)
+            span.set_outputs(
+                {
+                    "ok": bool((reply or {}).get("ok", True)),
+                    "artifact_refs": list((reply or {}).get("artifact_refs") or []),
+                    "mission_lead": blackboard.mission_lead,
+                    "active_specialist": agent_id,
+                    "remediation_round": rem_round,
+                }
+            )
+            return reply or {"ok": True}
 
     team_rows = assemble_team(
         agents=runtime.agents,
@@ -980,7 +1055,7 @@ async def run_swarm_v2_mission(
     invoker = A2AAgentInvoker(transport, from_agent="coordinator_agent")
     engine = ExecutionEngine(invoker, budgets=policies.budgets)
     emitter = MissionEventEmitter(
-        blackboard, workflow_name="swarm_v2", workflow_version="1.3.0"
+        blackboard, workflow_name="swarm_v2", workflow_version="1.4.0"
     )
     ctx = SwarmV2Context(
         runtime=runtime,
@@ -1000,7 +1075,17 @@ async def run_swarm_v2_mission(
         team=team,
         request=request,
         emitter=emitter,
+        mcp_stats=mcp_stats,
     )
+    _live["ctx"] = ctx
+    if mode != "fixture" and mcp_stats is not None and mcp_stats.mcp_hits == 0:
+        # Staging/production asked for MCP path but nothing hit yet — note intent.
+        line = (
+            f"execution_mode={mode}: MCP-preferring providers active "
+            f"(capabilities available: {sorted(runtime.mcp.capabilities) or ['none']})"
+        )
+        if line not in ctx.limitations:
+            ctx.limitations.append(line)
     for reason in normalized.unresolved_semantics:
         if reason == "primary_metric_unresolved":
             line = "Primary metric could not be resolved from the query; results may use fixture defaults."
@@ -1018,7 +1103,7 @@ async def run_swarm_v2_mission(
         "as_of": as_of,
         "status": "received",
         "workflow_name": "swarm_v2",
-        "workflow_version": "1.3.0",
+        "workflow_version": "1.4.0",
         "normalized_query": normalized.model_dump(),
         "mission_lead": initial_lead,
         "initial_mission_lead": initial_lead,
@@ -1028,6 +1113,17 @@ async def run_swarm_v2_mission(
         "usage": {},
         "events": [],
         "budget_exhausted": False,
+        "langsmith_tracing": bool(runtime.settings.langsmith_tracing),
+        "trace_base": {
+            "request_id": rid,
+            "session_id": sid,
+            "workflow_name": "swarm_v2",
+            "workflow_version": "1.4.0",
+            "agent_version": "1.4.0",
+        },
+        "synthetic": True,
+        "current_decomposition_ref": decomposition.decomposition_id,
+        "decomposition_refs": [decomposition.decomposition_id],
     }
 
     graph = build_swarm_v2_graph(ctx)
@@ -1041,7 +1137,7 @@ async def run_swarm_v2_mission(
             "workflow_name": "swarm_v2",
             "workflow_version": "1.4.0",
             "agent_name": "coordinator_agent",
-            "agent_version": "1.3.0",
+            "agent_version": "1.4.0",
             "decomposition_id": decomposition.decomposition_id,
             "decomposition_version": decomposition.version,
             "mission_lead": initial_lead,
@@ -1086,10 +1182,14 @@ async def run_swarm_v2_mission(
         )
 
     prov = blackboard.synthetic_summary()
+    if ctx.mcp_stats is not None:
+        for line in ctx.mcp_stats.limitations():
+            if line not in ctx.limitations:
+                ctx.limitations.append(line)
     ctx.emit(
         MISSION_CONTROL_PLANE,
         decide_execute=True,
-        decomposition_refs=[d.get("decomposition_id") for d in ctx.decompositions],
+        decomposition_refs=[str(d.get("decomposition_id") or "") for d in ctx.decompositions],
         completion=ctx.completion_detail,
         request=request.model_dump(),
         iterations=ctx.investigate_iterations,

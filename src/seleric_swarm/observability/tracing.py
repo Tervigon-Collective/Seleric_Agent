@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, MutableMapping
 from contextlib import contextmanager
 from typing import Any, Literal
 
@@ -74,11 +74,13 @@ def redact_value(key: str, value: Any) -> Any:
     return value
 
 
-def redact_mapping(payload: dict[str, Any]) -> dict[str, Any]:
+def redact_mapping(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {key: redact_value(key, value) for key, value in payload.items()}
 
 
-def redact_processor(_logger: Any, _method: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+def redact_processor(
+    _logger: Any, _method: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
     return redact_mapping(event_dict)
 
 

@@ -19,6 +19,8 @@
 - API edge hardening: reject empty query / unknown `scenario_id` (400); Skeptic probe follow-ups classify as `hypothesis_test`; challenged missions always surface limitations
 - ~~Health + forecast + action skipped diagnostic/skeptic; API could return `status: running`~~ **Done (v1.8)** — `executive_health` always implies `diagnostic`; intake/swarm intents merged; skeptic gates on diagnostic/predictive/prescriptive; terminal statuses never leak `running` (maps to `partial`); `full_*` flags also force matching specialist intents so Swagger defaults actually activate Prediction/Diagnostic
 - ~~Creative decomposition matrix + plan DoD gaps~~ **Done (v1.9)** — lookup routing (`how many` / intake-aware); preserve `prototype_completed`; legacy “Root cause” synthesis gated; unresolved primary metric limitations; Phase 13 A–Q report in [19_FINAL_REPORT_AQ.md](./19_FINAL_REPORT_AQ.md)
+- ~~LangSmith task-level metadata incomplete~~ **Done (v1.10)** — `coordinator_task_metadata` on activate + dispatcher task spans; workflow_version **1.4.0**
+- ~~Swarm has no MCP data path (fixture-only)~~ **Done (v1.11)** — `HybridMcpDataProvider` + `execution_mode` staging/production prefer MCP for commerce/performance with fixture fallback; see [12_MCP_BOUNDARIES.md](./12_MCP_BOUNDARIES.md)
 
 ## Checklist
 
@@ -29,7 +31,7 @@
 - Leadership hysteresis
 - Completion gate objective-based
 - API fields preserved (`route`, `mission_id`, `status`, leadership, artifacts, events, …)
-- Live DECIDE→EXECUTE LangGraph cycle (`swarm_v2` workflow_version 1.3.0)
+- Live DECIDE→EXECUTE LangGraph cycle (`swarm_v2` workflow_version 1.4.0)
 - Budget hard-stops on agent / leadership / remediation / LLM ceilings
 - Structured mission event envelope + family coverage
 - Durable mission payload + events API
@@ -38,3 +40,5 @@
 - Lookup fast-path covers `how many` / intake lookup+comparison
 - Phase 13 A–Q final report checked in
 - Plan phases 0–13: **COMPLETE** (see [19_FINAL_REPORT_AQ.md](./19_FINAL_REPORT_AQ.md))
+- LangSmith per-activation / per-task spans (`task_id`, `subquestion_id`, `active_specialist`, `remediation_round`, …)
+- MCP-preferring hybrid providers via `execution_mode=staging|production`

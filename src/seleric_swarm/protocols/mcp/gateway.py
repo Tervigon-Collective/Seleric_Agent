@@ -14,7 +14,7 @@ from seleric_swarm.protocols.mcp.servers.seleric_remote import TOOLS as SELERIC_
 from seleric_swarm.protocols.mcp.servers.seleric_remote import build_seleric_servers
 from seleric_swarm.registry.agent_registry import AgentRegistry
 
-_FIXTURE_ADAPTERS = {
+_FIXTURE_ADAPTERS: dict[str, type[Any]] = {
     "fixture_commerce": FixtureCommerceServer,
     "fixture_performance": FixturePerformanceServer,
 }

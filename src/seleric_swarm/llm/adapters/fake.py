@@ -131,7 +131,7 @@ def classify_lookup_query(query: str, timezone: str, as_of: str | None) -> dict[
             "unsupported_reason": "Funnel domain is not activated in V1",
         }
 
-    metric_hints: list[str] = []
+    metric_hints = []
     if "gross sales" in lower:
         metric_hints.append("metric.gross_sales")
     elif "net sales" in lower or "revenue" in lower or "sales" in lower:
@@ -154,7 +154,7 @@ def classify_lookup_query(query: str, timezone: str, as_of: str | None) -> dict[
 
     if kind == "comparison":
         if len(dates) >= 2:
-            time_range: dict[str, Any] = {
+            time_range = {
                 "kind": "comparison",
                 "start": dates[0],
                 "end": dates[1],

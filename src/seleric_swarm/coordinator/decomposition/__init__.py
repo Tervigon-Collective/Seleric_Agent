@@ -51,9 +51,9 @@ def is_duplicate_subquestion(existing: list[SubQuestion], question: str) -> bool
         if _normalize_question_text(sq.question) == norm:
             return True
         # near-duplicate: same purpose tokens
-        if norm in _normalize_question_text(sq.question) or _normalize_question_text(sq.question) in norm:
-            if abs(len(norm) - len(_normalize_question_text(sq.question))) < 12:
-                return True
+        _sq_norm = _normalize_question_text(sq.question)
+        if (norm in _sq_norm or _sq_norm in norm) and abs(len(norm) - len(_sq_norm)) < 12:
+            return True
     return False
 
 
