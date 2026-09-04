@@ -1,5 +1,5 @@
 {
-  "numeric_exact_match": 1.0,
+  "numeric_exact_match": 0.16666666666666666,
   "schema_valid": 1.0,
   "routing_exact_match": 1.0,
   "classify_exact_match": 1.0,

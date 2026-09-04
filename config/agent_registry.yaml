@@ -21,6 +21,16 @@ agents:
     mcp_capabilities: [performance.daily_cac]
     handoff_targets: [commerce_agent, funnel_agent, finance_agent]
 
+  - id: attribution_agent
+    type: domain
+    version: "0.1.0"
+    enabled: true
+    domains: [meta_ads, google_ads, amazon, organic]
+    seleric_module: attribution
+    capabilities: [attribution_analysis, channel_attribution]
+    mcp_capabilities: []
+    handoff_targets: [commerce_agent, performance_agent]
+
   - id: commerce_agent
     type: domain
     version: "0.1.0"
@@ -51,6 +61,36 @@ agents:
     capabilities: [profitability, cogs, margin, cash]
     mcp_capabilities: []
     handoff_targets: [commerce_agent, inventory_agent, procurement_agent]
+
+  - id: product_agent
+    type: domain
+    version: "0.1.0"
+    enabled: true
+    domains: [shopify, amazon]
+    seleric_module: product
+    capabilities: [product_performance, sku_analysis, margin_analysis]
+    mcp_capabilities: []
+    handoff_targets: [commerce_agent, inventory_agent]
+
+  - id: customer_agent
+    type: domain
+    version: "0.1.0"
+    enabled: true
+    domains: [shopify]
+    seleric_module: customer
+    capabilities: [ltv_analysis, repeat_purchase_analysis, cohort_analysis]
+    mcp_capabilities: []
+    handoff_targets: [commerce_agent, performance_agent]
+
+  - id: operations_agent
+    type: domain
+    version: "0.1.0"
+    enabled: true
+    domains: [shopify]
+    seleric_module: operations
+    capabilities: [returns_analysis, refund_analysis]
+    mcp_capabilities: []
+    handoff_targets: [commerce_agent, product_agent]
 
   - id: inventory_agent
     type: domain

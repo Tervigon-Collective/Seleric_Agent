@@ -64,3 +64,45 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+
+  - id: metric.units_sold
+    version: 1
+    owner: product
+    description: Net units (ordered minus refunded) on eligible placement lines.
+    formula: ordered_units - refunded_units
+    unit: units
+    grain: day
+    timezone: Asia/Kolkata
+    domain: product
+
+  - id: metric.repeat_rate
+    version: 1
+    owner: customer
+    description: Repeat customers divided by customers in the query window.
+    formula: repeat_customers / customers
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.refunded_amount_excl_tax
+    version: 1
+    owner: operations
+    description: Refund amount excluding tax on the refund event date.
+    formula: sum(refund_amount_ex_gst)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: operations
+
+  - id: metric.attributed_net_revenue
+    version: 1
+    owner: attribution
+    description: First-party, last-touch attributed net revenue across channels.
+    formula: sum(attributed_net_revenue)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+    validation:
+      - non_negative
