@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     a2a_public_base_url: str = ""
     api_host: str = ""
     api_port: int = 0
+    # inprocess = local handlers only; http = remote A2A only; hybrid = local then HTTP fallback
+    a2a_transport: Literal["inprocess", "http", "hybrid"] = "inprocess"
+    a2a_timeout_s: float = 30.0
 
     mission_timeout_s: float = 120.0
     max_llm_calls: int = 6
@@ -71,6 +74,10 @@ class Settings(BaseSettings):
 
     workflow_name: str = "lookup_v1"
     workflow_version: str = "1.0.0"
+    # Swarm mission control plane: swarm_v1 (legacy imperative) or swarm_v2 (Coordinator V1).
+    swarm_workflow: Literal["swarm_v1", "swarm_v2"] = "swarm_v2"
+    coordinator_policies_path: str = "config/coordinator_policies.yaml"
+    max_remediation_rounds: int = 3
 
     @field_validator("llm_fallback_model", "azure_key_vault_url", mode="before")
     @classmethod

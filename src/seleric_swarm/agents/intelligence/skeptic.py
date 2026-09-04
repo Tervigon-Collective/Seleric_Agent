@@ -1,6 +1,7 @@
 """Challenge conclusions, search contradictions and reopen weak work."""
 from typing import Any
-from ..base import SwarmAgent, AgentContext
+
+from ..base import AgentContext, SwarmAgent
 
 
 class Agent(SwarmAgent):

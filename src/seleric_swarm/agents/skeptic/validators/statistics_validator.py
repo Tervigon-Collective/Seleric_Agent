@@ -24,7 +24,23 @@ class StatisticsValidator(Validator):
         sample = primary.sample_size if primary else ctx.claim.metadata.get("sample_size")
         change = primary.change_pct if primary else ctx.claim.metadata.get("change_pct")
 
-        checks.append(("sample_size", {"sample_size": sample, "min_sample": ctx.policies.min_sample_size()}))
+        # A *missing* sample size is a provenance gap (unknown != zero); only run
+        # the power check when a count is actually reported. Reporting "sample_size
+        # 0" as a statistical weakness on data that simply never carried the field
+        # (e.g. index-metric fixtures) would REVISE every such claim forever.
+        if sample is not None:
+            checks.append(("sample_size", {"sample_size": sample, "min_sample": ctx.policies.min_sample_size()}))
+        else:
+            out.evidence_gaps.append(
+                gap(
+                    "Evidence does not report a sample size.",
+                    "Without a count the estimate's statistical power cannot be assessed.",
+                    capability_required="metric_observation",
+                    blocking=False,
+                    priority=3,
+                )
+            )
+            out.methodological_issues.append("Sample size not reported for the primary evidence.")
         if change is not None:
             checks.append(("effect_size", {"change_pct": change}))
         if ctx.claim.claim_type in {"causal", "correlation"} and ctx.causal:

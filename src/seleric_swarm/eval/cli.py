@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from collections import Counter
+from typing import Any
 
 from seleric_swarm.bootstrap import build_runtime
 from seleric_swarm.config.settings import Settings
@@ -129,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--judge requires --live-llm (the judge must not run against the fake adapter)")
     import asyncio
 
+    payload: dict[str, Any]
     if args.suite in {"lookup_v1", "lookup"}:
         report = asyncio.run(_run_lookup(live_llm=args.live_llm, judge=args.judge))
         classify = asyncio.run(_run_classify())

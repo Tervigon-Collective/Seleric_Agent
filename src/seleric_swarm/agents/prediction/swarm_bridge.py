@@ -77,6 +77,7 @@ class SwarmPredictionSpecialist:
         )
 
     async def run(self, blackboard: Blackboard, mission: SwarmMission) -> list[str]:
+        blackboard.discard_by(created_by="prediction_agent", artifact_types=("prediction",))
         base = self._deps or self._fixture_deps()
         deps = prediction_deps_from_blackboard(blackboard, base=base)
         agent = PredictionAgent(deps=deps, policies=self._policies)
@@ -98,7 +99,8 @@ class SwarmPredictionSpecialist:
                                     reasons=result.audit.get("fallback_reasons"))
             return []
 
-        art = _to_artifact(blackboard, result)
+        secondary = self._scenario.get("forecast_truth", {}).get("secondary") or {}
+        art = _to_artifact(blackboard, result, secondary=secondary if isinstance(secondary, dict) else {})
         if result.synthetic:
             art.mark_synthetic()
         blackboard.record_event(
@@ -111,13 +113,9 @@ class SwarmPredictionSpecialist:
         return [blackboard.post(art)]
 
 
-def _to_artifact(blackboard: Blackboard, result: PredictionResult) -> Prediction:
+def _to_artifact(blackboard: Blackboard, result: PredictionResult, *, secondary: dict[str, Any]) -> Prediction:
     fa = result.forecast_artifact
     assert fa is not None
-    secondary: dict[str, Any] = {}
-    truth_secondary = result.audit.get("secondary")
-    if isinstance(truth_secondary, dict):
-        secondary = truth_secondary
     return Prediction.new(
         mission_id=blackboard.mission_id,
         created_by="prediction_agent",

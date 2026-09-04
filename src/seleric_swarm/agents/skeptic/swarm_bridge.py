@@ -61,6 +61,9 @@ class SwarmSkepticSpecialist:
         return bool(blackboard.by_type("causal") or blackboard.by_type("strategy"))
 
     async def run(self, blackboard: Blackboard, mission: SwarmMission) -> list[str]:
+        # idempotent re-check: the completion gate / synthesizer must see exactly
+        # one (latest) Skeptic verdict, not a stale first one.
+        blackboard.discard_by(created_by="skeptic_agent", artifact_types=("skeptic",))
         claim, evidence_refs = _claim_from_blackboard(blackboard, mission)
         evidence_repo, artifact_repo = repositories_from_blackboard(blackboard)
         agent = SkepticAgent(
@@ -95,9 +98,10 @@ def _claim_from_blackboard(blackboard: Blackboard, mission: SwarmMission) -> tup
     strategy = blackboard.by_type("strategy")
     retained = [h for h in blackboard.by_type("hypothesis") if h.get("status") == "retained"]
     evidence_refs = list(blackboard.evidence_ledger)
+    latest_causal = causal[-1] if causal else None  # newest wins after a re-diagnosis
 
     if strategy:
-        s = strategy[0]
+        s = strategy[-1]
         recommended = (s.get("recommended") or [""])[0]
         return (
             Claim(
@@ -107,10 +111,12 @@ def _claim_from_blackboard(blackboard: Blackboard, mission: SwarmMission) -> tup
                 origin_agent="strategy_agent",
                 support_refs=evidence_refs,
                 strategy_refs=[s["artifact_id"]],
-                causal_refs=[c["artifact_id"] for c in causal],
+                causal_refs=[latest_causal["artifact_id"]] if latest_causal else [],
                 metadata={
                     "diagnosed_mechanism": (
-                        f"{causal[0].get('treatment')} -> {causal[0].get('outcome')}" if causal else None
+                        f"{latest_causal.get('treatment')} -> {latest_causal.get('outcome')}"
+                        if latest_causal
+                        else None
                     ),
                     "domain": _lead_domain(blackboard),
                     "alternatives_ruled_out": True,
@@ -119,9 +125,9 @@ def _claim_from_blackboard(blackboard: Blackboard, mission: SwarmMission) -> tup
             evidence_refs,
         )
 
-    if causal:
-        c = causal[0]
-        statement = retained[0]["statement"] if retained else (
+    if latest_causal:
+        c = latest_causal
+        statement = retained[-1]["statement"] if retained else (
             f"{c.get('treatment')} caused a change in {c.get('outcome')}"
         )
         return (

@@ -49,7 +49,7 @@ def select_initial_lead(
     hints = [m for m in metric_hints if m.startswith("metric.")]
     domain_agent_ids = frozenset(a["id"] for a in agents.domain_agents(enabled_only=True))
 
-    if llm_domain_lead in domain_agent_ids:
+    if llm_domain_lead and llm_domain_lead in domain_agent_ids:
         return LeadDecision(
             mission_lead=llm_domain_lead,
             score=0.85,

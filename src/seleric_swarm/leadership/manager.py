@@ -10,9 +10,7 @@ class LeadershipManager:
         if not proposal.get("evidence_refs"):
             return True
         recent = [(h.get("from_agent"), h.get("to_agent")) for h in history[-4:]]
-        if len(recent) >= 4 and recent[-1] == recent[-3] and recent[-2] == recent[-4]:
-            return True
-        return False
+        return len(recent) >= 4 and recent[-1] == recent[-3] and recent[-2] == recent[-4]
 
     def apply(self, state: dict[str, Any], to_agent: str, transfer: dict[str, Any]) -> dict[str, Any]:
         epoch = int(state.get("leadership_epoch", 0)) + 1

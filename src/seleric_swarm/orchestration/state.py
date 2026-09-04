@@ -14,9 +14,10 @@ class MissionState(TypedDict, total=False):
     workflow_name: str
     workflow_version: str
     status: str
+    status_reason: str | None
     query_class: str
     mission_lead: str
-    active_specialist: str
+    active_specialist: str | None
     leadership_epoch: int
     task_id: str
     entities: list[str]
@@ -65,3 +66,31 @@ class MissionState(TypedDict, total=False):
     langsmith_run_id: str | None
     started_at: str
     synthesis_fallback: bool
+    # Coordinator V1 / swarm_v2 extensions (serialize dicts only — no live clients).
+    execution_mode: str
+    synthetic: bool
+    normalized_query: dict[str, Any]
+    decomposition_refs: list[str]
+    current_decomposition_ref: str | None
+    decompositions: list[dict[str, Any]]
+    objectives: list[dict[str, Any]]
+    claim_refs: list[str]
+    validated_claim_refs: list[str]
+    challenged_claim_refs: list[str]
+    rejected_claim_refs: list[str]
+    managed_claims: list[dict[str, Any]]
+    evidence_gaps: list[dict[str, Any]]
+    conflicts: list[dict[str, Any]]
+    remediation_round: int
+    remediation_tasks: list[dict[str, Any]]
+    budgets: dict[str, Any]
+    usage: dict[str, Any]
+    budget_exhausted: bool
+    events: list[dict[str, Any]]
+    skeptic_refs: list[str]
+    prediction_refs: list[str]
+    team: list[dict[str, Any]]
+    completion_detail: dict[str, Any]
+    specialists_activated: int
+    langsmith_tracing: bool
+    trace_base: dict[str, Any]

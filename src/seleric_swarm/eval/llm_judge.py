@@ -91,6 +91,6 @@ async def judge_synthesis(
     )
     try:
         resp = await llm.complete(request)
-    except Exception as exc:  # noqa: BLE001 - a broken judge must fail closed, not crash the suite
+    except Exception as exc:
         return JudgeVerdict(faithful=0, extra_numbers=1, rationale=f"judge call failed: {exc}", parsed=False)
     return _parse(resp.text)

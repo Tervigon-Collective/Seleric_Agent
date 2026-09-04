@@ -60,7 +60,9 @@ def build_response(blackboard: Blackboard, mission: SwarmMission) -> str:
     lines.append("")
 
     if retained:
-        lines.append("Root cause (retained hypothesis):")
+        # Claim-safe wording: never assert "Root cause" — claim-aware synthesis owns
+        # validated vs leading language. This legacy helper is a thin fallback only.
+        lines.append("Leading hypothesis (legacy synthesizer — prefer claim-aware builder):")
         lines.append(f"  {retained[0]['statement']}")
         if causal and causal[0].get("passed"):
             c = causal[0]
@@ -96,7 +98,7 @@ def build_response(blackboard: Blackboard, mission: SwarmMission) -> str:
         lines.append("")
 
     if skeptic:
-        k = skeptic[0]
+        k = skeptic[-1]  # the latest verdict (a re-check appends a second artifact)
         lines.append(f"Skeptic verdict: {k.get('verdict')}")
         for prob in k.get("problems", []):
             lines.append(f"  - {prob.get('type')}: {prob.get('description')}")

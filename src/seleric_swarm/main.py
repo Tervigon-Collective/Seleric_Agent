@@ -36,17 +36,41 @@ app = FastAPI(title="Seleric Intelligence Swarm", version="0.1.0", lifespan=life
 
 class MissionRequest(BaseModel):
     query: str
-    scope: dict[str, Any] = Field(default_factory=dict)
+    scope: dict[str, Any] = Field(
+        default_factory=dict,
+        json_schema_extra={"examples": [{"timezone": "Asia/Kolkata", "as_of": "2026-09-03"}]},
+    )
     mode: str = "read_only"
     session_id: str | None = None
     # When the query is diagnostic / predictive / prescriptive it is routed to the
     # dynamic two-axis swarm. These switch in the full agent subsystems
     # (agents/diagnostic, agents/prediction, agents/skeptic) instead of the
     # lightweight in-loop specialists. Lookup / comparison queries ignore them.
+    # When True they ALSO ensure the matching intent is present so the specialist
+    # actually runs (e.g. full_prediction on a "why" query still forecasts).
     full_diagnostic: bool = True
     full_prediction: bool = True
     full_skeptic: bool = True
     scenario_id: str = "cac_regression"
+    # fixture = offline synthetic providers (default).
+    # staging/production = prefer MCPGateway for commerce/performance, fixture fallback.
+    execution_mode: str = "fixture"
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "query": "Why has CAC increased over the last three days?",
+                    "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-03"},
+                    "mode": "read_only",
+                    "full_diagnostic": True,
+                    "full_prediction": True,
+                    "full_skeptic": True,
+                    "scenario_id": "cac_regression",
+                }
+            ]
+        }
+    }
 
 
 class PingRequest(BaseModel):
@@ -61,6 +85,8 @@ def root() -> dict[str, Any]:
         "docs": "/docs",
         "health": "/health",
         "missions": "POST /v1/missions",
+        "mission_get": "GET /v1/missions/{mission_id}",
+        "mission_events": "GET /v1/missions/{mission_id}/events",
     }
 
 
@@ -118,17 +144,36 @@ async def create_mission(req: MissionRequest) -> dict[str, Any]:
     runtime = get_runtime()
     if req.mode != "read_only":
         raise HTTPException(status_code=400, detail="Only read_only mode is allowed in V1")
-    dispatched = await run_any_mission(
-        runtime,
-        query=req.query,
-        timezone=str(req.scope.get("timezone") or "Asia/Kolkata"),
-        as_of=req.scope.get("as_of") or req.scope.get("asOf"),
-        session_id=req.session_id,
-        full_diagnostic=req.full_diagnostic,
-        full_prediction=req.full_prediction,
-        full_skeptic=req.full_skeptic,
-        scenario_id=req.scenario_id,
-    )
+    if req.execution_mode not in {"fixture", "staging", "production"}:
+        raise HTTPException(
+            status_code=400,
+            detail="execution_mode must be one of: fixture, staging, production",
+        )
+    query = (req.query or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="query must be a non-empty string")
+    if req.session_id is not None and req.session_id.strip() in {"", "string"}:
+        # Swagger placeholder "string" should not pollute mission metadata
+        req.session_id = None
+    try:
+        dispatched = await run_any_mission(
+            runtime,
+            query=query,
+            timezone=str(req.scope.get("timezone") or "Asia/Kolkata"),
+            as_of=req.scope.get("as_of") or req.scope.get("asOf"),
+            session_id=req.session_id,
+            full_diagnostic=req.full_diagnostic,
+            full_prediction=req.full_prediction,
+            full_skeptic=req.full_skeptic,
+            scenario_id=req.scenario_id,
+            execution_mode=req.execution_mode,
+        )
+    except Exception as exc:
+        from seleric_swarm.swarm.providers.errors import ScenarioNotFoundError
+
+        if isinstance(exc, ScenarioNotFoundError):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise
     # Flatten: a consistent top-level mission object with a `route` marker.
     # lookup  -> MissionResult fields; swarm -> SwarmMissionResult fields.
     return {"route": dispatched["route"], **dispatched["result"]}
@@ -137,10 +182,48 @@ async def create_mission(req: MissionRequest) -> dict[str, Any]:
 @app.get("/v1/missions/{mission_id}")
 def get_mission(mission_id: str) -> dict[str, Any]:
     runtime = get_runtime()
+    # a swarm mission stores its full dict under raw state; prefer it
+    raw = getattr(runtime.store, "get_raw", lambda _mid: None)(mission_id)
+    if isinstance(raw, dict) and raw.get("route") == "swarm":
+        return raw
     result = runtime.store.get(mission_id)
     if result is None:
         raise HTTPException(status_code=404, detail="mission not found")
     return result.model_dump()
+
+
+@app.get("/v1/missions/{mission_id}/events")
+def get_mission_events(
+    mission_id: str,
+    family: str | None = None,
+    after_seq: int = 0,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Return structured control-plane events for a persisted mission."""
+    runtime = get_runtime()
+    store = runtime.store
+    exists = store.get(mission_id) is not None or getattr(store, "get_raw", lambda _m: None)(mission_id)
+    if not exists:
+        raise HTTPException(status_code=404, detail="mission not found")
+    list_events = getattr(store, "list_events", None)
+    if list_events is None:
+        from seleric_swarm.persistence.memory import extract_events, filter_events
+
+        events = filter_events(
+            extract_events(getattr(store, "get_raw", lambda _m: None)(mission_id)),
+            family=family,
+            after_seq=after_seq,
+            limit=limit,
+        )
+    else:
+        events = list_events(mission_id, family=family, after_seq=after_seq, limit=limit)
+    return {
+        "mission_id": mission_id,
+        "count": len(events),
+        "family": family,
+        "after_seq": after_seq,
+        "events": events,
+    }
 
 
 def serve() -> None:

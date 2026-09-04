@@ -139,16 +139,19 @@ class StatisticalBaselineForecaster:
 
         if self._method == "last_value":
             point = history[-1]
+            actual = history[1:]                       # each point is "predicted" by the previous one
             fitted = history[:-1]
-            resid = [history[i + 1] - history[i] for i in range(n - 1)]
+            resid = [a - f for a, f in zip(actual, fitted, strict=True)]
         elif self._method == "linear_trend":
             slope, intercept = _ols(history)
             point = intercept + slope * (n - 1 + steps)
+            actual = history
             fitted = [intercept + slope * i for i in range(n)]
             resid = [history[i] - fitted[i] for i in range(n)]
         else:  # drift_projection
             drift = (history[-1] - history[0]) / max(1, n - 1)
             point = history[-1] + drift * steps
+            actual = history
             fitted = [history[0] + drift * i for i in range(n)]
             resid = [history[i] - fitted[i] for i in range(n)]
 
@@ -162,7 +165,7 @@ class StatisticalBaselineForecaster:
             interval=[round(point - half, 4), round(point + half, 4)],
             model_id=f"baseline.{self._method}",
             model_version="1",
-            backtest_metrics={"in_sample_mape": _mape(history, fitted)},
+            backtest_metrics={"in_sample_mape": _mape(actual, fitted)},
             drift_status="n/a",
             method=f"statistical_baseline:{self._method}",
             synthetic=False,

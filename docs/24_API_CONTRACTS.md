@@ -31,6 +31,14 @@ POST /v1/missions
 GET /v1/missions/{mission_id}
 ```
 
+## Mission events
+
+```http
+GET /v1/missions/{mission_id}/events?family=mission&after_seq=0&limit=200
+```
+
+Returns structured control-plane events (`kind`, `ts`, `seq`, `family`, …) persisted with the mission.
+
 ## Agent A2A endpoints
 
 Expose protocol-compliant A2A routes according to the selected SDK. Do not create a parallel proprietary HTTP contract for inter-agent communication unless required for internal optimization.

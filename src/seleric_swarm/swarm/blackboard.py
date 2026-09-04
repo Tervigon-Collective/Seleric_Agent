@@ -17,6 +17,7 @@ class ArtifactStore(Protocol):
     def put(self, artifact_id: str, payload: dict[str, Any]) -> None: ...
     def get(self, artifact_id: str) -> dict[str, Any] | None: ...
     def all(self) -> list[dict[str, Any]]: ...
+    def delete(self, artifact_id: str) -> None: ...
 
 
 class InMemoryArtifactStore:
@@ -31,6 +32,9 @@ class InMemoryArtifactStore:
 
     def all(self) -> list[dict[str, Any]]:
         return list(self._items.values())
+
+    def delete(self, artifact_id: str) -> None:
+        self._items.pop(artifact_id, None)
 
 
 class Blackboard:
@@ -70,6 +74,25 @@ class Blackboard:
         self._store.put(artifact_id, current)
         self.record_event("artifact_updated", artifact_id=artifact_id, keys=sorted(patch))
 
+    def discard(self, artifact_id: str) -> None:
+        self._store.delete(artifact_id)
+        self.evidence_ledger = [e for e in self.evidence_ledger if e != artifact_id]
+        self.record_event("artifact_discarded", artifact_id=artifact_id)
+
+    def discard_by(self, *, created_by: str, artifact_types: tuple[str, ...]) -> int:
+        """Remove this author's prior artifacts of the given types. Lets an agent
+        that runs twice in one mission (e.g. a Skeptic-driven re-diagnosis)
+        replace its output instead of accumulating stale duplicates."""
+
+        victims = [
+            a["artifact_id"]
+            for a in self._store.all()
+            if a.get("created_by") == created_by and a.get("artifact_type") in artifact_types
+        ]
+        for aid in victims:
+            self.discard(aid)
+        return len(victims)
+
     def by_type(self, artifact_type: str) -> list[dict[str, Any]]:
         return [a for a in self._store.all() if a.get("artifact_type") == artifact_type]
 
@@ -104,7 +127,17 @@ class Blackboard:
         self.record_event("leadership_transfer", **record)
 
     def record_event(self, kind: str, **data: Any) -> None:
-        self.events.append({"kind": kind, **data})
+        from seleric_swarm.coordinator.observability.events import family_of, now_iso
+
+        event = {
+            "kind": kind,
+            "ts": now_iso(),
+            "seq": len(self.events) + 1,
+            "mission_id": self.mission_id,
+            "family": family_of(kind),
+            **data,
+        }
+        self.events.append(event)
 
     # -- state view for the LeadershipManager -----------------------------
     def leadership_state(self) -> dict[str, Any]:

@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from seleric_swarm.coordinator.contracts import MissionBudget
+
 
 @dataclass(frozen=True)
 class MissionLimits:
@@ -39,6 +41,7 @@ class BudgetVerdict:
     ok: bool
     error_code: str | None = None
     reason: str | None = None
+    exhausted_key: str | None = None
 
 
 _OK = BudgetVerdict(ok=True)
@@ -52,17 +55,67 @@ def check_budget(
     tool_needed: int = 0,
 ) -> BudgetVerdict:
     if int(state.get("llm_calls") or 0) + llm_needed > limits.max_llm_calls:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "LLM call budget exceeded")
+        return BudgetVerdict(False, "BUDGET_EXCEEDED", "LLM call budget exceeded", "llm_calls")
     if int(state.get("tool_calls") or 0) + tool_needed > limits.max_tool_calls:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Tool call budget exceeded")
+        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Tool call budget exceeded", "tool_calls")
     return _OK
 
 
 def check_hard_stops(state: dict[str, Any], limits: MissionLimits) -> BudgetVerdict:
     if int(state.get("coordinator_iterations") or 0) > limits.max_iterations:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Coordinator iteration ceiling reached")
+        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Coordinator iteration ceiling reached", "iterations")
     if len(state.get("handoff_history") or []) > limits.max_leadership_transfers:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Leadership transfer ceiling reached")
+        return BudgetVerdict(
+            False, "BUDGET_EXCEEDED", "Leadership transfer ceiling reached", "leadership_transfers"
+        )
     if int(state.get("agent_calls") or 0) > limits.max_agent_calls:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Agent call ceiling reached")
+        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Agent call ceiling reached", "agent_calls")
+    return _OK
+
+
+def _as_mission_budget(budgets: MissionBudget | dict[str, Any]) -> MissionBudget:
+    if isinstance(budgets, MissionBudget):
+        return budgets
+    return MissionBudget(**{k: v for k, v in budgets.items() if k in MissionBudget.model_fields})
+
+
+def check_swarm_budget(
+    state: dict[str, Any],
+    budgets: MissionBudget | dict[str, Any],
+    *,
+    agent_calls_needed: int = 0,
+) -> BudgetVerdict:
+    """Hard-stop check for swarm_v2 against MissionBudget / policy ceilings.
+
+    Returns ok=False when any ceiling is already met or would be crossed by
+    ``agent_calls_needed``. Used to stop investigate loops and force partial
+    completion instead of unbounded DECIDE→EXECUTE cycling.
+
+    Investigate-wave ceilings stay in the refine router (leadership.max_transfers).
+    """
+    budgets = _as_mission_budget(budgets)
+    usage = dict(state.get("usage") or {})
+    agent_calls = int(usage.get("agent_calls") or state.get("agent_calls") or 0)
+
+    if agent_calls_needed > 0 and agent_calls + agent_calls_needed > budgets.max_agent_calls:
+        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Agent call budget exhausted", "agent_calls")
+    if agent_calls >= budgets.max_agent_calls:
+        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Agent call budget exhausted", "agent_calls")
+
+    transfers = len(state.get("handoff_history") or [])
+    if transfers >= budgets.max_leadership_transfers:
+        return BudgetVerdict(
+            False, "BUDGET_EXCEEDED", "Leadership transfer ceiling reached", "leadership_transfers"
+        )
+
+    rem_round = int(usage.get("remediation_rounds") or state.get("remediation_round") or 0)
+    if rem_round >= budgets.max_remediation_rounds:
+        return BudgetVerdict(
+            False, "BUDGET_EXCEEDED", "Remediation round budget exhausted", "remediation_rounds"
+        )
+
+    llm_calls = int(usage.get("llm_calls") or state.get("llm_calls") or 0)
+    if llm_calls >= budgets.max_llm_calls:
+        return BudgetVerdict(False, "BUDGET_EXCEEDED", "LLM call budget exhausted", "llm_calls")
+
     return _OK
