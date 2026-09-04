@@ -82,6 +82,9 @@ async def run_swarm_mission(
     scenario_id: str = DEFAULT_SCENARIO,
     session_id: str | None = None,
     request_id: str | None = None,
+    full_skeptic: bool = False,
+    full_diagnostic: bool = False,
+    full_prediction: bool = False,
 ) -> SwarmMissionResult:
     mission_id = f"MS-{uuid4().hex[:10]}"
     rid = request_id or uuid4().hex
@@ -115,10 +118,33 @@ async def run_swarm_mission(
     }
     observer = ObserverAgent(providers, domains)
     anomaly = AnomalyAgent(providers)
-    diagnostic = DiagnosticAgent(providers)
-    prediction = PredictionAgent(providers)
+    if full_diagnostic:
+        # Delegate to the full explicit-hypothesis subsystem (agents/diagnostic/)
+        # while keeping the in-loop specialist interface + the Hypothesis/Causal
+        # Blackboard artifacts the synthesizer / completion gate expect.
+        from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
+
+        diagnostic: Any = SwarmDiagnosticSpecialist(providers, scenario=scenario)
+    else:
+        diagnostic = DiagnosticAgent(providers)
+    if full_prediction:
+        # Delegate to the full forecast-orchestration subsystem (agents/prediction/)
+        # while keeping the in-loop specialist interface + the Prediction artifact.
+        from seleric_swarm.agents.prediction.swarm_bridge import SwarmPredictionSpecialist
+
+        prediction: Any = SwarmPredictionSpecialist(providers, scenario=scenario)
+    else:
+        prediction = PredictionAgent(providers)
     strategy = StrategyAgent(providers)
-    skeptic = SkepticAgent(providers)
+    if full_skeptic:
+        # Delegate to the full verification subsystem (agents/skeptic/) while
+        # keeping the in-loop specialist interface + the Skeptic Blackboard
+        # artifact the synthesizer / completion gate expect.
+        from seleric_swarm.agents.skeptic.swarm_bridge import SwarmSkepticSpecialist
+
+        skeptic: Any = SwarmSkepticSpecialist(providers)
+    else:
+        skeptic = SkepticAgent(providers)
 
     blackboard = Blackboard(mission_id)
     blackboard.mission_lead = initial_lead

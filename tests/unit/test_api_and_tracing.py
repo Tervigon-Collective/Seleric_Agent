@@ -41,6 +41,33 @@ def test_health_and_ping_and_mission(runtime, monkeypatch):
     assert fetched.json()["mission_id"] == mission_id
 
 
+def test_mission_diagnostic_query_routes_to_full_swarm(runtime, monkeypatch):
+    monkeypatch.setattr(main_mod, "_runtime", runtime)
+    client = TestClient(app, raise_server_exceptions=True)
+    created = client.post(
+        "/v1/missions",
+        json={
+            "query": (
+                "Why has our CAC increased for the last three days, "
+                "what happens if this continues, and what should we do?"
+            ),
+            "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-03"},
+            "mode": "read_only",
+        },
+    )
+    assert created.status_code == 200
+    m = created.json()
+    assert m["route"] == "swarm"
+    assert m["status"] in {"completed", "partial"}
+    # the full agent subsystems ran and posted every artifact type
+    arts = m["artifacts"]
+    assert arts["hypothesis"] and arts["causal"]      # Diagnostic subsystem
+    assert arts["prediction"]                          # Prediction subsystem
+    assert arts["skeptic"]                             # Skeptic subsystem
+    chain = [m["initial_mission_lead"], *[h["to_agent"] for h in m["handoff_history"]]]
+    assert chain == ["performance_agent", "funnel_agent", "technical_agent"]
+
+
 def test_langsmith_failure_does_not_fail_span():
     def boom(*_args, **_kwargs):
         raise RuntimeError("langsmith down")

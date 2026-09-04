@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SkepticVerdict",
+  "description": "Output of seleric_swarm.agents.skeptic.SkepticAgent.validate_claim",
+  "type": "object",
+  "required": [
+    "skeptic_run_id",
+    "mission_id",
+    "claim_id",
+    "claim_type",
+    "verdict",
+    "trust_score",
+    "trust_label"
+  ],
+  "properties": {
+    "skeptic_run_id": { "type": "string" },
+    "mission_id": { "type": "string" },
+    "claim_id": { "type": "string" },
+    "claim_type": {
+      "enum": [
+        "numeric", "comparison", "anomaly", "correlation", "causal",
+        "forecast", "recommendation", "action", "qualitative"
+      ]
+    },
+    "verdict": { "enum": ["PASS", "REVISE", "REJECT"] },
+    "trust_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "trust_label": { "enum": ["VERIFIED", "STRONG", "PROBABLE", "WEAK", "INSUFFICIENT"] },
+    "risk_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "risk_class": { "type": "string", "pattern": "^R[0-5]$" },
+    "challenges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["challenge_id", "category", "severity", "description"],
+        "properties": {
+          "challenge_id": { "type": "string" },
+          "category": {
+            "enum": [
+              "evidence", "provenance", "metric", "statistical", "anomaly",
+              "causal", "model", "forecast", "contradiction",
+              "alternative_hypothesis", "strategy", "data_quality",
+              "temporal", "source"
+            ]
+          },
+          "severity": { "enum": ["info", "warning", "blocking"] },
+          "description": { "type": "string" },
+          "evidence_refs": { "type": "array", "items": { "type": "string" } },
+          "remediation_hint": { "type": ["string", "null"] },
+          "detail": { "type": "object" }
+        }
+      }
+    },
+    "supporting_evidence": { "type": "array", "items": { "type": "string" } },
+    "contradictory_evidence": { "type": "array", "items": { "type": "string" } },
+    "alternative_hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["hypothesis_id", "hypothesis"],
+        "properties": {
+          "hypothesis_id": { "type": "string" },
+          "hypothesis": { "type": "string" },
+          "mechanism": { "type": "string" },
+          "supporting_observations": { "type": "array", "items": { "type": "string" } },
+          "contradictory_observations": { "type": "array", "items": { "type": "string" } },
+          "falsification_test": { "type": "string" },
+          "priority": { "type": "integer" },
+          "status": { "enum": ["open", "supported", "eliminated"] }
+        }
+      }
+    },
+    "evidence_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gap_id", "description", "reason_required"],
+        "properties": {
+          "gap_id": { "type": "string" },
+          "description": { "type": "string" },
+          "reason_required": { "type": "string" },
+          "capability_required": { "type": ["string", "null"] },
+          "blocking": { "type": "boolean" },
+          "priority": { "type": "integer" }
+        }
+      }
+    },
+    "methodological_issues": { "type": "array", "items": { "type": "string" } },
+    "required_followups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["task_id", "requested_capability", "objective", "question"],
+        "properties": {
+          "task_id": { "type": "string" },
+          "requested_capability": { "type": "string" },
+          "objective": { "type": "string" },
+          "question": { "type": "string" },
+          "evidence_refs": { "type": "array", "items": { "type": "string" } },
+          "priority": { "type": "integer" },
+          "blocking": { "type": "boolean" },
+          "preferred_domain": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "validator_results": { "type": "object" },
+    "trust_components": { "type": "object" },
+    "explanation": { "type": "string" },
+    "audit": { "type": "object" },
+    "created_at": { "type": "string" }
+  }
+}

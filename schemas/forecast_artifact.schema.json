@@ -1,46 +1,34 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ForecastArtifact",
+  "description": "Output of seleric_swarm.agents.prediction.PredictionAgent.predict (PredictionResult.forecast_artifact). Validated by the Skeptic's model + forecast validators.",
   "type": "object",
-  "required": [
-    "forecast_id",
-    "target",
-    "horizon",
-    "model",
-    "prediction",
-    "evidence_refs"
-  ],
+  "required": ["forecast_id", "target_metric", "horizon"],
   "properties": {
-    "forecast_id": {
-      "type": "string"
-    },
-    "target": {
-      "type": "string"
-    },
-    "horizon": {
-      "type": "string"
-    },
-    "model": {
-      "type": "object"
-    },
+    "forecast_id": { "type": "string" },
+    "mission_id": { "type": "string" },
+    "target_metric": { "type": "string" },
     "prediction": {},
-    "interval": {
-      "type": [
-        "object",
-        "null"
-      ]
+    "interval": { "type": "array", "items": { "type": "number" } },
+    "horizon": { "type": "string" },
+    "model_id": { "type": ["string", "null"] },
+    "model_version": { "type": ["string", "null"] },
+    "feature_set_id": { "type": ["string", "null"] },
+    "feature_set_version": { "type": ["string", "null"] },
+    "training_window": { "type": "object" },
+    "backtest_metrics": { "type": "object" },
+    "drift_status": { "type": ["string", "null"] },
+    "applicability_status": {
+      "type": ["string", "null"],
+      "enum": ["in_domain", "near_domain", "out_of_domain", "regime_shift", "unknown", null]
     },
-    "drift_status": {
-      "type": [
-        "string",
-        "null"
-      ]
+    "generated_at": { "type": ["string", "null"] },
+    "evidence_refs": { "type": "array", "items": { "type": "string" } },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "llm_generated": {
+      "type": "boolean",
+      "description": "Always false - the Prediction Agent never produces numbers with an LLM."
     },
-    "evidence_refs": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    }
+    "synthetic": { "type": "boolean" }
   }
 }
