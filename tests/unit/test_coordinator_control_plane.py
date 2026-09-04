@@ -75,13 +75,13 @@ def test_dispatch_guard_blocks_missing_data_path(runtime):
     no_data = Task(
         id="T2",
         type="observe_metric",
-        objective="atc rate",
+        objective="atc to purchase rate",
         required_capabilities=["metric_observation"],
-        metric_ids=["metric.atc_rate"],  # no mcp_capability in the registry
+        metric_ids=["metric.atc_to_purchase_rate"],  # no mcp_capability in the registry
     )
     verdict = guard.check(no_data)
     assert verdict.dispatchable is False
-    assert "atc_rate" in verdict.reason
+    assert "atc_to_purchase_rate" in verdict.reason
 
     stub_cap = Task(
         id="T3", type="causal_validation", objective="x", required_capabilities=["causal_diagnosis"]

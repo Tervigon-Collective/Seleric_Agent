@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dotenv import load_dotenv
+
 from seleric_swarm.config.settings import Settings, get_settings
 from seleric_swarm.llm.factory import build_llm
 from seleric_swarm.observability.tracing import configure_langsmith_env, configure_logging
@@ -13,6 +15,10 @@ from seleric_swarm.services.metrics import MetricRegistry
 
 
 def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
+    # Settings(env_file=".env") only populates pydantic fields, it never exports
+    # to os.environ -- MCPGateway reads SELERIC_MCP_URL/TOKEN straight from
+    # os.environ, so without this the live seleric server silently never registers.
+    load_dotenv(repo_root() / ".env")
     settings = settings or get_settings()
     configure_logging(settings)
     configure_langsmith_env(settings)
