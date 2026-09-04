@@ -19,7 +19,6 @@ class MetricDefinition:
         self.grain: str = payload.get("grain", "day")
         self.timezone: str = payload.get("timezone", "Asia/Kolkata")
         self.domain: str = payload.get("domain", self.owner)
-        self.mcp_capability: str | None = payload.get("mcp_capability")
         self.raw = payload
 
 

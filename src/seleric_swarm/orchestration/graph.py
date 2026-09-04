@@ -266,7 +266,7 @@ def build_graph(runtime: SwarmRuntime):
                 return {"error_code": over, "error_message": "Observer budget exceeded", "status": "failed"}
             lead = state.get("mission_lead") or (domain_ids[0] if domain_ids else "observer_agent")
             metric_def = runtime.metrics.get(state["metric_id"]) if state.get("metric_id") else None
-            tool_name = (metric_def.mcp_capability if metric_def else None) or "unresolved"
+            tool_name = "seleric.metrics_query" if metric_def else "unresolved"
             with traced_span(
                 f"tool.mcp.{tool_name}",
                 {**_meta(runtime, state, "observer_agent"), "tool_name": tool_name},

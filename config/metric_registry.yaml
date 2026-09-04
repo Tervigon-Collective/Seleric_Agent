@@ -8,7 +8,6 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: commerce
-    mcp_capability: commerce.daily_sales
     validation:
       - non_negative
 
@@ -21,7 +20,6 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: commerce
-    mcp_capability: commerce.daily_sales
     validation:
       - non_negative
 
@@ -33,7 +31,6 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: performance
-    mcp_capability: performance.daily_cac
     unit: INR
     validation:
       - denominator_non_negative
@@ -48,8 +45,6 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
-    mcp_capability: seleric.metrics_query
-    seleric_measure: session_atc_rate
 
   - id: metric.net_profit
     version: 1
@@ -60,8 +55,6 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: finance
-    mcp_capability: seleric.metrics_query
-    seleric_measure: net_profit
 
   - id: metric.atc_to_purchase_rate
     version: 1

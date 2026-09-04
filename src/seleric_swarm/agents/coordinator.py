@@ -13,7 +13,6 @@ from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.time_range import resolve_time_range
 
 AGENT_VERSION = "0.1.0"
-_CANONICAL_METRICS = {"metric.net_sales", "metric.gross_sales", "metric.cac"}
 
 
 class Agent(SwarmAgent):
@@ -104,7 +103,10 @@ class Agent(SwarmAgent):
                 "llm_calls": 1,
             }
 
-        canonical = [m for m in classification.metric_hints if m in _CANONICAL_METRICS]
+        # Skip observer's LLM metric-mapping call when the LLM already named a
+        # single hint that's a real registered metric -- driven by the metric
+        # registry itself, not a local duplicate of its ids.
+        canonical = [m for m in classification.metric_hints if self.runtime.metrics.get(m) is not None]
         preset_metric = canonical[0] if len(canonical) == 1 else None
 
         return {

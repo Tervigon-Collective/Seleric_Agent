@@ -19,6 +19,14 @@ _FIXTURE_ADAPTERS = {
     "fixture_performance": FixturePerformanceServer,
 }
 
+# Offline/dev fallback only, keyed by domain: when the live seleric catalogue
+# isn't configured in this process, agents fall back to the domain's local
+# fixture server instead of failing outright. Not a per-metric routing table.
+FIXTURE_CAPABILITY_BY_DOMAIN = {
+    "commerce": FixtureCommerceServer.capability,
+    "performance": FixturePerformanceServer.capability,
+}
+
 # Every domain agent with catalogue access gets the same read-only tool set
 # (a catalogue-level constant, not a per-domain one); what differs per agent is
 # which module (data-access scope) the gateway pins, read from the registry.
