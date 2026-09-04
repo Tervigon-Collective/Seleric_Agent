@@ -37,6 +37,26 @@ def get_runtime() -> SwarmRuntime:
     return _runtime
 
 
+def _resolve_scenario_id(scenario_id: str | None, *, route: str) -> str:
+    """Swarm missions require an explicit fixture pack; lookup ignores the field."""
+    from seleric_swarm.swarm.providers.fixtures import DEFAULT_SCENARIO, list_scenarios
+
+    cleaned = (scenario_id or "").strip()
+    if route == "swarm":
+        if not cleaned:
+            available = ", ".join(list_scenarios()) or "(none registered)"
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "scenario_id is required for swarm missions "
+                    f"(e.g. cac_regression). Available: {available}"
+                ),
+            )
+        return cleaned
+    # Lookup path never loads a scenario; keep a harmless placeholder for kwargs.
+    return cleaned or DEFAULT_SCENARIO
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global _runtime
@@ -83,7 +103,15 @@ class MissionRequest(BaseModel):
     full_diagnostic: bool = True
     full_prediction: bool = True
     full_skeptic: bool = True
-    scenario_id: str = "cac_regression"
+    # Fixture pack for swarm (e.g. "cac_regression"). Required on swarm routes;
+    # ignored on lookup. No silent default — callers must choose the pack.
+    scenario_id: str | None = Field(
+        default=None,
+        description=(
+            "Fixture scenario id for swarm missions (e.g. cac_regression). "
+            "Required when the query routes to swarm; ignored for lookup."
+        ),
+    )
     # fixture = offline synthetic providers (default).
     # staging/production = prefer MCPGateway for commerce/performance, fixture fallback.
     execution_mode: str = "fixture"
@@ -213,9 +241,11 @@ async def create_mission(
     request_id = str(getattr(request.state, "request_id", None) or uuid4().hex)
     session_id = req.session_id or uuid4().hex
 
+    route_hint = await route_for(runtime, query=query)
+    scenario_id = _resolve_scenario_id(req.scenario_id, route=route_hint)
+
     # Async accept path — validate scenario early for swarm-bound queries.
     if not req.wait:
-        route_hint = await route_for(runtime, query=query)
         if route_hint == "swarm":
             from seleric_swarm.coordinator.intake import has_analytical_signal
             from seleric_swarm.swarm.providers.errors import ScenarioNotFoundError
@@ -230,7 +260,7 @@ async def create_mission(
                     ),
                 )
             try:
-                load_scenario(req.scenario_id)
+                load_scenario(scenario_id)
             except ScenarioNotFoundError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         mission_id = new_mission_id(swarm_likely=route_hint == "swarm")
@@ -253,7 +283,7 @@ async def create_mission(
             full_diagnostic=req.full_diagnostic,
             full_prediction=req.full_prediction,
             full_skeptic=req.full_skeptic,
-            scenario_id=req.scenario_id,
+            scenario_id=scenario_id,
             execution_mode=req.execution_mode,
         )
         return accepted
@@ -269,7 +299,7 @@ async def create_mission(
             full_diagnostic=req.full_diagnostic,
             full_prediction=req.full_prediction,
             full_skeptic=req.full_skeptic,
-            scenario_id=req.scenario_id,
+            scenario_id=scenario_id,
             execution_mode=req.execution_mode,
         )
     except Exception as exc:

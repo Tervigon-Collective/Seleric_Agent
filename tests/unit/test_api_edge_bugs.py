@@ -57,3 +57,14 @@ def test_api_rejects_empty_query_and_unknown_scenario(runtime, monkeypatch):
     )
     assert bad.status_code == 400
     assert "Unknown scenario_id" in bad.json()["detail"]
+
+    missing = client.post(
+        "/v1/missions",
+        json={
+            "query": "Why has CAC increased?",
+            "mode": "read_only",
+            "scope": {"timezone": "Asia/Kolkata"},
+        },
+    )
+    assert missing.status_code == 400
+    assert "scenario_id is required" in missing.json()["detail"]

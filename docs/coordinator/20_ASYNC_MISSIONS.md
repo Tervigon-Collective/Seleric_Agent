@@ -4,7 +4,7 @@ Default: `POST /v1/missions` with `wait=true` runs synchronously and returns the
 
 ## Async accept (`wait=false`)
 
-1. API validates input (and `scenario_id` for swarm routes).
+1. API validates input (`scenario_id` is **required** for swarm routes; ignored on lookup).
 2. Seeds a pollable placeholder: `status=running`, `async=true`, `route=pending`.
 3. Schedules background execution with a preassigned `mission_id`.
 4. Returns the placeholder immediately.

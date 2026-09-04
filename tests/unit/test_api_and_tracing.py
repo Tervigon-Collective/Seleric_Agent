@@ -53,6 +53,7 @@ def test_mission_diagnostic_query_routes_to_full_swarm(runtime, monkeypatch):
             ),
             "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-03"},
             "mode": "read_only",
+            "scenario_id": "cac_regression",
         },
     )
     assert created.status_code == 200

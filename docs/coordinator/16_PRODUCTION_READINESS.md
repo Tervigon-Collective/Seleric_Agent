@@ -16,7 +16,7 @@
 - ~~Structured mission events ad-hoc~~ **Done (v1.6)** — `MissionEventEmitter` + envelope + family taxonomy; see [14_OBSERVABILITY.md](./14_OBSERVABILITY.md)
 - ~~Persistence incomplete for restart / event query~~ **Done (v1.7)** — full JSON + `mission_events` durability; `GET /v1/missions/{id}/events`; see [18_PERSISTENCE.md](./18_PERSISTENCE.md)
 - Lookup_v1 now emits structured events (`mission_created`, `claim_validated`, `mission_completed`, handoffs) for the events API
-- API edge hardening: reject empty query / unknown `scenario_id` (400); Skeptic probe follow-ups classify as `hypothesis_test`; challenged missions always surface limitations
+- API edge hardening: reject empty query / unknown or missing `scenario_id` on swarm (400); Skeptic probe follow-ups classify as `hypothesis_test`; challenged missions always surface limitations
 - ~~Health + forecast + action skipped diagnostic/skeptic; API could return `status: running`~~ **Done (v1.8)** — `executive_health` always implies `diagnostic`; intake/swarm intents merged; skeptic gates on diagnostic/predictive/prescriptive; terminal statuses never leak `running` (maps to `partial`); `full_*` flags also force matching specialist intents so Swagger defaults actually activate Prediction/Diagnostic
 - ~~Creative decomposition matrix + plan DoD gaps~~ **Done (v1.9)** — lookup routing (`how many` / intake-aware); preserve `prototype_completed`; legacy “Root cause” synthesis gated; unresolved primary metric limitations; Phase 13 A–Q report in [19_FINAL_REPORT_AQ.md](./19_FINAL_REPORT_AQ.md)
 - ~~LangSmith task-level metadata incomplete~~ **Done (v1.10)** — `coordinator_task_metadata` on activate + dispatcher task spans; workflow_version **1.4.0**
