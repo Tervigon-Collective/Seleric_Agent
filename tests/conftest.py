@@ -8,6 +8,11 @@ os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["PERSISTENCE_BACKEND"] = "memory"
 os.environ["AZURE_OPENAI_API_KEY"] = ""
 os.environ["LANGSMITH_API_KEY"] = ""
+# build_runtime() loads .env for the real seleric MCP creds; tests must stay
+# hermetic (fixture-only MCP servers), so blank these before that load_dotenv
+# call -- python-dotenv never overrides a key that's already set.
+os.environ["SELERIC_MCP_URL"] = ""
+os.environ["SELERIC_MCP_TOKEN"] = ""
 
 import pytest
 
