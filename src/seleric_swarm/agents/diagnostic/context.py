@@ -27,6 +27,7 @@ from seleric_swarm.agents.diagnostic.registries import (
     StatisticalValidatorService,
     TemplateCausalEstimationService,
 )
+from seleric_swarm.services.ontology import OntologyPort
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class DiagnosticDeps:
     stats: StatisticalValidatorService = field(default_factory=DeterministicStatsValidator)
     causal_service: CausalEstimationService = field(default_factory=TemplateCausalEstimationService)
     reasoning: ReasoningModel = field(default_factory=NullReasoningModel)
+    ontology: OntologyPort | None = None
 
 
 @dataclass

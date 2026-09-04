@@ -67,6 +67,32 @@ async def test_fake_llm_classify_combined_leadership_query():
 
 
 @pytest.mark.asyncio
+async def test_fake_llm_classify_gross_and_net_sale_singular():
+    llm = FakeLLMAdapter()
+    result = await llm.complete_structured(
+        LLMRequest(
+            messages=[
+                ChatMessage(role="system", content="classify"),
+                ChatMessage(
+                    role="user",
+                    content=(
+                        "Query: What is gross sale and net sale for today\n"
+                        "Timezone: Asia/Kolkata\nAs-of: 2026-09-04"
+                    ),
+                ),
+            ],
+            model="fake",
+            metadata=LLMRequestMetadata(prompt_id="coordinator.classify"),
+        ),
+        CoordinatorClassificationV1,
+    )
+    assert result.value.query_class == "lookup"
+    assert result.value.domain_lead == "commerce_agent"
+    assert "metric.gross_sales" in result.value.metric_hints
+    assert "metric.net_sales" in result.value.metric_hints
+
+
+@pytest.mark.asyncio
 async def test_fake_llm_metric_map():
     llm = FakeLLMAdapter()
     result = await llm.complete_structured(

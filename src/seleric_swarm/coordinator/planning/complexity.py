@@ -22,6 +22,12 @@ def _mentions(text: str, hints: Sequence[str]) -> bool:
     return any(hint in text for hint in hints)
 
 
+def looks_like_diagnostic(query: str) -> bool:
+    """True for why/root-cause/prescribe questions — not for ranking lookups."""
+    text = (query or "").lower()
+    return _mentions(text, _PRESCRIPTIVE_HINTS) or _mentions(text, _DIAGNOSTIC_HINTS)
+
+
 def classify_complexity(
     *,
     query_class: str,

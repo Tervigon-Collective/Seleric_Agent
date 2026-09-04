@@ -34,6 +34,7 @@ from seleric_swarm.coordinator.routing.dispatchability import DispatchGuard
         ("unsupported", "why did CAC increase?", ["metric.cac"], [], ComplexityLevel.L4),
         ("unsupported", "why did CAC increase and what should we do?", ["metric.cac", "metric.net_sales"], [], ComplexityLevel.L5),
         ("unsupported", "forecast next week sales", [], [], ComplexityLevel.L3),
+        ("lookup", "What is the best performing channel is the last 3 days", ["metric.attributed_net_revenue"], [], ComplexityLevel.L0),
     ],
 )
 def test_classify_complexity(query_class, query, hints, entities, expected):

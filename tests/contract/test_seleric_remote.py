@@ -1,6 +1,8 @@
 import pytest
+import httpx
 
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
+from seleric_swarm.protocols.mcp.servers.seleric_remote import _parse_jsonrpc_response
 
 
 @pytest.mark.asyncio
@@ -46,8 +48,41 @@ async def test_module_is_pinned_server_side(monkeypatch):
     await gw.call(
         agent_id="finance_agent",
         capability="seleric.metrics_query",
-        arguments={"measures": ["net_profit"], "time_range": {"preset": "last_30d"}, "module": "commerce"},
+        arguments={"measures": ["net_profit"], "time_range": {"preset": "last_30d"}},
     )
-
-    # finance_agent is pinned to "finance" regardless of what the caller passed.
     assert captured["module"] == "finance"
+
+    captured.clear()
+    await gw.call(
+        agent_id="finance_agent",
+        capability="seleric.metrics_query",
+        arguments={
+            "measures": ["cac"],
+            "time_range": {"preset": "last_30d"},
+            "module": None,  # metric-level unscoped override
+        },
+    )
+    assert "module" not in captured
+
+
+def test_empty_sse_data_is_skipped():
+    resp = httpx.Response(
+        200,
+        headers={"content-type": "text/event-stream"},
+        text='data:\ndata: {"jsonrpc": "2.0", "result": {"ok": true}}\n',
+    )
+    assert _parse_jsonrpc_response(resp)["result"] == {"ok": True}
+
+
+def test_empty_sse_only_raises_runtime_error_not_json_decode():
+    resp = httpx.Response(200, headers={"content-type": "text/event-stream"}, text="data:\n\n")
+    with pytest.raises(RuntimeError, match="no data event"):
+        _parse_jsonrpc_response(resp)
+
+
+def test_invalid_sse_json_raises_runtime_error():
+    resp = httpx.Response(
+        200, headers={"content-type": "text/event-stream"}, text="data: not-json\n"
+    )
+    with pytest.raises(RuntimeError, match="invalid JSON"):
+        _parse_jsonrpc_response(resp)

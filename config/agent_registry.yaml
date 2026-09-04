@@ -18,8 +18,7 @@ agents:
     domains: [meta_ads, google_ads]
     seleric_module: paidmedia
     capabilities: [campaign_analysis, cac_analysis, roas_analysis, attribution_analysis]
-    mcp_capabilities: [performance.daily_cac]
-    handoff_targets: [commerce_agent, funnel_agent, finance_agent]
+    mcp_capabilities: []
 
   - id: attribution_agent
     type: domain
@@ -29,7 +28,6 @@ agents:
     seleric_module: attribution
     capabilities: [attribution_analysis, channel_attribution]
     mcp_capabilities: []
-    handoff_targets: [commerce_agent, performance_agent]
 
   - id: commerce_agent
     type: domain
@@ -38,9 +36,7 @@ agents:
     domains: [shopify, amazon, blinkit]
     seleric_module: commerce
     capabilities: [orders, products, pricing, returns, ecommerce_analysis]
-    mcp_capabilities: [commerce.daily_sales]
-    allowed_metrics: [metric.net_sales, metric.gross_sales]
-    handoff_targets: [funnel_agent, finance_agent, inventory_agent]
+    mcp_capabilities: []
 
   - id: funnel_agent
     type: domain
@@ -50,7 +46,6 @@ agents:
     seleric_module: webanalytics
     capabilities: [funnel_analysis, journey_analysis, device_analysis]
     mcp_capabilities: []
-    handoff_targets: [technical_agent, commerce_agent]
 
   - id: finance_agent
     type: domain
@@ -60,7 +55,6 @@ agents:
     seleric_module: finance
     capabilities: [profitability, cogs, margin, cash]
     mcp_capabilities: []
-    handoff_targets: [commerce_agent, inventory_agent, procurement_agent]
 
   - id: product_agent
     type: domain
@@ -70,7 +64,6 @@ agents:
     seleric_module: product
     capabilities: [product_performance, sku_analysis, margin_analysis]
     mcp_capabilities: []
-    handoff_targets: [commerce_agent, inventory_agent]
 
   - id: customer_agent
     type: domain
@@ -80,7 +73,6 @@ agents:
     seleric_module: customer
     capabilities: [ltv_analysis, repeat_purchase_analysis, cohort_analysis]
     mcp_capabilities: []
-    handoff_targets: [commerce_agent, performance_agent]
 
   - id: operations_agent
     type: domain
@@ -90,7 +82,6 @@ agents:
     seleric_module: operations
     capabilities: [returns_analysis, refund_analysis]
     mcp_capabilities: []
-    handoff_targets: [commerce_agent, product_agent]
 
   - id: inventory_agent
     type: domain
@@ -99,7 +90,6 @@ agents:
     domains: [inventory]
     capabilities: [stock_cover, stockout_risk, ageing]
     mcp_capabilities: []
-    handoff_targets: [procurement_agent, commerce_agent]
 
   - id: procurement_agent
     type: domain
@@ -108,7 +98,6 @@ agents:
     domains: [procurement]
     capabilities: [vendor, po, moq, lead_time]
     mcp_capabilities: []
-    handoff_targets: [inventory_agent, finance_agent]
 
   - id: technical_agent
     type: domain
@@ -117,7 +106,6 @@ agents:
     domains: [web_reliability]
     capabilities: [latency, errors, deployments, incident_analysis]
     mcp_capabilities: []
-    handoff_targets: [funnel_agent]
 
   - id: observer_agent
     type: intelligence

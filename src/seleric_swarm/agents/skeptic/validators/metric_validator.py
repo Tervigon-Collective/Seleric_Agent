@@ -82,6 +82,9 @@ class MetricValidator(Validator):
             out.score_signals["metric_validity"] = 0.4
         else:
             out.score_signals["metric_validity"] = 0.9 if by_metric else 0.6
+
+        if ctx.deps.ontology is not None:
+            await _ontology_surface_checks(ctx, out, by_metric)
         return out
 
 
@@ -95,3 +98,53 @@ def _semantic_diff(a, b, reg) -> list[str]:
             differs.append(key)
     # different origin source AND at least one semantic descriptor present but unequal
     return differs
+
+
+_CONVERSION_HINTS = ("roas", "cpa", "acos", "attributed", "purchase value", "conversion value")
+
+
+async def _ontology_surface_checks(ctx: SkepticContext, out: ValidatorOutcome, by_metric: dict) -> None:
+    """Flag PaidMedia delivery metrics used as attributed/ROAS claims."""
+    statement = (ctx.claim.statement or "").lower()
+    looks_conversion = any(hint in statement for hint in _CONVERSION_HINTS)
+    surfaces: list[dict] = []
+    for metric_id, group in by_metric.items():
+        om = await ctx.deps.ontology.metric_context(metric_id)  # type: ignore[union-attr]
+        if not om:
+            continue
+        surfaces.append(
+            {
+                "metric_id": metric_id,
+                "data_product": om.get("data_product"),
+                "contract": om.get("contract"),
+                "entity_cluster": om.get("entity_cluster"),
+                "related_metrics": om.get("related_metrics") or [],
+                "attribution_boundary": om.get("attribution_boundary"),
+            }
+        )
+        if looks_conversion and om.get("domain") == "PaidMedia" and om.get("attribution_policy"):
+            refs = [ev.evidence_id for ev in group]
+            out.challenges.append(
+                challenge(
+                    "metric",
+                    "warning",
+                    (
+                        f"Claim discusses attributed/conversion performance but '{metric_id}' "
+                        f"lives on Paid Media data product {om.get('data_product')}. "
+                        f"{om['attribution_policy']}"
+                    ),
+                    evidence_refs=refs,
+                    detail={"wrong_surface": True, "data_product": om.get("data_product")},
+                    remediation_hint=(
+                        "Use MarketingAttribution (order_attribution / meta_ad_attribution) "
+                        "for attributed revenue; do not use platform-reported ROAS."
+                    ),
+                )
+            )
+            out.methodological_issues.append(
+                f"Wrong surface: {metric_id} is PaidMedia delivery, not attributed commerce."
+            )
+            if out.status == "OK":
+                out.status = "WEAK"
+    if surfaces:
+        out.detail = {**(out.detail or {}), "ontology": surfaces}

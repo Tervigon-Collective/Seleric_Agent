@@ -7,6 +7,7 @@ Uses the interpreter that invoked this file. Prefer the project venv:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -18,12 +19,23 @@ if str(SRC) not in sys.path:
 
 def main() -> None:
     import uvicorn
+    from dotenv import load_dotenv
+
+    from seleric_swarm.config.settings import get_settings
+
+    load_dotenv(ROOT / ".env")
+    get_settings.cache_clear()
+    settings = get_settings()
+    host = settings.api_host or os.environ.get("API_HOST") or ""
+    port = settings.api_port or int(os.environ.get("API_PORT") or "0")
+    if not host or not port:
+        raise SystemExit("API_HOST and API_PORT must be set in the environment (or .env)")
 
     uvicorn.run(
         "seleric_swarm.main:app",
-        host="127.0.0.1",
-        port=8000,
-        reload=True,
+        host=host,
+        port=port,
+        reload=settings.is_dev_surface(),
         reload_dirs=[str(ROOT / "src"), str(ROOT / "config"), str(ROOT / "prompts")],
         reload_includes=[".env"],
     )

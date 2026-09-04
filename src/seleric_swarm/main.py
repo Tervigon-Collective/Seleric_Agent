@@ -145,6 +145,15 @@ def get_mission(mission_id: str) -> dict[str, Any]:
 
 def serve() -> None:
     """Console entrypoint used by `seleric-api` after an editable install."""
+    import os
+
     import uvicorn
 
-    uvicorn.run("seleric_swarm.main:app", host="127.0.0.1", port=8000, reload=True)
+    from seleric_swarm.config.settings import get_settings
+
+    settings = get_settings()
+    host = settings.api_host or os.environ.get("API_HOST") or ""
+    port = settings.api_port or int(os.environ.get("API_PORT") or "0")
+    if not host or not port:
+        raise SystemExit("API_HOST and API_PORT must be set in the environment (or .env)")
+    uvicorn.run("seleric_swarm.main:app", host=host, port=port, reload=settings.is_dev_surface())

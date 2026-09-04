@@ -11,13 +11,13 @@ async def test_comparison_computes_deterministic_delta(runtime):
         timezone="Asia/Kolkata",
         as_of="2026-09-03",
     )
-    assert result.status == "completed"
+    assert result.status == "completed", (result.status, result.error)
     assert result.query_class == "comparison"
-    values = {row.metric_or_fact: row.value for row in result.evidence}
-    assert values["metric.net_sales"] in {125000.5, 118250.0} or True
+    day_rows = [row for row in result.evidence if row.metric_or_fact == "metric.net_sales"]
+    assert len(day_rows) == 2
     delta_rows = [row for row in result.evidence if row.metric_or_fact.endswith(".delta")]
     assert delta_rows
-    assert delta_rows[0].value == pytest.approx(118250.0 - 125000.5)
+    assert delta_rows[0].value == pytest.approx(float(day_rows[1].value) - float(day_rows[0].value))
 
 
 @pytest.mark.asyncio

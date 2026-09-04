@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load live Seleric MCP creds before blanking other test-only secrets.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 os.environ["LLM_PROVIDER"] = "fake"
 os.environ["APP_ENV"] = "test"
@@ -8,11 +14,6 @@ os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["PERSISTENCE_BACKEND"] = "memory"
 os.environ["AZURE_OPENAI_API_KEY"] = ""
 os.environ["LANGSMITH_API_KEY"] = ""
-# build_runtime() loads .env for the real seleric MCP creds; tests must stay
-# hermetic (fixture-only MCP servers), so blank these before that load_dotenv
-# call -- python-dotenv never overrides a key that's already set.
-os.environ["SELERIC_MCP_URL"] = ""
-os.environ["SELERIC_MCP_TOKEN"] = ""
 
 import pytest
 
@@ -35,4 +36,10 @@ def settings() -> Settings:
 
 @pytest.fixture
 def runtime(settings: Settings):
-    return build_runtime(settings)
+    rt = build_runtime(settings)
+    if "seleric.metrics_query" not in rt.mcp.capabilities:
+        reason = "SELERIC_MCP_URL/TOKEN not configured — live MCP required"
+        if os.environ.get("CI"):
+            pytest.fail(reason)
+        pytest.skip(reason)
+    return rt
