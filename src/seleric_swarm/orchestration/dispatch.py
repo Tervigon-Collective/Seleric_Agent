@@ -88,13 +88,14 @@ async def run_any_mission(
     as_of: str | None = None,
     session_id: str | None = None,
     request_id: str | None = None,
+    mission_id: str | None = None,
     **swarm_only: Any,
 ) -> dict[str, Any]:
     """Classify, then dispatch to the lookup fast path or the dynamic swarm.
 
-    Shared kwargs (``session_id`` / ``request_id``) are forwarded to whichever
-    route runs. ``**swarm_only`` (e.g. ``providers``, ``scenario_id``) applies
-    only when the swarm route is taken and is ignored on the lookup route.
+    Shared kwargs (``session_id`` / ``request_id`` / ``mission_id``) are forwarded
+    to whichever route runs. ``**swarm_only`` (e.g. ``providers``, ``scenario_id``)
+    applies only when the swarm route is taken and is ignored on the lookup route.
     """
     route = await route_for(runtime, query=query)
     if route == "lookup":
@@ -105,6 +106,7 @@ async def run_any_mission(
             as_of=as_of,
             session_id=session_id,
             request_id=request_id,
+            mission_id=mission_id,
         )
         return {"route": "lookup", "result": result.model_dump()}
 
@@ -119,6 +121,7 @@ async def run_any_mission(
             as_of=as_of,
             session_id=session_id,
             request_id=request_id,
+            mission_id=mission_id,
             **swarm_only,
         )
         return {"route": "swarm", "workflow": "swarm_v2", "result": swarm.as_dict()}
@@ -130,6 +133,7 @@ async def run_any_mission(
         as_of=as_of,
         session_id=session_id,
         request_id=request_id,
+        mission_id=mission_id,
         **swarm_only,
     )
     return {"route": "swarm", "workflow": "swarm_v1", "result": swarm.as_dict()}

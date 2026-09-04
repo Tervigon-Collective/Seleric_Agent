@@ -21,6 +21,9 @@
 - ~~Creative decomposition matrix + plan DoD gaps~~ **Done (v1.9)** — lookup routing (`how many` / intake-aware); preserve `prototype_completed`; legacy “Root cause” synthesis gated; unresolved primary metric limitations; Phase 13 A–Q report in [19_FINAL_REPORT_AQ.md](./19_FINAL_REPORT_AQ.md)
 - ~~LangSmith task-level metadata incomplete~~ **Done (v1.10)** — `coordinator_task_metadata` on activate + dispatcher task spans; workflow_version **1.4.0**
 - ~~Swarm has no MCP data path (fixture-only)~~ **Done (v1.11)** — `HybridMcpDataProvider` + `execution_mode` staging/production prefer MCP for commerce/performance with fixture fallback; see [12_MCP_BOUNDARIES.md](./12_MCP_BOUNDARIES.md)
+- ~~Long missions only synchronous~~ **Done (v1.12)** — `wait=false` accepts with `status=running` + background execution; poll `GET /v1/missions/{id}`
+- ~~No API rate limit / readiness / optional auth~~ **Done (v1.13)** — sliding-window rate limit, optional `SELERIC_API_KEY`, `GET /readyz`; see [21_API_SECURITY.md](./21_API_SECURITY.md)
+- ~~No request correlation / async cancel~~ **Done (v1.14)** — `X-Request-ID` middleware; `POST /v1/missions/{id}/cancel` for running async missions
 
 ## Checklist
 
@@ -42,3 +45,6 @@
 - Plan phases 0–13: **COMPLETE** (see [19_FINAL_REPORT_AQ.md](./19_FINAL_REPORT_AQ.md))
 - LangSmith per-activation / per-task spans (`task_id`, `subquestion_id`, `active_specialist`, `remediation_round`, …)
 - MCP-preferring hybrid providers via `execution_mode=staging|production`
+- Async missions via `wait=false` (poll GET until terminal)
+- Optional API key + per-client rate limit; `/readyz` dependency checks
+- `X-Request-ID` on all responses; async mission cancel endpoint

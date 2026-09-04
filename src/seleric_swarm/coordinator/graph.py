@@ -860,9 +860,11 @@ async def run_swarm_v2_mission(
     full_prediction: bool = False,
     execution_mode: str = "fixture",
     budget_overrides: dict[str, Any] | None = None,
+    mission_id: str | None = None,
 ) -> SwarmMissionResult:
     """Execute Coordinator V1 via LangGraph DECIDE→EXECUTE cycle."""
-    mission_id = f"MS-{uuid4().hex[:10]}"
+    mid = mission_id or f"MS-{uuid4().hex[:10]}"
+    mission_id = mid
     rid = request_id or uuid4().hex
     sid = session_id or uuid4().hex
     policies = load_coordinator_policies(

@@ -105,8 +105,10 @@ async def run_swarm_mission(
     full_skeptic: bool = False,
     full_diagnostic: bool = False,
     full_prediction: bool = False,
+    mission_id: str | None = None,
 ) -> SwarmMissionResult:
-    mission_id = f"MS-{uuid4().hex[:10]}"
+    mid = mission_id or f"MS-{uuid4().hex[:10]}"
+    mission_id = mid
     rid = request_id or uuid4().hex
     sid = session_id or uuid4().hex
     tracing = runtime.settings.langsmith_tracing
@@ -124,7 +126,7 @@ async def run_swarm_mission(
     time_range["timezone"] = timezone
 
     mission = SwarmMission(
-        mission_id=mission_id,
+        mission_id=mid,
         query=query,
         time_range=time_range,
         intents=intents,
