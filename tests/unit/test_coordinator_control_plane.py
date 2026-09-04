@@ -60,8 +60,8 @@ def test_capability_resolver_flags_wired_agents(runtime):
 
 
 def test_dispatch_guard_blocks_missing_data_path(runtime):
-    guard = DispatchGuard(
-        CapabilityResolver(runtime.agents), runtime.metrics, set(runtime.mcp.capabilities)
+    live_guard = DispatchGuard(
+        CapabilityResolver(runtime.agents), runtime.metrics, {"seleric.metrics_query"}
     )
     live = Task(
         id="T1",
@@ -70,23 +70,37 @@ def test_dispatch_guard_blocks_missing_data_path(runtime):
         required_capabilities=["metric_observation"],
         metric_ids=["metric.net_sales"],
     )
-    assert guard.check(live).dispatchable is True
+    assert live_guard.check(live).dispatchable is True
 
+    unregistered = Task(
+        id="T1b",
+        type="observe_metric",
+        objective="made up metric",
+        required_capabilities=["metric_observation"],
+        metric_ids=["metric.does_not_exist"],
+    )
+    verdict = live_guard.check(unregistered)
+    assert verdict.dispatchable is False
+    assert "not in the metric registry" in verdict.reason
+
+    # metric resolution is dynamic (catalogue_search_metrics at observe time),
+    # so what actually gates dispatch is whether the live gateway is up at all.
+    offline_guard = DispatchGuard(CapabilityResolver(runtime.agents), runtime.metrics, set())
     no_data = Task(
         id="T2",
         type="observe_metric",
-        objective="atc to purchase rate",
+        objective="net sales",
         required_capabilities=["metric_observation"],
-        metric_ids=["metric.atc_to_purchase_rate"],  # no mcp_capability in the registry
+        metric_ids=["metric.net_sales"],
     )
-    verdict = guard.check(no_data)
+    verdict = offline_guard.check(no_data)
     assert verdict.dispatchable is False
-    assert "atc_to_purchase_rate" in verdict.reason
+    assert "No live MCP data path" in verdict.reason
 
     stub_cap = Task(
         id="T3", type="causal_validation", objective="x", required_capabilities=["causal_diagnosis"]
     )
-    assert guard.check(stub_cap).dispatchable is False
+    assert live_guard.check(stub_cap).dispatchable is False
 
 
 # --------------------------------------------------------------------------- #

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from seleric_swarm.coordinator.models import Task
 from seleric_swarm.coordinator.routing.capability_resolver import CapabilityResolver
+from seleric_swarm.protocols.mcp.gateway import FIXTURE_CAPABILITY_BY_DOMAIN
 from seleric_swarm.services.metrics import MetricRegistry
 
 
@@ -50,7 +51,11 @@ class DispatchGuard:
                 )
             wired.append(res.wired_candidates[0])
 
-        # 2. metric reads need a live MCP capability
+        # 2. metric reads need a live data path -- which measure serves a metric
+        # is resolved dynamically at observe time (catalogue_search_metrics), so
+        # dispatchability only needs to know the metric is registered and either
+        # the live catalogue gateway or the domain's offline fixture is reachable,
+        # not any per-metric tool mapping.
         for metric_id in task.metric_ids:
             definition = self._metrics.get(metric_id)
             if definition is None:
@@ -58,16 +63,14 @@ class DispatchGuard:
                     dispatchable=False,
                     reason=f"Metric '{metric_id}' is not in the metric registry",
                 )
-            mcp_cap = definition.mcp_capability
-            if not mcp_cap:
+            fixture_cap = FIXTURE_CAPABILITY_BY_DOMAIN.get(definition.domain)
+            has_live_path = "seleric.metrics_query" in self._mcp or (
+                fixture_cap is not None and fixture_cap in self._mcp
+            )
+            if not has_live_path:
                 return Dispatchability(
                     dispatchable=False,
-                    reason=f"Metric '{metric_id}' has no mcp_capability defined",
-                )
-            if mcp_cap not in self._mcp:
-                return Dispatchability(
-                    dispatchable=False,
-                    reason=f"MCP capability '{mcp_cap}' for metric '{metric_id}' is not live in this build",
+                    reason=f"No live MCP data path for metric '{metric_id}' in this build",
                 )
 
         agent = task.assigned_agent or (wired[0] if wired else None)

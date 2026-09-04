@@ -18,13 +18,15 @@ class _FakeMetrics:
 
 
 class _FakeGateway:
-    def __init__(self, response):
-        self._response = response
+    def __init__(self, responses):
+        # one response per capability, popped in call order for that capability
+        self._responses = {k: list(v) for k, v in responses.items()}
         self.calls: list[dict] = []
+        self.capabilities = set(responses)
 
     async def call(self, *, agent_id, capability, arguments):
         self.calls.append({"agent_id": agent_id, "capability": capability, "arguments": arguments})
-        return self._response
+        return self._responses[capability].pop(0)
 
 
 def _seleric_definition() -> SimpleNamespace:
@@ -33,9 +35,9 @@ def _seleric_definition() -> SimpleNamespace:
         unit="INR",
         version=1,
         formula="gross_profit - operating_cost",
+        description="Canonical net profit per the finance P&L definition.",
         domain="finance",
-        raw={"seleric_measure": "net_profit"},
-        mcp_capability="seleric.metrics_query",
+        raw={},
     )
 
 
@@ -58,8 +60,13 @@ async def test_seleric_backed_metric_builds_evidence_and_pins_owner_agent():
     definition = _seleric_definition()
     gateway = _FakeGateway(
         {
-            "rows": [{"net_profit": "-51190.98"}],
-            "provenance": {"cube_view": "canonical_pnl", "query_id": "q_1", "catalogue_version": "abc123"},
+            "seleric.catalogue_search_metrics": [{"matches": [{"id": "net_profit"}]}],
+            "seleric.metrics_query": [
+                {
+                    "rows": [{"net_profit": "-51190.98"}],
+                    "provenance": {"cube_view": "canonical_pnl", "query_id": "q_1", "catalogue_version": "abc123"},
+                }
+            ],
         }
     )
     runtime = SimpleNamespace(metrics=_FakeMetrics(definition), mcp=gateway)
@@ -70,16 +77,37 @@ async def test_seleric_backed_metric_builds_evidence_and_pins_owner_agent():
     assert result["error_code"] is None
     assert result["evidence"][0]["value"] == pytest.approx(-51190.98)
     assert result["evidence"][0]["source"] == "seleric_mcp.canonical_pnl"
-    # observer fetches on behalf of the owning domain agent, not itself --
-    # that's what lets the gateway pin the correct module.
+    # observer resolves the measure via the live catalogue, then fetches on
+    # behalf of the owning domain agent -- that's what lets the gateway pin
+    # the correct module. No local metric -> tool table involved.
     assert gateway.calls[0]["agent_id"] == "finance_agent"
-    assert gateway.calls[0]["capability"] == "seleric.metrics_query"
+    assert gateway.calls[0]["capability"] == "seleric.catalogue_search_metrics"
+    assert gateway.calls[1]["capability"] == "seleric.metrics_query"
+    assert gateway.calls[1]["arguments"]["measures"] == ["net_profit"]
 
 
 @pytest.mark.asyncio
 async def test_module_refusal_payload_is_treated_as_missing_not_a_crash():
     definition = _seleric_definition()
-    gateway = _FakeGateway({"error": "outside module", "rows": []})
+    gateway = _FakeGateway(
+        {
+            "seleric.catalogue_search_metrics": [{"matches": [{"id": "net_profit"}]}],
+            "seleric.metrics_query": [{"error": "outside module", "rows": []}],
+        }
+    )
+    runtime = SimpleNamespace(metrics=_FakeMetrics(definition), mcp=gateway)
+    observer = ObserverAgent(runtime)
+
+    result = await observer.observe(_ctx("metric.net_profit"))
+
+    assert result["error_code"] == "INSUFFICIENT_EVIDENCE"
+    assert result["evidence"] == []
+
+
+@pytest.mark.asyncio
+async def test_no_catalogue_match_is_treated_as_missing_not_a_crash():
+    definition = _seleric_definition()
+    gateway = _FakeGateway({"seleric.catalogue_search_metrics": [{"matches": []}]})
     runtime = SimpleNamespace(metrics=_FakeMetrics(definition), mcp=gateway)
     observer = ObserverAgent(runtime)
 

@@ -8,6 +8,7 @@ from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.contracts.lookup import MetricMappingV1
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
+from seleric_swarm.protocols.mcp.gateway import FIXTURE_CAPABILITY_BY_DOMAIN
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.evidence import make_evidence
 
@@ -120,25 +121,37 @@ class Agent(SwarmAgent):
                 "llm_calls": metric_llm_calls,
             }
 
-        capability = definition.mcp_capability or "commerce.daily_sales"
-        seleric_measure = definition.raw.get("seleric_measure")
+        owner_agent_id = f"{definition.domain}_agent"
+        # No local table of "which MCP tool serves this metric": if the live
+        # seleric catalogue is configured in this process, ask it what canonical
+        # measure answers the metric's own description (scoped to the owning
+        # domain's module, which the gateway pins automatically). Otherwise fall
+        # back to the domain's local fixture server, if it has one.
+        seleric_live = "seleric.catalogue_search_metrics" in self.runtime.mcp.capabilities
+        seleric_measure = None
+        if seleric_live:
+            seleric_measure = await self._resolve_seleric_measure(
+                definition=definition, owner_agent_id=owner_agent_id
+            )
+        fixture_capability = FIXTURE_CAPABILITY_BY_DOMAIN.get(definition.domain)
+
         evidence: list[dict[str, Any]] = []
         missing: list[str] = []
         tool_calls = 0
         for day in dates:
             tool_calls += 1
-            if capability.startswith("seleric.") and seleric_measure:
+            row_evidence = None
+            if seleric_measure:
                 row_evidence = await self._fetch_seleric(
-                    capability=capability,
                     seleric_measure=seleric_measure,
                     metric_id=metric_id,
                     definition=definition,
                     day=day,
-                    owner_agent_id=f"{definition.domain}_agent",
+                    owner_agent_id=owner_agent_id,
                 )
-            else:
+            elif not seleric_live and fixture_capability:
                 row_evidence = await self._fetch_fixture(
-                    capability=capability, metric_id=metric_id, definition=definition, day=day
+                    capability=fixture_capability, metric_id=metric_id, definition=definition, day=day
                 )
             if row_evidence is None:
                 missing.append(day)
@@ -231,10 +244,31 @@ class Agent(SwarmAgent):
             },
         )
 
+    async def _resolve_seleric_measure(self, *, definition: Any, owner_agent_id: str) -> str | None:
+        """Ask the live catalogue which measure answers this metric -- no local
+        metric -> MCP-tool table to keep in sync by hand."""
+
+        result = await self.runtime.mcp.call(
+            agent_id=owner_agent_id,
+            capability="seleric.catalogue_search_metrics",
+            arguments={"query": definition.description or definition.id},
+        )
+        matches = result.get("matches") or []
+        if not matches:
+            return None
+        # Text relevance can rank a same-named-but-wrong-platform measure above
+        # the canonical one (e.g. "amazon_gross_revenue" outscoring "gross_sales"
+        # for a Shopify metric); prefer an exact id match to our own metric name
+        # when the catalogue returned one, before trusting the ranking.
+        bare_id = definition.id.removeprefix("metric.")
+        for match in matches:
+            if match.get("id") == bare_id:
+                return bare_id
+        return matches[0].get("id")
+
     async def _fetch_seleric(
         self,
         *,
-        capability: str,
         seleric_measure: str,
         metric_id: str,
         definition: Any,
@@ -243,7 +277,7 @@ class Agent(SwarmAgent):
     ) -> dict[str, Any] | None:
         result = await self.runtime.mcp.call(
             agent_id=owner_agent_id,
-            capability=capability,
+            capability="seleric.metrics_query",
             arguments={"measures": [seleric_measure], "time_range": {"start": day, "end": day}},
         )
         # The catalogue module-scope refusal comes back as a normal payload
@@ -264,7 +298,8 @@ class Agent(SwarmAgent):
             freshness=provenance.get("generated_at"),
             provenance={
                 "server": "seleric_mcp",
-                "tool_name": capability,
+                "tool_name": "seleric.metrics_query",
+                "resolved_measure": seleric_measure,
                 "query_id": provenance.get("query_id"),
                 "cube_view": provenance.get("cube_view"),
                 "catalogue_version": provenance.get("catalogue_version"),
