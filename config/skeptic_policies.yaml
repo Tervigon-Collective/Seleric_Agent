@@ -1,0 +1,155 @@
+# Skeptic Agent policy + threshold configuration.
+# Loaded by seleric_swarm.agents.skeptic.policies.SkepticPolicies.load().
+# Weights and thresholds live here, never hard-coded in modules.
+
+skeptic:
+  budgets:
+    max_alternative_hypotheses: 5
+    max_challenges: 8
+    max_followup_rounds: 3
+    max_parallel_checks: 5
+    max_validator_calls: 24
+    max_llm_calls: 4
+    max_runtime_seconds: 60
+
+  # Whether the Skeptic must run at all for a given claim type. The Coordinator
+  # consults this; the agent still runs if explicitly asked.
+  activation:
+    numeric:
+      skeptic_required: false
+    comparison:
+      skeptic_required: false
+    anomaly:
+      skeptic_required_if_risk_above: 0.60
+    correlation:
+      skeptic_required_if_risk_above: 0.50
+    causal:
+      skeptic_required: true
+    forecast:
+      skeptic_required: true
+    recommendation:
+      skeptic_required_if_risk_above: 0.65
+    action:
+      skeptic_required: true
+    qualitative:
+      skeptic_required: false
+
+  # Risk scoring: weights sum to 1.0. Dimensions are computed deterministically.
+  risk:
+    weights:
+      claim_impact: 0.20
+      claim_type_risk: 0.15
+      evidence_weakness: 0.15
+      causal_complexity: 0.15
+      model_dependency: 0.10
+      irreversibility: 0.10
+      financial_magnitude: 0.10
+      operational_risk: 0.05
+    claim_type_risk:
+      numeric: 0.15
+      comparison: 0.20
+      anomaly: 0.40
+      correlation: 0.50
+      causal: 0.80
+      forecast: 0.75
+      recommendation: 0.80
+      action: 0.95
+      qualitative: 0.10
+    class_thresholds:   # RiskScore -> risk class floor
+      R1: 0.15
+      R2: 0.35
+      R3: 0.55
+      R4: 0.70
+      R5: 0.85
+    min_class_by_type:
+      causal: R3
+      correlation: R2
+      forecast: R4
+      recommendation: R3
+      action: R5
+
+  # Evidence / provenance gates.
+  evidence:
+    require_evidence_for:
+      - numeric
+      - comparison
+      - causal
+      - forecast
+      - recommendation
+      - action
+    max_freshness_hours: 72
+    min_sample_size: 100
+  provenance:
+    require_query_hash_for:
+      - numeric
+      - comparison
+    require_calculation_version_for:
+      - numeric
+      - causal
+
+  metric:
+    treat_definition_mismatch_as: metric_semantic_conflict   # never factual_conflict
+
+  causal:
+    require_temporal_check: true
+    require_graph: true
+    require_refutation: true
+    min_refutations: 2
+
+  forecast:
+    require_model_metadata: true
+    allow_llm_numeric_fallback: false
+    fallback_order:
+      - registered_production_model
+      - approved_statistical_baseline
+      - INSUFFICIENT_PREDICTIVE_EVIDENCE
+    drift_reject_statuses: [red, drifted, RED, DRIFTED]
+
+  model:
+    require_recent_validation_days: 90
+    require_backtest: true
+
+  strategy:
+    require_mechanism_fit: true
+    reject_on_blocking_rule_violation: true
+
+  blind_review:
+    enabled_if_risk_above: 0.75
+
+  # Trust scoring: per claim type, weighted dimensions in [0,1]. Weights sum ~1.
+  trust:
+    label_thresholds:   # score -> label floor
+      INSUFFICIENT: 0.0
+      WEAK: 0.35
+      PROBABLE: 0.55
+      STRONG: 0.72
+      VERIFIED: 0.9
+    verdict_thresholds:
+      revise_below: 0.55   # PASS requires score >= this (and no blocking issues)
+    profiles:
+      numeric:
+        source_reliability: 0.25
+        metric_validity: 0.25
+        freshness: 0.2
+        provenance_completeness: 0.2
+        cross_source_agreement: 0.1
+      causal:
+        evidence_quality: 0.15
+        temporal_validity: 0.15
+        graph_plausibility: 0.15
+        confounder_coverage: 0.15
+        estimator_validity: 0.1
+        refutation_robustness: 0.15
+        alternative_elimination: 0.1
+        cross_source_agreement: 0.05
+      forecast:
+        model_applicability: 0.25
+        backtest_quality: 0.2
+        drift_status: 0.25
+        calibration: 0.1
+        feature_freshness: 0.1
+        interval_quality: 0.1
+      default:
+        evidence_quality: 0.4
+        provenance_completeness: 0.3
+        cross_source_agreement: 0.3

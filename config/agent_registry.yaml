@@ -92,13 +92,52 @@ agents:
 
   - id: diagnostic_agent
     type: intelligence
-    version: "0.1.0"
-    capabilities: [hypothesis_generation, causal_diagnosis]
+    version: "1.0.0"
+    capabilities:
+      - hypothesis_generation
+      - hypothesis_testing
+      - causal_diagnosis
+      - causal_refutation
+      - root_cause_analysis
+    inputs:
+      - anomaly_artifact
+      - evidence_bundle
+      - causal_graph
+    outputs:
+      - diagnostic_artifact
+      - causal_artifact
+      - hypothesis
+      - claim
+    write_actions: false
+    # Read-only. Emits DiagnosticArtifact + CausalAnalysisArtifact + causal Claim[]
+    # - the contracts the Skeptic validates.
+    module: seleric_swarm.agents.diagnostic
+    policies: config/diagnostic_policies.yaml
 
   - id: prediction_agent
     type: intelligence
-    version: "0.1.0"
-    capabilities: [forecasting, risk_prediction]
+    version: "1.0.0"
+    capabilities:
+      - forecasting
+      - forecast_orchestration
+      - model_selection
+      - scenario_projection
+      - risk_prediction
+    inputs:
+      - evidence_bundle
+      - anomaly_artifact
+      - causal_artifact
+      - model_registry
+      - feature_store
+    outputs:
+      - forecast_artifact
+      - claim
+    write_actions: false
+    # Forecast ORCHESTRATION, not a forecasting LLM. Numbers come only from a
+    # registered production model or an approved statistical baseline; otherwise
+    # INSUFFICIENT_PREDICTIVE_EVIDENCE. Emits ForecastArtifact + forecast Claim[].
+    module: seleric_swarm.agents.prediction
+    policies: config/prediction_policies.yaml
 
   - id: strategy_agent
     type: intelligence
@@ -107,5 +146,35 @@ agents:
 
   - id: skeptic_agent
     type: intelligence
-    version: "0.1.0"
-    capabilities: [challenge, validation, contradiction_search]
+    version: "1.0.0"
+    capabilities:
+      - claim_validation
+      - evidence_audit
+      - contradiction_search
+      - alternative_hypothesis_generation
+      - causal_audit
+      - forecast_audit
+      - model_audit
+      - strategy_audit
+      - remediation_generation
+      # legacy aliases kept so existing capability lookups still resolve
+      - challenge
+      - validation
+    inputs:
+      - claim
+      - evidence_bundle
+      - anomaly_artifact
+      - diagnostic_artifact
+      - causal_artifact
+      - forecast_artifact
+      - strategy_artifact
+    outputs:
+      - skeptic_verdict
+      - challenge
+      - evidence_gap
+      - follow_up_task
+    write_actions: false
+    # Read-only. The Skeptic never becomes mission lead; it routes domain issues
+    # back to the Coordinator via follow_up_task.preferred_domain.
+    module: seleric_swarm.agents.skeptic
+    policies: config/skeptic_policies.yaml
