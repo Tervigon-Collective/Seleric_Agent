@@ -26,7 +26,7 @@ from seleric_swarm.observability.tracing import traced_span
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.domain.base import DomainAgent
-from seleric_swarm.swarm.domain.configs import ALL_DOMAIN_CONFIGS
+from seleric_swarm.swarm.domain.configs import build_domain_configs
 from seleric_swarm.swarm.envelope import Intent, SwarmMessage
 from seleric_swarm.swarm.mission import SwarmMission, SwarmMissionResult, TeamMember
 from seleric_swarm.swarm.providers.base import ProviderBundle
@@ -83,8 +83,16 @@ def _initial_lead(query: str) -> str:
     q = query.lower()
     if any(k in q for k in ("cac", "roas", "cpm", "cpc", "ctr", "ad spend", "acquisition")):
         return "performance_agent"
+    if any(k in q for k in ("attribut", "last-touch", "last touch", "channel mix")):
+        return "attribution_agent"
     if any(k in q for k in ("net sales", "gross sales", "orders", "returns", "revenue")):
         return "commerce_agent"
+    if any(k in q for k in ("units sold", "sku", "product margin", "assortment")):
+        return "product_agent"
+    if any(k in q for k in ("repeat rate", "ltv", "cohort", "retention")):
+        return "customer_agent"
+    if any(k in q for k in ("refund", "fulfillment", "ops sla")):
+        return "operations_agent"
     if any(k in q for k in ("profit", "margin", "cogs")):
         return "finance_agent"
     if any(k in q for k in ("sessions", "checkout", "add to cart", "conversion", "funnel")):
@@ -138,11 +146,14 @@ async def run_swarm_mission(
         },
     )
 
-    # -- assemble domain agents (all 7 through one class) + specialists --------
-    domains: dict[str, DomainAgent] = {
-        cfg.agent_id: DomainAgent(cfg, providers.data_for(cfg.domain), peers=providers.data)
-        for cfg in ALL_DOMAIN_CONFIGS.values()
-    }
+    # -- assemble domain agents (all DOMAIN_WIRING peers) + specialists --------
+    ontology = getattr(runtime, "ontology", None)
+    domains: dict[str, DomainAgent] = {}
+    for cfg in build_domain_configs(runtime.metrics, runtime.agents).values():
+        agent = DomainAgent(cfg, providers.data_for(cfg.domain), peers=providers.data, metrics=runtime.metrics)
+        if ontology is not None and cfg.seleric_module:
+            agent.attach_ontology(await ontology.for_module(cfg.seleric_module))
+        domains[cfg.agent_id] = agent
     observer = ObserverAgent(providers, domains)
     anomaly = AnomalyAgent(providers)
     if full_diagnostic:
@@ -151,7 +162,9 @@ async def run_swarm_mission(
         # Blackboard artifacts the synthesizer / completion gate expect.
         from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
 
-        diagnostic: Any = SwarmDiagnosticSpecialist(providers, scenario=scenario)
+        diagnostic: Any = SwarmDiagnosticSpecialist(
+            providers, scenario=scenario, ontology=getattr(runtime, "ontology", None)
+        )
     else:
         diagnostic = DiagnosticAgent(providers)
     if full_prediction:
@@ -169,7 +182,9 @@ async def run_swarm_mission(
         # artifact the synthesizer / completion gate expect.
         from seleric_swarm.agents.skeptic.swarm_bridge import SwarmSkepticSpecialist
 
-        skeptic: Any = SwarmSkepticSpecialist(providers)
+        skeptic: Any = SwarmSkepticSpecialist(
+            providers, ontology=getattr(runtime, "ontology", None)
+        )
     else:
         skeptic = SkepticAgent(providers)
 

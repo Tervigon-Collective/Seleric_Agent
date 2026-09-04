@@ -50,7 +50,12 @@ LLM        -> planning, semantic reasoning, hypothesis generation, interpretatio
 
 ## Final architecture diagram
 
-See `../diagrams/final_architecture.mmd`.
+Canonical Mermaid (your full control-plane diagram):
+
+- `diagrams/two_axis_swarm_architecture.mmd` (under docs)
+- `../diagrams/final_architecture.mmd` (repo root diagrams)
+
+Settings audit: `43_ARCHITECTURE_SETTINGS_VALIDATION.md`.
 
 ## Fundamental rule
 

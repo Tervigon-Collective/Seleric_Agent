@@ -286,6 +286,11 @@ def build_graph(runtime: SwarmRuntime):
                     payload={
                         "metric_hints": state.get("metric_hints") or [],
                         "metric_id": state.get("metric_id"),
+                        "fetched_metrics": [
+                            row.get("metric_or_fact")
+                            for row in (state.get("evidence") or [])
+                            if row.get("metric_or_fact")
+                        ],
                     },
                 )
                 result = await agent.run(ctx)
@@ -338,6 +343,7 @@ def build_graph(runtime: SwarmRuntime):
                         "allowed_metrics": state.get("allowed_metrics") or [],
                         "metric_hints": state.get("metric_hints") or [],
                         "metric_id": state.get("metric_id"),
+                        "entities": state.get("entities") or [],
                         "time_range": state.get("time_range") or {},
                         "query_class": state.get("query_class"),
                     },
@@ -395,14 +401,17 @@ def build_graph(runtime: SwarmRuntime):
         candidate = f"{definition.domain}_agent"
         return candidate if candidate in domain_agents else None
 
+    def _unresolved_foreign(state: MissionState) -> list[str]:
+        have = {row.get("metric_or_fact") for row in (state.get("evidence") or [])}
+        return [
+            metric_id
+            for metric_id in (state.get("handoff_needed_metrics") or [])
+            if metric_id not in have and _owning_domain_agent(metric_id)
+        ]
+
     def route_after_observer(state: MissionState) -> AfterObserver:
-        needed = list(state.get("handoff_needed_metrics") or [])
-        if (
-            needed
-            and _owning_domain_agent(needed[0])
-            and state.get("evidence")
-            and state.get("error_code") != "INSUFFICIENT_EVIDENCE"
-        ):
+        needed = _unresolved_foreign(state)
+        if needed and state.get("evidence") and state.get("error_code") != "INSUFFICIENT_EVIDENCE":
             return "propose_handoff"
         return "claim_gate"
 
@@ -418,8 +427,8 @@ def build_graph(runtime: SwarmRuntime):
                 "evidence_refs": state.get("evidence_refs"),
             },
         ) as span:
-            needed = list(state.get("handoff_needed_metrics") or [])
-            to_agent = _owning_domain_agent(needed[0]) or from_agent
+            needed = _unresolved_foreign(state)
+            to_agent = _owning_domain_agent(needed[0]) if needed else from_agent
             refs = [row["evidence_id"] for row in (state.get("evidence") or [])]
             transfer = {
                 "mission_id": state.get("mission_id"),
@@ -467,7 +476,7 @@ def build_graph(runtime: SwarmRuntime):
                     "leadership_epoch": decision["leadership_epoch"],
                 }
             )
-            needed = list(state.get("handoff_needed_metrics") or [])
+            needed = _unresolved_foreign(state)
             new_lead = decision["mission_lead"]
             lead_sel = dict(state.get("lead_selection") or {})
             if lead_sel:
@@ -511,11 +520,18 @@ def build_graph(runtime: SwarmRuntime):
             claims: list[dict[str, Any]] = []
             for ev in state.get("evidence") or []:
                 day = (ev.get("time_range") or {}).get("start")
+                end = (ev.get("time_range") or {}).get("end")
                 unit = ev.get("unit") or ""
                 metric = ev.get("metric_or_fact")
                 value = ev.get("value")
                 text = f"{metric} was {value} {unit}".strip()
-                if day:
+                dims = ev.get("dimensions") or {}
+                label = dims.get("product_title") or dims.get("sku") or dims.get("lt_channel") or dims.get("channel")
+                if label:
+                    text = f"{metric} for {label} was {value} {unit}".strip()
+                if day and end and end != day:
+                    text += f" from {day} to {end}"
+                elif day:
                     text += f" on {day}"
                 claim = {
                     "claim_id": f"CL-{uuid4().hex[:10]}",

@@ -1,6 +1,7 @@
+import pytest
+
 from seleric_swarm.protocols.a2a.envelope import SwarmEnvelope
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
-from seleric_swarm.protocols.mcp.servers.fixture_commerce import FixtureCommerceServer
 
 
 def test_envelope_contract():
@@ -18,34 +19,23 @@ def test_envelope_contract():
     SwarmEnvelope.model_validate(dumped)
 
 
-def test_fixture_commerce_contract_found():
-    server = FixtureCommerceServer("data/fixtures/commerce/daily_sales.json")
-    result = server.call({"date": "2026-08-01", "metrics": ["metric.net_sales"]})
-    assert result["found"] is True
-    assert result["metrics"]["metric.net_sales"] == 125000.5
-    assert result["row_count"] == 1
-    assert result["query_hash"]
-
-
-def test_fixture_commerce_missing_day_is_not_zero():
-    server = FixtureCommerceServer("data/fixtures/commerce/daily_sales.json")
-    result = server.call({"date": "2026-07-15", "metrics": ["metric.net_sales"]})
-    assert result["found"] is False
-    assert result["metrics"] == {}
-    assert result["row_count"] == 0
-
-
-import pytest
-
-
 @pytest.mark.asyncio
-async def test_gateway_allowlist():
-    gw = MCPGateway("config/mcp_servers.yaml")
+async def test_gateway_allowlist_and_live_seleric(runtime):
+    gw = runtime.mcp
+    assert "seleric.metrics_query" in gw.capabilities
     with pytest.raises(PermissionError):
-        await gw.call(agent_id="coordinator_agent", capability="commerce.daily_sales", arguments={"date": "2026-08-01"})
+        await gw.call(
+            agent_id="coordinator_agent",
+            capability="seleric.metrics_query",
+            arguments={"measures": ["commerce_net_revenue_daily"], "time_range": {"start": "2026-08-01", "end": "2026-08-01"}},
+        )
     row = await gw.call(
-        agent_id="observer_agent",
-        capability="commerce.daily_sales",
-        arguments={"date": "2026-08-01", "metrics": ["metric.net_sales"]},
+        agent_id="commerce_agent",
+        capability="seleric.metrics_query",
+        arguments={
+            "measures": ["commerce_net_revenue_daily"],
+            "time_range": {"start": "2026-08-01", "end": "2026-08-01"},
+        },
     )
-    assert row["found"] is True
+    assert row.get("error") is None
+    assert row.get("rows")

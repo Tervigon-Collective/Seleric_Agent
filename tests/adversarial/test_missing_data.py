@@ -4,10 +4,11 @@ from seleric_swarm.orchestration.runner import run_mission
 
 
 @pytest.mark.asyncio
-async def test_missing_fixture_date_is_insufficient_evidence_not_zero(runtime):
+async def test_empty_day_does_not_fabricate_evidence_when_missing(runtime):
+    # CAC has sparse days; a far-past date should fail closed rather than invent a number.
     result = await run_mission(
         runtime,
-        query="What were net sales on 2026-07-15?",
+        query="What is CAC on 2020-01-01?",
         timezone="Asia/Kolkata",
         as_of="2026-09-03",
     )

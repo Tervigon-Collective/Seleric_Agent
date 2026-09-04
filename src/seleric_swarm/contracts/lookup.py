@@ -69,6 +69,7 @@ class EvidenceView(BaseModel):
     time_range: dict[str, Any] = Field(default_factory=dict)
     source: str
     freshness: str | None = None
+    dimensions: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 

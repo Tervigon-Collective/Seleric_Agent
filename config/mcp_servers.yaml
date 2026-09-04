@@ -1,20 +1,6 @@
 servers:
-  performance_fixture:
-    capability_prefix: performance
-    transport: fixture
-    adapter: fixture_performance
-    fixture_path: data/fixtures/performance/daily_cac.json
-
-  commerce_fixture:
-    capability_prefix: commerce
-    transport: fixture
-    adapter: fixture_commerce
-    fixture_path: data/fixtures/commerce/daily_sales.json
-
-  # One consolidated business-data gateway (catalogue + metrics_query/drilldown/
-  # explain) instead of per-platform MCPs. Domain scoping is a `module` argument
-  # the real server enforces itself (see modules_list) -- MCPGateway pins it per
-  # agent via AGENT_MODULE, it does not re-implement the catalogue's own policy.
+  # Live Seleric catalogue + metrics_query. Domain scope is the `module`
+  # argument MCPGateway pins from config/agent_registry.yaml.
   seleric:
     capability_prefix: seleric
     transport: streamable_http

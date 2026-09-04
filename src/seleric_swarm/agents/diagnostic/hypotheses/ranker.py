@@ -29,6 +29,10 @@ def rank_hypotheses(ctx: DiagnosticContext, hypotheses: list[DiagnosticHypothesi
         # a hypothesis whose treatment metric itself moved anomalously scores higher
         if h.treatment_metric in anomaly_metrics:
             evidence_overlap = max(evidence_overlap, 0.6)
+        neighbors = set(ctx.scratch.get("semantic_neighbors") or [])
+        bare = (h.treatment_metric or "").removeprefix("metric.")
+        if h.treatment_metric in neighbors or (bare and bare in neighbors):
+            evidence_overlap = max(evidence_overlap, 0.5)
 
         incident_match = 0.0
         if incident_text:

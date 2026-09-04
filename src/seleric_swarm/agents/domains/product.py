@@ -1,4 +1,4 @@
-"""Website funnel/journey domain expertise and governed data access."""
+"""Product performance domain expertise and governed data access."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from seleric_swarm.agents.domains.common import domain_mission_update
 from seleric_swarm.runtime import SwarmRuntime
 
 AGENT_VERSION = "0.1.0"
-DOMAIN = "funnel"
+DOMAIN = "product"
 
 
 class Agent(SwarmAgent):
-    agent_id = "funnel_agent"
+    agent_id = "product_agent"
 
     def __init__(self, runtime: SwarmRuntime | None = None) -> None:
         self.runtime = runtime

@@ -19,7 +19,10 @@ TOOLS = (
     "catalogue_search_metrics",
     "catalogue_resolve_term",
     "catalogue_get_metric",
+    "catalogue_get_ontology",
+    "catalogue_related_metrics",
     "catalogue_list_dimensions",
+    "modules_list",
     "metrics_query",
     "metrics_drilldown",
     "insights_explain",
@@ -88,21 +91,47 @@ class SelericMCPTransport:
             raise RuntimeError(f"seleric mcp error calling {name}: {payload['error']}")
         result = payload.get("result") or {}
         for block in result.get("content") or []:
-            if block.get("type") == "text":
-                return json.loads(block["text"])
-        return result
+            if block.get("type") != "text":
+                continue
+            parsed = _loads_json(block.get("text"), context=f"tool {name}")
+            if parsed is None:
+                continue
+            return parsed if isinstance(parsed, dict) else {"value": parsed}
+        return result if isinstance(result, dict) else {}
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
 
+def _loads_json(raw: Any, *, context: str) -> Any | None:
+    """Parse a JSON payload. Empty bodies are skipped; garbage raises RuntimeError."""
+    if raw is None:
+        return None
+    text = raw if isinstance(raw, str) else str(raw)
+    if not text.strip():
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"seleric mcp returned invalid JSON ({context}): {exc}") from exc
+
+
 def _parse_jsonrpc_response(resp: httpx.Response) -> dict[str, Any]:
     if "text/event-stream" in resp.headers.get("content-type", ""):
         for line in resp.text.splitlines():
-            if line.startswith("data:"):
-                return json.loads(line[len("data:") :].strip())
+            if not line.startswith("data:"):
+                continue
+            parsed = _loads_json(line[len("data:") :].strip(), context="sse data")
+            if parsed is None:
+                continue
+            if not isinstance(parsed, dict):
+                raise RuntimeError("seleric mcp sse data was not a JSON object")
+            return parsed
         raise RuntimeError("no data event in streamable-http response")
-    return resp.json()
+    parsed = _loads_json(resp.text, context="http body")
+    if not isinstance(parsed, dict):
+        raise RuntimeError("seleric mcp returned an empty or non-object response")
+    return parsed
 
 
 class RemoteToolServer:

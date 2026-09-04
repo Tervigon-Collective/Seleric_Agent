@@ -38,6 +38,14 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
 
     out: list[DiagnosticHypothesis] = []
 
+    # 0. semantic neighbors from the OM entity cluster (not causal)
+    if ctx.deps.ontology is not None:
+        related = await ctx.deps.ontology.related_metrics(outcome)
+        neighbors = list(related.get("related_metrics") or [])
+        ctx.scratch["semantic_neighbors"] = neighbors
+        ctx.scratch["entity_cluster"] = related.get("entity_cluster")
+        ctx.scratch["om_data_product"] = related.get("data_product")
+
     # 1. deterministic template hypotheses
     for tpl in mechanisms_for(outcome):
         support = [

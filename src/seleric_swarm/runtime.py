@@ -9,6 +9,7 @@ from seleric_swarm.prompts.registry import PromptRegistry
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
 from seleric_swarm.registry.agent_registry import AgentRegistry
 from seleric_swarm.services.metrics import MetricRegistry
+from seleric_swarm.services.ontology import OntologyPort
 
 
 @dataclass
@@ -20,3 +21,4 @@ class SwarmRuntime:
     metrics: MetricRegistry
     agents: AgentRegistry
     store: MissionStore
+    ontology: OntologyPort | None = None

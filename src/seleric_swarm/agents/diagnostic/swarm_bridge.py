@@ -39,11 +39,13 @@ class SwarmDiagnosticSpecialist:
         scenario: dict[str, Any] | None = None,
         deps: DiagnosticDeps | None = None,
         policies: DiagnosticPolicies | None = None,
+        ontology: Any = None,
     ) -> None:
         self.providers = providers
         self._scenario = scenario or {}
         self._deps = deps
         self._policies = policies or DiagnosticPolicies.load()
+        self._ontology = ontology
 
     def policy(self, blackboard: Blackboard, mission: SwarmMission) -> bool:
         return mission.wants("diagnostic") and bool(blackboard.by_type("anomaly"))
@@ -54,6 +56,7 @@ class SwarmDiagnosticSpecialist:
         base = self._deps or DiagnosticDeps(
             causal_graphs=causal_graphs_from_yaml(),
             causal_service=TemplateCausalEstimationService(self._scenario.get("causal_truth", {})),
+            ontology=self._ontology,
         )
         deps = diagnostic_deps_from_blackboard(blackboard, base=base)
         agent = DiagnosticAgent(deps=deps, policies=self._policies)

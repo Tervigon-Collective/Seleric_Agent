@@ -45,6 +45,7 @@ def hypothesis_user(ctx: DiagnosticContext) -> str:
             f"Observed metrics: {observed}",
             f"Anomalies: {anomalies}",
             f"Existing template hypotheses: {[h.statement for h in ctx.hypotheses]}",
+            f"Semantic neighbors (same entity cluster, not causes): {ctx.scratch.get('semantic_neighbors') or []}",
             f"Max new hypotheses: {max(0, ctx.policies.budget('max_hypotheses') - len(ctx.hypotheses))}",
         ]
     )

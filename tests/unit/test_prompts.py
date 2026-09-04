@@ -9,7 +9,9 @@ def test_prompt_registry_loads_pinned_versions():
     spec = registry.load("coordinator.classify")
     assert spec.version == "1"
     assert spec.agent_id == "coordinator_agent"
-    rendered = spec.render_user({"query": "q", "timezone": "Asia/Kolkata", "as_of": "2026-09-03"})
+    rendered = spec.render_user(
+        {"query": "q", "timezone": "Asia/Kolkata", "as_of": "2026-09-03", "registry_catalog": "- metric.net_sales"}
+    )
     assert "q" in rendered
 
 

@@ -8,29 +8,29 @@ from typing import Any
 import yaml
 
 from seleric_swarm.paths import repo_root
-from seleric_swarm.protocols.mcp.servers.fixture_commerce import FixtureCommerceServer
-from seleric_swarm.protocols.mcp.servers.fixture_performance import FixturePerformanceServer
 from seleric_swarm.protocols.mcp.servers.seleric_remote import TOOLS as SELERIC_TOOLS
 from seleric_swarm.protocols.mcp.servers.seleric_remote import build_seleric_servers
 from seleric_swarm.registry.agent_registry import AgentRegistry
-
-_FIXTURE_ADAPTERS: dict[str, type[Any]] = {
-    "fixture_commerce": FixtureCommerceServer,
-    "fixture_performance": FixturePerformanceServer,
-}
-
-# Offline/dev fallback only, keyed by domain: when the live seleric catalogue
-# isn't configured in this process, agents fall back to the domain's local
-# fixture server instead of failing outright. Not a per-metric routing table.
-FIXTURE_CAPABILITY_BY_DOMAIN = {
-    "commerce": FixtureCommerceServer.capability,
-    "performance": FixturePerformanceServer.capability,
-}
 
 # Every domain agent with catalogue access gets the same read-only tool set
 # (a catalogue-level constant, not a per-domain one); what differs per agent is
 # which module (data-access scope) the gateway pins, read from the registry.
 SELERIC_CAPABILITIES = {f"seleric.{tool}" for tool in SELERIC_TOOLS}
+
+# Tools whose server signature accepts ``module``. The gateway pins the agent's
+# seleric_module onto these only — other catalogue tools (list_dimensions,
+# resolve_term, modules_list) would reject the extra argument.
+SELERIC_MODULE_ARG_TOOLS = {
+    f"seleric.{tool}"
+    for tool in (
+        "catalogue_search_metrics",
+        "catalogue_get_metric",
+        "catalogue_get_ontology",
+        "catalogue_related_metrics",
+        "metrics_query",
+        "metrics_drilldown",
+    )
+}
 
 
 def _build_allowlist(agents: AgentRegistry) -> tuple[dict[str, set[str]], dict[str, str]]:
@@ -49,12 +49,18 @@ def _build_allowlist(agents: AgentRegistry) -> tuple[dict[str, set[str]], dict[s
         allowlist[aid] = caps
         observer_caps |= caps
     allowlist["observer_agent"] = observer_caps
-    allowlist["coordinator_agent"] = set()
+    allowlist["coordinator_agent"] = {
+        "seleric.catalogue_search_metrics",
+        "seleric.catalogue_get_metric",
+        "seleric.catalogue_list_dimensions",
+        "seleric.catalogue_resolve_term",
+    }
     return allowlist, module_map
 
 
 class MCPGateway:
     def __init__(self, config_path: str, fixture_path: str | None = None, agents: AgentRegistry | None = None) -> None:
+        del fixture_path  # leftover kw from older fixture-backed gateway
         root = repo_root()
         path = Path(config_path)
         if not path.is_absolute():
@@ -63,24 +69,17 @@ class MCPGateway:
         servers = data.get("servers") or {}
         self._servers: dict[str, Any] = {}
         for name, cfg in servers.items():
-            transport = cfg.get("transport")
-            if transport == "fixture":
-                adapter_cls = _FIXTURE_ADAPTERS.get(cfg.get("adapter"))
-                if adapter_cls is None:
-                    continue
-                override = fixture_path if name == "commerce_fixture" else None
-                server = adapter_cls(override or cfg.get("fixture_path"))
-                self._servers[server.capability] = server
-            elif transport == "streamable_http":
-                url = os.environ.get(cfg.get("url_env", ""), "")
-                token = os.environ.get(cfg.get("auth_token_env", ""), "")
-                if not url or not token:
-                    continue  # not configured in this environment; capability unavailable
-                if name == "seleric":
-                    for remote in build_seleric_servers(
-                        url=url, token=token, capability_prefix=cfg.get("capability_prefix", "seleric")
-                    ):
-                        self._servers[remote.capability] = remote
+            if cfg.get("transport") != "streamable_http":
+                continue
+            url = os.environ.get(cfg.get("url_env", ""), "")
+            token = os.environ.get(cfg.get("auth_token_env", ""), "")
+            if not url or not token:
+                continue
+            if name == "seleric":
+                for remote in build_seleric_servers(
+                    url=url, token=token, capability_prefix=cfg.get("capability_prefix", "seleric")
+                ):
+                    self._servers[remote.capability] = remote
         if agents is None:
             agents = AgentRegistry(str(root / "config" / "agent_registry.yaml"))
         self._allowlist, self._module = _build_allowlist(agents)
@@ -92,6 +91,10 @@ class MCPGateway:
 
         return set(self._servers)
 
+    def module_for(self, agent_id: str) -> str | None:
+        """Seleric MCP module pinned for this agent, if any."""
+        return self._module.get(agent_id)
+
     def _authorize(self, agent_id: str, capability: str) -> None:
         allowed = self._allowlist.get(agent_id, set())
         if capability not in allowed:
@@ -99,15 +102,19 @@ class MCPGateway:
 
     async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
         self._authorize(agent_id, capability)
-        if capability in SELERIC_CAPABILITIES:
-            module = self._module.get(agent_id)
-            if module is not None:
-                # Pin server-side; the catalogue itself refuses out-of-module
-                # measures, so this is the actual domain boundary enforcement.
+        if capability in SELERIC_MODULE_ARG_TOOLS:
+            # Explicit module in arguments wins (including None = unscoped).
+            if "module" in arguments:
+                module = arguments.get("module")
+            else:
+                module = self._module.get(agent_id)
+            if module:
                 arguments = {**arguments, "module": module}
+            else:
+                arguments = {k: v for k, v in arguments.items() if k != "module"}
         server = self._servers.get(capability)
         if server is None:
-            raise NotImplementedError(f"MCP capability not available in V1: {capability}")
+            raise NotImplementedError(f"MCP capability not available: {capability}")
         result = server.call(arguments)
         if inspect.isawaitable(result):
             result = await result

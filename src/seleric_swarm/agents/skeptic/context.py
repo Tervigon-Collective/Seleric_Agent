@@ -43,6 +43,7 @@ from seleric_swarm.agents.skeptic.registries import (
     NullDriftMonitor,
     StatisticalValidatorService,
 )
+from seleric_swarm.services.ontology import OntologyPort
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,7 @@ class SkepticDeps:
     drift_monitor: DriftMonitor = field(default_factory=NullDriftMonitor)
     causal_service: CausalValidationService | None = None
     reasoning: ReasoningModel = field(default_factory=NullReasoningModel)
+    ontology: OntologyPort | None = None
 
     def resolved_causal_service(self) -> CausalValidationService:
         return self.causal_service or BasicCausalValidationService(self.causal_graphs)

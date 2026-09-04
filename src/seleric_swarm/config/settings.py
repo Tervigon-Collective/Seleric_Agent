@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Environment-driven configuration. Secrets come from env or Key Vault, never YAML."""
+    """All runtime config comes from the environment (or .env). No secrets/URLs in code."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     persistence_backend: Literal["memory", "postgres"] = "memory"
-    database_url: str = "postgresql+psycopg://seleric:seleric@localhost:5432/seleric_swarm"
+    database_url: str = ""
 
     llm_provider: Literal["fake", "azure_openai_compatible"] = "fake"
     llm_timeout_s: float = 30.0
@@ -30,37 +30,39 @@ class Settings(BaseSettings):
     llm_max_retries: int = 2
     llm_fallback_model: str | None = None
 
-    azure_openai_endpoint: str = "https://llama4-maverick-prod-resource.services.ai.azure.com"
+    azure_openai_endpoint: str = ""
     azure_openai_api_key: str = ""
-    azure_openai_model: str = "Llama-4-Maverick-17B-128E-Instruct-FP8"
+    azure_openai_model: str = ""
     azure_openai_api_version: str = "2024-05-01-preview"
-    # "openai_compatible" -> Azure AI Inference (*.services.ai.azure.com, no deployment
-    # routing). "azure" -> classic Azure OpenAI deployment resource (*.openai.azure.com).
+    # "openai_compatible" -> Azure AI Inference; "azure" -> classic Azure OpenAI.
     azure_auth_style: Literal["openai_compatible", "azure"] = "openai_compatible"
     azure_key_vault_url: str | None = None
 
     langsmith_tracing: bool = False
     langsmith_api_key: str = ""
-    langsmith_project: str = "seleric-swarm-local"
+    langsmith_project: str = ""
     langsmith_workspace_id: str = ""
-    langsmith_org: str = "default"
-    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_org: str = ""
+    langsmith_endpoint: str = ""
 
     mcp_config_path: str = "config/mcp_servers.yaml"
+    seleric_mcp_url: str = ""
+    seleric_mcp_token: str = ""
     metric_registry_path: str = "config/metric_registry.yaml"
     prompt_versions_path: str = "config/prompt_versions.yaml"
     prompts_dir: str = "prompts"
     fixtures_dir: str = "data/fixtures"
 
-    a2a_public_base_url: str = "http://localhost:8000"
+    a2a_public_base_url: str = ""
+    api_host: str = ""
+    api_port: int = 0
     # inprocess = local handlers only; http = remote A2A only; hybrid = local then HTTP fallback
     a2a_transport: Literal["inprocess", "http", "hybrid"] = "inprocess"
     a2a_timeout_s: float = 30.0
 
-    mission_timeout_s: float = 30.0
+    mission_timeout_s: float = 120.0
     max_llm_calls: int = 6
     max_tool_calls: int = 8
-    # Coordinator control-plane hard stops for the DECIDE -> EXECUTE cycle.
     max_agent_calls: int = 30
     max_leadership_transfers: int = 6
     max_coordinator_iterations: int = 12
@@ -93,14 +95,28 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("langsmith_project", "azure_openai_endpoint", "azure_openai_model", mode="before")
+    @field_validator(
+        "langsmith_project",
+        "langsmith_endpoint",
+        "azure_openai_endpoint",
+        "azure_openai_model",
+        "seleric_mcp_url",
+        "a2a_public_base_url",
+        "api_host",
+        mode="before",
+    )
     @classmethod
     def strip_wrapping_quotes(cls, value: object) -> object:
         if isinstance(value, str):
             return value.strip().strip('"').strip("'")
         return value
 
-    @field_validator("azure_openai_api_key", "langsmith_api_key", "api_key")
+    @field_validator(
+        "azure_openai_api_key",
+        "langsmith_api_key",
+        "api_key",
+        "seleric_mcp_token",
+    )
     @classmethod
     def no_placeholder_secrets(cls, value: str) -> str:
         if value.strip().lower() in {"replace_me", "changeme", "todo"}:

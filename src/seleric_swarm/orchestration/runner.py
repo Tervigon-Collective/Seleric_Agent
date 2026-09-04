@@ -50,6 +50,7 @@ def _result_from_state(runtime: SwarmRuntime, state: MissionState) -> MissionRes
                 time_range=row.get("time_range") or {},
                 source=row.get("source", ""),
                 freshness=row.get("freshness"),
+                dimensions=row.get("dimensions") or {},
                 provenance=row.get("provenance") or {},
             )
             for row in state.get("evidence") or []
