@@ -15,6 +15,13 @@ from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.agents.coordinator import Agent as CoordinatorAgent
 from seleric_swarm.agents.intelligence.observer import Agent as ObserverAgent
 from seleric_swarm.coordinator import ControlPlane
+from seleric_swarm.coordinator.execution.lookup_dag import (
+    dag_progress_summary,
+    mark_ready_tasks_done,
+    mark_tasks,
+    next_domain_lead,
+    route_from_plan,
+)
 from seleric_swarm.leadership.manager import LeadershipManager
 from seleric_swarm.observability.tracing import mission_metadata, traced_span
 from seleric_swarm.orchestration.state import MissionState
@@ -24,6 +31,30 @@ from seleric_swarm.services.claim_gate import validate_claim
 
 QUERY_CLASSES_SUPPORTED = {"lookup", "comparison"}
 AfterObserver = Literal["propose_handoff", "claim_gate"]
+
+
+def _emit_lookup_event(state: MissionState | dict[str, Any], kind: str, **data: Any) -> dict[str, Any]:
+    """Append a structured event onto lookup MissionState (for GET .../events)."""
+    from seleric_swarm.coordinator.observability.events import canonical_kind, family_of, now_iso
+
+    events = list(state.get("events") or [])
+    canon = canonical_kind(kind)
+    payload = {k: v for k, v in data.items() if v is not None}
+    if kind != canon:
+        payload["legacy_kind"] = kind
+    events.append(
+        {
+            "kind": canon,
+            "ts": now_iso(),
+            "seq": len(events) + 1,
+            "mission_id": state.get("mission_id"),
+            "workflow_name": "lookup_v1",
+            "workflow_version": state.get("workflow_version") or "1.0.0",
+            "family": family_of(canon),
+            **payload,
+        }
+    )
+    return {"events": events}
 
 
 def _load_domain_agent(agent_id: str, runtime: SwarmRuntime) -> SwarmAgent:
@@ -155,11 +186,22 @@ def build_graph(runtime: SwarmRuntime):
                         entities=list(result.get("entities") or []),
                     )
                     result.update(plan)
+                    # Authoritative lead comes from ControlPlane lead_selection.
+                    lead_sel = plan.get("lead_selection") or {}
+                    if lead_sel.get("mission_lead"):
+                        result["mission_lead"] = lead_sel["mission_lead"]
+                        result.setdefault("initial_mission_lead", lead_sel["mission_lead"])
                     if result.get("query_class") == "unsupported":
                         result["unsupported_reason"] = plane.unsupported_reason(
                             plan,
                             result.get("unsupported_reason")
                             or "Query class or domain is not enabled in V1",
+                        )
+                    # Non-dispatchable supported-class plans also need an explicit reason.
+                    elif plan.get("plan_dispatchable") is False and not result.get("unsupported_reason"):
+                        result["unsupported_reason"] = plane.unsupported_reason(
+                            plan,
+                            "Mission plan is not dispatchable",
                         )
                     # Human-readable decomposition here; full per-task detail is
                     # on the coordinator.plan.task.* child spans, so don't repeat
@@ -204,19 +246,28 @@ def build_graph(runtime: SwarmRuntime):
                     "mission_lead": result.get("mission_lead"),
                     "complexity": result.get("complexity_label"),
                     "plan_dispatchable": result.get("plan_dispatchable"),
+                    "dag_authority": True,
                     "route_hint": (result.get("query_class"), result.get("mission_lead")),
                     "unsupported_reason": result.get("unsupported_reason"),
                 }
             )
+            result.update(
+                _emit_lookup_event(
+                    {**dict(state), **result},
+                    "mission_created",
+                    query_class=result.get("query_class"),
+                    mission_lead=result.get("mission_lead"),
+                    plan_dispatchable=result.get("plan_dispatchable"),
+                )
+            )
             return result
 
     def route_after_coordinator(state: MissionState) -> str:
-        if state.get("error_code") in {"LLM_UNAVAILABLE", "BUDGET_EXCEEDED", "TIMEOUT"}:
-            return "finalize_error"
-        lead = state.get("mission_lead")
-        if lead in domain_node_names and state.get("query_class") in QUERY_CLASSES_SUPPORTED:
-            return domain_node_names[lead]
-        return "finalize_unsupported"
+        return route_from_plan(
+            dict(state),
+            supported_classes=QUERY_CLASSES_SUPPORTED,
+            domain_node_names=domain_node_names,
+        )
 
     def _make_domain_node(agent_id: str, agent: SwarmAgent):
         async def _domain_node(state: MissionState) -> dict[str, Any]:
@@ -316,12 +367,21 @@ def build_graph(runtime: SwarmRuntime):
             result["limitations"] = prior_limits + [item for item in new_limits if item not in prior_limits]
             if result.get("error_code") == "INSUFFICIENT_EVIDENCE" and not new_rows:
                 result["status"] = "failed"
+            else:
+                # Authoritative DAG: mark observe_metric tasks done after a successful wave.
+                result.update(
+                    mark_ready_tasks_done(
+                        dict(state) | {"evidence": merged},
+                        task_types={"observe_metric"},
+                    )
+                )
             obs_span.set_outputs(
                 {
                     "evidence_count": len(merged),
                     "evidence_refs": result.get("evidence_refs"),
                     "error_code": result.get("error_code"),
                     "status": result.get("status"),
+                    "dag": dag_progress_summary(dict(state) | result),
                 }
             )
             return result
@@ -406,8 +466,14 @@ def build_graph(runtime: SwarmRuntime):
                 }
             )
             needed = list(state.get("handoff_needed_metrics") or [])
-            return {
-                "mission_lead": decision["mission_lead"],
+            new_lead = decision["mission_lead"]
+            lead_sel = dict(state.get("lead_selection") or {})
+            if lead_sel:
+                lead_sel["mission_lead"] = new_lead
+                lead_sel["source"] = "handoff"
+            patch = {
+                "mission_lead": new_lead,
+                "lead_selection": lead_sel or state.get("lead_selection"),
                 "leadership_epoch": decision["leadership_epoch"],
                 "handoff_history": decision["handoff_history"],
                 "handoff_needed_metrics": [],
@@ -415,9 +481,17 @@ def build_graph(runtime: SwarmRuntime):
                 "metric_id": needed[0] if needed else state.get("metric_id"),
                 "error_code": None,
             }
+            patch.update(
+                _emit_lookup_event(
+                    {**dict(state), **patch},
+                    "leadership_transfer",
+                    **(decision["handoff_history"][-1] if decision.get("handoff_history") else {}),
+                )
+            )
+            return patch
 
     def route_after_arbitrate(state: MissionState) -> str:
-        lead = state.get("mission_lead")
+        lead = next_domain_lead(dict(state))
         if state.get("error_code") or lead not in domain_node_names:
             return "finalize_error"
         return domain_node_names[lead]
@@ -478,7 +552,16 @@ def build_graph(runtime: SwarmRuntime):
                     ],
                 }
             )
-            return {"claims": claims}
+            patch = {"claims": claims}
+            patch.update(mark_tasks(dict(state), task_types={"claim_gate"}, status="done"))
+            patch.update(
+                _emit_lookup_event(
+                    {**dict(state), **patch},
+                    "claim_validated",
+                    claim_count=len(claims),
+                )
+            )
+            return patch
 
     async def synthesize_node(state: MissionState) -> dict[str, Any]:
         with traced_span(
@@ -515,11 +598,17 @@ def build_graph(runtime: SwarmRuntime):
                 result["status"] = "partial"
             else:
                 result["status"] = "completed" if state.get("claims") else state.get("status") or "failed"
+            result.update(mark_tasks(dict(state), task_types={"synthesize"}, status="done"))
+            # Completion score now reads live task statuses from the authoritative DAG.
+            completion = plane.completion(dict(state) | result)
+            result.update(completion)
             span.set_outputs(
                 {
                     "status": result.get("status"),
                     "final_response": result.get("final_response"),
                     "limitations": result.get("limitations"),
+                    "completion_decision": result.get("completion_decision"),
+                    "dag": dag_progress_summary(dict(state) | result),
                 }
             )
             return result
@@ -579,6 +668,17 @@ def build_graph(runtime: SwarmRuntime):
             patch: dict[str, Any] = {"status": status}
             completion = plane.completion(dict(state))
             patch.update(completion)
+            kind = "mission_completed" if status == "completed" else "mission_partial"
+            if status == "failed":
+                kind = "mission_partial"
+            patch.update(
+                _emit_lookup_event(
+                    {**dict(state), **patch},
+                    kind,
+                    status=status,
+                    completion_decision=completion.get("completion_decision"),
+                )
+            )
             span.set_outputs(
                 {
                     "status": status,

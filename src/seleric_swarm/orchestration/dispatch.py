@@ -5,38 +5,79 @@ predictive and prescriptive questions enter the dynamic two-axis swarm. This is
 the "fold lookup_v1 into the coordinator as the L0/L1 fast path" wiring - the
 lookup graph and its tests are untouched, just no longer the only route.
 
-Not yet wired into ``main.py`` (the HTTP API still calls ``run_mission``
-directly); this is the intended future entrypoint. Callers branch on ``route``:
-``result`` is ``MissionResult.model_dump()`` for lookup, ``SwarmMissionResult``
-fields for swarm.
+``POST /v1/missions`` calls this. Callers branch on ``route``: ``result`` is
+``MissionResult.model_dump()`` for lookup, ``SwarmMissionResult`` fields for
+swarm. ``main.py`` flattens it to ``{"route": ..., **result}``.
+
+Swarm workflow is selected by ``settings.swarm_workflow``:
+``swarm_v1`` (legacy imperative) or ``swarm_v2`` (Coordinator V1 control plane).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from seleric_swarm.coordinator.intake import classify_intents as intake_classify_intents
 from seleric_swarm.orchestration.runner import run_mission
 from seleric_swarm.runtime import SwarmRuntime
-from seleric_swarm.swarm.orchestrator import classify_intents, run_swarm_mission
+from seleric_swarm.swarm.orchestrator import run_swarm_mission
 
 # Retrieval / comparison verbs that are safe for the lookup fast path.
-_LOOKUP_RE = ("what were", "what was", "what is", "how much", "compare", " vs ", "versus", "show me")
+_LOOKUP_RE = (
+    "what were",
+    "what was",
+    "what is",
+    "how much",
+    "how many",
+    "compare",
+    " vs ",
+    "versus",
+    "show me",
+    "tell me",
+    "get me",
+)
+
+_CAUSAL_MARKERS = (
+    "why",
+    "root cause",
+    "diagnose",
+    "what changed",
+    "caused",
+    "explain",
+    "driver of",
+    "driving",
+    "drove",
+    "change in",
+    "drop in",
+    "fall in",
+    "decline in",
+    "increase in",
+    "rise in",
+    "spike in",
+    "what's behind",
+    "what is behind",
+    "attributed to",
+)
 
 
 async def route_for(runtime: SwarmRuntime, *, query: str) -> str:
     """Return "lookup" or "swarm" (cheap, deterministic, no LLM).
 
-    Any diagnostic / predictive / prescriptive signal -> swarm. Otherwise, only a
-    plain retrieval / comparison phrasing stays on the lookup fast path.
+    Diagnostic / predictive / prescriptive / health → swarm.
+    Plain retrieval / comparison phrasing stays on the lookup fast path.
     """
     q = query.lower().strip()
-    intents = classify_intents(query)  # never empty; defaults to {"diagnostic"}
-    diagnostic_signal = intents != {"diagnostic"} or any(
-        k in q for k in ("why", "root cause", "diagnose", "what changed", "caused", "explain", "driver of")
-    )
-    if diagnostic_signal:
+    intake = set(intake_classify_intents(query))
+    causal = any(k in q for k in _CAUSAL_MARKERS)
+    lookupish = bool(intake & {"lookup", "comparison"})
+    # Always swarm for investigation / forecast / action / health.
+    if intake & {"predictive", "prescriptive", "executive_health"}:
         return "swarm"
-    return "lookup" if any(q.startswith(p) or p in q for p in _LOOKUP_RE) else "swarm"
+    if causal or ("diagnostic" in intake and not lookupish):
+        return "swarm"
+    if lookupish or any(q.startswith(p) or p in q for p in _LOOKUP_RE):
+        return "lookup"
+    return "swarm"
 
 
 async def run_any_mission(
@@ -66,6 +107,22 @@ async def run_any_mission(
             request_id=request_id,
         )
         return {"route": "lookup", "result": result.model_dump()}
+
+    workflow = getattr(runtime.settings, "swarm_workflow", "swarm_v1")
+    if workflow == "swarm_v2":
+        from seleric_swarm.coordinator.graph import run_swarm_v2_mission
+
+        swarm = await run_swarm_v2_mission(
+            runtime,
+            query=query,
+            timezone=timezone,
+            as_of=as_of,
+            session_id=session_id,
+            request_id=request_id,
+            **swarm_only,
+        )
+        return {"route": "swarm", "workflow": "swarm_v2", "result": swarm.as_dict()}
+
     swarm = await run_swarm_mission(
         runtime,
         query=query,
@@ -75,4 +132,4 @@ async def run_any_mission(
         request_id=request_id,
         **swarm_only,
     )
-    return {"route": "swarm", "result": swarm.as_dict()}
+    return {"route": "swarm", "workflow": "swarm_v1", "result": swarm.as_dict()}

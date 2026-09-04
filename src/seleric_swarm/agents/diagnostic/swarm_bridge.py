@@ -49,6 +49,8 @@ class SwarmDiagnosticSpecialist:
         return mission.wants("diagnostic") and bool(blackboard.by_type("anomaly"))
 
     async def run(self, blackboard: Blackboard, mission: SwarmMission) -> list[str]:
+        # idempotent re-run: replace this agent's prior output, don't accumulate
+        blackboard.discard_by(created_by="diagnostic_agent", artifact_types=("hypothesis", "causal"))
         base = self._deps or DiagnosticDeps(
             causal_graphs=causal_graphs_from_yaml(),
             causal_service=TemplateCausalEstimationService(self._scenario.get("causal_truth", {})),
@@ -70,17 +72,17 @@ class SwarmDiagnosticSpecialist:
         )
         result: DiagnosticResult = await agent.diagnose(request)
 
-        posted = _write_artifacts(blackboard, result)
+        posted, retained_ids = _write_artifacts(blackboard, result)
         blackboard.record_event(
             "diagnostic_done",
             hypotheses=len(result.hypotheses),
-            retained=[h.hypothesis_id for h in result.retained()],
+            retained=retained_ids,  # Blackboard artifact ids (not the internal ones)
             causal_confidence=result.finding.causal_confidence if result.finding else None,
         )
         return posted
 
 
-def _write_artifacts(blackboard: Blackboard, result: DiagnosticResult) -> list[str]:
+def _write_artifacts(blackboard: Blackboard, result: DiagnosticResult) -> tuple[list[str], list[str]]:
     id_map: dict[str, str] = {}
     posted: list[str] = []
     for h in result.hypotheses:
@@ -124,4 +126,6 @@ def _write_artifacts(blackboard: Blackboard, result: DiagnosticResult) -> list[s
         if ca.synthetic or result.synthetic:
             causal.mark_synthetic()
         posted.append(blackboard.post(causal))
-    return posted
+
+    retained_ids = [id_map[h.hypothesis_id] for h in result.retained() if h.hypothesis_id in id_map]
+    return posted, retained_ids

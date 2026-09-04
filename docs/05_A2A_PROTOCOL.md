@@ -45,6 +45,17 @@ Structured payloads should be placed inside A2A messages/artifacts. See `schemas
 
 Transmit references and the minimum context required by the target agent. Do not forward the full conversation/history unless explicitly needed.
 
+## Transports
+
+| Mode | Class | Setting |
+| --- | --- | --- |
+| In-process | `InProcessTransport` | `a2a_transport=inprocess` (default) |
+| HTTP | `A2AHttpTransport` | `a2a_transport=http` |
+| Hybrid | `HybridTransport` | `a2a_transport=hybrid` (local handlers first, else HTTP) |
+
+HTTP endpoint: `POST {base}/a2a/v1/agents/{agent_id}/messages` with `SwarmMessage` JSON.
+Headers: `Idempotency-Key`, `X-Seleric-Mission-Id`, `X-Seleric-From-Agent`.
+
 ## Idempotency
 
 Every task should have stable `mission_id`, `task_id`, `message_id` and `idempotency_key` fields.

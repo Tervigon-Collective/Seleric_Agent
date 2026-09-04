@@ -58,7 +58,7 @@ def test_mission_diagnostic_query_routes_to_full_swarm(runtime, monkeypatch):
     assert created.status_code == 200
     m = created.json()
     assert m["route"] == "swarm"
-    assert m["status"] in {"completed", "partial"}
+    assert m["status"] in {"completed", "partial", "prototype_completed"}
     # the full agent subsystems ran and posted every artifact type
     arts = m["artifacts"]
     assert arts["hypothesis"] and arts["causal"]      # Diagnostic subsystem
@@ -66,6 +66,19 @@ def test_mission_diagnostic_query_routes_to_full_swarm(runtime, monkeypatch):
     assert arts["skeptic"]                             # Skeptic subsystem
     chain = [m["initial_mission_lead"], *[h["to_agent"] for h in m["handoff_history"]]]
     assert chain == ["performance_agent", "funnel_agent", "technical_agent"]
+
+    # re-run must not duplicate a subsystem's artifacts (idempotent bridges)
+    assert len(arts["causal"]) == 1
+    assert len(arts["skeptic"]) == 1
+    assert len(arts["prediction"]) == 1
+
+    # GET returns the full swarm mission
+    fetched = client.get(f"/v1/missions/{m['mission_id']}")
+    assert fetched.status_code == 200
+    got = fetched.json()
+    assert got["route"] == "swarm"
+    assert got["mission_id"] == m["mission_id"]
+    assert "artifacts" in got and "events" in got
 
 
 def test_langsmith_failure_does_not_fail_span():

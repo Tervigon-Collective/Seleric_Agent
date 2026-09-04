@@ -1,6 +1,7 @@
 """Procurement/vendor domain expertise and governed data access."""
 from typing import Any
-from ..base import SwarmAgent, AgentContext
+
+from ..base import AgentContext, SwarmAgent
 
 
 class Agent(SwarmAgent):

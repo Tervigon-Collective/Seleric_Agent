@@ -8,10 +8,16 @@ produces a ``CausalAnalysisArtifact``; the Skeptic validates one).
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from seleric_swarm.agents.diagnostic.contracts import CausalAnalysisArtifact
+
+
+def _stable_id(prefix: str, *parts: str) -> str:
+    digest = hashlib.sha1("|".join(str(p) for p in parts).encode()).hexdigest()[:12]
+    return f"{prefix}-{digest}"
 
 # reuse the Skeptic's generic infra so there is one implementation of each.
 from seleric_swarm.agents.skeptic.registries import (  # noqa: F401
@@ -111,7 +117,7 @@ class TemplateCausalEstimationService:
         matches = t.get("treatment") == query.treatment and t.get("outcome") == query.outcome
         refutations = list(t.get("refutations", [])) if matches else []
         return CausalAnalysisArtifact(
-            causal_id=f"CAUS-{abs(hash((query.treatment, query.outcome))) % 10**10}",
+            causal_id=_stable_id("CAUS", query.mission_id, query.treatment, query.outcome),
             mission_id=query.mission_id,
             treatment=query.treatment,
             outcome=query.outcome,

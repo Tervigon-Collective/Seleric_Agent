@@ -18,6 +18,9 @@ import re
 from typing import Any
 from uuid import uuid4
 
+import structlog
+
+from seleric_swarm.coordinator.intake import apply_full_flags
 from seleric_swarm.leadership.manager import LeadershipManager
 from seleric_swarm.observability.tracing import traced_span
 from seleric_swarm.runtime import SwarmRuntime
@@ -38,16 +41,33 @@ from seleric_swarm.swarm.specialists.observer import ObserverAgent
 from seleric_swarm.swarm.specialists.prediction import PredictionAgent
 from seleric_swarm.swarm.specialists.skeptic import SkepticAgent
 from seleric_swarm.swarm.specialists.strategy import StrategyAgent
-from seleric_swarm.swarm.synthesis import build_response
+from seleric_swarm.swarm.synthesis import build_response  # noqa: F401 — kept for callers/tests
 from seleric_swarm.swarm.transport import InProcessTransport
 
-_DIAGNOSTIC_RE = re.compile(r"\b(why|root cause|reason for|caused|explain|driver of)\b", re.IGNORECASE)
-_PREDICTIVE_RE = re.compile(r"\b(forecast|predict|what happens|if this continues|next week|projection)\b", re.IGNORECASE)
-_PRESCRIPTIVE_RE = re.compile(r"\b(what should|recommend|what do we do|how do we fix|action)\b", re.IGNORECASE)
+_log = structlog.get_logger("seleric_swarm.swarm.orchestrator")
+
+_DIAGNOSTIC_RE = re.compile(
+    r"\b(why|root cause|reason for|caused?|explain|driver of|driving|drove|diagnose|"
+    r"what changed|change in|drop in|fall in|decline in|increase in|rise in|spike in|"
+    r"what.s behind|what is behind|attributed to)\b",
+    re.IGNORECASE,
+)
+_PREDICTIVE_RE = re.compile(
+    r"\b(forecast|predict|what happens|if this continues|next week|projection)\b",
+    re.IGNORECASE,
+)
+_PRESCRIPTIVE_RE = re.compile(
+    r"\b(what should|recommend|what do we do|how do we fix|action)\b",
+    re.IGNORECASE,
+)
+_HEALTH_RE = re.compile(r"\b(how are we doing|how is (the )?business|health check)\b", re.IGNORECASE)
 
 
 def classify_intents(query: str) -> set[str]:
     intents: set[str] = set()
+    if _HEALTH_RE.search(query):
+        intents.add("executive_health")
+        intents.add("diagnostic")
     if _DIAGNOSTIC_RE.search(query):
         intents.add("diagnostic")
     if _PREDICTIVE_RE.search(query):
@@ -93,7 +113,12 @@ async def run_swarm_mission(
 
     scenario = load_scenario(scenario_id)
     providers = providers or build_fixture_bundle(scenario_id)
-    intents = classify_intents(query)
+    intents = apply_full_flags(
+        classify_intents(query),
+        full_diagnostic=full_diagnostic,
+        full_prediction=full_prediction,
+        full_skeptic=full_skeptic,
+    )
     initial_lead = _initial_lead(query)
     time_range = dict(scenario.get("observation_window") or {"start": as_of, "end": as_of})
     time_range["timezone"] = timezone
@@ -230,21 +255,105 @@ async def run_swarm_mission(
             await activate("prediction_agent", "Forecast impact if the trend continues", Intent.MODEL_REQUEST)
         if "prescriptive" in intents:
             await activate("strategy_agent", "Design mechanism-fit interventions", Intent.MODEL_REQUEST)
+        managed_claims: list[dict[str, Any]] = []
+        remediation_round = 0
         if "diagnostic" in intents:
             result = await activate("skeptic_agent", "Attack the candidate conclusion", Intent.CHALLENGE)
-            verdict = (blackboard.by_type("skeptic") or [{}])[0].get("verdict")
+            # read the LATEST skeptic verdict - a re-check appends a second artifact
+            skeptic_art = (blackboard.by_type("skeptic") or [{}])[-1]
+            verdict = skeptic_art.get("verdict")
+            followups = list(skeptic_art.get("required_followups") or [])
+            retained_hyps = [h for h in blackboard.by_type("hypothesis") if h.get("status") == "retained"]
+            claim_statement = retained_hyps[0]["statement"] if retained_hyps else "candidate conclusion"
+            from seleric_swarm.coordinator.artifacts.claims import ClaimManager
+            from seleric_swarm.coordinator.governance.remediation import (
+                execute_targeted_remediation,
+                targeted_remediation_plan,
+            )
+            from seleric_swarm.coordinator.governance.skeptic_gate import apply_skeptic_gate
+
+            claim_mgr = ClaimManager()
+            claim = claim_mgr.propose(
+                mission_id=mission_id,
+                statement=claim_statement,
+                claim_type="causal",
+                support_refs=blackboard.refs_by_type("causal"),
+                origin_agent="diagnostic_agent",
+                synthetic=True,
+            )
+            if verdict == "PASS":
+                claim_mgr.transition(claim.claim_id, "SUPPORTED")
+            gate = apply_skeptic_gate(
+                claim_manager=claim_mgr,
+                claim_id=claim.claim_id,
+                verdict=str(verdict or "PASS"),
+                followups=followups,
+                mission_id=mission_id,
+                remediation_round=remediation_round,
+                max_remediation_rounds=int(getattr(runtime.settings, "max_remediation_rounds", 3)),
+            )
+            managed_claims = claim_mgr.dump()
+            blackboard.record_event(gate.get("event") or "skeptic_gate", verdict=verdict)
+
             if verdict == "REVISE":
-                blackboard.record_event("skeptic_revise_remediation")
-                await activate("diagnostic_agent", "Re-run diagnosis addressing skeptic follow-ups", Intent.MODEL_REQUEST)
-                await activate("skeptic_agent", "Re-check the revised conclusion", Intent.CHALLENGE)
+                # Targeted remediation — never blindly re-run entire Diagnostic.
+                plan = gate.get("remediation") or targeted_remediation_plan(
+                    mission_id=mission_id, followups=followups
+                )
+                blackboard.record_event(
+                    "skeptic_revise_remediation",
+                    avoid_full_diagnostic=plan.get("avoid_full_diagnostic"),
+                    kinds=plan.get("kinds"),
+                )
+
+                async def _activate(agent_id: str, objective: str, intent: str = "task_request", extra: dict | None = None):
+                    intent_enum = {
+                        "task_request": Intent.TASK_REQUEST,
+                        "model_request": Intent.MODEL_REQUEST,
+                        "challenge": Intent.CHALLENGE,
+                    }.get(intent, Intent.TASK_REQUEST)
+                    # causal_validation_only is recorded for audit; specialist still runs once
+                    if extra:
+                        blackboard.record_event("remediation_activate", agent=agent_id, **extra)
+                    return await activate(agent_id, objective, intent_enum)
+
+                await execute_targeted_remediation(plan=plan, activate=_activate)
+                remediation_round += 1
+                await activate("skeptic_agent", "Re-check after targeted remediation", Intent.CHALLENGE)
+                skeptic_art = (blackboard.by_type("skeptic") or [{}])[-1]
+                verdict = skeptic_art.get("verdict")
+                gate = apply_skeptic_gate(
+                    claim_manager=claim_mgr,
+                    claim_id=claim.claim_id,
+                    verdict=str(verdict or "PASS"),
+                    followups=list(skeptic_art.get("required_followups") or []),
+                    mission_id=mission_id,
+                    remediation_round=remediation_round,
+                    max_remediation_rounds=int(getattr(runtime.settings, "max_remediation_rounds", 3)),
+                )
+                managed_claims = claim_mgr.dump()
+            elif verdict == "REJECT":
+                blackboard.record_event("skeptic_reject", claim_id=claim.claim_id)
             _ = result
 
-        final_response = build_response(blackboard, mission)
+        from seleric_swarm.coordinator.synthesis.response_builder import build_claim_aware_response
+
+        final_response = build_claim_aware_response(
+            blackboard, mission, managed_claims=managed_claims
+        )
 
         retained = [h for h in blackboard.by_type("hypothesis") if h.get("status") == "retained"]
-        skeptic_ok = (blackboard.by_type("skeptic") or [{}])[0].get("verdict") == "PASS"
-        if "diagnostic" in intents and retained and skeptic_ok:
+        skeptic_ok = (blackboard.by_type("skeptic") or [{}])[-1].get("verdict") == "PASS"
+        challenged = any(c.get("state") == "CHALLENGED" for c in managed_claims)
+        prov = blackboard.synthetic_summary()
+        # Successful synthetic fixtures stay "completed" for API backward-compat;
+        # response banner + synthetic flag carry prototype semantics. swarm_v2 may
+        # emit prototype_completed via the completion gate.
+        if "diagnostic" in intents and retained and skeptic_ok and not challenged:
             status = "completed"
+        elif challenged:
+            status = "partial"
+            limitations.append("Primary claim remains CHALLENGED after Skeptic REVISE.")
         elif retained or blackboard.by_type("evidence"):
             status = "partial"
         else:
@@ -275,7 +384,7 @@ async def run_swarm_mission(
             }
         )
 
-    return SwarmMissionResult(
+    mission_result = SwarmMissionResult(
         mission_id=mission_id,
         status=status,
         query=query,
@@ -290,4 +399,40 @@ async def run_swarm_mission(
         limitations=limitations,
         synthetic=bool(prov["synthetic"]),
         events=blackboard.events,
+    )
+    # Persist so GET /v1/missions/{id} can return a swarm mission. The store's
+    # typed view is the lookup MissionResult; the full swarm dict rides in raw.
+    try:
+        runtime.store.put(
+            _swarm_mission_view(mission_result, rid, sid),
+            {"route": "swarm", **mission_result.as_dict()},
+        )
+    except Exception as exc:  # persistence must never fail a completed mission
+        _log.warning("swarm.persist_failed", mission_id=mission_id, error=str(exc))
+    return mission_result
+
+
+def _swarm_mission_view(result: SwarmMissionResult, request_id: str, session_id: str) -> Any:
+    from typing import cast
+
+    from seleric_swarm.contracts.lookup import (
+        HandoffView,
+        MissionError,
+        MissionResult,
+        MissionStatus,
+        TraceInfo,
+    )
+
+    status = result.status if result.status in {"completed", "partial", "failed"} else "partial"
+    return MissionResult(
+        mission_id=result.mission_id,
+        status=cast(MissionStatus, status),
+        mission_lead=result.mission_lead,
+        initial_mission_lead=result.initial_mission_lead,
+        leadership_epoch=result.leadership_epoch,
+        handoff_history=[HandoffView.model_validate(h) for h in result.handoff_history],
+        limitations=list(result.limitations),
+        final_response=result.final_response,
+        error=MissionError(code=result.error_code, message=result.error_code) if result.error_code else None,
+        trace=TraceInfo(request_id=request_id, session_id=session_id),
     )

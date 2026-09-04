@@ -249,9 +249,9 @@ def test_assess_completion_finishes_clean_numeric_lookup():
     assert out.score >= 0.9
 
 
-def test_assess_completion_finishes_on_advisory_dag(runtime):
-    # Plan tasks stay "pending" because the live execution loop is not wired yet;
-    # a completed mission with gated claims should still score "finish".
+def test_assess_completion_finishes_when_tasks_still_pending_but_claims_pass():
+    # If the DAG was not progressed (legacy / interrupted), gated claims + completed
+    # status still allow finish via the objective-coverage fallback.
     state = {
         "status": "completed",
         "evidence": [{"metric_or_fact": "metric.net_sales", "value": 1}],

@@ -1,0 +1,70 @@
+# Coordinator V1 control-plane policies
+business_timezone: Asia/Kolkata
+
+activation:
+  LOOKUP:
+    required: [observer_agent]
+    optional: []
+  COMPARISON:
+    required: [observer_agent]
+    optional: []
+  ANOMALY:
+    required: [observer_agent, anomaly_agent]
+    optional: []
+  DIAGNOSTIC:
+    required: [observer_agent, anomaly_agent, diagnostic_agent, skeptic_agent]
+    optional: []
+  PREDICTIVE:
+    required: [observer_agent, prediction_agent, skeptic_agent]
+    optional: [anomaly_agent]
+  PRESCRIPTIVE:
+    required: [strategy_agent, skeptic_agent]
+    optional: [diagnostic_agent, prediction_agent]
+
+domain_topology:
+  performance:
+    downstream: [funnel, commerce, finance]
+  funnel:
+    related: [technical, commerce]
+  commerce:
+    related: [inventory, finance, funnel]
+  inventory:
+    related: [procurement, commerce]
+  procurement:
+    related: [inventory, finance]
+  technical:
+    related: [funnel]
+  finance:
+    related: [commerce, performance]
+
+leadership:
+  min_score_delta: 0.15
+  require_new_evidence: true
+  max_transfers: 6
+  loop_window: 4
+
+decomposition:
+  eig_stop_threshold: 0.12
+  max_versions: 8
+  max_open_subquestions: 24
+
+budgets:
+  max_agent_calls: 30
+  max_a2a_calls: 40
+  max_mcp_calls: 20
+  max_llm_calls: 6
+  max_remediation_rounds: 3
+  max_leadership_transfers: 6
+  max_runtime_s: 120.0
+  max_parallel_tasks: 4
+
+synthesis:
+  forbidden_phrases_when_challenged:
+    - validated mechanism
+    - confirmed root cause
+    - proven cause
+    - established root cause
+    - validated and confirmed
+  prototype_banner: >
+    PROTOTYPE / FIXTURE RESULT — This result uses synthetic evidence
+    and must not be treated as production intelligence.

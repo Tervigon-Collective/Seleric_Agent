@@ -1,6 +1,7 @@
 """Generate/test hypotheses and invoke causal analysis where appropriate."""
 from typing import Any
-from ..base import SwarmAgent, AgentContext
+
+from ..base import AgentContext, SwarmAgent
 
 
 class Agent(SwarmAgent):

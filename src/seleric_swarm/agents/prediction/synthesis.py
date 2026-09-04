@@ -4,6 +4,8 @@ a confidence tier, scenarios, limitations and forecast ``Claim[]``.
 
 from __future__ import annotations
 
+import hashlib
+
 from seleric_swarm.agents.prediction.context import PredictionContext
 from seleric_swarm.agents.prediction.contracts import (
     ApplicabilityStatus,
@@ -61,7 +63,9 @@ def finalize(
     confidence: PredictiveConfidence = _confidence(ctx, run, applicability, rel_width, drift, interval_ok)
 
     artifact = ForecastArtifact(
-        forecast_id=f"PRED-{abs(hash((ctx.mission_key(), run.method, run.target_metric))) % 10**10}",
+        forecast_id="PRED-" + hashlib.sha1(
+            f"{ctx.mission_key()}|{run.method}|{run.target_metric}".encode()
+        ).hexdigest()[:12],
         mission_id=ctx.request.mission_id,
         target_metric=run.target_metric,
         prediction=run.prediction,

@@ -32,8 +32,19 @@ from seleric_swarm.swarm.providers.base import (
 DEFAULT_SCENARIO = "cac_regression"
 
 
+def list_scenarios() -> list[str]:
+    root = repo_root() / "data" / "fixtures" / "scenarios"
+    if not root.exists():
+        return []
+    return sorted(p.stem for p in root.glob("*.json"))
+
+
 def load_scenario(scenario_id: str = DEFAULT_SCENARIO) -> dict[str, Any]:
+    from seleric_swarm.swarm.providers.errors import ScenarioNotFoundError
+
     path = repo_root() / "data" / "fixtures" / "scenarios" / f"{scenario_id}.json"
+    if not path.exists():
+        raise ScenarioNotFoundError(scenario_id, available=list_scenarios())
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 

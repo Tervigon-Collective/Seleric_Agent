@@ -18,6 +18,7 @@ from seleric_swarm.agents.diagnostic.registries import (
     CausalEstimationQuery,
     CausalEstimationService,
     TemplateCausalEstimationService,
+    _stable_id,
 )
 from seleric_swarm.causal.dowhy_service import CausalRequest, DoWhyService, DoWhyUnavailable
 
@@ -64,7 +65,7 @@ class DoWhyCausalEstimationService:
         refutations = est.as_dict()["refutations"]
         passed = est.refutations_passed >= max(1, len(refutations) - 0) and len(refutations) >= 2
         return CausalAnalysisArtifact(
-            causal_id=f"CAUS-{abs(hash((query.treatment, query.outcome, est.n_rows))) % 10**10}",
+            causal_id=_stable_id("CAUS", query.mission_id, query.treatment, query.outcome, str(est.n_rows)),
             mission_id=query.mission_id,
             treatment=query.treatment,
             outcome=query.outcome,
