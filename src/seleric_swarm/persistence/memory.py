@@ -62,6 +62,21 @@ class InMemoryMissionStore:
         self._events: dict[str, list[dict[str, Any]]] = {}
 
     def put(self, result: MissionResult, raw_state: dict[str, Any] | None = None) -> None:
+        # Refuse to clobber a cancelled mission with a later success/failure write
+        # (async cancel race: background job finishes after client cancel).
+        existing_raw = self._raw.get(result.mission_id)
+        if (
+            isinstance(existing_raw, dict)
+            and existing_raw.get("status") == "cancelled"
+            and result.status != "cancelled"
+        ):
+            return
+        if (
+            result.mission_id in self._results
+            and self._results[result.mission_id].status == "cancelled"
+            and result.status != "cancelled"
+        ):
+            return
         self._results[result.mission_id] = result
         if raw_state is not None:
             self._raw[result.mission_id] = raw_state

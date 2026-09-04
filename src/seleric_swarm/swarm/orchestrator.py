@@ -20,7 +20,7 @@ from uuid import uuid4
 
 import structlog
 
-from seleric_swarm.coordinator.intake import apply_full_flags
+from seleric_swarm.coordinator.intake import apply_full_flags, resolve_mission_time_range
 from seleric_swarm.leadership.manager import LeadershipManager
 from seleric_swarm.observability.tracing import traced_span
 from seleric_swarm.runtime import SwarmRuntime
@@ -130,8 +130,7 @@ async def run_swarm_mission(
         full_skeptic=full_skeptic,
     )
     initial_lead = _initial_lead(query)
-    time_range = dict(scenario.get("observation_window") or {"start": as_of, "end": as_of})
-    time_range["timezone"] = timezone
+    time_range = resolve_mission_time_range(scenario, timezone=timezone, as_of=as_of)
 
     mission = SwarmMission(
         mission_id=mid,
@@ -432,6 +431,7 @@ async def run_swarm_mission(
 def _swarm_mission_view(result: SwarmMissionResult, request_id: str, session_id: str) -> Any:
     from typing import cast
 
+    from seleric_swarm.api.status import coerce_typed_status
     from seleric_swarm.contracts.lookup import (
         HandoffView,
         MissionError,
@@ -440,7 +440,7 @@ def _swarm_mission_view(result: SwarmMissionResult, request_id: str, session_id:
         TraceInfo,
     )
 
-    status = result.status if result.status in {"completed", "partial", "failed"} else "partial"
+    status = coerce_typed_status(result.status, default="partial")
     return MissionResult(
         mission_id=result.mission_id,
         status=cast(MissionStatus, status),

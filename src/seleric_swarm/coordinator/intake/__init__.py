@@ -48,6 +48,32 @@ _METRIC_ALIASES: dict[str, str] = {
     "purchase cvr": "metric.purchase_cvr",
     "conversion": "metric.purchase_cvr",
     "cvr": "metric.purchase_cvr",
+    "revenue": "metric.net_sales",
+    "gross sales": "metric.gross_sales",
+    "gross revenue": "metric.gross_sales",
+    "gross profit": "metric.net_profit",
+    "net profit": "metric.net_profit",
+    "profit": "metric.net_profit",
+    "margin": "metric.net_profit",
+    "units sold": "metric.units_sold",
+    "units": "metric.units_sold",
+    "sessions": "metric.sessions",
+    "traffic": "metric.sessions",
+    "spend": "metric.spend",
+    "ad spend": "metric.spend",
+    "return rate": "metric.return_rate",
+    "returns": "metric.return_rate",
+    "refund": "metric.refunded_amount_excl_tax",
+    "refunds": "metric.refunded_amount_excl_tax",
+    "repeat rate": "metric.repeat_rate",
+    "checkout rate": "metric.checkout_rate",
+    "add to cart": "metric.atc_rate",
+    "atc": "metric.atc_rate",
+    "error rate": "metric.js_error_rate",
+    "js error": "metric.js_error_rate",
+    "api error": "metric.api_error_rate",
+    "page load": "metric.mobile_lcp_seconds",
+    "lcp": "metric.mobile_lcp_seconds",
 }
 
 _ENTITY_PATTERNS: list[tuple[str, str]] = [
@@ -58,6 +84,37 @@ _ENTITY_PATTERNS: list[tuple[str, str]] = [
     (r"\bcheckout\b", "funnel_stage"),
     (r"\bpurchase\b", "funnel_stage"),
 ]
+
+
+_ANALYTICAL_RES = (
+    _DIAGNOSTIC_RE,
+    _PREDICTIVE_RE,
+    _PRESCRIPTIVE_RE,
+    _COMPARISON_RE,
+    _LOOKUP_RE,
+    _HEALTH_RE,
+)
+
+
+def has_analytical_signal(query: str, metrics: MetricRegistry | None = None) -> bool:
+    """True when the query carries a recognizable metric or analysis intent.
+
+    ``classify_intents`` falls back to ``diagnostic`` for anything it does not
+    recognize, so it cannot tell a real question ("why did CAC rise?") from
+    noise ("a", "?????", a pasted SQL string). This checks for an *explicit*
+    hook: an intent verb (why / forecast / compare / recommend / health), a
+    known metric alias, or a resolvable primary metric. Missions with no such
+    signal are routed to an ``ROUTING_UNSUPPORTED`` result instead of
+    fabricating a synthetic diagnosis against fixture defaults.
+    """
+    text = query or ""
+    if any(rx.search(text) for rx in _ANALYTICAL_RES):
+        return True
+    lowered = text.lower()
+    if any(alias in lowered for alias in _METRIC_ALIASES):
+        return True
+    primary, _secondary, _reason = resolve_metrics(text, metrics)
+    return primary is not None
 
 
 def classify_intents(query: str) -> list[str]:
@@ -262,6 +319,49 @@ def normalize_query(
         unresolved_semantics=unresolved,
         metric_resolution_reason=reason,
     )
+
+
+def resolve_mission_time_range(
+    scenario: dict,
+    *,
+    timezone: str,
+    as_of: str | None = None,
+    normalized: NormalizedQuery | None = None,
+) -> dict[str, str | None]:
+    """Build the observation window used for MCP/fixture fetches.
+
+    Preference order:
+    1. Scenario ``observation_window`` (preserves fixture degradation arcs)
+    2. Query-derived ``normalized.time_range`` when no scenario window
+    3. ``as_of`` alone
+
+    When ``as_of`` is past the window end, extend ``end`` to ``as_of`` so MCP
+    fetches include the client observation day (without rewriting the start).
+    """
+    window = dict(scenario.get("observation_window") or {})
+    as_of_day = (str(as_of)[:10] if as_of else None) or None
+
+    start = str(window["start"])[:10] if window.get("start") else None
+    end = str(window["end"])[:10] if window.get("end") else None
+
+    if start is None or end is None:
+        if normalized is not None and normalized.time_range is not None:
+            tr = normalized.time_range
+            n_start = getattr(tr, "start", None)
+            n_end = getattr(tr, "end", None) or n_start
+            if n_start and n_end:
+                start = start or str(n_start)[:10]
+                end = end or str(n_end)[:10]
+
+    if as_of_day:
+        end = max(end or as_of_day, as_of_day)
+        if not start or start > end:
+            start = as_of_day if not start else min(start, as_of_day)
+
+    if not start and not end:
+        start = end = as_of_day
+
+    return {"start": start, "end": end, "timezone": timezone}
 
 
 def complexity_band(normalized: NormalizedQuery) -> str:

@@ -59,23 +59,55 @@ _CAUSAL_MARKERS = (
     "attributed to",
 )
 
+# Degradation / anomaly stems — lookup verbs + these ⇒ swarm (not a plain retrieval).
+_DEGRADATION_MARKERS = (
+    "dropped",
+    "drop",
+    "fell",
+    "falling",
+    "declined",
+    "decline",
+    "decreased",
+    "decrease",
+    "increased",
+    "increase",
+    "rose",
+    "rising",
+    "spiked",
+    "spike",
+    "degraded",
+    "degradation",
+    "worsened",
+    "broken",
+    "crash",
+    "slump",
+)
+
+
+def _has_degradation(q: str) -> bool:
+    return any(m in q for m in _DEGRADATION_MARKERS)
+
 
 async def route_for(runtime: SwarmRuntime, *, query: str) -> str:
     """Return "lookup" or "swarm" (cheap, deterministic, no LLM).
 
     Diagnostic / predictive / prescriptive / health → swarm.
     Plain retrieval / comparison phrasing stays on the lookup fast path.
+    Lookup verbs combined with degradation/causal language still go to swarm
+    (e.g. "show me how many orders dropped").
     """
     q = query.lower().strip()
     intake = set(intake_classify_intents(query))
     causal = any(k in q for k in _CAUSAL_MARKERS)
+    degraded = _has_degradation(q)
     lookupish = bool(intake & {"lookup", "comparison"})
+    lookup_verb = any(q.startswith(p) or p in q for p in _LOOKUP_RE)
     # Always swarm for investigation / forecast / action / health.
     if intake & {"predictive", "prescriptive", "executive_health"}:
         return "swarm"
-    if causal or ("diagnostic" in intake and not lookupish):
+    if causal or degraded or ("diagnostic" in intake and not lookupish):
         return "swarm"
-    if lookupish or any(q.startswith(p) or p in q for p in _LOOKUP_RE):
+    if lookupish or lookup_verb:
         return "lookup"
     return "swarm"
 

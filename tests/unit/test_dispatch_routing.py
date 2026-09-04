@@ -19,6 +19,9 @@ from seleric_swarm.orchestration.dispatch import route_for
         ("what happens if this continues?", "swarm"),
         ("what should we do about rising CAC?", "swarm"),
         ("Explain the root cause of mobile LCP degradation", "swarm"),
+        ("Show me how many orders dropped yesterday", "swarm"),
+        ("how many sessions fell last week?", "swarm"),
+        ("tell me what the blended CAC was on 2026-09-02", "lookup"),
     ],
 )
 async def test_route_for_lookup_vs_swarm(query, expected):

@@ -5,7 +5,15 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 QueryClass = Literal["lookup", "comparison", "unsupported"]
-MissionStatus = Literal["completed", "partial", "failed", "running", "cancelled"]
+MissionStatus = Literal[
+    "completed",
+    "prototype_completed",
+    "partial",
+    "blocked",
+    "failed",
+    "running",
+    "cancelled",
+]
 ErrorCode = Literal[
     "TIMEOUT",
     "LLM_UNAVAILABLE",

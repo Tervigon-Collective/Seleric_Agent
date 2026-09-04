@@ -64,8 +64,18 @@ def _default_path() -> Path:
     return Path(__file__).resolve().parents[3] / "config" / "coordinator_policies.yaml"
 
 
-@lru_cache
 def load_coordinator_policies(path: str | None = None) -> CoordinatorPolicies:
+    """Return an **isolated** policy set.
+
+    The parsed file is cached, but each caller gets a deep copy so a mission (or
+    test) that mutates ``policies.leadership``/``.budgets`` in place cannot poison
+    every later mission sharing the process.
+    """
+    return _load_coordinator_policies_cached(path).model_copy(deep=True)
+
+
+@lru_cache
+def _load_coordinator_policies_cached(path: str | None = None) -> CoordinatorPolicies:
     cfg_path = Path(path) if path else _default_path()
     if not cfg_path.exists():
         return CoordinatorPolicies(

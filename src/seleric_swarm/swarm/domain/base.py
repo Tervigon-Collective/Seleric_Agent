@@ -220,6 +220,15 @@ class DomainAgent:
             return bool(raw["frontier"])
         return True
 
+    def _target_is_terminal(self, agent_id: str) -> bool:
+        """Terminal domains have an empty frontier (they diagnose; they don't hand off)."""
+        from seleric_swarm.swarm.domain.configs import ALL_DOMAIN_CONFIGS
+
+        cfg = ALL_DOMAIN_CONFIGS.get(agent_id)
+        if cfg is None:
+            return False
+        return not cfg.frontier_metrics
+
     # -- leadership handoff (architecture sec. 18-19, 32) -------------------
     def evaluate_handoff(self, blackboard: Blackboard) -> HandoffProposal | None:
         anomalies = blackboard.by_type("anomaly")
@@ -251,6 +260,11 @@ class DomainAgent:
             if not self._metric_is_frontier(str(a.get("metric_id") or ""))
         ]
         pool = outcomes or candidates
+        # When multiple bridge symptoms exist, prefer non-terminal owners so we do
+        # not skip intermediate domains (purchase_cvr→funnel before js_error→technical).
+        bridge = [(a, owner) for a, owner in pool if not self._target_is_terminal(owner)]
+        if bridge:
+            pool = bridge
         target_anom, to_agent = max(pool, key=lambda pair: abs(pair[0].get("deviation_pct") or 0))
 
         frontier_evidence = [

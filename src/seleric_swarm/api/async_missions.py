@@ -7,15 +7,15 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from seleric_swarm.api.status import TERMINAL_STATUSES, is_terminal_status
 from seleric_swarm.contracts.lookup import MissionResult, TraceInfo
 from seleric_swarm.orchestration.dispatch import run_any_mission
 from seleric_swarm.runtime import SwarmRuntime
 
 _log = logging.getLogger("seleric.api.async_missions")
 
-_TERMINAL = frozenset(
-    {"completed", "prototype_completed", "partial", "blocked", "failed", "cancelled"}
-)
+# Re-export for callers / tests
+_TERMINAL = TERMINAL_STATUSES
 
 # Cooperative cancel flags for async background jobs (per process).
 _cancel_requested: dict[str, bool] = {}
@@ -25,8 +25,18 @@ def request_cancel(mission_id: str) -> None:
     _cancel_requested[mission_id] = True
 
 
-def is_cancel_requested(mission_id: str) -> bool:
-    return bool(_cancel_requested.get(mission_id))
+def is_cancel_requested(mission_id: str, runtime: SwarmRuntime | None = None) -> bool:
+    if bool(_cancel_requested.get(mission_id)):
+        return True
+    if runtime is None:
+        return False
+    raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
+    if isinstance(raw, dict) and (
+        raw.get("status") == "cancelled" or raw.get("cancel_requested") is True
+    ):
+        return True
+    got = runtime.store.get(mission_id)
+    return bool(got is not None and got.status == "cancelled")
 
 
 def clear_cancel(mission_id: str) -> None:
@@ -104,7 +114,7 @@ async def run_mission_job(
     execution_mode: str,
 ) -> None:
     """Background worker: execute mission and overwrite the running placeholder."""
-    if is_cancel_requested(mission_id):
+    if is_cancel_requested(mission_id, runtime):
         _log.info("async_mission_skipped_cancelled", extra={"mission_id": mission_id})
         return
     try:
@@ -122,21 +132,24 @@ async def run_mission_job(
             scenario_id=scenario_id,
             execution_mode=execution_mode,
         )
-        if is_cancel_requested(mission_id):
-            # Cancel won the race — keep cancelled payload; do not clobber with success.
+        if is_cancel_requested(mission_id, runtime):
+            # Cancel won — store.put refuses overwrite of cancelled; restore if needed.
             _log.info("async_mission_discarded_after_cancel", extra={"mission_id": mission_id})
+            raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
+            if not (isinstance(raw, dict) and raw.get("status") == "cancelled"):
+                cancel_running_mission(runtime, mission_id=mission_id, request_id=request_id)
             clear_cancel(mission_id)
             return
         # run_* already persists; ensure async marker survives on raw
         raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
-        if isinstance(raw, dict):
+        if isinstance(raw, dict) and raw.get("status") != "cancelled":
             raw = {**raw, "async": True, "route": dispatched.get("route") or raw.get("route")}
             got = runtime.store.get(mission_id)
-            if got is not None:
+            if got is not None and got.status != "cancelled":
                 runtime.store.put(got, raw)
         clear_cancel(mission_id)
     except Exception as exc:  # never leave a hung running mission
-        if is_cancel_requested(mission_id):
+        if is_cancel_requested(mission_id, runtime):
             clear_cancel(mission_id)
             return
         _log.exception("async_mission_failed", extra={"mission_id": mission_id})
@@ -223,6 +236,7 @@ def cancel_running_mission(
         "mission_id": mission_id,
         "status": "cancelled",
         "async": True,
+        "cancel_requested": True,
         "events": events,
         "limitations": cancelled.limitations,
         "error_code": "CANCELLED",
@@ -232,5 +246,4 @@ def cancel_running_mission(
     return payload
 
 
-def is_terminal_status(status: str | None) -> bool:
-    return str(status or "") in _TERMINAL
+# is_terminal_status imported from api.status and re-exported above

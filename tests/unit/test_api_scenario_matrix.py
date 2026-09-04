@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 import seleric_swarm.main as main_mod
 from seleric_swarm.main import app
 
-_TERMINAL = {"completed", "prototype_completed", "partial", "blocked", "failed"}
+from seleric_swarm.api.status import TERMINAL_STATUSES
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def test_why_cac_with_full_prediction_produces_forecast(client):
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["status"] in _TERMINAL
+    assert body["status"] in TERMINAL_STATUSES
     assert body["status"] != "running"
     arts = body["artifacts"]
     assert arts["hypothesis"]
@@ -59,7 +59,7 @@ def test_health_combo_never_returns_running(client):
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["status"] in _TERMINAL
+    assert body["status"] in TERMINAL_STATUSES
     assert body["artifacts"]["hypothesis"]
     assert body["artifacts"]["prediction"]
     assert body["artifacts"]["strategy"]
@@ -82,7 +82,7 @@ def test_prescriptive_with_full_diagnostic_runs_diagnostic(client):
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["status"] in _TERMINAL
+    assert body["status"] in TERMINAL_STATUSES
     assert body["artifacts"]["hypothesis"]
     assert body["artifacts"]["strategy"]
     assert body["artifacts"]["skeptic"]

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 from uuid import uuid4
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 # event families the control plane emits (without the trailing "_")
@@ -187,7 +187,11 @@ async def llm_ping(req: PingRequest) -> dict[str, Any]:
 
 
 @app.post("/v1/missions")
-async def create_mission(req: MissionRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+async def create_mission(
+    req: MissionRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+) -> dict[str, Any]:
     runtime = get_runtime()
     if req.mode != "read_only":
         raise HTTPException(status_code=400, detail="Only read_only mode is allowed in V1")
@@ -205,16 +209,26 @@ async def create_mission(req: MissionRequest, background_tasks: BackgroundTasks)
 
     timezone = str(req.scope.get("timezone") or "Asia/Kolkata")
     as_of = req.scope.get("as_of") or req.scope.get("asOf")
-    request_id = uuid4().hex
+    # Correlate with X-Request-ID middleware (echoed on the response).
+    request_id = str(getattr(request.state, "request_id", None) or uuid4().hex)
     session_id = req.session_id or uuid4().hex
 
     # Async accept path — validate scenario early for swarm-bound queries.
     if not req.wait:
         route_hint = await route_for(runtime, query=query)
         if route_hint == "swarm":
+            from seleric_swarm.coordinator.intake import has_analytical_signal
             from seleric_swarm.swarm.providers.errors import ScenarioNotFoundError
             from seleric_swarm.swarm.providers.fixtures import load_scenario
 
+            if not has_analytical_signal(query, runtime.metrics):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Query does not name a known metric or a supported analysis "
+                        "(diagnose / forecast / compare / recommend / health check)."
+                    ),
+                )
             try:
                 load_scenario(req.scenario_id)
             except ScenarioNotFoundError as exc:

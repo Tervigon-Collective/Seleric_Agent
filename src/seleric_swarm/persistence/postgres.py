@@ -29,6 +29,15 @@ class PostgresMissionStore:
         self._raw: dict[str, dict[str, Any]] = {}
 
     def put(self, result: MissionResult, raw_state: dict[str, Any] | None = None) -> None:
+        # Refuse to clobber cancelled missions (async cancel vs late job completion).
+        existing = self._results.get(result.mission_id) or self.get(result.mission_id)
+        existing_raw = self._raw.get(result.mission_id) or self.get_raw(result.mission_id)
+        if result.status != "cancelled":
+            if existing is not None and existing.status == "cancelled":
+                return
+            if isinstance(existing_raw, dict) and existing_raw.get("status") == "cancelled":
+                return
+
         payload = result.model_dump(mode="json")
         raw = dict(raw_state or {})
         route = str(raw.get("route") or ("swarm" if "artifacts" in raw else "lookup"))
@@ -62,6 +71,8 @@ class PostgresMissionStore:
                         result_json = EXCLUDED.result_json,
                         raw_json = EXCLUDED.raw_json,
                         updated_at = NOW()
+                    WHERE missions.status IS DISTINCT FROM 'cancelled'
+                       OR EXCLUDED.status = 'cancelled'
                     """
                 ),
                 {
