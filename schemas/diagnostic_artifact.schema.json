@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiagnosticArtifact",
+  "description": "Output of seleric_swarm.agents.diagnostic.DiagnosticAgent.diagnose (DiagnosticResult.diagnostic_artifact)",
+  "type": "object",
+  "required": ["diagnostic_id", "mission_id", "hypotheses", "methodology"],
+  "properties": {
+    "diagnostic_id": { "type": "string" },
+    "mission_id": { "type": "string" },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["hypothesis_id", "statement", "status"],
+        "properties": {
+          "hypothesis_id": { "type": "string" },
+          "statement": { "type": "string" },
+          "mechanism": { "type": "string" },
+          "treatment_metric": { "type": "string" },
+          "status": { "enum": ["proposed", "testing", "retained", "rejected", "inconclusive"] },
+          "prior_score": { "type": "number" },
+          "posterior_score": { "type": "number" },
+          "is_primary": { "type": "boolean" },
+          "llm_generated": { "type": "boolean" },
+          "rejection_reason": { "type": ["string", "null"] },
+          "tests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "evidence_sufficiency", "temporal_precedence", "segment_specificity",
+                    "dose_response", "control_divergence", "mechanism_consistency"
+                  ]
+                },
+                "passed": { "type": "boolean" },
+                "hard_gate": { "type": "boolean" },
+                "note": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "retained_hypotheses": { "type": "array", "items": { "type": "string" } },
+    "rejected_hypotheses": { "type": "array", "items": { "type": "string" } },
+    "supporting_evidence": { "type": "array", "items": { "type": "string" } },
+    "contradictory_evidence": { "type": "array", "items": { "type": "string" } },
+    "methodology": { "type": "string" },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "causal_ref": { "type": ["string", "null"] },
+    "synthetic": { "type": "boolean" }
+  }
+}

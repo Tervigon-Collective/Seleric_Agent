@@ -1,0 +1,55 @@
+# Prediction Agent policy + threshold configuration.
+# Loaded by seleric_swarm.agents.prediction.policies.PredictionPolicies.load().
+
+prediction:
+  budgets:
+    max_llm_calls: 2          # narrative / scenario framing only, never numbers
+    max_runtime_seconds: 45
+
+  horizon:
+    default: 7d
+    max_days: 30
+
+  # Fallback ladder (spec sec. 30). Tried in order; first that yields a forecast wins.
+  fallback_order:
+    - registered_model
+    - statistical_baseline
+    - insufficient
+  allow_llm_numeric_fallback: false
+
+  model:
+    require_status: [approved, production]
+    require_backtest: true
+    require_recent_validation_days: 90
+    require_feature_set: true
+
+  baseline:
+    # the approved statistical baseline the agent may use when no registered
+    # production model applies
+    method: drift_projection          # drift_projection | last_value | linear_trend
+    min_history_points: 8
+    interval_z: 1.28                  # ~80% interval from residual std
+    approved: true
+
+  drift:
+    reject_statuses: [red, drifted, RED, DRIFTED]
+    unknown_is: warning              # warning | reject
+
+  applicability:
+    min_history_days: 28
+    reject_statuses: [out_of_domain, regime_shift, not_applicable]
+    near_domain_is: warning
+
+  interval:
+    required: true
+    max_relative_width: 0.6          # |hi-lo| / (2*|prediction|) above this -> WEAK
+
+  scenarios:
+    build: true
+    # pessimistic = interval upper (for "bad = up" metrics) scaled by cause persistence
+    cause_persistence_high: 1.0
+    cause_persistence_low: 0.4
+
+  confidence:
+    # score inputs -> tier. All checks pass + tight interval + backtest good -> STRONG
+    strong_requires_backtest_mape_below: 0.15

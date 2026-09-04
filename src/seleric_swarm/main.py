@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from seleric_swarm.bootstrap import build_runtime
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.observability.tracing import traced_span
-from seleric_swarm.orchestration.runner import run_mission
+from seleric_swarm.orchestration.dispatch import run_any_mission
 from seleric_swarm.runtime import SwarmRuntime
 
 _runtime: SwarmRuntime | None = None
@@ -39,6 +39,14 @@ class MissionRequest(BaseModel):
     scope: dict[str, Any] = Field(default_factory=dict)
     mode: str = "read_only"
     session_id: str | None = None
+    # When the query is diagnostic / predictive / prescriptive it is routed to the
+    # dynamic two-axis swarm. These switch in the full agent subsystems
+    # (agents/diagnostic, agents/prediction, agents/skeptic) instead of the
+    # lightweight in-loop specialists. Lookup / comparison queries ignore them.
+    full_diagnostic: bool = True
+    full_prediction: bool = True
+    full_skeptic: bool = True
+    scenario_id: str = "cac_regression"
 
 
 class PingRequest(BaseModel):
@@ -108,15 +116,22 @@ async def llm_ping(req: PingRequest) -> dict[str, Any]:
 @app.post("/v1/missions")
 async def create_mission(req: MissionRequest) -> dict[str, Any]:
     runtime = get_runtime()
-    result = await run_mission(
+    if req.mode != "read_only":
+        raise HTTPException(status_code=400, detail="Only read_only mode is allowed in V1")
+    dispatched = await run_any_mission(
         runtime,
         query=req.query,
         timezone=str(req.scope.get("timezone") or "Asia/Kolkata"),
         as_of=req.scope.get("as_of") or req.scope.get("asOf"),
-        mode=req.mode,
         session_id=req.session_id,
+        full_diagnostic=req.full_diagnostic,
+        full_prediction=req.full_prediction,
+        full_skeptic=req.full_skeptic,
+        scenario_id=req.scenario_id,
     )
-    return result.model_dump()
+    # Flatten: a consistent top-level mission object with a `route` marker.
+    # lookup  -> MissionResult fields; swarm -> SwarmMissionResult fields.
+    return {"route": dispatched["route"], **dispatched["result"]}
 
 
 @app.get("/v1/missions/{mission_id}")
