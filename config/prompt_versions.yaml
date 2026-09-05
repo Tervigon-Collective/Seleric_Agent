@@ -1,3 +1,4 @@
 coordinator.classify: "1"
+coordinator.classify_swarm: "1"
 observer.metric_map: "1"
 synthesizer.response: "1"

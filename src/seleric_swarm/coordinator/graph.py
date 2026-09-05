@@ -93,7 +93,7 @@ from seleric_swarm.swarm.domain.base import DomainAgent
 from seleric_swarm.swarm.domain.configs import build_domain_configs
 from seleric_swarm.swarm.envelope import Intent, SwarmMessage
 from seleric_swarm.swarm.mission import SwarmMission, SwarmMissionResult, TeamMember
-from seleric_swarm.swarm.orchestrator import _initial_lead, classify_intents
+from seleric_swarm.swarm.orchestrator import _initial_lead
 from seleric_swarm.swarm.providers.base import ProviderBundle
 from seleric_swarm.swarm.providers.fixtures import (
     DEFAULT_SCENARIO,
@@ -975,8 +975,6 @@ async def run_swarm_v2_mission(
             )
         else:
             providers = build_fixture_bundle(scenario_id)
-    initial_lead = _initial_lead(query)
-
     request = MissionRequest(
         query=query,
         session_id=sid,
@@ -989,12 +987,23 @@ async def run_swarm_v2_mission(
         metrics=runtime.metrics,
         mcp=runtime.mcp if mode != "fixture" else None,
         agent_id="coordinator_agent",
+        runtime=runtime if mode != "fixture" else None,
+        mission_id=mid,
+        request_id=rid,
+        session_id=sid,
     )
-    # Single source of truth: intake intents (includes executive_health → diagnostic),
-    # plus full_* flags that force specialist activation. Fold into normalized so
-    # decomposition / plan see the same intents the mission executes with.
+    # normalized.candidate_domains is already LLM+catalogue grounded when a
+    # live runtime was given (falls back to the regex domain guesser inside
+    # normalize_query itself when not) — no separate keyword pass needed here.
+    initial_lead = (
+        f"{normalized.candidate_domains[0]}_agent" if normalized.candidate_domains else _initial_lead(query)
+    )
+    # Single source of truth: intake intents (LLM+catalogue classified, includes
+    # executive_health → diagnostic), plus full_* flags that force specialist
+    # activation. Fold into normalized so decomposition / plan see the same
+    # intents the mission executes with.
     intents = apply_full_flags(
-        set(normalized.intents) | classify_intents(query),
+        set(normalized.intents),
         full_diagnostic=full_diagnostic,
         full_prediction=full_prediction,
         full_skeptic=full_skeptic,

@@ -32,29 +32,10 @@ async def test_hybrid_staging_uses_mcp_for_performance(runtime):
 
 
 @pytest.mark.asyncio
-async def test_hybrid_fixture_mode_skips_mcp(runtime):
-    bundle, stats = build_hybrid_bundle(
-        "cac_regression",
-        mcp=runtime.mcp,
-        execution_mode="fixture",
-        metrics=runtime.metrics,
-        agents=runtime.agents,
-    )
-    provider = bundle.data_for("commerce")
-    assert provider is not None
-    assert type(provider).__name__ == "FixtureDataProvider"
-    await provider.fetch(
-        metric_ids=["metric.net_sales"],
-        time_range={"start": "2026-09-01", "end": "2026-09-01"},
-    )
-    assert stats.mcp_attempts == 0
-
-
-@pytest.mark.asyncio
-async def test_hybrid_production_uses_fixture_for_domain_with_no_module(runtime):
+async def test_hybrid_production_returns_nothing_for_domain_with_no_module(runtime):
     # "technical" has no seleric_module (no live Technical MCP exists yet) —
-    # production mode falls back to fixture data rather than returning nothing,
-    # so the mission still gets a best-effort answer instead of a hole.
+    # no fixture fallback: missing live coverage means missing data, not a
+    # fabricated synthetic number.
     bundle, stats = build_hybrid_bundle(
         "cac_regression",
         mcp=runtime.mcp,
@@ -63,12 +44,14 @@ async def test_hybrid_production_uses_fixture_for_domain_with_no_module(runtime)
         agents=runtime.agents,
     )
     technical = bundle.data_for("technical")
-    assert type(technical).__name__ == "FixtureDataProvider"
+    assert type(technical).__name__ == "EmptyDataProvider"
     result = await technical.fetch(
         metric_ids=["metric.js_error_rate"],
         time_range={"start": "2026-08-31", "end": "2026-09-03"},
     )
-    assert result.readings
+    assert result.readings == []
+    assert result.missing == ["metric.js_error_rate"]
+    assert result.synthetic is False
     assert stats.mcp_attempts == 0
 
 

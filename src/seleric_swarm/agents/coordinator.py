@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 from uuid import uuid4
 
 from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.contracts.lookup import CoordinatorClassificationV1
+from seleric_swarm.coordinator.catalogue_grounding import entities_from_catalogue, hints_from_catalogue
 from seleric_swarm.coordinator.planning.complexity import looks_like_diagnostic
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
@@ -119,7 +119,7 @@ class Agent(SwarmAgent):
         # with the classifier — never a local phrase table.
         catalogue_hints = []
         if not looks_like_diagnostic(query):
-            catalogue_hints = await self._hints_from_catalogue(query)
+            catalogue_hints = await hints_from_catalogue(query, runtime=self.runtime, agent_id=self.agent_id)
         merged_hints = list(dict.fromkeys([*classification.metric_hints, *catalogue_hints]))
         canonical = [m for m in merged_hints if self.runtime.metrics.get(m) is not None]
         preset_metric = canonical[0] if len(canonical) == 1 else None
@@ -143,7 +143,7 @@ class Agent(SwarmAgent):
 
         entities = list(classification.entities or [])
         if not entities and canonical:
-            entities = await self._entities_from_catalogue(query, canonical[0])
+            entities = await entities_from_catalogue(query, canonical[0], runtime=self.runtime, agent_id=self.agent_id)
 
         return {
             "query_class": query_class,
@@ -159,92 +159,3 @@ class Agent(SwarmAgent):
             "prompt_version": spec.version,
         }
 
-    async def _hints_from_catalogue(self, query: str) -> list[str]:
-        if "seleric.catalogue_search_metrics" not in self.runtime.mcp.capabilities:
-            return []
-        try:
-            result = await self.runtime.mcp.call(
-                agent_id=self.agent_id,
-                capability="seleric.catalogue_search_metrics",
-                arguments={"query": query},
-            )
-        except Exception:
-            return []
-        out: list[str] = []
-        scored: list[tuple[int, str]] = []
-        q_tokens = {
-            tok
-            for tok in re.findall(r"[a-z0-9]+", (query or "").lower())
-            if tok not in {
-                "what",
-                "is",
-                "the",
-                "a",
-                "an",
-                "for",
-                "on",
-                "of",
-                "and",
-                "were",
-                "was",
-                "how",
-                "many",
-                "today",
-                "yesterday",
-                "last",
-                "days",
-                "in",
-                "to",
-            }
-        }
-        for match in result.get("matches") or []:
-            how = str(match.get("matched_on") or "")
-            if how.startswith("description"):
-                continue
-            registry_id = self.runtime.metrics.id_for_catalogue(match.get("id"))
-            if not registry_id:
-                continue
-            hay = f"{match.get('id') or ''} {match.get('display_name') or ''}".lower().replace("_", " ")
-            hay_tokens = set(re.findall(r"[a-z0-9]+", hay))
-            overlap_tokens = hay_tokens & q_tokens
-            overlap = len(overlap_tokens)
-            cid = str(match.get("id") or "")
-            if overlap >= 2:
-                scored.append((overlap, registry_id))
-            elif overlap == 1:
-                tok = next(iter(overlap_tokens))
-                if tok == cid or cid.split("_") == [tok]:
-                    scored.append((overlap, registry_id))
-        if not scored:
-            return []
-        best = max(item[0] for item in scored)
-        for overlap, registry_id in scored:
-            if overlap == best and registry_id not in out:
-                out.append(registry_id)
-        return out
-
-    async def _entities_from_catalogue(self, query: str, metric_id: str) -> list[str]:
-        definition = self.runtime.metrics.get(metric_id)
-        if definition is None or "seleric.catalogue_get_metric" not in self.runtime.mcp.capabilities:
-            return []
-        try:
-            payload = await self.runtime.mcp.call(
-                agent_id=self.agent_id,
-                capability="seleric.catalogue_get_metric",
-                arguments={"metric_id": definition.catalogue_metric},
-            )
-        except Exception:
-            return []
-        supported = list(payload.get("supported_dimensions") or [])
-        text = (query or "").lower()
-        hits: list[str] = []
-        for dim in supported:
-            raw = str(dim)
-            parts = [p for p in raw.removeprefix("lt_").split("_") if p]
-            token = " ".join(parts)
-            if raw.lower() in text or (token and token in text):
-                hits.append(raw)
-                continue
-            if any(part in text for part in parts if len(part) >= 4):
-                hits.append(raw)
-        return hits

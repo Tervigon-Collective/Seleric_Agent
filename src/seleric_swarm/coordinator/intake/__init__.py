@@ -389,12 +389,60 @@ async def normalize_query(
     requested_outputs: list[str] | None = None,
     mcp: Any | None = None,
     agent_id: str = "coordinator_agent",
+    runtime: Any | None = None,
+    mission_id: str | None = None,
+    request_id: str | None = None,
+    session_id: str | None = None,
 ) -> NormalizedQuery:
-    intents = classify_intents(query)
-    primary, secondary, reason = await resolve_metrics(query, metrics, mcp=mcp, agent_id=agent_id)
-    entities = resolve_entities(query)
-    time_range, comparison = resolve_time_range(query, timezone=timezone, as_of=as_of)
-    domains = candidate_domains(query, intents, primary)
+    """Classify intents/metrics/entities/domains.
+
+    When ``runtime`` is given (live missions), classification goes through
+    the LLM + live catalogue (coordinator.intake.llm_classifier) — no keyword
+    lists. Falls back to the offline regex classifier only when no runtime is
+    given (fixture-free unit tests, or the LLM call itself failed).
+    """
+    llm_result = None
+    if runtime is not None:
+        from seleric_swarm.coordinator.intake.llm_classifier import classify_query_via_llm
+
+        llm_result = await classify_query_via_llm(
+            query,
+            runtime=runtime,
+            timezone=timezone,
+            as_of=as_of,
+            agent_id=agent_id,
+            mission_id=mission_id,
+            request_id=request_id,
+            session_id=session_id,
+        )
+
+    if llm_result is not None:
+        intents = list(llm_result.intents)
+        primary = llm_result.primary_metric
+        secondary = llm_result.secondary_metrics
+        reason = f"llm+catalogue: {primary}" if primary else None
+        entities = [
+            EntityRef(entity_type="dimension", entity_id=e, raw=e, resolved=True, resolution_reason="llm_catalogue")
+            for e in llm_result.entities
+        ]
+        tr = llm_result.time_range
+        time_range = (
+            TimeRange(start=tr.start, end=tr.end or tr.start, timezone=timezone, label=tr.relative_token)
+            if tr.start
+            else None
+        )
+        comparison = None
+        domains = (
+            [llm_result.domain_lead.removesuffix("_agent")]
+            if llm_result.domain_lead
+            else candidate_domains(query, intents, primary)
+        )
+    else:
+        intents = classify_intents(query)
+        primary, secondary, reason = await resolve_metrics(query, metrics, mcp=mcp, agent_id=agent_id)
+        entities = resolve_entities(query)
+        time_range, comparison = resolve_time_range(query, timezone=timezone, as_of=as_of)
+        domains = candidate_domains(query, intents, primary)
     unresolved: list[str] = []
     if primary is None and "lookup" in intents:
         unresolved.append("primary_metric_unresolved")
