@@ -113,8 +113,9 @@ def has_analytical_signal(query: str, metrics: MetricRegistry | None = None) -> 
     lowered = text.lower()
     if any(alias in lowered for alias in _METRIC_ALIASES):
         return True
-    # Sync offline check only — live catalogue resolution is async and belongs
-    # in normalize_query / resolve_metrics, not this cheap gate.
+    # Cheap admission check — sync offline resolver only. Live catalogue
+    # resolution is async and belongs in normalize_query / resolve_metrics
+    # (once we know execution_mode).
     del metrics
     primary, _secondary, _reason = _resolve_metrics_offline(text)
     return primary is not None

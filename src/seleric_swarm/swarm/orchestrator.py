@@ -140,7 +140,7 @@ async def run_swarm_mission(
             providers, _mcp_stats = build_hybrid_bundle(
                 scenario_id,
                 mcp=runtime.mcp,
-                execution_mode=mode,
+                execution_mode=mode,  # type: ignore[arg-type]
                 metrics=runtime.metrics,
                 agents=runtime.agents,
             )

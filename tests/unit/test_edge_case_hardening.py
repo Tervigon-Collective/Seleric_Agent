@@ -116,14 +116,13 @@ def test_swarm_mission_embeds_trace(runtime, monkeypatch):
     assert (body.get("trace") or {}).get("request_id") == "swarm-corr-1"
 
 
-def test_sync_reports_unresolvable_query_as_failed_mission(runtime, monkeypatch):
-    """A query with no recognizable metric or analysis intent now resolves as
-    a structured failed mission (status=failed, ROUTING_UNSUPPORTED) rather
-    than an HTTP-level 400 — the request itself was well-formed, only the
-    business question could not be answered."""
+def test_sync_rejects_unsupported_swarm_query(runtime, monkeypatch):
+    """Unrecognized phrasing is rejected at the API (400) for both routes —
+    lookup no longer swallows noise that would have been diagnostic before.
+    """
     monkeypatch.setattr(main_mod, "_runtime", runtime)
     client = TestClient(app, raise_server_exceptions=True)
-    resp = client.post(
+    bad = client.post(
         "/v1/missions",
         json={
             "query": "?????",
@@ -131,10 +130,8 @@ def test_sync_reports_unresolvable_query_as_failed_mission(runtime, monkeypatch)
             "scenario_id": "cac_regression",
         },
     )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "failed"
-    assert body["error"]["code"] == "ROUTING_UNSUPPORTED"
+    assert bad.status_code == 400
+    assert "known metric" in bad.json()["detail"]
 
 
 def test_sync_passes_generated_session_id(runtime, monkeypatch):
@@ -178,6 +175,7 @@ async def test_swarm_v1_accepts_execution_mode(runtime, monkeypatch):
     }
 
 
+@pytest.mark.asyncio
 async def test_as_of_extends_scenario_observation_window():
     scenario = {"observation_window": {"start": "2026-08-31", "end": "2026-09-02"}}
     # Scenario window kept; as_of past end extends end only
@@ -234,6 +232,7 @@ def test_swarm_mission_view_preserves_prototype_completed():
     assert coerce_typed_status("weird") == "partial"
 
 
+@pytest.mark.asyncio
 async def test_full_flags_folded_into_normalized_intents():
     nq = await normalize_query("Why did CAC rise?", timezone="Asia/Kolkata", as_of="2026-09-03")
     intents = apply_full_flags(

@@ -277,19 +277,25 @@ async def create_mission(
     route_hint = await route_for(runtime, query=query)
     scenario_id = _resolve_scenario_id(req.scenario_id, route=route_hint)
 
+    # Applies to both routes: unrecognized phrasing (e.g. "?????") now defaults
+    # to the lookup fast path rather than "diagnostic", so this can't be gated
+    # on route_hint == "swarm" alone or nonsense queries would silently
+    # succeed via lookup instead of being rejected.
+    from seleric_swarm.coordinator.intake import has_analytical_signal
+
+    if not has_analytical_signal(query, runtime.metrics):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Query does not name a known metric or a supported analysis "
+                "(diagnose / forecast / compare / recommend / health check)."
+            ),
+        )
+
     if route_hint == "swarm":
-        from seleric_swarm.coordinator.intake import has_analytical_signal
         from seleric_swarm.swarm.providers.errors import ScenarioNotFoundError
         from seleric_swarm.swarm.providers.fixtures import load_scenario
 
-        if not has_analytical_signal(query, runtime.metrics):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Query does not name a known metric or a supported analysis "
-                    "(diagnose / forecast / compare / recommend / health check)."
-                ),
-            )
         try:
             load_scenario(scenario_id)
         except ScenarioNotFoundError as exc:

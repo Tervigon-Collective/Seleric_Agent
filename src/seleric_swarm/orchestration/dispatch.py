@@ -23,44 +23,10 @@ from seleric_swarm.orchestration.runner import run_mission
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.swarm.orchestrator import run_swarm_mission
 
-# Retrieval / comparison verbs that are safe for the lookup fast path.
-_LOOKUP_RE = (
-    "what were",
-    "what was",
-    "what is",
-    "how much",
-    "how many",
-    "compare",
-    " vs ",
-    "versus",
-    "show me",
-    "tell me",
-    "get me",
-)
-
-_CAUSAL_MARKERS = (
-    "why",
-    "root cause",
-    "diagnose",
-    "what changed",
-    "caused",
-    "explain",
-    "driver of",
-    "driving",
-    "drove",
-    "change in",
-    "drop in",
-    "fall in",
-    "decline in",
-    "increase in",
-    "rise in",
-    "spike in",
-    "what's behind",
-    "what is behind",
-    "attributed to",
-)
-
 # Degradation / anomaly stems — word-boundary match (avoid "backdrop"/"airdrop").
+# Not covered by coordinator.intake's _DIAGNOSTIC_RE, which only matches these
+# as "increase in"/"drop in" phrases — this catches the bare verb forms too
+# (e.g. "how many orders dropped" has no diagnostic trigger word otherwise).
 _DEGRADATION_RE = re.compile(
     r"\b("
     r"dropped|drop|fell|falling|declined|decline|decreased|decrease|"
@@ -80,27 +46,26 @@ async def route_for(runtime: SwarmRuntime, *, query: str) -> str:
 
     Diagnostic / predictive / prescriptive / health → swarm.
     Plain retrieval / comparison phrasing stays on the lookup fast path.
-    Lookup verbs combined with degradation/causal language still go to swarm
-    (e.g. "show me how many orders dropped").
 
-    Intake ``classify_intents`` is the primary signal; local degradation/causal
-    markers catch phrasing that intake treats as lookup-only.
+    Classification is delegated to coordinator.intake.classify_intents
+    (word-boundary regexes) rather than a duplicate hand-rolled keyword list,
+    so routing and in-swarm specialist activation can't drift apart. Lookup
+    verbs combined with degradation language still go to swarm (e.g. "show me
+    how many orders dropped").
     """
     q = query.lower().strip()
     intake = set(intake_classify_intents(query))
-    causal = any(k in q for k in _CAUSAL_MARKERS)
     degraded = _has_degradation(q)
     lookupish = bool(intake & {"lookup", "comparison"})
-    lookup_verb = any(q.startswith(p) or p in q for p in _LOOKUP_RE)
     # Always swarm for investigation / forecast / action / health.
     if intake & {"predictive", "prescriptive", "executive_health"}:
         return "swarm"
-    if causal or ("diagnostic" in intake and not lookupish):
+    if "diagnostic" in intake and not lookupish:
         return "swarm"
     # Pure comparison lookups stay on the fast path even if "increase" appears.
     if degraded and not (intake == {"comparison"} or intake == {"lookup", "comparison"}):
         return "swarm"
-    if lookupish or lookup_verb:
+    if lookupish:
         return "lookup"
     return "swarm"
 

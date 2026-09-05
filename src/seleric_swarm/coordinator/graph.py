@@ -976,6 +976,7 @@ async def run_swarm_v2_mission(
         else:
             providers = build_fixture_bundle(scenario_id)
     initial_lead = _initial_lead(query)
+
     request = MissionRequest(
         query=query,
         session_id=sid,
