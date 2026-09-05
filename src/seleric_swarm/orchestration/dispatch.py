@@ -82,6 +82,9 @@ async def route_for(runtime: SwarmRuntime, *, query: str) -> str:
     Plain retrieval / comparison phrasing stays on the lookup fast path.
     Lookup verbs combined with degradation/causal language still go to swarm
     (e.g. "show me how many orders dropped").
+
+    Intake ``classify_intents`` is the primary signal; local degradation/causal
+    markers catch phrasing that intake treats as lookup-only.
     """
     q = query.lower().strip()
     intake = set(intake_classify_intents(query))

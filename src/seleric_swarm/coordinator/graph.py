@@ -451,7 +451,10 @@ def _make_refine(ctx: SwarmV2Context):
             current_lead=lead,
             topology=ctx.policies.domain_topology,
         )
-        proposal = ctx.domains[lead].evaluate_handoff(ctx.blackboard)
+        lead_domain = lead.removesuffix("_agent")
+        topo = ctx.policies.domain_topology.get(lead_domain)
+        neighbors = [d for vs in topo.values() for d in vs] if topo else None
+        proposal = ctx.domains[lead].evaluate_handoff(ctx.blackboard, topology_neighbors=neighbors)
         if proposal is not None:
             decision = ctx.leadership.decide_transfer(
                 ctx.blackboard.leadership_state(),
@@ -662,7 +665,7 @@ def _make_remediate(ctx: SwarmV2Context):
 
         # Extend decomposition from Skeptic follow-ups (avoid duplicate version spam)
         prev_id = ctx.decomposition.decomposition_id
-        ctx.decomposition = refine_from_skeptic_followups(ctx.decomposition, followups)
+        ctx.decomposition = refine_from_skeptic_followups(ctx.decomposition, followups, policies=ctx.policies)
         if ctx.decomposition.decomposition_id != prev_id or not any(d.get("decomposition_id") == prev_id for d in ctx.decompositions):
             ctx.decompositions.append(ctx.decomposition.model_dump())
 
@@ -922,7 +925,7 @@ async def run_swarm_v2_mission(
     full_skeptic: bool = False,
     full_diagnostic: bool = False,
     full_prediction: bool = False,
-    execution_mode: str = "fixture",
+    execution_mode: str = "production",
     budget_overrides: dict[str, Any] | None = None,
     mission_id: str | None = None,
 ) -> SwarmMissionResult:
@@ -958,24 +961,34 @@ async def run_swarm_v2_mission(
         )
     scenario = load_scenario(scenario_id)
     mode: Literal["production", "staging", "fixture"] = (
-        execution_mode if execution_mode in {"production", "staging", "fixture"} else "fixture"  # type: ignore[assignment]
+        execution_mode if execution_mode in {"production", "staging", "fixture"} else "production"  # type: ignore[assignment]
     )
     mcp_stats: McpFetchStats | None = None
     if providers is None:
         if mode != "fixture":
             providers, mcp_stats = build_hybrid_bundle(
-                scenario_id, mcp=runtime.mcp, execution_mode=mode
+                scenario_id,
+                mcp=runtime.mcp,
+                execution_mode=mode,
+                metrics=runtime.metrics,
+                agents=runtime.agents,
             )
         else:
             providers = build_fixture_bundle(scenario_id)
     initial_lead = _initial_lead(query)
-
     request = MissionRequest(
         query=query,
         session_id=sid,
         execution_mode=mode,
     )
-    normalized = normalize_query(query, timezone=timezone, as_of=as_of, metrics=runtime.metrics)
+    normalized = await normalize_query(
+        query,
+        timezone=timezone,
+        as_of=as_of,
+        metrics=runtime.metrics,
+        mcp=runtime.mcp if mode != "fixture" else None,
+        agent_id="coordinator_agent",
+    )
     # Single source of truth: intake intents (includes executive_health → diagnostic),
     # plus full_* flags that force specialist activation. Fold into normalized so
     # decomposition / plan see the same intents the mission executes with.
@@ -988,9 +1001,19 @@ async def run_swarm_v2_mission(
     if "executive_health" in intents:
         intents.add("diagnostic")
     normalized = normalized.model_copy(update={"intents": sorted(intents)})
-    time_range = resolve_mission_time_range(
-        scenario, timezone=timezone, as_of=as_of, normalized=normalized
-    )
+    # Live MCP uses the query window; fixture mode keeps the scenario observation window
+    # (and as_of extension) via resolve_mission_time_range.
+    if mode != "fixture" and normalized.time_range is not None:
+        time_range = {
+            "start": normalized.time_range.start,
+            "end": normalized.time_range.end,
+            "timezone": normalized.time_range.timezone or timezone,
+            "label": normalized.time_range.label,
+        }
+    else:
+        time_range = resolve_mission_time_range(
+            scenario, timezone=timezone, as_of=as_of, normalized=normalized
+        )
     decomposition = initial_decomposition(mission_id=mission_id, normalized=normalized, policies=policies)
     plan = build_mission_plan(
         mission_id=mission_id,
@@ -1009,10 +1032,13 @@ async def run_swarm_v2_mission(
         complexity=plan.complexity,
         initial_lead=initial_lead,
         context={
+            # Only fall back to a domain default when intake couldn't resolve a
+            # specific metric from the query — never clobber a correctly
+            # resolved one (e.g. "why did ROAS drop" must diagnose ROAS, not CAC,
+            # even though ROAS keywords route the initial lead to performance_agent).
             "primary_metric": (
-                "metric.cac"
-                if initial_lead == "performance_agent"
-                else (normalized.primary_metric or "metric.net_sales")
+                normalized.primary_metric
+                or ("metric.cac" if initial_lead == "performance_agent" else "metric.net_sales")
             ),
             "resolved_metric": normalized.primary_metric,
             "decomposition_id": decomposition.decomposition_id,
@@ -1093,7 +1119,7 @@ async def run_swarm_v2_mission(
             decomposition_id=decomp.decomposition_id,
             decomposition_version=decomp.version,
             leadership_epoch=blackboard.leadership_epoch,
-            synthetic=True,
+            synthetic=(mode == "fixture"),
         )
         msg = SwarmMessage.request(
             mission_id=mission_id,
@@ -1210,7 +1236,7 @@ async def run_swarm_v2_mission(
             "workflow_version": "1.4.0",
             "agent_version": "1.4.0",
         },
-        "synthetic": True,
+        "synthetic": mode == "fixture",
         "current_decomposition_ref": decomposition.decomposition_id,
         "decomposition_refs": [decomposition.decomposition_id],
     }
@@ -1230,11 +1256,12 @@ async def run_swarm_v2_mission(
             "decomposition_id": decomposition.decomposition_id,
             "decomposition_version": decomposition.version,
             "mission_lead": initial_lead,
-            "synthetic": True,
+            "synthetic": mode == "fixture",
+            "execution_mode": mode,
             "decide_execute": True,
         },
         runtime.settings.langsmith_tracing,
-        inputs={"query": query, "intents": sorted(intents), "complexity": plan.complexity},
+        inputs={"query": query, "intents": sorted(intents), "complexity": plan.complexity, "execution_mode": mode},
     ) as span:
         final_state: dict[str, Any] = await graph.ainvoke(initial_state)
         artifacts = {

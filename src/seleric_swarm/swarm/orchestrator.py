@@ -20,7 +20,11 @@ from uuid import uuid4
 
 import structlog
 
-from seleric_swarm.coordinator.intake import apply_full_flags, resolve_mission_time_range
+from seleric_swarm.coordinator.intake import (
+    apply_full_flags,
+    resolve_metrics,
+    resolve_mission_time_range,
+)
 from seleric_swarm.leadership.manager import LeadershipManager
 from seleric_swarm.observability.tracing import traced_span
 from seleric_swarm.runtime import SwarmRuntime
@@ -134,7 +138,11 @@ async def run_swarm_mission(
             from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
 
             providers, _mcp_stats = build_hybrid_bundle(
-                scenario_id, mcp=runtime.mcp, execution_mode=mode  # type: ignore[arg-type]
+                scenario_id,
+                mcp=runtime.mcp,
+                execution_mode=mode,
+                metrics=runtime.metrics,
+                agents=runtime.agents,
             )
         else:
             providers = build_fixture_bundle(scenario_id)
@@ -155,7 +163,21 @@ async def run_swarm_mission(
         complexity="L5" if len(intents) >= 2 else "L4",
         initial_lead=initial_lead,
         context={
-            "primary_metric": "metric.cac" if initial_lead == "performance_agent" else "metric.net_sales",
+            # Only fall back to a domain default when the query itself didn't
+            # resolve a specific metric — never clobber a correctly resolved
+            # one (e.g. "why did ROAS drop" must diagnose ROAS, not CAC, even
+            # though ROAS keywords route the initial lead to performance_agent).
+            "primary_metric": (
+                (
+                    await resolve_metrics(
+                        query,
+                        runtime.metrics,
+                        mcp=runtime.mcp if execution_mode != "fixture" else None,
+                        agent_id="coordinator_agent",
+                    )
+                )[0]
+                or ("metric.cac" if initial_lead == "performance_agent" else "metric.net_sales")
+            ),
             "degradation_started_at": (scenario.get("domains", {}).get("technical", {}) or {}).get("degradation_started_at"),
         },
     )

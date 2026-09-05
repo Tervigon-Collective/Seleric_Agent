@@ -127,9 +127,9 @@ class MissionRequest(BaseModel):
             "Required when the query routes to swarm; ignored for lookup."
         ),
     )
-    # fixture = offline synthetic providers (default).
-    # staging/production = prefer MCPGateway for commerce/performance, fixture fallback.
-    execution_mode: str = "fixture"
+    # fixture = offline synthetic providers.
+    # staging/production = live Seleric MCP (catalogue + metrics_query), fixture fallback.
+    execution_mode: str = "production"
     # wait=true (default): run synchronously and return the finished mission.
     # wait=false: accept immediately (status=running); poll GET /v1/missions/{id}.
     wait: bool = True
@@ -141,6 +141,7 @@ class MissionRequest(BaseModel):
                     "query": "Why has CAC increased over the last three days?",
                     "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-03"},
                     "mode": "read_only",
+                    "execution_mode": "production",
                     "full_diagnostic": True,
                     "full_prediction": True,
                     "full_skeptic": True,

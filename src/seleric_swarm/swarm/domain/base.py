@@ -234,12 +234,19 @@ class DomainAgent:
         return bool(cfg is not None and cfg.terminal)
 
     # -- leadership handoff (architecture sec. 18-19, 32) -------------------
-    def evaluate_handoff(self, blackboard: Blackboard) -> HandoffProposal | None:
+    def evaluate_handoff(
+        self, blackboard: Blackboard, *, topology_neighbors: list[str] | None = None
+    ) -> HandoffProposal | None:
         anomalies = blackboard.by_type("anomaly")
         if self._owns_frontier(anomalies):
             return None  # the cause is in my domain; keep leading
 
         peers = set(self.config.handoff_targets)
+        if topology_neighbors is not None:
+            # Restrict to the mesh's actual adjacency (config/coordinator_policies.yaml)
+            # so RCA walks intermediate domains (e.g. Funnel) instead of jumping
+            # straight to a distant domain just because it has the biggest anomaly.
+            peers &= {f"{d}_agent" for d in topology_neighbors}
         visited = {self.agent_id}
         for h in blackboard.handoff_history or []:
             if h.get("from_agent"):
