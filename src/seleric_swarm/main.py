@@ -52,9 +52,9 @@ class MissionRequest(BaseModel):
     full_prediction: bool = True
     full_skeptic: bool = True
     scenario_id: str = "cac_regression"
-    # fixture = offline synthetic providers (default).
-    # staging/production = prefer MCPGateway for commerce/performance, fixture fallback.
-    execution_mode: str = "fixture"
+    # fixture = offline synthetic providers.
+    # staging/production = live Seleric MCP (catalogue + metrics_query), fixture fallback.
+    execution_mode: str = "production"
 
     model_config = {
         "json_schema_extra": {
@@ -63,6 +63,7 @@ class MissionRequest(BaseModel):
                     "query": "Why has CAC increased over the last three days?",
                     "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-03"},
                     "mode": "read_only",
+                    "execution_mode": "production",
                     "full_diagnostic": True,
                     "full_prediction": True,
                     "full_skeptic": True,

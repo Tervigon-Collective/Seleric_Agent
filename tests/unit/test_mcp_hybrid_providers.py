@@ -4,46 +4,69 @@ from __future__ import annotations
 
 import pytest
 
-from seleric_swarm.swarm.providers.mcp_data import DOMAIN_MCP_ROUTES, build_hybrid_bundle
+from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
 
 
 @pytest.mark.asyncio
 async def test_hybrid_staging_uses_mcp_for_performance(runtime):
     bundle, stats = build_hybrid_bundle(
-        "cac_regression", mcp=runtime.mcp, execution_mode="staging"
+        "cac_regression",
+        mcp=runtime.mcp,
+        execution_mode="staging",
+        metrics=runtime.metrics,
+        agents=runtime.agents,
     )
-    assert "performance.daily_cac" in runtime.mcp.capabilities
+    assert "seleric.metrics_query" in runtime.mcp.capabilities
     provider = bundle.data_for("performance")
-    assert provider is not None
+    assert type(provider).__name__ == "HybridMcpDataProvider"
     result = await provider.fetch(
         metric_ids=["metric.cac"],
-        time_range={"start": "2026-09-03", "end": "2026-09-03"},
+        time_range={"start": "2026-08-31", "end": "2026-09-03"},
     )
     assert result.readings
     cac = next(r for r in result.readings if r.metric_id == "metric.cac" and not r.dimensions)
-    # Either MCP overlay hit or fallback — both valid; staging with fixture MCP should hit.
-    if stats.mcp_hits:
-        assert cac.data_origin == "MCP"
-        assert "performance.daily_cac" in stats.capabilities_used
-        assert any("MCP data path used" in line for line in stats.limitations())
-    else:
-        assert stats.mcp_fallbacks >= 1
+    assert cac.data_origin == "MCP"
+    assert cac.synthetic is False
+    assert stats.mcp_hits >= 1
+    assert "seleric.metrics_query" in stats.capabilities_used
 
 
 @pytest.mark.asyncio
 async def test_hybrid_fixture_mode_skips_mcp(runtime):
     bundle, stats = build_hybrid_bundle(
-        "cac_regression", mcp=runtime.mcp, execution_mode="fixture"
+        "cac_regression",
+        mcp=runtime.mcp,
+        execution_mode="fixture",
+        metrics=runtime.metrics,
+        agents=runtime.agents,
     )
     provider = bundle.data_for("commerce")
     assert provider is not None
-    # Pure FixtureDataProvider — no Hybrid wrapper in fixture mode
     assert type(provider).__name__ == "FixtureDataProvider"
     await provider.fetch(
         metric_ids=["metric.net_sales"],
         time_range={"start": "2026-09-01", "end": "2026-09-01"},
     )
     assert stats.mcp_attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_hybrid_production_skips_fixture_for_technical(runtime):
+    bundle, stats = build_hybrid_bundle(
+        "cac_regression",
+        mcp=runtime.mcp,
+        execution_mode="production",
+        metrics=runtime.metrics,
+        agents=runtime.agents,
+    )
+    technical = bundle.data_for("technical")
+    assert type(technical).__name__ == "EmptyDataProvider"
+    result = await technical.fetch(
+        metric_ids=["metric.js_error_rate"],
+        time_range={"start": "2026-08-31", "end": "2026-09-03"},
+    )
+    assert result.readings == []
+    assert result.synthetic is False
 
 
 @pytest.mark.asyncio
@@ -60,11 +83,6 @@ async def test_swarm_v2_staging_surfaces_mcp_limitations(runtime):
     )
     joined = " ".join(result.limitations)
     assert "execution_mode=staging" in joined or "MCP" in joined
-
-
-def test_domain_mcp_routes_cover_registry_capabilities():
-    assert DOMAIN_MCP_ROUTES["commerce"][1] == "commerce.daily_sales"
-    assert DOMAIN_MCP_ROUTES["performance"][1] == "performance.daily_cac"
 
 
 def test_api_rejects_bad_execution_mode(runtime, monkeypatch):

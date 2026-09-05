@@ -7,10 +7,15 @@ from typing import Any
 from seleric_swarm.agents.diagnostic.context import DiagnosticContext, ScopedAnomaly
 from seleric_swarm.agents.diagnostic.ontology import known_outcomes
 
-_OUTCOME_PRIORITY = ("metric.purchase_cvr", "metric.cac", "metric.net_sales")
-
 # When leadership has moved to a downstream domain, diagnose that domain's
 # frontier metric rather than the top-line symptom that opened the mission.
+# NOTE: this is not a text-resolvable "which metric does the query mean"
+# lookup (the MCP catalogue can't answer it) — it's domain-mesh business
+# knowledge ("what's the diagnostic outcome metric once you're in domain X"),
+# a concept config/metric_registry.yaml doesn't currently model (it only
+# flags handoff-trigger "frontier" metrics, a different semantic). Making
+# this dynamic needs a registry schema addition (e.g. a per-domain "outcome"
+# flag), not a runtime lookup — left as documented static domain knowledge.
 _DOMAIN_FRONTIER: dict[str, str] = {
     "technical": "metric.purchase_cvr",
     "funnel": "metric.purchase_cvr",
@@ -88,11 +93,8 @@ def _resolve_outcome(
 
     if hint and hint in metric_ids:
         return hint
-    for candidate in _OUTCOME_PRIORITY:
-        if candidate in metric_ids and candidate != hint:
-            return candidate
     if hint and hint in known_outcomes():
         return hint
     if anomalies:
         return max(anomalies, key=lambda a: abs(a.deviation_pct or 0)).metric_id
-    return hint or "metric.purchase_cvr"
+    return hint

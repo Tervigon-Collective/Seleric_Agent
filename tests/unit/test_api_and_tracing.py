@@ -53,6 +53,10 @@ def test_mission_diagnostic_query_routes_to_full_swarm(runtime, monkeypatch):
             ),
             "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-03"},
             "mode": "read_only",
+            # Pin fixture mode: this test asserts the deterministic scripted
+            # handoff chain baked into the cac_regression scenario, which live
+            # MCP data (the default execution_mode) will not reproduce.
+            "execution_mode": "fixture",
         },
     )
     assert created.status_code == 200

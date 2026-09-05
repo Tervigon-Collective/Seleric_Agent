@@ -44,7 +44,7 @@ from seleric_swarm.swarm.mission import SwarmMission
 async def test_01_simple_lookup_minimal_swarm(runtime):
     route = await route_for(runtime, query="What were Shopify sales yesterday?")
     assert route == "lookup"
-    nq = normalize_query("What were Shopify sales yesterday?")
+    nq = await normalize_query("What were Shopify sales yesterday?")
     assert "lookup" in nq.intents or complexity_band(nq) in {"L0", "L1"}
     assert intent_band_for_activation(nq) == "LOOKUP"
     dec = initial_decomposition(mission_id="M1", normalized=nq)
@@ -60,8 +60,9 @@ async def test_01_simple_lookup_minimal_swarm(runtime):
 # --- 2. Vague executive query -----------------------------------------------
 
 
-def test_02_executive_health_decomposition():
-    nq = normalize_query("How are we doing today?")
+@pytest.mark.asyncio
+async def test_02_executive_health_decomposition():
+    nq = await normalize_query("How are we doing today?")
     assert "executive_health" in nq.intents
     dec = initial_decomposition(mission_id="M2", normalized=nq)
     assert dec.template == "executive_health"
@@ -76,8 +77,9 @@ def test_02_executive_health_decomposition():
 # --- 3–5. CAC recursive decomposition / ruled-out / mobile refine -----------
 
 
-def test_03_04_05_cac_recursive_decomposition_and_frontier():
-    nq = normalize_query("Why has CAC increased over the last three days?")
+@pytest.mark.asyncio
+async def test_03_04_05_cac_recursive_decomposition_and_frontier():
+    nq = await normalize_query("Why has CAC increased over the last three days?")
     dec = initial_decomposition(mission_id="M3", normalized=nq)
     assert dec.template == "cac_diagnostic"
     assert any(sq.branch == "media" for sq in dec.subquestions)
@@ -116,8 +118,9 @@ def test_03_04_05_cac_recursive_decomposition_and_frontier():
 # --- 6. Skeptic adds subquestion --------------------------------------------
 
 
-def test_06_skeptic_adds_traffic_mix_subquestion():
-    nq = normalize_query("Why has CAC increased?")
+@pytest.mark.asyncio
+async def test_06_skeptic_adds_traffic_mix_subquestion():
+    nq = await normalize_query("Why has CAC increased?")
     dec = initial_decomposition(mission_id="M6", normalized=nq)
     followups = [
         {
@@ -137,8 +140,9 @@ def test_06_skeptic_adds_traffic_mix_subquestion():
 # --- 7. Duplicate subquestion prevention ------------------------------------
 
 
-def test_07_duplicate_subquestion_prevention():
-    nq = normalize_query("Why has CAC increased?")
+@pytest.mark.asyncio
+async def test_07_duplicate_subquestion_prevention():
+    nq = await normalize_query("Why has CAC increased?")
     dec = initial_decomposition(mission_id="M7", normalized=nq)
     q = dec.subquestions[0].question
     assert is_duplicate_subquestion(dec.subquestions, q)
@@ -454,8 +458,9 @@ def test_20_budget_exhaustion_partial():
 # --- 21. Decomposition audit ------------------------------------------------
 
 
-def test_21_decomposition_audit_trail():
-    nq = normalize_query("Why has CAC increased?")
+@pytest.mark.asyncio
+async def test_21_decomposition_audit_trail():
+    nq = await normalize_query("Why has CAC increased?")
     d1 = initial_decomposition(mission_id="M21", normalized=nq)
     d2 = refine_from_evidence(
         d1,
@@ -510,6 +515,10 @@ async def test_swarm_v2_cac_reference_mission(runtime):
         full_diagnostic=True,
         full_prediction=True,
         full_skeptic=False,
+        # Pin fixture mode: this test asserts the deterministic scripted
+        # PROTOTYPE banner, which live MCP data (the default execution_mode)
+        # will not reproduce.
+        execution_mode="fixture",
     )
     assert out["route"] == "swarm"
     assert out.get("workflow") == "swarm_v2"
@@ -536,8 +545,9 @@ async def test_hypothesis_dedup_same_statement():
     assert id1 == id2
 
 
-def test_select_next_subquestions_respects_eig():
-    nq = normalize_query("How are we doing today?")
+@pytest.mark.asyncio
+async def test_select_next_subquestions_respects_eig():
+    nq = await normalize_query("How are we doing today?")
     dec = initial_decomposition(mission_id="Meig", normalized=nq)
     selected = select_next_subquestions(dec, limit=2, eig_threshold=0.01)
     assert len(selected) <= 2

@@ -43,6 +43,22 @@ def information_gain(
     return round((eig * business_impact * resolve_prob) / denom, 4)
 
 
+def _cap_added_to_open_limit(
+    kept: list[SubQuestion], added: list[SubQuestion], max_open: int
+) -> list[SubQuestion]:
+    """Trim newly added subquestions so open (pending/ready) count stays <= max_open.
+
+    Lowest-priority additions are dropped first; kept/retired questions are untouched.
+    """
+    open_kept = sum(1 for sq in kept if sq.status in {"pending", "ready"})
+    room = max(0, max_open - open_kept)
+    if len(added) <= room:
+        return added
+    ranked = sorted(added, key=lambda s: (-s.priority, s.question_id))
+    accepted_ids = {s.question_id for s in ranked[:room]}
+    return [s for s in added if s.question_id in accepted_ids]
+
+
 def is_duplicate_subquestion(existing: list[SubQuestion], question: str) -> bool:
     norm = _normalize_question_text(question)
     for sq in existing:
@@ -231,6 +247,8 @@ def refine_from_evidence(
                 )
             )
 
+    added = _cap_added_to_open_limit(kept, added, policies.decomposition.max_open_subquestions)
+
     if not added and not retired:
         return current
 
@@ -262,8 +280,11 @@ def refine_from_evidence(
 def refine_from_skeptic_followups(
     current: ProblemDecomposition,
     followups: list[dict[str, Any]],
+    *,
+    policies: CoordinatorPolicies | None = None,
 ) -> ProblemDecomposition:
     """Skeptic REVISE may extend decomposition with targeted subquestions only."""
+    policies = policies or load_coordinator_policies()
     added: list[SubQuestion] = []
     for f in followups:
         qtext = str(f.get("question") or f.get("objective") or "").strip()
@@ -286,6 +307,9 @@ def refine_from_skeptic_followups(
                 metadata={"from_followup": f.get("task_id")},
             )
         )
+    added = _cap_added_to_open_limit(
+        list(current.subquestions), added, policies.decomposition.max_open_subquestions
+    )
     if not added:
         return current
     version = current.version + 1

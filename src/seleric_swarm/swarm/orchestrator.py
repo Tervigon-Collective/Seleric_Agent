@@ -20,7 +20,7 @@ from uuid import uuid4
 
 import structlog
 
-from seleric_swarm.coordinator.intake import apply_full_flags
+from seleric_swarm.coordinator.intake import apply_full_flags, resolve_metrics
 from seleric_swarm.leadership.manager import LeadershipManager
 from seleric_swarm.observability.tracing import traced_span
 from seleric_swarm.runtime import SwarmRuntime
@@ -113,6 +113,7 @@ async def run_swarm_mission(
     full_skeptic: bool = False,
     full_diagnostic: bool = False,
     full_prediction: bool = False,
+    execution_mode: str = "fixture",
 ) -> SwarmMissionResult:
     mission_id = f"MS-{uuid4().hex[:10]}"
     rid = request_id or uuid4().hex
@@ -139,7 +140,21 @@ async def run_swarm_mission(
         complexity="L5" if len(intents) >= 2 else "L4",
         initial_lead=initial_lead,
         context={
-            "primary_metric": "metric.cac" if initial_lead == "performance_agent" else "metric.net_sales",
+            # Only fall back to a domain default when the query itself didn't
+            # resolve a specific metric — never clobber a correctly resolved
+            # one (e.g. "why did ROAS drop" must diagnose ROAS, not CAC, even
+            # though ROAS keywords route the initial lead to performance_agent).
+            "primary_metric": (
+                (
+                    await resolve_metrics(
+                        query,
+                        runtime.metrics,
+                        mcp=runtime.mcp if execution_mode != "fixture" else None,
+                        agent_id="coordinator_agent",
+                    )
+                )[0]
+                or ("metric.cac" if initial_lead == "performance_agent" else "metric.net_sales")
+            ),
             "degradation_started_at": (scenario.get("domains", {}).get("technical", {}) or {}).get("degradation_started_at"),
         },
     )

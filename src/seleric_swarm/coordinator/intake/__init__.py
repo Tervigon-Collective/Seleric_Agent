@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from seleric_swarm.coordinator.contracts import (
@@ -34,13 +35,12 @@ _LOOKUP_RE = re.compile(
 _HEALTH_RE = re.compile(r"\b(how are we doing|how is (the )?business|health check)\b", re.IGNORECASE)
 
 _METRIC_ALIASES: dict[str, str] = {
-    "cac": "metric.blended_paid_cac",
-    "blended cac": "metric.blended_paid_cac",
-    "paid cac": "metric.blended_paid_cac",
+    "cac": "metric.cac",
+    "blended cac": "metric.cac",
+    "paid cac": "metric.cac",
     "cpm": "metric.cpm",
     "ctr": "metric.ctr",
     "cpc": "metric.cpc",
-    "roas": "metric.roas",
     "net sales": "metric.net_sales",
     "sales": "metric.net_sales",
     "shopify sales": "metric.net_sales",
@@ -78,8 +78,11 @@ def classify_intents(query: str) -> list[str]:
     # prediction/strategy alone — otherwise specialists skip Diagnostic/Skeptic.
     if "executive_health" in intents and "diagnostic" not in intents:
         intents.append("diagnostic")
+    # Unrecognized phrasing defaults to the cheapest tier (observer-only lookup),
+    # not the full investigation pipeline — this also drives route_for's
+    # swarm-vs-lookup decision, so a plain "get today's X" stays on the fast path.
     if not intents:
-        intents.append("diagnostic")
+        intents.append("lookup")
     return intents
 
 
@@ -108,26 +111,114 @@ def apply_full_flags(
     return out
 
 
-def resolve_metrics(query: str, metrics: MetricRegistry | None = None) -> tuple[str | None, list[str], str | None]:
+_STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "and", "or", "but", "if", "then", "than", "of", "in", "on", "at", "to",
+    "for", "with", "by", "from", "this", "that", "these", "those", "it",
+    "we", "us", "our", "do", "does", "did", "has", "have", "had", "not",
+    "why", "what", "when", "where", "how", "which", "who", "should",
+    "over", "last", "past", "next", "days", "day", "week", "weeks",
+    "month", "months", "year", "years", "today", "yesterday", "continues",
+    "happen", "happens", "action", "get", "me", "show", "tell", "please",
+}
+
+
+def _candidate_terms(query: str, *, max_terms: int = 12) -> list[str]:
+    """Generic n-gram phrase extraction — no metric-specific vocabulary.
+
+    Longer windows first (more likely to hit a specific glossary phrase like
+    "net sales" before wasting a call on a lone generic word).
+    """
+    words = [w for w in re.findall(r"[a-zA-Z]+", query.lower()) if w not in _STOPWORDS]
+    candidates: list[str] = []
+    for size in (3, 2, 1):
+        for i in range(len(words) - size + 1):
+            phrase = " ".join(words[i : i + size])
+            if phrase and phrase not in candidates:
+                candidates.append(phrase)
+    return candidates[:max_terms]
+
+
+async def _resolve_metrics_via_catalogue(
+    query: str,
+    *,
+    mcp: Any,
+    agent_id: str,
+    metrics: MetricRegistry | None,
+) -> tuple[str | None, list[str], str | None]:
+    """Resolve query language to metric ids via the live Seleric MCP catalogue.
+
+    No local alias table: every candidate phrase is checked against the
+    catalogue's own glossary (catalogue_resolve_term), which is the single
+    source of truth for what a business term means.
+    """
+    found: list[str] = []
+    reasons: list[str] = []
+    seen: set[str] = set()
+    for term in _candidate_terms(query):
+        try:
+            result = await mcp.call(
+                agent_id=agent_id, capability="seleric.catalogue_resolve_term", arguments={"text": term}
+            )
+        except Exception:
+            continue
+        if result.get("kind") != "resolved":
+            continue
+        catalogue_id = result.get("metric_id")
+        if not catalogue_id or catalogue_id in seen:
+            continue
+        seen.add(catalogue_id)
+        registry_id = metrics.id_for_catalogue(catalogue_id) if metrics else None
+        resolved = registry_id or f"metric.{catalogue_id}"
+        found.append(resolved)
+        reasons.append(f"{term}->{resolved} (catalogue, confidence={result.get('confidence')})")
+        if len(found) >= 3:
+            break
+    primary = found[0] if found else None
+    return primary, found[1:], "; ".join(reasons) or None
+
+
+def _resolve_metrics_offline(query: str) -> tuple[str | None, list[str], str | None]:
+    """Fixture-mode fallback only — no live MCP available. Kept deterministic
+    on purpose so offline/synthetic missions stay reproducible in tests.
+    """
     q = query.lower()
     found: list[str] = []
     reason_parts: list[str] = []
     for alias, metric_id in _METRIC_ALIASES.items():
         if alias in q:
-            if metrics is not None and metrics.get(metric_id) is None:
-                # still accept known alias ids used by swarm fixtures
-                pass
             found.append(metric_id)
             reason_parts.append(f"{alias}->{metric_id}")
-    # preserve order, unique
     found = list(dict.fromkeys(found))
     primary = found[0] if found else None
-    secondary = found[1:]
     reason = "; ".join(reason_parts) if reason_parts else None
     if "cac" in q and primary is None:
-        primary = "metric.blended_paid_cac"
-        reason = "default CAC alias -> metric.blended_paid_cac"
-    return primary, secondary, reason
+        primary = "metric.cac"
+        reason = "default CAC alias -> metric.cac"
+    return primary, found[1:], reason
+
+
+async def resolve_metrics(
+    query: str,
+    metrics: MetricRegistry | None = None,
+    *,
+    mcp: Any | None = None,
+    agent_id: str = "coordinator_agent",
+) -> tuple[str | None, list[str], str | None]:
+    """Resolve the metric(s) a query is about.
+
+    Live mode (``mcp`` given, with the catalogue capability registered):
+    resolves dynamically against the Seleric MCP catalogue — no hardcoded
+    metric vocabulary. Falls back to the static offline alias table only
+    when no live catalogue is available (fixture/offline missions).
+    """
+    if mcp is not None and "seleric.catalogue_resolve_term" in getattr(mcp, "capabilities", set()):
+        primary, secondary, reason = await _resolve_metrics_via_catalogue(
+            query, mcp=mcp, agent_id=agent_id, metrics=metrics
+        )
+        if primary is not None:
+            return primary, secondary, reason
+    return _resolve_metrics_offline(query)
 
 
 def resolve_entities(query: str) -> list[EntityRef]:
@@ -225,16 +316,18 @@ def candidate_domains(query: str, intents: list[str], primary_metric: str | None
     return list(dict.fromkeys(domains))
 
 
-def normalize_query(
+async def normalize_query(
     query: str,
     *,
     timezone: str = "Asia/Kolkata",
     as_of: str | None = None,
     metrics: MetricRegistry | None = None,
     requested_outputs: list[str] | None = None,
+    mcp: Any | None = None,
+    agent_id: str = "coordinator_agent",
 ) -> NormalizedQuery:
     intents = classify_intents(query)
-    primary, secondary, reason = resolve_metrics(query, metrics)
+    primary, secondary, reason = await resolve_metrics(query, metrics, mcp=mcp, agent_id=agent_id)
     entities = resolve_entities(query)
     time_range, comparison = resolve_time_range(query, timezone=timezone, as_of=as_of)
     domains = candidate_domains(query, intents, primary)
@@ -243,11 +336,7 @@ def normalize_query(
         unresolved.append("primary_metric_unresolved")
     # Causal / forecast questions without a resolvable metric still run, but
     # surface the gap so synthesis/limitations can explain fixture fallback.
-    if (
-        primary is None
-        and any(i in intents for i in ("diagnostic", "predictive", "prescriptive"))
-        and not any(alias in query.lower() for alias in _METRIC_ALIASES)
-    ):
+    if primary is None and any(i in intents for i in ("diagnostic", "predictive", "prescriptive")):
         unresolved.append("primary_metric_unresolved")
     return NormalizedQuery(
         original_query=query,

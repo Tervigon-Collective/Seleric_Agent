@@ -22,60 +22,25 @@ from seleric_swarm.orchestration.runner import run_mission
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.swarm.orchestrator import run_swarm_mission
 
-# Retrieval / comparison verbs that are safe for the lookup fast path.
-_LOOKUP_RE = (
-    "what were",
-    "what was",
-    "what is",
-    "how much",
-    "how many",
-    "compare",
-    " vs ",
-    "versus",
-    "show me",
-    "tell me",
-    "get me",
-)
-
-_CAUSAL_MARKERS = (
-    "why",
-    "root cause",
-    "diagnose",
-    "what changed",
-    "caused",
-    "explain",
-    "driver of",
-    "driving",
-    "drove",
-    "change in",
-    "drop in",
-    "fall in",
-    "decline in",
-    "increase in",
-    "rise in",
-    "spike in",
-    "what's behind",
-    "what is behind",
-    "attributed to",
-)
-
 
 async def route_for(runtime: SwarmRuntime, *, query: str) -> str:
     """Return "lookup" or "swarm" (cheap, deterministic, no LLM).
 
     Diagnostic / predictive / prescriptive / health → swarm.
     Plain retrieval / comparison phrasing stays on the lookup fast path.
+
+    Classification is delegated entirely to coordinator.intake.classify_intents
+    (word-boundary regexes) rather than a second hand-rolled substring keyword
+    list here, so routing and in-swarm specialist activation can't drift apart.
     """
-    q = query.lower().strip()
     intake = set(intake_classify_intents(query))
-    causal = any(k in q for k in _CAUSAL_MARKERS)
     lookupish = bool(intake & {"lookup", "comparison"})
     # Always swarm for investigation / forecast / action / health.
     if intake & {"predictive", "prescriptive", "executive_health"}:
         return "swarm"
-    if causal or ("diagnostic" in intake and not lookupish):
+    if "diagnostic" in intake and not lookupish:
         return "swarm"
-    if lookupish or any(q.startswith(p) or p in q for p in _LOOKUP_RE):
+    if lookupish:
         return "lookup"
     return "swarm"
 

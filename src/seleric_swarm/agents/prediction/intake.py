@@ -8,8 +8,6 @@ from typing import Any
 
 from seleric_swarm.agents.prediction.context import PredictionContext
 
-_TARGET_PRIORITY = ("metric.cac", "metric.net_sales", "metric.purchase_cvr")
-
 
 async def resolve_intake(ctx: PredictionContext) -> None:
     req = ctx.request
@@ -66,17 +64,16 @@ async def resolve_intake(ctx: PredictionContext) -> None:
 def _resolve_target(hint: str, anomalies: list[dict], evidence: list[dict]) -> str:
     if hint:
         return hint
-    an_metrics = {a.get("metric_id") for a in anomalies}
-    for candidate in _TARGET_PRIORITY:
-        if candidate in an_metrics:
-            return candidate
+    # No static metric-name priority list: pick the most-deviated real anomaly,
+    # else the first real evidence metric. If nothing is available, report
+    # unresolved (target_metric == "") rather than guessing a plausible id.
     if anomalies:
         return max(anomalies, key=lambda a: abs(a.get("deviation_pct") or 0)).get("metric_id", "")
     for e in evidence:
         m = e.get("metric_id") or e.get("metric_or_fact")
         if m and not str(m).startswith("event."):
             return str(m)
-    return "metric.cac"
+    return ""
 
 
 def _num(v: Any) -> float | None:
