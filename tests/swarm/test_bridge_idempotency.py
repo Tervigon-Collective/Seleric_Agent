@@ -13,6 +13,25 @@ from seleric_swarm.swarm.artifacts import Anomaly, Causal, Evidence
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission
 
+# Declared causal truth for the diagnostic bridge's TemplateCausalEstimationService
+# (previously loaded from data/fixtures/scenarios/cac_regression.json).
+_CAC_REGRESSION_SCENARIO = {
+    "causal_truth": {
+        "graph_id": "causal.funnel_purchase.v1",
+        "treatment": "metric.mobile_lcp_seconds",
+        "outcome": "metric.purchase_cvr",
+        "common_causes": ["metric.sessions", "device", "campaign", "metric.return_rate"],
+        "effect": -0.62,
+        "effect_ci": [-0.81, -0.44],
+        "refutations": [
+            {"name": "random_common_cause", "passed": True},
+            {"name": "placebo_treatment", "passed": True},
+            {"name": "data_subset", "passed": True},
+        ],
+        "passed": True,
+    }
+}
+
 
 def _blackboard_with_cac_scenario() -> Blackboard:
     bb = Blackboard("MS-idem")
@@ -59,13 +78,11 @@ def test_blackboard_discard_and_discard_by():
 @pytest.mark.asyncio
 async def test_diagnostic_bridge_is_idempotent():
     from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
-    from seleric_swarm.swarm.providers.fixtures import load_scenario
-
     bb = _blackboard_with_cac_scenario()
     mission = SwarmMission(mission_id="MS-idem", query="Why did purchase CVR drop?", time_range={},
                            initial_lead="performance_agent", intents={"diagnostic"},
                            context={"degradation_started_at": "2026-09-01T12:00:00+05:30"})
-    spec = SwarmDiagnosticSpecialist(scenario=load_scenario("cac_regression"))
+    spec = SwarmDiagnosticSpecialist(scenario=_CAC_REGRESSION_SCENARIO)
 
     await spec.run(bb, mission)
     h1, c1 = len(bb.by_type("hypothesis")), len(bb.by_type("causal"))
@@ -81,13 +98,11 @@ async def test_diagnostic_bridge_is_idempotent():
 async def test_skeptic_bridge_keeps_one_latest_verdict():
     from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
     from seleric_swarm.agents.skeptic.swarm_bridge import SwarmSkepticSpecialist
-    from seleric_swarm.swarm.providers.fixtures import load_scenario
-
     bb = _blackboard_with_cac_scenario()
     mission = SwarmMission(mission_id="MS-idem", query="Why did purchase CVR drop, what should we do?",
                            time_range={}, initial_lead="performance_agent", intents={"diagnostic"},
                            context={"degradation_started_at": "2026-09-01T12:00:00+05:30"})
-    await SwarmDiagnosticSpecialist(scenario=load_scenario("cac_regression")).run(bb, mission)
+    await SwarmDiagnosticSpecialist(scenario=_CAC_REGRESSION_SCENARIO).run(bb, mission)
 
     sk = SwarmSkepticSpecialist()
     await sk.run(bb, mission)

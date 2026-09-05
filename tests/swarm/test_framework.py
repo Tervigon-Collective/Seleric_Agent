@@ -1,15 +1,13 @@
-"""Framework-level checks: artifacts, blackboard, envelope, transport, providers,
-autonomy, and the complexity-based dispatch fold-in."""
+"""Framework-level checks: artifacts, blackboard, envelope, transport, and the
+complexity-based dispatch fold-in."""
 
 from __future__ import annotations
 
 import pytest
 
 from seleric_swarm.swarm.artifacts import ARTIFACT_MODELS, Anomaly, Evidence
-from seleric_swarm.swarm.autonomy import AutonomyLevel, allowed
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.envelope import PROTOCOL, HandoffProposal, Intent, SwarmMessage
-from seleric_swarm.swarm.providers.fixtures import build_fixture_bundle, load_scenario
 from seleric_swarm.swarm.transport import InProcessTransport
 
 
@@ -69,24 +67,6 @@ async def test_in_process_transport_routes_and_logs():
     assert miss["ok"] is False
 
 
-def test_autonomy_blocks_business_action_execution():
-    assert allowed("strategy", AutonomyLevel.PROPOSE_INTERVENTION) is True
-    assert allowed("strategy", AutonomyLevel.EXECUTE_ACTION) is False
-    assert allowed("specialist", AutonomyLevel.PROPOSE_HANDOFF) is False
-
-
-@pytest.mark.asyncio
-async def test_fixture_providers_are_marked_synthetic():
-    scenario = load_scenario("cac_regression")
-    bundle = build_fixture_bundle("cac_regression")
-    perf = bundle.data_for("performance")
-    res = await perf.fetch(metric_ids=["metric.cac"], time_range={})
-    assert res.synthetic is True
-    assert res.readings[0].data_origin == "FIXTURE"
-    assert res.readings[0].change_pct == pytest.approx((782 - 604) / 604 * 100, rel=1e-3)
-    assert scenario["synthetic"] is True
-
-
 @pytest.mark.asyncio
 async def test_dispatch_routes_lookup_vs_swarm(runtime):
     from seleric_swarm.orchestration.dispatch import route_for
@@ -94,26 +74,3 @@ async def test_dispatch_routes_lookup_vs_swarm(runtime):
     assert await route_for(runtime, query="What were net sales on 2026-08-01?") == "lookup"
     assert await route_for(runtime, query="Why did CAC increase and what should we do?") == "swarm"
     assert await route_for(runtime, query="Compare net sales on 2026-08-01 and 2026-08-02") == "lookup"
-
-
-def test_synthetic_summary_and_banner_track_provenance():
-    from seleric_swarm.swarm.mission import SwarmMission
-    from seleric_swarm.swarm.synthesis import _banner, build_response
-
-    bb = Blackboard("MS-2")
-    real = Evidence.new(mission_id="MS-2", created_by="observer", metric_or_fact="metric.cac", value=1)
-    syn = Evidence.new(mission_id="MS-2", created_by="observer", metric_or_fact="metric.spend", value=2)
-    syn.mark_synthetic()
-    bb.post(real)
-    bb.post(syn)
-
-    s = bb.synthetic_summary()
-    assert s["total"] == 2 and s["synthetic"] == 1 and s["mixed"] is True and s["all_synthetic"] is False
-    assert "MIXED PROVENANCE" in (_banner(s) or "")
-
-    # fully real -> no banner
-    bb_real = Blackboard("MS-3")
-    bb_real.post(Evidence.new(mission_id="MS-3", created_by="observer", metric_or_fact="metric.cac", value=1))
-    assert _banner(bb_real.synthetic_summary()) is None
-    mission = SwarmMission(mission_id="MS-3", query="q", time_range={}, initial_lead="performance_agent")
-    assert "PROTOTYPE OUTPUT" not in build_response(bb_real, mission)

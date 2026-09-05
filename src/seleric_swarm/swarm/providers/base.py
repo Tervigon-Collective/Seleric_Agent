@@ -183,14 +183,23 @@ class StatsEngine(Protocol):
 
 @dataclass
 class ProviderBundle:
-    """Everything the swarm needs to run. Swap fields for real implementations."""
+    """Everything the swarm needs to run. Swap fields for real implementations.
+
+    ``anomaly``/``causal``/``forecaster``/``optimizer``/``stats`` are optional:
+    swarm_v2 (the live control plane) doesn't call them at all — anomaly
+    detection, causal diagnosis, and forecasting are owned by the
+    diagnostic/prediction specialist agents instead. They remain here only for
+    the ``AnomalyDetector``/``CausalEngine``/``Forecaster``/``Optimizer``/
+    ``StatsEngine`` Protocol seam, for a caller that wants to plug in a real
+    implementation.
+    """
 
     data: dict[str, DataProvider]  # domain -> provider
-    anomaly: AnomalyDetector
-    causal: CausalEngine
-    forecaster: Forecaster
-    optimizer: Optimizer
-    stats: StatsEngine
+    anomaly: AnomalyDetector | None = None
+    causal: CausalEngine | None = None
+    forecaster: Forecaster | None = None
+    optimizer: Optimizer | None = None
+    stats: StatsEngine | None = None
 
     def data_for(self, domain: str) -> DataProvider | None:
         return self.data.get(domain)

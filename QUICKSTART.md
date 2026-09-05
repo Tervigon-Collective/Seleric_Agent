@@ -22,11 +22,7 @@ docker compose up -d
 
 ## 4. Configure MCP servers
 
-Copy and edit:
-
-```bash
-cp config/mcp_servers.example.yaml config/mcp_servers.local.yaml
-```
+Edit `config/mcp_servers.yaml`.
 
 Do not place secrets in YAML. Use environment variables or your secret manager.
 

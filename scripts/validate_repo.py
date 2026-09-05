@@ -8,7 +8,7 @@ required = [
     "docs/01_SYSTEM_ARCHITECTURE.md",
     "docs/22_IMPLEMENTATION_ROADMAP.md",
     "diagrams/final_architecture.mmd",
-    "config/agent_registry.example.yaml",
+    "config/agent_registry.yaml",
     "schemas/a2a_envelope.schema.json",
     "schemas/evidence_artifact.schema.json",
 ]

@@ -25,7 +25,7 @@ from seleric_swarm.api.security import ApiSecurityMiddleware
 from seleric_swarm.bootstrap import build_runtime
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.observability.tracing import traced_span
-from seleric_swarm.orchestration.dispatch import route_for, run_any_mission
+from seleric_swarm.orchestration.dispatch import _SWARM_INTENTS, run_any_mission
 from seleric_swarm.runtime import SwarmRuntime
 
 _runtime: SwarmRuntime | None = None
@@ -36,26 +36,6 @@ def get_runtime() -> SwarmRuntime:
     if _runtime is None:
         _runtime = build_runtime()
     return _runtime
-
-
-def _resolve_scenario_id(scenario_id: str | None, *, route: str) -> str:
-    """Swarm missions require an explicit fixture pack; lookup ignores the field."""
-    from seleric_swarm.swarm.providers.fixtures import DEFAULT_SCENARIO, list_scenarios
-
-    cleaned = (scenario_id or "").strip()
-    if route == "swarm":
-        if not cleaned:
-            available = ", ".join(list_scenarios()) or "(none registered)"
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "scenario_id is required for swarm missions "
-                    f"(e.g. cac_regression). Available: {available}"
-                ),
-            )
-        return cleaned
-    # Lookup path never loads a scenario; keep a harmless placeholder for kwargs.
-    return cleaned or DEFAULT_SCENARIO
 
 
 @asynccontextmanager
@@ -118,17 +98,7 @@ class MissionRequest(BaseModel):
     full_diagnostic: bool = True
     full_prediction: bool = True
     full_skeptic: bool = True
-    # Fixture pack for swarm (e.g. "cac_regression"). Required on swarm routes;
-    # ignored on lookup. No silent default — callers must choose the pack.
-    scenario_id: str | None = Field(
-        default=None,
-        description=(
-            "Fixture scenario id for swarm missions (e.g. cac_regression). "
-            "Required when the query routes to swarm; ignored for lookup."
-        ),
-    )
-    # fixture = offline synthetic providers.
-    # staging/production = live Seleric MCP (catalogue + metrics_query), fixture fallback.
+    # staging/production both use the live Seleric MCP (catalogue + metrics_query).
     execution_mode: str = "production"
     # wait=true (default): run synchronously and return the finished mission.
     # wait=false: accept immediately (status=running); poll GET /v1/missions/{id}.
@@ -238,10 +208,10 @@ async def create_mission(
     runtime = get_runtime()
     if req.mode != "read_only":
         raise HTTPException(status_code=400, detail="Only read_only mode is allowed in V1")
-    if req.execution_mode not in {"fixture", "staging", "production"}:
+    if req.execution_mode not in {"staging", "production"}:
         raise HTTPException(
             status_code=400,
-            detail="execution_mode must be one of: fixture, staging, production",
+            detail="execution_mode must be one of: staging, production",
         )
     query = (req.query or "").strip()
     if not query:
@@ -273,34 +243,28 @@ async def create_mission(
     request_id = str(getattr(request.state, "request_id", None) or uuid4().hex)
     session_id = req.session_id or uuid4().hex
 
-    route_hint = await route_for(runtime, query=query)
-    scenario_id = _resolve_scenario_id(req.scenario_id, route=route_hint)
+    # Single LLM classification drives both the routing decision and the
+    # "is this a real query" rejection — no keyword/regex gating. A query the
+    # LLM can't map to any metric or supported intent (e.g. "?????") reports
+    # unresolved=True with its own reason; anything else routes on its intents.
+    from seleric_swarm.coordinator.intake.llm_classifier import classify_query_via_llm
 
-    # Applies to both routes: unrecognized phrasing (e.g. "?????") now defaults
-    # to the lookup fast path rather than "diagnostic", so this can't be gated
-    # on route_hint == "swarm" alone or nonsense queries would silently
-    # succeed via lookup instead of being rejected.
-    from seleric_swarm.coordinator.intake import has_analytical_signal
-
-    if not has_analytical_signal(query, runtime.metrics):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Query does not name a known metric or a supported analysis "
-                "(diagnose / forecast / compare / recommend / health check)."
-            ),
+    classification = await classify_query_via_llm(
+        query,
+        runtime=runtime,
+        timezone=timezone,
+        as_of=as_of,
+        request_id=request_id,
+        session_id=session_id,
+    )
+    if classification is None or classification.unresolved:
+        reason = (classification.unsupported_reason if classification else None) or (
+            "Query does not name a resolvable metric or a supported analysis intent."
         )
+        raise HTTPException(status_code=400, detail=reason)
+    route_hint = "swarm" if set(classification.intents) & _SWARM_INTENTS else "lookup"
 
-    if route_hint == "swarm":
-        from seleric_swarm.swarm.providers.errors import ScenarioNotFoundError
-        from seleric_swarm.swarm.providers.fixtures import load_scenario
-
-        try:
-            load_scenario(scenario_id)
-        except ScenarioNotFoundError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    # Async accept path — scenario already validated above for swarm.
+    # Async accept path.
     if not req.wait:
         mission_id = new_mission_id(swarm_likely=route_hint == "swarm")
         accepted = seed_running_mission(
@@ -322,31 +286,22 @@ async def create_mission(
             full_diagnostic=req.full_diagnostic,
             full_prediction=req.full_prediction,
             full_skeptic=req.full_skeptic,
-            scenario_id=scenario_id,
             execution_mode=req.execution_mode,
         )
         return accepted
 
-    try:
-        dispatched = await run_any_mission(
-            runtime,
-            query=query,
-            timezone=timezone,
-            as_of=as_of,
-            session_id=session_id,
-            request_id=request_id,
-            full_diagnostic=req.full_diagnostic,
-            full_prediction=req.full_prediction,
-            full_skeptic=req.full_skeptic,
-            scenario_id=scenario_id,
-            execution_mode=req.execution_mode,
-        )
-    except Exception as exc:
-        from seleric_swarm.swarm.providers.errors import ScenarioNotFoundError
-
-        if isinstance(exc, ScenarioNotFoundError):
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        raise
+    dispatched = await run_any_mission(
+        runtime,
+        query=query,
+        timezone=timezone,
+        as_of=as_of,
+        session_id=session_id,
+        request_id=request_id,
+        full_diagnostic=req.full_diagnostic,
+        full_prediction=req.full_prediction,
+        full_skeptic=req.full_skeptic,
+        execution_mode=req.execution_mode,
+    )
     # Flatten: a consistent top-level mission object with a `route` marker.
     # lookup  -> MissionResult fields; swarm -> SwarmMissionResult fields.
     out = {"route": dispatched["route"], **dispatched["result"]}

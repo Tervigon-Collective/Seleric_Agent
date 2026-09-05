@@ -42,7 +42,6 @@ from seleric_swarm.coordinator.governance.skeptic_gate import apply_skeptic_gate
 from seleric_swarm.coordinator.governance.synthetic_guard import mission_synthetic_status
 from seleric_swarm.coordinator.intake import (
     apply_full_flags,
-    has_analytical_signal,
     normalize_query,
     resolve_mission_time_range,
 )
@@ -93,13 +92,7 @@ from seleric_swarm.swarm.domain.base import DomainAgent
 from seleric_swarm.swarm.domain.configs import build_domain_configs
 from seleric_swarm.swarm.envelope import Intent, SwarmMessage
 from seleric_swarm.swarm.mission import SwarmMission, SwarmMissionResult, TeamMember
-from seleric_swarm.swarm.orchestrator import _initial_lead
 from seleric_swarm.swarm.providers.base import ProviderBundle
-from seleric_swarm.swarm.providers.fixtures import (
-    DEFAULT_SCENARIO,
-    build_fixture_bundle,
-    load_scenario,
-)
 from seleric_swarm.swarm.providers.mcp_data import McpFetchStats, build_hybrid_bundle
 from seleric_swarm.swarm.specialists.anomaly import AnomalyAgent
 from seleric_swarm.swarm.specialists.diagnostic import DiagnosticAgent
@@ -111,6 +104,58 @@ from seleric_swarm.swarm.transport import InProcessTransport
 
 WorkflowVersion = Literal["swarm_v2"]
 ActivateFn = Callable[..., Awaitable[dict[str, Any]]]
+
+def _initial_lead(query: str) -> str:
+    """Domain-lead fallback for the rare case ``normalized.candidate_domains``
+    is empty (candidate_domains() itself always falls back to "performance",
+    so this path is effectively unreachable in practice — kept for safety).
+    """
+    q = query.lower()
+    if any(k in q for k in ("cac", "roas", "cpm", "cpc", "ctr", "ad spend", "acquisition")):
+        return "performance_agent"
+    if any(k in q for k in ("attribut", "last-touch", "last touch", "channel mix")):
+        return "attribution_agent"
+    if any(k in q for k in ("net sales", "gross sales", "orders", "returns", "revenue")):
+        return "commerce_agent"
+    if any(k in q for k in ("units sold", "sku", "product margin", "assortment")):
+        return "product_agent"
+    if any(k in q for k in ("repeat rate", "ltv", "cohort", "retention")):
+        return "customer_agent"
+    if any(k in q for k in ("refund", "fulfillment", "ops sla")):
+        return "operations_agent"
+    if any(k in q for k in ("profit", "margin", "cogs")):
+        return "finance_agent"
+    if any(k in q for k in ("sessions", "checkout", "add to cart", "conversion", "funnel")):
+        return "funnel_agent"
+    return "performance_agent"
+
+
+def _swarm_mission_view(result: SwarmMissionResult, request_id: str, session_id: str) -> Any:
+    from typing import cast
+
+    from seleric_swarm.api.status import coerce_typed_status
+    from seleric_swarm.contracts.lookup import (
+        HandoffView,
+        MissionError,
+        MissionResult,
+        MissionStatus,
+        TraceInfo,
+    )
+
+    status = coerce_typed_status(result.status, default="partial")
+    return MissionResult(
+        mission_id=result.mission_id,
+        status=cast(MissionStatus, status),
+        mission_lead=result.mission_lead,
+        initial_mission_lead=result.initial_mission_lead,
+        leadership_epoch=result.leadership_epoch,
+        handoff_history=[HandoffView.model_validate(h) for h in result.handoff_history],
+        limitations=list(result.limitations),
+        final_response=result.final_response,
+        error=MissionError(code=result.error_code, message=result.error_code) if result.error_code else None,
+        trace=TraceInfo(request_id=request_id, session_id=session_id),
+    )
+
 
 _CHALLENGED_LIM = "Primary claim remains CHALLENGED after Skeptic REVISE."
 _REASON_MAX_ROUNDS = "Max Skeptic remediation rounds exhausted; primary claim remains unresolved."
@@ -865,7 +910,8 @@ def _unsupported_swarm_result(
     """Terminal result for a query with no resolvable metric or analysis intent.
 
     Prevents the swarm from fabricating a synthetic diagnosis against fixture
-    defaults for noise / off-topic input (see ``has_analytical_signal``).
+    defaults for noise / off-topic input — the LLM classifier in
+    ``normalize_query`` reports this via ``NormalizedQuery.unsupported_reason``.
     """
     result = SwarmMissionResult(
         mission_id=mission_id,
@@ -896,8 +942,6 @@ def _unsupported_swarm_result(
         error_code="ROUTING_UNSUPPORTED",
     )
     try:
-        from seleric_swarm.swarm.orchestrator import _swarm_mission_view
-
         runtime.store.put(
             _swarm_mission_view(result, request_id, session_id),
             {
@@ -919,7 +963,6 @@ async def run_swarm_v2_mission(
     timezone: str = "Asia/Kolkata",
     as_of: str | None = None,
     providers: ProviderBundle | None = None,
-    scenario_id: str = DEFAULT_SCENARIO,
     session_id: str | None = None,
     request_id: str | None = None,
     full_skeptic: bool = False,
@@ -934,19 +977,6 @@ async def run_swarm_v2_mission(
     mission_id = mid
     rid = request_id or uuid4().hex
     sid = session_id or uuid4().hex
-    if not has_analytical_signal(query, runtime.metrics):
-        return _unsupported_swarm_result(
-            mission_id=mission_id,
-            query=query,
-            request_id=rid,
-            session_id=sid,
-            runtime=runtime,
-            reason=(
-                "Query does not name a known metric or a supported analysis "
-                "(diagnose / forecast / compare / recommend / health check); "
-                "rephrase with a metric and an intent, e.g. 'why did CAC increase?'."
-            ),
-        )
     policies = load_coordinator_policies(
         getattr(runtime.settings, "coordinator_policies_path", None)
     )
@@ -954,22 +984,18 @@ async def run_swarm_v2_mission(
         policies = policies.model_copy(
             update={"budgets": policies.budgets.model_copy(update=budget_overrides)}
         )
-    scenario = load_scenario(scenario_id)
-    mode: Literal["production", "staging", "fixture"] = (
-        execution_mode if execution_mode in {"production", "staging", "fixture"} else "production"  # type: ignore[assignment]
+    scenario: dict[str, Any] = {}
+    mode: Literal["production", "staging"] = (
+        execution_mode if execution_mode in {"production", "staging"} else "production"  # type: ignore[assignment]
     )
     mcp_stats: McpFetchStats | None = None
     if providers is None:
-        if mode != "fixture":
-            providers, mcp_stats = build_hybrid_bundle(
-                scenario_id,
-                mcp=runtime.mcp,
-                execution_mode=mode,
-                metrics=runtime.metrics,
-                agents=runtime.agents,
-            )
-        else:
-            providers = build_fixture_bundle(scenario_id)
+        providers, mcp_stats = build_hybrid_bundle(
+            mcp=runtime.mcp,
+            execution_mode=mode,
+            metrics=runtime.metrics,
+            agents=runtime.agents,
+        )
     request = MissionRequest(
         query=query,
         session_id=sid,
@@ -980,13 +1006,22 @@ async def run_swarm_v2_mission(
         timezone=timezone,
         as_of=as_of,
         metrics=runtime.metrics,
-        mcp=runtime.mcp if mode != "fixture" else None,
+        mcp=runtime.mcp,
         agent_id="coordinator_agent",
-        runtime=runtime if mode != "fixture" else None,
+        runtime=runtime,
         mission_id=mid,
         request_id=rid,
         session_id=sid,
     )
+    if normalized.unsupported_reason:
+        return _unsupported_swarm_result(
+            mission_id=mission_id,
+            query=query,
+            request_id=rid,
+            session_id=sid,
+            runtime=runtime,
+            reason=normalized.unsupported_reason,
+        )
     # normalized.candidate_domains is already LLM+catalogue grounded when a
     # live runtime was given (falls back to the regex domain guesser inside
     # normalize_query itself when not) — no separate keyword pass needed here.
@@ -1009,7 +1044,14 @@ async def run_swarm_v2_mission(
     time_range = resolve_mission_time_range(
         scenario, timezone=timezone, as_of=as_of, normalized=normalized
     )
-    decomposition = initial_decomposition(mission_id=mission_id, normalized=normalized, policies=policies)
+    decomposition = await initial_decomposition(
+        mission_id=mission_id,
+        normalized=normalized,
+        policies=policies,
+        runtime=runtime,
+        request_id=rid,
+        session_id=sid,
+    )
     plan = build_mission_plan(
         mission_id=mission_id,
         normalized=normalized,
@@ -1114,7 +1156,7 @@ async def run_swarm_v2_mission(
             decomposition_id=decomp.decomposition_id,
             decomposition_version=decomp.version,
             leadership_epoch=blackboard.leadership_epoch,
-            synthetic=(mode == "fixture"),
+            synthetic=False,
         )
         msg = SwarmMessage.request(
             mission_id=mission_id,
@@ -1188,7 +1230,7 @@ async def run_swarm_v2_mission(
         mcp_stats=mcp_stats,
     )
     _live["ctx"] = ctx
-    if mode != "fixture" and mcp_stats is not None and mcp_stats.mcp_hits == 0:
+    if mcp_stats is not None and mcp_stats.mcp_hits == 0:
         # Staging/production asked for MCP path but nothing hit yet — note intent.
         line = (
             f"execution_mode={mode}: MCP-preferring providers active "
@@ -1198,7 +1240,7 @@ async def run_swarm_v2_mission(
             ctx.limitations.append(line)
     for reason in normalized.unresolved_semantics:
         if reason == "primary_metric_unresolved":
-            line = "Primary metric could not be resolved from the query; results may use fixture defaults."
+            line = "Primary metric could not be resolved from the query."
         else:
             line = reason
         if line not in ctx.limitations:
@@ -1231,7 +1273,7 @@ async def run_swarm_v2_mission(
             "workflow_version": "1.4.0",
             "agent_version": "1.4.0",
         },
-        "synthetic": mode == "fixture",
+        "synthetic": False,
         "current_decomposition_ref": decomposition.decomposition_id,
         "decomposition_refs": [decomposition.decomposition_id],
     }
@@ -1251,7 +1293,7 @@ async def run_swarm_v2_mission(
             "decomposition_id": decomposition.decomposition_id,
             "decomposition_version": decomposition.version,
             "mission_lead": initial_lead,
-            "synthetic": mode == "fixture",
+            "synthetic": False,
             "execution_mode": mode,
             "decide_execute": True,
         },
@@ -1282,8 +1324,7 @@ async def run_swarm_v2_mission(
             # even if an earlier gate stamped prototype_completed.
             status = "partial"
         elif metric_unresolved and status in {"prototype_completed", "completed"}:
-            # We answered a fixture-default metric, not the user's question — the
-            # investigation ran but the target could not be identified.
+            # The investigation ran but the target metric could not be identified.
             status = "partial"
         elif status == "prototype_completed":
             pass  # preserve DoD status for synthetic-complete missions
@@ -1342,8 +1383,6 @@ async def run_swarm_v2_mission(
         events=list(blackboard.events),
     )
     try:
-        from seleric_swarm.swarm.orchestrator import _swarm_mission_view
-
         runtime.store.put(
             _swarm_mission_view(result, rid, sid),
             {

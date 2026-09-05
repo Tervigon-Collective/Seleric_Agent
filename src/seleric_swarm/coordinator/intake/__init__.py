@@ -86,40 +86,6 @@ _ENTITY_PATTERNS: list[tuple[str, str]] = [
 ]
 
 
-_ANALYTICAL_RES = (
-    _DIAGNOSTIC_RE,
-    _PREDICTIVE_RE,
-    _PRESCRIPTIVE_RE,
-    _COMPARISON_RE,
-    _LOOKUP_RE,
-    _HEALTH_RE,
-)
-
-
-def has_analytical_signal(query: str, metrics: MetricRegistry | None = None) -> bool:
-    """True when the query carries a recognizable metric or analysis intent.
-
-    ``classify_intents`` falls back to ``diagnostic`` for anything it does not
-    recognize, so it cannot tell a real question ("why did CAC rise?") from
-    noise ("a", "?????", a pasted SQL string). This checks for an *explicit*
-    hook: an intent verb (why / forecast / compare / recommend / health), a
-    known metric alias, or a resolvable primary metric. Missions with no such
-    signal are routed to an ``ROUTING_UNSUPPORTED`` result instead of
-    fabricating a synthetic diagnosis against fixture defaults.
-    """
-    text = query or ""
-    if any(rx.search(text) for rx in _ANALYTICAL_RES):
-        return True
-    lowered = text.lower()
-    if any(alias in lowered for alias in _METRIC_ALIASES):
-        return True
-    # Cheap admission check, no live MCP call here — the offline resolver is
-    # sync and sufficient (the authoritative dynamic resolution happens later
-    # in normalize_query, once we know execution_mode).
-    primary, _secondary, _reason = _resolve_metrics_offline(text)
-    return primary is not None
-
-
 def classify_intents(query: str) -> list[str]:
     intents: list[str] = []
     if _HEALTH_RE.search(query):
@@ -442,6 +408,9 @@ async def normalize_query(
         entities = resolve_entities(query)
         time_range, comparison = resolve_time_range(query, timezone=timezone, as_of=as_of)
         domains = candidate_domains(query, intents, primary)
+    unsupported_reason = (
+        llm_result.unsupported_reason if llm_result is not None and llm_result.unresolved else None
+    )
     unresolved: list[str] = []
     if primary is None and "lookup" in intents:
         unresolved.append("primary_metric_unresolved")
@@ -461,6 +430,7 @@ async def normalize_query(
         candidate_domains=domains,
         unresolved_semantics=unresolved,
         metric_resolution_reason=reason,
+        unsupported_reason=unsupported_reason,
     )
 
 

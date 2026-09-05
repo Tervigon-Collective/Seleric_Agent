@@ -131,7 +131,7 @@ class DomainAgent:
                     value=e.at,
                     unit=None,
                     time_range=time_range,
-                    source=f"fixture.event.{e.event_id}",
+                    source=f"domain_event.{e.event_id}",
                     data_origin=e.data_origin,  # type: ignore[arg-type]
                     provenance={"event_id": e.event_id, "description": e.description, "domain": e.domain},
                 )

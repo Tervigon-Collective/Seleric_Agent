@@ -103,7 +103,7 @@ class MissionRequest(BaseModel):
     user_id: str | None = None
     session_id: str | None = None
     scope: MissionScope = Field(default_factory=MissionScope)
-    execution_mode: Literal["production", "staging", "fixture"] = "production"
+    execution_mode: Literal["production", "staging"] = "production"
     requested_outputs: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -120,6 +120,7 @@ class NormalizedQuery(BaseModel):
     candidate_domains: list[str] = Field(default_factory=list)
     unresolved_semantics: list[str] = Field(default_factory=list)
     metric_resolution_reason: str | None = None
+    unsupported_reason: str | None = None
 
 
 class SubQuestion(BaseModel):

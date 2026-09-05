@@ -34,4 +34,4 @@ Each feature should record:
 - owners,
 - consumers.
 
-Examples are in `config/model_registry.example.yaml` and `config/feature_registry.example.yaml`.
+An example is in `config/model_registry.example.yaml`.

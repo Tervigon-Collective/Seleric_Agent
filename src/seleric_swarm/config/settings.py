@@ -51,7 +51,6 @@ class Settings(BaseSettings):
     metric_registry_path: str = "config/metric_registry.yaml"
     prompt_versions_path: str = "config/prompt_versions.yaml"
     prompts_dir: str = "prompts"
-    fixtures_dir: str = "data/fixtures"
 
     a2a_public_base_url: str = ""
     api_host: str = ""
@@ -74,8 +73,9 @@ class Settings(BaseSettings):
 
     workflow_name: str = "lookup_v1"
     workflow_version: str = "1.0.0"
-    # Swarm mission control plane: swarm_v1 (legacy imperative) or swarm_v2 (Coordinator V1).
-    swarm_workflow: Literal["swarm_v1", "swarm_v2"] = "swarm_v2"
+    # Swarm mission control plane (Coordinator V1). Only "swarm_v2" exists today —
+    # the legacy "swarm_v1" imperative workflow was removed.
+    swarm_workflow: Literal["swarm_v2"] = "swarm_v2"
     coordinator_policies_path: str = "config/coordinator_policies.yaml"
     max_remediation_rounds: int = 3
 
