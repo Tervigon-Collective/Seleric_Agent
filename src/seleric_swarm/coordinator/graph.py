@@ -1283,7 +1283,13 @@ async def run_swarm_v2_mission(
         retained = [h for h in blackboard.by_type("hypothesis") if h.get("status") == "retained"]
         skeptic_ok = (blackboard.by_type("skeptic") or [{}])[-1].get("verdict") == "PASS"
         challenged = any(c.get("state") == "CHALLENGED" for c in ctx.managed_claims)
-        all_synthetic = bool(blackboard.synthetic_summary().get("all_synthetic"))
+        synth_summary = blackboard.synthetic_summary()
+        all_synthetic = bool(synth_summary.get("all_synthetic"))
+        # Matches SwarmMissionResult.synthetic's own "any synthetic artifact"
+        # semantics (see `synthetic=bool(prov.get("synthetic"))` below) — a
+        # mission mixing one synthetic artifact into otherwise-real evidence
+        # must still never be labeled a bare "completed" success.
+        any_synthetic = bool(synth_summary.get("synthetic"))
         # A health check legitimately has no single primary metric — it scans every
         # domain — so an unresolved metric only downgrades targeted investigations.
         metric_unresolved = (
@@ -1302,6 +1308,14 @@ async def run_swarm_v2_mission(
             status = "partial"
         elif status == "prototype_completed":
             pass  # preserve DoD status for synthetic-complete missions
+        elif status == "completed" and any_synthetic and not metric_unresolved:
+            # decide_completion's own "synthetic" reading can disagree with the
+            # blackboard's authoritative synthetic_summary (e.g. it never saw a
+            # retained claim to key off of) - never let a synthetic-touched
+            # mission surface as a bare "completed" success.
+            status = "prototype_completed"
+            if "prototype_completed: synthetic evidence only" not in ctx.limitations:
+                ctx.limitations.append("prototype_completed: synthetic evidence only")
         elif "diagnostic" in intents and retained and skeptic_ok and not challenged:
             status = "prototype_completed" if all_synthetic and not metric_unresolved else (
                 "partial" if metric_unresolved else "completed"

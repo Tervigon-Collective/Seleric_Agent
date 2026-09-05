@@ -13,7 +13,10 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
-from seleric_swarm.coordinator.catalogue_grounding import entities_from_catalogue, hints_from_catalogue
+from seleric_swarm.coordinator.catalogue_grounding import (
+    entities_from_catalogue,
+    hints_from_catalogue,
+)
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.services.time_range import resolve_time_range, window_from_query
@@ -54,7 +57,7 @@ class LlmClassification(BaseModel):
 async def classify_query_via_llm(
     query: str,
     *,
-    runtime: "SwarmRuntime",
+    runtime: SwarmRuntime,
     timezone: str,
     as_of: str | None,
     mission_id: str | None = None,
