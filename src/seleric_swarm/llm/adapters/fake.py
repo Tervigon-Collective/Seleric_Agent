@@ -243,6 +243,38 @@ def classify_lookup_query(query: str, timezone: str, as_of: str | None) -> dict[
     }
 
 
+def classify_swarm_query(query: str, timezone: str, as_of: str | None) -> dict[str, Any]:
+    """Deterministic stand-in for coordinator.classify_swarm's structured output."""
+    del timezone, as_of
+    lower = query.strip().lower()
+    intents: list[str] = []
+    if any(k in lower for k in ("how are we doing", "how is the business", "health check")):
+        intents += ["executive_health", "diagnostic"]
+    if any(k in lower for k in ("why", "root cause", "reason for", "explain", "diagnose", "driver of", "what changed")):
+        intents.append("diagnostic")
+    if any(k in lower for k in ("forecast", "predict", "what happens", "if this continues", "projection")):
+        intents.append("predictive")
+    if any(k in lower for k in ("what should", "recommend", "what do we do", "how do we fix")):
+        intents.append("prescriptive")
+    if any(k in lower for k in ("compare", " versus ", " vs ")):
+        intents.append("comparison")
+    hints = _collect_hints(lower)
+    if not intents:
+        intents.append("lookup" if hints else "comparison" if "compare" in lower else "lookup")
+    domain_lead = _lead_for_hints(hints) if hints else ""
+    if domain_lead == "coordinator_agent":
+        domain_lead = ""
+    time_range, _query_class = _time_range_for(query.strip(), lower)
+    return {
+        "intents": list(dict.fromkeys(intents)),
+        "domain_lead": domain_lead,
+        "entities": [],
+        "time_range": time_range,
+        "metric_hints": hints,
+        "unsupported_reason": None if intents else "No recognizable intent or metric",
+    }
+
+
 def map_metric(
     query: str,
     hints: list[str],
@@ -371,6 +403,8 @@ class FakeLLMAdapter:
         timezone = _extract_field(user, "Timezone") or "Asia/Kolkata"
         as_of = _extract_field(user, "As-of")
 
+        if prompt_id == "coordinator.classify_swarm":
+            return json.dumps(classify_swarm_query(query, timezone, as_of))
         if prompt_id.endswith("classify") or "coordinator.classify" in prompt_id:
             return json.dumps(classify_lookup_query(query, timezone, as_of))
         if prompt_id.endswith("metric_map") or "observer.metric_map" in prompt_id:

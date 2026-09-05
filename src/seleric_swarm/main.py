@@ -145,7 +145,6 @@ class MissionRequest(BaseModel):
                     "full_diagnostic": True,
                     "full_prediction": True,
                     "full_skeptic": True,
-                    "scenario_id": "cac_regression",
                     "wait": True,
                 }
             ]
