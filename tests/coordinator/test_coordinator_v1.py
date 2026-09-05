@@ -395,6 +395,7 @@ async def test_18b_synthetic_mission_status_prototype_completed(runtime):
 
     result = await run_swarm_v2_mission(
         runtime,
+        scenario_id="cac_regression",
         query="Why has CAC increased over the last three days?",
         full_diagnostic=True,
         full_skeptic=True,
@@ -507,6 +508,7 @@ async def test_swarm_v2_cac_reference_mission(runtime):
     out = await run_any_mission(
         runtime,
         query="Why has CAC increased, what happens if this continues, and what should we do?",
+        scenario_id="cac_regression",
         full_diagnostic=True,
         full_prediction=True,
         full_skeptic=False,

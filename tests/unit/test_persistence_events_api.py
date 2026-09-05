@@ -25,6 +25,10 @@ def test_extract_and_filter_events():
     assert only_task[0]["kind"] == "task_wave_executed"
     after = filter_events(events, after_seq=1)
     assert [e["seq"] for e in after] == [2, 3]
+    # Missing/zero seq only appears on the first page.
+    with_zero = events + [{"kind": "legacy", "seq": 0, "family": "mission"}]
+    assert len(filter_events(with_zero, after_seq=0)) == 4
+    assert all(int(e.get("seq") or 0) > 1 for e in filter_events(with_zero, after_seq=1))
 
 
 def test_memory_store_list_events_roundtrip():
@@ -76,7 +80,25 @@ def test_api_mission_events_endpoint(runtime, monkeypatch):
     body = events_resp.json()
     assert body["mission_id"] == mission_id
     assert body["count"] >= 1
+    assert "has_more" in body
+    assert body["has_more"] is False or body.get("next_after_seq") is not None
     assert all("kind" in e for e in body["events"])
+
+    page = client.get(
+        f"/v1/missions/{mission_id}/events",
+        params={"limit": 1, "after_seq": 0},
+    )
+    assert page.status_code == 200
+    page_body = page.json()
+    assert page_body["count"] == 1
+    if page_body["has_more"]:
+        assert page_body["next_after_seq"] is not None
+        more = client.get(
+            f"/v1/missions/{mission_id}/events",
+            params={"after_seq": page_body["next_after_seq"], "limit": 200},
+        )
+        assert more.status_code == 200
+        assert more.json()["count"] >= 1
 
     mission_family = client.get(f"/v1/missions/{mission_id}/events", params={"family": "mission"})
     assert mission_family.status_code == 200

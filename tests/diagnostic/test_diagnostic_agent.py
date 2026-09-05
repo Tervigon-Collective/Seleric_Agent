@@ -33,7 +33,50 @@ async def test_reference_latency_regression_retained(make_agent):
     assert len(retained) == 1 and retained[0].treatment_metric == "metric.mobile_lcp_seconds"
     assert len(r.rejected()) >= 3
     assert r.claims and r.claims[0].claim_type == "causal"
+    # falsification bookkeeping: rejected alternatives carry the evidence that
+    # actually falsified them, not just a status flip with a hidden reason
+    assert r.contradictions
+    assert all(c.hypothesis_id != retained[0].hypothesis_id for c in r.contradictions)
+    assert all(c.severity in {"info", "warning", "blocking"} for c in r.contradictions)
     assert any("confounding" in lim.lower() for lim in r.limitations)
+
+
+# --------------------------------------------------------------------------- #
+# 1a. retained mechanism's domain differs from the current lead ->
+#     leadership transfer is *recommended*, not executed; incident_type set
+# --------------------------------------------------------------------------- #
+async def test_leadership_transfer_recommended_and_incident_type_set(make_agent):
+    agent = make_agent(
+        latency_bundle(),
+        [anomaly("AN-cvr", "metric.purchase_cvr", -24.0, start_time="2026-09-01T12:05:00+05:30"),
+         anomaly("AN-lcp", "metric.mobile_lcp_seconds", 164.0, direction="up", start_time="2026-09-01T11:47:00+05:30")],
+    )
+    r = await agent.diagnose(_req(
+        outcome_metric="metric.purchase_cvr",
+        degradation_started_at="2026-09-01T12:05:00+05:30",
+        lead_domain="performance_agent",
+        context={"trust_metadata_causal": True},
+    ))
+    assert r.leadership_transfer_recommended is True
+    assert r.recommended_domain_lead == "technical_agent"
+    assert r.leadership_transfer_reason and "performance" in r.leadership_transfer_reason
+    assert r.incident_type == "technical"
+
+
+async def test_no_leadership_transfer_when_lead_already_owns_mechanism(make_agent):
+    agent = make_agent(
+        latency_bundle(),
+        [anomaly("AN-cvr", "metric.purchase_cvr", -24.0, start_time="2026-09-01T12:05:00+05:30"),
+         anomaly("AN-lcp", "metric.mobile_lcp_seconds", 164.0, direction="up", start_time="2026-09-01T11:47:00+05:30")],
+    )
+    r = await agent.diagnose(_req(
+        outcome_metric="metric.purchase_cvr",
+        degradation_started_at="2026-09-01T12:05:00+05:30",
+        lead_domain="technical_agent",
+        context={"trust_metadata_causal": True},
+    ))
+    assert r.leadership_transfer_recommended is False
+    assert r.recommended_domain_lead is None
 
 
 # --------------------------------------------------------------------------- #
@@ -82,6 +125,8 @@ async def test_temporal_reversal_rejects_hypothesis(make_agent):
     latency_h = next(h for h in r.hypotheses if h.treatment_metric == "metric.mobile_lcp_seconds")
     assert latency_h.status == "rejected"
     assert "hard gate" in (latency_h.rejection_reason or "")
+    blocking = [c for c in r.contradictions if c.hypothesis_id == latency_h.hypothesis_id]
+    assert blocking and blocking[0].category == "temporal" and blocking[0].severity == "blocking"
 
 
 # --------------------------------------------------------------------------- #

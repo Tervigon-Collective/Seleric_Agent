@@ -20,13 +20,32 @@ from seleric_swarm.agents.diagnostic.contracts import (
     CausalAnalysisArtifact,
     Claim,
     DiagnosticArtifact,
+    DiagnosticContradiction,
     DiagnosticFinding,
     DiagnosticHypothesis,
     DiagnosticResult,
 )
+from seleric_swarm.agents.diagnostic.ontology import incident_type_for_treatment
+
+
+def _contradictions_for(h: DiagnosticHypothesis) -> list[DiagnosticContradiction]:
+    """Failed (non-skipped) tests ARE the contradiction evidence — this makes
+    that reasoning inspectable instead of only affecting the posterior score.
+    """
+    out = []
+    for r in h.test_results:
+        if r.passed or r.detail.get("skipped"):
+            continue
+        out.append(DiagnosticContradiction.from_test_result(r, evidence_refs=list(h.supporting_evidence)))
+    return out
 
 
 def classify_hypothesis(ctx: DiagnosticContext, h: DiagnosticHypothesis) -> None:
+    contradictions = _contradictions_for(h)
+    if contradictions:
+        ctx.scratch.setdefault("contradictions", []).extend(contradictions)
+        h.contradictory_evidence = sorted({ref for c in contradictions for ref in c.evidence_refs})
+
     hard_fail = next((r for r in h.test_results if r.hard_gate and not r.passed), None)
     if hard_fail:
         h.status = "rejected"
@@ -89,6 +108,7 @@ def finalize(
                 causal_ref=causal_artifact.causal_id if causal_artifact else None,
                 retained_hypothesis_id=causal_hypothesis.hypothesis_id if retained else None,
                 supporting_evidence=list(causal_hypothesis.supporting_evidence),
+                contradictory_evidence=list(causal_hypothesis.contradictory_evidence),
                 ruled_out=[h.hypothesis_id for h in result.rejected()],
                 limitations=list(limitations),
             )
@@ -104,9 +124,12 @@ def finalize(
                 "INSUFFICIENT_EVIDENCE: no hypothesis reached a causally-supported confidence tier."
             )
 
+    _apply_leadership_and_incident_type(ctx, result)
+
     result.finding = finding
     result.causal_artifact = causal_artifact
     result.limitations = limitations
+    result.contradictions = list(ctx.scratch.get("contradictions") or [])
     result.methodology = (
         "explicit hypotheses -> deterministic tests (evidence, temporal precedence, "
         "segment specificity, control divergence, dose-response) -> causal estimation + "
@@ -134,6 +157,31 @@ def _to_diagnostic_artifact(
         causal_ref=causal_artifact.causal_id if causal_artifact else None,
         synthetic=result.synthetic,
     )
+
+
+def _apply_leadership_and_incident_type(ctx: DiagnosticContext, result: DiagnosticResult) -> None:
+    """Propose (never execute) a domain-leadership transfer, and attach a
+    coarse incident_type label for downstream routing.
+
+    Diagnostic only recommends; the Coordinator's Leadership Manager decides
+    whether to honor it (spec §59, §128).
+    """
+    viable = [h for h in result.hypotheses if h.status != "rejected"]
+    best = next(iter(result.retained()), None) or (viable[0] if viable else None)
+    if best is None or not best.treatment_metric:
+        return
+
+    result.incident_type = incident_type_for_treatment(result.outcome_metric, best.treatment_metric)
+
+    current_lead = (ctx.request.lead_domain or "").removesuffix("_agent") or None
+    mechanism_domain = best.domains[0] if best.domains else None
+    if mechanism_domain and current_lead and mechanism_domain != current_lead:
+        result.recommended_domain_lead = f"{mechanism_domain}_agent"
+        result.leadership_transfer_recommended = True
+        result.leadership_transfer_reason = (
+            f"Retained mechanism '{best.statement}' is owned by {mechanism_domain}, "
+            f"not the current lead {current_lead}."
+        )
 
 
 def _hypo_row(h: DiagnosticHypothesis) -> dict[str, Any]:

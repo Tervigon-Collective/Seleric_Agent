@@ -167,3 +167,43 @@ def mechanisms_for(outcome_metric: str) -> tuple[MechanismTemplate, ...]:
 
 def known_outcomes() -> list[str]:
     return list(_ONTOLOGY)
+
+
+# Coarse routing label for downstream Prediction/Strategy (spec §122) — a
+# classification hint, never a causal claim. Keyed on the stable mechanism
+# ``key`` rather than ``domains`` because e.g. payment_failure and
+# mobile_latency_regression share the "technical" domain but are distinct
+# incident classes for routing purposes.
+_INCIDENT_TYPE_BY_KEY: dict[str, str] = {
+    "mobile_latency_regression": "technical",
+    "js_error_spike": "technical",
+    "price_or_discount_change": "pricing",
+    "stock_availability": "inventory",
+    "payment_failure": "payment",
+    "traffic_mix_shift": "acquisition",
+    "tracking_regression": "tracking",
+    "downstream_cvr_decline": "funnel",
+    "auction_pressure": "acquisition",
+    "creative_fatigue": "acquisition",
+    "attribution_change": "tracking",
+    "conversion_decline": "funnel",
+    "returns_spike": "commerce",
+    "traffic_decline": "acquisition",
+}
+
+
+def incident_type_for_key(mechanism_key: str) -> str | None:
+    return _INCIDENT_TYPE_BY_KEY.get(mechanism_key)
+
+
+def incident_type_for_treatment(outcome_metric: str, treatment_metric: str) -> str | None:
+    """Resolve incident_type from the ontology template a hypothesis came from.
+
+    Hypotheses don't retain the template ``key`` (only the (treatment, outcome)
+    pair), so this matches back on that pair — stable because each outcome's
+    template set uses a unique treatment metric per mechanism.
+    """
+    for tmpl in mechanisms_for(outcome_metric):
+        if tmpl.treatment_metric == treatment_metric:
+            return incident_type_for_key(tmpl.key)
+    return None

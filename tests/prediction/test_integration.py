@@ -114,7 +114,9 @@ async def test_reference_mission_full_prediction(runtime):
     from seleric_swarm.swarm.orchestrator import run_swarm_mission
 
     q = "Why has our CAC increased for the last three days, what happens if this continues, and what should we do?"
-    res = await run_swarm_mission(runtime, query=q, as_of="2026-09-03", full_prediction=True)
+    res = await run_swarm_mission(
+        runtime, query=q, scenario_id="cac_regression", as_of="2026-09-03", full_prediction=True
+    )
     assert res.status == "completed"
     assert res.artifacts["prediction"], "prediction artifact posted"
     ev_kinds = [e["kind"] for e in res.events]
@@ -126,8 +128,13 @@ async def test_reference_mission_all_three_subsystems(runtime):
 
     q = "Why has our CAC increased for the last three days, what happens if this continues, and what should we do?"
     res = await run_swarm_mission(
-        runtime, query=q, as_of="2026-09-03",
-        full_diagnostic=True, full_prediction=True, full_skeptic=True,
+        runtime,
+        query=q,
+        scenario_id="cac_regression",
+        as_of="2026-09-03",
+        full_diagnostic=True,
+        full_prediction=True,
+        full_skeptic=True,
     )
     assert res.status in {"completed", "partial"}
     assert res.artifacts["hypothesis"] and res.artifacts["causal"]

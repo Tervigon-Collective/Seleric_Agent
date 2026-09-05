@@ -16,7 +16,13 @@ QUERY = "Why has our CAC increased for the last three days, what happens if this
 
 @pytest.mark.asyncio
 async def test_cac_reference_mission_transfers_leadership_on_evidence(runtime):
-    res = await run_swarm_mission(runtime, query=QUERY, timezone="Asia/Kolkata", as_of="2026-09-03")
+    res = await run_swarm_mission(
+        runtime,
+        query=QUERY,
+        scenario_id="cac_regression",
+        timezone="Asia/Kolkata",
+        as_of="2026-09-03",
+    )
 
     # dynamic team assembly from intents
     assert classify_intents(QUERY) == {"diagnostic", "predictive", "prescriptive"}
@@ -47,7 +53,9 @@ async def test_cac_reference_mission_transfers_leadership_on_evidence(runtime):
 
 @pytest.mark.asyncio
 async def test_reference_mission_retains_frontend_regression_hypothesis(runtime):
-    res = await run_swarm_mission(runtime, query=QUERY, as_of="2026-09-03")
+    res = await run_swarm_mission(
+        runtime, query=QUERY, scenario_id="cac_regression", as_of="2026-09-03"
+    )
     assert res.artifacts["causal"], "a causal artifact was produced"
     # the synthesized answer names the mechanism and the recommended rollback
     text = res.final_response.lower()
@@ -79,6 +87,8 @@ async def test_no_anomaly_scenario_keeps_leadership(runtime):
         optimizer=fx.TemplateOptimizer(),
         stats=fx.TemplateStatsEngine(scenario),
     )
-    res = await run_swarm_mission(runtime, query=QUERY, as_of="2026-09-03", providers=bundle)
+    res = await run_swarm_mission(
+        runtime, query=QUERY, scenario_id="cac_regression", as_of="2026-09-03", providers=bundle
+    )
     assert res.handoff_history == []
     assert res.mission_lead == "performance_agent"

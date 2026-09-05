@@ -129,7 +129,9 @@ async def test_reference_mission_full_diagnostic(runtime):
     from seleric_swarm.swarm.orchestrator import run_swarm_mission
 
     q = "Why has our CAC increased for the last three days, what happens if this continues, and what should we do?"
-    res = await run_swarm_mission(runtime, query=q, as_of="2026-09-03", full_diagnostic=True)
+    res = await run_swarm_mission(
+        runtime, query=q, scenario_id="cac_regression", as_of="2026-09-03", full_diagnostic=True
+    )
     assert res.status == "completed"
     chain = [res.initial_mission_lead] + [h["to_agent"] for h in res.handoff_history]
     assert chain == ["performance_agent", "funnel_agent", "technical_agent"]
@@ -144,7 +146,14 @@ async def test_reference_mission_full_diagnostic_and_skeptic(runtime):
     from seleric_swarm.swarm.orchestrator import run_swarm_mission
 
     q = "Why has our CAC increased for the last three days, what happens if this continues, and what should we do?"
-    res = await run_swarm_mission(runtime, query=q, as_of="2026-09-03", full_diagnostic=True, full_skeptic=True)
+    res = await run_swarm_mission(
+        runtime,
+        query=q,
+        scenario_id="cac_regression",
+        as_of="2026-09-03",
+        full_diagnostic=True,
+        full_skeptic=True,
+    )
     assert res.status in {"completed", "partial"}
     assert res.artifacts["skeptic"]
     skeptic_art_id = res.artifacts["skeptic"][0]

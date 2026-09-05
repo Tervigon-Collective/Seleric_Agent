@@ -4,7 +4,7 @@
 ``Prediction`` Blackboard artifact from the ``ForecastArtifact`` the subsystem
 produces, so the synthesizer and existing tests are unchanged.
 
-Enable per run: ``run_swarm_mission(runtime, query=..., full_prediction=True)``.
+Enable per run: ``run_swarm_mission(runtime, query=..., scenario_id=..., full_prediction=True)``.
 """
 
 from __future__ import annotations

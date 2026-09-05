@@ -102,9 +102,9 @@ class PostgresMissionStore:
                     "raw_json": _json(raw),
                 },
             )
-            # Cancelled row: ON CONFLICT WHERE skipped the update (rowcount=0).
-            # Do not wipe events or refresh the in-process cache with a late completion.
-            if result.status != "cancelled" and int(getattr(write, "rowcount", 0) or 0) == 0:
+            # Lost CAS (cancel after completed, or completion after cancel): do not
+            # refresh cache or wipe events.
+            if int(getattr(write, "rowcount", 0) or 0) == 0:
                 return
 
             self._results[result.mission_id] = result
@@ -279,16 +279,17 @@ class PostgresMissionStore:
         limit: int = 500,
     ) -> list[dict[str, Any]]:
         with self._engine.begin() as conn:
+            # Fetch all mission events then apply seq/family filters in Python so
+            # after_seq pagination is correct (SQL LIMIT-before-filter would skip).
             rows = conn.execute(
                 self._text(
                     """
                     SELECT payload FROM mission_events
                     WHERE mission_id = :mission_id
                     ORDER BY event_id ASC
-                    LIMIT :limit
                     """
                 ),
-                {"mission_id": mission_id, "limit": max(limit * 2, 500)},
+                {"mission_id": mission_id},
             ).mappings().all()
         events: list[dict[str, Any]] = []
         for row in rows:

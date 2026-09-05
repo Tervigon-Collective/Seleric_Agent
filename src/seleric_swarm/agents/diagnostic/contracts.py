@@ -90,6 +90,49 @@ class HypothesisTest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+ContradictionCategory = Literal[
+    "temporal", "segment", "metric", "source", "causal", "statistical", "business_logic"
+]
+ContradictionSeverity = Literal["info", "warning", "blocking"]
+
+_CATEGORY_BY_TEST_KIND: dict[str, ContradictionCategory] = {
+    "temporal_precedence": "temporal",
+    "segment_specificity": "segment",
+    "control_divergence": "segment",
+    "evidence_sufficiency": "metric",
+    "dose_response": "statistical",
+    "mechanism_consistency": "statistical",
+}
+
+
+class DiagnosticContradiction(BaseModel):
+    """Evidence that does not fit a hypothesis (spec's falsification bookkeeping).
+
+    Derived from a failed ``TestResult``, not a separate analysis pass — the
+    test-driven rejection logic already *decides* on this evidence; this model
+    just makes that reasoning inspectable instead of only affecting a score.
+    """
+
+    contradiction_id: str = Field(default_factory=lambda: _rid("CTR"))
+    hypothesis_id: str
+    category: ContradictionCategory
+    description: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    severity: ContradictionSeverity = "warning"
+
+    @classmethod
+    def from_test_result(
+        cls, result: TestResult, *, evidence_refs: list[str] | None = None
+    ) -> DiagnosticContradiction:
+        return cls(
+            hypothesis_id=result.hypothesis_id,
+            category=_CATEGORY_BY_TEST_KIND.get(result.kind, "statistical"),
+            description=result.note or f"{result.kind} failed",
+            evidence_refs=list(evidence_refs or []),
+            severity="blocking" if result.hard_gate else "warning",
+        )
+
+
 class TestResult(BaseModel):
     test_id: str
     hypothesis_id: str
@@ -152,6 +195,15 @@ class DiagnosticResult(BaseModel):
     audit: dict[str, Any] = Field(default_factory=dict)
     synthetic: bool = False
     created_at: str = Field(default_factory=_now)
+    contradictions: list[DiagnosticContradiction] = Field(default_factory=list)
+
+    # -- leadership / decomposition advice (Coordinator decides, Diagnostic only proposes) --
+    recommended_domain_lead: str | None = None
+    leadership_transfer_recommended: bool = False
+    leadership_transfer_reason: str | None = None
+
+    # -- coarse routing label for downstream Prediction/Strategy, not a causal claim --
+    incident_type: str | None = None
 
     def retained(self) -> list[DiagnosticHypothesis]:
         return [h for h in self.hypotheses if h.status == "retained"]

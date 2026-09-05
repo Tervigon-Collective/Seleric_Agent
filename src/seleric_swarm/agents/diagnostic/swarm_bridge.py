@@ -6,7 +6,7 @@ delegates to ``agents.diagnostic.DiagnosticAgent``, then writes the equivalent
 ``Hypothesis`` + ``Causal`` Blackboard artifacts the synthesizer, completion gate
 and existing tests expect.
 
-Enable per run: ``run_swarm_mission(runtime, query=..., full_diagnostic=True)``.
+Enable per run: ``run_swarm_mission(runtime, query=..., scenario_id=..., full_diagnostic=True)``.
 """
 
 from __future__ import annotations
@@ -81,7 +81,18 @@ class SwarmDiagnosticSpecialist:
             hypotheses=len(result.hypotheses),
             retained=retained_ids,  # Blackboard artifact ids (not the internal ones)
             causal_confidence=result.finding.causal_confidence if result.finding else None,
+            incident_type=result.incident_type,
+            contradictions=len(result.contradictions),
         )
+        if result.leadership_transfer_recommended:
+            # Diagnostic only proposes; the Coordinator's Leadership Manager /
+            # frontier evaluation independently decides whether to transfer.
+            blackboard.record_event(
+                "leadership_transfer_recommended",
+                current_lead=blackboard.mission_lead,
+                recommended_lead=result.recommended_domain_lead,
+                reason=result.leadership_transfer_reason,
+            )
         return posted
 
 

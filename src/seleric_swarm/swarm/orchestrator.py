@@ -107,7 +107,7 @@ async def run_swarm_mission(
     timezone: str = "Asia/Kolkata",
     as_of: str | None = None,
     providers: ProviderBundle | None = None,
-    scenario_id: str = DEFAULT_SCENARIO,
+    scenario_id: str | None = None,
     session_id: str | None = None,
     request_id: str | None = None,
     full_skeptic: bool = False,
@@ -116,6 +116,11 @@ async def run_swarm_mission(
     mission_id: str | None = None,
     execution_mode: str = "fixture",
 ) -> SwarmMissionResult:
+    if not scenario_id:
+        raise ValueError(
+            "scenario_id is required for swarm missions "
+            f"(e.g. '{DEFAULT_SCENARIO}' for the fixture pack)"
+        )
     mid = mission_id or f"MS-{uuid4().hex[:10]}"
     mission_id = mid
     rid = request_id or uuid4().hex

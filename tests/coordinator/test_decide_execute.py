@@ -12,6 +12,7 @@ from seleric_swarm.orchestration.dispatch import run_any_mission
 async def test_decide_execute_emits_wave_events(runtime):
     result = await run_swarm_v2_mission(
         runtime,
+        scenario_id="cac_regression",
         query="Why has CAC increased over the last three days?",
         full_diagnostic=True,
         full_prediction=True,
@@ -39,6 +40,7 @@ async def test_dispatch_uses_langgraph_v2(runtime):
     out = await run_any_mission(
         runtime,
         query="Why has CAC increased and what should we do?",
+        scenario_id="cac_regression",
         full_diagnostic=True,
         full_skeptic=False,
     )

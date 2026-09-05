@@ -37,6 +37,7 @@ def test_emitter_envelope():
 async def test_swarm_v2_event_taxonomy_coverage(runtime):
     result = await run_swarm_v2_mission(
         runtime,
+        scenario_id="cac_regression",
         query="Why has CAC increased over the last three days?",
         full_diagnostic=True,
     )

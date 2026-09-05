@@ -60,6 +60,7 @@ def test_completion_gate_leadership_budget_key():
 async def test_swarm_v2_budget_exhaustion_emits_event_and_partial(runtime):
     result = await run_swarm_v2_mission(
         runtime,
+        scenario_id="cac_regression",
         query="Why has CAC increased?",
         timezone="Asia/Kolkata",
         as_of="2026-08-01",

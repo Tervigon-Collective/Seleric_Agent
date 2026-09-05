@@ -394,23 +394,33 @@ def get_mission_events(
     exists = store.get(mission_id) is not None or getattr(store, "get_raw", lambda _m: None)(mission_id)
     if not exists:
         raise HTTPException(status_code=404, detail="mission not found")
+    # Fetch one extra row so clients can paginate without a separate count query.
+    fetch_limit = limit + 1
     list_events = getattr(store, "list_events", None)
     if list_events is None:
         from seleric_swarm.persistence.memory import extract_events, filter_events
 
-        events = filter_events(
+        page = filter_events(
             extract_events(getattr(store, "get_raw", lambda _m: None)(mission_id)),
             family=family,
             after_seq=after_seq,
-            limit=limit,
+            limit=fetch_limit,
         )
     else:
-        events = list_events(mission_id, family=family, after_seq=after_seq, limit=limit)
+        page = list_events(mission_id, family=family, after_seq=after_seq, limit=fetch_limit)
+    has_more = len(page) > limit
+    events = page[:limit]
+    next_after_seq = None
+    if has_more and events:
+        next_after_seq = int(events[-1].get("seq") or after_seq)
     return {
         "mission_id": mission_id,
         "count": len(events),
         "family": family,
         "after_seq": after_seq,
+        "limit": limit,
+        "has_more": has_more,
+        "next_after_seq": next_after_seq,
         "events": events,
     }
 

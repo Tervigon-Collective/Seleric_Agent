@@ -42,7 +42,8 @@ def filter_events(
     out: list[dict[str, Any]] = []
     for event in events:
         seq = int(event.get("seq") or 0)
-        if seq and seq <= after_seq:
+        # Missing/zero seq: include only on the first page (after_seq == 0).
+        if after_seq > 0 and seq <= after_seq:
             continue
         if family:
             fam = event.get("family") or ""

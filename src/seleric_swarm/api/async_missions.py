@@ -210,62 +210,67 @@ def cancel_running_mission(
         raise ValueError(f"mission not cancellable (status={status})")
 
     request_cancel(mission_id)
-    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    # Re-check immediately before write (job may have just finished).
-    raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
-    result = runtime.store.get(mission_id)
-    status = None
-    if isinstance(raw, dict):
-        status = raw.get("status")
-    if status is None and result is not None:
-        status = result.status
-    if str(status or "") != "running":
-        raise ValueError(f"mission not cancellable (status={status})")
+    try:
+        ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Re-check immediately before write (job may have just finished).
+        raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
+        result = runtime.store.get(mission_id)
+        status = None
+        if isinstance(raw, dict):
+            status = raw.get("status")
+        if status is None and result is not None:
+            status = result.status
+        if str(status or "") != "running":
+            raise ValueError(f"mission not cancellable (status={status})")
 
-    events = list((raw or {}).get("events") or [])
-    events.append(
-        {
-            "kind": "mission_cancelled",
-            "ts": ts,
-            "seq": len(events) + 1,
+        events = list((raw or {}).get("events") or [])
+        events.append(
+            {
+                "kind": "mission_cancelled",
+                "ts": ts,
+                "seq": len(events) + 1,
+                "mission_id": mission_id,
+                "family": "mission",
+                "async": True,
+            }
+        )
+        rid = request_id or (result.trace.request_id if result and result.trace else uuid4().hex)
+        sid = result.trace.session_id if result and result.trace else rid
+        cancelled = MissionResult(
+            mission_id=mission_id,
+            status="cancelled",
+            limitations=["Mission cancelled by client before completion."],
+            final_response=None,
+            trace=TraceInfo(request_id=rid, session_id=sid),
+        )
+        payload = {
+            **(raw or {}),
+            "route": (raw or {}).get("route") or "pending",
             "mission_id": mission_id,
-            "family": "mission",
+            "status": "cancelled",
             "async": True,
+            "cancel_requested": True,
+            "events": events,
+            "limitations": cancelled.limitations,
+            "error_code": "CANCELLED",
+            "final_response": None,
         }
-    )
-    rid = request_id or (result.trace.request_id if result and result.trace else uuid4().hex)
-    sid = result.trace.session_id if result and result.trace else rid
-    cancelled = MissionResult(
-        mission_id=mission_id,
-        status="cancelled",
-        limitations=["Mission cancelled by client before completion."],
-        final_response=None,
-        trace=TraceInfo(request_id=rid, session_id=sid),
-    )
-    payload = {
-        **(raw or {}),
-        "route": (raw or {}).get("route") or "pending",
-        "mission_id": mission_id,
-        "status": "cancelled",
-        "async": True,
-        "cancel_requested": True,
-        "events": events,
-        "limitations": cancelled.limitations,
-        "error_code": "CANCELLED",
-        "final_response": None,
-    }
-    runtime.store.put(cancelled, payload)
-    # If the job won the race, store refused the cancel write — surface that.
-    got = runtime.store.get(mission_id)
-    got_raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
-    final_status = None
-    if isinstance(got_raw, dict):
-        final_status = got_raw.get("status")
-    if final_status is None and got is not None:
-        final_status = got.status
-    if final_status != "cancelled":
-        raise ValueError(f"mission not cancellable (status={final_status})")
-    return payload
+        runtime.store.put(cancelled, payload)
+        # If the job won the race, store refused the cancel write — surface that.
+        got = runtime.store.get(mission_id)
+        got_raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
+        final_status = None
+        if isinstance(got_raw, dict):
+            final_status = got_raw.get("status")
+        if final_status is None and got is not None:
+            final_status = got.status
+        if final_status != "cancelled":
+            raise ValueError(f"mission not cancellable (status={final_status})")
+        return payload
+    except Exception:
+        # Do not leave a sticky cancel flag after a 409 / race loss.
+        clear_cancel(mission_id)
+        raise
 
 
 # is_terminal_status imported from api.status and re-exported above

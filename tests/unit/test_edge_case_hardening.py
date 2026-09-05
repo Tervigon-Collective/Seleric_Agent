@@ -300,3 +300,31 @@ def test_malformed_as_of_string_is_rejected_not_swallowed(runtime, monkeypatch):
         },
     )
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_library_swarm_requires_scenario_id(runtime):
+    from seleric_swarm.coordinator.graph import run_swarm_v2_mission
+    from seleric_swarm.swarm.orchestrator import run_swarm_mission
+
+    with pytest.raises(ValueError, match="scenario_id is required"):
+        await run_swarm_mission(runtime, query="why did CAC increase?")
+    with pytest.raises(ValueError, match="scenario_id is required"):
+        await run_swarm_v2_mission(runtime, query="why did CAC increase?")
+
+
+def test_failed_cancel_clears_process_flag(runtime):
+    mid = "MS-cancel-flag-leak"
+    clear_cancel(mid)
+    done = MissionResult(
+        mission_id=mid,
+        status="completed",
+        limitations=[],
+        final_response="done",
+        trace=TraceInfo(request_id="r", session_id="s"),
+    )
+    runtime.store.put(done, {"route": "swarm", "status": "completed", "mission_id": mid})
+    with pytest.raises(ValueError, match="not cancellable"):
+        cancel_running_mission(runtime, mission_id=mid)
+    assert is_cancel_requested(mid) is False
+    clear_cancel(mid)

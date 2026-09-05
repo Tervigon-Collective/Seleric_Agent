@@ -53,6 +53,7 @@ async def test_swarm_v2_staging_surfaces_mcp_limitations(runtime):
 
     result = await run_swarm_v2_mission(
         runtime,
+        scenario_id="cac_regression",
         query="Why has CAC increased over the last three days?",
         full_diagnostic=True,
         full_skeptic=True,

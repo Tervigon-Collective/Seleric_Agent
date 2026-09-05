@@ -56,6 +56,9 @@ def test_cancel_running_mission(runtime):
     assert is_cancel_requested("MS-cancel1")
     with pytest.raises(ValueError, match="not cancellable"):
         cancel_running_mission(runtime, mission_id="MS-cancel1")
+    # Failed second cancel must not leave a sticky process-local flag after clear.
+    # Store still shows cancelled via runtime-aware check.
+    assert is_cancel_requested("MS-cancel1", runtime) is True
     clear_cancel("MS-cancel1")
 
 
