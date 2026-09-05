@@ -220,7 +220,7 @@ async def _resolve_metrics_via_catalogue(
             result = await mcp.call(
                 agent_id=agent_id, capability="seleric.catalogue_resolve_term", arguments={"text": term}
             )
-        except Exception:
+        except Exception:  # noqa: S112 - a single unresolved term must not abort catalogue lookup
             continue
         if result.get("kind") != "resolved":
             continue

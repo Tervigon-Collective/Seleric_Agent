@@ -116,10 +116,14 @@ def test_swarm_mission_embeds_trace(runtime, monkeypatch):
     assert (body.get("trace") or {}).get("request_id") == "swarm-corr-1"
 
 
-def test_sync_rejects_unsupported_swarm_query(runtime, monkeypatch):
+def test_sync_reports_unresolvable_query_as_failed_mission(runtime, monkeypatch):
+    """A query with no recognizable metric or analysis intent now resolves as
+    a structured failed mission (status=failed, ROUTING_UNSUPPORTED) rather
+    than an HTTP-level 400 — the request itself was well-formed, only the
+    business question could not be answered."""
     monkeypatch.setattr(main_mod, "_runtime", runtime)
     client = TestClient(app, raise_server_exceptions=True)
-    bad = client.post(
+    resp = client.post(
         "/v1/missions",
         json={
             "query": "?????",
@@ -127,8 +131,10 @@ def test_sync_rejects_unsupported_swarm_query(runtime, monkeypatch):
             "scenario_id": "cac_regression",
         },
     )
-    assert bad.status_code == 400
-    assert "known metric" in bad.json()["detail"]
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "failed"
+    assert body["error"]["code"] == "ROUTING_UNSUPPORTED"
 
 
 def test_sync_passes_generated_session_id(runtime, monkeypatch):
@@ -172,7 +178,7 @@ async def test_swarm_v1_accepts_execution_mode(runtime, monkeypatch):
     }
 
 
-def test_as_of_extends_scenario_observation_window():
+async def test_as_of_extends_scenario_observation_window():
     scenario = {"observation_window": {"start": "2026-08-31", "end": "2026-09-02"}}
     # Scenario window kept; as_of past end extends end only
     tr = resolve_mission_time_range(scenario, timezone="Asia/Kolkata", as_of="2026-09-03")
@@ -191,7 +197,7 @@ def test_as_of_extends_scenario_observation_window():
     assert tr_in["start"] == "2026-08-31"
 
     # No scenario window → fall back to normalized query window
-    nq = normalize_query(
+    nq = await normalize_query(
         "Why has CAC increased over the last three days?",
         timezone="Asia/Kolkata",
         as_of="2026-09-03",
@@ -228,8 +234,8 @@ def test_swarm_mission_view_preserves_prototype_completed():
     assert coerce_typed_status("weird") == "partial"
 
 
-def test_full_flags_folded_into_normalized_intents():
-    nq = normalize_query("Why did CAC rise?", timezone="Asia/Kolkata", as_of="2026-09-03")
+async def test_full_flags_folded_into_normalized_intents():
+    nq = await normalize_query("Why did CAC rise?", timezone="Asia/Kolkata", as_of="2026-09-03")
     intents = apply_full_flags(
         set(nq.intents),
         full_diagnostic=True,

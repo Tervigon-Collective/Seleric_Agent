@@ -52,7 +52,7 @@ async def test_hybrid_fixture_mode_skips_mcp(runtime):
 
 @pytest.mark.asyncio
 async def test_hybrid_production_skips_fixture_for_technical(runtime):
-    bundle, stats = build_hybrid_bundle(
+    bundle, _stats = build_hybrid_bundle(
         "cac_regression",
         mcp=runtime.mcp,
         execution_mode="production",
