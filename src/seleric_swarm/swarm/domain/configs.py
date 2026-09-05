@@ -133,6 +133,7 @@ def build_domain_configs(
             handoff_targets=[p for p in peer_ids if p != wire.agent_id],
             ontology=list(wire.ontology),
             seleric_module=module,
+            terminal=wire.terminal,
         )
     return out
 

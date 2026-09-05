@@ -147,7 +147,7 @@ async def test_ontology_service_offline_returns_empty():
 @pytest.mark.asyncio
 async def test_ontology_service_swallows_empty_mcp_json():
     class Boom:
-        capabilities = {"seleric.catalogue_get_ontology", "seleric.catalogue_get_metric"}
+        capabilities = {"seleric.catalogue_get_ontology", "seleric.catalogue_get_metric"}  # noqa: RUF012
 
         def module_for(self, agent_id):
             return "commerce"

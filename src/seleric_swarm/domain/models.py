@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 TrustLabel = Literal["VERIFIED", "STRONG", "PROBABLE", "WEAK", "INSUFFICIENT"]
 
@@ -32,6 +32,8 @@ class LeadershipTransfer(BaseModel):
 
 
 class Claim(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     claim_id: str
     claim_type: Literal["numeric", "causal", "forecast", "recommendation", "qualitative"]
     text: str

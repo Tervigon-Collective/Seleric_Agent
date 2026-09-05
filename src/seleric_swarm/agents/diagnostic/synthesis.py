@@ -93,6 +93,17 @@ def finalize(
                 limitations=list(limitations),
             )
 
+    if finding is None:
+        if not result.hypotheses:
+            limitations.append(
+                "INSUFFICIENT_EVIDENCE: no candidate mechanism could be generated for "
+                f"{ctx.outcome_metric or 'this metric'} from the available ontology/evidence."
+            )
+        else:
+            limitations.append(
+                "INSUFFICIENT_EVIDENCE: no hypothesis reached a causally-supported confidence tier."
+            )
+
     result.finding = finding
     result.causal_artifact = causal_artifact
     result.limitations = limitations

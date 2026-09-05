@@ -3,6 +3,8 @@ monitor, constraint-store business rules, and the swarm bridge."""
 
 from __future__ import annotations
 
+import importlib.util
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -37,6 +39,7 @@ def _graphs() -> InMemoryCausalGraphRegistry:
     return reg
 
 
+@pytest.mark.skipif(importlib.util.find_spec("dowhy") is None, reason="DoWhy not installed")
 async def test_dowhy_service_reestimates_and_confirms_effect():
     rng = np.random.default_rng(0)
     n = 800
@@ -71,6 +74,7 @@ async def test_dowhy_service_degrades_without_observations():
     assert any("re-estimation skipped" in i for i in res.issues)
 
 
+@pytest.mark.skipif(importlib.util.find_spec("dowhy") is None, reason="DoWhy not installed")
 async def test_dowhy_service_rejects_on_sign_flip():
     rng = np.random.default_rng(1)
     n = 600

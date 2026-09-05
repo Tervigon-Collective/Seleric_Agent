@@ -615,7 +615,21 @@ def build_graph(runtime: SwarmRuntime):
             if state.get("status") == "partial":
                 result["status"] = "partial"
             else:
-                result["status"] = "completed" if state.get("claims") else state.get("status") or "failed"
+                claims = state.get("claims") or []
+                passed = [c for c in claims if c.get("gate_status") == "passed"]
+                if passed:
+                    result["status"] = "completed"
+                elif claims:
+                    # Every extracted claim was rejected by the gate — the mission
+                    # ran end to end but produced no answer the user can rely on.
+                    result["status"] = "partial"
+                    lim = "No claim passed the validation gate; the answer is unverified."
+                    merged = list(result.get("limitations") or state.get("limitations") or [])
+                    if lim not in merged:
+                        merged.append(lim)
+                    result["limitations"] = merged
+                else:
+                    result["status"] = state.get("status") or "failed"
             result.update(mark_tasks(dict(state), task_types={"synthesize"}, status="done"))
             # Completion score now reads live task statuses from the authoritative DAG.
             completion = plane.completion(dict(state) | result)

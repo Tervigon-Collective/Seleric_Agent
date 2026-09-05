@@ -13,7 +13,7 @@ from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.evidence import make_evidence
 
 AGENT_VERSION = "0.1.0"
-_TOP_N_RE = re.compile(r"\btop\s+(\d+)\b", re.I)
+_TOP_N_RE = re.compile(r"\btop\s+(\d+)\b", re.IGNORECASE)
 _DEFAULT_TOP_N = 10
 
 

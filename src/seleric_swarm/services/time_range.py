@@ -6,8 +6,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
 
-_LAST_N_DAYS = re.compile(r"\blast\s+(\d+)\s+days?\b", re.I)
+_LAST_N_DAYS = re.compile(r"\blast\s+(\d+)\s+days?\b", re.IGNORECASE)
 _ISO_DAY = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
+_COMPARISON_VERB = re.compile(r"\b(compare|versus|vs\.?|against|change|delta|over)\b", re.IGNORECASE)
+# relative period → day offset for a two-point (point-vs-point) comparison
+_RELATIVE_COMPARE = (
+    (re.compile(r"\b(week[\s-]*over[\s-]*week|wow|this week\b.*\blast week|last week)\b", re.IGNORECASE), 7),
+    (re.compile(r"\b(month[\s-]*over[\s-]*month|mom|this month\b.*\blast month|last month)\b", re.IGNORECASE), 30),
+    (re.compile(r"\b(year[\s-]*over[\s-]*year|yoy|this year\b.*\blast year|last year)\b", re.IGNORECASE), 365),
+)
 
 
 def as_of_date(as_of: str | None, timezone: str) -> date:
@@ -38,6 +45,20 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
         return TimeRangeV1(kind="comparison", start=dates[0], end=dates[1], relative_token=None)
     if dates:
         return TimeRangeV1(kind="absolute", start=dates[0], end=dates[0], relative_token=None)
+    # Relative period-over-period ("this week vs last week", "MoM change") resolves
+    # to a two-point comparison anchored on as_of, so the mission runs instead of
+    # failing with "comparison time range requires two dates".
+    if _COMPARISON_VERB.search(text):
+        for pattern, offset_days in _RELATIVE_COMPARE:
+            if pattern.search(text):
+                anchor = as_of_date(as_of, timezone)
+                prior = anchor - timedelta(days=offset_days)
+                return TimeRangeV1(
+                    kind="comparison",
+                    start=prior.isoformat(),
+                    end=anchor.isoformat(),
+                    relative_token=f"prior_{offset_days}d_vs_as_of",
+                )
     lower = text.lower()
     anchor = as_of_date(as_of, timezone)
     if re.search(r"\byesterday\b", lower):
@@ -74,12 +95,20 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
             day = (anchor - timedelta(days=1)).isoformat()
         return TimeRangeV1(kind="absolute", start=day, end=day, relative_token=token)
     if time_range.kind == "comparison":
-        start = time_range.start
-        end = time_range.end
+        cmp_start: str | None = time_range.start
+        cmp_end: str | None = time_range.end
         if time_range.relative_token == "yesterday_vs_as_of":
-            start = (anchor - timedelta(days=1)).isoformat()
-            end = anchor.isoformat()
-        if not start or not end:
-            raise ValueError("comparison time range requires two dates")
-        return TimeRangeV1(kind="comparison", start=start[:10], end=end[:10], relative_token=time_range.relative_token)
+            cmp_start = (anchor - timedelta(days=1)).isoformat()
+            cmp_end = anchor.isoformat()
+        if not cmp_start or not cmp_end:
+            raise ValueError(
+                "comparison needs two dated periods — give explicit dates or a "
+                "period-over-period phrase (e.g. 'this week vs last week')"
+            )
+        return TimeRangeV1(
+            kind="comparison",
+            start=cmp_start[:10],
+            end=cmp_end[:10],
+            relative_token=time_range.relative_token,
+        )
     return time_range

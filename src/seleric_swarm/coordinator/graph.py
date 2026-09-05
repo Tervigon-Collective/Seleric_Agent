@@ -40,7 +40,12 @@ from seleric_swarm.coordinator.governance.remediation import (
 )
 from seleric_swarm.coordinator.governance.skeptic_gate import apply_skeptic_gate
 from seleric_swarm.coordinator.governance.synthetic_guard import mission_synthetic_status
-from seleric_swarm.coordinator.intake import apply_full_flags, normalize_query
+from seleric_swarm.coordinator.intake import (
+    apply_full_flags,
+    has_analytical_signal,
+    normalize_query,
+    resolve_mission_time_range,
+)
 from seleric_swarm.coordinator.leadership.frontier import LeadershipController, evaluate_frontier
 from seleric_swarm.coordinator.observability.events import (
     CLAIM_CHALLENGED,
@@ -85,7 +90,7 @@ from seleric_swarm.orchestration.state import MissionState
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.domain.base import DomainAgent
-from seleric_swarm.swarm.domain.configs import ALL_DOMAIN_CONFIGS
+from seleric_swarm.swarm.domain.configs import build_domain_configs
 from seleric_swarm.swarm.envelope import Intent, SwarmMessage
 from seleric_swarm.swarm.mission import SwarmMission, SwarmMissionResult, TeamMember
 from seleric_swarm.swarm.orchestrator import _initial_lead, classify_intents
@@ -848,6 +853,65 @@ def _make_synthesize(ctx: SwarmV2Context):
     return synthesize
 
 
+def _unsupported_swarm_result(
+    *,
+    mission_id: str,
+    query: str,
+    request_id: str,
+    session_id: str,
+    runtime: SwarmRuntime,
+    reason: str,
+) -> SwarmMissionResult:
+    """Terminal result for a query with no resolvable metric or analysis intent.
+
+    Prevents the swarm from fabricating a synthetic diagnosis against fixture
+    defaults for noise / off-topic input (see ``has_analytical_signal``).
+    """
+    result = SwarmMissionResult(
+        mission_id=mission_id,
+        status="failed",
+        query=query,
+        complexity="L0",
+        initial_mission_lead="coordinator_agent",
+        mission_lead="coordinator_agent",
+        leadership_epoch=0,
+        team=[],
+        handoff_history=[],
+        artifacts={
+            t: []
+            for t in (
+                "evidence",
+                "anomaly",
+                "hypothesis",
+                "causal",
+                "prediction",
+                "strategy",
+                "skeptic",
+            )
+        },
+        final_response=reason,
+        limitations=[reason],
+        synthetic=False,
+        events=[],
+        error_code="ROUTING_UNSUPPORTED",
+    )
+    try:
+        from seleric_swarm.swarm.orchestrator import _swarm_mission_view
+
+        runtime.store.put(
+            _swarm_mission_view(result, request_id, session_id),
+            {
+                "route": "swarm",
+                "workflow": "swarm_v2",
+                "trace": {"request_id": request_id, "session_id": session_id},
+                **result.as_dict(),
+            },
+        )
+    except Exception:  # noqa: S110 - persistence must never fail the response
+        pass
+    return result
+
+
 async def run_swarm_v2_mission(
     runtime: SwarmRuntime,
     *,
@@ -863,11 +927,26 @@ async def run_swarm_v2_mission(
     full_prediction: bool = False,
     execution_mode: str = "production",
     budget_overrides: dict[str, Any] | None = None,
+    mission_id: str | None = None,
 ) -> SwarmMissionResult:
     """Execute Coordinator V1 via LangGraph DECIDE→EXECUTE cycle."""
-    mission_id = f"MS-{uuid4().hex[:10]}"
+    mid = mission_id or f"MS-{uuid4().hex[:10]}"
+    mission_id = mid
     rid = request_id or uuid4().hex
     sid = session_id or uuid4().hex
+    if not has_analytical_signal(query, runtime.metrics):
+        return _unsupported_swarm_result(
+            mission_id=mission_id,
+            query=query,
+            request_id=rid,
+            session_id=sid,
+            runtime=runtime,
+            reason=(
+                "Query does not name a known metric or a supported analysis "
+                "(diagnose / forecast / compare / recommend / health check); "
+                "rephrase with a metric and an intent, e.g. 'why did CAC increase?'."
+            ),
+        )
     policies = load_coordinator_policies(
         getattr(runtime.settings, "coordinator_policies_path", None)
     )
@@ -892,6 +971,7 @@ async def run_swarm_v2_mission(
         else:
             providers = build_fixture_bundle(scenario_id)
     initial_lead = _initial_lead(query)
+
     request = MissionRequest(
         query=query,
         session_id=sid,
@@ -905,19 +985,9 @@ async def run_swarm_v2_mission(
         mcp=runtime.mcp if mode != "fixture" else None,
         agent_id="coordinator_agent",
     )
-    # Live MCP uses the query window; fixture mode keeps the scenario observation window.
-    if mode != "fixture" and normalized.time_range is not None:
-        time_range = {
-            "start": normalized.time_range.start,
-            "end": normalized.time_range.end,
-            "timezone": normalized.time_range.timezone or timezone,
-            "label": normalized.time_range.label,
-        }
-    else:
-        time_range = dict(scenario.get("observation_window") or {"start": as_of, "end": as_of})
-        time_range["timezone"] = timezone
     # Single source of truth: intake intents (includes executive_health → diagnostic),
-    # plus full_* flags that force specialist activation.
+    # plus full_* flags that force specialist activation. Fold into normalized so
+    # decomposition / plan see the same intents the mission executes with.
     intents = apply_full_flags(
         set(normalized.intents) | classify_intents(query),
         full_diagnostic=full_diagnostic,
@@ -926,6 +996,10 @@ async def run_swarm_v2_mission(
     )
     if "executive_health" in intents:
         intents.add("diagnostic")
+    normalized = normalized.model_copy(update={"intents": sorted(intents)})
+    time_range = resolve_mission_time_range(
+        scenario, timezone=timezone, as_of=as_of, normalized=normalized
+    )
     decomposition = initial_decomposition(mission_id=mission_id, normalized=normalized, policies=policies)
     plan = build_mission_plan(
         mission_id=mission_id,
@@ -962,8 +1036,10 @@ async def run_swarm_v2_mission(
     )
 
     domains: dict[str, DomainAgent] = {
-        cfg.agent_id: DomainAgent(cfg, providers.data_for(cfg.domain), peers=providers.data)
-        for cfg in ALL_DOMAIN_CONFIGS.values()
+        cfg.agent_id: DomainAgent(
+            cfg, providers.data_for(cfg.domain), peers=providers.data, metrics=runtime.metrics
+        )
+        for cfg in build_domain_configs(runtime.metrics, runtime.agents).values()
     }
     observer = ObserverAgent(providers, domains)
     anomaly = AnomalyAgent(providers)
@@ -1184,12 +1260,28 @@ async def run_swarm_v2_mission(
         skeptic_ok = (blackboard.by_type("skeptic") or [{}])[-1].get("verdict") == "PASS"
         challenged = any(c.get("state") == "CHALLENGED" for c in ctx.managed_claims)
         all_synthetic = bool(blackboard.synthetic_summary().get("all_synthetic"))
+        # A health check legitimately has no single primary metric — it scans every
+        # domain — so an unresolved metric only downgrades targeted investigations.
+        metric_unresolved = (
+            "primary_metric_unresolved" in normalized.unresolved_semantics
+            and "executive_health" not in intents
+        )
         if ctx.budget_exhausted or final_state.get("budget_exhausted"):
+            status = "partial"
+        elif challenged and status in {"prototype_completed", "completed"}:
+            # A claim the Skeptic left CHALLENGED must never surface as a success,
+            # even if an earlier gate stamped prototype_completed.
+            status = "partial"
+        elif metric_unresolved and status in {"prototype_completed", "completed"}:
+            # We answered a fixture-default metric, not the user's question — the
+            # investigation ran but the target could not be identified.
             status = "partial"
         elif status == "prototype_completed":
             pass  # preserve DoD status for synthetic-complete missions
         elif "diagnostic" in intents and retained and skeptic_ok and not challenged:
-            status = "prototype_completed" if all_synthetic else "completed"
+            status = "prototype_completed" if all_synthetic and not metric_unresolved else (
+                "partial" if metric_unresolved else "completed"
+            )
         elif challenged or status in {"running", "validating", "remediating", "assembled", "planning"}:
             status = "partial"
 
@@ -1249,6 +1341,7 @@ async def run_swarm_v2_mission(
                 "route": "swarm",
                 "workflow": "swarm_v2",
                 "workflow_version": "1.4.0",
+                "trace": {"request_id": rid, "session_id": sid},
                 **result.as_dict(),
             },
         )

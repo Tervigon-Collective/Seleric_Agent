@@ -66,11 +66,7 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
         slug_parts = [p for p in slug.split("_") if p]
         phrases = [slug_phrase, slug_phrase.replace("sales", "sale"), *metric.aliases]
         score = 0
-        if slug_phrase and slug_phrase in q:
-            score = 10
-        elif "sales" in slug_phrase and slug_phrase.replace("sales", "sale") in q:
-            score = 10
-        elif slug_parts and all(part in q_words for part in slug_parts):
+        if slug_phrase and slug_phrase in q or "sales" in slug_phrase and slug_phrase.replace("sales", "sale") in q or slug_parts and all(part in q_words for part in slug_parts):
             score = 10
         else:
             for alias in metric.aliases:
@@ -90,7 +86,7 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
         if score == 0 and metric.domain in q_words and len(by_domain.get(metric.domain) or []) == 1:
             score = 7
             phrases = [metric.domain, *phrases]
-        if score == 0 and "channel" in q_words and re.search(r"\bacross channels\b", metric.description or "", re.I):
+        if score == 0 and "channel" in q_words and re.search(r"\bacross channels\b", metric.description or "", re.IGNORECASE):
             score = 8
             phrases = ["channel", *phrases]
         if score == 0:
@@ -300,9 +296,15 @@ def map_metric(
 
 def _claims_from_user(text: str) -> list[dict[str, Any]]:
     marker = "GATED_CLAIMS_JSON:"
-    if marker not in text:
+    # The template renders this on its own line, followed by EVIDENCE_JSON on
+    # the next line — take only that line's payload so trailing template
+    # content doesn't corrupt json.loads (a strict parser rejects any string
+    # with trailing data, so "[...]\nEVIDENCE_JSON: ..." would silently parse
+    # to zero claims and mask a passed, gated claim as "no claims available").
+    line = next((ln for ln in text.splitlines() if ln.strip().startswith(marker)), None)
+    if line is None:
         return []
-    raw = text.split(marker, 1)[1].strip()
+    raw = line.split(marker, 1)[1].strip()
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:

@@ -59,6 +59,12 @@ async def resolve_intake(ctx: DiagnosticContext) -> None:
         lead_domain=(req.lead_domain or "").removesuffix("_agent") or None,
     )
 
+    # No anomaly evidence at all, and no caller-supplied metric hint either —
+    # there is nothing confirmed to diagnose. Do not force a root-cause story
+    # against a hardcoded default metric (spec: NO_CONFIRMED_ANOMALY).
+    hint = req.outcome_metric or req.primary_metric
+    ctx.no_confirmed_anomaly = not ctx.anomalies and not hint
+
     # -- degradation start -------------------------------------
     ctx.degradation_started_at = (
         req.degradation_started_at

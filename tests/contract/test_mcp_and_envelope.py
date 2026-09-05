@@ -1,7 +1,6 @@
 import pytest
 
 from seleric_swarm.protocols.a2a.envelope import SwarmEnvelope
-from seleric_swarm.protocols.mcp.gateway import MCPGateway
 
 
 def test_envelope_contract():

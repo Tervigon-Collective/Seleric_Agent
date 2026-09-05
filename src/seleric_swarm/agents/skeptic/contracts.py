@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # --------------------------------------------------------------------------- #
 # Enums / literals
@@ -109,6 +109,8 @@ def _rid(prefix: str) -> str:
 
 class Claim(BaseModel):
     """A candidate conclusion produced by another agent, submitted for review."""
+
+    model_config = ConfigDict(protected_namespaces=())
 
     claim_id: str = Field(default_factory=lambda: _rid("CL"))
     mission_id: str
@@ -309,6 +311,8 @@ class DiagnosticArtifact(BaseModel):
 
 class ForecastArtifact(BaseModel):
     """Future Prediction Agent contract."""
+
+    model_config = ConfigDict(protected_namespaces=())
 
     forecast_id: str
     mission_id: str = ""

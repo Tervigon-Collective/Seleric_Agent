@@ -37,6 +37,32 @@ async def test_reference_latency_regression_retained(make_agent):
 
 
 # --------------------------------------------------------------------------- #
+# 1b. a reported (not merely absent) small sample size downgrades support via
+#     the shared deterministic statistics service - never treated as zero
+# --------------------------------------------------------------------------- #
+async def test_reported_small_sample_size_downgrades_evidence_sufficiency(make_agent):
+    bundle = latency_bundle()
+    for row in bundle:
+        if row.get("metric_id") == "metric.mobile_lcp_seconds":
+            row["sample_size"] = 5  # far below the deterministic validator's power threshold
+    agent = make_agent(
+        bundle,
+        [anomaly("AN-cvr", "metric.purchase_cvr", -24.0, start_time="2026-09-01T12:05:00+05:30"),
+         anomaly("AN-lcp", "metric.mobile_lcp_seconds", 164.0, direction="up", start_time="2026-09-01T11:47:00+05:30")],
+    )
+    r = await agent.diagnose(_req(
+        outcome_metric="metric.purchase_cvr",
+        degradation_started_at="2026-09-01T12:05:00+05:30",
+        context={"trust_metadata_causal": True},
+    ))
+    latency_h = next(h for h in r.hypotheses if h.treatment_metric == "metric.mobile_lcp_seconds")
+    ev_check = next(t for t in latency_h.test_results if t.kind == "evidence_sufficiency")
+    assert ev_check.passed is False
+    assert "sample_size_check" in ev_check.detail
+    assert ev_check.detail["sample_size_check"]["sample_size"] == 5
+
+
+# --------------------------------------------------------------------------- #
 # 2. impossible temporal ordering -> hypothesis rejected on the hard gate
 # --------------------------------------------------------------------------- #
 async def test_temporal_reversal_rejects_hypothesis(make_agent):
@@ -56,6 +82,68 @@ async def test_temporal_reversal_rejects_hypothesis(make_agent):
     latency_h = next(h for h in r.hypotheses if h.treatment_metric == "metric.mobile_lcp_seconds")
     assert latency_h.status == "rejected"
     assert "hard gate" in (latency_h.rejection_reason or "")
+
+
+# --------------------------------------------------------------------------- #
+# 2b. no anomaly evidence and no metric hint -> NO_CONFIRMED_ANOMALY, no
+#     fabricated root cause against a hardcoded default metric
+# --------------------------------------------------------------------------- #
+async def test_no_anomaly_does_not_fabricate_root_cause(make_agent):
+    agent = make_agent([], [])
+    r = await agent.diagnose(_req())
+    assert r.hypotheses == []
+    assert r.finding is None
+    assert r.claims == []
+    assert any("NO_CONFIRMED_ANOMALY" in lim for lim in r.limitations)
+
+
+# --------------------------------------------------------------------------- #
+# 2b2. unrecognized metric -> INSUFFICIENT_EVIDENCE, not a silent empty result
+# --------------------------------------------------------------------------- #
+async def test_unknown_metric_reports_insufficient_evidence(make_agent):
+    agent = make_agent([], [])
+    r = await agent.diagnose(_req(outcome_metric="metric.totally_unrecognized_thing"))
+    assert r.hypotheses == []
+    assert r.finding is None
+    assert any("INSUFFICIENT_EVIDENCE" in lim for lim in r.limitations)
+
+
+# --------------------------------------------------------------------------- #
+# 2c. runtime budget exhaustion returns a partial result instead of hanging
+# --------------------------------------------------------------------------- #
+async def test_runtime_budget_exhaustion_returns_partial_result(make_agent):
+    import asyncio
+
+    from seleric_swarm.agents.diagnostic import DiagnosticDeps
+    from seleric_swarm.agents.diagnostic.agent import DiagnosticAgent
+    from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
+    from seleric_swarm.agents.diagnostic.registries import (
+        InMemoryAnomalyRepository,
+        InMemoryEvidenceRepository,
+        TemplateCausalEstimationService,
+    )
+    from tests.diagnostic.conftest import CAC_TRUTH
+
+    class _SlowReasoningModel:
+        async def generate_structured(self, *, system, user, schema, tags=None):
+            await asyncio.sleep(5)
+            raise AssertionError("should have timed out before returning")
+
+    deps = DiagnosticDeps(
+        evidence_repo=InMemoryEvidenceRepository(latency_bundle()),
+        anomaly_repo=InMemoryAnomalyRepository(
+            [anomaly("AN-cvr", "metric.purchase_cvr", -24.0, start_time="2026-09-01T12:05:00+05:30")]
+        ),
+        causal_service=TemplateCausalEstimationService(CAC_TRUTH),
+        reasoning=_SlowReasoningModel(),
+    )
+    policies = DiagnosticPolicies(raw={"budgets": {"max_runtime_seconds": 1, "max_hypotheses": 20}})
+    r = await DiagnosticAgent(deps=deps, policies=policies).diagnose(_req(
+        outcome_metric="metric.purchase_cvr",
+        degradation_started_at="2026-09-01T12:05:00+05:30",
+    ))
+    assert r.methodology == "budget_exhausted"
+    assert any("runtime budget" in lim for lim in r.limitations)
 
 
 # --------------------------------------------------------------------------- #
@@ -200,3 +288,52 @@ async def test_llm_enrichment_is_bounded(make_agent, graphs):
     llm_hyps = [h for h in r.hypotheses if h.llm_generated]
     assert all(h.treatment_metric in {"metric.js_error_rate"} for h in llm_hyps)
     assert not any("aliens" in h.statement.lower() for h in r.hypotheses)
+    # the LLM's "JS errors from the deploy" describes the same mechanism as the
+    # template's js_error_rate -> purchase_cvr hypothesis (same treatment/outcome,
+    # different wording) - it must collapse to one hypothesis, not two.
+    js_error_hyps = [h for h in r.hypotheses if h.treatment_metric == "metric.js_error_rate"]
+    assert len(js_error_hyps) == 1
+
+
+# --------------------------------------------------------------------------- #
+# 8b. semantically-equivalent hypotheses (same mechanism, different wording)
+#     dedupe to one hypothesis regardless of phrasing
+# --------------------------------------------------------------------------- #
+async def test_semantically_equivalent_hypotheses_are_deduplicated(make_agent, graphs):
+    from seleric_swarm.agents.diagnostic import DiagnosticDeps
+    from seleric_swarm.agents.diagnostic.agent import DiagnosticAgent
+    from seleric_swarm.agents.diagnostic.hypotheses.generator import _LLMHypo, _LLMHypoList
+    from seleric_swarm.agents.diagnostic.reasoning import ScriptedReasoningModel
+    from seleric_swarm.agents.diagnostic.registries import (
+        InMemoryAnomalyRepository,
+        InMemoryEvidenceRepository,
+        TemplateCausalEstimationService,
+    )
+    from tests.diagnostic.conftest import CAC_TRUTH
+
+    scripted = ScriptedReasoningModel(
+        structured=[
+            _LLMHypoList(hypotheses=[
+                _LLMHypo(
+                    statement="Mobile frontend slowdown caused lower conversion",
+                    treatment_metric="metric.mobile_lcp_seconds",
+                ),
+            ])
+        ]
+    )
+    deps = DiagnosticDeps(
+        evidence_repo=InMemoryEvidenceRepository(latency_bundle()),
+        anomaly_repo=InMemoryAnomalyRepository(
+            [anomaly("AN-cvr", "metric.purchase_cvr", -24.0, start_time="2026-09-01T12:05:00+05:30")]
+        ),
+        causal_graphs=graphs,
+        causal_service=TemplateCausalEstimationService(CAC_TRUTH),
+        reasoning=scripted,
+    )
+    r = await DiagnosticAgent(deps=deps).diagnose(_req(
+        outcome_metric="metric.purchase_cvr",
+        degradation_started_at="2026-09-01T12:05:00+05:30",
+        context={"trust_metadata_causal": True},
+    ))
+    lcp_hyps = [h for h in r.hypotheses if h.treatment_metric == "metric.mobile_lcp_seconds"]
+    assert len(lcp_hyps) == 1

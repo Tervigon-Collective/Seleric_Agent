@@ -28,9 +28,9 @@ def _result_from_state(runtime: SwarmRuntime, state: MissionState) -> MissionRes
         url = langsmith_run_url(
             runtime.settings.langsmith_project, run_id, runtime.settings.langsmith_org
         )
-    status_val = state.get("status") or "failed"
-    if status_val not in {"completed", "partial", "failed"}:
-        status_val = "failed"
+    from seleric_swarm.api.status import coerce_typed_status
+
+    status_val = coerce_typed_status(state.get("status") or "failed", default="failed")
     return MissionResult(
         mission_id=state["mission_id"],
         status=status_val,  # type: ignore[arg-type]
@@ -76,13 +76,14 @@ async def run_mission(
     mode: str = "read_only",
     session_id: str | None = None,
     request_id: str | None = None,
+    mission_id: str | None = None,
 ) -> MissionResult:
-    mission_id = f"M-{uuid4().hex[:10]}"
+    mid = mission_id or f"M-{uuid4().hex[:10]}"
     rid = request_id or uuid4().hex
     sid = session_id or uuid4().hex
     if mode != "read_only":
         result = MissionResult(
-            mission_id=mission_id,
+            mission_id=mid,
             status="failed",
             error=MissionError(code="INVALID_REQUEST", message="Only read_only mode is allowed in V1"),
             trace=TraceInfo(request_id=rid, session_id=sid),
@@ -91,7 +92,7 @@ async def run_mission(
         return result
 
     initial: MissionState = {
-        "mission_id": mission_id,
+        "mission_id": mid,
         "request_id": rid,
         "session_id": sid,
         "user_query": query,
@@ -115,7 +116,7 @@ async def run_mission(
     metadata = mission_metadata(
         request_id=rid,
         session_id=sid,
-        mission_id=mission_id,
+        mission_id=mid,
         workflow_name=runtime.settings.workflow_name,
         workflow_version=runtime.settings.workflow_version,
         agent_name="coordinator_agent",

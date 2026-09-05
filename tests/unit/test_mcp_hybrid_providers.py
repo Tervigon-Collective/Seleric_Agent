@@ -51,7 +51,10 @@ async def test_hybrid_fixture_mode_skips_mcp(runtime):
 
 
 @pytest.mark.asyncio
-async def test_hybrid_production_skips_fixture_for_technical(runtime):
+async def test_hybrid_production_uses_fixture_for_domain_with_no_module(runtime):
+    # "technical" has no seleric_module (no live Technical MCP exists yet) —
+    # production mode falls back to fixture data rather than returning nothing,
+    # so the mission still gets a best-effort answer instead of a hole.
     bundle, stats = build_hybrid_bundle(
         "cac_regression",
         mcp=runtime.mcp,
@@ -60,13 +63,13 @@ async def test_hybrid_production_skips_fixture_for_technical(runtime):
         agents=runtime.agents,
     )
     technical = bundle.data_for("technical")
-    assert type(technical).__name__ == "EmptyDataProvider"
+    assert type(technical).__name__ == "FixtureDataProvider"
     result = await technical.fetch(
         metric_ids=["metric.js_error_rate"],
         time_range={"start": "2026-08-31", "end": "2026-09-03"},
     )
-    assert result.readings == []
-    assert result.synthetic is False
+    assert result.readings
+    assert stats.mcp_attempts == 0
 
 
 @pytest.mark.asyncio

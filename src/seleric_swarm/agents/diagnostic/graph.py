@@ -45,6 +45,41 @@ async def load_inputs(state: DiagnosticState) -> dict[str, Any]:
     }
 
 
+def _route_after_load(state: DiagnosticState) -> str:
+    ctx = _ctx(state)
+    return "no_anomaly" if ctx.no_confirmed_anomaly else "generate_hypotheses"
+
+
+async def no_anomaly_node(state: DiagnosticState) -> dict[str, Any]:
+    """No anomaly evidence and no metric hint - nothing confirmed to diagnose.
+
+    Forcing a root-cause story here would fabricate a diagnosis against a
+    hardcoded default metric; return NO_CONFIRMED_ANOMALY instead.
+    """
+    ctx = _ctx(state)
+    no_anomaly_msg = (
+        "NO_CONFIRMED_ANOMALY: no anomaly evidence was supplied and no metric was "
+        "named, so no root-cause investigation was run."
+    )
+    result = DiagnosticResult(
+        diagnostic_run_id=state.get("diagnostic_run_id") or f"DIAG-{int(time.time() * 1000) % 10_000_000}",
+        mission_id=ctx.request.mission_id,
+        question=ctx.request.question,
+        outcome_metric=ctx.outcome_metric,
+        methodology="no_confirmed_anomaly",
+        limitations=[no_anomaly_msg],
+        synthetic=ctx.synthetic_inputs(),
+    )
+    return {
+        "status": "done",
+        "error": "NO_CONFIRMED_ANOMALY",
+        "_result": result,
+        "finding": {},
+        "claims": [],
+        "limitations": result.limitations,
+    }
+
+
 async def generate_node(state: DiagnosticState) -> dict[str, Any]:
     ctx = _ctx(state)
     ctx.hypotheses = await generate_hypotheses(ctx)
@@ -140,6 +175,7 @@ async def finalize_node(state: DiagnosticState) -> dict[str, Any]:
 def build_diagnostic_graph():
     g = StateGraph(DiagnosticState)
     g.add_node("load_inputs", load_inputs)
+    g.add_node("no_anomaly", no_anomaly_node)
     g.add_node("generate_hypotheses", generate_node)
     g.add_node("rank_hypotheses", rank_node)
     g.add_node("test_hypotheses", test_node)
@@ -148,7 +184,12 @@ def build_diagnostic_graph():
     g.add_node("finalize", finalize_node)
 
     g.add_edge(START, "load_inputs")
-    g.add_edge("load_inputs", "generate_hypotheses")
+    g.add_conditional_edges(
+        "load_inputs",
+        _route_after_load,
+        {"no_anomaly": "no_anomaly", "generate_hypotheses": "generate_hypotheses"},
+    )
+    g.add_edge("no_anomaly", END)
     g.add_edge("generate_hypotheses", "rank_hypotheses")
     g.add_edge("rank_hypotheses", "test_hypotheses")
     g.add_edge("test_hypotheses", "classify")

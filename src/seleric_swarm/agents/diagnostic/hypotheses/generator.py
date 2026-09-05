@@ -110,11 +110,22 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
         except Exception as exc:  # LLM failure must never break diagnosis
             _log.debug("diagnostic.hypotheses.llm_skipped", error=str(exc))
 
-    # de-dupe by statement, keep first, cap
-    seen: set[str] = set()
+    # De-dupe by canonical mechanism fingerprint (treatment -> outcome), not raw
+    # wording — an LLM-phrased hypothesis and a template-generated one describing
+    # the same mechanism (e.g. "mobile frontend slowdown cut conversion" vs "a
+    # frontend regression increased mobile latency, reducing purchase CVR") must
+    # collapse to one hypothesis rather than each getting its own id/test plan.
+    # Domains are a derived label, not part of what makes two explanations the
+    # same mechanism, so they are intentionally excluded from the key.
+    seen: set[tuple[str, str]] = set()
     deduped: list[DiagnosticHypothesis] = []
     for h in out:
-        key = h.statement.strip().lower()
+        tm = h.treatment_metric.strip().lower()
+        key = (
+            (tm, h.outcome_metric.strip().lower())
+            if tm
+            else ("__statement__", h.statement.strip().lower())
+        )
         if key in seen:
             continue
         seen.add(key)

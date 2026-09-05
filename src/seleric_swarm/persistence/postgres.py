@@ -29,6 +29,27 @@ class PostgresMissionStore:
         self._raw: dict[str, dict[str, Any]] = {}
 
     def put(self, result: MissionResult, raw_state: dict[str, Any] | None = None) -> None:
+        # Refuse to clobber cancelled missions (async cancel vs late job completion).
+        existing = self._results.get(result.mission_id) or self.get(result.mission_id)
+        existing_raw = self._raw.get(result.mission_id) or self.get_raw(result.mission_id)
+        if result.status != "cancelled":
+            if existing is not None and existing.status == "cancelled":
+                return
+            if isinstance(existing_raw, dict) and existing_raw.get("status") == "cancelled":
+                return
+        else:
+            # Cancel is CAS: only overwrite while still running.
+            cur = None
+            if isinstance(existing_raw, dict):
+                cur = existing_raw.get("status")
+            if cur is None and existing is not None:
+                cur = existing.status
+            if cur is not None and str(cur) != "running":
+                return
+            if existing is None and existing_raw is None:
+                # Allow initial cancel seed only when something exists to cancel.
+                pass
+
         payload = result.model_dump(mode="json")
         raw = dict(raw_state or {})
         route = str(raw.get("route") or ("swarm" if "artifacts" in raw else "lookup"))
@@ -37,12 +58,8 @@ class PostgresMissionStore:
         if not events and isinstance(raw.get("events"), list):
             events = [e for e in raw["events"] if isinstance(e, dict)]
 
-        self._results[result.mission_id] = result
-        if raw_state is not None:
-            self._raw[result.mission_id] = raw_state
-
         with self._engine.begin() as conn:
-            conn.execute(
+            write = conn.execute(
                 self._text(
                     """
                     INSERT INTO missions (
@@ -62,6 +79,14 @@ class PostgresMissionStore:
                         result_json = EXCLUDED.result_json,
                         raw_json = EXCLUDED.raw_json,
                         updated_at = NOW()
+                    WHERE (
+                        EXCLUDED.status IS DISTINCT FROM 'cancelled'
+                        AND missions.status IS DISTINCT FROM 'cancelled'
+                    )
+                    OR (
+                        EXCLUDED.status = 'cancelled'
+                        AND missions.status = 'running'
+                    )
                     """
                 ),
                 {
@@ -77,6 +102,14 @@ class PostgresMissionStore:
                     "raw_json": _json(raw),
                 },
             )
+            # Cancelled row: ON CONFLICT WHERE skipped the update (rowcount=0).
+            # Do not wipe events or refresh the in-process cache with a late completion.
+            if result.status != "cancelled" and int(getattr(write, "rowcount", 0) or 0) == 0:
+                return
+
+            self._results[result.mission_id] = result
+            if raw_state is not None:
+                self._raw[result.mission_id] = raw_state
 
             # Replace event log for this mission (idempotent re-put).
             conn.execute(
@@ -279,5 +312,7 @@ def _json(value: Any) -> str:
 
 def build_store(backend: str, database_url: str) -> InMemoryMissionStore | PostgresMissionStore:
     if backend == "postgres":
+        if not (database_url or "").strip():
+            raise ValueError("persistence_backend=postgres requires a non-empty database_url")
         return PostgresMissionStore(database_url)
     return InMemoryMissionStore()

@@ -112,6 +112,37 @@ async def test_fake_llm_metric_map():
 
 
 @pytest.mark.asyncio
+async def test_fake_llm_synthesizer_reads_gated_claims_json():
+    """Regression: GATED_CLAIMS_JSON is followed by EVIDENCE_JSON on the next
+    line (the real synthesizer.response template). json.loads on the raw
+    remainder-of-text (rather than just that line) fails on the trailing
+    EVIDENCE_JSON content, silently dropping a claim that already passed the
+    gate and rendering the misleading "No validated claims are available."
+    even though a claim did exist."""
+    llm = FakeLLMAdapter()
+    response = await llm.complete(
+        LLMRequest(
+            messages=[
+                ChatMessage(role="system", content="synthesizer"),
+                ChatMessage(
+                    role="user",
+                    content=(
+                        "Query: What were net sales yesterday?\n"
+                        'GATED_CLAIMS_JSON: [{"text": "net sales was 100 INR", "support_refs": ["EV-1"]}]\n'
+                        "EVIDENCE_JSON: [{\"evidence_id\": \"EV-1\"}]"
+                    ),
+                ),
+            ],
+            model="fake",
+            metadata=LLMRequestMetadata(prompt_id="synthesizer.response"),
+        )
+    )
+    assert "No validated claims are available" not in response.text
+    assert "net sales was 100 INR" in response.text
+    assert "EV-1" in response.text
+
+
+@pytest.mark.asyncio
 async def test_fallback_disabled():
     llm = FakeLLMAdapter()
     with pytest.raises(FallbackDisabled):

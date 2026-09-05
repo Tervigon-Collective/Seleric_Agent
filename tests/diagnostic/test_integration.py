@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -92,6 +94,7 @@ async def test_a2a_adapter(make_agent):
 # --------------------------------------------------------------------------- #
 # DoWhy estimation service produces a real, fitted causal artifact
 # --------------------------------------------------------------------------- #
+@pytest.mark.skipif(importlib.util.find_spec("dowhy") is None, reason="DoWhy not installed")
 async def test_dowhy_estimation_service_fits_observations():
     rng = np.random.default_rng(0)
     n = 700

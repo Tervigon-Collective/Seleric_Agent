@@ -67,6 +67,9 @@ class DiagnosticContext:
     event_times: dict[str, str] = field(default_factory=dict)  # event fact -> ISO time
     hypotheses: list[DiagnosticHypothesis] = field(default_factory=list)
     scratch: dict[str, Any] = field(default_factory=dict)
+    # True when intake found no anomaly evidence at all and had to fall back to a
+    # hardcoded default outcome metric — there is nothing confirmed to diagnose.
+    no_confirmed_anomaly: bool = False
 
     def evidence_for_metric(self, metric_id: str) -> list[dict[str, Any]]:
         return [

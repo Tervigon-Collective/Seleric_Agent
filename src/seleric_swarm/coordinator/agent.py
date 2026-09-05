@@ -44,7 +44,13 @@ Evidence owns truth.
 """.strip()
 
 
-# Re-export the lookup classify agent for callers that want a single import path.
-from seleric_swarm.agents.coordinator import Agent as CoordinatorClassifyAgent
+def __getattr__(name: str):
+    # Lazy re-export — avoid circular import with agents.coordinator at package load.
+    if name == "CoordinatorClassifyAgent":
+        from seleric_swarm.agents.coordinator import Agent as CoordinatorClassifyAgent
 
-__all__ = ["COORDINATOR_SYSTEM_PROMPT", "CoordinatorClassifyAgent"]
+        return CoordinatorClassifyAgent
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = ["COORDINATOR_SYSTEM_PROMPT", "CoordinatorClassifyAgent"]  # noqa: F822 - module __getattr__ resolves it

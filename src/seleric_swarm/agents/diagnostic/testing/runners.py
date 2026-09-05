@@ -43,9 +43,25 @@ async def _evidence_sufficiency(ctx: DiagnosticContext, h: DiagnosticHypothesis,
     rows = ctx.evidence_for_metric(tm) if tm else []
     rows += [e for e in ctx.evidence if (e.get("metric_id") or e.get("metric_or_fact")) in _events_for(tm)]
     passed = len(rows) >= int(t.params.get("min_supporting", 1)) or bool(h.supporting_evidence)
+    detail: dict[str, Any] = {"rows": len(rows)}
+    note = "direct evidence present" if passed else "no direct evidence for treatment"
+
+    # Deterministic sample-size gate — reuses the same statistical service the
+    # Skeptic validates against. Missing sample_size is NOT treated as zero
+    # (evidence that never reports a count is neither underpowered nor
+    # sufficiently powered); only a *reported* small sample downgrades support.
+    if passed:
+        sizes = [r["sample_size"] for r in rows if r.get("sample_size") is not None]
+        if sizes:
+            check = await ctx.deps.stats.check(name="sample_size", data={"sample_size": min(sizes)})
+            detail["sample_size_check"] = check.detail
+            if not check.passed:
+                passed = False
+                note = f"reported sample size too small for statistical power: {check.detail}"
+
     return TestResult(
         test_id=t.test_id, hypothesis_id=h.hypothesis_id, kind=t.kind, passed=passed,
-        detail={"rows": len(rows)}, note="direct evidence present" if passed else "no direct evidence for treatment",
+        detail=detail, note=note,
     )
 
 

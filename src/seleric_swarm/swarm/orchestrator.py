@@ -20,7 +20,11 @@ from uuid import uuid4
 
 import structlog
 
-from seleric_swarm.coordinator.intake import apply_full_flags, resolve_metrics
+from seleric_swarm.coordinator.intake import (
+    apply_full_flags,
+    resolve_metrics,
+    resolve_mission_time_range,
+)
 from seleric_swarm.leadership.manager import LeadershipManager
 from seleric_swarm.observability.tracing import traced_span
 from seleric_swarm.runtime import SwarmRuntime
@@ -113,15 +117,30 @@ async def run_swarm_mission(
     full_skeptic: bool = False,
     full_diagnostic: bool = False,
     full_prediction: bool = False,
+    mission_id: str | None = None,
     execution_mode: str = "fixture",
 ) -> SwarmMissionResult:
-    mission_id = f"MS-{uuid4().hex[:10]}"
+    mid = mission_id or f"MS-{uuid4().hex[:10]}"
+    mission_id = mid
     rid = request_id or uuid4().hex
     sid = session_id or uuid4().hex
     tracing = runtime.settings.langsmith_tracing
 
     scenario = load_scenario(scenario_id)
-    providers = providers or build_fixture_bundle(scenario_id)
+    if providers is None:
+        mode = execution_mode if execution_mode in {"production", "staging", "fixture"} else "fixture"
+        if mode != "fixture":
+            from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
+
+            providers, _mcp_stats = build_hybrid_bundle(
+                scenario_id,
+                mcp=runtime.mcp,
+                execution_mode=mode,  # type: ignore[arg-type]
+                metrics=runtime.metrics,
+                agents=runtime.agents,
+            )
+        else:
+            providers = build_fixture_bundle(scenario_id)
     intents = apply_full_flags(
         classify_intents(query),
         full_diagnostic=full_diagnostic,
@@ -129,11 +148,10 @@ async def run_swarm_mission(
         full_skeptic=full_skeptic,
     )
     initial_lead = _initial_lead(query)
-    time_range = dict(scenario.get("observation_window") or {"start": as_of, "end": as_of})
-    time_range["timezone"] = timezone
+    time_range = resolve_mission_time_range(scenario, timezone=timezone, as_of=as_of)
 
     mission = SwarmMission(
-        mission_id=mission_id,
+        mission_id=mid,
         query=query,
         time_range=time_range,
         intents=intents,
@@ -435,7 +453,11 @@ async def run_swarm_mission(
     try:
         runtime.store.put(
             _swarm_mission_view(mission_result, rid, sid),
-            {"route": "swarm", **mission_result.as_dict()},
+            {
+                "route": "swarm",
+                "trace": {"request_id": rid, "session_id": sid},
+                **mission_result.as_dict(),
+            },
         )
     except Exception as exc:  # persistence must never fail a completed mission
         _log.warning("swarm.persist_failed", mission_id=mission_id, error=str(exc))
@@ -445,6 +467,7 @@ async def run_swarm_mission(
 def _swarm_mission_view(result: SwarmMissionResult, request_id: str, session_id: str) -> Any:
     from typing import cast
 
+    from seleric_swarm.api.status import coerce_typed_status
     from seleric_swarm.contracts.lookup import (
         HandoffView,
         MissionError,
@@ -453,7 +476,7 @@ def _swarm_mission_view(result: SwarmMissionResult, request_id: str, session_id:
         TraceInfo,
     )
 
-    status = result.status if result.status in {"completed", "partial", "failed"} else "partial"
+    status = coerce_typed_status(result.status, default="partial")
     return MissionResult(
         mission_id=result.mission_id,
         status=cast(MissionStatus, status),

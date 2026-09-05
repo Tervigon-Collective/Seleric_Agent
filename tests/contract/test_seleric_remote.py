@@ -1,5 +1,5 @@
-import pytest
 import httpx
+import pytest
 
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
 from seleric_swarm.protocols.mcp.servers.seleric_remote import _parse_jsonrpc_response

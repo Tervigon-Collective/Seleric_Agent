@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -79,6 +79,15 @@ class Settings(BaseSettings):
     coordinator_policies_path: str = "config/coordinator_policies.yaml"
     max_remediation_rounds: int = 3
 
+    # API security (v1.13)
+    # When set, all non-probe routes require X-API-Key or Authorization: Bearer.
+    api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("api_key", "API_KEY", "SELERIC_API_KEY"),
+    )
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 60
+
     @field_validator("llm_fallback_model", "azure_key_vault_url", mode="before")
     @classmethod
     def empty_str_to_none(cls, value: object) -> object:
@@ -102,7 +111,12 @@ class Settings(BaseSettings):
             return value.strip().strip('"').strip("'")
         return value
 
-    @field_validator("azure_openai_api_key", "langsmith_api_key", "seleric_mcp_token")
+    @field_validator(
+        "azure_openai_api_key",
+        "langsmith_api_key",
+        "api_key",
+        "seleric_mcp_token",
+    )
     @classmethod
     def no_placeholder_secrets(cls, value: str) -> str:
         if value.strip().lower() in {"replace_me", "changeme", "todo"}:
