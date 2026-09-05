@@ -7,8 +7,8 @@ from typing import Any
 from uuid import uuid4
 
 from seleric_swarm.agents.base import AgentContext, SwarmAgent
-from seleric_swarm.coordinator.planning.complexity import looks_like_diagnostic
 from seleric_swarm.contracts.lookup import CoordinatorClassificationV1
+from seleric_swarm.coordinator.planning.complexity import looks_like_diagnostic
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.runtime import SwarmRuntime

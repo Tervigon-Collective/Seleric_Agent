@@ -22,6 +22,8 @@ from seleric_swarm.orchestration.dispatch import route_for
         ("Show me how many orders dropped yesterday", "swarm"),
         ("how many sessions fell last week?", "swarm"),
         ("tell me what the blended CAC was on 2026-09-02", "lookup"),
+        ("What were backdrop sales yesterday?", "lookup"),
+        ("Compare Meta vs Google CAC increase over three days", "lookup"),
     ],
 )
 async def test_route_for_lookup_vs_swarm(query, expected):

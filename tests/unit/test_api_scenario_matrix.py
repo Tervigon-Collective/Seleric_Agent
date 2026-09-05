@@ -6,9 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import seleric_swarm.main as main_mod
-from seleric_swarm.main import app
-
 from seleric_swarm.api.status import TERMINAL_STATUSES
+from seleric_swarm.main import app
 
 
 @pytest.fixture

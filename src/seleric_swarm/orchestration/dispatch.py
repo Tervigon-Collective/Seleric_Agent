@@ -15,6 +15,7 @@ Swarm workflow is selected by ``settings.swarm_workflow``:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from seleric_swarm.coordinator.intake import classify_intents as intake_classify_intents
@@ -59,33 +60,19 @@ _CAUSAL_MARKERS = (
     "attributed to",
 )
 
-# Degradation / anomaly stems — lookup verbs + these ⇒ swarm (not a plain retrieval).
-_DEGRADATION_MARKERS = (
-    "dropped",
-    "drop",
-    "fell",
-    "falling",
-    "declined",
-    "decline",
-    "decreased",
-    "decrease",
-    "increased",
-    "increase",
-    "rose",
-    "rising",
-    "spiked",
-    "spike",
-    "degraded",
-    "degradation",
-    "worsened",
-    "broken",
-    "crash",
-    "slump",
+# Degradation / anomaly stems — word-boundary match (avoid "backdrop"/"airdrop").
+_DEGRADATION_RE = re.compile(
+    r"\b("
+    r"dropped|drop|fell|falling|declined|decline|decreased|decrease|"
+    r"increased|increase|rose|rising|spiked|spike|degraded|degradation|"
+    r"worsened|broken|crash|slump"
+    r")\b",
+    re.IGNORECASE,
 )
 
 
 def _has_degradation(q: str) -> bool:
-    return any(m in q for m in _DEGRADATION_MARKERS)
+    return bool(_DEGRADATION_RE.search(q))
 
 
 async def route_for(runtime: SwarmRuntime, *, query: str) -> str:
@@ -105,7 +92,10 @@ async def route_for(runtime: SwarmRuntime, *, query: str) -> str:
     # Always swarm for investigation / forecast / action / health.
     if intake & {"predictive", "prescriptive", "executive_health"}:
         return "swarm"
-    if causal or degraded or ("diagnostic" in intake and not lookupish):
+    if causal or ("diagnostic" in intake and not lookupish):
+        return "swarm"
+    # Pure comparison lookups stay on the fast path even if "increase" appears.
+    if degraded and not (intake == {"comparison"} or intake == {"lookup", "comparison"}):
         return "swarm"
     if lookupish or lookup_verb:
         return "lookup"
@@ -156,7 +146,12 @@ async def run_any_mission(
             mission_id=mission_id,
             **swarm_only,
         )
-        return {"route": "swarm", "workflow": "swarm_v2", "result": swarm.as_dict()}
+        payload = swarm.as_dict()
+        rid = request_id or payload.get("request_id")
+        sid = session_id or payload.get("session_id")
+        if rid and sid:
+            payload.setdefault("trace", {"request_id": rid, "session_id": sid})
+        return {"route": "swarm", "workflow": "swarm_v2", "result": payload}
 
     swarm = await run_swarm_mission(
         runtime,
@@ -168,4 +163,7 @@ async def run_any_mission(
         mission_id=mission_id,
         **swarm_only,
     )
-    return {"route": "swarm", "workflow": "swarm_v1", "result": swarm.as_dict()}
+    payload = swarm.as_dict()
+    if request_id and session_id:
+        payload.setdefault("trace", {"request_id": request_id, "session_id": session_id})
+    return {"route": "swarm", "workflow": "swarm_v1", "result": payload}

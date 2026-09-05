@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Re-export the Skeptic-facing output contracts.
 from seleric_swarm.agents.skeptic.contracts import (  # noqa: F401
@@ -72,7 +72,7 @@ class PredictionRequest(BaseModel):
     # optional pandas DataFrame for a model service that fits
     observations: Any = None
 
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())
 
 
 # --------------------------------------------------------------------------- #
@@ -89,6 +89,8 @@ class ScenarioProjection(BaseModel):
 
 class ForecastRun(BaseModel):
     """Raw output of the model service / baseline before it becomes an artifact."""
+
+    model_config = ConfigDict(protected_namespaces=())
 
     source: ForecastSource
     target_metric: str

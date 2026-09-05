@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from seleric_swarm.coordinator.contracts import (
     EntityRef,
@@ -206,11 +206,11 @@ def resolve_entities(query: str) -> list[EntityRef]:
 
 
 def _as_of_date(as_of: str | None, tz: ZoneInfo) -> date:
-    if as_of:
+    if isinstance(as_of, str) and as_of.strip():
         try:
             return date.fromisoformat(as_of[:10])
-        except ValueError:
-            pass
+        except ValueError as exc:
+            raise ValueError(f"as_of is not a valid date: {as_of!r}") from exc
     return datetime.now(tz).date()
 
 
@@ -220,7 +220,10 @@ def resolve_time_range(
     timezone: str = "Asia/Kolkata",
     as_of: str | None = None,
 ) -> tuple[TimeRange | None, TimeRange | None]:
-    tz = ZoneInfo(timezone)
+    try:
+        tz = ZoneInfo(timezone)
+    except ZoneInfoNotFoundError:
+        tz = ZoneInfo("UTC")
     today = _as_of_date(as_of, tz)
     q = query.lower()
 
@@ -339,19 +342,27 @@ def resolve_mission_time_range(
     fetches include the client observation day (without rewriting the start).
     """
     window = dict(scenario.get("observation_window") or {})
-    as_of_day = (str(as_of)[:10] if as_of else None) or None
+    as_of_day: str | None = None
+    if as_of:
+        try:
+            as_of_day = date.fromisoformat(str(as_of)[:10]).isoformat()
+        except ValueError:
+            as_of_day = None
 
     start = str(window["start"])[:10] if window.get("start") else None
     end = str(window["end"])[:10] if window.get("end") else None
+    # Preserve the fixture/scenario arc end for single-day MCP fetches even if
+    # client as_of extends the reported observation window.
+    observation_end = end
 
-    if start is None or end is None:
-        if normalized is not None and normalized.time_range is not None:
-            tr = normalized.time_range
-            n_start = getattr(tr, "start", None)
-            n_end = getattr(tr, "end", None) or n_start
-            if n_start and n_end:
-                start = start or str(n_start)[:10]
-                end = end or str(n_end)[:10]
+    if (start is None or end is None) and normalized is not None and normalized.time_range is not None:
+        tr = normalized.time_range
+        n_start = getattr(tr, "start", None)
+        n_end = getattr(tr, "end", None) or n_start
+        if n_start and n_end:
+            start = start or str(n_start)[:10]
+            end = end or str(n_end)[:10]
+            observation_end = observation_end or end
 
     if as_of_day:
         end = max(end or as_of_day, as_of_day)
@@ -360,8 +371,12 @@ def resolve_mission_time_range(
 
     if not start and not end:
         start = end = as_of_day
+        observation_end = as_of_day
 
-    return {"start": start, "end": end, "timezone": timezone}
+    out: dict[str, str | None] = {"start": start, "end": end, "timezone": timezone}
+    if observation_end:
+        out["observation_end"] = observation_end
+    return out
 
 
 def complexity_band(normalized: NormalizedQuery) -> str:

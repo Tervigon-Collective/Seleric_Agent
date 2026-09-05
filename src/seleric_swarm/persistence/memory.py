@@ -65,6 +65,7 @@ class InMemoryMissionStore:
         # Refuse to clobber a cancelled mission with a later success/failure write
         # (async cancel race: background job finishes after client cancel).
         existing_raw = self._raw.get(result.mission_id)
+        existing = self._results.get(result.mission_id)
         if (
             isinstance(existing_raw, dict)
             and existing_raw.get("status") == "cancelled"
@@ -72,11 +73,20 @@ class InMemoryMissionStore:
         ):
             return
         if (
-            result.mission_id in self._results
-            and self._results[result.mission_id].status == "cancelled"
+            existing is not None
+            and existing.status == "cancelled"
             and result.status != "cancelled"
         ):
             return
+        # Cancel must not overwrite an already-terminal completion (CAS).
+        if result.status == "cancelled":
+            cur = None
+            if isinstance(existing_raw, dict):
+                cur = existing_raw.get("status")
+            if cur is None and existing is not None:
+                cur = existing.status
+            if cur is not None and str(cur) != "running":
+                return
         self._results[result.mission_id] = result
         if raw_state is not None:
             self._raw[result.mission_id] = raw_state

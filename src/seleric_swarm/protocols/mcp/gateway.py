@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import os
 from pathlib import Path
@@ -120,3 +121,36 @@ class MCPGateway:
             result = await result
         self.invocations.append({"agent_id": agent_id, "capability": capability, "arguments": arguments})
         return result
+
+    async def aclose(self) -> None:
+        """Close underlying HTTP transports (shared across tool wrappers)."""
+        seen: set[int] = set()
+        for server in self._servers.values():
+            transport = getattr(server, "_transport", None)
+            if transport is None:
+                closer = getattr(server, "aclose", None)
+                if closer is not None:
+                    maybe = closer()
+                    if inspect.isawaitable(maybe):
+                        await maybe
+                continue
+            tid = id(transport)
+            if tid in seen:
+                continue
+            seen.add(tid)
+            closer = getattr(transport, "aclose", None)
+            if closer is not None:
+                maybe = closer()
+                if inspect.isawaitable(maybe):
+                    await maybe
+
+    def close(self) -> None:
+        """Best-effort sync teardown for HTTP transports outside an async context."""
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(self.aclose())
+            finally:
+                loop.close()
+        except Exception:  # noqa: S110 - teardown must never fail the suite (loop already closed, etc.)
+            pass

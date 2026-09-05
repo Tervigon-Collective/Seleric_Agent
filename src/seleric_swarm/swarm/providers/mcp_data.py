@@ -101,7 +101,12 @@ class HybridMcpDataProvider:
         if not want:
             return base
 
-        day = str(time_range.get("end") or time_range.get("start") or "")[:10]
+        day = str(
+            time_range.get("observation_end")
+            or time_range.get("end")
+            or time_range.get("start")
+            or ""
+        )[:10]
         if not day:
             self._stats.mcp_fallbacks += 1
             self._stats.fallback_reasons.append(f"{self._capability}: missing date in time_range")

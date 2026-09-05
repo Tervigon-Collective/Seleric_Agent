@@ -53,4 +53,4 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["COORDINATOR_SYSTEM_PROMPT", "CoordinatorClassifyAgent"]
+__all__ = ["COORDINATOR_SYSTEM_PROMPT", "CoordinatorClassifyAgent"]  # noqa: F822 - module __getattr__ resolves it

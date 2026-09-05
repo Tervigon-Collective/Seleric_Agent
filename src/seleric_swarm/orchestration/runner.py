@@ -28,9 +28,9 @@ def _result_from_state(runtime: SwarmRuntime, state: MissionState) -> MissionRes
         url = langsmith_run_url(
             runtime.settings.langsmith_project, run_id, runtime.settings.langsmith_org
         )
-    status_val = state.get("status") or "failed"
-    if status_val not in {"completed", "partial", "failed", "running"}:
-        status_val = "failed"
+    from seleric_swarm.api.status import coerce_typed_status
+
+    status_val = coerce_typed_status(state.get("status") or "failed", default="failed")
     return MissionResult(
         mission_id=state["mission_id"],
         status=status_val,  # type: ignore[arg-type]

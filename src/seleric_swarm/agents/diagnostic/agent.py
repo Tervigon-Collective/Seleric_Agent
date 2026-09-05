@@ -10,6 +10,7 @@ reasoning model is supplied.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -47,16 +48,46 @@ class DiagnosticAgent:
 
     async def diagnose(self, request: DiagnosticRequest) -> DiagnosticResult:
         started = time.perf_counter()
+        run_id = f"DIAG-{int(started * 1000) % 10_000_000}"
         ctx = DiagnosticContext(request=request, policies=self.policies, deps=self.deps)
-        final_state = await _graph().ainvoke(
-            {
-                "mission_id": request.mission_id,
-                "diagnostic_run_id": f"DIAG-{int(started * 1000) % 10_000_000}",
-                "request": request.model_dump(exclude={"observations"}),
-                "_context": ctx,
-            }
-        )
-        result: DiagnosticResult = final_state["_result"]
+        timeout_s = self.policies.budget("max_runtime_seconds") or 90
+        try:
+            final_state = await asyncio.wait_for(
+                _graph().ainvoke(
+                    {
+                        "mission_id": request.mission_id,
+                        "diagnostic_run_id": run_id,
+                        "request": request.model_dump(exclude={"observations"}),
+                        "_context": ctx,
+                    }
+                ),
+                timeout=timeout_s,
+            )
+            result: DiagnosticResult = final_state["_result"]
+        except TimeoutError:
+            # Budget exhaustion is a valid output — return the best available
+            # diagnosis (whatever hypotheses/finding the context accumulated
+            # before the deadline) rather than hanging the mission.
+            budget_msg = (
+                f"Diagnostic run exceeded its {timeout_s}s runtime budget; "
+                "returning the best evidence gathered before the deadline."
+            )
+            result = DiagnosticResult(
+                diagnostic_run_id=run_id,
+                mission_id=request.mission_id,
+                question=request.question,
+                outcome_metric=ctx.outcome_metric or request.outcome_metric or request.primary_metric,
+                hypotheses=ctx.hypotheses,
+                methodology="budget_exhausted",
+                limitations=[budget_msg],
+                synthetic=ctx.synthetic_inputs(),
+            )
+            _log.warning(
+                "diagnostic.budget_exhausted",
+                mission_id=request.mission_id,
+                diagnostic_run_id=run_id,
+                timeout_s=timeout_s,
+            )
         self._emit(result, elapsed_ms=round((time.perf_counter() - started) * 1000, 2))
         return result
 

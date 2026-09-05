@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import seleric_swarm.main as main_mod
-from seleric_swarm.api.async_missions import is_terminal_status
+from seleric_swarm.api.status import is_terminal_status
 from seleric_swarm.main import app
 
 

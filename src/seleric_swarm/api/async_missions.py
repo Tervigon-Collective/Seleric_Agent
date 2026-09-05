@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from seleric_swarm.api.status import TERMINAL_STATUSES, is_terminal_status
+from seleric_swarm.api.status import TERMINAL_STATUSES
 from seleric_swarm.contracts.lookup import MissionResult, TraceInfo
 from seleric_swarm.orchestration.dispatch import run_any_mission
 from seleric_swarm.runtime import SwarmRuntime
@@ -64,6 +64,7 @@ def seed_running_mission(
         "status": "running",
         "query": query,
         "async": True,
+        "trace": {"request_id": request_id, "session_id": session_id},
         "artifacts": {
             "evidence": [],
             "anomaly": [],
@@ -210,6 +211,17 @@ def cancel_running_mission(
 
     request_cancel(mission_id)
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Re-check immediately before write (job may have just finished).
+    raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
+    result = runtime.store.get(mission_id)
+    status = None
+    if isinstance(raw, dict):
+        status = raw.get("status")
+    if status is None and result is not None:
+        status = result.status
+    if str(status or "") != "running":
+        raise ValueError(f"mission not cancellable (status={status})")
+
     events = list((raw or {}).get("events") or [])
     events.append(
         {
@@ -243,6 +255,16 @@ def cancel_running_mission(
         "final_response": None,
     }
     runtime.store.put(cancelled, payload)
+    # If the job won the race, store refused the cancel write — surface that.
+    got = runtime.store.get(mission_id)
+    got_raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
+    final_status = None
+    if isinstance(got_raw, dict):
+        final_status = got_raw.get("status")
+    if final_status is None and got is not None:
+        final_status = got.status
+    if final_status != "cancelled":
+        raise ValueError(f"mission not cancellable (status={final_status})")
     return payload
 
 

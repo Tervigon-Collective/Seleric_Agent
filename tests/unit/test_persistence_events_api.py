@@ -63,6 +63,7 @@ def test_api_mission_events_endpoint(runtime, monkeypatch):
             "query": "Why has CAC increased over the last three days?",
             "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-03"},
             "mode": "read_only",
+            "scenario_id": "cac_regression",
         },
     )
     assert created.status_code == 200

@@ -42,4 +42,9 @@ def runtime(settings: Settings):
         if os.environ.get("CI"):
             pytest.fail(reason)
         pytest.skip(reason)
-    return rt
+    try:
+        yield rt
+    finally:
+        closer = getattr(rt.mcp, "close", None)
+        if closer is not None:
+            closer()

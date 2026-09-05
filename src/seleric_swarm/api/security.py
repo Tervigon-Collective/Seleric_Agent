@@ -70,14 +70,23 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
         if _is_exempt(path):
             return await call_next(request)
 
+        # Prefer live settings so .env loaded after import still applies.
+        api_key = self.api_key
+        try:
+            from seleric_swarm.config.settings import get_settings
+
+            api_key = (get_settings().api_key or "").strip() or api_key
+        except Exception:  # noqa: S110 - fall back to the boot-time key on any settings error
+            pass
+
         # Optional shared API key (enabled when SELERIC_API_KEY / settings.api_key set).
-        if self.api_key:
+        if api_key:
             provided = (request.headers.get("x-api-key") or "").strip()
             auth = (request.headers.get("authorization") or "").strip()
             bearer = ""
             if auth.lower().startswith("bearer "):
                 bearer = auth[7:].strip()
-            if provided != self.api_key and bearer != self.api_key:
+            if provided != api_key and bearer != api_key:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Missing or invalid API key"},

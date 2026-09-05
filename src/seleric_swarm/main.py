@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import Any
 from uuid import uuid4
 
@@ -62,16 +63,30 @@ async def lifespan(_app: FastAPI):
     global _runtime
     if _runtime is None:
         _runtime = build_runtime()
-    yield
+    try:
+        yield
+    finally:
+        rt = _runtime
+        if rt is not None:
+            closer = getattr(rt.mcp, "aclose", None)
+            if closer is not None:
+                maybe = closer()
+                if hasattr(maybe, "__await__"):
+                    await maybe
 
 
 app = FastAPI(title="Seleric Intelligence Swarm", version="0.1.0", lifespan=lifespan)
 
-# Security middleware reads settings at import/startup; rebuild runtime lazily inside.
+# Load repo .env before middleware reads settings (CWD-independent).
 _settings_boot = None
 try:
-    from seleric_swarm.config.settings import get_settings
+    from dotenv import load_dotenv
 
+    from seleric_swarm.config.settings import get_settings
+    from seleric_swarm.paths import repo_root
+
+    load_dotenv(repo_root() / ".env")
+    get_settings.cache_clear()
     _settings_boot = get_settings()
 except Exception:
     _settings_boot = None
@@ -237,6 +252,23 @@ async def create_mission(
 
     timezone = str(req.scope.get("timezone") or "Asia/Kolkata")
     as_of = req.scope.get("as_of") or req.scope.get("asOf")
+    if as_of is not None:
+        if not isinstance(as_of, str):
+            raise HTTPException(status_code=400, detail="scope.as_of must be a date string (YYYY-MM-DD)")
+        try:
+            parsed_as_of = date.fromisoformat(as_of[:10])
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail=f"scope.as_of is not a valid date: {as_of!r}"
+            ) from exc
+        # Dates too close to date.min/date.max overflow the day-range arithmetic
+        # ("last N days", "as_of - 1 year", ...) used throughout time-range
+        # resolution. Reject far outside any plausible business range instead.
+        if not (1900 <= parsed_as_of.year <= 2400):
+            raise HTTPException(
+                status_code=400,
+                detail=f"scope.as_of year out of supported range (1900-2400): {as_of!r}",
+            )
     # Correlate with X-Request-ID middleware (echoed on the response).
     request_id = str(getattr(request.state, "request_id", None) or uuid4().hex)
     session_id = req.session_id or uuid4().hex
@@ -244,25 +276,26 @@ async def create_mission(
     route_hint = await route_for(runtime, query=query)
     scenario_id = _resolve_scenario_id(req.scenario_id, route=route_hint)
 
-    # Async accept path — validate scenario early for swarm-bound queries.
-    if not req.wait:
-        if route_hint == "swarm":
-            from seleric_swarm.coordinator.intake import has_analytical_signal
-            from seleric_swarm.swarm.providers.errors import ScenarioNotFoundError
-            from seleric_swarm.swarm.providers.fixtures import load_scenario
+    if route_hint == "swarm":
+        from seleric_swarm.coordinator.intake import has_analytical_signal
+        from seleric_swarm.swarm.providers.errors import ScenarioNotFoundError
+        from seleric_swarm.swarm.providers.fixtures import load_scenario
 
-            if not has_analytical_signal(query, runtime.metrics):
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Query does not name a known metric or a supported analysis "
-                        "(diagnose / forecast / compare / recommend / health check)."
-                    ),
-                )
-            try:
-                load_scenario(scenario_id)
-            except ScenarioNotFoundError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not has_analytical_signal(query, runtime.metrics):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Query does not name a known metric or a supported analysis "
+                    "(diagnose / forecast / compare / recommend / health check)."
+                ),
+            )
+        try:
+            load_scenario(scenario_id)
+        except ScenarioNotFoundError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Async accept path — scenario already validated above for swarm.
+    if not req.wait:
         mission_id = new_mission_id(swarm_likely=route_hint == "swarm")
         accepted = seed_running_mission(
             runtime,
@@ -294,7 +327,7 @@ async def create_mission(
             query=query,
             timezone=timezone,
             as_of=as_of,
-            session_id=req.session_id,
+            session_id=session_id,
             request_id=request_id,
             full_diagnostic=req.full_diagnostic,
             full_prediction=req.full_prediction,
@@ -310,7 +343,10 @@ async def create_mission(
         raise
     # Flatten: a consistent top-level mission object with a `route` marker.
     # lookup  -> MissionResult fields; swarm -> SwarmMissionResult fields.
-    return {"route": dispatched["route"], **dispatched["result"]}
+    out = {"route": dispatched["route"], **dispatched["result"]}
+    if not isinstance(out.get("trace"), dict):
+        out["trace"] = {"request_id": request_id, "session_id": session_id}
+    return out
 
 
 @app.get("/v1/missions/{mission_id}")

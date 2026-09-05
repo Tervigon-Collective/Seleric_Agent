@@ -125,12 +125,12 @@ def _parse_jsonrpc_response(resp: httpx.Response) -> dict[str, Any]:
             if parsed is None:
                 continue
             if not isinstance(parsed, dict):
-                raise RuntimeError("seleric mcp sse data was not a JSON object")
+                raise RuntimeError("seleric mcp sse data was not a JSON object")  # noqa: TRY004
             return parsed
         raise RuntimeError("no data event in streamable-http response")
     parsed = _loads_json(resp.text, context="http body")
     if not isinstance(parsed, dict):
-        raise RuntimeError("seleric mcp returned an empty or non-object response")
+        raise RuntimeError("seleric mcp returned an empty or non-object response")  # noqa: TRY004
     return parsed
 
 

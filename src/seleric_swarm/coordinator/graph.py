@@ -90,7 +90,7 @@ from seleric_swarm.orchestration.state import MissionState
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.domain.base import DomainAgent
-from seleric_swarm.swarm.domain.configs import ALL_DOMAIN_CONFIGS
+from seleric_swarm.swarm.domain.configs import build_domain_configs
 from seleric_swarm.swarm.envelope import Intent, SwarmMessage
 from seleric_swarm.swarm.mission import SwarmMission, SwarmMissionResult, TeamMember
 from seleric_swarm.swarm.orchestrator import _initial_lead, classify_intents
@@ -897,7 +897,12 @@ def _unsupported_swarm_result(
 
         runtime.store.put(
             _swarm_mission_view(result, request_id, session_id),
-            {"route": "swarm", "workflow": "swarm_v2", **result.as_dict()},
+            {
+                "route": "swarm",
+                "workflow": "swarm_v2",
+                "trace": {"request_id": request_id, "session_id": session_id},
+                **result.as_dict(),
+            },
         )
     except Exception:  # noqa: S110 - persistence must never fail the response
         pass
@@ -1014,8 +1019,10 @@ async def run_swarm_v2_mission(
     )
 
     domains: dict[str, DomainAgent] = {
-        cfg.agent_id: DomainAgent(cfg, providers.data_for(cfg.domain), peers=providers.data)
-        for cfg in ALL_DOMAIN_CONFIGS.values()
+        cfg.agent_id: DomainAgent(
+            cfg, providers.data_for(cfg.domain), peers=providers.data, metrics=runtime.metrics
+        )
+        for cfg in build_domain_configs(runtime.metrics, runtime.agents).values()
     }
     observer = ObserverAgent(providers, domains)
     anomaly = AnomalyAgent(providers)
@@ -1316,6 +1323,7 @@ async def run_swarm_v2_mission(
                 "route": "swarm",
                 "workflow": "swarm_v2",
                 "workflow_version": "1.4.0",
+                "trace": {"request_id": rid, "session_id": sid},
                 **result.as_dict(),
             },
         )

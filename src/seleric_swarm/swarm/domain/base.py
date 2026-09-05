@@ -30,6 +30,8 @@ class DomainConfig:
     handoff_targets: list[str] = field(default_factory=list)
     ontology: list[str] = field(default_factory=list)  # keyword fallback when MCP is offline
     seleric_module: str | None = None
+    # Terminal domains diagnose in place and never propose handoffs.
+    terminal: bool = False
 
 
 @dataclass
@@ -202,9 +204,13 @@ class DomainAgent:
         )
 
     def _owns_frontier(self, anomalies: list[dict[str, Any]]) -> bool:
+        if self.config.terminal:
+            return True  # terminal domain diagnoses; never hands off
         frontier = set(self.config.frontier_metrics)
         if not frontier:
-            return True  # terminal domain (e.g. technical): it diagnoses, never hands off
+            # Non-terminal with no frontier metrics configured — do not claim ownership
+            # (empty frontier must not block handoffs the way terminals do).
+            return False
         return any(a.get("metric_id") in frontier for a in anomalies)
 
     def _metric_is_frontier(self, metric_id: str) -> bool:
@@ -221,13 +227,11 @@ class DomainAgent:
         return True
 
     def _target_is_terminal(self, agent_id: str) -> bool:
-        """Terminal domains have an empty frontier (they diagnose; they don't hand off)."""
+        """Terminal domains diagnose in place and should not be preferred as mid-chain hops."""
         from seleric_swarm.swarm.domain.configs import ALL_DOMAIN_CONFIGS
 
         cfg = ALL_DOMAIN_CONFIGS.get(agent_id)
-        if cfg is None:
-            return False
-        return not cfg.frontier_metrics
+        return bool(cfg is not None and cfg.terminal)
 
     # -- leadership handoff (architecture sec. 18-19, 32) -------------------
     def evaluate_handoff(self, blackboard: Blackboard) -> HandoffProposal | None:
@@ -260,11 +264,16 @@ class DomainAgent:
             if not self._metric_is_frontier(str(a.get("metric_id") or ""))
         ]
         pool = outcomes or candidates
-        # When multiple bridge symptoms exist, prefer non-terminal owners so we do
-        # not skip intermediate domains (purchase_cvr→funnel before js_error→technical).
-        bridge = [(a, owner) for a, owner in pool if not self._target_is_terminal(owner)]
-        if bridge:
-            pool = bridge
+        # From upstream media domains, prefer non-terminal bridge owners when they
+        # carry a material signal (purchase_cvr→funnel) so we do not skip to
+        # technical. Mid-chain domains (funnel) keep max-deviation selection so
+        # root-cause terminal metrics (js_error) still win over soft commerce dips.
+        if self.config.domain in {"performance", "attribution"}:
+            bridge = [(a, owner) for a, owner in pool if not self._target_is_terminal(owner)]
+            if bridge:
+                best_bridge = max(abs(a.get("deviation_pct") or 0) for a, _ in bridge)
+                if best_bridge >= 10:
+                    pool = bridge
         target_anom, to_agent = max(pool, key=lambda pair: abs(pair[0].get("deviation_pct") or 0))
 
         frontier_evidence = [

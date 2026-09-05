@@ -114,6 +114,7 @@ async def run_swarm_mission(
     full_diagnostic: bool = False,
     full_prediction: bool = False,
     mission_id: str | None = None,
+    execution_mode: str = "fixture",
 ) -> SwarmMissionResult:
     mid = mission_id or f"MS-{uuid4().hex[:10]}"
     mission_id = mid
@@ -122,7 +123,16 @@ async def run_swarm_mission(
     tracing = runtime.settings.langsmith_tracing
 
     scenario = load_scenario(scenario_id)
-    providers = providers or build_fixture_bundle(scenario_id)
+    if providers is None:
+        mode = execution_mode if execution_mode in {"production", "staging", "fixture"} else "fixture"
+        if mode != "fixture":
+            from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
+
+            providers, _mcp_stats = build_hybrid_bundle(
+                scenario_id, mcp=runtime.mcp, execution_mode=mode  # type: ignore[arg-type]
+            )
+        else:
+            providers = build_fixture_bundle(scenario_id)
     intents = apply_full_flags(
         classify_intents(query),
         full_diagnostic=full_diagnostic,
@@ -421,7 +431,11 @@ async def run_swarm_mission(
     try:
         runtime.store.put(
             _swarm_mission_view(mission_result, rid, sid),
-            {"route": "swarm", **mission_result.as_dict()},
+            {
+                "route": "swarm",
+                "trace": {"request_id": rid, "session_id": sid},
+                **mission_result.as_dict(),
+            },
         )
     except Exception as exc:  # persistence must never fail a completed mission
         _log.warning("swarm.persist_failed", mission_id=mission_id, error=str(exc))
