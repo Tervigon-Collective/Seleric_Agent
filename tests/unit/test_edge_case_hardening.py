@@ -172,7 +172,8 @@ async def test_swarm_v1_accepts_execution_mode(runtime, monkeypatch):
     }
 
 
-def test_as_of_extends_scenario_observation_window():
+@pytest.mark.asyncio
+async def test_as_of_extends_scenario_observation_window():
     scenario = {"observation_window": {"start": "2026-08-31", "end": "2026-09-02"}}
     # Scenario window kept; as_of past end extends end only
     tr = resolve_mission_time_range(scenario, timezone="Asia/Kolkata", as_of="2026-09-03")
@@ -191,7 +192,7 @@ def test_as_of_extends_scenario_observation_window():
     assert tr_in["start"] == "2026-08-31"
 
     # No scenario window → fall back to normalized query window
-    nq = normalize_query(
+    nq = await normalize_query(
         "Why has CAC increased over the last three days?",
         timezone="Asia/Kolkata",
         as_of="2026-09-03",
@@ -228,8 +229,9 @@ def test_swarm_mission_view_preserves_prototype_completed():
     assert coerce_typed_status("weird") == "partial"
 
 
-def test_full_flags_folded_into_normalized_intents():
-    nq = normalize_query("Why did CAC rise?", timezone="Asia/Kolkata", as_of="2026-09-03")
+@pytest.mark.asyncio
+async def test_full_flags_folded_into_normalized_intents():
+    nq = await normalize_query("Why did CAC rise?", timezone="Asia/Kolkata", as_of="2026-09-03")
     intents = apply_full_flags(
         set(nq.intents),
         full_diagnostic=True,
