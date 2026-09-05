@@ -382,3 +382,39 @@ async def test_semantically_equivalent_hypotheses_are_deduplicated(make_agent, g
     ))
     lcp_hyps = [h for h in r.hypotheses if h.treatment_metric == "metric.mobile_lcp_seconds"]
     assert len(lcp_hyps) == 1
+
+
+# --------------------------------------------------------------------------- #
+# 9. multiple contributors: a real-but-weaker mechanism is reported alongside
+#    the primary, ranked below it, and never fabricated into a validated claim
+# --------------------------------------------------------------------------- #
+async def test_multiple_contributors_ranked_not_forced_to_one(make_agent):
+    from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
+
+    bundle = latency_bundle() + [
+        ev("EV-pay", "metric.payment_failure_rate", 4.2, change_pct=520.0, start_time="2026-09-01T11:50:00+05:30"),
+    ]
+    agent = make_agent(
+        bundle,
+        [anomaly("AN-cvr", "metric.purchase_cvr", -24.0, start_time="2026-09-01T12:05:00+05:30")],
+    )
+    agent.policies = DiagnosticPolicies(raw={"budgets": {"max_primary_candidates": 4}})
+    r = await agent.diagnose(_req(
+        outcome_metric="metric.purchase_cvr",
+        degradation_started_at="2026-09-01T12:05:00+05:30",
+        context={"trust_metadata_causal": True},
+    ))
+    assert len(r.findings) > 1
+    assert r.findings[0].role == "primary"
+    assert r.findings[0].retained_hypothesis_id is not None
+    assert all(f.role != "primary" for f in r.findings[1:])
+    # secondary/contributor findings that never reached the retain threshold
+    # must not be reported as validated claims
+    assert all(
+        f.retained_hypothesis_id is None
+        for f in r.findings
+        if f.role != "primary"
+    )
+    assert len(r.claims) == 1  # only the retained primary produced a claim
+    assert r.residual_unexplained is True
+    assert r.finding is r.findings[0]  # backward-compat singular accessor

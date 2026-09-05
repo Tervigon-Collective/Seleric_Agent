@@ -24,6 +24,7 @@ from seleric_swarm.agents.diagnostic.contracts import (
     DiagnosticFinding,
     DiagnosticHypothesis,
     DiagnosticResult,
+    FindingRole,
 )
 from seleric_swarm.agents.diagnostic.ontology import incident_type_for_treatment
 
@@ -68,10 +69,9 @@ def finalize(
     ctx: DiagnosticContext,
     result: DiagnosticResult,
     *,
-    causal_hypothesis: DiagnosticHypothesis | None,
-    causal_artifact: CausalAnalysisArtifact | None,
-    causal_confidence: str | None,
+    causal_results: list[tuple[DiagnosticHypothesis, str, CausalAnalysisArtifact]] | None = None,
 ) -> DiagnosticResult:
+    causal_results = causal_results or []
     limitations: list[str] = []
     if ctx.policies.always_note_confounding():
         limitations.append("Unmeasured confounding cannot be completely excluded.")
@@ -83,37 +83,61 @@ def finalize(
     if ctx.request.observations is None:
         limitations.append("Causal estimate is metadata-only (no observation frame was fitted).")
 
-    finding: DiagnosticFinding | None = None
-    if causal_hypothesis is not None and causal_confidence is not None:
-        retained = ctx.policies.meets_retain(causal_confidence) and causal_confidence != "REJECTED"
+    # Classify every causally-estimated candidate independently — a hypothesis
+    # can be a real, reportable contributor without being THE explanation
+    # (spec §54-55: primary/secondary/co-contributors, never forced to one).
+    accepted: list[tuple[DiagnosticHypothesis, str, CausalAnalysisArtifact]] = []
+    for h, confidence, artifact in causal_results:
+        retained = ctx.policies.meets_retain(confidence) and confidence != "REJECTED"
         if retained:
-            causal_hypothesis.status = "retained"
-        elif causal_confidence == "REJECTED":
-            causal_hypothesis.status = "rejected"
-            causal_hypothesis.rejection_reason = "causal check rejected (e.g. impossible ordering)"
+            h.status = "retained"
+            accepted.append((h, confidence, artifact))
+        elif confidence == "REJECTED":
+            h.status = "rejected"
+            h.rejection_reason = "causal check rejected (e.g. impossible ordering)"
         else:
-            causal_hypothesis.status = "inconclusive"
+            h.status = "inconclusive"
+            if ctx.policies.emit_inconclusive_finding():
+                accepted.append((h, confidence, artifact))
 
-        # every other still-'testing' hypothesis is now rejected as an alternative
-        for h in result.hypotheses:
-            if h.hypothesis_id != causal_hypothesis.hypothesis_id and h.status == "testing":
-                h.status = "rejected"
-                h.rejection_reason = h.rejection_reason or "not the retained mechanism; superseded"
+    # Every other still-'testing' hypothesis (never causally estimated, or
+    # estimated but not accepted above) is superseded by the accepted set.
+    accepted_ids = {h.hypothesis_id for h, _, _ in accepted}
+    for h in result.hypotheses:
+        if h.hypothesis_id not in accepted_ids and h.status == "testing":
+            h.status = "rejected"
+            h.rejection_reason = h.rejection_reason or "not among the retained mechanisms; superseded"
 
-        if retained or (ctx.policies.emit_inconclusive_finding() and causal_confidence != "REJECTED"):
-            finding = DiagnosticFinding(
-                statement=causal_hypothesis.statement,
-                mechanism=causal_hypothesis.mechanism,
-                causal_confidence=causal_confidence,  # type: ignore[arg-type]
-                causal_ref=causal_artifact.causal_id if causal_artifact else None,
-                retained_hypothesis_id=causal_hypothesis.hypothesis_id if retained else None,
-                supporting_evidence=list(causal_hypothesis.supporting_evidence),
-                contradictory_evidence=list(causal_hypothesis.contradictory_evidence),
-                ruled_out=[h.hypothesis_id for h in result.rejected()],
+    # Rank: retained beats inconclusive; within a tier, larger |estimated effect|
+    # ranks first (a real-but-tiny contributor is a contributor, not the primary).
+    def _effect_magnitude(artifact: CausalAnalysisArtifact | None) -> float:
+        if artifact is None or artifact.estimated_effect is None:
+            return 0.0
+        return abs(artifact.estimated_effect)
+
+    accepted.sort(key=lambda item: (0 if item[0].status == "retained" else 1, -_effect_magnitude(item[2])))
+
+    ruled_out = [h.hypothesis_id for h in result.rejected()]
+    findings: list[DiagnosticFinding] = []
+    for idx, (h, confidence, artifact) in enumerate(accepted):
+        role: FindingRole = "primary" if idx == 0 else ("secondary" if idx == 1 else "contributor")
+        findings.append(
+            DiagnosticFinding(
+                statement=h.statement,
+                mechanism=h.mechanism,
+                causal_confidence=confidence,  # type: ignore[arg-type]
+                causal_ref=artifact.causal_id if artifact else None,
+                retained_hypothesis_id=h.hypothesis_id if h.status == "retained" else None,
+                role=role,
+                estimated_effect=artifact.estimated_effect if artifact else None,
+                supporting_evidence=list(h.supporting_evidence),
+                contradictory_evidence=list(h.contradictory_evidence),
+                ruled_out=ruled_out,
                 limitations=list(limitations),
             )
+        )
 
-    if finding is None:
+    if not findings:
         if not result.hypotheses:
             limitations.append(
                 "INSUFFICIENT_EVIDENCE: no candidate mechanism could be generated for "
@@ -124,19 +148,28 @@ def finalize(
                 "INSUFFICIENT_EVIDENCE: no hypothesis reached a causally-supported confidence tier."
             )
 
+    # Residual uncertainty is real whenever the retained findings don't add up
+    # to a single, dominant explanation: either several findings share credit,
+    # or the sole finding never rose above metadata-only causal confirmation.
+    result.residual_unexplained = len(findings) > 1 or (
+        len(findings) == 1 and findings[0].retained_hypothesis_id is None
+    )
+
     _apply_leadership_and_incident_type(ctx, result)
 
-    result.finding = finding
-    result.causal_artifact = causal_artifact
+    result.finding = findings[0] if findings else None
+    result.findings = findings
+    result.causal_artifact = accepted[0][2] if accepted else None
     result.limitations = limitations
     result.contradictions = list(ctx.scratch.get("contradictions") or [])
     result.methodology = (
         "explicit hypotheses -> deterministic tests (evidence, temporal precedence, "
         "segment specificity, control divergence, dose-response) -> causal estimation + "
-        "refutation on the top surviving hypothesis -> retain/reject by confidence tier"
+        "refutation on every surviving hypothesis -> retain/reject by confidence tier "
+        "-> rank by effect magnitude into primary/secondary/contributor findings"
     )
-    result.diagnostic_artifact = _to_diagnostic_artifact(ctx, result, causal_artifact)
-    result.claims = _to_claims(ctx, result, finding, causal_artifact)
+    result.diagnostic_artifact = _to_diagnostic_artifact(ctx, result, result.causal_artifact)
+    result.claims = _to_claims(ctx, result)
     result.synthetic = ctx.synthetic_inputs()
     return result
 
@@ -203,30 +236,36 @@ def _hypo_row(h: DiagnosticHypothesis) -> dict[str, Any]:
     }
 
 
-def _to_claims(
-    ctx: DiagnosticContext,
-    result: DiagnosticResult,
-    finding: DiagnosticFinding | None,
-    causal_artifact: CausalAnalysisArtifact | None,
-) -> list[Claim]:
-    if finding is None or finding.retained_hypothesis_id is None:
-        return []
-    return [
-        Claim(
-            mission_id=ctx.request.mission_id,
-            claim_type="causal",
-            statement=finding.statement,
-            origin_agent="diagnostic_agent",
-            support_refs=list(finding.supporting_evidence),
-            causal_refs=[causal_artifact.causal_id] if causal_artifact else [],
-            diagnostic_refs=[result.diagnostic_run_id],
-            metadata={
-                "causal_confidence": finding.causal_confidence,
-                "diagnosed_mechanism": f"{causal_artifact.treatment} -> {causal_artifact.outcome}"
-                if causal_artifact
-                else finding.mechanism,
-                "alternatives_ruled_out": bool(result.rejected()),
-                "domain": (ctx.request.lead_domain or "").removesuffix("_agent") or None,
-            },
+def _to_claims(ctx: DiagnosticContext, result: DiagnosticResult) -> list[Claim]:
+    """One claim per *retained* finding — never for a merely inconclusive
+    secondary/contributor (spec §67: Diagnostic proposes SUPPORTED claims only
+    from validated mechanisms; Skeptic/Coordinator govern from there).
+    """
+    claims: list[Claim] = []
+    domain = (ctx.request.lead_domain or "").removesuffix("_agent") or None
+    for finding in result.findings:
+        if finding.retained_hypothesis_id is None:
+            continue
+        causal_ref = finding.causal_ref
+        causal_artifact = result.causal_artifact if causal_ref == (result.causal_artifact.causal_id if result.causal_artifact else None) else None
+        claims.append(
+            Claim(
+                mission_id=ctx.request.mission_id,
+                claim_type="causal",
+                statement=finding.statement,
+                origin_agent="diagnostic_agent",
+                support_refs=list(finding.supporting_evidence),
+                causal_refs=[causal_ref] if causal_ref else [],
+                diagnostic_refs=[result.diagnostic_run_id],
+                metadata={
+                    "causal_confidence": finding.causal_confidence,
+                    "role": finding.role,
+                    "diagnosed_mechanism": f"{causal_artifact.treatment} -> {causal_artifact.outcome}"
+                    if causal_artifact
+                    else finding.mechanism,
+                    "alternatives_ruled_out": bool(result.rejected()),
+                    "domain": domain,
+                },
+            )
         )
-    ]
+    return claims

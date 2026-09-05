@@ -163,8 +163,17 @@ class DiagnosticHypothesis(BaseModel):
     rejection_reason: str | None = None
 
 
+FindingRole = Literal["primary", "secondary", "contributor"]
+
+
 class DiagnosticFinding(BaseModel):
-    """The retained root-cause candidate + how strongly it is supported."""
+    """A supported (or inconclusive-but-reported) root-cause candidate.
+
+    Multiple findings may co-exist on one ``DiagnosticResult`` (spec §54-55):
+    a causal factor can be real without being the *whole* explanation. ``role``
+    ranks them; it is never a claim that unranked findings are false, only that
+    they explain less of the observed change than ``role="primary"``.
+    """
 
     finding_id: str = Field(default_factory=lambda: _rid("DFIND"))
     statement: str
@@ -172,6 +181,8 @@ class DiagnosticFinding(BaseModel):
     causal_confidence: CausalConfidence
     causal_ref: str | None = None
     retained_hypothesis_id: str | None = None
+    role: FindingRole = "primary"
+    estimated_effect: float | None = None
     supporting_evidence: list[str] = Field(default_factory=list)
     contradictory_evidence: list[str] = Field(default_factory=list)
     ruled_out: list[str] = Field(default_factory=list)
@@ -187,6 +198,10 @@ class DiagnosticResult(BaseModel):
     outcome_metric: str
     hypotheses: list[DiagnosticHypothesis] = Field(default_factory=list)
     finding: DiagnosticFinding | None = None
+    # All supported/inconclusive-but-reported findings, ranked by role. ``finding``
+    # is kept as a convenience alias for ``findings[0]`` (backward compatible with
+    # single-cause callers); prefer ``findings`` when multiple contributors matter.
+    findings: list[DiagnosticFinding] = Field(default_factory=list)
     diagnostic_artifact: DiagnosticArtifact | None = None
     causal_artifact: CausalAnalysisArtifact | None = None
     claims: list[Claim] = Field(default_factory=list)
@@ -204,6 +219,10 @@ class DiagnosticResult(BaseModel):
 
     # -- coarse routing label for downstream Prediction/Strategy, not a causal claim --
     incident_type: str | None = None
+
+    # -- residual uncertainty (spec §54, §123): what the retained findings do
+    # NOT explain. Only ever a qualitative flag; never a fabricated percentage.
+    residual_unexplained: bool = False
 
     def retained(self) -> list[DiagnosticHypothesis]:
         return [h for h in self.hypotheses if h.status == "retained"]

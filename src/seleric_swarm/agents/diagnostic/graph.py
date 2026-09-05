@@ -113,6 +113,10 @@ async def classify_node(state: DiagnosticState) -> dict[str, Any]:
 
 
 async def causal_node(state: DiagnosticState) -> dict[str, Any]:
+    """Estimate causal effect for every eligible surviving hypothesis, not just
+    one — a real contributor can co-exist with a stronger one (spec §54-55).
+    ``max_primary_candidates`` still bounds how many DoWhy runs this costs.
+    """
     ctx = _ctx(state)
     eligible = [
         h for h in ctx.hypotheses
@@ -123,19 +127,16 @@ async def causal_node(state: DiagnosticState) -> dict[str, Any]:
     cap = ctx.policies.budget("max_primary_candidates")
     picked = eligible[:cap]
 
-    best: tuple[Any, str, Any] | None = None
+    results: list[tuple[Any, str, Any]] = []
     for h in picked:
         artifact, confidence = await estimate_for_hypothesis(ctx, h)
-        rank = ctx.policies.confidence_rank(str(confidence))
-        if best is None or rank > ctx.policies.confidence_rank(str(best[1])):
-            best = (h, str(confidence), artifact)
+        results.append((h, str(confidence), artifact))
 
-    if best is None:
-        ctx.scratch["causal"] = None
+    ctx.scratch["causal_results"] = results
+    if not results:
         return {"causal_confidence": "", "causal_ref": ""}
-    chosen_h, chosen_conf, chosen_art = best
-    ctx.scratch["causal"] = {"hypothesis": chosen_h, "confidence": chosen_conf, "artifact": chosen_art}
-    return {"causal_confidence": chosen_conf, "causal_ref": chosen_art.causal_id}
+    best = max(results, key=lambda r: ctx.policies.confidence_rank(r[1]))
+    return {"causal_confidence": best[1], "causal_ref": best[2].causal_id}
 
 
 async def finalize_node(state: DiagnosticState) -> dict[str, Any]:
@@ -147,19 +148,14 @@ async def finalize_node(state: DiagnosticState) -> dict[str, Any]:
         outcome_metric=ctx.outcome_metric,
         hypotheses=ctx.hypotheses,
     )
-    causal = ctx.scratch.get("causal")
-    result = finalize(
-        ctx,
-        result,
-        causal_hypothesis=causal["hypothesis"] if causal else None,
-        causal_artifact=causal["artifact"] if causal else None,
-        causal_confidence=causal["confidence"] if causal else None,
-    )
+    causal_results = ctx.scratch.get("causal_results") or []
+    result = finalize(ctx, result, causal_results=causal_results)
     result.audit = {
         "hypotheses_generated": len(ctx.hypotheses),
         "retained": [h.hypothesis_id for h in result.retained()],
         "rejected": [h.hypothesis_id for h in result.rejected()],
-        "causal_confidence": causal["confidence"] if causal else None,
+        "causal_candidates_estimated": len(causal_results),
+        "findings": len(result.findings),
         "observations_fitted": ctx.request.observations is not None,
         "elapsed_ms": round((time.perf_counter() - float(state.get("_t0") or time.perf_counter())) * 1000, 2),
     }
