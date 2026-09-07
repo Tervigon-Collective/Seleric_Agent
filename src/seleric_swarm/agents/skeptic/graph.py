@@ -66,7 +66,7 @@ async def load_claim(state: SkepticState) -> dict[str, Any]:
 
 async def classify_claim_node(state: SkepticState) -> dict[str, Any]:
     ctx = _ctx(state)
-    result = classify_claim(ctx.claim)
+    result = await classify_claim(ctx.claim, ctx=ctx)
     ctx.claim.claim_type = result.claim_type
     patch: dict[str, Any] = {"claim_type": result.claim_type}
     if result.mismatch:

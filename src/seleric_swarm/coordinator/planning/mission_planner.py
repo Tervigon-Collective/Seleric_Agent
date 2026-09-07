@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from functools import lru_cache
 from typing import Any
 
 from seleric_swarm.coordinator.contracts import (
@@ -14,6 +15,17 @@ from seleric_swarm.coordinator.contracts import (
 )
 from seleric_swarm.coordinator.intake import complexity_band, intent_band_for_activation
 from seleric_swarm.coordinator.policies import CoordinatorPolicies, load_coordinator_policies
+from seleric_swarm.registry.agent_registry import AgentRegistry
+
+# Pseudo-capabilities used only for task routing here — they either have no
+# 1:1 match in config/agent_registry.yaml's `capabilities:` lists (a remediation
+# sentinel, or a naming variant of a real capability) so they can't be derived
+# from the registry like everything else below.
+_CAPABILITY_ALIASES: dict[str, str] = {
+    "hypothesis_test": "diagnostic_agent",  # registry capability is "hypothesis_testing"
+    "causal_graph_resolve": "causal_registry",  # sentinel: resolved via CausalGraphRegistry, not a dispatched agent
+    "model_metadata": "prediction_agent",  # forecast metadata, not its own registry capability
+}
 
 
 def _idempotency_key(mission_id: str, task_type: str, subquestion_id: str | None, agent: str | None) -> str:
@@ -21,22 +33,22 @@ def _idempotency_key(mission_id: str, task_type: str, subquestion_id: str | None
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
+@lru_cache
+def _capability_agent_map(registry_path: str = "config/agent_registry.yaml") -> dict[str, str]:
+    """capability -> first agent that declares it, built from the registry so it
+    can't drift out of sync the way a hand-duplicated dict would."""
+    registry = AgentRegistry(registry_path)
+    mapping = dict(_CAPABILITY_ALIASES)
+    for agent_id in registry.all_ids():
+        for cap in registry.capabilities_of(agent_id):
+            mapping.setdefault(cap, agent_id)
+    return mapping
+
+
 def _agent_for_capability(cap: str, preferred_domain: str | None) -> str | None:
-    mapping = {
-        "metric_observation": "observer_agent",
-        "evidence_collection": "observer_agent",
-        "anomaly_analysis": "anomaly_agent",
-        "hypothesis_generation": "diagnostic_agent",
-        "hypothesis_test": "diagnostic_agent",
-        "causal_diagnosis": "diagnostic_agent",
-        "causal_graph_resolve": "causal_registry",
-        "forecasting": "prediction_agent",
-        "intervention_design": "strategy_agent",
-        "challenge": "skeptic_agent",
-        "model_metadata": "prediction_agent",
-    }
-    if cap in mapping:
-        return mapping[cap]
+    agent = _capability_agent_map().get(cap)
+    if agent:
+        return agent
     if preferred_domain:
         return f"{preferred_domain}_agent"
     return None

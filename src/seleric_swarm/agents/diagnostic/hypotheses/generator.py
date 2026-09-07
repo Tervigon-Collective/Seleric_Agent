@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from seleric_swarm.agents.diagnostic.context import DiagnosticContext
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticHypothesis
-from seleric_swarm.agents.diagnostic.ontology import mechanisms_for
+from seleric_swarm.agents.diagnostic.ontology import graph_id_for_outcome, mechanisms_for
 
 _log = structlog.get_logger("seleric_swarm.agents.diagnostic")
 
@@ -134,11 +134,4 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
 
 
 def _graph_id_for(ctx: DiagnosticContext) -> str:
-    return (
-        ctx.request.context.get("graph_id")
-        or {
-            "metric.purchase_cvr": "causal.funnel_purchase.v1",
-            "metric.cac": "causal.funnel_purchase.v1",
-            "metric.net_sales": "causal.funnel_purchase.v1",
-        }.get(ctx.outcome_metric, "")
-    )
+    return ctx.request.context.get("graph_id") or graph_id_for_outcome(ctx.outcome_metric)

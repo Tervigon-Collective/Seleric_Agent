@@ -58,6 +58,24 @@ budgets:
   max_runtime_s: 120.0
   max_parallel_tasks: 4
 
+routing:
+  weights:
+    capability_match: 0.35
+    domain_match: 0.20
+    historical_accuracy: 0.15
+    data_access_match: 0.10
+    availability: 0.10
+    latency: 0.05
+    cost: 0.05
+  latency_score:
+    low: 1.0
+    medium: 0.6
+    high: 0.3
+  cost_score:
+    low: 1.0
+    medium: 0.6
+    high: 0.3
+
 synthesis:
   forbidden_phrases_when_challenged:
     - validated mechanism

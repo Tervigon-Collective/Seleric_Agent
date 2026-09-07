@@ -16,11 +16,28 @@ AGENT_VERSION = "0.1.0"
 _TOP_N_RE = re.compile(r"\btop\s+(\d+)\b", re.IGNORECASE)
 _DEFAULT_TOP_N = 10
 
+# Suffixes that identify time-grain dimensions (e.g. order_date, created_at,
+# event_time, report_month).  These represent query granularity, NOT categorical
+# breakdown axes, so they must never be resolved from entity names.
+_TIME_DIM_SUFFIXES = ("_date", "_at", "_time", "_month", "_week", "_year", "_hour", "_day")
+
+
+def _is_time_dim(dim: str) -> bool:
+    return any(dim.endswith(s) for s in _TIME_DIM_SUFFIXES)
+
 
 def _resolve_dimension(entity: str, supported: list[str]) -> str | None:
-    """Map a control-plane entity onto a catalogue dimension id."""
+    """Map a control-plane entity onto a catalogue dimension id.
+
+    Time-grain dimensions (``order_date``, ``event_at``, ``created_month`` …)
+    are excluded so that entity tokens like "order" cannot accidentally trigger
+    a daily breakdown via fuzzy suffix matching against ``order_date``.
+    """
     entity = (entity or "").strip()
     if not entity:
+        return None
+    # The entity itself looks like a time dim — never use it as a breakdown.
+    if _is_time_dim(entity):
         return None
     if not supported or entity in supported:
         return entity
@@ -28,7 +45,8 @@ def _resolve_dimension(entity: str, supported: list[str]) -> str | None:
     matches = [
         dim
         for dim in supported
-        if dim == entity or dim.removeprefix("lt_") == token or token in dim.split("_")
+        if (dim == entity or dim.removeprefix("lt_") == token or token in dim.split("_"))
+        and not _is_time_dim(dim)
     ]
     return matches[0] if matches else None
 

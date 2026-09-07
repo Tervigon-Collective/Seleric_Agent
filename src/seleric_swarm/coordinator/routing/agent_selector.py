@@ -12,18 +12,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-WEIGHTS = {
-    "capability_match": 0.35,
-    "domain_match": 0.20,
-    "historical_accuracy": 0.15,
-    "data_access_match": 0.10,
-    "availability": 0.10,
-    "latency": 0.05,
-    "cost": 0.05,
-}
+from seleric_swarm.coordinator.policies import load_coordinator_policies
 
-_LATENCY_SCORE = {"low": 1.0, "medium": 0.6, "high": 0.3}
-_COST_SCORE = {"low": 1.0, "medium": 0.6, "high": 0.3}
+_ROUTING = load_coordinator_policies().routing
+WEIGHTS = _ROUTING.weights
+_LATENCY_SCORE = _ROUTING.latency_score
+_COST_SCORE = _ROUTING.cost_score
 
 
 @dataclass

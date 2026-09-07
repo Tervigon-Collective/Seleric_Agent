@@ -105,6 +105,7 @@ async def test_run_mission_job_failure_path_marks_failed(runtime, monkeypatch):
         full_diagnostic=True,
         full_prediction=True,
         full_skeptic=True,
+        full_strategy=True,
         execution_mode="production",
     )
     raw = runtime.store.get_raw(mid)

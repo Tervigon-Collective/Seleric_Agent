@@ -19,6 +19,11 @@ diagnostic:
       incident_match: 0.3
       temporal_alignment: 0.2
       mechanism_specificity: 0.1
+    # per-hypothesis mechanism_specificity sub-score inputs (see prior_weights above)
+    mechanism_specificity_scores:
+      base: 0.2
+      detailed_mechanism: 0.7
+      has_treatment_metric_bonus: 0.3
 
   testing:
     # hard gates: a failed hard-gate test rejects the hypothesis regardless of score

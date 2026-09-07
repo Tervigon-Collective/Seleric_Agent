@@ -146,6 +146,7 @@ class Strategy(SwarmArtifact):
     options: list[dict[str, Any]] = Field(default_factory=list)
     recommended: list[str] = Field(default_factory=list)
     rationale: str = ""
+    owner_domain: str | None = None
 
     @classmethod
     def new(cls, *, mission_id: str, created_by: str, **kw: Any) -> Strategy:

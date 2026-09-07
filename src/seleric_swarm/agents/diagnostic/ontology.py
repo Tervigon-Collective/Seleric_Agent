@@ -207,3 +207,53 @@ def incident_type_for_treatment(outcome_metric: str, treatment_metric: str) -> s
         if tmpl.treatment_metric == treatment_metric:
             return incident_type_for_key(tmpl.key)
     return None
+
+
+# Single source of truth for the causal-graph wiring the estimator, generator,
+# ranker and test runners all need. Previously duplicated as independent
+# literals in each of those modules, which could silently drift out of sync.
+_GRAPH_ID_BY_OUTCOME: dict[str, str] = {
+    "metric.purchase_cvr": "causal.funnel_purchase.v1",
+    "metric.cac": "causal.funnel_purchase.v1",
+    "metric.net_sales": "causal.funnel_purchase.v1",
+}
+_DEFAULT_GRAPH_ID = "causal.funnel_purchase.v1"
+
+_NODE_BY_METRIC: dict[str, str] = {
+    "metric.mobile_lcp_seconds": "page_latency",
+    "metric.js_error_rate": "page_latency",
+    "metric.purchase_cvr": "purchase",
+    "metric.cac": "purchase",
+    "metric.avg_price": "price",
+    "metric.in_stock_rate": "stock",
+    "metric.payment_failure_rate": "payment_failure",
+}
+
+# treatment metric -> event facts that would precede a real change in it.
+_TREATMENT_EVENTS: dict[str, tuple[str, ...]] = {
+    "metric.mobile_lcp_seconds": ("event.frontend_deployment",),
+    "metric.js_error_rate": ("event.frontend_deployment", "event.tag_change"),
+    "metric.avg_price": ("event.price_change",),
+    "metric.attributed_orders": ("event.attribution_change", "event.tag_change"),
+}
+
+_BASE_COMMON_CAUSES: tuple[str, ...] = ("metric.sessions", "campaign", "device")
+_EXTRA_COMMON_CAUSES_BY_OUTCOME: dict[str, tuple[str, ...]] = {
+    "metric.cac": ("metric.return_rate",),
+}
+
+
+def graph_id_for_outcome(outcome_metric: str) -> str:
+    return _GRAPH_ID_BY_OUTCOME.get(outcome_metric, _DEFAULT_GRAPH_ID)
+
+
+def node_for_metric(metric_id: str) -> str:
+    return _NODE_BY_METRIC.get(metric_id, metric_id)
+
+
+def treatment_events(treatment_metric: str) -> tuple[str, ...]:
+    return _TREATMENT_EVENTS.get(treatment_metric, ())
+
+
+def common_causes_for_outcome(outcome_metric: str) -> list[str]:
+    return [*_BASE_COMMON_CAUSES, *_EXTRA_COMMON_CAUSES_BY_OUTCOME.get(outcome_metric, ())]

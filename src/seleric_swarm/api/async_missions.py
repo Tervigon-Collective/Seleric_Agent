@@ -111,6 +111,7 @@ async def run_mission_job(
     full_diagnostic: bool,
     full_prediction: bool,
     full_skeptic: bool,
+    full_strategy: bool,
     execution_mode: str,
 ) -> None:
     """Background worker: execute mission and overwrite the running placeholder."""
@@ -129,6 +130,7 @@ async def run_mission_job(
             full_diagnostic=full_diagnostic,
             full_prediction=full_prediction,
             full_skeptic=full_skeptic,
+            full_strategy=full_strategy,
             execution_mode=execution_mode,
         )
         if is_cancel_requested(mission_id, runtime):

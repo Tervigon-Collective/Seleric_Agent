@@ -118,6 +118,7 @@ def apply_full_flags(
     full_diagnostic: bool = False,
     full_prediction: bool = False,
     full_skeptic: bool = False,
+    full_strategy: bool = False,
 ) -> set[str]:
     """Ensure full_* request flags activate the matching specialist intents.
 
@@ -131,6 +132,8 @@ def apply_full_flags(
         out.add("diagnostic")
     if full_prediction:
         out.add("predictive")
+    if full_strategy:
+        out.add("prescriptive")
     if full_skeptic and not (out & {"diagnostic", "predictive", "prescriptive", "executive_health"}):
         # Skeptic needs a claim-bearing path; diagnostic is the minimum.
         out.add("diagnostic")

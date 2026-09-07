@@ -80,10 +80,14 @@ async def synthesize_response(runtime: SwarmRuntime, state: dict) -> dict:
 
 def _table_fallback(evidence: list[dict], claims: list[dict]) -> str:
     if claims:
-        return " ".join(c.get("text", "") for c in claims)
+        # Strip internal IDs (CL-xxx / EV-xxx) — they are provenance, not user content.
+        import re as _re
+        _id_re = _re.compile(r"\s*[\[(]?(CL|EV|M|T)-[0-9a-f]+[\])]?", _re.IGNORECASE)
+        texts = [_id_re.sub("", c.get("text", "")).strip() for c in claims]
+        return " ".join(t for t in texts if t)
     if evidence:
         parts = []
         for row in evidence:
-            parts.append(f"{row.get('metric_or_fact')}={row.get('value')} ({row.get('evidence_id')})")
+            parts.append(f"{row.get('metric_or_fact')}={row.get('value')}")
         return "Validated evidence: " + "; ".join(parts)
     return "No validated claims are available."

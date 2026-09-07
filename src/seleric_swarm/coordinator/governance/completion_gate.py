@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from seleric_swarm.coordinator.contracts import CompletionDecision, MissionStatus
-from seleric_swarm.coordinator.governance.completion import assess_completion
+from seleric_swarm.coordinator.governance.completion import _finish_threshold, assess_completion
 from seleric_swarm.coordinator.governance.conflicts import unresolved_blocking
 
 
@@ -93,7 +93,7 @@ def decide_completion(state: dict[str, Any]) -> CompletionDecision:
         and not blocking_tasks
         and not gaps
         and not conflicts
-        and (not unresolved or coverage >= 0.9)
+        and (not unresolved or coverage >= _finish_threshold())
         and assessment.decision == "finish"
     )
 
