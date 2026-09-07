@@ -49,6 +49,7 @@ class LlmClassification(BaseModel):
     primary_metric: str | None
     secondary_metrics: list[str]
     unresolved: bool
+    unsupported_reason: str | None
 
 
 async def classify_query_via_llm(
@@ -140,4 +141,5 @@ async def classify_query_via_llm(
         primary_metric=canonical[0] if canonical else None,
         secondary_metrics=canonical[1:],
         unresolved=not canonical and classification.unsupported_reason is not None,
+        unsupported_reason=classification.unsupported_reason,
     )

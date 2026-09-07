@@ -111,11 +111,11 @@ async def test_a2a_adapter_insufficient(no_model_deps):
 # swarm bridge keeps the reference mission green with full_prediction=True
 # --------------------------------------------------------------------------- #
 async def test_reference_mission_full_prediction(runtime):
-    from seleric_swarm.swarm.orchestrator import run_swarm_mission
+    from seleric_swarm.coordinator.graph import run_swarm_v2_mission
 
     q = "Why has our CAC increased for the last three days, what happens if this continues, and what should we do?"
-    res = await run_swarm_mission(
-        runtime, query=q, scenario_id="cac_regression", as_of="2026-09-03", full_prediction=True
+    res = await run_swarm_v2_mission(
+        runtime, query=q, as_of="2026-09-03", full_prediction=True
     )
     assert res.status == "completed"
     assert res.artifacts["prediction"], "prediction artifact posted"
@@ -124,13 +124,12 @@ async def test_reference_mission_full_prediction(runtime):
 
 
 async def test_reference_mission_all_three_subsystems(runtime):
-    from seleric_swarm.swarm.orchestrator import run_swarm_mission
+    from seleric_swarm.coordinator.graph import run_swarm_v2_mission
 
     q = "Why has our CAC increased for the last three days, what happens if this continues, and what should we do?"
-    res = await run_swarm_mission(
+    res = await run_swarm_v2_mission(
         runtime,
         query=q,
-        scenario_id="cac_regression",
         as_of="2026-09-03",
         full_diagnostic=True,
         full_prediction=True,

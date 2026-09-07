@@ -44,8 +44,8 @@ seleric-swarm-init/
 1. Read `docs/00_PROJECT_CHARTER.md`.
 2. Read `docs/01_SYSTEM_ARCHITECTURE.md`.
 3. Read `docs/02_AGENT_CATALOG.md` and `docs/04_DYNAMIC_LEADERSHIP.md`.
-4. Configure your MCP endpoints in `.env` and `config/mcp_servers.example.yaml`.
-5. Define canonical metrics in `config/metric_registry.example.yaml`.
+4. Configure your MCP endpoints in `.env` and `config/mcp_servers.yaml`.
+5. Define canonical metrics in `config/metric_registry.yaml`.
 6. Run the Phase 1 implementation plan in `docs/22_IMPLEMENTATION_ROADMAP.md`.
 
 ## Recommended implementation order

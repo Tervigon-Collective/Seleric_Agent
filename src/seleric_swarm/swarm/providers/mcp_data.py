@@ -1,10 +1,8 @@
 """MCP-backed DataProvider — Coordinator never calls MCP; domain agents do.
 
 Preferred path: DomainAgent → DataProvider → MCPGateway → server.
-No fixture fallback: in production/staging, a domain either has live Seleric
-catalogue data or it has none (reported as ``missing``). Fixture mode is a
-separate, explicit offline path (build_fixture_bundle) never reachable from
-a live mission.
+A domain either has live Seleric catalogue data or it has none (reported as
+``missing``) — there is no canned-data fallback.
 """
 
 from __future__ import annotations
@@ -21,14 +19,6 @@ from seleric_swarm.swarm.providers.base import (
     DomainEvent,
     MetricReading,
     ProviderBundle,
-)
-from seleric_swarm.swarm.providers.fixtures import (
-    TemplateAnomalyDetector,
-    TemplateCausalEngine,
-    TemplateForecaster,
-    TemplateOptimizer,
-    TemplateStatsEngine,
-    load_scenario,
 )
 
 
@@ -239,7 +229,6 @@ class HybridMcpDataProvider:
 
 
 def build_hybrid_bundle(
-    scenario_id: str,
     *,
     mcp: MCPGateway | None = None,
     execution_mode: str = "production",
@@ -247,11 +236,8 @@ def build_hybrid_bundle(
     agents: AgentRegistry | None = None,
 ) -> tuple[ProviderBundle, McpFetchStats]:
     """Build providers for a live mission: live MCP for domains with a
-    seleric_module, no data otherwise. ``scenario_id`` only supplies the
-    causal/forecast template engines' stand-in truth until real causal
-    inference / forecasting models replace them — never metric data.
+    seleric_module, no data otherwise.
     """
-    scenario = load_scenario(scenario_id)
     stats = McpFetchStats()
     domain_cfgs = build_domain_configs(metrics, agents)
     data: dict[str, Any] = {}
@@ -268,12 +254,5 @@ def build_hybrid_bundle(
             )
         else:
             data[d] = EmptyDataProvider(d)
-    bundle = ProviderBundle(
-        data=data,
-        anomaly=TemplateAnomalyDetector(),
-        causal=TemplateCausalEngine(scenario),
-        forecaster=TemplateForecaster(scenario),
-        optimizer=TemplateOptimizer(),
-        stats=TemplateStatsEngine(scenario),
-    )
+    bundle = ProviderBundle(data=data)
     return bundle, stats

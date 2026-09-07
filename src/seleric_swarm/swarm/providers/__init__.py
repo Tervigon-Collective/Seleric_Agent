@@ -1,1 +1,1 @@
-"""Swarm provider ports + fixture/template implementations."""
+"""Swarm provider ports — live MCP-backed implementations."""

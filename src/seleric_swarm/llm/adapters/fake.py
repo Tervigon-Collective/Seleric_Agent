@@ -259,8 +259,19 @@ def classify_swarm_query(query: str, timezone: str, as_of: str | None) -> dict[s
     if any(k in lower for k in ("compare", " versus ", " vs ")):
         intents.append("comparison")
     hints = _collect_hints(lower)
+    if not intents and not hints and not re.search(r"[a-z]{2,}", lower):
+        # No real words at all (e.g. "?????") — mirrors the real prompt's
+        # instruction to return empty intents + unsupported_reason for gibberish.
+        return {
+            "intents": [],
+            "domain_lead": "",
+            "entities": [],
+            "time_range": {"kind": "none"},
+            "metric_hints": [],
+            "unsupported_reason": "No recognizable business intent or metric in the query",
+        }
     if not intents:
-        intents.append("lookup" if hints else "comparison" if "compare" in lower else "lookup")
+        intents.append("lookup")
     domain_lead = _lead_for_hints(hints) if hints else ""
     if domain_lead == "coordinator_agent":
         domain_lead = ""
@@ -272,6 +283,31 @@ def classify_swarm_query(query: str, timezone: str, as_of: str | None) -> dict[s
         "time_range": time_range,
         "metric_hints": hints,
         "unsupported_reason": None if intents else "No recognizable intent or metric",
+    }
+
+
+def decompose_mission_query(intents_csv: str, primary_metric: str, query: str) -> dict[str, Any]:
+    """Deterministic stand-in for coordinator.decompose_mission's structured
+    output — reuses the curated investigation templates as canned "LLM"
+    output so fake-adapter tests stay consistent with the real prompt's
+    intent without duplicating template-writing here.
+    """
+    from seleric_swarm.coordinator.decomposition.templates import TEMPLATES, select_template
+
+    intents = [i.strip() for i in intents_csv.split(",") if i.strip() and i.strip().lower() != "none"]
+    metric = None if primary_metric.strip().lower() in ("", "none") else primary_metric.strip()
+    template_name = select_template(intents, metric, query)
+    steps = TEMPLATES.get(template_name) or TEMPLATES["diagnostic"]
+    return {
+        "steps": [
+            {
+                "purpose": step["purpose"],
+                "question": step["question"],
+                "priority": int(step.get("priority") or 5),
+                "branch": step.get("branch"),
+            }
+            for step in steps
+        ]
     }
 
 
@@ -405,6 +441,10 @@ class FakeLLMAdapter:
 
         if prompt_id == "coordinator.classify_swarm":
             return json.dumps(classify_swarm_query(query, timezone, as_of))
+        if prompt_id == "coordinator.decompose_mission":
+            intents_csv = _extract_field(user, "Intents") or "none"
+            primary_metric = _extract_field(user, "Primary metric") or "none"
+            return json.dumps(decompose_mission_query(intents_csv, primary_metric, query))
         if prompt_id.endswith("classify") or "coordinator.classify" in prompt_id:
             return json.dumps(classify_lookup_query(query, timezone, as_of))
         if prompt_id.endswith("metric_map") or "observer.metric_map" in prompt_id:

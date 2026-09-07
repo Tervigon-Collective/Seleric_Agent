@@ -126,11 +126,11 @@ async def test_dowhy_estimation_service_fits_observations():
 # swarm bridge keeps the reference mission green with full_diagnostic=True
 # --------------------------------------------------------------------------- #
 async def test_reference_mission_full_diagnostic(runtime):
-    from seleric_swarm.swarm.orchestrator import run_swarm_mission
+    from seleric_swarm.coordinator.graph import run_swarm_v2_mission
 
     q = "Why has our CAC increased for the last three days, what happens if this continues, and what should we do?"
-    res = await run_swarm_mission(
-        runtime, query=q, scenario_id="cac_regression", as_of="2026-09-03", full_diagnostic=True
+    res = await run_swarm_v2_mission(
+        runtime, query=q, as_of="2026-09-03", full_diagnostic=True
     )
     assert res.status == "completed"
     chain = [res.initial_mission_lead] + [h["to_agent"] for h in res.handoff_history]
@@ -143,13 +143,12 @@ async def test_reference_mission_full_diagnostic(runtime):
 
 
 async def test_reference_mission_full_diagnostic_and_skeptic(runtime):
-    from seleric_swarm.swarm.orchestrator import run_swarm_mission
+    from seleric_swarm.coordinator.graph import run_swarm_v2_mission
 
     q = "Why has our CAC increased for the last three days, what happens if this continues, and what should we do?"
-    res = await run_swarm_mission(
+    res = await run_swarm_v2_mission(
         runtime,
         query=q,
-        scenario_id="cac_regression",
         as_of="2026-09-03",
         full_diagnostic=True,
         full_skeptic=True,

@@ -13,13 +13,9 @@
 - `QUICKSTART.md`
 - `README.md`
 - `SECURITY.md`
-- `config/agent_registry.example.yaml`
+- `config/agent_registry.yaml`
 - `config/causal_graphs.example.yaml`
-- `config/feature_registry.example.yaml`
-- `config/mcp_servers.example.yaml`
-- `config/metric_registry.example.yaml`
 - `config/model_registry.example.yaml`
-- `config/policies.example.yaml`
 - `contracts/agent_card.performance.example.json`
 - `diagrams/evidence_flow.mmd`
 - `diagrams/final_architecture.mmd`

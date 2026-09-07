@@ -73,15 +73,40 @@ def is_duplicate_subquestion(existing: list[SubQuestion], question: str) -> bool
     return False
 
 
-def initial_decomposition(
+async def initial_decomposition(
     *,
     mission_id: str,
     normalized: NormalizedQuery,
     policies: CoordinatorPolicies | None = None,
+    runtime: Any | None = None,
+    request_id: str | None = None,
+    session_id: str | None = None,
 ) -> ProblemDecomposition:
+    """Decompose a mission into subquestions.
+
+    Live missions (``runtime`` given): decomposed via the LLM
+    (coordinator.decomposition.llm_decomposer) — no keyword/template
+    dispatch. Falls back to the static TEMPLATES/select_template dispatch
+    only when no runtime is given (fixture-free unit tests) or the LLM call
+    itself failed, same fallback contract coordinator.intake.normalize_query
+    uses.
+    """
     policies = policies or load_coordinator_policies()
-    template_name = select_template(normalized.intents, normalized.primary_metric, normalized.original_query)
-    steps = TEMPLATES.get(template_name) or TEMPLATES["diagnostic"]
+    steps: list[dict[str, Any]] | None = None
+    template_name = "llm"
+    if runtime is not None:
+        from seleric_swarm.coordinator.decomposition.llm_decomposer import decompose_mission_via_llm
+
+        steps = await decompose_mission_via_llm(
+            normalized,
+            runtime=runtime,
+            mission_id=mission_id,
+            request_id=request_id,
+            session_id=session_id,
+        )
+    if steps is None:
+        template_name = select_template(normalized.intents, normalized.primary_metric, normalized.original_query)
+        steps = TEMPLATES.get(template_name) or TEMPLATES["diagnostic"]
     dec_id = _dec_id(mission_id, 1)
 
     objectives = [

@@ -105,8 +105,7 @@ async def test_run_mission_job_failure_path_marks_failed(runtime, monkeypatch):
         full_diagnostic=True,
         full_prediction=True,
         full_skeptic=True,
-        scenario_id="cac_regression",
-        execution_mode="fixture",
+        execution_mode="production",
     )
     raw = runtime.store.get_raw(mid)
     assert raw is not None
