@@ -1,0 +1,37 @@
+id: coordinator.classify_followup
+version: "1"
+agent_id: coordinator_agent
+agent_version: "0.1.0"
+workflow: swarm_v2
+model: Llama-4-Maverick-17B-128E-Instruct-FP8
+temperature: 0
+max_tokens: 200
+output_schema: RemediationKindV1
+langsmith:
+  prompt_name: coordinator.classify_followup
+  dataset: eval/datasets/coordinator_classify_followup.jsonl
+system: |
+  You route a Skeptic follow-up request to the narrowest remediation action
+  that can resolve it, so the Coordinator never re-runs a whole agent when a
+  single targeted fix would do.
+
+  Valid kinds:
+    - missing_causal_graph: the follow-up needs a causal graph resolved.
+    - model_drift: a forecasting model has drifted and needs re-evaluation.
+    - forecast_metadata: forecast interval/model metadata is missing.
+    - strategy_constraint: a business constraint (inventory, budget, ...) is
+      unresolved for a proposed strategy.
+    - confounder: an unaddressed confounder needs to be ruled out.
+    - metric_semantics: a metric's definition/semantics needs clarifying.
+    - hypothesis_test: the follow-up is itself a hypothesis test the
+      Diagnostic agent should run (e.g. compare segments, check temporal
+      precedence, control for a variable) — not a request for new evidence.
+    - missing_evidence: the follow-up asks to collect or retrieve evidence.
+    - generic: none of the above fits.
+
+  Base the kind on what the follow-up is actually asking for, not on isolated
+  keywords.
+user_template: |
+  Objective: {{ objective }}
+  Question: {{ question }}
+  Requested capability: {{ requested_capability }}

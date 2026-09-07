@@ -17,6 +17,12 @@ from seleric_swarm.agents.diagnostic.contracts import (
     CausalConfidence,
     DiagnosticHypothesis,
 )
+from seleric_swarm.agents.diagnostic.ontology import (
+    common_causes_for_outcome,
+    graph_id_for_outcome,
+    node_for_metric,
+    treatment_events,
+)
 from seleric_swarm.agents.diagnostic.registries import CausalEstimationQuery
 
 
@@ -90,23 +96,18 @@ def _confidence(
 
 
 def _graph_id(ctx: DiagnosticContext) -> str:
-    return ctx.request.context.get("graph_id") or "causal.funnel_purchase.v1"
+    return ctx.request.context.get("graph_id") or graph_id_for_outcome(ctx.outcome_metric)
 
 
 def _common_causes(ctx: DiagnosticContext, h: DiagnosticHypothesis, graph) -> list[str]:
     declared = ctx.request.context.get("common_causes")
     if declared:
         return list(declared)
-    base = ["metric.sessions", "campaign", "device"]
-    if ctx.outcome_metric == "metric.cac":
-        base.append("metric.return_rate")
-    return base
+    return common_causes_for_outcome(ctx.outcome_metric)
 
 
 def _first_treatment_time(ctx: DiagnosticContext, h: DiagnosticHypothesis) -> str | None:
-    from seleric_swarm.agents.diagnostic.testing.runners import _TREATMENT_EVENTS
-
-    for ev_key in _TREATMENT_EVENTS.get(h.treatment_metric, ()):
+    for ev_key in treatment_events(h.treatment_metric):
         if ev_key in ctx.event_times:
             return ctx.event_times[ev_key]
     for e in ctx.evidence_for_metric(h.treatment_metric):
@@ -121,15 +122,7 @@ def _fallback_treatment(h: DiagnosticHypothesis) -> str:
 
 
 def _node(metric_id: str) -> str:
-    return {
-        "metric.mobile_lcp_seconds": "page_latency",
-        "metric.js_error_rate": "page_latency",
-        "metric.purchase_cvr": "purchase",
-        "metric.cac": "purchase",
-        "metric.avg_price": "price",
-        "metric.in_stock_rate": "stock",
-        "metric.payment_failure_rate": "payment_failure",
-    }.get(metric_id, metric_id)
+    return node_for_metric(metric_id)
 
 
 def _parse(value: str) -> datetime | None:

@@ -16,6 +16,12 @@ _STOPWORDS = {
     "how", "many", "today", "yesterday", "last", "days", "in", "to",
 }
 
+# The catalogue's search endpoint doesn't return a relevance score, so token
+# overlap with the query is the only ranking signal available. A single-token
+# overlap only counts as a match when that token *is* the metric id/name
+# (not just any shared word) to avoid false positives from generic terms.
+_MIN_MULTI_TOKEN_OVERLAP = 2
+
 
 async def hints_from_catalogue(query: str, *, runtime: SwarmRuntime, agent_id: str = "coordinator_agent") -> list[str]:
     """Resolve query language to registry metric ids via catalogue_search_metrics."""
@@ -44,7 +50,7 @@ async def hints_from_catalogue(query: str, *, runtime: SwarmRuntime, agent_id: s
         overlap_tokens = hay_tokens & q_tokens
         overlap = len(overlap_tokens)
         cid = str(match.get("id") or "")
-        if overlap >= 2:
+        if overlap >= _MIN_MULTI_TOKEN_OVERLAP:
             scored.append((overlap, registry_id))
         elif overlap == 1:
             tok = next(iter(overlap_tokens))

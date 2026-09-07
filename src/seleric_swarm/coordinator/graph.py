@@ -99,7 +99,6 @@ from seleric_swarm.swarm.specialists.diagnostic import DiagnosticAgent
 from seleric_swarm.swarm.specialists.observer import ObserverAgent
 from seleric_swarm.swarm.specialists.prediction import PredictionAgent
 from seleric_swarm.swarm.specialists.skeptic import SkepticAgent
-from seleric_swarm.swarm.specialists.strategy import StrategyAgent
 from seleric_swarm.swarm.transport import InProcessTransport
 
 WorkflowVersion = Literal["swarm_v2"]
@@ -628,7 +627,7 @@ def _make_skeptic_gate(ctx: SwarmV2Context):
             ctx.claim_id = claim.claim_id
             ctx.emit(CLAIM_PROPOSED, claim_id=claim.claim_id, claim_type=claim.claim_type)
 
-        gate = apply_skeptic_gate(
+        gate = await apply_skeptic_gate(
             claim_manager=ctx.claim_mgr,
             claim_id=ctx.claim_id,
             verdict=str(verdict or "PASS"),
@@ -637,6 +636,7 @@ def _make_skeptic_gate(ctx: SwarmV2Context):
             remediation_round=ctx.remediation_round,
             max_remediation_rounds=ctx.policies.budgets.max_remediation_rounds,
             prev_followup_signature=ctx.last_followup_signature,
+            runtime=ctx.runtime,
         )
         ctx.last_followup_signature = gate.get("followup_signature") or ctx.last_followup_signature
         ctx.managed_claims = ctx.claim_mgr.dump()
@@ -714,8 +714,8 @@ def _make_remediate(ctx: SwarmV2Context):
         if ctx.decomposition.decomposition_id != prev_id or not any(d.get("decomposition_id") == prev_id for d in ctx.decompositions):
             ctx.decompositions.append(ctx.decomposition.model_dump())
 
-        plan_rem = targeted_remediation_plan(
-            mission_id=ctx.mission.mission_id, followups=followups
+        plan_rem = await targeted_remediation_plan(
+            mission_id=ctx.mission.mission_id, followups=followups, runtime=ctx.runtime
         )
 
         async def _activate(
@@ -968,6 +968,7 @@ async def run_swarm_v2_mission(
     full_skeptic: bool = False,
     full_diagnostic: bool = False,
     full_prediction: bool = False,
+    full_strategy: bool = False,
     execution_mode: str = "production",
     budget_overrides: dict[str, Any] | None = None,
     mission_id: str | None = None,
@@ -1037,6 +1038,7 @@ async def run_swarm_v2_mission(
         full_diagnostic=full_diagnostic,
         full_prediction=full_prediction,
         full_skeptic=full_skeptic,
+        full_strategy=full_strategy,
     )
     if "executive_health" in intents:
         intents.add("diagnostic")
@@ -1106,7 +1108,9 @@ async def run_swarm_v2_mission(
         prediction: Any = SwarmPredictionSpecialist(providers, scenario=scenario)
     else:
         prediction = PredictionAgent(providers)
-    strategy = StrategyAgent(providers)
+    from seleric_swarm.agents.strategy.swarm_bridge import SwarmStrategySpecialist
+
+    strategy: Any = SwarmStrategySpecialist(providers, runtime=runtime)
     if full_skeptic:
         from seleric_swarm.agents.skeptic.swarm_bridge import SwarmSkepticSpecialist
 

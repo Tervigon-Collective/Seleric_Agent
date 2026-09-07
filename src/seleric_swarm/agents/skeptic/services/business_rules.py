@@ -8,19 +8,36 @@ snapshot into `RuleViolation`s for a `StrategyArtifact`.
 
 `InMemoryConstraintStore` lets a test or an offline run supply the snapshot
 directly; production implements `ConstraintStore` against the live systems.
+
+Whether the action "scales spend" / "cuts spend" / "discounts" is decided by an
+optional reasoning model when one is injected (real sentence meaning, not
+keyword hits); the keyword lists below are the always-available deterministic
+fallback, same pattern as the Diagnostic/Skeptic LLM-enrichment modules.
 """
 
 from __future__ import annotations
 
+import structlog
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from pydantic import BaseModel
+
 from seleric_swarm.agents.skeptic.contracts import StrategyArtifact
+from seleric_swarm.agents.skeptic.reasoning import NullReasoningModel, ReasoningModel
 from seleric_swarm.agents.skeptic.registries import RuleViolation
+
+_log = structlog.get_logger("seleric_swarm.agents.skeptic")
 
 _SCALE_WORDS = ("increase", "scale", "raise", "boost", "ramp", "push")
 _SPEND_WORDS = ("spend", "budget", "acquisition", "bid", "paid media")
 _CUT_WORDS = ("reduce", "cut", "decrease", "pause", "lower")
+
+
+class _ActionClassification(BaseModel):
+    scales_spend: bool
+    cuts_spend: bool
+    discounts: bool
 
 
 @dataclass
@@ -54,8 +71,28 @@ class InMemoryConstraintStore:
 class ConstraintStoreBusinessRuleService:
     """Implements ``registries.BusinessRuleService``."""
 
-    def __init__(self, store: ConstraintStore) -> None:
+    def __init__(self, store: ConstraintStore, *, reasoning: ReasoningModel | None = None) -> None:
         self._store = store
+        self._reasoning = reasoning
+
+    async def _classify_action(self, action: str) -> _ActionClassification:
+        if self._reasoning is not None and not isinstance(self._reasoning, NullReasoningModel):
+            try:
+                from seleric_swarm.agents.skeptic.prompts import BUSINESS_ACTION_SYSTEM, business_action_user
+
+                return await self._reasoning.generate_structured(
+                    system=BUSINESS_ACTION_SYSTEM,
+                    user=business_action_user(action),
+                    schema=_ActionClassification,
+                    tags=["skeptic", "business_rules"],
+                )
+            except Exception as exc:  # LLM failure must never break rule checks
+                _log.debug("skeptic.business_rules.llm_skipped", error=str(exc))
+        return _ActionClassification(
+            scales_spend=_has(action, _SCALE_WORDS) and _has(action, _SPEND_WORDS),
+            cuts_spend=_has(action, _CUT_WORDS) and _has(action, _SPEND_WORDS),
+            discounts="discount" in action or "promo" in action or "price cut" in action,
+        )
 
     async def validate_strategy(
         self, strategy: StrategyArtifact, *, context: dict[str, Any]
@@ -67,9 +104,10 @@ class ConstraintStoreBusinessRuleService:
         action = (strategy.action or "").lower()
         out: list[RuleViolation] = []
 
-        scales_spend = _has(action, _SCALE_WORDS) and _has(action, _SPEND_WORDS)
-        cuts_spend = _has(action, _CUT_WORDS) and _has(action, _SPEND_WORDS)
-        discounts = "discount" in action or "promo" in action or "price cut" in action
+        classification = await self._classify_action(action)
+        scales_spend = classification.scales_spend
+        cuts_spend = classification.cuts_spend
+        discounts = classification.discounts
 
         # -- inventory: don't scale demand when cover is critical -------------
         if scales_spend and snap.stock_cover_days is not None and (

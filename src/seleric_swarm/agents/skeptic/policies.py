@@ -58,6 +58,10 @@ class SkepticPolicies:
         }
         return int(self._get("budgets", name, default=table.get(name, 0)))
 
+    # -- intake ----------------------------------------------------------
+    def claim_classification_llm_enabled(self) -> bool:
+        return bool(self._get("intake", "claim_classification_llm_enabled", default=True))
+
     # -- activation ----------------------------------------------------
     def skeptic_required(self, claim_type: str, risk_score: float) -> bool:
         node = self._get("activation", claim_type, default={}) or {}

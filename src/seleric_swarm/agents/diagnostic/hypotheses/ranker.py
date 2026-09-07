@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from seleric_swarm.agents.diagnostic.context import DiagnosticContext
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticHypothesis
+from seleric_swarm.agents.diagnostic.ontology import treatment_events as _ontology_treatment_events
 
 
 def rank_hypotheses(ctx: DiagnosticContext, hypotheses: list[DiagnosticHypothesis]) -> list[DiagnosticHypothesis]:
@@ -53,11 +54,12 @@ def rank_hypotheses(ctx: DiagnosticContext, hypotheses: list[DiagnosticHypothesi
             elif t_times:
                 temporal_alignment = 0.3
 
-        mechanism_specificity = 0.2
+        spec_scores = ctx.policies.mechanism_specificity_scores()
+        mechanism_specificity = spec_scores["base"]
         if h.mechanism and len(h.mechanism.split()) >= 5:
-            mechanism_specificity = 0.7
+            mechanism_specificity = spec_scores["detailed_mechanism"]
         if h.treatment_metric:
-            mechanism_specificity = min(1.0, mechanism_specificity + 0.3)
+            mechanism_specificity = min(1.0, mechanism_specificity + spec_scores["has_treatment_metric_bonus"])
 
         h.prior_score = round(
             w.get("evidence_overlap", 0.4) * evidence_overlap
@@ -74,11 +76,4 @@ def rank_hypotheses(ctx: DiagnosticContext, hypotheses: list[DiagnosticHypothesi
 
 
 def _treatment_events(h: DiagnosticHypothesis) -> set[str]:
-    # crude mapping treatment metric -> the event fact that would precede it
-    mapping = {
-        "metric.mobile_lcp_seconds": {"event.frontend_deployment"},
-        "metric.js_error_rate": {"event.frontend_deployment", "event.tag_change"},
-        "metric.avg_price": {"event.price_change"},
-        "metric.attributed_orders": {"event.attribution_change", "event.tag_change"},
-    }
-    return mapping.get(h.treatment_metric, set())
+    return set(_ontology_treatment_events(h.treatment_metric))

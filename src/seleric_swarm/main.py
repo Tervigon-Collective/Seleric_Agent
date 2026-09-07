@@ -98,6 +98,7 @@ class MissionRequest(BaseModel):
     full_diagnostic: bool = True
     full_prediction: bool = True
     full_skeptic: bool = True
+    full_strategy: bool = True
     # staging/production both use the live Seleric MCP (catalogue + metrics_query).
     execution_mode: str = "production"
     # wait=true (default): run synchronously and return the finished mission.
@@ -115,6 +116,7 @@ class MissionRequest(BaseModel):
                     "full_diagnostic": True,
                     "full_prediction": True,
                     "full_skeptic": True,
+                    "full_strategy": True,
                     "wait": True,
                 }
             ]
@@ -286,6 +288,7 @@ async def create_mission(
             full_diagnostic=req.full_diagnostic,
             full_prediction=req.full_prediction,
             full_skeptic=req.full_skeptic,
+            full_strategy=req.full_strategy,
             execution_mode=req.execution_mode,
         )
         return accepted
@@ -300,6 +303,7 @@ async def create_mission(
         full_diagnostic=req.full_diagnostic,
         full_prediction=req.full_prediction,
         full_skeptic=req.full_skeptic,
+        full_strategy=req.full_strategy,
         execution_mode=req.execution_mode,
     )
     # Flatten: a consistent top-level mission object with a `route` marker.

@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from seleric_swarm.config.settings import get_settings
+
 WEIGHTS = {
     "objective_coverage": 0.30,
     "evidence_completeness": 0.25,
@@ -23,8 +25,13 @@ WEIGHTS = {
     "contradiction_resolution": 0.10,
 }
 
-FINISH_THRESHOLD = 0.90
-REVIEW_THRESHOLD = 0.70
+
+def _finish_threshold() -> float:
+    return get_settings().completion_threshold
+
+
+def _review_threshold() -> float:
+    return get_settings().completion_review_threshold
 
 
 @dataclass
@@ -101,9 +108,9 @@ def assess_completion(
     }
     score = round(sum(WEIGHTS[k] * v for k, v in components.items()), 4)
 
-    if score >= FINISH_THRESHOLD:
+    if score >= _finish_threshold():
         decision = "finish"
-    elif score >= REVIEW_THRESHOLD:
+    elif score >= _review_threshold():
         decision = "review"
     else:
         decision = "continue"

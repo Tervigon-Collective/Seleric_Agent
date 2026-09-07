@@ -16,6 +16,7 @@ from seleric_swarm.agents.diagnostic.contracts import (
     HypothesisTest,
     TestResult,
 )
+from seleric_swarm.agents.diagnostic.ontology import treatment_events as _treatment_events_for
 
 
 async def run_tests(
@@ -203,16 +204,8 @@ _RUNNERS = {
 # --------------------------------------------------------------------------- #
 
 
-_TREATMENT_EVENTS: dict[str, tuple[str, ...]] = {
-    "metric.mobile_lcp_seconds": ("event.frontend_deployment",),
-    "metric.js_error_rate": ("event.frontend_deployment", "event.tag_change"),
-    "metric.avg_price": ("event.price_change",),
-    "metric.attributed_orders": ("event.attribution_change", "event.tag_change"),
-}
-
-
 def _events_for(treatment_metric: str) -> set[str]:
-    return set(_TREATMENT_EVENTS.get(treatment_metric, ()))
+    return set(_treatment_events_for(treatment_metric))
 
 
 def _treatment_change_times(ctx: DiagnosticContext, treatment_metric: str) -> list[datetime | None]:

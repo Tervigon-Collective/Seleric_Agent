@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from seleric_swarm.coordinator.artifacts.claims import ClaimManager
 from seleric_swarm.coordinator.governance.remediation import targeted_remediation_plan
+
+if TYPE_CHECKING:
+    from seleric_swarm.runtime import SwarmRuntime
 
 
 def followup_signature(followups: list[dict[str, Any]] | None) -> str:
@@ -26,7 +29,7 @@ def followup_signature(followups: list[dict[str, Any]] | None) -> str:
     return hashlib.sha1("|".join(keys).encode()).hexdigest()[:16]
 
 
-def apply_skeptic_gate(
+async def apply_skeptic_gate(
     *,
     claim_manager: ClaimManager,
     claim_id: str,
@@ -36,6 +39,7 @@ def apply_skeptic_gate(
     remediation_round: int,
     max_remediation_rounds: int = 3,
     prev_followup_signature: str | None = None,
+    runtime: SwarmRuntime | None = None,
 ) -> dict[str, Any]:
     claim = claim_manager.apply_skeptic_verdict(claim_id, verdict)
     buckets = claim_manager.buckets()
@@ -65,18 +69,20 @@ def apply_skeptic_gate(
             out["mission_status"] = "partial"
             out["status_reason"] = "remediation_stalled_no_new_information"
             return out
-        plan = targeted_remediation_plan(
+        plan = await targeted_remediation_plan(
             mission_id=mission_id,
             followups=list(followups or []),
+            runtime=runtime,
         )
         out["remediation"] = plan
         out["mission_status"] = "remediating"
         return out
     if verdict == "REJECT":
         out["event"] = "skeptic_reject"
-        plan = targeted_remediation_plan(
+        plan = await targeted_remediation_plan(
             mission_id=mission_id,
             followups=list(followups or []),
+            runtime=runtime,
         )
         out["remediation"] = plan
         out["mission_status"] = "remediating"

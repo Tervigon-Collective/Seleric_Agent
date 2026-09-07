@@ -72,6 +72,10 @@ class DiagnosticPolicies:
         }
         return {**default, **(self._get("hypotheses", "prior_weights", default={}) or {})}
 
+    def mechanism_specificity_scores(self) -> dict[str, float]:
+        default = {"base": 0.2, "detailed_mechanism": 0.7, "has_treatment_metric_bonus": 0.3}
+        return {**default, **(self._get("hypotheses", "mechanism_specificity_scores", default={}) or {})}
+
     # -- testing --------------------------------------------------
     def hard_gates(self) -> set[str]:
         return set(self._get("testing", "hard_gates", default=["temporal_precedence"]))

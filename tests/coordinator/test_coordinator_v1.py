@@ -250,10 +250,11 @@ def test_10_leadership_loop_detection():
 # --- 11–15. Skeptic PASS / REVISE / REJECT / causal graph -------------------
 
 
-def test_11_skeptic_pass_validates_claim():
+@pytest.mark.asyncio
+async def test_11_skeptic_pass_validates_claim():
     mgr = ClaimManager()
     c = mgr.propose(mission_id="M11", statement="X caused Y", claim_type="causal")
-    gate = apply_skeptic_gate(
+    gate = await apply_skeptic_gate(
         claim_manager=mgr,
         claim_id=c.claim_id,
         verdict="PASS",
@@ -265,10 +266,11 @@ def test_11_skeptic_pass_validates_claim():
     assert c.claim_id in gate["validated_claim_refs"]
 
 
-def test_12_skeptic_revise_challenges_and_forbids_validated_language():
+@pytest.mark.asyncio
+async def test_12_skeptic_revise_challenges_and_forbids_validated_language():
     mgr = ClaimManager()
     c = mgr.propose(mission_id="M12", statement="Frontend regression caused CVR drop", claim_type="causal")
-    gate = apply_skeptic_gate(
+    gate = await apply_skeptic_gate(
         claim_manager=mgr,
         claim_id=c.claim_id,
         verdict="REVISE",
@@ -298,7 +300,8 @@ def test_12_skeptic_revise_challenges_and_forbids_validated_language():
     assert "proven cause" not in lowered
 
 
-def test_13_missing_causal_graph_targeted_remediation():
+@pytest.mark.asyncio
+async def test_13_missing_causal_graph_targeted_remediation():
     followups = [
         {
             "task_id": "FUP-cg",
@@ -309,8 +312,8 @@ def test_13_missing_causal_graph_targeted_remediation():
             "priority": 9,
         }
     ]
-    assert classify_followup(followups[0]) == "missing_causal_graph"
-    plan = targeted_remediation_plan(mission_id="M13", followups=followups)
+    assert await classify_followup(followups[0]) == "missing_causal_graph"
+    plan = await targeted_remediation_plan(mission_id="M13", followups=followups)
     assert plan["avoid_full_diagnostic"] is True
     assert plan["requires_causal_validation_only"] is True
     caps = [t["requested_capabilities"][0] for t in plan["tasks"]]
@@ -338,10 +341,11 @@ def test_14_graph_resolved_invalidates_dependents_only():
     assert bb.get(eid) is not None
 
 
-def test_15_skeptic_reject_opens_next_hypothesis():
+@pytest.mark.asyncio
+async def test_15_skeptic_reject_opens_next_hypothesis():
     mgr = ClaimManager()
     c = mgr.propose(mission_id="M15", statement="bad hyp", claim_type="causal")
-    gate = apply_skeptic_gate(
+    gate = await apply_skeptic_gate(
         claim_manager=mgr,
         claim_id=c.claim_id,
         verdict="REJECT",
@@ -356,20 +360,22 @@ def test_15_skeptic_reject_opens_next_hypothesis():
 # --- 16–17. Prediction drift / strategy mismatch ----------------------------
 
 
-def test_16_prediction_drift_blocks_via_remediation_kind():
+@pytest.mark.asyncio
+async def test_16_prediction_drift_blocks_via_remediation_kind():
     f = {"question": "Model drift detected for forecast model", "requested_capability": "forecasting"}
-    assert classify_followup(f) == "model_drift"
-    plan = targeted_remediation_plan(mission_id="M16", followups=[f])
+    assert await classify_followup(f) == "model_drift"
+    plan = await targeted_remediation_plan(mission_id="M16", followups=[f])
     assert plan["requires_prediction_only"] is True
 
 
-def test_17_strategy_mismatch_classified_as_constraint():
+@pytest.mark.asyncio
+async def test_17_strategy_mismatch_classified_as_constraint():
     f = {
         "question": "Strategy reduce Meta budget does not match checkout regression diagnosis",
         "requested_capability": "intervention_design",
         "objective": "constraint mismatch inventory/budget",
     }
-    assert classify_followup(f) == "strategy_constraint"
+    assert await classify_followup(f) == "strategy_constraint"
 
 
 # --- 18. Synthetic propagation ----------------------------------------------
@@ -413,11 +419,12 @@ async def test_18b_synthetic_mission_status_prototype_completed(runtime):
 # --- 19. A2A / task idempotency ---------------------------------------------
 
 
-def test_19_remediation_task_idempotency():
+@pytest.mark.asyncio
+async def test_19_remediation_task_idempotency():
     followups = [
         {"task_id": "FUP-x", "question": "q", "requested_capability": "metric_observation", "priority": 5}
     ]
-    p1 = targeted_remediation_plan(mission_id="M19", followups=followups)
+    p1 = await targeted_remediation_plan(mission_id="M19", followups=followups)
     from seleric_swarm.coordinator.contracts import TaskSpec
     from seleric_swarm.coordinator.planning.mission_planner import append_remediation_tasks
 

@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     max_leadership_transfers: int = 6
     max_coordinator_iterations: int = 12
     completion_threshold: float = 0.90
+    completion_review_threshold: float = 0.70
 
     allow_write_actions: bool = False
     require_skeptic_for_causal: bool = True

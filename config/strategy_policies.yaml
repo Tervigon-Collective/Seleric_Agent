@@ -1,0 +1,14 @@
+# Strategy Agent policy + threshold configuration.
+# Loaded by seleric_swarm.agents.strategy.policies.StrategyPolicies.load().
+
+strategy:
+  budgets:
+    max_options: 5
+    max_llm_calls: 2
+    max_runtime_seconds: 45
+
+  generation:
+    # an option below this mechanism-fit tier still gets returned (so the
+    # Skeptic's mechanism-fit check can see and reject it) but is flagged as
+    # a limitation rather than a confident recommendation.
+    min_mechanism_fit_to_recommend: high

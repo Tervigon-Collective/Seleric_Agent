@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from seleric_swarm.agents.skeptic import Claim, SkepticDeps
 from seleric_swarm.agents.skeptic.a2a import SkepticA2AAdapter
 from seleric_swarm.agents.skeptic.agent import SkepticAgent
@@ -28,9 +30,10 @@ def test_parser_accepts_legacy_domain_claim():
     assert "CAUS-9" in claim.support_refs and "M-1" in claim.support_refs
 
 
-def test_classifier_flags_stronger_wording():
+@pytest.mark.asyncio
+async def test_classifier_flags_stronger_wording():
     c = _claim(claim_type="numeric", statement="the outage caused the revenue drop")
-    result = classify_claim(c)
+    result = await classify_claim(c)
     assert result.mismatch is True
     assert result.claim_type == "numeric"  # never silently upgraded
 

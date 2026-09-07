@@ -46,6 +46,26 @@ class SynthesisPolicy(BaseModel):
     )
 
 
+class RoutingPolicy(BaseModel):
+    weights: dict[str, float] = Field(
+        default_factory=lambda: {
+            "capability_match": 0.35,
+            "domain_match": 0.20,
+            "historical_accuracy": 0.15,
+            "data_access_match": 0.10,
+            "availability": 0.10,
+            "latency": 0.05,
+            "cost": 0.05,
+        }
+    )
+    latency_score: dict[str, float] = Field(
+        default_factory=lambda: {"low": 1.0, "medium": 0.6, "high": 0.3}
+    )
+    cost_score: dict[str, float] = Field(
+        default_factory=lambda: {"low": 1.0, "medium": 0.6, "high": 0.3}
+    )
+
+
 class CoordinatorPolicies(BaseModel):
     activation: dict[str, SpecialistActivation] = Field(default_factory=dict)
     domain_topology: dict[str, dict[str, list[str]]] = Field(default_factory=dict)
@@ -53,6 +73,7 @@ class CoordinatorPolicies(BaseModel):
     decomposition: DecompositionPolicy = Field(default_factory=DecompositionPolicy)
     budgets: MissionBudget = Field(default_factory=MissionBudget)
     synthesis: SynthesisPolicy = Field(default_factory=SynthesisPolicy)
+    routing: RoutingPolicy = Field(default_factory=RoutingPolicy)
     business_timezone: str = "Asia/Kolkata"
 
     def specialists_for(self, intent_band: str) -> SpecialistActivation:
@@ -115,5 +136,6 @@ def _load_coordinator_policies_cached(path: str | None = None) -> CoordinatorPol
         decomposition=DecompositionPolicy(**(raw.get("decomposition") or {})),
         budgets=MissionBudget(**(raw.get("budgets") or {})),
         synthesis=SynthesisPolicy(**(raw.get("synthesis") or {})),
+        routing=RoutingPolicy(**(raw.get("routing") or {})),
         business_timezone=str(raw.get("business_timezone") or "Asia/Kolkata"),
     )

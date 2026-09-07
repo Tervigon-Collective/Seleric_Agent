@@ -3,7 +3,7 @@
 Metric ownership and handoff peers are discovered — not coded:
 - owned / probe / frontier ← ``config/metric_registry.yaml``
 - handoff targets ← every other domain agent in this wiring
-- seleric_module ← ``config/agent_registry.yaml`` when present
+- seleric_module / ontology ← ``config/agent_registry.yaml`` when present
 
 Cross-domain RCA uses evidence + registry ownership at runtime
 (``DomainAgent.evaluate_handoff``), not a static neighbor list.
@@ -123,6 +123,9 @@ def build_domain_configs(
         module = reg.get("seleric_module")
         if module is None:
             module = wire.seleric_module
+        ontology = reg.get("ontology")
+        if ontology is None:
+            ontology = list(wire.ontology)
         out[wire.agent_id] = DomainConfig(
             agent_id=wire.agent_id,
             domain=wire.domain,
@@ -131,7 +134,7 @@ def build_domain_configs(
             probe_metrics=probe or list(owned),
             probe_dimensions=[dict(d) for d in wire.probe_dimensions],
             handoff_targets=[p for p in peer_ids if p != wire.agent_id],
-            ontology=list(wire.ontology),
+            ontology=list(ontology),
             seleric_module=module,
             terminal=wire.terminal,
         )
