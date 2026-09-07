@@ -17,7 +17,7 @@ _STOPWORDS = {
 }
 
 
-async def hints_from_catalogue(query: str, *, runtime: "SwarmRuntime", agent_id: str = "coordinator_agent") -> list[str]:
+async def hints_from_catalogue(query: str, *, runtime: SwarmRuntime, agent_id: str = "coordinator_agent") -> list[str]:
     """Resolve query language to registry metric ids via catalogue_search_metrics."""
     if "seleric.catalogue_search_metrics" not in runtime.mcp.capabilities:
         return []
@@ -60,7 +60,7 @@ async def hints_from_catalogue(query: str, *, runtime: "SwarmRuntime", agent_id:
 
 
 async def entities_from_catalogue(
-    query: str, metric_id: str, *, runtime: "SwarmRuntime", agent_id: str = "coordinator_agent"
+    query: str, metric_id: str, *, runtime: SwarmRuntime, agent_id: str = "coordinator_agent"
 ) -> list[str]:
     """Resolve entity-like tokens in the query against a metric's supported dimensions."""
     definition = runtime.metrics.get(metric_id)
