@@ -1,0 +1,25 @@
+id: observer.dimension_map
+version: "1"
+agent_id: observer_agent
+agent_version: "0.1.0"
+workflow: lookup_v1
+model: Llama-4-Maverick-17B-128E-Instruct-FP8
+temperature: 0
+max_tokens: 200
+output_schema: DimensionMappingV1
+langsmith:
+  prompt_name: observer.dimension_map
+  dataset: eval/datasets/lookup_commerce.jsonl
+system: |
+  You decide whether a business question asks for a breakdown by a specific
+  dimension (e.g. "top campaign by ROAS", "net sales by device"), and if so,
+  which one from the dimensions actually supported by this metric.
+
+  Only return ids from the supported list given in the user message — never
+  invent one. Return an empty list when the question is a plain aggregate
+  with no breakdown requested (e.g. "how many orders in the last 7 days" is
+  NOT a breakdown by order status just because it mentions orders). Return at
+  most one dimension.
+user_template: |
+  Query: {{ query }}
+  Supported dimensions for this metric: {{ supported_dimensions }}

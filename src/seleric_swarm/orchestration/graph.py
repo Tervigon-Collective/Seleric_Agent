@@ -695,8 +695,11 @@ def build_graph(runtime: SwarmRuntime):
             tracing,
         ) as span:
             status = state.get("status") or "completed"
-            if state.get("error_code") == "INSUFFICIENT_EVIDENCE" and not state.get("claims"):
-                status = "failed"
+            # Never let an internal error_code ride along into a "completed"
+            # result — any error condition downgrades status: to "failed" when
+            # there's nothing usable to show, "partial" when some claims exist.
+            if state.get("error_code") and status == "completed":
+                status = "failed" if not state.get("claims") else "partial"
             patch: dict[str, Any] = {"status": status}
             completion = plane.completion(dict(state))
             patch.update(completion)

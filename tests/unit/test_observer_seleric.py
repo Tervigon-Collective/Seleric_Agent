@@ -4,6 +4,31 @@ import pytest
 
 from seleric_swarm.agents.base import AgentContext
 from seleric_swarm.agents.intelligence.observer import Agent as ObserverAgent
+from seleric_swarm.prompts.registry import PromptRegistry
+
+
+class _FakeLLM:
+    """Stands in for the dimension_map LLM call — returns the dimension(s)
+    it was constructed with, grounded exactly like the real prompt (the test
+    supplies what a real model would answer given the real supported_dimensions)."""
+
+    def __init__(self, dimensions: list[str]):
+        self._dimensions = dimensions
+
+    async def complete_structured(self, request, schema):
+        return SimpleNamespace(value=schema(dimensions=self._dimensions))
+
+
+def _runtime_with_llm(*, metrics, mcp, dimensions: list[str]) -> SimpleNamespace:
+    return SimpleNamespace(
+        metrics=metrics,
+        mcp=mcp,
+        ontology=None,
+        llm=_FakeLLM(dimensions),
+        prompts=PromptRegistry("prompts", "config/prompt_versions.yaml"),
+        settings=SimpleNamespace(llm_timeout_s=5.0, workflow_name="lookup_v1", workflow_version="1.0.0"),
+        agents=SimpleNamespace(version=lambda agent_id, default: default),
+    )
 
 
 class _FakeMetrics:
@@ -197,6 +222,7 @@ async def test_observer_ranks_top_products_by_title_not_period_total():
     gateway = _FakeGateway(
         {
             "seleric.catalogue_search_metrics": [{"matches": [{"id": "units_sold"}]}],
+            "seleric.catalogue_get_metric": [{"supported_dimensions": ["product_title"]}],
             "seleric.metrics_query": [
                 {
                     "rows": [
@@ -208,7 +234,7 @@ async def test_observer_ranks_top_products_by_title_not_period_total():
             ],
         }
     )
-    runtime = SimpleNamespace(metrics=_MapMetrics([units]), mcp=gateway, ontology=None)
+    runtime = _runtime_with_llm(metrics=_MapMetrics([units]), mcp=gateway, dimensions=["product_title"])
     observer = ObserverAgent(runtime)
     result = await observer.observe(
         AgentContext(
@@ -219,12 +245,11 @@ async def test_observer_ranks_top_products_by_title_not_period_total():
             payload={
                 "metric_id": "metric.units_sold",
                 "allowed_metrics": ["metric.units_sold"],
-                "entities": ["product_title"],
                 "time_range": {"kind": "point", "start": "2026-09-04"},
             },
         )
     )
-    query = gateway.calls[1]["arguments"]
+    query = gateway.calls[-1]["arguments"]
     assert query["dimensions"] == ["product_title"]
     assert query["sort"] == [{"field": "units_sold", "direction": "desc"}]
     assert query["limit"] == 10
@@ -240,6 +265,7 @@ async def test_observer_ranks_best_channel_over_last_n_days_window():
     gateway = _FakeGateway(
         {
             "seleric.catalogue_search_metrics": [{"matches": [{"id": "attributed_net_revenue"}]}],
+            "seleric.catalogue_get_metric": [{"supported_dimensions": ["lt_channel"]}],
             "seleric.metrics_query": [
                 {
                     "rows": [
@@ -251,7 +277,7 @@ async def test_observer_ranks_best_channel_over_last_n_days_window():
             ],
         }
     )
-    runtime = SimpleNamespace(metrics=_MapMetrics([attr]), mcp=gateway, ontology=None)
+    runtime = _runtime_with_llm(metrics=_MapMetrics([attr]), mcp=gateway, dimensions=["lt_channel"])
     result = await ObserverAgent(runtime).observe(
         AgentContext(
             mission_id="M-test",
@@ -261,12 +287,11 @@ async def test_observer_ranks_best_channel_over_last_n_days_window():
             payload={
                 "metric_id": "metric.attributed_net_revenue",
                 "allowed_metrics": ["metric.attributed_net_revenue"],
-                "entities": ["lt_channel"],
                 "time_range": {"kind": "absolute", "start": "2026-09-02", "end": "2026-09-04"},
             },
         )
     )
-    query = gateway.calls[1]["arguments"]
+    query = gateway.calls[-1]["arguments"]
     assert query["time_range"] == {"start": "2026-09-02", "end": "2026-09-04"}
     assert query["dimensions"] == ["lt_channel"]
     assert query["sort"] == [{"field": "attributed_net_revenue", "direction": "desc"}]

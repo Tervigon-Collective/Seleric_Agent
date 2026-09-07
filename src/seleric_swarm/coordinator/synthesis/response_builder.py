@@ -80,7 +80,9 @@ def build_claim_aware_response(
     retained = [h for h in blackboard.by_type("hypothesis") if h.get("status") == "retained"]
     if validated:
         c = validated[0]
-        strength = c.get("causal_strength") or "STRONGLY_SUPPORTED"
+        # Unset means the confidence tier genuinely wasn't computed — the safe
+        # ceiling is the weakest tier, never the strongest (see swarm/artifacts.py Causal.confidence).
+        strength = c.get("causal_strength") or "ASSOCIATION_ONLY"
         verb = _CAUSAL_LANGUAGE.get(strength, "evidence supports")
         lines.append("Primary finding:")
         lines.append(f"  {verb}: {c.get('statement')}")

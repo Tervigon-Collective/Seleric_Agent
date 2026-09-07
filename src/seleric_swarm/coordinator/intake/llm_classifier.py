@@ -13,10 +13,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
-from seleric_swarm.coordinator.catalogue_grounding import (
-    entities_from_catalogue,
-    hints_from_catalogue,
-)
+from seleric_swarm.coordinator.catalogue_grounding import hints_from_catalogue
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.services.time_range import resolve_time_range, window_from_query
@@ -126,9 +123,12 @@ async def classify_query_via_llm(
     merged_hints = list(dict.fromkeys([*classification.metric_hints, *catalogue_hints]))
     canonical = [m for m in merged_hints if runtime.metrics.get(m) is not None]
 
+    # Dimension/breakdown resolution now happens at observer execution time
+    # (agents/intelligence/observer.py::_resolve_breakdown_dimensions), where
+    # the metric's real supported_dimensions are available to ground the LLM's
+    # choice — this classify-time field is descriptive context only (e.g. for
+    # the mission decomposer), not authoritative for breakdown queries.
     entities = list(classification.entities or [])
-    if not entities and canonical:
-        entities = await entities_from_catalogue(query, canonical[0], runtime=runtime, agent_id=agent_id)
 
     # "coordinator_agent" is the orchestrating role, never a domain lead —
     # treat it the same as "no lead determined" so callers fall back safely.

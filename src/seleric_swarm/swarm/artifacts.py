@@ -118,6 +118,11 @@ class Causal(SwarmArtifact):
     effect_ci: list[float] = Field(default_factory=list)
     refutations: list[dict[str, Any]] = Field(default_factory=list)
     passed: bool = False
+    # confidence tier from the causal engine (REJECTED / ASSOCIATION_ONLY /
+    # PLAUSIBLE_CAUSAL / CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS / STRONGLY_SUPPORTED).
+    # Empty means the confidence tier genuinely wasn't computed — callers must
+    # not upgrade that to a confident claim, only the lowest tier is safe.
+    confidence: str = ""
 
     @classmethod
     def new(cls, *, mission_id: str, created_by: str, **kw: Any) -> Causal:

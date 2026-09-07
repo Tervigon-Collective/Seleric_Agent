@@ -135,6 +135,7 @@ def _write_artifacts(blackboard: Blackboard, result: DiagnosticResult) -> tuple[
             effect_ci=ca.confidence_interval,
             refutations=ca.refutation_results,
             passed=ca.passed and (result.finding.causal_confidence != "REJECTED" if result.finding else ca.passed),
+            confidence=result.finding.causal_confidence if result.finding else "",
             evidence_refs=[id_map[h.hypothesis_id] for h in result.retained() if h.hypothesis_id in id_map],
         )
         if ca.synthetic or result.synthetic:

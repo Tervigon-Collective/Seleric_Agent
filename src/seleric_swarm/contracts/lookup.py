@@ -48,6 +48,10 @@ class MetricMappingV1(BaseModel):
     reason: str | None = None
 
 
+class DimensionMappingV1(BaseModel):
+    dimensions: list[str] = Field(default_factory=list)
+
+
 class TraceInfo(BaseModel):
     request_id: str
     session_id: str

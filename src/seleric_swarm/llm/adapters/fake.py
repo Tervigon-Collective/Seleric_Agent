@@ -362,6 +362,19 @@ def map_metric(
     }
 
 
+def map_dimension(query: str, supported: list[str]) -> dict[str, Any]:
+    """Stand-in for observer.dimension_map: pick the supported dimension whose
+    name is actually mentioned in the query, so tests exercise the same
+    grounded-in-real-data contract the real LLM prompt does."""
+    lower = query.lower()
+    hits: list[str] = []
+    for dim in supported:
+        words = [w for w in dim.removeprefix("lt_").split("_") if len(w) >= 4]
+        if any(re.search(rf"\b{re.escape(w)}s?\b", lower) for w in words):
+            hits.append(dim)
+    return {"dimensions": hits[:1]}
+
+
 def _claims_from_user(text: str) -> list[dict[str, Any]]:
     marker = "GATED_CLAIMS_JSON:"
     # The template renders this on its own line, followed by EVIDENCE_JSON on
@@ -453,6 +466,10 @@ class FakeLLMAdapter:
             allowed_field = _extract_field(user, "Allowed metric ids") or ""
             allowed = [item.strip() for item in allowed_field.split(",") if item.strip()]
             return json.dumps(map_metric(query, hints, allowed or None))
+        if prompt_id.endswith("dimension_map") or "observer.dimension_map" in prompt_id:
+            supported_field = _extract_field(user, "Supported dimensions for this metric") or ""
+            supported = [item.strip() for item in supported_field.split(",") if item.strip()]
+            return json.dumps(map_dimension(query, supported))
         if prompt_id.endswith("response") or "synthesizer" in prompt_id:
             return synthesize_response(user)
         if "json schema" in joined or request.response_format == "json_schema":

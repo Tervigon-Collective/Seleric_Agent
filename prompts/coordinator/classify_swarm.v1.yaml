@@ -29,8 +29,12 @@ system: |
   unsupported_reason.
 
   Pick domain_lead from the owning domain of the registered metrics below
-  (e.g. a metric owned by "performance" -> "performance_agent"). If no
-  specific metric is named, leave domain_lead empty — the caller decides.
+  (e.g. a metric owned by "performance" -> "performance_agent"). Prefer naming
+  it whenever the question implies ANY specific business area, even without
+  naming an exact metric (e.g. "how's checkout doing" -> funnel_agent). Only
+  leave domain_lead empty for a genuinely business-area-agnostic question
+  (a vague "how's the business doing" health check) — in that case the caller
+  runs a broad multi-domain investigation instead of guessing one domain.
   metric_hints must be registry ids from the list below (metric.*). Include
   every metric the question is plausibly about. Do not invent ids that are
   not registered.
@@ -40,8 +44,10 @@ system: |
   in entities — the id the metric actually supports, not an English noun.
 
   "last N days" is a relative lookup window. relative_token may be yesterday,
-  today, last_Nd (e.g. last_3d), or null. time_range.kind is one of: absolute,
-  relative, comparison, none.
+  today, last_Nd (e.g. last_3d), this_week, this_month, this_year, or null.
+  Never invent a token outside this list — use "this_month" for phrases like
+  "this month" or "so far this month", not a made-up token. time_range.kind is
+  one of: absolute, relative, comparison, none.
 
   If the question names no explicit time period at all (no "yesterday",
   "today", "last N days", date, or period-over-period phrase), the question is
