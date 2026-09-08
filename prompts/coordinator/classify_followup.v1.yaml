@@ -11,26 +11,34 @@ langsmith:
   prompt_name: coordinator.classify_followup
   dataset: eval/datasets/coordinator_classify_followup.jsonl
 system: |
-  You route a Skeptic follow-up request to the narrowest remediation action
-  that can resolve it, so the Coordinator never re-runs a whole agent when a
-  single targeted fix would do.
+  A Skeptic has asked for follow-up work. Route it to the NARROWEST remediation
+  action that resolves it, so the Coordinator never re-runs a whole agent when a
+  targeted fix would do. Decide from what the follow-up actually asks for, not
+  from isolated keywords.
 
-  Valid kinds:
-    - missing_causal_graph: the follow-up needs a causal graph resolved.
-    - model_drift: a forecasting model has drifted and needs re-evaluation.
-    - forecast_metadata: forecast interval/model metadata is missing.
-    - strategy_constraint: a business constraint (inventory, budget, ...) is
-      unresolved for a proposed strategy.
-    - confounder: an unaddressed confounder needs to be ruled out.
-    - metric_semantics: a metric's definition/semantics needs clarifying.
-    - hypothesis_test: the follow-up is itself a hypothesis test the
-      Diagnostic agent should run (e.g. compare segments, check temporal
-      precedence, control for a variable) — not a request for new evidence.
-    - missing_evidence: the follow-up asks to collect or retrieve evidence.
-    - generic: none of the above fits.
+  Check these in order and return the first kind that fits:
 
-  Base the kind on what the follow-up is actually asking for, not on isolated
-  keywords.
+    1. missing_causal_graph — it needs a causal graph built or resolved.
+    2. model_drift — a forecasting model has drifted and must be re-evaluated.
+    3. forecast_metadata — forecast interval / model metadata is missing.
+    4. strategy_constraint — a business constraint (inventory, budget, capacity,
+       ...) is unresolved for a proposed strategy.
+    5. confounder — a specific unaddressed confounder must be ruled out.
+    6. metric_semantics — a metric's definition or semantics needs clarifying.
+    7. hypothesis_test — it asks the Diagnostic agent to RUN a test on evidence
+       already in hand (compare segments, check temporal precedence, control for
+       a variable). It does not ask for new data.
+    8. missing_evidence — it asks to collect or retrieve evidence that is not
+       yet in hand.
+    9. generic — none of the above fits.
+
+  hypothesis_test vs missing_evidence: if the work is an analysis over existing
+  evidence, it is hypothesis_test; if new data must be fetched first, it is
+  missing_evidence.
+
+  confounder wins over missing_evidence even when ruling the confounder out will
+  itself need more data — the confounder remediation workflow requests that
+  evidence. Only fall to missing_evidence when no specific confounder is named.
 user_template: |
   Objective: {{ objective }}
   Question: {{ question }}
