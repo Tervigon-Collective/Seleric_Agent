@@ -41,6 +41,8 @@ from seleric_swarm.coordinator.governance.remediation import (
 from seleric_swarm.coordinator.governance.skeptic_gate import apply_skeptic_gate
 from seleric_swarm.coordinator.governance.synthetic_guard import mission_synthetic_status
 from seleric_swarm.coordinator.intake import (
+    UNRESOLVED_NO_LLM,
+    UNRESOLVED_PRIMARY_METRIC,
     apply_full_flags,
     normalize_query,
     resolve_mission_time_range,
@@ -65,6 +67,7 @@ from seleric_swarm.coordinator.observability.events import (
     REMEDIATION_ROUND_DONE,
     SKEPTIC_GATE,
     SKEPTIC_PASS,
+    SPECIALIST_ERROR,
     SKEPTIC_REJECT,
     SKEPTIC_REVISE,
     TASK_PLAN_CREATED,
@@ -94,8 +97,8 @@ from seleric_swarm.swarm.envelope import Intent, SwarmMessage
 from seleric_swarm.swarm.mission import SwarmMission, SwarmMissionResult, TeamMember
 from seleric_swarm.swarm.providers.base import ProviderBundle
 from seleric_swarm.swarm.providers.mcp_data import McpFetchStats, build_hybrid_bundle
+from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
 from seleric_swarm.swarm.specialists.anomaly import AnomalyAgent
-from seleric_swarm.swarm.specialists.diagnostic import DiagnosticAgent
 from seleric_swarm.swarm.specialists.observer import ObserverAgent
 from seleric_swarm.swarm.specialists.prediction import PredictionAgent
 from seleric_swarm.swarm.specialists.skeptic import SkepticAgent
@@ -984,7 +987,6 @@ async def run_swarm_v2_mission(
         timezone=timezone,
         as_of=as_of,
         metrics=runtime.metrics,
-        mcp=runtime.mcp,
         agent_id="coordinator_agent",
         runtime=runtime,
         mission_id=mid,
@@ -1000,12 +1002,11 @@ async def run_swarm_v2_mission(
             runtime=runtime,
             reason=normalized.unsupported_reason,
         )
-    # normalized.candidate_domains is already LLM+catalogue grounded when a
-    # live runtime was given (falls back to the regex domain guesser inside
-    # normalize_query itself when not). A mission requires some initial lead
-    # to route to; "commerce" is the one terminal default for the rare case
-    # nothing at all resolved (no domain_lead, no metric ownership, no keyword
-    # signal) — a single documented last resort, not a second keyword table.
+    # normalized.candidate_domains is LLM+catalogue grounded (or empty when
+    # the classifier could not pin a domain). A mission requires some initial
+    # lead to route to; ``commerce_agent`` is the one terminal default for
+    # the rare case nothing at all resolved (no domain_lead, no registered
+    # metric ownership) — a single documented last resort, not a second table.
     initial_lead = f"{normalized.candidate_domains[0]}_agent" if normalized.candidate_domains else "commerce_agent"
     # Single source of truth: intake intents (LLM+catalogue classified, includes
     # executive_health → diagnostic), plus full_* flags that force specialist
@@ -1072,12 +1073,20 @@ async def run_swarm_v2_mission(
     }
     observer = ObserverAgent(providers, domains)
     anomaly = AnomalyAgent(providers)
-    if full_diagnostic:
-        from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
-
-        diagnostic: Any = SwarmDiagnosticSpecialist(providers, scenario=scenario)
-    else:
-        diagnostic = DiagnosticAgent(providers)
+    # Diagnostic is always the full subsystem (hypothesis generator + DoWhy /
+    # registered causal graphs). The ``full_diagnostic`` request flag now only
+    # controls whether the diagnostic intent is force-added (see apply_full_flags);
+    # the implementation is unconditional so no mission ever gets the old
+    # scenario-hardcoded template diagnoser.
+    trace_base = {
+        "request_id": rid,
+        "session_id": sid,
+        "workflow_name": "swarm_v2",
+        "workflow_version": "1.4.0",
+    }
+    diagnostic: Any = SwarmDiagnosticSpecialist(
+        providers, scenario=scenario, trace_base=trace_base
+    )
     if full_prediction:
         from seleric_swarm.agents.prediction.swarm_bridge import SwarmPredictionSpecialist
 
@@ -1100,8 +1109,29 @@ async def run_swarm_v2_mission(
     for spec in (observer, anomaly, diagnostic, prediction, strategy, skeptic):
 
         async def _handler(msg: SwarmMessage, _spec=spec) -> dict[str, Any]:
-            ids = await _spec.run(blackboard, mission)
-            return {"ok": True, "artifact_refs": ids, "produced": _spec.produces}
+            """Execute a specialist, isolating failures from the mission pipeline.
+
+            When a specialist raises, the mission continues with other specialists
+            rather than aborting the entire LangGraph node. The error is logged
+            via SPECIALIST_ERROR event and the handler returns ok=False so callers
+            know the activation didn't produce artifacts.
+            """
+            try:
+                ids = await _spec.run(blackboard, mission)
+                return {"ok": True, "artifact_refs": ids, "produced": _spec.produces}
+            except Exception as exc:  # noqa: BLE001 — we log and continue
+                blackboard.record_event(
+                    SPECIALIST_ERROR,
+                    agent_id=_spec.agent_id,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc)[:500],
+                )
+                return {
+                    "ok": False,
+                    "artifact_refs": [],
+                    "produced": _spec.produces,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
 
         transport.register(spec.agent_id, _handler)
 
@@ -1153,6 +1183,10 @@ async def run_swarm_v2_mission(
                 "task_id": task_id,
                 "subquestion_id": subquestion_id,
                 "remediation_round": rem_round,
+                # Trace base for LangSmith / observability — specialists can
+                # propagate these into their own LLM calls as metadata.
+                "request_id": rid,
+                "session_id": sid,
             },
         )
         with traced_span(
@@ -1218,13 +1252,17 @@ async def run_swarm_v2_mission(
         )
         if line not in ctx.limitations:
             ctx.limitations.append(line)
+    # `unresolved_semantics` tokens are lowercase machine-readable reasons owned
+    # by `coordinator.intake`. Map each to an operator-readable limitation using
+    # the *same* constants both sides use — no literal string coupling here.
+    _UNRESOLVED_TO_LIMITATION = {
+        UNRESOLVED_PRIMARY_METRIC: "Primary metric could not be resolved from the query.",
+        UNRESOLVED_NO_LLM: (
+            "LLM classification was unavailable; mission proceeds without normalized intents."
+        ),
+    }
     for reason in normalized.unresolved_semantics:
-        if reason == "primary_metric_unresolved":
-            line = "Primary metric could not be resolved from the query."
-        elif reason == "llm_classification_unavailable":
-            line = "LLM classification was unavailable; this query was classified with the offline fallback."
-        else:
-            line = reason
+        line = _UNRESOLVED_TO_LIMITATION.get(reason, reason)
         if line not in ctx.limitations:
             ctx.limitations.append(line)
 
@@ -1302,7 +1340,7 @@ async def run_swarm_v2_mission(
         # A health check legitimately has no single primary metric — it scans every
         # domain — so an unresolved metric only downgrades targeted investigations.
         metric_unresolved = (
-            "primary_metric_unresolved" in normalized.unresolved_semantics
+            UNRESOLVED_PRIMARY_METRIC in normalized.unresolved_semantics
             and "executive_health" not in intents
         )
         if ctx.budget_exhausted or final_state.get("budget_exhausted"):

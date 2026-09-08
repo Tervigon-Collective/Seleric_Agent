@@ -44,7 +44,9 @@ from seleric_swarm.swarm.mission import SwarmMission
 async def test_01_simple_lookup_minimal_swarm(runtime):
     route = await route_for(runtime, query="What were Shopify sales yesterday?")
     assert route == "lookup"
-    nq = await normalize_query("What were Shopify sales yesterday?")
+    nq = await normalize_query(
+        "What were Shopify sales yesterday?", runtime=runtime, metrics=runtime.metrics
+    )
     assert "lookup" in nq.intents or complexity_band(nq) in {"L0", "L1"}
     assert intent_band_for_activation(nq) == "LOOKUP"
     dec = await initial_decomposition(mission_id="M1", normalized=nq)
@@ -61,8 +63,10 @@ async def test_01_simple_lookup_minimal_swarm(runtime):
 
 
 @pytest.mark.asyncio
-async def test_02_executive_health_decomposition():
-    nq = await normalize_query("How are we doing today?")
+async def test_02_executive_health_decomposition(runtime):
+    nq = await normalize_query(
+        "How are we doing today?", runtime=runtime, metrics=runtime.metrics
+    )
     assert "executive_health" in nq.intents
     dec = await initial_decomposition(mission_id="M2", normalized=nq)
     assert dec.template == "executive_health"
@@ -78,8 +82,12 @@ async def test_02_executive_health_decomposition():
 
 
 @pytest.mark.asyncio
-async def test_03_04_05_cac_recursive_decomposition_and_frontier():
-    nq = await normalize_query("Why has CAC increased over the last three days?")
+async def test_03_04_05_cac_recursive_decomposition_and_frontier(runtime):
+    nq = await normalize_query(
+        "Why has CAC increased over the last three days?",
+        runtime=runtime,
+        metrics=runtime.metrics,
+    )
     dec = await initial_decomposition(mission_id="M3", normalized=nq)
     assert dec.template == "cac_diagnostic"
     assert any(sq.branch == "media" for sq in dec.subquestions)
@@ -119,8 +127,10 @@ async def test_03_04_05_cac_recursive_decomposition_and_frontier():
 
 
 @pytest.mark.asyncio
-async def test_06_skeptic_adds_traffic_mix_subquestion():
-    nq = await normalize_query("Why has CAC increased?")
+async def test_06_skeptic_adds_traffic_mix_subquestion(runtime):
+    nq = await normalize_query(
+        "Why has CAC increased?", runtime=runtime, metrics=runtime.metrics
+    )
     dec = await initial_decomposition(mission_id="M6", normalized=nq)
     followups = [
         {
@@ -141,8 +151,10 @@ async def test_06_skeptic_adds_traffic_mix_subquestion():
 
 
 @pytest.mark.asyncio
-async def test_07_duplicate_subquestion_prevention():
-    nq = await normalize_query("Why has CAC increased?")
+async def test_07_duplicate_subquestion_prevention(runtime):
+    nq = await normalize_query(
+        "Why has CAC increased?", runtime=runtime, metrics=runtime.metrics
+    )
     dec = await initial_decomposition(mission_id="M7", normalized=nq)
     q = dec.subquestions[0].question
     assert is_duplicate_subquestion(dec.subquestions, q)
@@ -466,8 +478,10 @@ def test_20_budget_exhaustion_partial():
 
 
 @pytest.mark.asyncio
-async def test_21_decomposition_audit_trail():
-    nq = await normalize_query("Why has CAC increased?")
+async def test_21_decomposition_audit_trail(runtime):
+    nq = await normalize_query(
+        "Why has CAC increased?", runtime=runtime, metrics=runtime.metrics
+    )
     d1 = await initial_decomposition(mission_id="M21", normalized=nq)
     d2 = refine_from_evidence(
         d1,
@@ -546,8 +560,10 @@ async def test_hypothesis_dedup_same_statement():
 
 
 @pytest.mark.asyncio
-async def test_select_next_subquestions_respects_eig():
-    nq = await normalize_query("How are we doing today?")
+async def test_select_next_subquestions_respects_eig(runtime):
+    nq = await normalize_query(
+        "How are we doing today?", runtime=runtime, metrics=runtime.metrics
+    )
     dec = await initial_decomposition(mission_id="Meig", normalized=nq)
     selected = select_next_subquestions(dec, limit=2, eig_threshold=0.01)
     assert len(selected) <= 2

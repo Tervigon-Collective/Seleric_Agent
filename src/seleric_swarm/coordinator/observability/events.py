@@ -23,6 +23,7 @@ EVENT_FAMILIES = (
     "claim_",
     "skeptic_",
     "remediation_",
+    "specialist_",
 )
 
 # Well-known kinds emitted by the control plane.
@@ -55,6 +56,8 @@ SKEPTIC_REJECT = "skeptic_reject"
 REMEDIATION_PLANNED = "remediation_planned"
 REMEDIATION_ACTIVATED = "remediation_activated"
 REMEDIATION_ROUND_DONE = "remediation_round_done"
+
+SPECIALIST_ERROR = "specialist_error"
 
 # Backward-compatible aliases → canonical kind
 _ALIASES: dict[str, str] = {

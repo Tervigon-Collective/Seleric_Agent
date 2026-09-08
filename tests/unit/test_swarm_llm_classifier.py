@@ -1,10 +1,9 @@
 """LLM+catalogue classifier for swarm_v2 (coordinator.intake.llm_classifier).
 
-Zero coverage existed for this module before these tests — it's the "rewire
-the LLM classifier into swarm_v2" work: replaces regex-only intent/metric
-matching with the LLM + live catalogue classifier already used by lookup_v1,
-falling back to the offline regex path on any LLM failure (spec: LLM failure
-must degrade gracefully, never crash the mission).
+The classifier grounds intent/metric/entity/domain against the live metric
+registry + Seleric catalogue via the LLM. There is no keyword fallback: an
+LLM failure surfaces as ``LLM_CLASSIFICATION_UNAVAILABLE`` in the caller's
+``NormalizedQuery`` and is treated as an unsupported mission.
 """
 
 from __future__ import annotations
@@ -58,8 +57,8 @@ async def test_classify_query_via_llm_maps_coordinator_agent_lead_to_empty(runti
 
 @pytest.mark.asyncio
 async def test_classify_query_via_llm_returns_none_when_prompt_missing(runtime, monkeypatch):
-    """Missing/broken prompt spec must degrade to None (caller falls back to
-    the offline regex classifier), never raise and crash the mission."""
+    """Missing/broken prompt spec must degrade to ``None`` (caller surfaces
+    ``LLM_CLASSIFICATION_UNAVAILABLE``), never raise and crash the mission."""
 
     def _boom(_name: str):
         raise FileNotFoundError("no such prompt")
@@ -81,7 +80,6 @@ async def test_normalize_query_uses_llm_path_when_runtime_given(runtime):
         timezone="Asia/Kolkata",
         as_of="2026-09-03",
         metrics=runtime.metrics,
-        mcp=runtime.mcp,
         runtime=runtime,
     )
     assert "diagnostic" in nq.intents
@@ -89,14 +87,20 @@ async def test_normalize_query_uses_llm_path_when_runtime_given(runtime):
 
 
 @pytest.mark.asyncio
-async def test_normalize_query_falls_back_to_regex_without_runtime(runtime):
-    """No runtime given (fixture-mode missions) -> deterministic offline path,
-    same intents the regex classifier has always produced."""
+async def test_normalize_query_without_runtime_fails_closed(runtime):
+    """No runtime given → LLM_CLASSIFICATION_UNAVAILABLE, empty intents.
+
+    The intake no longer has a regex fallback; a missing LLM path means the
+    mission is unsupported, not silently reclassified from keywords.
+    """
+    from seleric_swarm.coordinator.intake import UNSUPPORTED_NO_LLM
+
     nq = await normalize_query(
         "Why has CAC increased over the last three days?",
         timezone="Asia/Kolkata",
         as_of="2026-09-03",
         metrics=runtime.metrics,
     )
-    assert "diagnostic" in nq.intents
-    assert nq.primary_metric == "metric.cac"
+    assert nq.intents == []
+    assert nq.primary_metric is None
+    assert nq.unsupported_reason == UNSUPPORTED_NO_LLM

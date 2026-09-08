@@ -28,6 +28,9 @@ class PredictionAgent(SpecialistAgent):
                 h["artifact_id"] for h in blackboard.by_type("hypothesis") if h.get("status") == "retained"
             ],
         }
+        if self.providers.forecaster is None:
+            blackboard.record_event("prediction_provider_unavailable", target=target)
+            return []
         result = await self.providers.forecaster.forecast(target=target, horizon="7d", features=features)
         if result is None:
             blackboard.record_event("prediction_insufficient", target=target)

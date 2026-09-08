@@ -32,20 +32,19 @@ async def route_for(
     """Return "lookup" or "swarm", based on the LLM's classified intent.
 
     Diagnostic / predictive / prescriptive / health → swarm.
-    Plain retrieval / comparison → the lookup fast path. Falls back to the
-    offline regex classifier only when the LLM classification path itself
-    isn't usable (no prompt/LLM configured) — same fallback rule
-    coordinator.intake.normalize_query uses.
+    Plain retrieval / comparison → the lookup fast path.
+
+    If the LLM classifier itself is unavailable we route to lookup: the lookup
+    entrypoint will then surface the same ``LLM_CLASSIFICATION_UNAVAILABLE``
+    reason its own coordinator returns. Nothing here guesses intent from
+    keywords.
     """
     from seleric_swarm.coordinator.intake.llm_classifier import classify_query_via_llm
 
     classification = await classify_query_via_llm(query, runtime=runtime, timezone=timezone, as_of=as_of)
-    if classification is not None:
-        intents = set(classification.intents)
-    else:
-        from seleric_swarm.coordinator.intake import classify_intents as intake_classify_intents
-
-        intents = set(intake_classify_intents(query))
+    if classification is None:
+        return "lookup"
+    intents = set(classification.intents)
     return "swarm" if intents & _SWARM_INTENTS else "lookup"
 
 

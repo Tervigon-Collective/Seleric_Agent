@@ -65,12 +65,25 @@ class DataResult:
 
 @dataclass
 class AnomalyFinding:
+    """Single-metric anomaly result the detector emits.
+
+    ``score`` is the *magnitude* of the relative change (direction-agnostic) —
+    kept for backward-compat with callers that rank by absolute effect size.
+    New consumers (leadership frontier, Skeptic) should key off
+    ``adversity_score`` instead: it is zero when the move is favorable
+    (e.g. CAC dropping) and equal to the magnitude when it is adverse.
+    """
+
     metric_id: str
     observed: float | None
     expected_range: list[float]
     deviation_pct: float | None
     score: float
     direction: str
+    magnitude_score: float = 0.0
+    adversity_score: float = 0.0
+    direction_bad: str = "up"
+    adverse: bool = False
     detector: dict[str, Any] = field(default_factory=dict)
     dimensions: dict[str, Any] = field(default_factory=dict)
     start_time: str | None = None
@@ -185,13 +198,11 @@ class StatsEngine(Protocol):
 class ProviderBundle:
     """Everything the swarm needs to run. Swap fields for real implementations.
 
-    ``anomaly``/``causal``/``forecaster``/``optimizer``/``stats`` are optional:
-    swarm_v2 (the live control plane) doesn't call them at all — anomaly
-    detection, causal diagnosis, and forecasting are owned by the
-    diagnostic/prediction specialist agents instead. They remain here only for
-    the ``AnomalyDetector``/``CausalEngine``/``Forecaster``/``Optimizer``/
-    ``StatsEngine`` Protocol seam, for a caller that wants to plug in a real
-    implementation.
+    ``build_hybrid_bundle`` fills intelligence seams with Template* defaults.
+    Full diagnostic/prediction/strategy bridges may ignore these and use their
+    own services; the lightweight specialists (``AnomalyAgent``,
+    ``DiagnosticAgent``, ``PredictionAgent``, ``SkepticAgent``) call them
+    directly and must not see ``None``.
     """
 
     data: dict[str, DataProvider]  # domain -> provider

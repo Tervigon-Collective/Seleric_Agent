@@ -10,7 +10,6 @@ from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
 @pytest.mark.asyncio
 async def test_hybrid_staging_uses_mcp_for_performance(runtime):
     bundle, stats = build_hybrid_bundle(
-        "cac_regression",
         mcp=runtime.mcp,
         execution_mode="staging",
         metrics=runtime.metrics,
@@ -37,7 +36,6 @@ async def test_hybrid_production_returns_nothing_for_domain_with_no_module(runti
     # no fixture fallback: missing live coverage means missing data, not a
     # fabricated synthetic number.
     bundle, stats = build_hybrid_bundle(
-        "cac_regression",
         mcp=runtime.mcp,
         execution_mode="production",
         metrics=runtime.metrics,

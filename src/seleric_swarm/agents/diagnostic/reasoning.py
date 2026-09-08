@@ -25,10 +25,27 @@ class ReasoningModel(Protocol):
 
 
 class LLMPortReasoningModel:
-    def __init__(self, port: LLMPort, *, model: str, mission_id: str = "", temperature: float = 0.0) -> None:
+    """LLM port wrapper that propagates full trace metadata to LangSmith."""
+
+    def __init__(
+        self,
+        port: LLMPort,
+        *,
+        model: str,
+        mission_id: str = "",
+        request_id: str | None = None,
+        session_id: str | None = None,
+        workflow_name: str | None = None,
+        workflow_version: str | None = None,
+        temperature: float = 0.0,
+    ) -> None:
         self._port = port
         self._model = model
         self._mission_id = mission_id
+        self._request_id = request_id
+        self._session_id = session_id
+        self._workflow_name = workflow_name
+        self._workflow_version = workflow_version
         self._temperature = temperature
 
     async def generate_structured(
@@ -40,7 +57,13 @@ class LLMPortReasoningModel:
             temperature=self._temperature,
             max_tokens=1024,
             metadata=LLMRequestMetadata(
-                mission_id=self._mission_id, agent_id="diagnostic_agent", agent_version="1.0.0"
+                mission_id=self._mission_id,
+                request_id=self._request_id,
+                session_id=self._session_id,
+                workflow_name=self._workflow_name,
+                workflow_version=self._workflow_version,
+                agent_id="diagnostic_agent",
+                agent_version="1.0.0",
             ),
             tags=tags or ["diagnostic"],
         )

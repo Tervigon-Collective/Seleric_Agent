@@ -1,115 +1,38 @@
-"""Query intake — normalize intents, metrics, entities, and time ranges."""
+"""Query intake — LLM+catalogue classification only.
+
+There is intentionally no local intent keyword table, no ``_METRIC_ALIASES``
+alias dictionary, and no regex-based domain guesser here. Every semantic
+decision (intent, primary metric, entities, domain lead) comes from the LLM
+classifier grounded in the live metric registry + Seleric catalogue via
+``coordinator.intake.llm_classifier``.
+
+When no ``runtime`` is available, or the LLM call itself fails, this module
+fails closed: the returned ``NormalizedQuery`` carries
+``unsupported_reason=LLM_CLASSIFICATION_UNAVAILABLE`` and empty intents. The
+mission entrypoint (``coordinator.graph.run_swarm_v2_mission``) treats that
+as an ``UNSUPPORTED`` mission — it does not fabricate a heuristic classification.
+
+Regex is still the right tool for date-token parsing (ISO dates, "last N days",
+"yesterday"). That logic lives in :mod:`seleric_swarm.services.time_range`
+(``window_from_query`` / ``resolve_time_range``) and is invoked by the LLM
+classifier, which is a syntactic tokenizer — not intent classification.
+"""
 
 from __future__ import annotations
 
-import re
-from datetime import date, datetime, timedelta
+from datetime import date
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from seleric_swarm.coordinator.contracts import (
-    EntityRef,
-    NormalizedQuery,
-    TimeRange,
-)
+from seleric_swarm.coordinator.contracts import EntityRef, NormalizedQuery, TimeRange
 from seleric_swarm.services.metrics import MetricRegistry, lead_agent_for_hints
 
-_DIAGNOSTIC_RE = re.compile(
-    r"\b(why|root cause|reason for|caused?|explain|driver of|driving|drove|diagnose|"
-    r"what changed|change in|drop in|fall in|decline in|increase in|rise in|spike in|"
-    r"what.s behind|attributed to)\b",
-    re.IGNORECASE,
-)
-_PREDICTIVE_RE = re.compile(
-    r"\b(forecast|predict|what happens|if this continues|next week|projection)\b",
-    re.IGNORECASE,
-)
-_PRESCRIPTIVE_RE = re.compile(
-    r"\b(what should|recommend|what do we do|how do we fix|action)\b", re.IGNORECASE
-)
-_COMPARISON_RE = re.compile(r"\b(compare|versus| vs |against|difference)\b", re.IGNORECASE)
-_LOOKUP_RE = re.compile(
-    r"\b(what were|what was|what is|how much|how many|show me|tell me|get me|sales yesterday)\b",
-    re.IGNORECASE,
-)
-_HEALTH_RE = re.compile(r"\b(how are we doing|how is (the )?business|health check)\b", re.IGNORECASE)
+UNSUPPORTED_NO_LLM = "LLM_CLASSIFICATION_UNAVAILABLE"
 
-_METRIC_ALIASES: dict[str, str] = {
-    "cac": "metric.cac",
-    "blended cac": "metric.cac",
-    "paid cac": "metric.cac",
-    "cpm": "metric.cpm",
-    "ctr": "metric.ctr",
-    "cpc": "metric.cpc",
-    "net sales": "metric.net_sales",
-    "sales": "metric.net_sales",
-    "shopify sales": "metric.net_sales",
-    "orders": "metric.orders",
-    "purchase cvr": "metric.purchase_cvr",
-    "conversion": "metric.purchase_cvr",
-    "cvr": "metric.purchase_cvr",
-    "revenue": "metric.net_sales",
-    "gross sales": "metric.gross_sales",
-    "gross revenue": "metric.gross_sales",
-    "gross profit": "metric.net_profit",
-    "net profit": "metric.net_profit",
-    "profit": "metric.net_profit",
-    "margin": "metric.net_profit",
-    "units sold": "metric.units_sold",
-    "units": "metric.units_sold",
-    "sessions": "metric.sessions",
-    "traffic": "metric.sessions",
-    "spend": "metric.spend",
-    "ad spend": "metric.spend",
-    "return rate": "metric.return_rate",
-    "returns": "metric.return_rate",
-    "refund": "metric.refunded_amount_excl_tax",
-    "refunds": "metric.refunded_amount_excl_tax",
-    "repeat rate": "metric.repeat_rate",
-    "checkout rate": "metric.checkout_rate",
-    "add to cart": "metric.atc_rate",
-    "atc": "metric.atc_rate",
-    "error rate": "metric.js_error_rate",
-    "js error": "metric.js_error_rate",
-    "api error": "metric.api_error_rate",
-    "page load": "metric.mobile_lcp_seconds",
-    "lcp": "metric.mobile_lcp_seconds",
-}
-
-_ENTITY_PATTERNS: list[tuple[str, str]] = [
-    (r"\bmobile\b", "device"),
-    (r"\bdesktop\b", "device"),
-    (r"\bmeta\b|\bfacebook\b", "channel"),
-    (r"\bgoogle\b", "channel"),
-    (r"\bcheckout\b", "funnel_stage"),
-    (r"\bpurchase\b", "funnel_stage"),
-]
-
-
-def classify_intents(query: str) -> list[str]:
-    intents: list[str] = []
-    if _HEALTH_RE.search(query):
-        intents.append("executive_health")
-    if _DIAGNOSTIC_RE.search(query):
-        intents.append("diagnostic")
-    if _PREDICTIVE_RE.search(query):
-        intents.append("predictive")
-    if _PRESCRIPTIVE_RE.search(query):
-        intents.append("prescriptive")
-    if _COMPARISON_RE.search(query):
-        intents.append("comparison")
-    if _LOOKUP_RE.search(query) and not intents:
-        intents.append("lookup")
-    # Executive health is a diagnostic investigation (why are we unhealthy), not
-    # prediction/strategy alone — otherwise specialists skip Diagnostic/Skeptic.
-    if "executive_health" in intents and "diagnostic" not in intents:
-        intents.append("diagnostic")
-    # Unrecognized phrasing defaults to the cheapest tier (observer-only lookup),
-    # not the full investigation pipeline — this also drives route_for's
-    # swarm-vs-lookup decision, so a plain "get today's X" stays on the fast path.
-    if not intents:
-        intents.append("lookup")
-    return intents
+# When the classifier cannot pin the mission to a specific domain (e.g.
+# ``executive_health``), fan out across the domains a broad investigation
+# needs to touch. Ordered by the workspace's typical CAC→conversion→profit
+# investigation chain — the mission planner picks the first as initial lead.
+_BROAD_INVESTIGATION_DOMAINS = ["commerce", "performance", "funnel", "finance"]
 
 
 def apply_full_flags(
@@ -120,13 +43,14 @@ def apply_full_flags(
     full_skeptic: bool = False,
     full_strategy: bool = False,
 ) -> set[str]:
-    """Ensure full_* request flags activate the matching specialist intents.
+    """Fold ``full_*`` request flags into the intent set.
 
-    ``full_*`` historically only swapped in the full agent bridge implementation.
-    Callers (especially the HTTP API, where these default to True) also expect the
-    specialist to *run*. Without this, ``full_prediction=True`` on a pure "why"
-    query registers PredictionAgent but never activates it.
+    The HTTP API sets these to ``True`` by default so callers expect the
+    matching specialist to *run*, not just be registered. Without this,
+    ``full_prediction=True`` on a pure "why" query never activates
+    ``PredictionAgent``.
     """
+
     out = set(intents)
     if full_diagnostic:
         out.add("diagnostic")
@@ -140,235 +64,67 @@ def apply_full_flags(
     return out
 
 
-_STOPWORDS = {
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "and", "or", "but", "if", "then", "than", "of", "in", "on", "at", "to",
-    "for", "with", "by", "from", "this", "that", "these", "those", "it",
-    "we", "us", "our", "do", "does", "did", "has", "have", "had", "not",
-    "why", "what", "when", "where", "how", "which", "who", "should",
-    "over", "last", "past", "next", "days", "day", "week", "weeks",
-    "month", "months", "year", "years", "today", "yesterday", "continues",
-    "happen", "happens", "action", "get", "me", "show", "tell", "please",
-}
-
-
-def _candidate_terms(query: str, *, max_terms: int = 12) -> list[str]:
-    """Generic n-gram phrase extraction — no metric-specific vocabulary.
-
-    Longer windows first (more likely to hit a specific glossary phrase like
-    "net sales" before wasting a call on a lone generic word).
-    """
-    words = [w for w in re.findall(r"[a-zA-Z]+", query.lower()) if w not in _STOPWORDS]
-    candidates: list[str] = []
-    for size in (3, 2, 1):
-        for i in range(len(words) - size + 1):
-            phrase = " ".join(words[i : i + size])
-            if phrase and phrase not in candidates:
-                candidates.append(phrase)
-    return candidates[:max_terms]
-
-
-async def _resolve_metrics_via_catalogue(
-    query: str,
-    *,
-    mcp: Any,
-    agent_id: str,
-    metrics: MetricRegistry | None,
-) -> tuple[str | None, list[str], str | None]:
-    """Resolve query language to metric ids via the live Seleric MCP catalogue.
-
-    No local alias table: every candidate phrase is checked against the
-    catalogue's own glossary (catalogue_resolve_term), which is the single
-    source of truth for what a business term means.
-    """
-    found: list[str] = []
-    reasons: list[str] = []
-    seen: set[str] = set()
-    for term in _candidate_terms(query):
-        try:
-            result = await mcp.call(
-                agent_id=agent_id, capability="seleric.catalogue_resolve_term", arguments={"text": term}
-            )
-        except Exception:  # noqa: S112 - a single unresolved term must not abort catalogue lookup
-            continue
-        if result.get("kind") != "resolved":
-            continue
-        catalogue_id = result.get("metric_id")
-        if not catalogue_id or catalogue_id in seen:
-            continue
-        seen.add(catalogue_id)
-        registry_id = metrics.id_for_catalogue(catalogue_id) if metrics else None
-        resolved = registry_id or f"metric.{catalogue_id}"
-        found.append(resolved)
-        reasons.append(f"{term}->{resolved} (catalogue, confidence={result.get('confidence')})")
-        if len(found) >= 3:
-            break
-    primary = found[0] if found else None
-    return primary, found[1:], "; ".join(reasons) or None
-
-
-def _resolve_metrics_offline(query: str) -> tuple[str | None, list[str], str | None]:
-    """Fixture-mode fallback only — no live MCP available. Kept deterministic
-    on purpose so offline/synthetic missions stay reproducible in tests.
-    """
-    q = query.lower()
-    found: list[str] = []
-    reason_parts: list[str] = []
-    for alias, metric_id in _METRIC_ALIASES.items():
-        if alias in q:
-            found.append(metric_id)
-            reason_parts.append(f"{alias}->{metric_id}")
-    found = list(dict.fromkeys(found))
-    primary = found[0] if found else None
-    reason = "; ".join(reason_parts) if reason_parts else None
-    if "cac" in q and primary is None:
-        primary = "metric.cac"
-        reason = "default CAC alias -> metric.cac"
-    return primary, found[1:], reason
-
-
-async def resolve_metrics(
-    query: str,
-    metrics: MetricRegistry | None = None,
-    *,
-    mcp: Any | None = None,
-    agent_id: str = "coordinator_agent",
-) -> tuple[str | None, list[str], str | None]:
-    """Resolve the metric(s) a query is about.
-
-    Live mode (``mcp`` given, with the catalogue capability registered):
-    resolves dynamically against the Seleric MCP catalogue — no hardcoded
-    metric vocabulary. Falls back to the static offline alias table only
-    when no live catalogue is available (fixture/offline missions).
-    """
-    if mcp is not None and "seleric.catalogue_resolve_term" in getattr(mcp, "capabilities", set()):
-        primary, secondary, reason = await _resolve_metrics_via_catalogue(
-            query, mcp=mcp, agent_id=agent_id, metrics=metrics
-        )
-        if primary is not None:
-            return primary, secondary, reason
-    return _resolve_metrics_offline(query)
-
-
-def resolve_entities(query: str) -> list[EntityRef]:
-    entities: list[EntityRef] = []
-    for pattern, etype in _ENTITY_PATTERNS:
-        m = re.search(pattern, query, re.IGNORECASE)
-        if m:
-            raw = m.group(0)
-            entities.append(
-                EntityRef(
-                    entity_type=etype,
-                    entity_id=raw.lower(),
-                    raw=raw,
-                    resolved=True,
-                    resolution_reason="pattern_match",
-                )
-            )
-    return entities
-
-
-def _as_of_date(as_of: str | None, tz: ZoneInfo) -> date:
-    if isinstance(as_of, str) and as_of.strip():
-        try:
-            return date.fromisoformat(as_of[:10])
-        except ValueError as exc:
-            raise ValueError(f"as_of is not a valid date: {as_of!r}") from exc
-    return datetime.now(tz).date()
-
-
-def resolve_time_range(
-    query: str,
-    *,
-    timezone: str = "Asia/Kolkata",
-    as_of: str | None = None,
-) -> tuple[TimeRange | None, TimeRange | None]:
-    try:
-        tz = ZoneInfo(timezone)
-    except ZoneInfoNotFoundError:
-        tz = ZoneInfo("UTC")
-    today = _as_of_date(as_of, tz)
-    q = query.lower()
-
-    def day_range(d: date, label: str) -> TimeRange:
-        return TimeRange(
-            start=d.isoformat(),
-            end=d.isoformat(),
-            timezone=timezone,
-            label=label,
-        )
-
-    if "yesterday" in q:
-        d = today - timedelta(days=1)
-        return day_range(d, "yesterday"), None
-    if "last three days" in q or "past three days" in q or "last 3 days" in q:
-        start = today - timedelta(days=3)
-        return TimeRange(
-            start=start.isoformat(), end=today.isoformat(), timezone=timezone, label="last_three_days"
-        ), None
-    if "today" in q:
-        return day_range(today, "today"), None
-    if "this week" in q:
-        start = today - timedelta(days=today.weekday())
-        return TimeRange(
-            start=start.isoformat(), end=today.isoformat(), timezone=timezone, label="this_week"
-        ), None
-    if "last month" in q:
-        first_this = today.replace(day=1)
-        last_month_end = first_this - timedelta(days=1)
-        last_month_start = last_month_end.replace(day=1)
-        return TimeRange(
-            start=last_month_start.isoformat(),
-            end=last_month_end.isoformat(),
-            timezone=timezone,
-            label="last_month",
-        ), None
-    # default: last 3 days for diagnostic-style questions
-    start = today - timedelta(days=3)
-    return TimeRange(
-        start=start.isoformat(), end=today.isoformat(), timezone=timezone, label="recent_window"
-    ), None
-
-
-_BROAD_INVESTIGATION_DOMAINS = ["commerce", "performance", "funnel", "finance"]
-
-
 def candidate_domains(
-    query: str,
-    intents: list[str],
+    intents: list[str] | set[str],
     primary_metric: str | None,
     metrics: MetricRegistry | None = None,
 ) -> list[str]:
-    if "executive_health" in intents:
-        # A health check genuinely wants broad investigation, not a single
-        # domain guess — this is the correct behavior for that intent, not a
-        # fallback default.
-        return list(_BROAD_INVESTIGATION_DOMAINS)
+    """Derive the mission's candidate domains from registry metric ownership.
 
-    # A resolved metric already carries its owning domain in the registry —
-    # a deterministic lookup, not a guess. Prefer it over any keyword table.
-    if metrics is not None:
-        lead = lead_agent_for_hints([primary_metric] if primary_metric else [], metrics)
+    Never from keyword matching over the query text. The metric registry is
+    the single source of truth for which domain owns a metric; this function
+    is a pure lookup.
+
+    * ``executive_health`` fans out to the broad investigation set.
+    * A resolved ``primary_metric`` with a registered owner returns that
+      single domain.
+    * Anything else returns ``[]`` — the caller is expected to fall through
+      to a documented default lead (``commerce_agent`` today) rather than
+      guessing another domain here.
+    """
+
+    intent_set = set(intents)
+    if "executive_health" in intent_set:
+        return list(_BROAD_INVESTIGATION_DOMAINS)
+    if metrics is not None and primary_metric is not None:
+        lead = lead_agent_for_hints([primary_metric], metrics)
         if lead != "coordinator_agent":
             return [lead.removesuffix("_agent")]
+    return []
 
-    domains: list[str] = []
-    q = query.lower()
-    if primary_metric and "cac" in (primary_metric or "") or "cac" in q:
-        domains.extend(["performance", "funnel", "technical"])
-    if any(k in q for k in ("sales", "orders", "shopify", "revenue")):
-        domains.append("commerce")
-    if any(k in q for k in ("funnel", "cvr", "checkout", "sessions")):
-        domains.append("funnel")
-    if any(k in q for k in ("latency", "lcp", "js error", "deploy", "mobile")):
-        domains.append("technical")
-    if domains:
-        return list(dict.fromkeys(domains))
-    # Nothing resolved at all: the classify_swarm prompt's own contract is
-    # that an empty domain_lead means "run a broad investigation instead of
-    # guessing one domain" — that promise should hold regardless of which
-    # intent triggered it, not just executive_health.
-    return list(_BROAD_INVESTIGATION_DOMAINS)
+
+UNSUPPORTED_PRIMARY_METRIC_UNRESOLVED = "PRIMARY_METRIC_UNRESOLVED"
+
+# Machine-readable tokens that live inside NormalizedQuery.unresolved_semantics.
+# Callers (coordinator.graph) match against these constants, not literal strings,
+# so a rename here can't drift out of sync silently.
+UNRESOLVED_NO_LLM = UNSUPPORTED_NO_LLM.lower()
+UNRESOLVED_PRIMARY_METRIC = "primary_metric_unresolved"
+
+
+def _unsupported(
+    query: str,
+    requested_outputs: list[str] | None,
+    *,
+    reason: str,
+    unresolved_semantics: list[str] | None = None,
+) -> NormalizedQuery:
+    """Fail-closed NormalizedQuery — empty intents, explicit unsupported_reason."""
+
+    return NormalizedQuery(
+        original_query=query,
+        intents=[],
+        primary_metric=None,
+        secondary_metrics=[],
+        entities=[],
+        time_range=None,
+        comparison_range=None,
+        requested_outputs=list(requested_outputs or []),
+        candidate_domains=[],
+        unresolved_semantics=list(unresolved_semantics or [reason.lower()]),
+        metric_resolution_reason=None,
+        unsupported_reason=reason,
+    )
 
 
 async def normalize_query(
@@ -378,78 +134,94 @@ async def normalize_query(
     as_of: str | None = None,
     metrics: MetricRegistry | None = None,
     requested_outputs: list[str] | None = None,
-    mcp: Any | None = None,
     agent_id: str = "coordinator_agent",
     runtime: Any | None = None,
     mission_id: str | None = None,
     request_id: str | None = None,
     session_id: str | None = None,
 ) -> NormalizedQuery:
-    """Classify intents/metrics/entities/domains.
+    """Classify a natural-language query via the LLM + live catalogue.
 
-    When ``runtime`` is given (live missions), classification goes through
-    the LLM + live catalogue (coordinator.intake.llm_classifier) — no keyword
-    lists. Falls back to the offline regex classifier only when no runtime is
-    given (fixture-free unit tests, or the LLM call itself failed).
+    Fails closed with:
+
+    * ``LLM_CLASSIFICATION_UNAVAILABLE`` when no runtime is given or the LLM
+      call fails — never falls back to keyword regexes.
+    * ``PRIMARY_METRIC_UNRESOLVED`` when the query has a diagnostic/predictive/
+      prescriptive/lookup intent but no metric could be resolved against the
+      registry — fail at the intake boundary, not deep in the pipeline.
     """
-    llm_result = None
-    if runtime is not None:
-        from seleric_swarm.coordinator.intake.llm_classifier import classify_query_via_llm
 
-        llm_result = await classify_query_via_llm(
-            query,
-            runtime=runtime,
-            timezone=timezone,
-            as_of=as_of,
-            agent_id=agent_id,
-            mission_id=mission_id,
-            request_id=request_id,
-            session_id=session_id,
-        )
+    if runtime is None:
+        return _unsupported(query, requested_outputs, reason=UNSUPPORTED_NO_LLM)
 
-    if llm_result is not None:
-        intents = list(llm_result.intents)
-        primary = llm_result.primary_metric
-        secondary = llm_result.secondary_metrics
-        reason = f"llm+catalogue: {primary}" if primary else None
-        entities = [
-            EntityRef(entity_type="dimension", entity_id=e, raw=e, resolved=True, resolution_reason="llm_catalogue")
-            for e in llm_result.entities
-        ]
-        tr = llm_result.time_range
-        time_range = (
-            TimeRange(start=tr.start, end=tr.end or tr.start, timezone=timezone, label=tr.relative_token)
-            if tr.start
-            else None
-        )
-        comparison = None
-        domains = (
-            [llm_result.domain_lead.removesuffix("_agent")]
-            if llm_result.domain_lead
-            else candidate_domains(query, intents, primary, metrics)
-        )
-    else:
-        intents = classify_intents(query)
-        primary, secondary, reason = await resolve_metrics(query, metrics, mcp=mcp, agent_id=agent_id)
-        entities = resolve_entities(query)
-        time_range, comparison = resolve_time_range(query, timezone=timezone, as_of=as_of)
-        domains = candidate_domains(query, intents, primary, metrics)
-    unsupported_reason = (
-        llm_result.unsupported_reason if llm_result is not None and llm_result.unresolved else None
+    # Lazy import breaks a cycle: intake -> llm_classifier -> runtime -> intake.
+    from seleric_swarm.coordinator.intake.llm_classifier import classify_query_via_llm
+
+    llm_result = await classify_query_via_llm(
+        query,
+        runtime=runtime,
+        timezone=timezone,
+        as_of=as_of,
+        agent_id=agent_id,
+        mission_id=mission_id,
+        request_id=request_id,
+        session_id=session_id,
     )
+    if llm_result is None:
+        return _unsupported(query, requested_outputs, reason=UNSUPPORTED_NO_LLM)
+
+    intents = list(llm_result.intents)
+    primary = llm_result.primary_metric
+    secondary = list(llm_result.secondary_metrics)
+    reason = f"llm+catalogue: {primary}" if primary else None
+
+    entities = [
+        EntityRef(
+            entity_type="dimension",
+            entity_id=e,
+            raw=e,
+            resolved=True,
+            resolution_reason="llm_catalogue",
+        )
+        for e in llm_result.entities
+    ]
+
+    tr = llm_result.time_range
+    time_range = (
+        TimeRange(
+            start=tr.start,
+            end=tr.end or tr.start,
+            timezone=timezone,
+            label=tr.relative_token,
+        )
+        if tr.start
+        else None
+    )
+
+    domains = (
+        [llm_result.domain_lead.removesuffix("_agent")]
+        if llm_result.domain_lead
+        else candidate_domains(intents, primary, metrics)
+    )
+
+    # Intake-boundary fail-closed: a targeted investigation (why/forecast/action)
+    # against a query whose primary metric is unresolvable is unsupported — the
+    # downstream pipeline can't investigate a metric it can't identify. Executive
+    # health is exempt: it legitimately scans every domain, no single metric.
+    metric_needed = bool(intents) and "executive_health" not in intents and (
+        "lookup" in intents
+        or any(i in intents for i in ("diagnostic", "predictive", "prescriptive", "comparison"))
+    )
+    if primary is None and metric_needed:
+        return _unsupported(
+            query,
+            requested_outputs,
+            reason=UNSUPPORTED_PRIMARY_METRIC_UNRESOLVED,
+            unresolved_semantics=[UNRESOLVED_PRIMARY_METRIC],
+        )
+
     unresolved: list[str] = []
-    if primary is None and "lookup" in intents:
-        unresolved.append("primary_metric_unresolved")
-    # Causal / forecast questions without a resolvable metric still run, but
-    # surface the gap so synthesis/limitations can explain fixture fallback.
-    if primary is None and any(i in intents for i in ("diagnostic", "predictive", "prescriptive")):
-        unresolved.append("primary_metric_unresolved")
-    if llm_result is None and runtime is not None:
-        # A live runtime was available, so the offline keyword classifier only
-        # ran because the LLM call itself failed mid-request — surface that as
-        # a degraded-classification signal rather than treating this response
-        # as equivalent to a genuine offline/test-mode classification.
-        unresolved.append("llm_classification_unavailable")
+
     return NormalizedQuery(
         original_query=query,
         intents=intents,
@@ -457,12 +229,12 @@ async def normalize_query(
         secondary_metrics=secondary,
         entities=entities,
         time_range=time_range,
-        comparison_range=comparison,
+        comparison_range=None,
         requested_outputs=list(requested_outputs or []),
         candidate_domains=domains,
         unresolved_semantics=unresolved,
         metric_resolution_reason=reason,
-        unsupported_reason=unsupported_reason,
+        unsupported_reason=llm_result.unsupported_reason if llm_result.unresolved else None,
     )
 
 
@@ -473,28 +245,34 @@ def resolve_mission_time_range(
     as_of: str | None = None,
     normalized: NormalizedQuery | None = None,
 ) -> dict[str, str | None]:
-    """Build the observation window used for MCP/fixture fetches.
+    """Build the observation window used for MCP fetches.
 
     Preference order:
+
     1. Scenario ``observation_window`` (preserves fixture degradation arcs)
     2. Query-derived ``normalized.time_range`` when no scenario window
     3. ``as_of`` alone
 
-    When ``as_of`` is past the window end, extend ``end`` to ``as_of`` so MCP
-    fetches include the client observation day (without rewriting the start).
+    When ``as_of`` is past the window end, extend ``end`` to ``as_of`` so
+    MCP fetches include the client observation day (without rewriting the
+    start of the investigated window).
     """
+
     window = dict(scenario.get("observation_window") or {})
     as_of_day: str | None = None
     if as_of:
+        raw = str(as_of)[:10]
         try:
-            as_of_day = date.fromisoformat(str(as_of)[:10]).isoformat()
-        except ValueError:
-            as_of_day = None
+            as_of_day = date.fromisoformat(raw).isoformat()
+        except ValueError as exc:
+            # A malformed as_of is a caller bug that would silently produce an
+            # unbounded time window — surface it instead of swallowing.
+            raise ValueError(f"Invalid as_of={as_of!r}; expected ISO date") from exc
 
     start = str(window["start"])[:10] if window.get("start") else None
     end = str(window["end"])[:10] if window.get("end") else None
-    # Preserve the fixture/scenario arc end for single-day MCP fetches even if
-    # client as_of extends the reported observation window.
+    # Preserve the scenario/fixture arc end for single-day MCP fetches even
+    # if client ``as_of`` extends the reported observation window.
     observation_end = end
 
     if (start is None or end is None) and normalized is not None and normalized.time_range is not None:
@@ -522,6 +300,11 @@ def resolve_mission_time_range(
 
 
 def complexity_band(normalized: NormalizedQuery) -> str:
+    """Derive the L0–L5 complexity band from the intent set.
+
+    Pure set logic — no textual analysis of the query.
+    """
+
     intents = set(normalized.intents)
     if intents <= {"lookup"}:
         return "L0"
@@ -541,6 +324,8 @@ def complexity_band(normalized: NormalizedQuery) -> str:
 
 
 def intent_band_for_activation(normalized: NormalizedQuery) -> str:
+    """Map intents to a coarse activation band the CoordinatorPolicies use."""
+
     intents = set(normalized.intents)
     if "prescriptive" in intents:
         return "PRESCRIPTIVE"
