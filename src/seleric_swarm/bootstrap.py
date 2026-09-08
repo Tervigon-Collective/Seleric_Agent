@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from seleric_swarm.config.settings import Settings, get_settings
 from seleric_swarm.llm.factory import build_llm
+from seleric_swarm.llm.metering import MeteredLLMPort
 from seleric_swarm.observability.tracing import configure_langsmith_env, configure_logging
 from seleric_swarm.paths import repo_root
 from seleric_swarm.persistence.postgres import build_store
@@ -46,7 +47,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     mcp = MCPGateway(settings.mcp_config_path, agents=agents)
     return SwarmRuntime(
         settings=settings,
-        llm=build_llm(settings),
+        llm=MeteredLLMPort(build_llm(settings)),
         prompts=PromptRegistry(settings.prompts_dir, settings.prompt_versions_path),
         mcp=mcp,
         metrics=MetricRegistry(settings.metric_registry_path),

@@ -227,7 +227,13 @@ def build_swarm_v2_graph(ctx: SwarmV2Context) -> Any:
 def _route_after_refine(ctx: SwarmV2Context):
     def _route(state: MissionState) -> str:
         max_iter = ctx.policies.leadership.max_transfers + 1
-        budget = check_swarm_budget(dict(state), ctx.policies.budgets, agent_calls_needed=2)
+        token_usage = getattr(ctx.runtime.llm, "usage_for", lambda _mid: None)(ctx.mission.mission_id)
+        budget = check_swarm_budget(
+            dict(state),
+            ctx.policies.budgets,
+            agent_calls_needed=2,
+            token_usage=(token_usage.total_tokens if token_usage else 0),
+        )
         if not budget.ok:
             ctx.budget_exhausted = True
             ctx.budget_reason = budget.reason
@@ -571,6 +577,9 @@ def _make_specialists(ctx: SwarmV2Context):
             "limitations": list(ctx.limitations),
             "events": list(ctx.blackboard.events),
             "specialists_activated": activated,
+            "mission_lead": ctx.blackboard.mission_lead,
+            "leadership_epoch": ctx.blackboard.leadership_epoch,
+            "handoff_history": list(ctx.blackboard.handoff_history),
         }
 
     return specialists
@@ -1118,8 +1127,9 @@ async def run_swarm_v2_mission(
         "workflow_name": "swarm_v2",
         "workflow_version": "1.4.0",
     }
+    leadership_controller = LeadershipController(LeadershipManager(), policies)
     diagnostic: Any = SwarmDiagnosticSpecialist(
-        providers, scenario=scenario, trace_base=trace_base
+        providers, scenario=scenario, trace_base=trace_base, leadership=leadership_controller
     )
     if full_prediction:
         from seleric_swarm.agents.prediction.swarm_bridge import SwarmPredictionSpecialist
@@ -1264,7 +1274,7 @@ async def run_swarm_v2_mission(
         mission=mission,
         domains=domains,
         activate=activate,
-        leadership=LeadershipController(LeadershipManager(), policies),
+        leadership=leadership_controller,
         claim_mgr=ClaimManager(),
         artifact_mgr=ArtifactManager(blackboard),
         transport=transport,

@@ -12,7 +12,23 @@ def _normalize_number(token: str) -> str:
     return token.replace(",", "").replace("+", "")
 
 
-def allowed_numbers(evidence: list[dict[str, Any]], extra: list[Any] | None = None) -> set[str]:
+def allowed_numbers(
+    evidence: list[dict[str, Any]],
+    extra: list[Any] | None = None,
+    query_text: str | None = None,
+) -> set[str]:
+    """Build the set of numeric tokens the synthesizer is allowed to write.
+
+    Three sources:
+    1. ``extra`` — values the caller has already whitelisted (e.g. evidence
+       values passed through again for convenience).
+    2. Evidence rows — each row's ``value`` plus ISO date fragments from its
+       ``time_range``.
+    3. ``query_text`` — numbers that appear verbatim in the user's original
+       question.  These are query parameters (e.g. "5" in "last 5 months"),
+       not fabricated metric values, so they are allowed when the synthesizer
+       echoes them back in the answer.
+    """
     allowed: set[str] = set()
     for item in extra or []:
         if item is None:
@@ -31,6 +47,9 @@ def allowed_numbers(evidence: list[dict[str, Any]], extra: list[Any] | None = No
                 day = str(time_range[key])
                 allowed.update(day.split("-"))
                 allowed.add(day.replace("-", ""))
+    if query_text:
+        for match in _NUMBER_RE.finditer(query_text):
+            allowed.add(_normalize_number(match.group(0)))
     return {token for token in allowed if token}
 
 
@@ -40,8 +59,19 @@ def extract_numbers(text: str) -> list[str]:
     return [_normalize_number(match.group(0)) for match in _NUMBER_RE.finditer(cleaned)]
 
 
-def unaudited_numbers(text: str, evidence: list[dict[str, Any]], extra: list[Any] | None = None) -> list[str]:
-    allowed = allowed_numbers(evidence, extra)
+def unaudited_numbers(
+    text: str,
+    evidence: list[dict[str, Any]],
+    extra: list[Any] | None = None,
+    query_text: str | None = None,
+) -> list[str]:
+    """Return numeric tokens in ``text`` that are not accounted for by evidence.
+
+    ``query_text`` (the original user question) is forwarded to
+    ``allowed_numbers`` so that the synthesizer can echo query parameters
+    (e.g. "5" in "last 5 months") without triggering a fabrication alarm.
+    """
+    allowed = allowed_numbers(evidence, extra, query_text=query_text)
     leaked: list[str] = []
     for token in extract_numbers(text):
         if token in {"", "-", "."}:

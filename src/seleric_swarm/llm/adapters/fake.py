@@ -161,6 +161,24 @@ def _time_range_for(q: str, lower: str) -> tuple[dict[str, Any], str]:
             {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n.group(1)}d"},
             "lookup",
         )
+    last_n_weeks = re.search(r"\blast\s+(\d+)\s+weeks?\b", lower)
+    if last_n_weeks:
+        return (
+            {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n_weeks.group(1)}w"},
+            "lookup",
+        )
+    last_n_months = re.search(r"\blast\s+(\d+)\s+months?\b", lower)
+    if last_n_months:
+        return (
+            {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n_months.group(1)}m"},
+            "lookup",
+        )
+    last_n_quarters = re.search(r"\blast\s+(\d+)\s+quarters?\b", lower)
+    if last_n_quarters:
+        return (
+            {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n_quarters.group(1)}q"},
+            "lookup",
+        )
     if "yesterday" in lower:
         return {"kind": "relative", "start": None, "end": None, "relative_token": "yesterday"}, "lookup"
     if "today" in lower:

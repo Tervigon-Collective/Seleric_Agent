@@ -27,6 +27,12 @@ class MetricDefinition:
         self.catalogue_metric: str = payload.get("catalogue_metric") or self.id.removeprefix("metric.")
         # Optional module override when the measure lives outside the domain agent pin.
         self.seleric_module: str | None = payload.get("seleric_module")
+        # "up" (default) or "down" — which direction of movement is adverse for
+        # this metric. Most metrics here are costs/error rates (up is bad); a
+        # metric raises this to "down" when more is better (revenue, orders,
+        # conversion rates, ...). Backs anomaly adversity scoring — see
+        # docs/44 ticket ROB-001.
+        self.direction_bad: str = payload.get("direction_bad", "up")
         self.raw = payload
 
 

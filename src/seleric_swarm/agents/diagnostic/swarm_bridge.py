@@ -17,11 +17,13 @@ from seleric_swarm.agents.diagnostic.agent import DiagnosticAgent, diagnostic_de
 from seleric_swarm.agents.diagnostic.context import DiagnosticDeps
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticRequest, DiagnosticResult
 from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
+from seleric_swarm.agents.diagnostic.ontology import common_causes_for_outcome, mechanisms_for
 from seleric_swarm.agents.diagnostic.registries import (
     TemplateCausalEstimationService,
     causal_graphs_from_yaml,
 )
 from seleric_swarm.agents.diagnostic.services.dowhy_estimation import DoWhyCausalEstimationService
+from seleric_swarm.coordinator.leadership.frontier import LeadershipController
 from seleric_swarm.swarm.artifacts import Causal, Hypothesis
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission
@@ -42,12 +44,14 @@ class SwarmDiagnosticSpecialist:
         policies: DiagnosticPolicies | None = None,
         ontology: Any = None,
         trace_base: dict[str, str | None] | None = None,
+        leadership: LeadershipController | None = None,
     ) -> None:
         self.providers = providers
         self._scenario = scenario or {}
         self._deps = deps
         self._policies = policies or DiagnosticPolicies.load()
         self._ontology = ontology
+        self._leadership = leadership
         # Trace base for LangSmith (request_id, session_id, workflow, etc.)
         # Passed by coordinator graph; used when creating LLMPortReasoningModel.
         self._trace_base = trace_base or {}
@@ -69,11 +73,16 @@ class SwarmDiagnosticSpecialist:
         # - Fixture/test mode: scenario has causal_truth → use template service
         # - Production mode: no fixture → use DoWhy with template fallback
         causal_truth = self._scenario.get("causal_truth")
+        primary_metric = str(mission.context.get("primary_metric") or "")
+        observations = None
         if causal_truth:
             causal_service = TemplateCausalEstimationService(causal_truth)
         else:
             causal_service = DoWhyCausalEstimationService(
                 fallback=TemplateCausalEstimationService({}),
+            )
+            observations = await _fetch_observations(
+                self.providers, primary_metric, dict(mission.time_range)
             )
 
         base = self._deps or DiagnosticDeps(
@@ -84,17 +93,29 @@ class SwarmDiagnosticSpecialist:
         deps = diagnostic_deps_from_blackboard(blackboard, base=base)
         agent = DiagnosticAgent(deps=deps, policies=self._policies)
 
+        context: dict[str, Any] = {
+            # fixture/replay mode: the template causal truth is authoritative
+            "trust_metadata_causal": True,
+        }
+        if observations is not None:
+            # DoWhy needs exact column matches — only declare common causes we
+            # actually fetched real data for (some ontology common causes,
+            # e.g. "campaign"/"device", are categorical dimensions, not
+            # metrics fetch_series can pull; dropping the unfetchable ones
+            # here beats DoWhy rejecting the whole estimate for missing columns).
+            context["common_causes"] = [
+                c for c in common_causes_for_outcome(primary_metric) if c in observations.columns
+            ]
+
         request = DiagnosticRequest(
             mission_id=blackboard.mission_id,
             question=mission.query,
-            primary_metric=str(mission.context.get("primary_metric") or ""),
+            primary_metric=primary_metric,
             lead_domain=blackboard.mission_lead,
             time_range=dict(mission.time_range),
             degradation_started_at=mission.context.get("degradation_started_at"),
-            context={
-                # fixture/replay mode: the template causal truth is authoritative
-                "trust_metadata_causal": True,
-            },
+            observations=observations,
+            context=context,
         )
         result: DiagnosticResult = await agent.diagnose(request)
 
@@ -108,15 +129,80 @@ class SwarmDiagnosticSpecialist:
             contradictions=len(result.contradictions),
         )
         if result.leadership_transfer_recommended:
-            # Diagnostic only proposes; the Coordinator's Leadership Manager /
-            # frontier evaluation independently decides whether to transfer.
             blackboard.record_event(
                 "leadership_transfer_recommended",
                 current_lead=blackboard.mission_lead,
                 recommended_lead=result.recommended_domain_lead,
                 reason=result.leadership_transfer_reason,
             )
+            # Diagnostic proposes; the Coordinator's LeadershipController still
+            # arbitrates (evidence required, loop/hysteresis checks) before it
+            # takes effect. Evidence refs are the retained hypothesis IDs the
+            # recommendation was based on.
+            if self._leadership is not None and result.recommended_domain_lead:
+                evidence_refs = retained_ids or posted
+                decision = self._leadership.decide_transfer(
+                    blackboard.leadership_state(),
+                    {
+                        "mission_id": blackboard.mission_id,
+                        "from_agent": blackboard.mission_lead,
+                        "to_agent": result.recommended_domain_lead,
+                        "requested_target": result.recommended_domain_lead,
+                        "reason": result.leadership_transfer_reason or "",
+                        "evidence_refs": evidence_refs,
+                        "unresolved_question": result.leadership_transfer_reason or "",
+                    },
+                )
+                if decision.get("accepted"):
+                    blackboard.apply_transfer(decision["handoff_history"][-1])
+                else:
+                    blackboard.record_event(
+                        "leadership_transfer_rejected",
+                        reason=decision.get("error_message"),
+                        error_code=decision.get("error_code"),
+                    )
         return posted
+
+
+async def _fetch_observations(providers: Any, outcome_metric: str, time_range: dict[str, Any]) -> Any:
+    """Real per-day observation series for DoWhy (docs/44 ROB-002).
+
+    ``providers`` is a ``ProviderBundle`` (domain -> DataProvider). Only
+    ``HybridMcpDataProvider`` implements ``fetch_series``; fixture/template
+    providers don't, and that's fine — this stays ``None`` for them, same as
+    before this fix (metadata-only estimation, honestly capped).
+    """
+    if providers is None or not outcome_metric:
+        return None
+    needed = {outcome_metric, *common_causes_for_outcome(outcome_metric)}
+    needed |= {tmpl.treatment_metric for tmpl in mechanisms_for(outcome_metric)}
+
+    seen: set[int] = set()
+    frame = None
+    for provider in getattr(providers, "data", {}).values():
+        fetch_series = getattr(provider, "fetch_series", None)
+        if fetch_series is None or id(provider) in seen:
+            continue
+        seen.add(id(provider))
+        try:
+            candidate = await fetch_series(metric_ids=sorted(needed), time_range=time_range)
+        except Exception:
+            continue
+        if candidate is None:
+            continue
+        if frame is None:
+            frame = candidate
+        else:
+            import pandas as pd
+
+            frame = pd.concat([frame, candidate], axis=1, join="outer")
+            frame = frame.loc[:, ~frame.columns.duplicated()]
+    if frame is None or outcome_metric not in frame.columns:
+        return None
+    frame = frame.dropna(how="any")
+    # Same 8-row floor as fetch_series's own min_rows default — merging
+    # per-provider frames on an outer join can drop rows back below it.
+    return frame if len(frame) >= 8 else None
 
 
 def _write_artifacts(blackboard: Blackboard, result: DiagnosticResult) -> tuple[list[str], list[str]]:
