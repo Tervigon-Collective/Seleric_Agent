@@ -85,7 +85,7 @@ from seleric_swarm.coordinator.policies import CoordinatorPolicies, load_coordin
 from seleric_swarm.coordinator.routing.invocation import A2AAgentInvoker, assemble_team
 from seleric_swarm.coordinator.state import empty_mission_extensions
 from seleric_swarm.coordinator.synthesis.provenance_builder import build_provenance_summary
-from seleric_swarm.coordinator.synthesis.response_builder import build_claim_aware_response
+from seleric_swarm.coordinator.synthesis.llm_response import synthesize_swarm_response
 from seleric_swarm.leadership.manager import LeadershipManager
 from seleric_swarm.observability.tracing import coordinator_task_metadata, traced_span
 from seleric_swarm.orchestration.state import MissionState
@@ -583,6 +583,23 @@ def _make_skeptic_gate(ctx: SwarmV2Context):
         if not needs_skeptic:
             return {"status": "validating", "events": list(ctx.blackboard.events)}
 
+        if (
+            not ctx.claim_id
+            and not ctx.blackboard.by_type("hypothesis")
+            and not ctx.blackboard.by_type("causal")
+        ):
+            # Diagnostic produced no candidate hypotheses at all — whether
+            # because no material anomaly was found, or because the frontier
+            # metric it ended up investigating (e.g. after a leadership
+            # transfer) isn't one the diagnostic ontology covers — there is no
+            # candidate conclusion for the Skeptic to challenge. Proposing one
+            # here would only get correctly rejected as unsupported, burning a
+            # full remediation cycle to reach a "found nothing" result the
+            # mission already has. This is distinct from hypotheses that WERE
+            # generated and tested but not retained (metric.cac-style weak
+            # evidence) — that case still deserves Skeptic's scrutiny.
+            return {"status": "validating", "events": list(ctx.blackboard.events)}
+
         # First entry vs re-check after remediation
         if ctx.remediation_round == 0 and not ctx.claim_id:
             await ctx.activate("skeptic_agent", "Attack candidate conclusion", Intent.CHALLENGE)
@@ -762,9 +779,24 @@ def _make_complete(ctx: SwarmV2Context):
         for line in conflict_limitations(conflicts):
             if line not in ctx.limitations:
                 ctx.limitations.append(line)
+        # A thorough investigation that never had a candidate mechanism to
+        # claim (no hypothesis, no causal artifact, and consequently nothing
+        # rejected/challenged either) is a complete "nothing material found"
+        # answer, not an incomplete one — same condition the skeptic_gate node
+        # uses to skip manufacturing an empty claim in the first place.
+        no_material_finding = (
+            not ctx.blackboard.by_type("hypothesis")
+            and not ctx.blackboard.by_type("causal")
+            and not buckets["rejected_claim_refs"]
+            and not buckets["challenged_claim_refs"]
+        )
+        objectives = [o.model_dump() for o in ctx.decomposition.objectives]
+        if no_material_finding:
+            for o in objectives:
+                o["status"] = "satisfied"
         state_for_completion: dict[str, Any] = {
             **empty_mission_extensions(),
-            "objectives": [o.model_dump() for o in ctx.decomposition.objectives],
+            "objectives": objectives,
             "validated_claim_refs": buckets["validated_claim_refs"],
             "challenged_claim_refs": buckets["challenged_claim_refs"],
             "rejected_claim_refs": buckets["rejected_claim_refs"],
@@ -776,7 +808,8 @@ def _make_complete(ctx: SwarmV2Context):
             "decompositions": ctx.decompositions,
             "claims": [{"gate_status": "passed"} for _ in buckets["validated_claim_refs"]],
             "evidence": ctx.blackboard.by_type("evidence"),
-            "status": "completed" if buckets["validated_claim_refs"] else "partial",
+            "status": "completed" if (buckets["validated_claim_refs"] or no_material_finding) else "partial",
+            "no_material_finding": no_material_finding,
             "skeptic_findings": list(state.get("skeptic_findings") or []),
             "budgets": ctx.policies.budgets.model_dump(),
             "usage": {
@@ -861,9 +894,10 @@ def _make_complete(ctx: SwarmV2Context):
 
 def _make_synthesize(ctx: SwarmV2Context):
     async def synthesize(state: MissionState) -> dict[str, Any]:
-        ctx.final_response = build_claim_aware_response(
-            ctx.blackboard,
-            ctx.mission,
+        ctx.final_response = await synthesize_swarm_response(
+            runtime=ctx.runtime,
+            blackboard=ctx.blackboard,
+            mission=ctx.mission,
             managed_claims=ctx.managed_claims,
             completion_status=str(state.get("completion_decision") or state.get("status")),
             policies=ctx.policies,

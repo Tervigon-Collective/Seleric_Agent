@@ -470,6 +470,12 @@ class FakeLLMAdapter:
             supported_field = _extract_field(user, "Supported dimensions for this metric") or ""
             supported = [item.strip() for item in supported_field.split(",") if item.strip()]
             return json.dumps(map_dimension(query, supported))
+        if prompt_id == "synthesizer.swarm_response":
+            # No scripted business-prose generator for swarm_v2 synthesis —
+            # returning empty defers to the deterministic template fallback
+            # (coordinator/synthesis/response_builder.py) that tests already
+            # assert against, same as a real LLM producing nothing useful.
+            return ""
         if prompt_id.endswith("response") or "synthesizer" in prompt_id:
             return synthesize_response(user)
         if "json schema" in joined or request.response_format == "json_schema":

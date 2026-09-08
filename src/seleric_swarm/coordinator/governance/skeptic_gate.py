@@ -55,10 +55,13 @@ async def apply_skeptic_gate(
         out["mission_status"] = "validating"
         out["event"] = "skeptic_pass"
         return out
-    if verdict == "REVISE":
-        out["event"] = "skeptic_revise"
+    if verdict in ("REVISE", "REJECT"):
+        out["event"] = "skeptic_revise" if verdict == "REVISE" else "skeptic_reject"
         sig = followup_signature(followups)
         out["followup_signature"] = sig
+        # Both REVISE and REJECT trigger a remediation round — cap and
+        # stall-detect uniformly, otherwise REJECT (which had neither check)
+        # can loop indefinitely reproducing the identical rejection.
         if remediation_round >= max_remediation_rounds:
             out["mission_status"] = "partial"
             out["status_reason"] = "max_remediation_rounds_exhausted"
@@ -76,16 +79,7 @@ async def apply_skeptic_gate(
         )
         out["remediation"] = plan
         out["mission_status"] = "remediating"
-        return out
-    if verdict == "REJECT":
-        out["event"] = "skeptic_reject"
-        plan = await targeted_remediation_plan(
-            mission_id=mission_id,
-            followups=list(followups or []),
-            runtime=runtime,
-        )
-        out["remediation"] = plan
-        out["mission_status"] = "remediating"
-        out["open_next_hypothesis"] = True
+        if verdict == "REJECT":
+            out["open_next_hypothesis"] = True
         return out
     return out
