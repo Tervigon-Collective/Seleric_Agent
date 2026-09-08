@@ -21,6 +21,7 @@ from seleric_swarm.agents.diagnostic.registries import (
     TemplateCausalEstimationService,
     causal_graphs_from_yaml,
 )
+from seleric_swarm.agents.diagnostic.services.dowhy_estimation import DoWhyCausalEstimationService
 from seleric_swarm.swarm.artifacts import Causal, Hypothesis
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission
@@ -40,22 +41,44 @@ class SwarmDiagnosticSpecialist:
         deps: DiagnosticDeps | None = None,
         policies: DiagnosticPolicies | None = None,
         ontology: Any = None,
+        trace_base: dict[str, str | None] | None = None,
     ) -> None:
         self.providers = providers
         self._scenario = scenario or {}
         self._deps = deps
         self._policies = policies or DiagnosticPolicies.load()
         self._ontology = ontology
+        # Trace base for LangSmith (request_id, session_id, workflow, etc.)
+        # Passed by coordinator graph; used when creating LLMPortReasoningModel.
+        self._trace_base = trace_base or {}
 
     def policy(self, blackboard: Blackboard, mission: SwarmMission) -> bool:
         return mission.wants("diagnostic") and bool(blackboard.by_type("anomaly"))
 
     async def run(self, blackboard: Blackboard, mission: SwarmMission) -> list[str]:
-        # idempotent re-run: replace this agent's prior output, don't accumulate
+        # Idempotent re-run: replace this agent's prior output, don't accumulate.
+        # NOTE: This discards artifacts unconditionally. In a Skeptic-driven re-
+        # diagnosis, prior artifacts may be referenced by claims in ClaimManager,
+        # leading to dangling support_refs. The ClaimManager is owned by the
+        # coordinator graph and not accessible here. Callers that need claim-ref
+        # safety should either (a) pass a claim_ref predicate here, or (b) reset
+        # affected claims when triggering a re-diagnosis. Tracked as a known
+        # limitation until the swarm architecture passes governance context.
         blackboard.discard_by(created_by="diagnostic_agent", artifact_types=("hypothesis", "causal"))
+        # Causal service selection:
+        # - Fixture/test mode: scenario has causal_truth → use template service
+        # - Production mode: no fixture → use DoWhy with template fallback
+        causal_truth = self._scenario.get("causal_truth")
+        if causal_truth:
+            causal_service = TemplateCausalEstimationService(causal_truth)
+        else:
+            causal_service = DoWhyCausalEstimationService(
+                fallback=TemplateCausalEstimationService({}),
+            )
+
         base = self._deps or DiagnosticDeps(
             causal_graphs=causal_graphs_from_yaml(),
-            causal_service=TemplateCausalEstimationService(self._scenario.get("causal_truth", {})),
+            causal_service=causal_service,
             ontology=self._ontology,
         )
         deps = diagnostic_deps_from_blackboard(blackboard, base=base)

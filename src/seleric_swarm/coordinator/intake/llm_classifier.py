@@ -1,8 +1,15 @@
-"""LLM-based query classification for swarm_v2 — replaces keyword/regex intent
-matching. Regex stays only where it's genuinely the right tool: date-token
-parsing (services/time_range.window_from_query handles "last 3 days" /
-"yesterday" / ISO dates deterministically before the LLM's own time_range
-guess is used as a fallback).
+"""LLM-based query classification for swarm_v2.
+
+There is no keyword/regex intent matcher. Regex stays only where it is the
+right tool: date-token parsing (``services/time_range.window_from_query``
+handles "last 3 days" / "yesterday" / ISO dates deterministically before
+the LLM's own ``time_range`` guess is used as a fallback). That is a
+syntactic tokenizer, not intent classification.
+
+When the LLM path is unusable (no prompt / no LLM configured / call failed)
+this function returns ``None`` and the caller (``coordinator.intake.normalize_query``)
+surfaces ``LLM_CLASSIFICATION_UNAVAILABLE`` — nothing falls back to a
+keyword table.
 """
 
 from __future__ import annotations
@@ -65,8 +72,9 @@ async def classify_query_via_llm(
 ) -> LlmClassification | None:
     """Classify intent/metrics/domain/entities via the LLM + live catalogue.
 
-    Returns None when the LLM path isn't usable (no prompt, no LLM configured,
-    or the call failed) — callers fall back to the offline regex classifier.
+    Returns ``None`` when the LLM path isn't usable (no prompt, no LLM
+    configured, or the call failed). Callers surface the failure as
+    ``LLM_CLASSIFICATION_UNAVAILABLE``; there is no keyword fallback.
     """
     try:
         spec = runtime.prompts.load("coordinator.classify_swarm")

@@ -72,6 +72,14 @@ class DiagnosticAgent:
                 f"Diagnostic run exceeded its {timeout_s}s runtime budget; "
                 "returning the best evidence gathered before the deadline."
             )
+            limitations = [budget_msg]
+            # Per 01-evidence-policy.mdc: if evidence is missing, return
+            # INSUFFICIENT_EVIDENCE. When timeout occurs with no retained
+            # hypotheses, the diagnostic produced no usable conclusion.
+            if not ctx.hypotheses:
+                limitations.append(
+                    "INSUFFICIENT_EVIDENCE: timeout occurred before any hypothesis was generated."
+                )
             result = DiagnosticResult(
                 diagnostic_run_id=run_id,
                 mission_id=request.mission_id,
@@ -79,7 +87,7 @@ class DiagnosticAgent:
                 outcome_metric=ctx.outcome_metric or request.outcome_metric or request.primary_metric,
                 hypotheses=ctx.hypotheses,
                 methodology="budget_exhausted",
-                limitations=[budget_msg],
+                limitations=limitations,
                 synthetic=ctx.synthetic_inputs(),
             )
             _log.warning(
@@ -87,6 +95,7 @@ class DiagnosticAgent:
                 mission_id=request.mission_id,
                 diagnostic_run_id=run_id,
                 timeout_s=timeout_s,
+                hypotheses_collected=len(ctx.hypotheses),
             )
         self._emit(result, elapsed_ms=round((time.perf_counter() - started) * 1000, 2))
         return result

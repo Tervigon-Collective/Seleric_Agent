@@ -20,6 +20,13 @@ from seleric_swarm.swarm.providers.base import (
     MetricReading,
     ProviderBundle,
 )
+from seleric_swarm.swarm.providers.template import (
+    TemplateAnomalyDetector,
+    TemplateCausalEngine,
+    TemplateForecaster,
+    TemplateOptimizer,
+    TemplateStatsEngine,
+)
 
 
 @dataclass
@@ -254,5 +261,14 @@ def build_hybrid_bundle(
             )
         else:
             data[d] = EmptyDataProvider(d)
-    bundle = ProviderBundle(data=data)
+    # Data is MCP/empty; intelligence seams stay Template* so specialists
+    # (anomaly / lightweight diagnostic / prediction / skeptic) never see None.
+    bundle = ProviderBundle(
+        data=data,
+        anomaly=TemplateAnomalyDetector(),
+        causal=TemplateCausalEngine(),
+        forecaster=TemplateForecaster(),
+        optimizer=TemplateOptimizer(),
+        stats=TemplateStatsEngine(),
+    )
     return bundle, stats

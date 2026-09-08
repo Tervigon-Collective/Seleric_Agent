@@ -151,7 +151,7 @@ def test_sync_passes_generated_session_id(runtime, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_as_of_extends_scenario_observation_window():
+async def test_as_of_extends_scenario_observation_window(runtime):
     scenario = {"observation_window": {"start": "2026-08-31", "end": "2026-09-02"}}
     # Scenario window kept; as_of past end extends end only
     tr = resolve_mission_time_range(scenario, timezone="Asia/Kolkata", as_of="2026-09-03")
@@ -169,17 +169,27 @@ async def test_as_of_extends_scenario_observation_window():
     assert tr_in["end"] == "2026-09-02"
     assert tr_in["start"] == "2026-08-31"
 
-    # No scenario window → fall back to normalized query window
+    # No scenario window → fall back to normalized query window. "last 3 days"
+    # (numeric form) is what services/time_range.window_from_query recognizes
+    # deterministically; the LLM handles the word form ("last three days") in
+    # production, but our FakeLLM stub does not, so this test uses the numeric
+    # form to exercise the actual date tokenizer.
     nq = await normalize_query(
-        "Why has CAC increased over the last three days?",
+        "Why has CAC increased over the last 3 days?",
         timezone="Asia/Kolkata",
         as_of="2026-09-03",
+        runtime=runtime,
+        metrics=runtime.metrics,
     )
     tr2 = resolve_mission_time_range(
         {}, timezone="Asia/Kolkata", as_of="2026-09-03", normalized=nq
     )
+    # "last 3 days" ending 2026-09-03 is an inclusive 3-day window
+    # (2026-09-01, 09-02, 09-03) — matches services.time_range.window_from_query.
+    # The old regex intake had an off-by-one (4-day window); we now use the
+    # canonical resolver here too.
     assert tr2["end"] == "2026-09-03"
-    assert tr2["start"] == "2026-08-31"
+    assert tr2["start"] == "2026-09-01"
 
 
 def test_swarm_mission_view_preserves_prototype_completed():
@@ -208,8 +218,14 @@ def test_swarm_mission_view_preserves_prototype_completed():
 
 
 @pytest.mark.asyncio
-async def test_full_flags_folded_into_normalized_intents():
-    nq = await normalize_query("Why did CAC rise?", timezone="Asia/Kolkata", as_of="2026-09-03")
+async def test_full_flags_folded_into_normalized_intents(runtime):
+    nq = await normalize_query(
+        "Why did CAC rise?",
+        timezone="Asia/Kolkata",
+        as_of="2026-09-03",
+        runtime=runtime,
+        metrics=runtime.metrics,
+    )
     intents = apply_full_flags(
         set(nq.intents),
         full_diagnostic=True,

@@ -80,7 +80,15 @@ class Anomaly(SwarmArtifact):
     observed: float | None = None
     expected_range: list[float] = Field(default_factory=list)
     deviation_pct: float | None = None
+    # ``score`` is the deviation-magnitude score, kept for back-compat.
+    # ``magnitude_score`` mirrors it explicitly; ``adversity_score`` is the
+    # magnitude-in-adverse-direction score the leadership frontier / skeptic
+    # rank by so favorable moves don't wear a "high anomaly" label.
     score: float | None = None
+    magnitude_score: float | None = None
+    adversity_score: float | None = None
+    direction_bad: Literal["up", "down"] = "up"
+    adverse: bool = False
     detector: dict[str, Any] = Field(default_factory=dict)
     dimensions: dict[str, Any] = Field(default_factory=dict)
     start_time: str | None = None

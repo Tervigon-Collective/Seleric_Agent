@@ -7,6 +7,8 @@ statistics decide expected vs observed. This prototype routes to
 
 from __future__ import annotations
 
+from typing import Any
+
 from seleric_swarm.swarm.artifacts import Anomaly
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission
@@ -24,12 +26,11 @@ class AnomalyAgent(SpecialistAgent):
 
     async def run(self, blackboard: Blackboard, mission: SwarmMission) -> list[str]:
         evidence = blackboard.by_type("evidence")
-        already = {(a["metric_id"], tuple(sorted((a.get("dimensions") or {}).items()))) for a in blackboard.by_type("anomaly")}
+        already = {
+            (a["metric_id"], tuple(sorted((a.get("dimensions") or {}).items())))
+            for a in blackboard.by_type("anomaly")
+        }
 
-        deploy_at = next(
-            (e["value"] for e in evidence if str(e.get("metric_or_fact", "")).startswith("event.")),
-            None,
-        )
         readings: list[MetricReading] = []
         for e in evidence:
             metric = e.get("metric_or_fact")
@@ -50,9 +51,20 @@ class AnomalyAgent(SpecialistAgent):
                 )
             )
 
-        findings = await self.providers.anomaly.detect(
-            readings, context={"degradation_started_at": deploy_at}
-        )
+        detector = self.providers.anomaly
+        if detector is None:
+            blackboard.record_event("anomaly_provider_unavailable")
+            return []
+
+        # Build detector context from mission context (no scenario-specific glue)
+        detect_ctx: dict[str, Any] = {}
+        if mission.context:
+            # Pass through time_range for detectors that need window info
+            if "time_range" in mission.context:
+                detect_ctx["time_range"] = mission.context["time_range"]
+
+        findings = await detector.detect(readings, context=detect_ctx)
+
         posted: list[str] = []
         for f in findings:
             key = (f.metric_id, tuple(sorted((f.dimensions or {}).items())))
@@ -66,12 +78,20 @@ class AnomalyAgent(SpecialistAgent):
                 expected_range=f.expected_range,
                 deviation_pct=f.deviation_pct,
                 score=f.score,
+                magnitude_score=f.magnitude_score,
+                adversity_score=f.adversity_score,
+                direction_bad=f.direction_bad,  # type: ignore[arg-type]
+                adverse=f.adverse,
                 detector=f.detector,
                 dimensions=f.dimensions,
                 start_time=f.start_time,
                 direction=f.direction,  # type: ignore[arg-type]
                 data_origin=f.data_origin,  # type: ignore[arg-type]
-                evidence_refs=[e["artifact_id"] for e in evidence if e.get("metric_or_fact") == f.metric_id],
+                evidence_refs=[
+                    e["artifact_id"]
+                    for e in evidence
+                    if e.get("metric_or_fact") == f.metric_id
+                ],
             )
             if f.synthetic:
                 art.mark_synthetic()
@@ -80,5 +100,6 @@ class AnomalyAgent(SpecialistAgent):
                 blackboard.record_event("anomaly_rejected", problems=problems)
                 continue
             posted.append(blackboard.post(art))
+
         blackboard.record_event("anomaly_done", found=len(posted))
         return posted

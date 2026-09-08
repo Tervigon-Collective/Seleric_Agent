@@ -43,6 +43,8 @@ class SkepticAgent(SpecialistAgent):
 
         for attack in _ATTACKS:
             if attack in {"alternative_explanation", "uncontrolled_confounder", "seasonality", "sample_size"}:
+                if self.providers.stats is None:
+                    continue
                 res = await self.providers.stats.check(
                     name=attack,
                     data={"outcome": causal.get("outcome"), "treatment": causal.get("treatment")},
