@@ -7,10 +7,7 @@ from uuid import uuid4
 
 from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.contracts.lookup import CoordinatorClassificationV1
-from seleric_swarm.coordinator.catalogue_grounding import (
-    entities_from_catalogue,
-    hints_from_catalogue,
-)
+from seleric_swarm.coordinator.catalogue_grounding import hints_from_catalogue
 from seleric_swarm.coordinator.planning.complexity import looks_like_diagnostic
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
@@ -144,9 +141,10 @@ class Agent(SwarmAgent):
         elif canonical and domain_lead in {"coordinator_agent", "", None}:
             domain_lead = lead_agent_for_hints(canonical, self.runtime.metrics)
 
+        # Dimension/breakdown resolution now happens at observer execution time
+        # (agents/intelligence/observer.py::_resolve_breakdown_dimensions),
+        # grounded in the metric's real supported_dimensions.
         entities = list(classification.entities or [])
-        if not entities and canonical:
-            entities = await entities_from_catalogue(query, canonical[0], runtime=self.runtime, agent_id=self.agent_id)
 
         return {
             "query_class": query_class,

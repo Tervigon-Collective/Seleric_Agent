@@ -12,7 +12,7 @@ from seleric_swarm.coordinator.contracts import (
     NormalizedQuery,
     TimeRange,
 )
-from seleric_swarm.services.metrics import MetricRegistry
+from seleric_swarm.services.metrics import MetricRegistry, lead_agent_for_hints
 
 _DIAGNOSTIC_RE = re.compile(
     r"\b(why|root cause|reason for|caused?|explain|driver of|driving|drove|diagnose|"
@@ -330,7 +330,28 @@ def resolve_time_range(
     ), None
 
 
-def candidate_domains(query: str, intents: list[str], primary_metric: str | None) -> list[str]:
+_BROAD_INVESTIGATION_DOMAINS = ["commerce", "performance", "funnel", "finance"]
+
+
+def candidate_domains(
+    query: str,
+    intents: list[str],
+    primary_metric: str | None,
+    metrics: MetricRegistry | None = None,
+) -> list[str]:
+    if "executive_health" in intents:
+        # A health check genuinely wants broad investigation, not a single
+        # domain guess — this is the correct behavior for that intent, not a
+        # fallback default.
+        return list(_BROAD_INVESTIGATION_DOMAINS)
+
+    # A resolved metric already carries its owning domain in the registry —
+    # a deterministic lookup, not a guess. Prefer it over any keyword table.
+    if metrics is not None:
+        lead = lead_agent_for_hints([primary_metric] if primary_metric else [], metrics)
+        if lead != "coordinator_agent":
+            return [lead.removesuffix("_agent")]
+
     domains: list[str] = []
     q = query.lower()
     if primary_metric and "cac" in (primary_metric or "") or "cac" in q:
@@ -341,11 +362,13 @@ def candidate_domains(query: str, intents: list[str], primary_metric: str | None
         domains.append("funnel")
     if any(k in q for k in ("latency", "lcp", "js error", "deploy", "mobile")):
         domains.append("technical")
-    if "executive_health" in intents:
-        domains.extend(["commerce", "performance", "funnel", "finance"])
-    if not domains:
-        domains.append("performance")
-    return list(dict.fromkeys(domains))
+    if domains:
+        return list(dict.fromkeys(domains))
+    # Nothing resolved at all: the classify_swarm prompt's own contract is
+    # that an empty domain_lead means "run a broad investigation instead of
+    # guessing one domain" — that promise should hold regardless of which
+    # intent triggered it, not just executive_health.
+    return list(_BROAD_INVESTIGATION_DOMAINS)
 
 
 async def normalize_query(
@@ -403,14 +426,14 @@ async def normalize_query(
         domains = (
             [llm_result.domain_lead.removesuffix("_agent")]
             if llm_result.domain_lead
-            else candidate_domains(query, intents, primary)
+            else candidate_domains(query, intents, primary, metrics)
         )
     else:
         intents = classify_intents(query)
         primary, secondary, reason = await resolve_metrics(query, metrics, mcp=mcp, agent_id=agent_id)
         entities = resolve_entities(query)
         time_range, comparison = resolve_time_range(query, timezone=timezone, as_of=as_of)
-        domains = candidate_domains(query, intents, primary)
+        domains = candidate_domains(query, intents, primary, metrics)
     unsupported_reason = (
         llm_result.unsupported_reason if llm_result is not None and llm_result.unresolved else None
     )
@@ -421,6 +444,12 @@ async def normalize_query(
     # surface the gap so synthesis/limitations can explain fixture fallback.
     if primary is None and any(i in intents for i in ("diagnostic", "predictive", "prescriptive")):
         unresolved.append("primary_metric_unresolved")
+    if llm_result is None and runtime is not None:
+        # A live runtime was available, so the offline keyword classifier only
+        # ran because the LLM call itself failed mid-request — surface that as
+        # a degraded-classification signal rather than treating this response
+        # as equivalent to a genuine offline/test-mode classification.
+        unresolved.append("llm_classification_unavailable")
     return NormalizedQuery(
         original_query=query,
         intents=intents,

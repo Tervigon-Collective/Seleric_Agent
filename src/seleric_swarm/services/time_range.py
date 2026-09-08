@@ -67,6 +67,19 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
     if re.search(r"\btoday\b", lower):
         day = anchor.isoformat()
         return TimeRangeV1(kind="absolute", start=day, end=day, relative_token="today")
+    if re.search(r"\bthis\s+month\b", lower):
+        return TimeRangeV1(
+            kind="absolute", start=anchor.replace(day=1).isoformat(), end=anchor.isoformat(),
+            relative_token="this_month",
+        )
+    if re.search(r"\bthis\s+week\b", lower):
+        start = anchor - timedelta(days=anchor.weekday())
+        return TimeRangeV1(kind="absolute", start=start.isoformat(), end=anchor.isoformat(), relative_token="this_week")
+    if re.search(r"\bthis\s+year\b", lower):
+        return TimeRangeV1(
+            kind="absolute", start=anchor.replace(month=1, day=1).isoformat(), end=anchor.isoformat(),
+            relative_token="this_year",
+        )
     return None
 
 
@@ -76,8 +89,14 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
         day = time_range.start[:10]
         return TimeRangeV1(kind="absolute", start=day, end=time_range.end[:10] if time_range.end else day)
     if time_range.kind == "relative":
-        token = time_range.relative_token or "yesterday"
-        last_n = re.fullmatch(r"last_(\d+)d", token or "")
+        token = time_range.relative_token
+        if not token:
+            # kind="relative" without a token is a classifier/schema anomaly,
+            # not "no time phrase" (that case is kind="none") — the classify
+            # prompt is responsible for always filling relative_token when it
+            # picks kind="relative", so this must raise, not silently guess.
+            raise ValueError("relative time_range requires a relative_token")
+        last_n = re.fullmatch(r"last_(\d+)d", token)
         if last_n:
             n = max(1, min(int(last_n.group(1)), 90))
             start = anchor - timedelta(days=n - 1)
@@ -89,11 +108,23 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
             )
         if token == "today":
             day = anchor.isoformat()
-        elif token == "yesterday":
+            return TimeRangeV1(kind="absolute", start=day, end=day, relative_token=token)
+        if token == "yesterday":
             day = (anchor - timedelta(days=1)).isoformat()
-        else:
-            day = (anchor - timedelta(days=1)).isoformat()
-        return TimeRangeV1(kind="absolute", start=day, end=day, relative_token=token)
+            return TimeRangeV1(kind="absolute", start=day, end=day, relative_token=token)
+        if token == "this_week":
+            start = anchor - timedelta(days=anchor.weekday())
+            return TimeRangeV1(kind="absolute", start=start.isoformat(), end=anchor.isoformat(), relative_token=token)
+        if token == "this_month":
+            return TimeRangeV1(
+                kind="absolute", start=anchor.replace(day=1).isoformat(), end=anchor.isoformat(), relative_token=token
+            )
+        if token == "this_year":
+            return TimeRangeV1(
+                kind="absolute", start=anchor.replace(month=1, day=1).isoformat(), end=anchor.isoformat(),
+                relative_token=token,
+            )
+        raise ValueError(f"unrecognized relative_token: {token!r}")
     if time_range.kind == "comparison":
         cmp_start: str | None = time_range.start
         cmp_end: str | None = time_range.end

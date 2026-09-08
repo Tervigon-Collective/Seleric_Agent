@@ -63,33 +63,3 @@ async def hints_from_catalogue(query: str, *, runtime: SwarmRuntime, agent_id: s
         if overlap == best and registry_id not in out:
             out.append(registry_id)
     return out
-
-
-async def entities_from_catalogue(
-    query: str, metric_id: str, *, runtime: SwarmRuntime, agent_id: str = "coordinator_agent"
-) -> list[str]:
-    """Resolve entity-like tokens in the query against a metric's supported dimensions."""
-    definition = runtime.metrics.get(metric_id)
-    if definition is None or "seleric.catalogue_get_metric" not in runtime.mcp.capabilities:
-        return []
-    try:
-        payload = await runtime.mcp.call(
-            agent_id=agent_id,
-            capability="seleric.catalogue_get_metric",
-            arguments={"metric_id": definition.catalogue_metric},
-        )
-    except Exception:
-        return []
-    supported = list(payload.get("supported_dimensions") or [])
-    text = (query or "").lower()
-    hits: list[str] = []
-    for dim in supported:
-        raw = str(dim)
-        parts = [p for p in raw.removeprefix("lt_").split("_") if p]
-        token = " ".join(parts)
-        if raw.lower() in text or (token and token in text):
-            hits.append(raw)
-            continue
-        if any(part in text for part in parts if len(part) >= 4):
-            hits.append(raw)
-    return hits

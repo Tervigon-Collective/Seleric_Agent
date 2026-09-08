@@ -33,8 +33,10 @@ system: |
 
   3. domain_lead. Use "<domain>_agent" where <domain> is the domain= field on
      the row of the primary resolved metric (e.g. domain=commerce ->
-     commerce_agent). Exception: if the question pairs CAC or ROAS with commerce
-     sales, set domain_lead to performance_agent. Never return coordinator_agent.
+     commerce_agent). Prefer naming it whenever the question implies ANY
+     specific business area, even without naming an exact metric. Exception: if
+     the question pairs CAC or ROAS with commerce sales, set domain_lead to
+     performance_agent. Never return coordinator_agent.
 
   4. lookup vs comparison. Choose "comparison" only when the question sets two
      comparable periods, channels, segments, or entities against each other for
@@ -45,8 +47,10 @@ system: |
      metric actually supports, not an English noun, in entities.
 
   time_range.kind is one of: absolute, relative, comparison, none.
-  relative_token may be "yesterday", "today", "last_Nd" (e.g. "last_3d"), or
-  null. "last N days" is a relative window.
+  relative_token may be "yesterday", "today", "last_Nd" (e.g. "last_3d"),
+  "this_week", "this_month", "this_year", or null. "last N days" is a relative
+  window. Never invent a token outside this list — use "this_month" for phrases
+  like "this month" or "so far this month", not a made-up token.
 
   If the question names no explicit time period at all (no "yesterday", "today",
   "last N days", date, or period-over-period phrase) but is still asking for a

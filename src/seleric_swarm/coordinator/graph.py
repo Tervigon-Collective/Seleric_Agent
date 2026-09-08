@@ -104,31 +104,6 @@ from seleric_swarm.swarm.transport import InProcessTransport
 WorkflowVersion = Literal["swarm_v2"]
 ActivateFn = Callable[..., Awaitable[dict[str, Any]]]
 
-def _initial_lead(query: str) -> str:
-    """Domain-lead fallback for the rare case ``normalized.candidate_domains``
-    is empty (candidate_domains() itself always falls back to "performance",
-    so this path is effectively unreachable in practice — kept for safety).
-    """
-    q = query.lower()
-    if any(k in q for k in ("cac", "roas", "cpm", "cpc", "ctr", "ad spend", "acquisition")):
-        return "performance_agent"
-    if any(k in q for k in ("attribut", "last-touch", "last touch", "channel mix")):
-        return "attribution_agent"
-    if any(k in q for k in ("net sales", "gross sales", "orders", "returns", "revenue")):
-        return "commerce_agent"
-    if any(k in q for k in ("units sold", "sku", "product margin", "assortment")):
-        return "product_agent"
-    if any(k in q for k in ("repeat rate", "ltv", "cohort", "retention")):
-        return "customer_agent"
-    if any(k in q for k in ("refund", "fulfillment", "ops sla")):
-        return "operations_agent"
-    if any(k in q for k in ("profit", "margin", "cogs")):
-        return "finance_agent"
-    if any(k in q for k in ("sessions", "checkout", "add to cart", "conversion", "funnel")):
-        return "funnel_agent"
-    return "performance_agent"
-
-
 def _swarm_mission_view(result: SwarmMissionResult, request_id: str, session_id: str) -> Any:
     from typing import cast
 
@@ -616,6 +591,7 @@ def _make_skeptic_gate(ctx: SwarmV2Context):
             retained_hyps = [
                 h for h in ctx.blackboard.by_type("hypothesis") if h.get("status") == "retained"
             ]
+            causal_arts = ctx.blackboard.by_type("causal")
             claim = ctx.claim_mgr.propose(
                 mission_id=ctx.mission.mission_id,
                 statement=retained_hyps[0]["statement"] if retained_hyps else "candidate conclusion",
@@ -623,6 +599,7 @@ def _make_skeptic_gate(ctx: SwarmV2Context):
                 support_refs=ctx.blackboard.refs_by_type("causal"),
                 origin_agent="diagnostic_agent",
                 synthetic=True,
+                causal_strength=(causal_arts[0].get("confidence") or None) if causal_arts else None,
             )
             ctx.claim_id = claim.claim_id
             ctx.emit(CLAIM_PROPOSED, claim_id=claim.claim_id, claim_type=claim.claim_type)
@@ -1025,10 +1002,11 @@ async def run_swarm_v2_mission(
         )
     # normalized.candidate_domains is already LLM+catalogue grounded when a
     # live runtime was given (falls back to the regex domain guesser inside
-    # normalize_query itself when not) — no separate keyword pass needed here.
-    initial_lead = (
-        f"{normalized.candidate_domains[0]}_agent" if normalized.candidate_domains else _initial_lead(query)
-    )
+    # normalize_query itself when not). A mission requires some initial lead
+    # to route to; "commerce" is the one terminal default for the rare case
+    # nothing at all resolved (no domain_lead, no metric ownership, no keyword
+    # signal) — a single documented last resort, not a second keyword table.
+    initial_lead = f"{normalized.candidate_domains[0]}_agent" if normalized.candidate_domains else "commerce_agent"
     # Single source of truth: intake intents (LLM+catalogue classified, includes
     # executive_health → diagnostic), plus full_* flags that force specialist
     # activation. Fold into normalized so decomposition / plan see the same
@@ -1071,14 +1049,12 @@ async def run_swarm_v2_mission(
         complexity=plan.complexity,
         initial_lead=initial_lead,
         context={
-            # Only fall back to a domain default when intake couldn't resolve a
-            # specific metric from the query — never clobber a correctly
-            # resolved one (e.g. "why did ROAS drop" must diagnose ROAS, not CAC,
-            # even though ROAS keywords route the initial lead to performance_agent).
-            "primary_metric": (
-                normalized.primary_metric
-                or ("metric.cac" if initial_lead == "performance_agent" else "metric.net_sales")
-            ),
+            # No guessing here: an unresolved metric stays empty and each
+            # specialist's own resolution ladder (anomaly-driven / domain-frontier
+            # for Diagnostic, "unresolved rather than a plausible id" for
+            # Prediction) decides what to do, instead of this being clobbered by
+            # an arbitrary CAC/net_sales pick keyed off which domain is lead.
+            "primary_metric": normalized.primary_metric,
             "resolved_metric": normalized.primary_metric,
             "decomposition_id": decomposition.decomposition_id,
             "plan_errors": plan_errors,
@@ -1245,6 +1221,8 @@ async def run_swarm_v2_mission(
     for reason in normalized.unresolved_semantics:
         if reason == "primary_metric_unresolved":
             line = "Primary metric could not be resolved from the query."
+        elif reason == "llm_classification_unavailable":
+            line = "LLM classification was unavailable; this query was classified with the offline fallback."
         else:
             line = reason
         if line not in ctx.limitations:

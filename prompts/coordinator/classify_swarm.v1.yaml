@@ -43,17 +43,21 @@ system: |
 
   3. domain_lead. Use "<domain>_agent" where <domain> is the domain= field on
      the row of the primary resolved metric (e.g. domain=performance ->
-     performance_agent). If no specific metric is named (including
-     executive_health), leave domain_lead empty — the caller decides. Never
-     return coordinator_agent.
+     performance_agent). Prefer naming it whenever the question implies ANY
+     specific business area, even without naming an exact metric (e.g. "how's
+     checkout doing" -> funnel_agent). Only leave domain_lead empty for a
+     genuinely business-area-agnostic question (including executive_health) —
+     the caller decides. Never return coordinator_agent.
 
   4. Ranking / breakdown questions ("best", "top", "by <dimension>") are lookup
      or comparison unless the user also asks why. Put the catalogue dimension id
      the metric actually supports — not an English noun — in entities.
 
   time_range.kind is one of: absolute, relative, comparison, none.
-  relative_token may be "yesterday", "today", "last_Nd" (e.g. "last_3d"), or
-  null. "last N days" is a relative window.
+  relative_token may be "yesterday", "today", "last_Nd" (e.g. "last_3d"),
+  "this_week", "this_month", "this_year", or null. "last N days" is a relative
+  window. Never invent a token outside this list — use "this_month" for phrases
+  like "this month" or "so far this month", not a made-up token.
 
   If the question names no explicit time period at all (no "yesterday", "today",
   "last N days", date, or period-over-period phrase) but is still asking for a

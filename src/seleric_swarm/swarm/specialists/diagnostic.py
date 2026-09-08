@@ -107,6 +107,9 @@ class DiagnosticAgent(SpecialistAgent):
             effect_ci=result.effect_ci,
             refutations=result.refutations,
             passed=result.passed,
+            # This lightweight fallback only knows pass/fail, not a real confidence
+            # tier — a middle tier is the honest ceiling, never the top one.
+            confidence="CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS" if result.passed else "ASSOCIATION_ONLY",
             data_origin=result.data_origin,  # type: ignore[arg-type]
             evidence_refs=[primary_id],
         )

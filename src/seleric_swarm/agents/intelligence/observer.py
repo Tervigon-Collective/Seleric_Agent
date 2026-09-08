@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from seleric_swarm.agents.base import AgentContext, SwarmAgent
-from seleric_swarm.contracts.lookup import MetricMappingV1
+from seleric_swarm.contracts.lookup import DimensionMappingV1, MetricMappingV1
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.runtime import SwarmRuntime
@@ -16,62 +16,14 @@ AGENT_VERSION = "0.1.0"
 _TOP_N_RE = re.compile(r"\btop\s+(\d+)\b", re.IGNORECASE)
 _DEFAULT_TOP_N = 10
 
-# Suffixes that identify time-grain dimensions (e.g. order_date, created_at,
-# event_time, report_month).  These represent query granularity, NOT categorical
-# breakdown axes, so they must never be resolved from entity names.
-_TIME_DIM_SUFFIXES = ("_date", "_at", "_time", "_month", "_week", "_year", "_hour", "_day")
-
-
-def _is_time_dim(dim: str) -> bool:
-    return any(dim.endswith(s) for s in _TIME_DIM_SUFFIXES)
-
-
-def _resolve_dimension(entity: str, supported: list[str]) -> str | None:
-    """Map a control-plane entity onto a catalogue dimension id.
-
-    Time-grain dimensions (``order_date``, ``event_at``, ``created_month`` …)
-    are excluded so that entity tokens like "order" cannot accidentally trigger
-    a daily breakdown via fuzzy suffix matching against ``order_date``.
-    """
-    entity = (entity or "").strip()
-    if not entity:
-        return None
-    # The entity itself looks like a time dim — never use it as a breakdown.
-    if _is_time_dim(entity):
-        return None
-    if not supported or entity in supported:
-        return entity
-    token = entity.removeprefix("lt_")
-    matches = [
-        dim
-        for dim in supported
-        if (dim == entity or dim.removeprefix("lt_") == token or token in dim.split("_"))
-        and not _is_time_dim(dim)
-    ]
-    return matches[0] if matches else None
-
-
-def _rank_breakdown(
-    question: str,
-    *,
-    entities: list[str],
-    supported_dimensions: list[str] | None = None,
-) -> dict[str, Any] | None:
-    """Break down when the control plane named a catalogue dimension in entities."""
-    n = _DEFAULT_TOP_N
-    found = _TOP_N_RE.search(question or "")
-    if found:
-        n = max(1, min(int(found.group(1)), 25))
-    supported = list(supported_dimensions or [])
-    dims: list[str] = []
-    for entity in entities:
-        resolved = _resolve_dimension(entity, supported)
-        if resolved:
-            dims.append(resolved)
-    dims = list(dict.fromkeys(dims))
-    if not dims:
-        return None
-    return {"dimensions": dims[:1], "limit": n}
+# Cheap pre-filter so a plain aggregate lookup doesn't pay for an extra LLM
+# call: only worth asking "does this need a breakdown?" when there's some
+# ranking/grouping language at all. This never decides WHICH dimension — that
+# real decision is grounded in the metric's actual supported_dimensions via
+# the observer.dimension_map prompt (see _resolve_breakdown_dimensions).
+_RANKING_LANGUAGE_RE = re.compile(
+    r"\b(top|best|worst|highest|lowest|leading|lagging|breakdown|by)\b", re.IGNORECASE
+)
 
 
 def _dimension_value(row: dict[str, Any], dim_id: str) -> Any:
@@ -191,17 +143,16 @@ class Agent(SwarmAgent):
             )
             for start, end in windows:
                 tool_calls += 1
-                rows = []
+                rows: list[dict[str, Any]] = []
                 if seleric_measure:
                     rows = await self._fetch_seleric(
+                        ctx,
                         seleric_measure=seleric_measure,
                         metric_id=metric_id,
                         definition=definition,
                         start=start,
                         end=end,
                         owner_agent_id=owner_agent_id,
-                        question=ctx.question,
-                        entities=list(ctx.payload.get("entities") or []),
                     )
                 if not rows:
                     missing.append(f"{metric_id} on {start}" + (f"–{end}" if end != start else ""))
@@ -336,8 +287,51 @@ class Agent(SwarmAgent):
             return preferred
         return None
 
+    async def _resolve_breakdown_dimensions(
+        self, ctx: AgentContext, *, supported: list[str]
+    ) -> list[str]:
+        """Ask the LLM which supported dimension (if any) the query wants to
+        break down by — grounded in the metric's real dimension list (unlike
+        the classify-time ``entities`` field, which has no dimension catalogue
+        in its prompt context and so can only ever guess)."""
+        if not supported or not _RANKING_LANGUAGE_RE.search(ctx.question or ""):
+            return []
+        spec = self.runtime.prompts.load("observer.dimension_map")
+        user = spec.render_user({"query": ctx.question, "supported_dimensions": ", ".join(supported)})
+        request = LLMRequest(
+            messages=[
+                ChatMessage(role="system", content=spec.system),
+                ChatMessage(role="user", content=user),
+            ],
+            model=spec.model,
+            temperature=spec.temperature,
+            max_tokens=spec.max_tokens,
+            timeout_s=self.runtime.settings.llm_timeout_s,
+            metadata=LLMRequestMetadata(
+                request_id=str(ctx.payload.get("request_id") or ctx.mission_id),
+                session_id=str(ctx.payload.get("session_id") or ctx.mission_id),
+                mission_id=ctx.mission_id,
+                task_id=ctx.task_id,
+                agent_id=self.agent_id,
+                agent_version=self.runtime.agents.version(self.agent_id, AGENT_VERSION),
+                prompt_id=spec.id,
+                prompt_version=spec.version,
+                workflow_name=self.runtime.settings.workflow_name,
+                workflow_version=self.runtime.settings.workflow_version,
+                model=spec.model,
+                query_class=str(ctx.payload.get("query_class") or "") or None,
+            ),
+            tags=["observer", "dimension_map"],
+        )
+        try:
+            mapped = await self.runtime.llm.complete_structured(request, DimensionMappingV1)
+        except (LLMError, LLMStructuredOutputError):
+            return []
+        return [d for d in mapped.value.dimensions if d in supported][:1]
+
     async def _fetch_seleric(
         self,
+        ctx: AgentContext,
         *,
         seleric_measure: str,
         metric_id: str,
@@ -345,15 +339,13 @@ class Agent(SwarmAgent):
         start: str,
         end: str,
         owner_agent_id: str,
-        question: str = "",
-        entities: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         arguments: dict[str, Any] = {
             "measures": [seleric_measure],
             "time_range": {"start": start, "end": end},
         }
         supported: list[str] = []
-        if entities and "seleric.catalogue_get_metric" in self.runtime.mcp.capabilities:
+        if "seleric.catalogue_get_metric" in self.runtime.mcp.capabilities:
             try:
                 payload = await self.runtime.mcp.call(
                     agent_id=owner_agent_id,
@@ -363,15 +355,13 @@ class Agent(SwarmAgent):
                 supported = list(payload.get("supported_dimensions") or [])
             except Exception:
                 supported = []
-        rank = _rank_breakdown(
-            question,
-            entities=list(entities or []),
-            supported_dimensions=supported,
-        )
-        if rank:
-            arguments["dimensions"] = list(rank["dimensions"])
+        dim_ids = await self._resolve_breakdown_dimensions(ctx, supported=supported)
+        if dim_ids:
+            found = _TOP_N_RE.search(ctx.question or "")
+            n = max(1, min(int(found.group(1)), 25)) if found else _DEFAULT_TOP_N
+            arguments["dimensions"] = dim_ids
             arguments["sort"] = [{"field": seleric_measure, "direction": "desc"}]
-            arguments["limit"] = rank["limit"]
+            arguments["limit"] = n
         if "seleric_module" in getattr(definition, "raw", {}):
             arguments["module"] = definition.seleric_module
         result = await self.runtime.mcp.call(
@@ -389,7 +379,46 @@ class Agent(SwarmAgent):
         ontology = getattr(self.runtime, "ontology", None)
         if ontology is not None:
             om = await ontology.metric_context(seleric_measure, agent_id=owner_agent_id)
-        dim_ids = list(rank["dimensions"]) if rank else []
+
+        def _evidence(*, value: float, dims: dict[str, Any]) -> dict[str, Any]:
+            return make_evidence(
+                source=f"seleric_mcp.{provenance.get('cube_view', seleric_measure)}",
+                metric_or_fact=metric_id,
+                value=value,
+                unit=definition.unit or provenance.get("currency"),
+                dimensions=dims,
+                time_range={"start": start, "end": end, "timezone": provenance.get("timezone")},
+                freshness=provenance.get("generated_at"),
+                provenance={
+                    "server": "seleric_mcp",
+                    "tool_name": "seleric.metrics_query",
+                    "resolved_measure": seleric_measure,
+                    "query_id": provenance.get("query_id"),
+                    "cube_view": provenance.get("cube_view"),
+                    "catalogue_version": provenance.get("catalogue_version"),
+                    "freshness": provenance.get("freshness"),
+                    "requested_time_range": {"start": start, "end": end},
+                    "metric_version": definition.version,
+                    "formula": definition.formula,
+                    "data_product": om.get("data_product"),
+                    "contract": om.get("contract"),
+                    "entity_cluster": om.get("entity_cluster"),
+                    "om_domain": om.get("domain"),
+                },
+            )
+
+        values = [float(row[seleric_measure]) for row in rows if row.get(seleric_measure) is not None]
+        if not values:
+            return []
+        if not dim_ids:
+            # No breakdown was requested — an ungrouped aggregate query answers
+            # with ONE number for the period. Multiple rows here means the
+            # underlying rows weren't rolled up (e.g. one row per order), not
+            # that there are several distinct answers, so sum rather than
+            # emitting one near-identical evidence artifact per row.
+            return [_evidence(value=sum(values), dims={})]
+
+        seen: set[tuple[tuple[str, Any], ...]] = set()
         out: list[dict[str, Any]] = []
         for row in rows:
             raw_value = row.get(seleric_measure)
@@ -397,31 +426,9 @@ class Agent(SwarmAgent):
                 continue
             dims = {d: _dimension_value(row, d) for d in dim_ids}
             dims = {k: v for k, v in dims.items() if v is not None}
-            out.append(
-                make_evidence(
-                    source=f"seleric_mcp.{provenance.get('cube_view', seleric_measure)}",
-                    metric_or_fact=metric_id,
-                    value=float(raw_value),
-                    unit=definition.unit or provenance.get("currency"),
-                    dimensions=dims,
-                    time_range={"start": start, "end": end, "timezone": provenance.get("timezone")},
-                    freshness=provenance.get("generated_at"),
-                    provenance={
-                        "server": "seleric_mcp",
-                        "tool_name": "seleric.metrics_query",
-                        "resolved_measure": seleric_measure,
-                        "query_id": provenance.get("query_id"),
-                        "cube_view": provenance.get("cube_view"),
-                        "catalogue_version": provenance.get("catalogue_version"),
-                        "freshness": provenance.get("freshness"),
-                        "requested_time_range": {"start": start, "end": end},
-                        "metric_version": definition.version,
-                        "formula": definition.formula,
-                        "data_product": om.get("data_product"),
-                        "contract": om.get("contract"),
-                        "entity_cluster": om.get("entity_cluster"),
-                        "om_domain": om.get("domain"),
-                    },
-                )
-            )
+            key = tuple(sorted(dims.items()))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(_evidence(value=float(raw_value), dims=dims))
         return out
