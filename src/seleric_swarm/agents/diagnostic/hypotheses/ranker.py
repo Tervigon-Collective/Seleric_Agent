@@ -11,6 +11,8 @@ causal estimate first; it is not a probability.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from seleric_swarm.agents.diagnostic.context import DiagnosticContext
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticHypothesis
 from seleric_swarm.agents.diagnostic.ontology import treatment_events as _ontology_treatment_events
@@ -41,15 +43,19 @@ def rank_hypotheses(ctx: DiagnosticContext, hypotheses: list[DiagnosticHypothesi
             incident_match = min(1.0, hit / 4.0)
 
         temporal_alignment = 0.0
-        if ctx.degradation_started_at and h.treatment_metric:
-            # any evidence/event for the treatment before the degradation start
+        deg_dt = _parse(ctx.degradation_started_at) if ctx.degradation_started_at else None
+        if deg_dt and h.treatment_metric:
+            # any event fact for the treatment that precedes the degradation start.
+            # Compare parsed datetimes, not raw strings — "Z" vs "+00:00" and
+            # differing UTC offsets do not sort lexically.
             t_times = [
-                str(e.get("value"))
+                _parse(str(e.get("value")))
                 for e in ctx.evidence
                 if (e.get("metric_id") or e.get("metric_or_fact")) in _treatment_events(h)
                 and e.get("value")
             ]
-            if any(t <= ctx.degradation_started_at for t in t_times):
+            t_times = [t for t in t_times if t is not None]
+            if any(t <= deg_dt for t in t_times):
                 temporal_alignment = 1.0
             elif t_times:
                 temporal_alignment = 0.3
@@ -77,3 +83,12 @@ def rank_hypotheses(ctx: DiagnosticContext, hypotheses: list[DiagnosticHypothesi
 
 def _treatment_events(h: DiagnosticHypothesis) -> set[str]:
     return set(_ontology_treatment_events(h.treatment_metric))
+
+
+def _parse(value: str) -> datetime | None:
+    v = f"{value[:-1]}+00:00" if value.endswith("Z") else value
+    try:
+        dt = datetime.fromisoformat(v)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)

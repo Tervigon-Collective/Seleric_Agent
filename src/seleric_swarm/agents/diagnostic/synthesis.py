@@ -159,7 +159,8 @@ def finalize(
 
     result.finding = findings[0] if findings else None
     result.findings = findings
-    result.causal_artifact = accepted[0][2] if accepted else None
+    result.causal_artifacts = [art for _, _, art in accepted if art is not None]
+    result.causal_artifact = result.causal_artifacts[0] if result.causal_artifacts else None
     result.limitations = limitations
     result.contradictions = list(ctx.scratch.get("contradictions") or [])
     result.methodology = (
@@ -243,11 +244,12 @@ def _to_claims(ctx: DiagnosticContext, result: DiagnosticResult) -> list[Claim]:
     """
     claims: list[Claim] = []
     domain = (ctx.request.lead_domain or "").removesuffix("_agent") or None
+    by_id = {a.causal_id: a for a in result.causal_artifacts}
     for finding in result.findings:
         if finding.retained_hypothesis_id is None:
             continue
         causal_ref = finding.causal_ref
-        causal_artifact = result.causal_artifact if causal_ref == (result.causal_artifact.causal_id if result.causal_artifact else None) else None
+        causal_artifact = by_id.get(causal_ref) if causal_ref else None
         claims.append(
             Claim(
                 mission_id=ctx.request.mission_id,

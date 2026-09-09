@@ -97,6 +97,29 @@ class DiagnosticAgent:
                 timeout_s=timeout_s,
                 hypotheses_collected=len(ctx.hypotheses),
             )
+        except Exception as exc:  # noqa: BLE001 - a failed workflow is a valid, reportable outcome
+            # A node failure must not abort the mission pipeline. Return the best
+            # evidence gathered so far, tagged INSUFFICIENT_EVIDENCE, exactly like
+            # the timeout path (per 01-evidence-policy.mdc).
+            _log.exception(
+                "diagnostic.workflow_failed",
+                mission_id=request.mission_id,
+                diagnostic_run_id=run_id,
+                error=str(exc),
+            )
+            result = DiagnosticResult(
+                diagnostic_run_id=run_id,
+                mission_id=request.mission_id,
+                question=request.question,
+                outcome_metric=ctx.outcome_metric or request.outcome_metric or request.primary_metric,
+                hypotheses=ctx.hypotheses,
+                methodology="workflow_failed",
+                limitations=[
+                    f"Diagnostic workflow raised {type(exc).__name__}: {exc}",
+                    "INSUFFICIENT_EVIDENCE: the diagnostic workflow did not complete.",
+                ],
+                synthetic=ctx.synthetic_inputs(),
+            )
         self._emit(result, elapsed_ms=round((time.perf_counter() - started) * 1000, 2))
         return result
 

@@ -203,7 +203,11 @@ class DiagnosticResult(BaseModel):
     # single-cause callers); prefer ``findings`` when multiple contributors matter.
     findings: list[DiagnosticFinding] = Field(default_factory=list)
     diagnostic_artifact: DiagnosticArtifact | None = None
+    # ``causal_artifact`` is the top-ranked estimate, kept for single-cause
+    # callers. ``causal_artifacts`` carries one entry per accepted finding so
+    # every ``Claim.causal_refs`` value below is resolvable (spec §54-55).
     causal_artifact: CausalAnalysisArtifact | None = None
+    causal_artifacts: list[CausalAnalysisArtifact] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
     methodology: str = ""
     limitations: list[str] = Field(default_factory=list)
