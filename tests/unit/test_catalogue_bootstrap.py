@@ -1,7 +1,7 @@
 """Unit tests for CatalogueBootstrap (services/catalogue_bootstrap.py).
 
 Covers:
-  1. warm() populates the cache from catalogue_search_metrics results.
+  1. warm() populates the cache from catalogue_bootstrap (then listing fallbacks).
   2. has() returns True only for known IDs.
   3. refresh_if_stale() only calls warm() when TTL is exceeded.
   4. warm() failure is non-fatal — cache stays empty, is_warm() is False.
@@ -49,8 +49,7 @@ def _mock_mcp(matches: list[dict] | None = None, raises: Exception | None = None
 
 @pytest.mark.asyncio
 async def test_warm_populates_cache():
-    """warm() must call catalogue_search_metrics with empty query and fill the
-    cache with every returned match, keyed by metric id."""
+    """warm() prefers catalogue_bootstrap and fills the cache by metric id."""
     mcp = _mock_mcp()
     bootstrap = CatalogueBootstrap(mcp, agent_id="coordinator_agent")
 
@@ -59,19 +58,16 @@ async def test_warm_populates_cache():
 
     assert count == len(_SAMPLE_MATCHES)
     assert bootstrap.is_warm()
-    # Each ID from the MCP result must be present in the cache.
     for m in _SAMPLE_MATCHES:
         assert bootstrap.has(m["id"]), f"Expected '{m['id']}' in cache"
-    # Metadata should be round-tripped correctly.
     cvr = bootstrap.get("session_conversion_rate")
     assert isinstance(cvr, CatalogueMetricMeta)
     assert cvr.label == "Session CVR"
     assert cvr.view == "session_funnel"
-    # Verify the MCP call was made with the correct arguments.
     mcp.call.assert_awaited_once_with(
         agent_id="coordinator_agent",
-        capability="seleric.catalogue_search_metrics",
-        arguments={"query": ""},
+        capability="seleric.catalogue_bootstrap",
+        arguments={},
     )
 
 
@@ -196,3 +192,43 @@ async def test_warm_with_registry_hints_logs_stale_entries(caplog):
         "session_conversion_rate is live — must not be warned"
     assert not any("total_ad_spend" in t for t in warning_texts), \
         "total_ad_spend is live — must not be warned"
+
+
+@pytest.mark.asyncio
+async def test_warm_falls_back_to_empty_search_when_bootstrap_empty():
+    """Old servers without catalogue_bootstrap still warm via search("")."""
+
+    async def call(*, agent_id, capability, arguments):
+        del agent_id, arguments
+        if capability == "seleric.catalogue_search_metrics":
+            return {"matches": _SAMPLE_MATCHES}
+        return {"metrics": []}
+
+    mcp = MagicMock()
+    mcp.call = AsyncMock(side_effect=call)
+    bootstrap = CatalogueBootstrap(mcp, agent_id="coordinator_agent")
+    count = await bootstrap.warm()
+    assert count == len(_SAMPLE_MATCHES)
+    assert bootstrap.is_warm()
+    caps = [c.kwargs["capability"] for c in mcp.call.await_args_list]
+    assert caps == [
+        "seleric.catalogue_bootstrap",
+        "seleric.catalogue_list_metrics",
+        "seleric.catalogue_search_metrics",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_warm_loads_dimensions_and_grain_defaults():
+    payload = {
+        "metrics": _SAMPLE_MATCHES,
+        "dimensions": [{"id": "channel", "aliases": ["marketplace"]}],
+        "grain_defaults": {"channel": {"dimension": "channel", "metric": "channel_orders"}},
+    }
+    mcp = _mock_mcp()
+    mcp.call = AsyncMock(return_value=payload)
+    bootstrap = CatalogueBootstrap(mcp)
+    await bootstrap.warm()
+    assert "channel" in bootstrap.dimension_ids()
+    assert bootstrap.alias_index()["marketplace"] == "channel"
+    assert bootstrap.grain_defaults()["channel"]["metric"] == "channel_orders"

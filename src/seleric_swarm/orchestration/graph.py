@@ -16,6 +16,7 @@ from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.agents.coordinator import Agent as CoordinatorAgent
 from seleric_swarm.agents.intelligence.observer import Agent as ObserverAgent
 from seleric_swarm.coordinator import ControlPlane
+from seleric_swarm.coordinator.catalogue_grounding import evidence_covers_grain
 from seleric_swarm.coordinator.execution.lookup_dag import (
     dag_progress_summary,
     mark_ready_tasks_done,
@@ -344,6 +345,7 @@ def build_graph(runtime: SwarmRuntime):
                         "metric_hints": state.get("metric_hints") or [],
                         "metric_id": state.get("metric_id"),
                         "entities": state.get("entities") or [],
+                        "resolved_dimensions": state.get("resolved_dimensions") or [],
                         "time_range": state.get("time_range") or {},
                         "query_class": state.get("query_class"),
                     },
@@ -561,6 +563,19 @@ def build_graph(runtime: SwarmRuntime):
                     "error_message": "No claims passed the provenance gate",
                     "status": "failed",
                 }
+            wanted = [d for d in (state.get("resolved_dimensions") or []) if d]
+            if wanted and not evidence_covers_grain(state.get("evidence") or [], wanted):
+                    limitation = (
+                        "Grain was requested but evidence has no dimension breakdown"
+                    )
+                    span.set_outputs({"gate": "grain_missing", "claims": claims})
+                    return {
+                        "claims": claims,
+                        "error_code": "INSUFFICIENT_EVIDENCE",
+                        "error_message": limitation,
+                        "limitations": list(state.get("limitations") or []) + [limitation],
+                        "status": "failed",
+                    }
             span.set_outputs(
                 {
                     "gate": "passed",

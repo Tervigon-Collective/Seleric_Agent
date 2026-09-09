@@ -35,7 +35,10 @@ def _is_retryable(exc: BaseException) -> bool:
 
 TOOLS = (
     "catalogue_search_metrics",
+    "catalogue_list_metrics",
+    "catalogue_bootstrap",
     "catalogue_resolve_term",
+    "catalogue_resolve_dimension",
     "catalogue_get_metric",
     "catalogue_get_ontology",
     "catalogue_related_metrics",

@@ -24,6 +24,7 @@ class MissionState(TypedDict, total=False):
     time_range: dict[str, Any]
     metric_hints: list[str]
     metric_id: str | None
+    resolved_dimensions: list[str]
     allowed_metrics: list[str]
     unsupported_reason: str | None
     task_graph: dict[str, Any]

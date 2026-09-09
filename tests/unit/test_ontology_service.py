@@ -96,6 +96,9 @@ def test_seleric_tools_include_ontology_endpoints():
     assert "catalogue_get_ontology" in TOOLS
     assert "catalogue_related_metrics" in TOOLS
     assert "modules_list" in TOOLS
+    assert "catalogue_bootstrap" in TOOLS
+    assert "catalogue_list_metrics" in TOOLS
+    assert "catalogue_resolve_dimension" in TOOLS
 
 
 @pytest.mark.asyncio

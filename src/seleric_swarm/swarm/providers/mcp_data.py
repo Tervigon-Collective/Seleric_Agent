@@ -184,11 +184,12 @@ class HybridMcpDataProvider:
         # is fresh; it warms lazily on the very first call per server process.
         # On first warm, registry_hints enables startup staleness logging so
         # stale entries are visible in server logs rather than per-mission.
-        if self._bootstrap is not None and preferred:
+        if self._bootstrap is not None:
             if self._bootstrap.should_refresh():
-                hints = [m.catalogue_metric for m in self._metrics.all() if m.catalogue_metric]
+                hints = [m.catalogue_metric for m in self._metrics.yaml_all() if m.catalogue_metric]
                 await self._bootstrap.warm(registry_hints=hints)
-            if self._bootstrap.has(preferred):
+            self._metrics.bind_catalogue(self._bootstrap)
+            if preferred and self._bootstrap.has(preferred):
                 self._measure_cache[definition.id] = preferred
                 return preferred
 

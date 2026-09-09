@@ -427,3 +427,78 @@ def test_registry_match_bundles_funnel_metrics_for_area_status_query():
     assert classified["domain_lead"] == "funnel_agent"
     assert classified["unsupported_reason"] is None
     assert classified["intents"] == ["lookup"]
+
+
+@pytest.mark.asyncio
+async def test_observer_uses_resolved_grain_without_ranking_language():
+    attr = _commerce_def("metric.attributed_net_revenue", "attributed_net_revenue")
+    attr.domain = "attribution"
+    gateway = _FakeGateway(
+        {
+            "seleric.catalogue_search_metrics": [{"matches": [{"id": "attributed_net_revenue"}]}],
+            "seleric.catalogue_get_metric": [{"supported_dimensions": ["lt_channel"]}],
+            "seleric.metrics_query": [
+                {
+                    "rows": [
+                        {"attributed_net_revenue": "900", "lt_channel": "meta"},
+                        {"attributed_net_revenue": "400", "lt_channel": "google"},
+                    ],
+                    "provenance": {"cube_view": "order_attribution", "query_id": "q_g"},
+                }
+            ],
+        }
+    )
+    runtime = _runtime_with_llm(metrics=_MapMetrics([attr]), mcp=gateway, dimensions=["lt_channel"])
+    result = await ObserverAgent(runtime).observe(
+        AgentContext(
+            mission_id="M-test",
+            task_id="T-1",
+            question="Get me channel wise report",
+            mission_lead="attribution_agent",
+            payload={
+                "metric_id": "metric.attributed_net_revenue",
+                "metric_hints": ["metric.attributed_net_revenue"],
+                "allowed_metrics": ["metric.attributed_net_revenue"],
+                "resolved_dimensions": ["lt_channel"],
+                "time_range": {"kind": "point", "start": "2026-09-02"},
+            },
+        )
+    )
+    query = gateway.calls[-1]["arguments"]
+    assert query["dimensions"] == ["lt_channel"]
+    channels = [row["dimensions"]["lt_channel"] for row in result["evidence"]]
+    assert channels == ["meta", "google"]
+    assert result["error_code"] is None
+
+
+@pytest.mark.asyncio
+async def test_observer_refuses_period_total_when_grain_unsupported():
+    net = _commerce_def("metric.net_sales", "commerce_net_revenue_daily")
+    gateway = _FakeGateway(
+        {
+            "seleric.catalogue_search_metrics": [{"matches": [{"id": "commerce_net_revenue_daily"}]}],
+            "seleric.catalogue_get_metric": [{"supported_dimensions": ["order_date"]}],
+            "seleric.metrics_query": [
+                {"rows": [{"commerce_net_revenue_daily": "1"}], "provenance": {}},
+            ],
+        }
+    )
+    runtime = _runtime_with_llm(metrics=_MapMetrics([net]), mcp=gateway, dimensions=[])
+    result = await ObserverAgent(runtime).observe(
+        AgentContext(
+            mission_id="M-test",
+            task_id="T-1",
+            question="Get me channel wise report",
+            mission_lead="commerce_agent",
+            payload={
+                "metric_id": "metric.net_sales",
+                "allowed_metrics": ["metric.net_sales"],
+                "resolved_dimensions": ["lt_channel"],
+                "time_range": {"kind": "point", "start": "2026-09-02"},
+            },
+        )
+    )
+    assert "seleric.metrics_query" not in [c["capability"] for c in gateway.calls]
+    assert result["error_code"] == "INSUFFICIENT_EVIDENCE"
+    assert result["evidence"] == []
+
