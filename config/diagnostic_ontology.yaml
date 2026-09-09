@@ -1,0 +1,164 @@
+# Diagnostic ontology: candidate mechanisms per outcome metric, plus the
+# causal-graph wiring the estimator/generator/ranker need. Data-driven
+# counterpart of the old agents/diagnostic/ontology.py module-level dicts
+# (docs/44 tickets SCL-001 / ADP-001) — adding a new outcome metric's
+# candidate mechanisms is now a config change, not a Python change.
+
+default_graph_id: causal.funnel_purchase.v1
+
+base_common_causes:
+  - metric.sessions
+  - campaign
+  - device
+
+outcomes:
+  metric.purchase_cvr:
+    graph_id: causal.funnel_purchase.v1
+    mechanisms:
+      - key: mobile_latency_regression
+        statement: "A frontend regression raised mobile latency, degrading mobile purchase conversion."
+        mechanism: "higher LCP / JS error rate on mobile lowers checkout completion"
+        treatment_metric: metric.mobile_lcp_seconds
+        domains: [technical, funnel]
+        evidence_hints: [event.frontend_deployment, metric.js_error_rate, metric.mobile_lcp_seconds]
+        incident_type: technical
+      - key: js_error_spike
+        statement: "A JavaScript error spike broke checkout interactions, lowering conversion."
+        mechanism: "client-side exceptions abort add-to-cart / checkout"
+        treatment_metric: metric.js_error_rate
+        domains: [technical, funnel]
+        evidence_hints: [metric.js_error_rate]
+        incident_type: technical
+      - key: price_or_discount_change
+        statement: "A price or discount change reduced conversion."
+        mechanism: "higher effective price lowers willingness to purchase"
+        treatment_metric: metric.avg_price
+        domains: [commerce]
+        evidence_hints: [event.price_change, metric.discount_rate]
+        incident_type: pricing
+      - key: stock_availability
+        statement: "Stock availability fell for high-traffic SKUs."
+        mechanism: "out-of-stock PDPs cannot convert"
+        treatment_metric: metric.in_stock_rate
+        domains: [inventory, commerce]
+        evidence_hints: [metric.in_stock_rate]
+        incident_type: inventory
+      - key: payment_failure
+        statement: "Payment failures rose, blocking completed purchases."
+        mechanism: "declined / errored transactions prevent order creation"
+        treatment_metric: metric.payment_failure_rate
+        domains: [technical, commerce]
+        evidence_hints: [metric.payment_failure_rate]
+        incident_type: payment
+      - key: traffic_mix_shift
+        statement: "Paid traffic quality deteriorated (lower-intent clicks)."
+        mechanism: "worse-intent sessions convert less"
+        treatment_metric: metric.paid_traffic_share
+        domains: [performance]
+        evidence_hints: [metric.ctr, metric.cpc]
+        incident_type: acquisition
+      - key: tracking_regression
+        statement: "Conversion tracking broke, understating purchases."
+        mechanism: "lost purchase events depress the measured rate without a real drop"
+        treatment_metric: metric.tracking_coverage
+        domains: [technical]
+        evidence_hints: [event.tag_change]
+        incident_type: tracking
+        is_symptom_only: false
+  metric.cac:
+    graph_id: causal.funnel_purchase.v1
+    extra_common_causes: [metric.return_rate]
+    mechanisms:
+      - key: downstream_cvr_decline
+        statement: "A downstream purchase-conversion decline raised CAC while media stayed healthy."
+        mechanism: "same spend / fewer orders inflates cost per acquisition"
+        treatment_metric: metric.purchase_cvr
+        domains: [performance, funnel]
+        evidence_hints: [metric.purchase_cvr, metric.spend]
+        incident_type: funnel
+      - key: auction_pressure
+        statement: "Rising auction pressure increased CPM and therefore CAC."
+        mechanism: "higher CPM at constant conversion raises acquisition cost"
+        treatment_metric: metric.cpm
+        domains: [performance]
+        evidence_hints: [metric.cpm, metric.frequency]
+        incident_type: acquisition
+      - key: creative_fatigue
+        statement: "Creative fatigue lowered CTR, raising effective CPC and CAC."
+        mechanism: "declining CTR at rising frequency raises cost per click"
+        treatment_metric: metric.ctr
+        domains: [performance]
+        evidence_hints: [metric.ctr, metric.frequency]
+        incident_type: acquisition
+      - key: attribution_change
+        statement: "An attribution / tracking change shifted credited orders, moving reported CAC."
+        mechanism: "fewer attributed orders at constant spend raises reported CAC"
+        treatment_metric: metric.attributed_orders
+        domains: [performance, technical]
+        evidence_hints: [event.attribution_change, event.tag_change]
+        incident_type: tracking
+  metric.checkout_rate:
+    graph_id: causal.funnel_purchase.v1
+    mechanisms:
+      - key: checkout_stock_availability
+        statement: "Stock availability fell for high-traffic SKUs, blocking checkout starts."
+        mechanism: "out-of-stock PDPs cannot reach checkout"
+        treatment_metric: metric.in_stock_rate
+        domains: [inventory, funnel]
+        evidence_hints: [metric.in_stock_rate]
+        incident_type: inventory
+      - key: checkout_js_error_spike
+        statement: "A JavaScript error spike broke the checkout step."
+        mechanism: "client-side exceptions abort checkout before it starts"
+        treatment_metric: metric.js_error_rate
+        domains: [technical, funnel]
+        evidence_hints: [metric.js_error_rate]
+        incident_type: technical
+      - key: checkout_mobile_latency_regression
+        statement: "A frontend regression raised mobile latency, degrading checkout starts."
+        mechanism: "higher LCP on mobile lowers checkout-step completion"
+        treatment_metric: metric.mobile_lcp_seconds
+        domains: [technical, funnel]
+        evidence_hints: [event.frontend_deployment, metric.mobile_lcp_seconds]
+        incident_type: technical
+  metric.net_sales:
+    graph_id: causal.funnel_purchase.v1
+    mechanisms:
+      - key: conversion_decline
+        statement: "A purchase-conversion decline reduced net sales."
+        mechanism: "fewer completed orders at constant traffic lowers revenue"
+        treatment_metric: metric.purchase_cvr
+        domains: [funnel, commerce]
+        evidence_hints: [metric.purchase_cvr]
+        incident_type: funnel
+      - key: returns_spike
+        statement: "A returns spike cut net sales."
+        mechanism: "higher return rate reduces net of gross sales"
+        treatment_metric: metric.return_rate
+        domains: [commerce]
+        evidence_hints: [metric.return_rate]
+        incident_type: commerce
+      - key: traffic_decline
+        statement: "A traffic decline reduced net sales."
+        mechanism: "fewer sessions at constant conversion lowers revenue"
+        treatment_metric: metric.sessions
+        domains: [funnel, performance]
+        evidence_hints: [metric.sessions]
+        incident_type: acquisition
+
+# metric -> causal-graph node label, where it differs from the metric id itself.
+node_by_metric:
+  metric.mobile_lcp_seconds: page_latency
+  metric.js_error_rate: page_latency
+  metric.purchase_cvr: purchase
+  metric.cac: purchase
+  metric.avg_price: price
+  metric.in_stock_rate: stock
+  metric.payment_failure_rate: payment_failure
+
+# treatment metric -> event facts that would precede a real change in it.
+treatment_events:
+  metric.mobile_lcp_seconds: [event.frontend_deployment]
+  metric.js_error_rate: [event.frontend_deployment, event.tag_change]
+  metric.avg_price: [event.price_change]
+  metric.attributed_orders: [event.attribution_change, event.tag_change]

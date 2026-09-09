@@ -128,3 +128,65 @@ def test_last_3_days_window_is_inclusive_of_as_of():
     assert window.start == "2026-09-01"
     assert window.end == "2026-09-03"
     assert window.relative_token == "last_3d"
+
+
+# ---------------------------------------------------------------------------
+# Registry authority: domain_lead override when canonical hints are resolved
+# ---------------------------------------------------------------------------
+
+def test_classify_best_selling_product_5_months_routes_to_product():
+    """Fake LLM returns last_5m token; product_agent must be the initial domain lead.
+
+    This validates that the registry overrides any LLM-suggested domain_lead when
+    canonical metric hints are present — the root cause of the wasted commerce
+    observer wave in the 'best selling product in last 5 months' trace.
+    """
+    result = classify_lookup_query(
+        "What is the best selling product in the last 5 months",
+        "Asia/Kolkata",
+        "2026-09-03",
+    )
+    assert result["query_class"] == "lookup"
+    # Registry owns units_sold → product_agent; must not be commerce_agent
+    assert result["domain_lead"] == "product_agent", (
+        f"expected product_agent (registry authority), got {result['domain_lead']}"
+    )
+    # Only the ranking metric — no gross_sales / orders / net_sales
+    assert result["metric_hints"] == ["metric.units_sold"], (
+        f"expected only metric.units_sold, got {result['metric_hints']}"
+    )
+    # 5-month relative token
+    assert result["time_range"]["relative_token"] == "last_5m", (
+        f"expected last_5m token, got {result['time_range']['relative_token']}"
+    )
+
+
+def test_classify_best_selling_last_n_months_resolves_correct_window():
+    """window_from_query must resolve 'last 5 months' with as_of 2026-09-03 to 2026-04-03."""
+    from seleric_swarm.services.time_range import window_from_query
+
+    window = window_from_query(
+        "What is the best selling product in the last 5 months",
+        "Asia/Kolkata",
+        "2026-09-03",
+    )
+    assert window is not None
+    assert window.start == "2026-04-03"
+    assert window.end == "2026-09-03"
+    assert window.relative_token == "last_5m"
+
+
+def test_classify_ranking_metric_hints_are_minimal():
+    """Ranking queries must not include revenue/order metrics alongside the rank metric."""
+    result = classify_lookup_query(
+        "What is the best selling product yesterday",
+        "Asia/Kolkata",
+        "2026-09-04",
+    )
+    assert result["query_class"] == "lookup"
+    assert result["domain_lead"] == "product_agent"
+    # Strictly only the ranking metric — not gross_sales/orders/net_sales
+    for hint in result["metric_hints"]:
+        assert hint in {"metric.units_sold"}, (
+            f"unexpected metric hint {hint!r} in ranking query"
+        )

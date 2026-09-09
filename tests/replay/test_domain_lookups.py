@@ -145,3 +145,71 @@ async def test_commerce_comparison_keeps_observer_on_domain_metric(runtime):
     assert result.active_specialist == "observer_agent"
     assert any(row.metric_or_fact == "metric.net_sales" for row in result.evidence)
     assert any(row.metric_or_fact.endswith(".delta") for row in result.evidence)
+
+
+@pytest.mark.asyncio
+async def test_product_best_seller_last_5_months(runtime):
+    """Regression: 'best selling product in last 5 months' must use product_agent
+    as the initial lead (no commerce→product handoff), resolve a 5-month window,
+    and return evidence broken down by product_title for metric.units_sold only.
+    """
+    result = await run_mission(
+        runtime,
+        query="What is the best selling product in the last 5 months",
+        timezone="Asia/Kolkata",
+        as_of="2026-09-03",
+    )
+    assert result.status == "completed", (result.status, result.error)
+    assert result.query_class == "lookup"
+
+    # Registry must override LLM: product_agent owns units_sold
+    assert result.mission_lead == "product_agent", (
+        f"expected product_agent, got {result.mission_lead}. "
+        "Hint: registry domain_lead override may not be firing."
+    )
+
+    # No wasted commerce observer wave — initial_mission_lead must already be product_agent
+    assert result.initial_mission_lead == "product_agent", (
+        f"commerce→product handoff should not occur; "
+        f"initial_mission_lead={result.initial_mission_lead}"
+    )
+    # Therefore no handoff epoch was needed
+    assert result.handoff_history == [], (
+        f"unexpected handoff: {result.handoff_history}"
+    )
+
+    # 5-month window: as_of 2026-09-03 → start 2026-04-03
+    mcp_call = next(
+        (c for c in runtime.mcp.invocations if c["capability"] == "seleric.metrics_query"),
+        None,
+    )
+    assert mcp_call is not None, "expected at least one metrics_query MCP call"
+    tr = mcp_call["arguments"].get("time_range") or {}
+    assert tr.get("start") == "2026-04-03", (
+        f"expected 5-month window start 2026-04-03, got {tr.get('start')}. "
+        "Hint: months time range parsing may be broken."
+    )
+    assert tr.get("end") == "2026-09-03"
+
+    # Evidence must contain product_title dimension (not order_date or empty)
+    titled = [
+        row for row in result.evidence
+        if (row.dimensions or {}).get("product_title")
+    ]
+    assert len(titled) >= 2, (
+        f"expected ranked product evidence with product_title dimension, got: {result.evidence}"
+    )
+
+    # All ranked rows must be units_sold, not commerce metrics
+    assert all(row.metric_or_fact == "metric.units_sold" for row in titled), (
+        f"all ranked rows should be metric.units_sold: {[r.metric_or_fact for r in titled]}"
+    )
+
+    # Confirmed: no gross_sales or net_sales evidence present (no over-broad hints)
+    metric_names = {row.metric_or_fact for row in result.evidence}
+    assert "metric.gross_sales" not in metric_names, (
+        "gross_sales should not be queried for a best-seller ranking question"
+    )
+    assert "metric.net_sales" not in metric_names, (
+        "net_sales should not be queried for a best-seller ranking question"
+    )

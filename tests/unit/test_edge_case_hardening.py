@@ -159,10 +159,10 @@ async def test_as_of_extends_scenario_observation_window(runtime):
     assert tr["start"] == "2026-08-31"
     assert tr["observation_end"] == "2026-09-02"
 
-    # Invalid as_of is ignored (does not corrupt the window)
-    tr_bad = resolve_mission_time_range(scenario, timezone="Asia/Kolkata", as_of="not-a-date")
-    assert tr_bad["end"] == "2026-09-02"
-    assert tr_bad["start"] == "2026-08-31"
+    # Invalid as_of is a caller bug — surfaced loudly instead of silently
+    # producing an unbounded window (docs/44 ROB-004).
+    with pytest.raises(ValueError, match="Invalid as_of"):
+        resolve_mission_time_range(scenario, timezone="Asia/Kolkata", as_of="not-a-date")
 
     # as_of inside window does not shrink end
     tr_in = resolve_mission_time_range(scenario, timezone="Asia/Kolkata", as_of="2026-09-01")

@@ -135,8 +135,17 @@ def build_claim_aware_response(
         )
         lines.append("")
 
+    skeptic_arts = blackboard.by_type("skeptic")
+    latest_verdict = skeptic_arts[-1].get("verdict") if skeptic_arts else None
+    rejected = latest_verdict == "REJECT"
+    # Claim state "CHALLENGED" only covers a REVISE verdict — REJECT maps to a
+    # different state ("REJECTED", see coordinator/artifacts/claims.py's
+    # _SKEPTIC_MAP) that this check used to miss entirely, letting a rejected
+    # recommendation render as if nothing were wrong with it.
+    unvalidated = bool(challenged) or rejected
+
     strategies = blackboard.by_type("strategy")
-    if strategies and not challenged:
+    if strategies and not unvalidated:
         s = strategies[0]
         if summary.get("all_synthetic"):
             lines.append("In this fixture scenario, the recommended modeled action is:")
@@ -157,8 +166,14 @@ def build_claim_aware_response(
     elif strategies and challenged:
         lines.append("Actions deferred: primary claim remains CHALLENGED.")
         lines.append("")
+    elif strategies and rejected:
+        s = strategies[0]
+        lines.append("Recommendation (NOT validated — Skeptic REJECTED the underlying diagnosis):")
+        for rec in s.get("recommended") or []:
+            lines.append(f"  - {rec}")
+        lines.append("  Do not act on this without further evidence.")
+        lines.append("")
 
-    skeptic_arts = blackboard.by_type("skeptic")
     if skeptic_arts:
         k = skeptic_arts[-1]
         lines.append(f"Skeptic verdict: {k.get('verdict')}")
@@ -189,6 +204,4 @@ def build_claim_aware_response(
         lines.append("")
 
     text = "\n".join(lines)
-    return _sanitize(text, challenged=bool(challenged) or (
-        (blackboard.by_type("skeptic") or [{}])[-1].get("verdict") == "REVISE"
-    ), policies=policies)
+    return _sanitize(text, challenged=unvalidated or latest_verdict == "REVISE", policies=policies)

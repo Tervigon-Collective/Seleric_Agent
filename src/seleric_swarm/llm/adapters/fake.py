@@ -161,6 +161,24 @@ def _time_range_for(q: str, lower: str) -> tuple[dict[str, Any], str]:
             {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n.group(1)}d"},
             "lookup",
         )
+    last_n_weeks = re.search(r"\blast\s+(\d+)\s+weeks?\b", lower)
+    if last_n_weeks:
+        return (
+            {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n_weeks.group(1)}w"},
+            "lookup",
+        )
+    last_n_months = re.search(r"\blast\s+(\d+)\s+months?\b", lower)
+    if last_n_months:
+        return (
+            {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n_months.group(1)}m"},
+            "lookup",
+        )
+    last_n_quarters = re.search(r"\blast\s+(\d+)\s+quarters?\b", lower)
+    if last_n_quarters:
+        return (
+            {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n_quarters.group(1)}q"},
+            "lookup",
+        )
     if "yesterday" in lower:
         return {"kind": "relative", "start": None, "end": None, "relative_token": "yesterday"}, "lookup"
     if "today" in lower:
@@ -470,6 +488,12 @@ class FakeLLMAdapter:
             supported_field = _extract_field(user, "Supported dimensions for this metric") or ""
             supported = [item.strip() for item in supported_field.split(",") if item.strip()]
             return json.dumps(map_dimension(query, supported))
+        if prompt_id == "synthesizer.swarm_response":
+            # No scripted business-prose generator for swarm_v2 synthesis —
+            # returning empty defers to the deterministic template fallback
+            # (coordinator/synthesis/response_builder.py) that tests already
+            # assert against, same as a real LLM producing nothing useful.
+            return ""
         if prompt_id.endswith("response") or "synthesizer" in prompt_id:
             return synthesize_response(user)
         if "json schema" in joined or request.response_format == "json_schema":

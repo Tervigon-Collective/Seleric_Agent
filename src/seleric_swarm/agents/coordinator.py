@@ -138,8 +138,21 @@ class Agent(SwarmAgent):
             query_class = "lookup"
             domain_lead = lead_agent_for_hints(canonical, self.runtime.metrics)
             unsupported_reason = None
-        elif canonical and domain_lead in {"coordinator_agent", "", None}:
-            domain_lead = lead_agent_for_hints(canonical, self.runtime.metrics)
+        elif canonical:
+            # Registry ownership is authoritative: the metric registry knows
+            # exactly which domain owns each metric.  The LLM's domain_lead is
+            # a useful hint but it can mis-fire (e.g. "best selling product"
+            # → LLM guesses commerce_agent, registry says product_agent).
+            # We override with the registry result whenever it resolves to a
+            # definitive non-coordinator owner, so no wasted observer wave
+            # occurs before the correct domain picks up the query.
+            registry_lead = lead_agent_for_hints(canonical, self.runtime.metrics)
+            if registry_lead != "coordinator_agent":
+                domain_lead = registry_lead
+            elif domain_lead in {"coordinator_agent", "", None}:
+                # Registry couldn't pin a domain either — keep LLM guess if
+                # it named a real agent, otherwise fall back to coordinator.
+                domain_lead = domain_lead or "coordinator_agent"
 
         # Dimension/breakdown resolution now happens at observer execution time
         # (agents/intelligence/observer.py::_resolve_breakdown_dimensions),
