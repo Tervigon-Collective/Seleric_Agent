@@ -57,6 +57,30 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Seleric Intelligence Swarm", version="0.1.0", lifespan=lifespan)
 
+# Read-only spatial AI-Office UI gateway (SSE snapshot + event stream).
+try:
+    from fastapi.middleware.cors import CORSMiddleware
+
+    from seleric_swarm.api.office.gateway import router as _office_router
+    from seleric_swarm.api.office.registry import register_mission as _register_mission
+
+    app.include_router(_office_router)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_methods=["GET"],
+        allow_headers=["*"],
+    )
+except Exception:  # office UI is optional — never block the core API on it
+    import logging as _logging
+
+    _logging.getLogger("seleric.api.office").warning(
+        "office gateway not mounted", exc_info=True
+    )
+
+    def _register_mission(_mission_id: str | None) -> None:  # type: ignore[misc]
+        return None
+
 # Load repo .env before middleware reads settings (CWD-independent).
 _settings_boot = None
 try:
@@ -279,6 +303,7 @@ async def create_mission(
     # Async accept path.
     if not req.wait:
         mission_id = new_mission_id(swarm_likely=route_hint == "swarm")
+        _register_mission(mission_id)
         accepted = seed_running_mission(
             runtime,
             mission_id=mission_id,
@@ -319,6 +344,7 @@ async def create_mission(
     # Flatten: a consistent top-level mission object with a `route` marker.
     # lookup  -> MissionResult fields; swarm -> SwarmMissionResult fields.
     out = {"route": dispatched["route"], **dispatched["result"]}
+    _register_mission(out.get("mission_id"))
     if not isinstance(out.get("trace"), dict):
         out["trace"] = {"request_id": request_id, "session_id": session_id}
     return out
