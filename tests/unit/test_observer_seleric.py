@@ -216,6 +216,64 @@ async def test_observer_fetches_every_allowed_hint():
 
 
 @pytest.mark.asyncio
+async def test_observer_bundles_domain_metrics_for_area_status_query():
+    """'funnel status' names an area, not one measure — the metric_map
+    fallback (used when classify hands no hints) must resolve every allowed
+    metric in that area instead of failing closed on a single pick."""
+    from seleric_swarm.llm.adapters.fake import FakeLLMAdapter
+    from seleric_swarm.prompts.registry import PromptRegistry
+
+    sessions = _commerce_def("metric.sessions", "sessions")
+    sessions.domain = "funnel"
+    checkout = _commerce_def("metric.checkout_rate", "checkout_rate")
+    checkout.domain = "funnel"
+    gateway = _FakeGateway(
+        {
+            "seleric.catalogue_search_metrics": [
+                {"matches": [{"id": "checkout_rate"}]},
+                {"matches": [{"id": "sessions"}]},
+            ],
+            "seleric.metrics_query": [
+                {
+                    "rows": [{"checkout_rate": "0.12"}],
+                    "provenance": {"cube_view": "funnel_daily", "query_id": "q_c"},
+                },
+                {
+                    "rows": [{"sessions": "1000"}],
+                    "provenance": {"cube_view": "funnel_daily", "query_id": "q_s"},
+                },
+            ],
+        }
+    )
+    runtime = SimpleNamespace(
+        metrics=_MapMetrics([sessions, checkout]),
+        mcp=gateway,
+        ontology=None,
+        llm=FakeLLMAdapter(),
+        prompts=PromptRegistry("prompts", "config/prompt_versions.yaml"),
+        settings=SimpleNamespace(llm_timeout_s=5.0, workflow_name="swarm_v2", workflow_version="1.0.0"),
+        agents=SimpleNamespace(version=lambda agent_id, default: default),
+    )
+    result = await ObserverAgent(runtime).observe(
+        AgentContext(
+            mission_id="M-test",
+            task_id="T-1",
+            question="funnel status for website today",
+            mission_lead="funnel_agent",
+            payload={
+                "allowed_metrics": ["metric.sessions", "metric.checkout_rate"],
+                "time_range": {"kind": "point", "start": "2026-09-09"},
+            },
+        )
+    )
+    values = {row["metric_or_fact"]: row["value"] for row in result["evidence"]}
+    assert values["metric.sessions"] == pytest.approx(1000.0)
+    assert values["metric.checkout_rate"] == pytest.approx(0.12)
+    assert result["error_code"] is None
+    assert result["llm_calls"] == 1
+
+
+@pytest.mark.asyncio
 async def test_observer_ranks_top_products_by_title_not_period_total():
     units = _commerce_def("metric.units_sold", "units_sold")
     units.domain = "product"
@@ -347,3 +405,25 @@ def test_registry_match_keeps_both_sales_metrics():
     assert "metric.attributed_net_revenue" in hints_from_registry(
         "What is the best performing channel is the last 3 days"
     )
+
+
+def test_registry_match_bundles_funnel_metrics_for_area_status_query():
+    """'funnel status' names the whole area (6 metrics), not one measure —
+    regression for the mission that used to hard-fail with INSUFFICIENT_EVIDENCE
+    because no single registered metric id matched "funnel"."""
+    from seleric_swarm.llm.adapters.fake import classify_swarm_query, hints_from_registry
+
+    hints = hints_from_registry("funnel status for website today")
+    assert {
+        "metric.sessions",
+        "metric.checkout_rate",
+        "metric.purchase_cvr",
+        "metric.atc_rate",
+        "metric.pdp_view_rate",
+        "metric.atc_to_purchase_rate",
+    }.issubset(set(hints))
+
+    classified = classify_swarm_query("funnel status for website today", "Asia/Kolkata", None)
+    assert classified["domain_lead"] == "funnel_agent"
+    assert classified["unsupported_reason"] is None
+    assert classified["intents"] == ["lookup"]

@@ -86,6 +86,16 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
         if score == 0 and metric.domain in q_words and len(by_domain.get(metric.domain) or []) == 1:
             score = 7
             phrases = [metric.domain, *phrases]
+        if (
+            score == 0
+            and metric.domain in q_words
+            and len(by_domain.get(metric.domain) or []) > 1
+            and _AREA_STATUS_RE.search(q)
+        ):
+            # "funnel status" names the whole area, not one measure — bundle
+            # every metric in that domain instead of dropping to zero hints.
+            score = 6
+            phrases = [metric.domain, *phrases]
         if score == 0 and "channel" in q_words and re.search(r"\bacross channels\b", metric.description or "", re.IGNORECASE):
             score = 8
             phrases = ["channel", *phrases]
@@ -102,6 +112,7 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
 
 _DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 _SALES_WORD = re.compile(r"\bsales\b")
+_AREA_STATUS_RE = re.compile(r"\b(status|health|doing|performing|performance|overview)\b")
 
 
 def _user_text(request: LLMRequest) -> str:
@@ -365,16 +376,20 @@ def map_metric(
     else:
         hint_ok = hints
     if len(candidates) == 1:
-        return {"metric_id": candidates[0], "ambiguous": False, "reason": None}
+        return {"metric_ids": candidates, "ambiguous": False, "reason": None}
     if len(candidates) > 1:
         for hint in hint_ok:
             if hint in candidates:
-                return {"metric_id": hint, "ambiguous": False, "reason": None}
-        return {"metric_id": candidates[0], "ambiguous": False, "reason": None}
+                return {"metric_ids": [hint], "ambiguous": False, "reason": None}
+        return {"metric_ids": [candidates[0]], "ambiguous": False, "reason": None}
     if hint_ok:
-        return {"metric_id": hint_ok[0], "ambiguous": False, "reason": None}
+        return {"metric_ids": [hint_ok[0]], "ambiguous": False, "reason": None}
+    if allowed_set and _AREA_STATUS_RE.search(lower):
+        # "funnel status" / "how's checkout doing" names an area, not one
+        # measure — bundle every allowed metric rather than failing closed.
+        return {"metric_ids": sorted(allowed_set), "ambiguous": False, "reason": None}
     return {
-        "metric_id": None,
+        "metric_ids": [],
         "ambiguous": True,
         "reason": "Could not map the question to a registered metric id",
     }
