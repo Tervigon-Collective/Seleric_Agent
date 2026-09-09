@@ -23,8 +23,14 @@ class MetricDefinition:
         # uses the live catalogue; the fake LLM adapter may use these as a
         # test double when MCP is not in the loop.
         self.aliases: list[str] = [str(a).lower() for a in (payload.get("aliases") or [])]
-        # Live catalogue measure id (defaults to bare id without metric. prefix).
-        self.catalogue_metric: str = payload.get("catalogue_metric") or self.id.removeprefix("metric.")
+        # Advisory hint for the live catalogue measure id.  When present,
+        # _resolve_measure uses it as the preferred ID (Step 0 cache check or
+        # Step 1 exact lookup).  When absent (None), resolution goes straight
+        # to Step 2 semantic search — the catalogue is the source of truth.
+        # NOTE: the old fallback of id.removeprefix("metric.") was removed
+        # because it silently chose wrong IDs for mismatched registry entries
+        # (e.g. metric.return_rate → "return_rate" which doesn't exist).
+        self.catalogue_metric: str | None = payload.get("catalogue_metric") or None
         # Optional module override when the measure lives outside the domain agent pin.
         self.seleric_module: str | None = payload.get("seleric_module")
         # "up" (default) or "down" — which direction of movement is adverse for
@@ -55,7 +61,8 @@ class MetricRegistry:
         """Registry rows for coordinator.classify — not a phrase table."""
         lines = []
         for metric in self.all():
-            lines.append(f"- {metric.id} (domain={metric.domain}, catalogue={metric.catalogue_metric}): {metric.description}")
+            cat = metric.catalogue_metric or "(unresolved — discovered via live catalogue)"
+            lines.append(f"- {metric.id} (domain={metric.domain}, catalogue={cat}): {metric.description}")
         return "\n".join(lines)
 
     def id_for_catalogue(self, catalogue_id: str | None) -> str | None:

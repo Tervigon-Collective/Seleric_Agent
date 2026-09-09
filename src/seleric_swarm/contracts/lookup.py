@@ -43,7 +43,7 @@ class CoordinatorClassificationV1(BaseModel):
 
 
 class MetricMappingV1(BaseModel):
-    metric_id: str | None = None
+    metric_ids: list[str] = Field(default_factory=list)
     ambiguous: bool = False
     reason: str | None = None
 

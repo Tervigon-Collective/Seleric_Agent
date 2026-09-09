@@ -352,6 +352,61 @@ async def test_resolve_measure_keyword_guard_rejects_wrong_domain_fallback(runti
     assert not stats.stale_registry_subs, "no substitution when guard rejects all candidates"
 
 
+@pytest.mark.asyncio
+async def test_resolve_measure_step0_hits_bootstrap_cache_without_mcp_call(runtime):
+    """When CatalogueBootstrap has already cached the preferred catalogue_metric
+    ID, _resolve_measure must return it via Step 0 with ZERO MCP calls.
+
+    This is the hot-path guarantee: once the bootstrap cache is warm,
+    every subsequent _resolve_measure call for a known metric costs nothing.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
+    from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
+
+    # Build a pre-warmed bootstrap whose cache already contains "cac".
+    mock_mcp_for_bootstrap = MagicMock()
+    mock_mcp_for_bootstrap.call = AsyncMock(
+        return_value={"matches": [{"id": "cac", "label": "CAC", "view": "ltv_cac"}]}
+    )
+    bootstrap = CatalogueBootstrap(mock_mcp_for_bootstrap, ttl_seconds=3600)
+    await bootstrap.warm()   # pre-warm — cache now has "cac"
+    assert bootstrap.has("cac"), "bootstrap cache must be warm before the test"
+
+    # Build the provider bundle using the pre-warmed bootstrap.
+    bundle, _stats = build_hybrid_bundle(
+        mcp=runtime.mcp,
+        execution_mode="staging",
+        metrics=runtime.metrics,
+        agents=runtime.agents,
+        bootstrap=bootstrap,
+    )
+    provider = bundle.data_for("performance")
+
+    # Intercept MCP calls made by the provider itself to verify Step 0 fires.
+    provider_call_log: list[str] = []
+
+    async def recording_call(*, agent_id, capability, arguments):
+        provider_call_log.append(capability)
+        # Fallback response in case Step 0 is unexpectedly bypassed.
+        return {"id": "cac", "display_name": "CAC"}
+
+    provider._mcp.call = recording_call
+
+    definition = runtime.metrics.get("metric.cac")
+    assert definition is not None
+    resolved = await provider._resolve_measure(definition)
+
+    assert resolved == "cac", "Step 0 should return the cached catalogue_metric"
+    # Key assertion: the provider must NOT have called catalogue_get_metric or
+    # catalogue_search_metrics — those are Steps 1 and 2, which are bypassed
+    # when the bootstrap cache already confirms the ID.
+    assert provider_call_log == [], (
+        f"Expected zero provider MCP calls via Step 0, got: {provider_call_log}"
+    )
+
+
 def test_api_rejects_bad_execution_mode(runtime, monkeypatch):
     from fastapi.testclient import TestClient
 

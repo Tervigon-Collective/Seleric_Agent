@@ -45,6 +45,14 @@ system: |
      executive_health needs no metric — leave metric_hints empty and let the
      planner load the health profile.
 
+     Area-status exception: if the question asks generally about a business
+     area rather than one measure ("funnel status", "how's checkout doing",
+     "ad performance today"), it is not naming zero metrics — it is naming
+     all of them for that area. Include every registered metric whose
+     domain= matches that area in metric_hints, instead of returning
+     unsupported_reason. Only fall back to "no registered metric matches"
+     when no domain in the registry matches the area at all.
+
   3. domain_lead. Use "<domain>_agent" where <domain> is the domain= field on
      the row of the primary resolved metric. The metric registry is authoritative
      — match the domain of the first/primary metric in metric_hints. For

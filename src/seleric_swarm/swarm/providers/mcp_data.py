@@ -13,6 +13,7 @@ from typing import Any
 
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
 from seleric_swarm.registry.agent_registry import AgentRegistry
+from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
 from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
 from seleric_swarm.swarm.domain.configs import build_domain_configs
 from seleric_swarm.swarm.providers.base import (
@@ -133,6 +134,7 @@ class HybridMcpDataProvider:
         metrics: MetricRegistry,
         agent_id: str,
         execution_mode: str = "production",
+        bootstrap: CatalogueBootstrap | None = None,
     ) -> None:
         self.domain = domain
         self._mcp = mcp
@@ -140,6 +142,7 @@ class HybridMcpDataProvider:
         self._metrics = metrics
         self._agent_id = agent_id
         self._execution_mode = execution_mode
+        self._bootstrap = bootstrap
         self._measure_cache: dict[str, str | None] = {}
 
     def _empty(self, metric_ids: list[str]) -> DataResult:
@@ -175,6 +178,20 @@ class HybridMcpDataProvider:
             return self._measure_cache[definition.id]
 
         preferred = definition.catalogue_metric
+
+        # Step 0: Bootstrap cache — O(1) dict lookup, zero MCP calls.
+        # refresh_if_stale() is a monotonic check and no-ops when the cache
+        # is fresh; it warms lazily on the very first call per server process.
+        # On first warm, registry_hints enables startup staleness logging so
+        # stale entries are visible in server logs rather than per-mission.
+        if self._bootstrap is not None and preferred:
+            if self._bootstrap.should_refresh():
+                hints = [m.catalogue_metric for m in self._metrics.all() if m.catalogue_metric]
+                await self._bootstrap.warm(registry_hints=hints)
+            if self._bootstrap.has(preferred):
+                self._measure_cache[definition.id] = preferred
+                return preferred
+
         # Preserve the original module-scoping contract:
         # - "seleric_module": null in YAML  → pass module=None explicitly so the
         #   gateway respects the metric's intentional unscoped access rather than
@@ -189,24 +206,29 @@ class HybridMcpDataProvider:
         )
 
         # Step 1: Exact ID lookup — deterministic, not semantic.
+        # Only attempted when a preferred catalogue_metric ID is known.
+        # Skipped when catalogue_metric is None (no hint in registry) — go
+        # straight to Step 2 semantic search.
         # catalogue_get_metric returns the full metric dict on success or
         # {"error": "Unknown metric '...'", "suggestions": [...]} on failure.
-        try:
-            exact_result = await self._mcp.call(
-                agent_id=self._agent_id,
-                capability="seleric.catalogue_get_metric",
-                arguments={"metric_id": preferred, **module_args},
-            )
-        except Exception:
-            self._measure_cache[definition.id] = None
-            return None
+        if preferred:
+            try:
+                exact_result = await self._mcp.call(
+                    agent_id=self._agent_id,
+                    capability="seleric.catalogue_get_metric",
+                    arguments={"metric_id": preferred, **module_args},
+                )
+            except Exception:
+                self._measure_cache[definition.id] = None
+                return None
 
-        if not exact_result.get("error"):
-            # Metric confirmed in catalogue — registry is current.
-            self._measure_cache[definition.id] = preferred
-            return preferred
+            if not exact_result.get("error"):
+                # Metric confirmed in catalogue — registry is current.
+                self._measure_cache[definition.id] = preferred
+                return preferred
+            # else: preferred ID absent — fall through to Step 2
 
-        # Step 2: Preferred ID absent from catalogue — registry is stale.
+        # Step 2: No preferred ID OR preferred ID absent from catalogue (stale).
         # Search by description (business meaning, not the stale ID string) and
         # apply the keyword-overlap guard to reject wrong-domain substitutions.
         try:
@@ -223,8 +245,9 @@ class HybridMcpDataProvider:
         for match in desc_matches:
             candidate = match.get("id") or ""
             if candidate and _measure_keywords_overlap(definition, candidate):
-                # Safe substitution — record so the operator can update the registry.
-                self._stats.record_stale_sub(definition.id, preferred, candidate)
+                if preferred:
+                    # Safe substitution — record so the operator can update the registry.
+                    self._stats.record_stale_sub(definition.id, preferred, candidate)
                 self._measure_cache[definition.id] = candidate
                 return candidate
 
@@ -278,9 +301,10 @@ class HybridMcpDataProvider:
                 # This distinguishes "measure not in catalogue" from "measure
                 # in catalogue but no rows for this period" (below).
                 self._stats.mcp_fallbacks += 1
+                cat_hint = definition.catalogue_metric or "(no catalogue_metric hint)"
                 self._stats.fallback_reasons.append(
-                    f"{metric_id}: catalogue measure '{definition.catalogue_metric}' not found "
-                    "— update metric_registry.yaml"
+                    f"{metric_id}: catalogue measure '{cat_hint}' not found "
+                    "— update metric_registry.yaml or add a catalogue_metric hint"
                 )
                 missing.append(metric_id)
                 continue
@@ -449,9 +473,15 @@ def build_hybrid_bundle(
     execution_mode: str = "production",
     metrics: MetricRegistry,
     agents: AgentRegistry | None = None,
+    bootstrap: CatalogueBootstrap | None = None,
 ) -> tuple[ProviderBundle, McpFetchStats]:
     """Build providers for a live mission: live MCP for domains with a
     seleric_module, no data otherwise.
+
+    ``bootstrap`` is the shared ``CatalogueBootstrap`` instance from
+    ``SwarmRuntime``.  When provided, ``_resolve_measure`` can check the
+    live catalogue cache (Step 0) before making any MCP calls, eliminating
+    the per-metric ``catalogue_get_metric`` round-trip on the hot path.
     """
     stats = McpFetchStats()
     domain_cfgs = build_domain_configs(metrics, agents)
@@ -466,6 +496,7 @@ def build_hybrid_bundle(
                 metrics=metrics,
                 agent_id=cfg.agent_id,
                 execution_mode=execution_mode,
+                bootstrap=bootstrap,
             )
         else:
             data[d] = EmptyDataProvider(d)

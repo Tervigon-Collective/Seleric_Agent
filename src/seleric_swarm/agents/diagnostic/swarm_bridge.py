@@ -11,7 +11,10 @@ Enable per run: ``run_swarm_mission(runtime, query=..., scenario_id=..., full_di
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 from seleric_swarm.agents.diagnostic.agent import DiagnosticAgent, diagnostic_deps_from_blackboard
 from seleric_swarm.agents.diagnostic.context import DiagnosticDeps
@@ -120,6 +123,14 @@ class SwarmDiagnosticSpecialist:
         result: DiagnosticResult = await agent.diagnose(request)
 
         posted, retained_ids = _write_artifacts(blackboard, result)
+        obs_rows = len(observations) if observations is not None else 0
+        if obs_rows == 0:
+            log.warning(
+                "diagnostic: no causal observations for '%s' — DoWhy used template fallback "
+                "(time_range=%s). Extend the mission window or check MCP series availability.",
+                primary_metric,
+                dict(mission.time_range),
+            )
         blackboard.record_event(
             "diagnostic_done",
             hypotheses=len(result.hypotheses),
@@ -127,6 +138,7 @@ class SwarmDiagnosticSpecialist:
             causal_confidence=result.finding.causal_confidence if result.finding else None,
             incident_type=result.incident_type,
             contradictions=len(result.contradictions),
+            causal_obs_rows=obs_rows,
         )
         if result.leadership_transfer_recommended:
             blackboard.record_event(
@@ -164,16 +176,66 @@ class SwarmDiagnosticSpecialist:
         return posted
 
 
-async def _fetch_observations(providers: Any, outcome_metric: str, time_range: dict[str, Any]) -> Any:
+_CAUSAL_EXTRA_HISTORY_DAYS: int = 30
+"""Look-back extension (days) added before the mission start for DoWhy observations.
+
+A user query window can be as short as 1 day ("yesterday") or 7 days ("last week"),
+both below the 8-row floor that ``fetch_series`` enforces.  Extending by 30 days gives
+DoWhy ≥30 pre-treatment observations — enough for a non-degenerate causal estimate —
+while keeping the extension well below ``fetch_series``'s 60-day upper cap.
+
+The user's visible answer is still anchored to their original query window; only the
+causal evidence layer uses the extended history.
+"""
+
+
+async def _fetch_observations(
+    providers: Any,
+    outcome_metric: str,
+    time_range: dict[str, Any],
+    *,
+    extra_history_days: int = _CAUSAL_EXTRA_HISTORY_DAYS,
+) -> Any:
     """Real per-day observation series for DoWhy (docs/44 ROB-002).
 
     ``providers`` is a ``ProviderBundle`` (domain -> DataProvider). Only
     ``HybridMcpDataProvider`` implements ``fetch_series``; fixture/template
     providers don't, and that's fine — this stays ``None`` for them, same as
     before this fix (metadata-only estimation, honestly capped).
+
+    ``extra_history_days`` is added before the mission start so that short
+    user query windows (e.g. 7 days) do not fall below the 8-row floor that
+    ``fetch_series`` enforces.  The causal estimate covers this extended period;
+    the user-facing answer remains scoped to the original query window.
     """
     if providers is None or not outcome_metric:
         return None
+
+    # Extend backwards so DoWhy gets enough context for a stable estimate.
+    # fetch_series rejects windows shorter than 8 days; a 30-day extension
+    # ensures we always exceed that floor even for single-day queries.
+    from datetime import date, timedelta
+
+    start_str = str(time_range.get("start") or "")[:10]
+    try:
+        extended_start = (
+            date.fromisoformat(start_str) - timedelta(days=extra_history_days)
+        ).isoformat()
+    except ValueError:
+        # Malformed date — fall back to original range (fetch_series will
+        # return None if it is too short, same as before this change).
+        extended_start = start_str
+
+    causal_time_range = {**time_range, "start": extended_start}
+    log.debug(
+        "_fetch_observations: mission window %s→%s extended to %s→%s (+%d days) for DoWhy",
+        time_range.get("start"),
+        time_range.get("end"),
+        extended_start,
+        time_range.get("end"),
+        extra_history_days,
+    )
+
     needed = {outcome_metric, *common_causes_for_outcome(outcome_metric)}
     needed |= {tmpl.treatment_metric for tmpl in mechanisms_for(outcome_metric)}
 
@@ -185,7 +247,7 @@ async def _fetch_observations(providers: Any, outcome_metric: str, time_range: d
             continue
         seen.add(id(provider))
         try:
-            candidate = await fetch_series(metric_ids=sorted(needed), time_range=time_range)
+            candidate = await fetch_series(metric_ids=sorted(needed), time_range=causal_time_range)
         except Exception:
             continue
         if candidate is None:
