@@ -84,6 +84,7 @@ def check_swarm_budget(
     budgets: MissionBudget | dict[str, Any],
     *,
     agent_calls_needed: int = 0,
+    token_usage: int = 0,
 ) -> BudgetVerdict:
     """Hard-stop check for swarm_v2 against MissionBudget / policy ceilings.
 
@@ -117,5 +118,8 @@ def check_swarm_budget(
     llm_calls = int(usage.get("llm_calls") or state.get("llm_calls") or 0)
     if llm_calls >= budgets.max_llm_calls:
         return BudgetVerdict(False, "BUDGET_EXCEEDED", "LLM call budget exhausted", "llm_calls")
+
+    if budgets.token_budget is not None and token_usage >= budgets.token_budget:
+        return BudgetVerdict(False, "BUDGET_EXCEEDED", "LLM token budget exhausted", "token_budget")
 
     return _OK

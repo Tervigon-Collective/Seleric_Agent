@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import re
+from calendar import monthrange
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
 
 _LAST_N_DAYS = re.compile(r"\blast\s+(\d+)\s+days?\b", re.IGNORECASE)
+_LAST_N_WEEKS = re.compile(r"\blast\s+(\d+)\s+weeks?\b", re.IGNORECASE)
+_LAST_N_MONTHS = re.compile(r"\blast\s+(\d+)\s+months?\b", re.IGNORECASE)
+_LAST_N_QTRS = re.compile(r"\blast\s+(?:(\d+)\s+)?quarters?\b", re.IGNORECASE)
 _ISO_DAY = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 _COMPARISON_VERB = re.compile(r"\b(compare|versus|vs\.?|against|change|delta|over)\b", re.IGNORECASE)
 # relative period → day offset for a two-point (point-vs-point) comparison
@@ -15,6 +19,19 @@ _RELATIVE_COMPARE = (
     (re.compile(r"\b(month[\s-]*over[\s-]*month|mom|this month\b.*\blast month|last month)\b", re.IGNORECASE), 30),
     (re.compile(r"\b(year[\s-]*over[\s-]*year|yoy|this year\b.*\blast year|last year)\b", re.IGNORECASE), 365),
 )
+
+
+def _sub_months(anchor: date, n: int) -> date:
+    """Subtract n calendar months from anchor — no 30-day approximation.
+
+    Clamps the day to the last day of the target month when the anchor day
+    does not exist there (e.g. 31 Jan → 31 Oct → 30 Sep for n=4).
+    """
+    total = anchor.year * 12 + anchor.month - 1 - n
+    y, m = divmod(total, 12)
+    m += 1
+    max_day = monthrange(y, m)[1]
+    return anchor.replace(year=y, month=m, day=min(anchor.day, max_day))
 
 
 def as_of_date(as_of: str | None, timezone: str) -> date:
@@ -27,19 +44,66 @@ def as_of_date(as_of: str | None, timezone: str) -> date:
 
 
 def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRangeV1 | None:
-    """Resolve an explicit window from the question: last-N, ISO dates, yesterday/today."""
+    """Resolve an explicit window from the question: last-N days/weeks/months/quarters, ISO dates, yesterday/today.
+
+    Priority order (first match wins):
+      1. last N days       → last_Nd  (capped at 90 to guard against typos)
+      2. last N weeks      → last_Nw  (calendar weeks, no cap)
+      3. last N months     → last_Nm  (calendar months, no cap)
+      4. last N quarters   → last_Nq  (calendar quarters, no cap)
+      5. two ISO dates     → comparison window
+      6. one ISO date      → single-day absolute
+      7. period-over-period phrases with comparison verb
+      8. yesterday / today / this week / this month / this year
+    """
     text = query or ""
+    anchor = as_of_date(as_of, timezone)
+
     found = _LAST_N_DAYS.search(text)
     if found:
         n = max(1, min(int(found.group(1)), 90))
-        end = as_of_date(as_of, timezone)
-        start = end - timedelta(days=n - 1)
+        start = anchor - timedelta(days=n - 1)
         return TimeRangeV1(
             kind="absolute",
             start=start.isoformat(),
-            end=end.isoformat(),
+            end=anchor.isoformat(),
             relative_token=f"last_{n}d",
         )
+
+    found = _LAST_N_WEEKS.search(text)
+    if found:
+        n = int(found.group(1))
+        start = anchor - timedelta(weeks=n)
+        return TimeRangeV1(
+            kind="absolute",
+            start=start.isoformat(),
+            end=anchor.isoformat(),
+            relative_token=f"last_{n}w",
+        )
+
+    found = _LAST_N_MONTHS.search(text)
+    if found:
+        n = int(found.group(1))
+        start = _sub_months(anchor, n)
+        return TimeRangeV1(
+            kind="absolute",
+            start=start.isoformat(),
+            end=anchor.isoformat(),
+            relative_token=f"last_{n}m",
+        )
+
+    found = _LAST_N_QTRS.search(text)
+    if found:
+        # group(1) may be None when "last quarter" is used without an explicit N
+        n = int(found.group(1)) if found.group(1) else 1
+        start = _sub_months(anchor, n * 3)
+        return TimeRangeV1(
+            kind="absolute",
+            start=start.isoformat(),
+            end=anchor.isoformat(),
+            relative_token=f"last_{n}q",
+        )
+
     dates = _ISO_DAY.findall(text)
     if len(dates) >= 2:
         return TimeRangeV1(kind="comparison", start=dates[0], end=dates[1], relative_token=None)
@@ -51,7 +115,6 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
     if _COMPARISON_VERB.search(text):
         for pattern, offset_days in _RELATIVE_COMPARE:
             if pattern.search(text):
-                anchor = as_of_date(as_of, timezone)
                 prior = anchor - timedelta(days=offset_days)
                 return TimeRangeV1(
                     kind="comparison",
@@ -60,7 +123,6 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
                     relative_token=f"prior_{offset_days}d_vs_as_of",
                 )
     lower = text.lower()
-    anchor = as_of_date(as_of, timezone)
     if re.search(r"\byesterday\b", lower):
         day = (anchor - timedelta(days=1)).isoformat()
         return TimeRangeV1(kind="absolute", start=day, end=day, relative_token="yesterday")
@@ -100,6 +162,36 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
         if last_n:
             n = max(1, min(int(last_n.group(1)), 90))
             start = anchor - timedelta(days=n - 1)
+            return TimeRangeV1(
+                kind="absolute",
+                start=start.isoformat(),
+                end=anchor.isoformat(),
+                relative_token=token,
+            )
+        last_nw = re.fullmatch(r"last_(\d+)w", token)
+        if last_nw:
+            n = int(last_nw.group(1))
+            start = anchor - timedelta(weeks=n)
+            return TimeRangeV1(
+                kind="absolute",
+                start=start.isoformat(),
+                end=anchor.isoformat(),
+                relative_token=token,
+            )
+        last_nm = re.fullmatch(r"last_(\d+)m", token)
+        if last_nm:
+            n = int(last_nm.group(1))
+            start = _sub_months(anchor, n)
+            return TimeRangeV1(
+                kind="absolute",
+                start=start.isoformat(),
+                end=anchor.isoformat(),
+                relative_token=token,
+            )
+        last_nq = re.fullmatch(r"last_(\d+)q", token)
+        if last_nq:
+            n = int(last_nq.group(1))
+            start = _sub_months(anchor, n * 3)
             return TimeRangeV1(
                 kind="absolute",
                 start=start.isoformat(),

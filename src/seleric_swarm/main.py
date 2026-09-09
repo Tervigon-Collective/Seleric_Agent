@@ -81,8 +81,16 @@ app.add_middleware(
 app.add_middleware(RequestIdMiddleware)
 
 
+_KNOWN_SCENARIO_IDS = {"cac_regression"}
+
+
 class MissionRequest(BaseModel):
     query: str
+    # docs/24_API_CONTRACTS.md documents this for fixture/replay-mode swarm
+    # testing. Previously accepted-but-silently-ignored by pydantic (no field
+    # existed) — an unknown id now 400s instead of being dropped (docs/44
+    # ROB-004).
+    scenario_id: str | None = None
     scope: dict[str, Any] = Field(
         default_factory=dict,
         json_schema_extra={"examples": [{"timezone": "Asia/Kolkata", "as_of": "2026-09-03"}]},
@@ -215,6 +223,8 @@ async def create_mission(
             status_code=400,
             detail="execution_mode must be one of: staging, production",
         )
+    if req.scenario_id is not None and req.scenario_id not in _KNOWN_SCENARIO_IDS:
+        raise HTTPException(status_code=400, detail=f"Unknown scenario_id: {req.scenario_id!r}")
     query = (req.query or "").strip()
     if not query:
         raise HTTPException(status_code=400, detail="query must be a non-empty string")

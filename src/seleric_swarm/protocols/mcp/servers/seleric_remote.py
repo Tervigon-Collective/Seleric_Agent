@@ -14,6 +14,24 @@ import json
 from typing import Any
 
 import httpx
+from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
+
+
+class MCPUnavailableError(RuntimeError):
+    """The Seleric MCP server did not respond after retrying transient failures.
+
+    Distinct from a JSON-RPC error (the server responded but said no) so
+    callers can tell "MCP is down" from "MCP said no" (docs/44 PRD-001).
+    """
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.ReadError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return False
+
 
 TOOLS = (
     "catalogue_search_metrics",
@@ -66,8 +84,7 @@ class SelericMCPTransport:
                     "clientInfo": {"name": "seleric-swarm", "version": "0.1.0"},
                 },
             }
-            resp = await self._client.post(self._url, json=body, headers=self._headers)
-            resp.raise_for_status()
+            resp = await self._post_with_retry(body)
             session_id = resp.headers.get("mcp-session-id")
             if not session_id:
                 raise RuntimeError("seleric mcp did not return an Mcp-Session-Id on initialize")
@@ -84,8 +101,7 @@ class SelericMCPTransport:
             "method": "tools/call",
             "params": {"name": name, "arguments": arguments},
         }
-        resp = await self._client.post(self._url, json=body, headers=self._headers)
-        resp.raise_for_status()
+        resp = await self._post_with_retry(body)
         payload = _parse_jsonrpc_response(resp)
         if "error" in payload:
             raise RuntimeError(f"seleric mcp error calling {name}: {payload['error']}")
@@ -98,6 +114,33 @@ class SelericMCPTransport:
                 continue
             return parsed if isinstance(parsed, dict) else {"value": parsed}
         return result if isinstance(result, dict) else {}
+
+    async def _post_with_retry(self, body: dict[str, Any]) -> httpx.Response:
+        """3 attempts, short exponential backoff, transient failures only.
+
+        4xx responses are real errors (retrying won't help) — only connection
+        errors, timeouts, and 5xx get retried. Raises ``MCPUnavailableError``
+        once retries are exhausted instead of leaking the raw httpx exception,
+        so callers (``HybridMcpDataProvider.fetch``'s existing broad
+        ``except Exception``) keep degrading gracefully either way, and a
+        future caller can distinguish "MCP is down" from "MCP said no".
+        """
+        try:
+            async for attempt in AsyncRetrying(
+                stop=stop_after_attempt(3),
+                wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+                retry=retry_if_exception(_is_retryable),
+                reraise=True,
+            ):
+                with attempt:
+                    resp = await self._client.post(self._url, json=body, headers=self._headers)
+                    resp.raise_for_status()
+                    return resp
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.ReadError, httpx.HTTPStatusError) as exc:
+            if _is_retryable(exc):
+                raise MCPUnavailableError(f"seleric mcp unavailable after retries: {exc}") from exc
+            raise  # a real 4xx error — not a "down" signal, let it surface as-is
+        raise AssertionError("unreachable")  # AsyncRetrying always returns or raises
 
     async def aclose(self) -> None:
         await self._client.aclose()

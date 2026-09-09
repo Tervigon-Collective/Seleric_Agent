@@ -8,6 +8,7 @@ from seleric_swarm.persistence.memory import MissionStore
 from seleric_swarm.prompts.registry import PromptRegistry
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
 from seleric_swarm.registry.agent_registry import AgentRegistry
+from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
 from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.services.ontology import OntologyPort
 
@@ -22,3 +23,6 @@ class SwarmRuntime:
     agents: AgentRegistry
     store: MissionStore
     ontology: OntologyPort | None = None
+    # Live Cube catalogue cache — created by build_runtime(), warmed lazily on
+    # first _resolve_measure() call.  None only in tests that bypass build_runtime.
+    bootstrap: CatalogueBootstrap | None = None

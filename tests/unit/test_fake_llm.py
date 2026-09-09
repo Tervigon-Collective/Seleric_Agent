@@ -108,7 +108,7 @@ async def test_fake_llm_metric_map():
         ),
         MetricMappingV1,
     )
-    assert result.value.metric_id == "metric.gross_sales"
+    assert result.value.metric_ids == ["metric.gross_sales"]
 
 
 @pytest.mark.asyncio

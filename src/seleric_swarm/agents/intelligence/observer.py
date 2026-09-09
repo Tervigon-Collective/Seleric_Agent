@@ -245,24 +245,24 @@ class Agent(SwarmAgent):
                 "llm_calls": 1,
             }
         mapping = mapped.value
-        metric_id = mapping.metric_id
-        if mapping.ambiguous or not metric_id or metric_id not in allowed:
+        raw_ids = list(dict.fromkeys(mapping.metric_ids))
+        unknown = [m for m in raw_ids if self.runtime.metrics.get(m) is None]
+        metric_ids = [m for m in raw_ids if m in allowed and m not in unknown]
+        if mapping.ambiguous or not metric_ids:
+            if unknown:
+                message = f"{unknown[0]} is not in the metric registry"
+                limitation = "Unknown metric id; observer will not invent a formula"
+            else:
+                message = mapping.reason or "Metric is ambiguous or not in the commerce registry"
+                limitation = "No registered metric could be selected without improvising a formula"
             return [], 1, {
-                "metric_id": metric_id,
+                "metric_id": raw_ids[0] if raw_ids else None,
                 "error_code": "INSUFFICIENT_EVIDENCE",
-                "error_message": mapping.reason or "Metric is ambiguous or not in the commerce registry",
-                "limitations": ["No registered metric could be selected without improvising a formula"],
+                "error_message": message,
+                "limitations": [limitation],
                 "llm_calls": 1,
             }
-        if self.runtime.metrics.get(metric_id) is None:
-            return [], 1, {
-                "metric_id": metric_id,
-                "error_code": "INSUFFICIENT_EVIDENCE",
-                "error_message": f"{metric_id} is not in the metric registry",
-                "limitations": ["Unknown metric id; observer will not invent a formula"],
-                "llm_calls": 1,
-            }
-        return [metric_id], 1, None
+        return metric_ids, 1, None
 
     async def _resolve_seleric_measure(self, *, definition: Any, owner_agent_id: str) -> str | None:
         """Resolve the catalogue measure id for this registry metric."""

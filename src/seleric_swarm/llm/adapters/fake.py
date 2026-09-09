@@ -86,6 +86,16 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
         if score == 0 and metric.domain in q_words and len(by_domain.get(metric.domain) or []) == 1:
             score = 7
             phrases = [metric.domain, *phrases]
+        if (
+            score == 0
+            and metric.domain in q_words
+            and len(by_domain.get(metric.domain) or []) > 1
+            and _AREA_STATUS_RE.search(q)
+        ):
+            # "funnel status" names the whole area, not one measure — bundle
+            # every metric in that domain instead of dropping to zero hints.
+            score = 6
+            phrases = [metric.domain, *phrases]
         if score == 0 and "channel" in q_words and re.search(r"\bacross channels\b", metric.description or "", re.IGNORECASE):
             score = 8
             phrases = ["channel", *phrases]
@@ -102,6 +112,7 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
 
 _DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 _SALES_WORD = re.compile(r"\bsales\b")
+_AREA_STATUS_RE = re.compile(r"\b(status|health|doing|performing|performance|overview)\b")
 
 
 def _user_text(request: LLMRequest) -> str:
@@ -159,6 +170,24 @@ def _time_range_for(q: str, lower: str) -> tuple[dict[str, Any], str]:
     if last_n:
         return (
             {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n.group(1)}d"},
+            "lookup",
+        )
+    last_n_weeks = re.search(r"\blast\s+(\d+)\s+weeks?\b", lower)
+    if last_n_weeks:
+        return (
+            {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n_weeks.group(1)}w"},
+            "lookup",
+        )
+    last_n_months = re.search(r"\blast\s+(\d+)\s+months?\b", lower)
+    if last_n_months:
+        return (
+            {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n_months.group(1)}m"},
+            "lookup",
+        )
+    last_n_quarters = re.search(r"\blast\s+(\d+)\s+quarters?\b", lower)
+    if last_n_quarters:
+        return (
+            {"kind": "relative", "start": None, "end": None, "relative_token": f"last_{last_n_quarters.group(1)}q"},
             "lookup",
         )
     if "yesterday" in lower:
@@ -347,16 +376,20 @@ def map_metric(
     else:
         hint_ok = hints
     if len(candidates) == 1:
-        return {"metric_id": candidates[0], "ambiguous": False, "reason": None}
+        return {"metric_ids": candidates, "ambiguous": False, "reason": None}
     if len(candidates) > 1:
         for hint in hint_ok:
             if hint in candidates:
-                return {"metric_id": hint, "ambiguous": False, "reason": None}
-        return {"metric_id": candidates[0], "ambiguous": False, "reason": None}
+                return {"metric_ids": [hint], "ambiguous": False, "reason": None}
+        return {"metric_ids": [candidates[0]], "ambiguous": False, "reason": None}
     if hint_ok:
-        return {"metric_id": hint_ok[0], "ambiguous": False, "reason": None}
+        return {"metric_ids": [hint_ok[0]], "ambiguous": False, "reason": None}
+    if allowed_set and _AREA_STATUS_RE.search(lower):
+        # "funnel status" / "how's checkout doing" names an area, not one
+        # measure — bundle every allowed metric rather than failing closed.
+        return {"metric_ids": sorted(allowed_set), "ambiguous": False, "reason": None}
     return {
-        "metric_id": None,
+        "metric_ids": [],
         "ambiguous": True,
         "reason": "Could not map the question to a registered metric id",
     }
@@ -470,6 +503,12 @@ class FakeLLMAdapter:
             supported_field = _extract_field(user, "Supported dimensions for this metric") or ""
             supported = [item.strip() for item in supported_field.split(",") if item.strip()]
             return json.dumps(map_dimension(query, supported))
+        if prompt_id == "synthesizer.swarm_response":
+            # No scripted business-prose generator for swarm_v2 synthesis —
+            # returning empty defers to the deterministic template fallback
+            # (coordinator/synthesis/response_builder.py) that tests already
+            # assert against, same as a real LLM producing nothing useful.
+            return ""
         if prompt_id.endswith("response") or "synthesizer" in prompt_id:
             return synthesize_response(user)
         if "json schema" in joined or request.response_format == "json_schema":

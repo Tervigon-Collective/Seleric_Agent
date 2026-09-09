@@ -52,7 +52,11 @@ def _objective_coverage(state: dict[str, Any], task_graph: dict[str, Any] | None
     # Advisory DAG (no live execution tracking yet) or no plan attached:
     # fall back to the mission outcome signal.
     if not state.get("claims"):
-        return 0.0
+        # A thorough investigation that legitimately found nothing material to
+        # claim (e.g. a health check with no anomalies, or a diagnostic
+        # question whose frontier metric has no candidate mechanism) is a
+        # complete answer, not an incomplete one — see `no_material_finding`.
+        return 1.0 if state.get("no_material_finding") else 0.0
     if state.get("status") == "completed":
         return 1.0
     if state.get("status") == "partial":
@@ -74,7 +78,11 @@ def _evidence_completeness(state: dict[str, Any]) -> float:
 def _claim_validation(state: dict[str, Any]) -> float:
     claims = state.get("claims") or []
     if not claims:
-        return 0.0
+        # No claim to validate is only a defect when something material was
+        # found and left unclaimed — a clean "nothing material found" sweep
+        # has nothing to validate by design (same "vacuously satisfied"
+        # pattern as _contradiction_resolution / _skeptic_status below).
+        return 1.0 if state.get("no_material_finding") else 0.0
     passed = [c for c in claims if c.get("gate_status") == "passed"]
     return len(passed) / len(claims)
 

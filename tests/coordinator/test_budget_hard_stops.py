@@ -22,6 +22,18 @@ def test_check_swarm_budget_agent_calls():
     assert v.error_code == "BUDGET_EXCEEDED"
 
 
+def test_check_swarm_budget_token_budget():
+    # docs/44 PRD-002: token_budget is opt-in (None by default) and, when set,
+    # enforced the same way max_llm_calls already is.
+    budgets = MissionBudget(token_budget=100)
+    assert check_swarm_budget({"usage": {}}, budgets, token_usage=50).ok
+    v = check_swarm_budget({"usage": {}}, budgets, token_usage=100)
+    assert not v.ok
+    assert v.exhausted_key == "token_budget"
+    # unset (default) never blocks, regardless of usage
+    assert check_swarm_budget({"usage": {}}, MissionBudget(), token_usage=10_000).ok
+
+
 def test_check_swarm_budget_leadership_and_remediation():
     budgets = MissionBudget(max_leadership_transfers=2, max_remediation_rounds=1)
     assert not check_swarm_budget(
@@ -72,3 +84,20 @@ async def test_swarm_v2_budget_exhaustion_emits_event_and_partial(runtime):
     control = next(e for e in result.events if e.get("kind") == "mission_control_plane")
     assert control.get("budget_exhausted") is True
     assert int((control.get("usage") or {}).get("agent_calls") or 0) >= 2
+
+
+@pytest.mark.asyncio
+async def test_swarm_v2_token_budget_degrades_mission(runtime):
+    # A token_budget of 1 is exhausted by the mission's first LLM call
+    # (FakeLLMAdapter reports 36 total_tokens per call) — the mission should
+    # degrade to partial via the same route as other budget exhaustion, not
+    # run unbounded LLM calls.
+    result = await run_swarm_v2_mission(
+        runtime,
+        query="Why has CAC increased?",
+        timezone="Asia/Kolkata",
+        as_of="2026-08-01",
+        budget_overrides={"token_budget": 1},
+    )
+    assert result.status == "partial"
+    assert runtime.llm.usage_for(result.mission_id).total_tokens >= 1

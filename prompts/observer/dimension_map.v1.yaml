@@ -20,6 +20,15 @@ system: |
   with no breakdown requested (e.g. "how many orders in the last 7 days" is
   NOT a breakdown by order status just because it mentions orders). Return at
   most one dimension.
+
+  Dimension-substitution rule: if the question asks for a breakdown by a
+  specific entity type (e.g. product, campaign, customer, channel) but no
+  matching dimension exists in the supported list for this metric, return an
+  empty list. Do NOT substitute a different dimension category — in particular,
+  do not pick a time/date dimension (e.g. order_date, event_date) when the
+  question is asking for a product, campaign, or channel ranking. Only return
+  a dimension when it directly matches what the question is ranking or grouping
+  by.
 user_template: |
   Query: {{ query }}
   Supported dimensions for this metric: {{ supported_dimensions }}

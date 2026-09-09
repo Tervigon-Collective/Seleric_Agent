@@ -1,14 +1,23 @@
 """Domain ontology: candidate mechanisms per outcome metric.
 
 Deterministic seed set the hypothesis generator draws from before (optionally)
-asking the LLM for more. Keeps generation bounded and business-grounded:
-each entry names a treatment metric, the owning domain(s), a mechanism sentence
-and the parent/outcome it plausibly drives.
+asking the LLM for more. Backed by ``config/diagnostic_ontology.yaml`` so that
+adding a new outcome metric's candidate mechanisms is a config change, not a
+Python code change (docs/44 tickets SCL-001 / ADP-001).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from seleric_swarm.paths import repo_root
+
+_DEFAULT_PATH = "config/diagnostic_ontology.yaml"
 
 
 @dataclass(frozen=True)
@@ -23,177 +32,73 @@ class MechanismTemplate:
     is_symptom_only: bool = False
 
 
-# outcome metric -> ordered candidate mechanisms (most specific first)
-_ONTOLOGY: dict[str, tuple[MechanismTemplate, ...]] = {
-    "metric.purchase_cvr": (
-        MechanismTemplate(
-            "mobile_latency_regression",
-            "A frontend regression raised mobile latency, degrading mobile purchase conversion.",
-            "higher LCP / JS error rate on mobile lowers checkout completion",
-            "metric.mobile_lcp_seconds",
-            "metric.purchase_cvr",
-            ("technical", "funnel"),
-            ("event.frontend_deployment", "metric.js_error_rate", "metric.mobile_lcp_seconds"),
-        ),
-        MechanismTemplate(
-            "js_error_spike",
-            "A JavaScript error spike broke checkout interactions, lowering conversion.",
-            "client-side exceptions abort add-to-cart / checkout",
-            "metric.js_error_rate",
-            "metric.purchase_cvr",
-            ("technical", "funnel"),
-            ("metric.js_error_rate",),
-        ),
-        MechanismTemplate(
-            "price_or_discount_change",
-            "A price or discount change reduced conversion.",
-            "higher effective price lowers willingness to purchase",
-            "metric.avg_price",
-            "metric.purchase_cvr",
-            ("commerce",),
-            ("event.price_change", "metric.discount_rate"),
-        ),
-        MechanismTemplate(
-            "stock_availability",
-            "Stock availability fell for high-traffic SKUs.",
-            "out-of-stock PDPs cannot convert",
-            "metric.in_stock_rate",
-            "metric.purchase_cvr",
-            ("inventory", "commerce"),
-            ("metric.in_stock_rate",),
-        ),
-        MechanismTemplate(
-            "payment_failure",
-            "Payment failures rose, blocking completed purchases.",
-            "declined / errored transactions prevent order creation",
-            "metric.payment_failure_rate",
-            "metric.purchase_cvr",
-            ("technical", "commerce"),
-            ("metric.payment_failure_rate",),
-        ),
-        MechanismTemplate(
-            "traffic_mix_shift",
-            "Paid traffic quality deteriorated (lower-intent clicks).",
-            "worse-intent sessions convert less",
-            "metric.paid_traffic_share",
-            "metric.purchase_cvr",
-            ("performance",),
-            ("metric.ctr", "metric.cpc"),
-        ),
-        MechanismTemplate(
-            "tracking_regression",
-            "Conversion tracking broke, understating purchases.",
-            "lost purchase events depress the measured rate without a real drop",
-            "metric.tracking_coverage",
-            "metric.purchase_cvr",
-            ("technical",),
-            ("event.tag_change",),
-            is_symptom_only=False,
-        ),
-    ),
-    "metric.cac": (
-        MechanismTemplate(
-            "downstream_cvr_decline",
-            "A downstream purchase-conversion decline raised CAC while media stayed healthy.",
-            "same spend / fewer orders inflates cost per acquisition",
-            "metric.purchase_cvr",
-            "metric.cac",
-            ("performance", "funnel"),
-            ("metric.purchase_cvr", "metric.spend"),
-        ),
-        MechanismTemplate(
-            "auction_pressure",
-            "Rising auction pressure increased CPM and therefore CAC.",
-            "higher CPM at constant conversion raises acquisition cost",
-            "metric.cpm",
-            "metric.cac",
-            ("performance",),
-            ("metric.cpm", "metric.frequency"),
-        ),
-        MechanismTemplate(
-            "creative_fatigue",
-            "Creative fatigue lowered CTR, raising effective CPC and CAC.",
-            "declining CTR at rising frequency raises cost per click",
-            "metric.ctr",
-            "metric.cac",
-            ("performance",),
-            ("metric.ctr", "metric.frequency"),
-        ),
-        MechanismTemplate(
-            "attribution_change",
-            "An attribution / tracking change shifted credited orders, moving reported CAC.",
-            "fewer attributed orders at constant spend raises reported CAC",
-            "metric.attributed_orders",
-            "metric.cac",
-            ("performance", "technical"),
-            ("event.attribution_change", "event.tag_change"),
-        ),
-    ),
-    "metric.net_sales": (
-        MechanismTemplate(
-            "conversion_decline",
-            "A purchase-conversion decline reduced net sales.",
-            "fewer completed orders at constant traffic lowers revenue",
-            "metric.purchase_cvr",
-            "metric.net_sales",
-            ("funnel", "commerce"),
-            ("metric.purchase_cvr",),
-        ),
-        MechanismTemplate(
-            "returns_spike",
-            "A returns spike cut net sales.",
-            "higher return rate reduces net of gross sales",
-            "metric.return_rate",
-            "metric.net_sales",
-            ("commerce",),
-            ("metric.return_rate",),
-        ),
-        MechanismTemplate(
-            "traffic_decline",
-            "A traffic decline reduced net sales.",
-            "fewer sessions at constant conversion lowers revenue",
-            "metric.sessions",
-            "metric.net_sales",
-            ("funnel", "performance"),
-            ("metric.sessions",),
-        ),
-    ),
-}
+@dataclass
+class _Ontology:
+    mechanisms_by_outcome: dict[str, tuple[MechanismTemplate, ...]]
+    incident_type_by_key: dict[str, str]
+    graph_id_by_outcome: dict[str, str]
+    default_graph_id: str
+    node_by_metric: dict[str, str]
+    treatment_events: dict[str, tuple[str, ...]]
+    base_common_causes: tuple[str, ...]
+    extra_common_causes_by_outcome: dict[str, tuple[str, ...]]
+
+
+@lru_cache(maxsize=1)
+def _load(path: str | None = None) -> _Ontology:
+    p = Path(path) if path else repo_root() / _DEFAULT_PATH
+    raw: dict[str, Any] = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+
+    mechanisms_by_outcome: dict[str, tuple[MechanismTemplate, ...]] = {}
+    incident_type_by_key: dict[str, str] = {}
+    graph_id_by_outcome: dict[str, str] = {}
+    extra_common_causes_by_outcome: dict[str, tuple[str, ...]] = {}
+
+    for outcome_metric, entry in (raw.get("outcomes") or {}).items():
+        templates = []
+        for m in entry.get("mechanisms") or []:
+            templates.append(
+                MechanismTemplate(
+                    key=m["key"],
+                    statement=m["statement"],
+                    mechanism=m["mechanism"],
+                    treatment_metric=m["treatment_metric"],
+                    outcome_metric=outcome_metric,
+                    domains=tuple(m.get("domains") or ()),
+                    evidence_hints=tuple(m.get("evidence_hints") or ()),
+                    is_symptom_only=bool(m.get("is_symptom_only", False)),
+                )
+            )
+            if m.get("incident_type"):
+                incident_type_by_key[m["key"]] = m["incident_type"]
+        mechanisms_by_outcome[outcome_metric] = tuple(templates)
+        if entry.get("graph_id"):
+            graph_id_by_outcome[outcome_metric] = entry["graph_id"]
+        if entry.get("extra_common_causes"):
+            extra_common_causes_by_outcome[outcome_metric] = tuple(entry["extra_common_causes"])
+
+    return _Ontology(
+        mechanisms_by_outcome=mechanisms_by_outcome,
+        incident_type_by_key=incident_type_by_key,
+        graph_id_by_outcome=graph_id_by_outcome,
+        default_graph_id=raw.get("default_graph_id", "causal.funnel_purchase.v1"),
+        node_by_metric=dict(raw.get("node_by_metric") or {}),
+        treatment_events={k: tuple(v) for k, v in (raw.get("treatment_events") or {}).items()},
+        base_common_causes=tuple(raw.get("base_common_causes") or ()),
+        extra_common_causes_by_outcome=extra_common_causes_by_outcome,
+    )
 
 
 def mechanisms_for(outcome_metric: str) -> tuple[MechanismTemplate, ...]:
-    return _ONTOLOGY.get(outcome_metric, ())
+    return _load().mechanisms_by_outcome.get(outcome_metric, ())
 
 
 def known_outcomes() -> list[str]:
-    return list(_ONTOLOGY)
-
-
-# Coarse routing label for downstream Prediction/Strategy (spec §122) — a
-# classification hint, never a causal claim. Keyed on the stable mechanism
-# ``key`` rather than ``domains`` because e.g. payment_failure and
-# mobile_latency_regression share the "technical" domain but are distinct
-# incident classes for routing purposes.
-_INCIDENT_TYPE_BY_KEY: dict[str, str] = {
-    "mobile_latency_regression": "technical",
-    "js_error_spike": "technical",
-    "price_or_discount_change": "pricing",
-    "stock_availability": "inventory",
-    "payment_failure": "payment",
-    "traffic_mix_shift": "acquisition",
-    "tracking_regression": "tracking",
-    "downstream_cvr_decline": "funnel",
-    "auction_pressure": "acquisition",
-    "creative_fatigue": "acquisition",
-    "attribution_change": "tracking",
-    "conversion_decline": "funnel",
-    "returns_spike": "commerce",
-    "traffic_decline": "acquisition",
-}
+    return list(_load().mechanisms_by_outcome)
 
 
 def incident_type_for_key(mechanism_key: str) -> str | None:
-    return _INCIDENT_TYPE_BY_KEY.get(mechanism_key)
+    return _load().incident_type_by_key.get(mechanism_key)
 
 
 def incident_type_for_treatment(outcome_metric: str, treatment_metric: str) -> str | None:
@@ -209,51 +114,19 @@ def incident_type_for_treatment(outcome_metric: str, treatment_metric: str) -> s
     return None
 
 
-# Single source of truth for the causal-graph wiring the estimator, generator,
-# ranker and test runners all need. Previously duplicated as independent
-# literals in each of those modules, which could silently drift out of sync.
-_GRAPH_ID_BY_OUTCOME: dict[str, str] = {
-    "metric.purchase_cvr": "causal.funnel_purchase.v1",
-    "metric.cac": "causal.funnel_purchase.v1",
-    "metric.net_sales": "causal.funnel_purchase.v1",
-}
-_DEFAULT_GRAPH_ID = "causal.funnel_purchase.v1"
-
-_NODE_BY_METRIC: dict[str, str] = {
-    "metric.mobile_lcp_seconds": "page_latency",
-    "metric.js_error_rate": "page_latency",
-    "metric.purchase_cvr": "purchase",
-    "metric.cac": "purchase",
-    "metric.avg_price": "price",
-    "metric.in_stock_rate": "stock",
-    "metric.payment_failure_rate": "payment_failure",
-}
-
-# treatment metric -> event facts that would precede a real change in it.
-_TREATMENT_EVENTS: dict[str, tuple[str, ...]] = {
-    "metric.mobile_lcp_seconds": ("event.frontend_deployment",),
-    "metric.js_error_rate": ("event.frontend_deployment", "event.tag_change"),
-    "metric.avg_price": ("event.price_change",),
-    "metric.attributed_orders": ("event.attribution_change", "event.tag_change"),
-}
-
-_BASE_COMMON_CAUSES: tuple[str, ...] = ("metric.sessions", "campaign", "device")
-_EXTRA_COMMON_CAUSES_BY_OUTCOME: dict[str, tuple[str, ...]] = {
-    "metric.cac": ("metric.return_rate",),
-}
-
-
 def graph_id_for_outcome(outcome_metric: str) -> str:
-    return _GRAPH_ID_BY_OUTCOME.get(outcome_metric, _DEFAULT_GRAPH_ID)
+    o = _load()
+    return o.graph_id_by_outcome.get(outcome_metric, o.default_graph_id)
 
 
 def node_for_metric(metric_id: str) -> str:
-    return _NODE_BY_METRIC.get(metric_id, metric_id)
+    return _load().node_by_metric.get(metric_id, metric_id)
 
 
 def treatment_events(treatment_metric: str) -> tuple[str, ...]:
-    return _TREATMENT_EVENTS.get(treatment_metric, ())
+    return _load().treatment_events.get(treatment_metric, ())
 
 
 def common_causes_for_outcome(outcome_metric: str) -> list[str]:
-    return [*_BASE_COMMON_CAUSES, *_EXTRA_COMMON_CAUSES_BY_OUTCOME.get(outcome_metric, ())]
+    o = _load()
+    return [*o.base_common_causes, *o.extra_common_causes_by_outcome.get(outcome_metric, ())]

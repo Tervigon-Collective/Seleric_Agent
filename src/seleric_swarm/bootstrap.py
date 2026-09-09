@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from seleric_swarm.config.settings import Settings, get_settings
 from seleric_swarm.llm.factory import build_llm
+from seleric_swarm.llm.metering import MeteredLLMPort
 from seleric_swarm.observability.tracing import configure_langsmith_env, configure_logging
 from seleric_swarm.paths import repo_root
 from seleric_swarm.persistence.postgres import build_store
@@ -13,6 +14,7 @@ from seleric_swarm.prompts.registry import PromptRegistry
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
 from seleric_swarm.registry.agent_registry import AgentRegistry
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
 from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.services.ontology import OntologyService
 
@@ -44,13 +46,18 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     configure_langsmith_env(settings)
     agents = AgentRegistry(str(repo_root() / "config" / "agent_registry.yaml"))
     mcp = MCPGateway(settings.mcp_config_path, agents=agents)
+    # CatalogueBootstrap is created eagerly but NOT warmed here — build_runtime
+    # is sync, warming is async.  The first _resolve_measure() call triggers
+    # refresh_if_stale() which does the actual MCP call.
+    cat_bootstrap = CatalogueBootstrap(mcp)
     return SwarmRuntime(
         settings=settings,
-        llm=build_llm(settings),
+        llm=MeteredLLMPort(build_llm(settings)),
         prompts=PromptRegistry(settings.prompts_dir, settings.prompt_versions_path),
         mcp=mcp,
         metrics=MetricRegistry(settings.metric_registry_path),
         agents=agents,
         store=build_store(settings.persistence_backend, settings.database_url),
         ontology=OntologyService(mcp),
+        bootstrap=cat_bootstrap,
     )
