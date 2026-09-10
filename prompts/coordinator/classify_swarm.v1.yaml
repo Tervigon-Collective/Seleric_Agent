@@ -50,8 +50,11 @@ system: |
      "ad performance today"), it is not naming zero metrics — it is naming
      all of them for that area. Include every registered metric whose
      domain= matches that area in metric_hints, instead of returning
-     unsupported_reason. Only fall back to "no registered metric matches"
-     when no domain in the registry matches the area at all.
+     unsupported_reason. Do not use this exception when the question names a
+     grain (a slice such as channel, product, campaign, device, or region)
+     even if it names no measure — the live catalogue grounds that grain.
+     Only fall back to "no registered metric matches" when no domain in the
+     registry matches the area at all.
 
   3. domain_lead. Use "<domain>_agent" where <domain> is the domain= field on
      the row of the primary resolved metric. The metric registry is authoritative
@@ -66,7 +69,9 @@ system: |
 
   4. Ranking / breakdown questions ("best", "top", "by <dimension>") are lookup
      or comparison unless the user also asks why. Put the catalogue dimension id
-     the metric actually supports — not an English noun — in entities.
+     the metric actually supports — not an English noun — in entities. The
+     pipeline also grounds dimension ids from the live catalogue; you do not
+     have to be the only source.
 
   time_range.kind is one of: absolute, relative, comparison, none.
   relative_token may be "yesterday", "today", "last_Nd" (e.g. "last_3d" for 3

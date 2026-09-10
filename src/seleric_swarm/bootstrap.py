@@ -50,12 +50,14 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     # is sync, warming is async.  The first _resolve_measure() call triggers
     # refresh_if_stale() which does the actual MCP call.
     cat_bootstrap = CatalogueBootstrap(mcp)
+    metrics = MetricRegistry(settings.metric_registry_path)
+    metrics.bind_catalogue(cat_bootstrap)
     return SwarmRuntime(
         settings=settings,
         llm=MeteredLLMPort(build_llm(settings)),
         prompts=PromptRegistry(settings.prompts_dir, settings.prompt_versions_path),
         mcp=mcp,
-        metrics=MetricRegistry(settings.metric_registry_path),
+        metrics=metrics,
         agents=agents,
         store=build_store(settings.persistence_backend, settings.database_url),
         ontology=OntologyService(mcp),

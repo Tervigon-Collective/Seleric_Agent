@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.contracts.lookup import CoordinatorClassificationV1
-from seleric_swarm.coordinator.catalogue_grounding import hints_from_catalogue
+from seleric_swarm.coordinator.catalogue_grounding import apply_catalogue_grain, hints_from_catalogue
 from seleric_swarm.coordinator.planning.complexity import looks_like_diagnostic
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
@@ -121,6 +121,9 @@ class Agent(SwarmAgent):
         if not looks_like_diagnostic(query):
             catalogue_hints = await hints_from_catalogue(query, runtime=self.runtime, agent_id=self.agent_id)
         merged_hints = list(dict.fromkeys([*classification.metric_hints, *catalogue_hints]))
+        merged_hints, resolved_dimensions = await apply_catalogue_grain(
+            query, merged_hints, runtime=self.runtime
+        )
         canonical = [m for m in merged_hints if self.runtime.metrics.get(m) is not None]
         preset_metric = canonical[0] if len(canonical) == 1 else None
 
@@ -154,16 +157,14 @@ class Agent(SwarmAgent):
                 # it named a real agent, otherwise fall back to coordinator.
                 domain_lead = domain_lead or "coordinator_agent"
 
-        # Dimension/breakdown resolution now happens at observer execution time
-        # (agents/intelligence/observer.py::_resolve_breakdown_dimensions),
-        # grounded in the metric's real supported_dimensions.
-        entities = list(classification.entities or [])
+        entities = list(resolved_dimensions or classification.entities or [])
 
         return {
             "query_class": query_class,
             "mission_lead": domain_lead,
             "initial_mission_lead": domain_lead,
             "entities": entities,
+            "resolved_dimensions": resolved_dimensions,
             "time_range": resolved.model_dump(),
             "metric_hints": merged_hints,
             "metric_id": preset_metric,

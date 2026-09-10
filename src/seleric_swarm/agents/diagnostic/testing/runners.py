@@ -85,13 +85,21 @@ async def _temporal_precedence(ctx: DiagnosticContext, h: DiagnosticHypothesis, 
         )
 
     deg_dt = _parse(deg)
-    ok = any(ct is not None and deg_dt is not None and ct <= deg_dt + timedelta(minutes=tol) for ct in change_times)
-    # explicit reversal: outcome moved strictly before the treatment -> hard fail
-    reversed_order = all(
-        ct is not None and deg_dt is not None and ct > deg_dt + timedelta(minutes=tol) for ct in change_times
-    )
+    if deg_dt is None:
+        # Malformed (not merely absent) degradation timestamp — we cannot test
+        # precedence, so skip rather than hard-reject every hypothesis that
+        # carries a treatment metric.
+        return TestResult(
+            test_id=t.test_id, hypothesis_id=h.hypothesis_id, kind=t.kind, passed=True,
+            detail={"skipped": f"unparseable degradation timestamp: {deg!r}"},
+            note="cannot test precedence; not failing on a malformed timestamp",
+        )
+    cutoff = deg_dt + timedelta(minutes=tol)
+    # pass if any treatment change precedes / coincides (within tolerance) with
+    # the degradation; otherwise every change is strictly after -> reversed order.
+    ok = any(ct <= cutoff for ct in change_times)
     return TestResult(
-        test_id=t.test_id, hypothesis_id=h.hypothesis_id, kind=t.kind, passed=ok and not reversed_order,
+        test_id=t.test_id, hypothesis_id=h.hypothesis_id, kind=t.kind, passed=ok,
         detail={"degradation": deg, "treatment_changes": [str(c) for c in change_times]},
         note="treatment precedes / coincides with degradation" if ok else "treatment change is after the outcome change",
     )

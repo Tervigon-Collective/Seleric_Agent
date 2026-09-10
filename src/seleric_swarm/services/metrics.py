@@ -1,11 +1,29 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from seleric_swarm.paths import repo_root
+
+if TYPE_CHECKING:
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap, CatalogueMetricMeta
+
+# Deterministic map: catalogue category → swarm domain (then ``{domain}_agent``).
+# Not a metric list — MCP is the metric repository.
+_CATEGORY_DOMAIN: dict[str, str] = {
+    "commerce": "commerce",
+    "attribution": "attribution",
+    "web_analytics": "funnel",
+    "webanalytics": "funnel",
+    "product": "product",
+    "paid_media": "performance",
+    "paidmedia": "performance",
+    "finance": "finance",
+    "customer": "customer",
+    "operations": "operations",
+}
 
 
 class MetricDefinition:
@@ -19,30 +37,21 @@ class MetricDefinition:
         self.grain: str = payload.get("grain", "day")
         self.timezone: str = payload.get("timezone", "Asia/Kolkata")
         self.domain: str = payload.get("domain", self.owner)
-        # Glossary synonyms for this metric — not questions. Production classify
-        # uses the live catalogue; the fake LLM adapter may use these as a
-        # test double when MCP is not in the loop.
         self.aliases: list[str] = [str(a).lower() for a in (payload.get("aliases") or [])]
-        # Advisory hint for the live catalogue measure id.  When present,
-        # _resolve_measure uses it as the preferred ID (Step 0 cache check or
-        # Step 1 exact lookup).  When absent (None), resolution goes straight
-        # to Step 2 semantic search — the catalogue is the source of truth.
-        # NOTE: the old fallback of id.removeprefix("metric.") was removed
-        # because it silently chose wrong IDs for mismatched registry entries
-        # (e.g. metric.return_rate → "return_rate" which doesn't exist).
         self.catalogue_metric: str | None = payload.get("catalogue_metric") or None
-        # Optional module override when the measure lives outside the domain agent pin.
         self.seleric_module: str | None = payload.get("seleric_module")
-        # "up" (default) or "down" — which direction of movement is adverse for
-        # this metric. Most metrics here are costs/error rates (up is bad); a
-        # metric raises this to "down" when more is better (revenue, orders,
-        # conversion rates, ...). Backs anomaly adversity scoring — see
-        # docs/44 ticket ROB-001.
         self.direction_bad: str = payload.get("direction_bad", "up")
         self.raw = payload
 
 
 class MetricRegistry:
+    """Metric identity comes from the live MCP catalogue when warm.
+
+    ``config/metric_registry.yaml`` is a cold-start / test overlay (legacy
+    ``metric.*`` ids, ``seleric_module`` exceptions, direction_bad). It is not
+    the metric list in production once CatalogueBootstrap is warm.
+    """
+
     def __init__(self, config_path: str | Path) -> None:
         root = repo_root()
         path = Path(config_path)
@@ -53,14 +62,81 @@ class MetricRegistry:
         self._by_catalogue = {
             m.catalogue_metric: m.id for m in self._metrics.values() if m.catalogue_metric
         }
+        self._live: CatalogueBootstrap | None = None
+        self._live_defs: dict[str, MetricDefinition] = {}
 
-    def all(self) -> list[MetricDefinition]:
+    def bind_catalogue(self, bootstrap: CatalogueBootstrap | None) -> None:
+        """Use the warmed MCP catalogue as the metric repository."""
+        self._live = bootstrap
+        self._live_defs = {}
+        if bootstrap is None or not bootstrap.is_warm():
+            return
+        self._live_defs = {meta.id: self._from_live(meta) for meta in bootstrap.entries()}
+
+    def _overlay_for(self, catalogue_id: str) -> MetricDefinition | None:
+        yaml_id = self._by_catalogue.get(catalogue_id)
+        return self._metrics.get(yaml_id) if yaml_id else None
+
+    def _from_live(self, meta: CatalogueMetricMeta) -> MetricDefinition:
+        overlay = self._overlay_for(meta.id)
+        raw = dict(meta.raw or {})
+        category = str(raw.get("category") or "").lower()
+        domain = _CATEGORY_DOMAIN.get(category) or (overlay.domain if overlay else "")
+        payload: dict[str, Any] = {
+            "id": meta.id,
+            "catalogue_metric": meta.id,
+            "description": meta.label or str(raw.get("description") or meta.id),
+            "domain": domain,
+            "owner": domain,
+            "formula": str(raw.get("formula") or meta.id),
+            "grain": str(raw.get("grain") or "day"),
+            "timezone": "Asia/Kolkata",
+        }
+        if overlay is not None:
+            payload["direction_bad"] = overlay.direction_bad
+            payload["seleric_module"] = overlay.seleric_module
+            payload["aliases"] = overlay.aliases
+            payload["unit"] = overlay.unit
+            if "seleric_module" in overlay.raw:
+                payload["seleric_module"] = overlay.seleric_module
+                raw = {**overlay.raw, **raw}
+        payload["raw"] = raw
+        return MetricDefinition(payload)
+
+    def yaml_all(self) -> list[MetricDefinition]:
+        """Overlay rows only — used for YAML-vs-live staleness hints."""
         return list(self._metrics.values())
 
+    def all(self) -> list[MetricDefinition]:
+        if not self._live_defs:
+            return list(self._metrics.values())
+        # Merge, don't replace: binding the live catalogue must not make
+        # ids_for_domain()/get() forget YAML metric.* ids that callers (e.g.
+        # domain_mission_update's allowlist check) already resolved earlier
+        # in the same mission — a prior full-replace here caused a live grain
+        # lookup for one query to silently break domain routing for every
+        # other query sharing this registry instance for the rest of the process.
+        merged: dict[str, MetricDefinition] = dict(self._live_defs)
+        for metric_id, definition in self._metrics.items():
+            merged.setdefault(metric_id, definition)
+        return list(merged.values())
+
     def catalog_prompt(self) -> str:
-        """Registry rows for coordinator.classify — not a phrase table."""
+        """Classifier context. Live catalogue is authoritative; this is not a metric list."""
+        if self._live_defs:
+            lines = [
+                "The live MCP catalogue is the only metric repository. Use catalogue ids.",
+                "Domain lead is deterministic from catalogue category:",
+            ]
+            seen: set[str] = set()
+            for category, domain in _CATEGORY_DOMAIN.items():
+                if domain in seen:
+                    continue
+                seen.add(domain)
+                lines.append(f"- {category} → {domain}_agent")
+            return "\n".join(lines)
         lines = []
-        for metric in self.all():
+        for metric in self.yaml_all():
             cat = metric.catalogue_metric or "(unresolved — discovered via live catalogue)"
             lines.append(f"- {metric.id} (domain={metric.domain}, catalogue={cat}): {metric.description}")
         return "\n".join(lines)
@@ -68,15 +144,25 @@ class MetricRegistry:
     def id_for_catalogue(self, catalogue_id: str | None) -> str | None:
         if not catalogue_id:
             return None
+        if self._live is not None and self._live.has(catalogue_id):
+            return catalogue_id
         if catalogue_id in self._metrics:
             return catalogue_id
         return self._by_catalogue.get(catalogue_id)
 
     def get(self, metric_id: str) -> MetricDefinition | None:
-        return self._metrics.get(metric_id)
+        if metric_id in self._live_defs:
+            return self._live_defs[metric_id]
+        yaml_def = self._metrics.get(metric_id)
+        if yaml_def is not None:
+            return yaml_def
+        mapped = self._by_catalogue.get(metric_id)
+        if mapped:
+            return self._metrics.get(mapped)
+        return None
 
     def ids_for_domain(self, domain: str) -> list[str]:
-        return [m.id for m in self._metrics.values() if m.domain == domain]
+        return [m.id for m in self.all() if m.domain == domain]
 
     def owner_agent_for(self, metric_id: str) -> str | None:
         """Domain agent id that owns this metric (``{domain}_agent``)."""
@@ -93,8 +179,8 @@ class MetricRegistry:
 
 
 def lead_agent_for_hints(hints: list[str], metrics: MetricRegistry | None = None) -> str:
-    """Lead from metric ownership in the registry. CAC still starts on performance."""
-    if "metric.cac" in hints:
+    """Lead from metric ownership. CAC still starts on performance."""
+    if "metric.cac" in hints or "cac" in hints:
         return "performance_agent"
     if metrics is not None:
         for hint in hints:

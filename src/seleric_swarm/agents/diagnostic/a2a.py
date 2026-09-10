@@ -46,16 +46,30 @@ class DiagnosticA2AAdapter:
         return await self.handle(payload)
 
 
+_DEGRADED_METHODOLOGIES = {"no_confirmed_anomaly", "budget_exhausted", "workflow_failed"}
+
+
 def _as_artifact_response(payload: dict[str, Any], result: DiagnosticResult) -> dict[str, Any]:
+    complete = (
+        result.diagnostic_artifact is not None
+        and result.methodology not in _DEGRADED_METHODOLOGIES
+    )
     return {
         "ok": True,
         "protocol": "seleric.swarm.v1",
         "mission_id": result.mission_id,
         "task_id": payload.get("task_id"),
         "intent": "artifact_response",
-        "produced": "diagnostic_artifact",
+        # only advertise a diagnostic_artifact when one was actually produced;
+        # NO_CONFIRMED_ANOMALY / budget / workflow-failure outcomes carry none.
+        "produced": "diagnostic_artifact" if complete else "diagnostic_incomplete",
+        "complete": complete,
+        "methodology": result.methodology,
+        "limitations": list(result.limitations),
         "diagnostic_artifact": result.diagnostic_artifact.model_dump() if result.diagnostic_artifact else None,
         "causal_artifact": result.causal_artifact.model_dump() if result.causal_artifact else None,
+        # every causal artifact any claim below references, so causal_refs resolve
+        "causal_artifacts": [a.model_dump() for a in result.causal_artifacts],
         "claims": [c.model_dump() for c in result.claims],
         "finding": result.finding.model_dump() if result.finding else None,
     }

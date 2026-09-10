@@ -200,6 +200,14 @@ class Agent(SwarmAgent):
             return [preset], 0, None
         if len(hints) == 1:
             return hints, 0, None
+        if ctx.payload.get("resolved_dimensions") and not hints:
+            return [], 0, {
+                "metric_id": None,
+                "error_code": "INSUFFICIENT_EVIDENCE",
+                "error_message": "Grain was named but no registered metric supports it",
+                "limitations": ["No registered metric supports the requested dimension"],
+                "llm_calls": 0,
+            }
 
         spec = self.runtime.prompts.load("observer.metric_map")
         user = spec.render_user(
@@ -294,7 +302,18 @@ class Agent(SwarmAgent):
         break down by — grounded in the metric's real dimension list (unlike
         the classify-time ``entities`` field, which has no dimension catalogue
         in its prompt context and so can only ever guess)."""
-        if not supported or not _RANKING_LANGUAGE_RE.search(ctx.question or ""):
+        if not supported:
+            return []
+        preset = [
+            d
+            for d in (ctx.payload.get("resolved_dimensions") or [])
+            if d in supported
+        ]
+        if preset:
+            return preset[:1]
+        # Classify-time grain already applied; only ask dimension_map when
+        # the question still has ranking/grouping language.
+        if not _RANKING_LANGUAGE_RE.search(ctx.question or ""):
             return []
         spec = self.runtime.prompts.load("observer.dimension_map")
         user = spec.render_user({"query": ctx.question, "supported_dimensions": ", ".join(supported)})
@@ -356,6 +375,9 @@ class Agent(SwarmAgent):
             except Exception:
                 supported = []
         dim_ids = await self._resolve_breakdown_dimensions(ctx, supported=supported)
+        wanted = [d for d in (ctx.payload.get("resolved_dimensions") or []) if d]
+        if wanted and not dim_ids:
+            return []
         if dim_ids:
             found = _TOP_N_RE.search(ctx.question or "")
             n = max(1, min(int(found.group(1)), 25)) if found else _DEFAULT_TOP_N

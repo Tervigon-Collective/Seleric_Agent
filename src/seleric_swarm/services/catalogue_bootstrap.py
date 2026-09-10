@@ -19,7 +19,7 @@ Design constraints
   (which is sync) and warmed lazily on the first ``_resolve_measure`` call
   (which is async).  No change to ``build_runtime``'s signature needed.
 - ``coordinator_agent`` is the right agent for warming: its allowlist includes
-  ``catalogue_search_metrics`` and it carries no module pin, so it sees the
+  catalogue listing tools and it carries no module pin, so it sees the
   full unscoped catalogue — including cross-module views like ``canonical_pnl``
   that are invisible when the call is scoped to ``paidmedia`` or ``commerce``.
 """
@@ -37,6 +37,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 DEFAULT_TTL_SECONDS: int = 900  # 15 minutes
+
+_BOOTSTRAP_CAP = "seleric.catalogue_bootstrap"
+_LIST_METRICS_CAP = "seleric.catalogue_list_metrics"
+_SEARCH_CAP = "seleric.catalogue_search_metrics"
 
 
 @dataclass
@@ -81,6 +85,8 @@ class CatalogueBootstrap:
         self._agent_id = agent_id
         self._ttl = ttl_seconds
         self._cache: dict[str, CatalogueMetricMeta] = {}
+        self._dimension_aliases: dict[str, list[str]] = {}
+        self._grain_defaults: dict[str, Any] = {}
         self._warmed_at: float | None = None
 
     # ------------------------------------------------------------------
@@ -113,6 +119,31 @@ class CatalogueBootstrap:
         """Return the set of all catalogue metric IDs currently in the cache."""
         return set(self._cache.keys())
 
+    def entries(self) -> list[CatalogueMetricMeta]:
+        """All cached metric rows (id, view, supported_dimensions)."""
+        return list(self._cache.values())
+
+    def dimension_ids(self) -> set[str]:
+        """Explicit catalogue dimensions plus those listed on cached metrics."""
+        ids = set(self._dimension_aliases)
+        for meta in self._cache.values():
+            ids.update(d for d in (meta.supported_dimensions or []) if d)
+        return ids
+
+    def alias_index(self) -> dict[str, str]:
+        """Normalized alias / display token → dimension id."""
+        out: dict[str, str] = {}
+        for dim_id, aliases in self._dimension_aliases.items():
+            out[dim_id.lower().replace("_", " ")] = dim_id
+            for alias in aliases:
+                key = str(alias).lower().replace("_", " ").strip()
+                if key:
+                    out[key] = dim_id
+        return out
+
+    def grain_defaults(self) -> dict[str, Any]:
+        return dict(self._grain_defaults)
+
     def unresolvable(self, candidate_ids: list[str]) -> list[str]:
         """Return the subset of *candidate_ids* that are NOT in the live cache.
 
@@ -130,56 +161,75 @@ class CatalogueBootstrap:
     # Warming
     # ------------------------------------------------------------------
 
-    async def warm(self, registry_hints: list[str] | None = None) -> int:
-        """Pull the full live metric list and populate the cache.
-
-        Calls ``seleric.catalogue_search_metrics`` with an empty query (full
-        listing) via ``coordinator_agent`` (no module pin — sees everything).
-
-        Returns the number of metrics loaded.  Never raises — a failing call
-        leaves the cache empty so ``_resolve_measure`` falls through to
-        Steps 1+2 unchanged.
-
-        Parameters
-        ----------
-        registry_hints:
-            Optional list of ``catalogue_metric`` values from the local
-            registry.  When provided, any entry that is absent from the live
-            catalogue is logged as a WARNING at startup rather than being
-            silently discovered per-mission.  Pass
-            ``[m.catalogue_metric for m in metrics.all() if m.catalogue_metric]``
-            from ``build_hybrid_bundle`` to enable this proactive check.
-        """
+    async def _call(self, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
         try:
             result = await self._mcp.call(
                 agent_id=self._agent_id,
-                capability="seleric.catalogue_search_metrics",
-                arguments={"query": ""},
+                capability=capability,
+                arguments=arguments,
             )
         except Exception as exc:  # noqa: BLE001
-            log.warning("CatalogueBootstrap.warm() failed (%s: %s) — using empty cache", type(exc).__name__, exc)
-            self._warmed_at = time.monotonic()  # mark attempted so TTL ticks
-            return 0
+            log.warning(
+                "CatalogueBootstrap %s failed (%s: %s)",
+                capability,
+                type(exc).__name__,
+                exc,
+            )
+            return {}
+        return result if isinstance(result, dict) else {}
 
-        matches: list[dict[str, Any]] = result.get("matches") or []
+    def _load_payload(self, payload: dict[str, Any]) -> int:
+        rows = payload.get("metrics") or payload.get("matches") or []
         self._cache.clear()
-        for m in matches:
-            mid: str = m.get("id") or ""
-            if mid:
-                self._cache[mid] = CatalogueMetricMeta(
-                    id=mid,
-                    label=str(m.get("label") or m.get("display_name") or ""),
-                    view=str(m.get("view") or m.get("cube_view") or ""),
-                    supported_dimensions=list(m.get("supported_dimensions") or []),
-                    raw=m,
-                )
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            mid = str(row.get("id") or "")
+            if not mid:
+                continue
+            self._cache[mid] = CatalogueMetricMeta(
+                id=mid,
+                label=str(row.get("label") or row.get("display_name") or ""),
+                view=str(row.get("view") or row.get("cube_view") or ""),
+                supported_dimensions=list(row.get("supported_dimensions") or []),
+                raw=row,
+            )
+        dims = payload.get("dimensions") or []
+        self._dimension_aliases = {}
+        for dim in dims:
+            if not isinstance(dim, dict):
+                continue
+            did = str(dim.get("id") or "")
+            if did:
+                self._dimension_aliases[did] = [str(a) for a in (dim.get("aliases") or [])]
+        defaults = payload.get("grain_defaults") or {}
+        self._grain_defaults = dict(defaults) if isinstance(defaults, dict) else {}
+        return len(self._cache)
+
+    async def warm(self, registry_hints: list[str] | None = None) -> int:
+        """Pull the live metric list (and dimension index when the server sends it).
+
+        Prefer ``catalogue_bootstrap``, then ``catalogue_list_metrics``, then
+        empty ``catalogue_search_metrics``. Never raises — a failing call
+        leaves the cache empty so ``_resolve_measure`` falls through to
+        Steps 1+2 unchanged.
+        """
+        count = 0
+        payload = await self._call(_BOOTSTRAP_CAP, {})
+        count = self._load_payload(payload)
+        if count == 0:
+            payload = await self._call(_LIST_METRICS_CAP, {})
+            count = self._load_payload(payload)
+        if count == 0:
+            payload = await self._call(_SEARCH_CAP, {"query": ""})
+            count = self._load_payload(payload)
 
         self._warmed_at = time.monotonic()
-        count = len(self._cache)
-        log.info("CatalogueBootstrap: cached %d live catalogue metric(s)", count)
+        if count:
+            log.info("CatalogueBootstrap: cached %d live catalogue metric(s)", count)
+        else:
+            log.warning("CatalogueBootstrap.warm() failed — using empty cache")
 
-        # Startup staleness check — surface stale registry entries immediately
-        # rather than waiting for the first mission that happens to query them.
         if registry_hints and count > 0:
             for stale_id in self.unresolvable(registry_hints):
                 log.warning(
@@ -187,7 +237,6 @@ class CatalogueBootstrap:
                     "— update metric_registry.yaml to silence this warning",
                     stale_id,
                 )
-
         return count
 
     async def refresh_if_stale(self) -> None:

@@ -288,15 +288,30 @@ def _write_artifacts(blackboard: Blackboard, result: DiagnosticResult) -> tuple[
         id_map[h.hypothesis_id] = hid
         posted.append(hid)
 
-    ca = result.causal_artifact
-    if ca is not None:
-        primary_hyp = next((h for h in result.hypotheses if h.status == "retained"), None) or (
-            result.hypotheses[0] if result.hypotheses else None
+    # One Blackboard Causal per accepted finding — a secondary retained finding
+    # must not leave its claim's causal_ref dangling (spec §54-55).
+    findings_by_ref = {f.causal_ref: f for f in result.findings if f.causal_ref}
+    to_post = result.causal_artifacts or ([result.causal_artifact] if result.causal_artifact else [])
+    fallback_hyp = next((h for h in result.hypotheses if h.status == "retained"), None) or (
+        result.hypotheses[0] if result.hypotheses else None
+    )
+    for ca in to_post:
+        finding = findings_by_ref.get(ca.causal_id)
+        hyp = None
+        if finding and finding.retained_hypothesis_id:
+            hyp = next(
+                (h for h in result.hypotheses if h.hypothesis_id == finding.retained_hypothesis_id), None
+            )
+        hyp = hyp or fallback_hyp
+        confidence = (
+            finding.causal_confidence
+            if finding
+            else (result.finding.causal_confidence if result.finding else "")
         )
         causal = Causal.new(
             mission_id=blackboard.mission_id,
             created_by="diagnostic_agent",
-            hypothesis_ref=id_map.get(primary_hyp.hypothesis_id) if primary_hyp else None,
+            hypothesis_ref=id_map.get(hyp.hypothesis_id) if hyp else None,
             treatment=ca.treatment,
             outcome=ca.outcome,
             common_causes=ca.common_causes,
@@ -305,8 +320,8 @@ def _write_artifacts(blackboard: Blackboard, result: DiagnosticResult) -> tuple[
             effect=ca.estimated_effect,
             effect_ci=ca.confidence_interval,
             refutations=ca.refutation_results,
-            passed=ca.passed and (result.finding.causal_confidence != "REJECTED" if result.finding else ca.passed),
-            confidence=result.finding.causal_confidence if result.finding else "",
+            passed=ca.passed and confidence != "REJECTED",
+            confidence=confidence,
             evidence_refs=[id_map[h.hypothesis_id] for h in result.retained() if h.hypothesis_id in id_map],
         )
         if ca.synthetic or result.synthetic:

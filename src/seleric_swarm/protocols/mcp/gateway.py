@@ -19,8 +19,7 @@ from seleric_swarm.registry.agent_registry import AgentRegistry
 SELERIC_CAPABILITIES = {f"seleric.{tool}" for tool in SELERIC_TOOLS}
 
 # Tools whose server signature accepts ``module``. The gateway pins the agent's
-# seleric_module onto these only — other catalogue tools (list_dimensions,
-# resolve_term, modules_list) would reject the extra argument.
+# seleric_module onto these only — listing/resolve tools reject the extra argument.
 SELERIC_MODULE_ARG_TOOLS = {
     f"seleric.{tool}"
     for tool in (
@@ -52,9 +51,12 @@ def _build_allowlist(agents: AgentRegistry) -> tuple[dict[str, set[str]], dict[s
     allowlist["observer_agent"] = observer_caps
     allowlist["coordinator_agent"] = {
         "seleric.catalogue_search_metrics",
+        "seleric.catalogue_list_metrics",
+        "seleric.catalogue_bootstrap",
         "seleric.catalogue_get_metric",
         "seleric.catalogue_list_dimensions",
         "seleric.catalogue_resolve_term",
+        "seleric.catalogue_resolve_dimension",
     }
     return allowlist, module_map
 

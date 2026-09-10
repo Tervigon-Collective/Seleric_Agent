@@ -9,6 +9,7 @@ metadata artifact) and records that the estimate is metadata-only.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import structlog
@@ -44,7 +45,12 @@ class DoWhyCausalEstimationService:
             return art
 
         try:
-            est = self._dowhy.estimate(
+            # DoWhy estimation is synchronous and CPU-bound (identify -> estimate
+            # -> one re-estimate per refuter). Run it off the event loop so the
+            # loop stays responsive AND the caller's asyncio.wait_for runtime
+            # budget can actually cancel/observe it.
+            est = await asyncio.to_thread(
+                self._dowhy.estimate,
                 CausalRequest(
                     treatment=query.treatment,
                     outcome=query.outcome,
@@ -63,7 +69,15 @@ class DoWhyCausalEstimationService:
             return art
 
         refutations = est.as_dict()["refutations"]
-        passed = est.refutations_passed >= max(1, len(refutations) - 0) and len(refutations) >= 2
+        # A refuter that *errored* (an environment / data-shape quirk) is
+        # tolerated; a refuter that ran and *contradicted* the effect is not.
+        # Require >= 2 refuters configured, no active contradiction, and at
+        # least 2 refuters that actually completed. This keeps a single flaky
+        # (e.g. stochastic placebo permutation) run from silently demoting a
+        # real causal finding to "inconclusive".
+        errored = sum(1 for r in refutations if "error" in r)
+        contradicted = sum(1 for r in refutations if not r.get("passed") and "error" not in r)
+        passed = len(refutations) >= 2 and contradicted == 0 and (len(refutations) - errored) >= 2
         return CausalAnalysisArtifact(
             causal_id=_stable_id("CAUS", query.mission_id, query.treatment, query.outcome, str(est.n_rows)),
             mission_id=query.mission_id,
