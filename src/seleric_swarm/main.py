@@ -93,7 +93,7 @@ class MissionRequest(BaseModel):
     scenario_id: str | None = None
     scope: dict[str, Any] = Field(
         default_factory=dict,
-        json_schema_extra={"examples": [{"timezone": "Asia/Kolkata", "as_of": "2026-09-03"}]},
+        json_schema_extra={"examples": [{"timezone": "Asia/Kolkata"}]},
     )
     mode: str = "read_only"
     session_id: str | None = None
@@ -118,7 +118,7 @@ class MissionRequest(BaseModel):
             "examples": [
                 {
                     "query": "Why has CAC increased over the last three days?",
-                    "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-03"},
+                    "scope": {"timezone": "Asia/Kolkata"},
                     "mode": "read_only",
                     "execution_mode": "production",
                     "full_diagnostic": True,
