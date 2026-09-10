@@ -16,11 +16,16 @@ npm run dev            # http://localhost:5173  — starts in DEMO mode, no back
 Live mode (against the running Seleric API):
 
 ```bash
-# terminal A
-API_HOST=127.0.0.1 API_PORT=8080 seleric-api          # exposes /v1/office/*
-# terminal B
-SELERIC_API_URL=http://127.0.0.1:8080 npm run dev
-# open http://localhost:5173/?mission=<mission_id>  then choose "Live swarm"
+# terminal A — API (8090; 8080 is often taken on this machine)
+API_HOST=127.0.0.1 API_PORT=8090 seleric-api
+
+# terminal B — start a mission you can watch (wait=false)
+curl -X POST http://127.0.0.1:8090/v1/missions -H "Content-Type: application/json" -d "{\"query\":\"Why has CAC increased?\",\"wait\":false}"
+
+# terminal C — office UI (proxies /v1 → API)
+SELERIC_API_URL=http://127.0.0.1:8090 npm run dev
+# open http://localhost:5173/?mission=<mission_id>
+# TopBar should show "Live swarm"
 ```
 
 ## Scripts
