@@ -84,12 +84,62 @@ async def hints_from_catalogue(query: str, *, runtime: SwarmRuntime, agent_id: s
             if tok == cid or cid.split("_") == [tok]:
                 scored.append((overlap, registry_id))
     if not scored:
-        return []
+        # Token-overlap search misses single strong terms whose id is a compound
+        # (e.g. "roas" vs "net_roas_all_channels" — overlap of 1, not the full id).
+        # Fall back to the glossary-backed resolver for exactly that case.
+        return await _resolve_metric_term(query, runtime=runtime, agent_id=agent_id)
     best = max(item[0] for item in scored)
     for overlap, registry_id in scored:
         if overlap == best and registry_id not in out:
             out.append(registry_id)
     return out
+
+
+async def _resolve_metric_term(query: str, *, runtime: SwarmRuntime, agent_id: str) -> list[str]:
+    """Glossary fallback for hints_from_catalogue via catalogue_resolve_term.
+
+    catalogue_resolve_term matches a single business term ("roas"), not a
+    full sentence — "how much roas increased over 3 days" comes back
+    "unknown". Try each non-stopword token in isolation instead, stopping at
+    the first "resolved" hit. The server already refuses to silently resolve
+    weak/ambiguous matches (see catalogue_resolve_term docs).
+
+    Warms/binds the catalogue bootstrap before returning — this only runs
+    when the id is live-catalogue-only (search already failed), so without
+    binding, MetricRegistry.get() would reject the very id we just resolved.
+    Scoped to this fallback only: binding unconditionally in the caller let
+    the search branch's id_for_catalogue() accept any live catalogue id
+    instead of only ones the YAML registry already maps, which pulled in
+    unrelated metrics (e.g. "net sales" also matching amazon_net_sales).
+    """
+    if _RESOLVE_TERM_CAP not in runtime.mcp.capabilities:
+        return []
+    tokens = [
+        tok
+        for tok in re.findall(r"[a-z0-9]+", (query or "").lower())
+        if tok not in _STOPWORDS and len(tok) >= 3
+    ]
+    for term in dict.fromkeys(tokens):
+        try:
+            result = await runtime.mcp.call(
+                agent_id=agent_id,
+                capability=_RESOLVE_TERM_CAP,
+                arguments={"text": term},
+            )
+        except Exception:
+            continue
+        if not isinstance(result, dict) or result.get("kind") != "resolved":
+            continue
+        metric_id = result.get("metric_id")
+        if not metric_id:
+            continue
+        bootstrap = getattr(runtime, "bootstrap", None)
+        if bootstrap is not None:
+            await bootstrap.refresh_if_stale()
+            runtime.metrics.bind_catalogue(bootstrap)
+        registry_id = runtime.metrics.id_for_catalogue(metric_id) or str(metric_id)
+        return [registry_id]
+    return []
 
 
 def _query_tokens(query: str) -> set[str]:

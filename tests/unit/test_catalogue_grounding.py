@@ -351,6 +351,50 @@ def test_bind_catalogue_does_not_hide_yaml_metric_ids():
     assert "channel_orders" in registry.ids_for_domain("attribution")
 
 
+@pytest.mark.asyncio
+async def test_hints_from_catalogue_falls_back_to_resolve_term_for_single_strong_token():
+    """Regression: 'roas' vs catalogue id 'net_roas_all_channels' overlaps on
+    only one token and isn't the whole id, so the search-based scorer finds
+    nothing. The glossary-backed catalogue_resolve_term should still resolve
+    it instead of the classifier returning 'no registered metric matches'."""
+    from seleric_swarm.coordinator.catalogue_grounding import hints_from_catalogue
+
+    class _Mcp:
+        capabilities = {"seleric.catalogue_search_metrics", "seleric.catalogue_resolve_term"}
+
+        async def call(self, *, agent_id, capability, arguments):
+            del agent_id
+            if capability == "seleric.catalogue_search_metrics":
+                return {"matches": []}
+            assert capability == "seleric.catalogue_resolve_term"
+            if arguments["text"] == "roas":
+                return {"kind": "resolved", "metric_id": "net_roas_all_channels", "confidence": 1.0}
+            return {"kind": "unknown", "suggestions": []}
+
+    defs = [_def("net_roas_all_channels", "net_roas_all_channels", "performance")]
+    runtime = SimpleNamespace(mcp=_Mcp(), metrics=_Registry(defs))
+    hints = await hints_from_catalogue("how much roas has increased over the last 3 day?", runtime=runtime)
+    assert hints == ["net_roas_all_channels"]
+
+
+@pytest.mark.asyncio
+async def test_hints_from_catalogue_ignores_unresolved_term():
+    from seleric_swarm.coordinator.catalogue_grounding import hints_from_catalogue
+
+    class _Mcp:
+        capabilities = {"seleric.catalogue_search_metrics", "seleric.catalogue_resolve_term"}
+
+        async def call(self, *, agent_id, capability, arguments):
+            del agent_id, arguments
+            if capability == "seleric.catalogue_search_metrics":
+                return {"matches": []}
+            return {"kind": "unknown", "suggestions": []}
+
+    runtime = SimpleNamespace(mcp=_Mcp(), metrics=_Registry(_DEFS))
+    hints = await hints_from_catalogue("gibberish query", runtime=runtime)
+    assert hints == []
+
+
 def test_live_catalogue_is_the_metric_repository():
     from seleric_swarm.services.metrics import MetricRegistry, lead_agent_for_hints
 

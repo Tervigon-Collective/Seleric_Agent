@@ -47,7 +47,8 @@ def _metrics_by_domain(metric_ids: Sequence[str], metrics: MetricRegistry) -> di
 def _resolve_metrics(mission_lead: str, metric_hints: Sequence[str], metrics: MetricRegistry) -> list[str]:
     hints = [m for m in metric_hints if m.startswith("metric.")]
     if hints:
-        return list(dict.fromkeys(hints))
+        resolved = [metrics.resolve_hint(h) or h for h in hints]
+        return list(dict.fromkeys(resolved))
     domain = mission_lead.removesuffix("_agent")
     owned = metrics.ids_for_domain(domain)
     return owned[:1]

@@ -156,6 +156,13 @@ class Agent(SwarmAgent):
                 # Registry couldn't pin a domain either — keep LLM guess if
                 # it named a real agent, otherwise fall back to coordinator.
                 domain_lead = domain_lead or "coordinator_agent"
+            if not policy_block:
+                # canonical ids already prove a real metric was found, even
+                # when the LLM's own unsupported_reason disagrees (it only
+                # sees classification.metric_hints, not catalogue_hints'
+                # live-search/resolve_term result) — a stale reason here was
+                # surfacing as mission failure on an otherwise-dispatchable plan.
+                unsupported_reason = None
 
         entities = list(resolved_dimensions or classification.entities or [])
 

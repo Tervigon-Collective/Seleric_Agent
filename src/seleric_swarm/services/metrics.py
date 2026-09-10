@@ -171,6 +171,28 @@ class MetricRegistry:
             return None
         return f"{m.domain}_agent"
 
+    def resolve_hint(self, hint: str) -> str | None:
+        """Best-effort resolve a raw classifier hint (e.g. ``metric.roas``) to a
+        known metric id, checking YAML aliases and the live catalogue before
+        giving up. Returns None (never the original hint) so callers can tell
+        an unresolved hint apart from an already-valid one.
+        """
+        if self.get(hint) is not None:
+            return hint
+        slug = hint.removeprefix("metric.").replace("_", " ").strip().lower()
+        if not slug:
+            return None
+        for metric in self._metrics.values():
+            if slug in metric.aliases:
+                return metric.id
+        # ponytail: substring match on live catalogue id/description, not token-ranked
+        # like catalogue_grounding.hints_from_catalogue — upgrade if false positives show up.
+        for metric in self._live_defs.values():
+            haystack = f"{metric.id} {metric.description}".lower().replace("_", " ")
+            if slug in haystack:
+                return metric.id
+        return None
+
     def require(self, metric_id: str) -> MetricDefinition:
         metric = self.get(metric_id)
         if metric is None:
