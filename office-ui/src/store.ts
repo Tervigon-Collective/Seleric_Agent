@@ -114,7 +114,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
   providerMode: "demo",
   selectedAgentId: null,
   hoveredAgentId: null,
-  followMode: "lead",
+  followMode: "off",
   timelineOpen: false,
   debugMode: false,
   reducedMotion: prefersReduced,

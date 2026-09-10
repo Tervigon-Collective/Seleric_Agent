@@ -120,7 +120,7 @@ export const DEMO_SCRIPT: Beat[] = [
     },
   },
   {
-    delayMs: 4200,
+    delayMs: 10000,
     event: {
       eventType: "leadership_transferred",
       agentId: "funnel_agent",
@@ -146,7 +146,7 @@ export const DEMO_SCRIPT: Beat[] = [
     },
   },
   {
-    delayMs: 4200,
+    delayMs: 10000,
     event: {
       eventType: "leadership_transferred",
       agentId: "technical_agent",
@@ -202,12 +202,12 @@ export const DEMO_SCRIPT: Beat[] = [
     patch: { artifacts: A(6), board: { steps: board(["verify", "frontier", "forecast", "strategy"], "diagnose") } },
   },
   {
-    delayMs: 3200,
+    delayMs: 9000,
     event: { eventType: "skeptic_review_started", agentId: "skeptic_agent", status: "reviewing", summary: "Skeptic review started", metadata: { claim_id: "CLM-1" } },
     patch: { stage: "review", board: { steps: board(["verify", "frontier", "forecast", "strategy"], "skeptic") } },
   },
   {
-    delayMs: 4800,
+    delayMs: 10000,
     event: {
       eventType: "skeptic_revise",
       agentId: "skeptic_agent",
@@ -235,11 +235,11 @@ export const DEMO_SCRIPT: Beat[] = [
     event: { eventType: "task_completed", agentId: "performance_agent", status: "completed", summary: "Traffic mix flat — control satisfied", metadata: { remediation_round: 1 } },
   },
   {
-    delayMs: 1500,
+    delayMs: 8000,
     event: { eventType: "skeptic_review_started", agentId: "skeptic_agent", status: "reviewing", summary: "Skeptic re-review", metadata: { claim_id: "CLM-1" } },
   },
   {
-    delayMs: 1800,
+    delayMs: 9000,
     event: { eventType: "skeptic_pass", agentId: "skeptic_agent", status: "completed", summary: "Skeptic: PASS", metadata: { verdict: "PASS", claim_id: "CLM-1" } },
     patch: { artifacts: A(7), board: { steps: board(["verify", "frontier", "forecast", "strategy", "diagnose", "skeptic"], "skeptic") } },
   },

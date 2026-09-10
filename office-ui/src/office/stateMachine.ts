@@ -49,11 +49,12 @@ export function destinationFor(agent: OfficeAgent): Vec {
   const s = agent.status;
   if (agent.role === "coordinator" && (s === "planning" || s === "thinking")) return SPOTS.planning_board;
   if (agent.role === "coordinator" && s === "working") return SPOTS.mission_room;
-  if (s === "handoff") return SPOTS.handoff_area;
-  if (s === "collaborating") return SPOTS.handoff_area;
-  if (s === "reviewing") return agent.agentId === "skeptic_agent" ? SPOTS.skeptic_desk : SPOTS.handoff_area;
+  // After handoffs / collab, stay at desk — meetings handle the walk-and-talk
+  if (s === "handoff" || s === "collaborating") return homeOf(agent.agentId);
+  if (s === "reviewing") return agent.agentId === "skeptic_agent" ? SPOTS.skeptic_desk : homeOf(agent.agentId);
+  // Evidence fetch is a rare single-agent walk; others work at their desk
   if (s === "retrieving_evidence" || s === "waiting_for_evidence") return SPOTS.data_terminal;
-  if (s === "waiting_for_agent") return SPOTS.lounge;
+  if (s === "waiting_for_agent") return homeOf(agent.agentId);
   if (s === "idle" || s === "offline") return homeOf(agent.agentId);
   return homeOf(agent.agentId);
 }
@@ -120,7 +121,8 @@ export function applyEventToAgents(
       break;
     case "task_started": {
       const lead = LEAD_TO_AGENT(meta.mission_lead as string | undefined);
-      set("observer_agent", { status: "retrieving_evidence", currentAction: "Gathering metrics" });
+      // Desk work — no mass walk to the terminal
+      set("observer_agent", { status: "working", currentAction: "Gathering metrics" });
       set("anomaly_agent", { status: "working", currentAction: "Scanning for anomalies" });
       set(lead, { status: "working", currentAction: "Leading the investigation wave" });
       break;

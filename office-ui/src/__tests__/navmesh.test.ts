@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { findPath, isWalkable, snapToWalkable } from "../office/navmesh";
-import { DESKS, SPOTS, ZONE_BY_ID } from "../office/layout";
+import { DESKS, MEETING_SLOTS, SPOTS, WORLD } from "../office/layout";
+import { getParchaAssets, MAP_W, MAP_H, TILE } from "../render/parchaAssets";
 
-/** A point is "inside a wall" if it's within ~4px of a room's wall line and
- *  not in that room's doorway — the navmesh must never route through one. */
+beforeAll(() => {
+  // firstmap collision is baked into getParchaAssets()
+  const a = getParchaAssets()!;
+  expect(a.blocked.length).toBe(MAP_W * MAP_H);
+});
+
 function segmentClearsWalls(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
   const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 4);
   for (let i = 0; i <= n; i++) {
@@ -19,15 +24,13 @@ describe("office navmesh", () => {
     for (const [k, v] of Object.entries(SPOTS)) expect(isWalkable(v.x, v.y), k).toBe(true);
   });
 
-  it("wall interiors are blocked", () => {
-    const z = ZONE_BY_ID.coordinator;
-    // dead centre of the west wall, away from any door
-    expect(isWalkable(z.x + 3, z.y + 40)).toBe(false);
+  it("map rim / furniture tiles are blocked", () => {
+    expect(isWalkable(TILE / 2, TILE / 2)).toBe(false);
+    expect(isWalkable(WORLD.w - TILE / 2, WORLD.h - TILE / 2)).toBe(false);
   });
 
-  it("snapToWalkable pulls a wall point onto open floor", () => {
-    const z = ZONE_BY_ID.performance;
-    const snapped = snapToWalkable({ x: z.x + 2, y: z.y + 60 });
+  it("snapToWalkable pulls a blocked point onto open floor", () => {
+    const snapped = snapToWalkable({ x: TILE / 2, y: TILE / 2 });
     expect(isWalkable(snapped.x, snapped.y)).toBe(true);
   });
 
@@ -60,6 +63,40 @@ describe("office navmesh", () => {
   });
 
   it("returns [] when already at the goal", () => {
-    expect(findPath({ x: 240, y: 250 }, { x: 240, y: 250 })).toEqual([]);
+    const p = DESKS[0].home;
+    expect(findPath(p, p)).toEqual([]);
+  });
+
+  it("blocks walking outside the building / off the floor", () => {
+    expect(isWalkable(-5, 100)).toBe(false);
+    expect(isWalkable(WORLD.w + 5, 100)).toBe(false);
+    expect(isWalkable(5, 5)).toBe(false);
+  });
+
+  it("meeting slots and shared spots stay reachable and walkable", () => {
+    for (const [k, [a, b]] of Object.entries(MEETING_SLOTS)) {
+      expect(isWalkable(a.x, a.y), `${k}[0]`).toBe(true);
+      expect(isWalkable(b.x, b.y), `${k}[1]`).toBe(true);
+    }
+    for (const d of DESKS) {
+      for (const goal of [SPOTS.handoff_area, SPOTS.data_terminal]) {
+        if (Math.hypot(d.home.x - goal.x, d.home.y - goal.y) < 24) continue;
+        const path = findPath(d.home, goal);
+        expect(path.length, `${d.agentId} -> ${goal.x},${goal.y}`).toBeGreaterThan(0);
+        let prev = d.home;
+        for (const wp of path) {
+          const steps = Math.ceil(Math.hypot(wp.x - prev.x, wp.y - prev.y) / 4);
+          for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            expect(
+              isWalkable(prev.x + (wp.x - prev.x) * t, prev.y + (wp.y - prev.y) * t),
+              `${d.agentId} path clears walls`,
+            ).toBe(true);
+          }
+          prev = wp;
+        }
+        expect(Math.hypot(path[path.length - 1].x - goal.x, path[path.length - 1].y - goal.y)).toBeLessThan(28);
+      }
+    }
   });
 });

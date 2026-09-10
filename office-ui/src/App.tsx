@@ -17,12 +17,15 @@ import { OfficeCanvas } from "./render/OfficeCanvas";
 const params = new URLSearchParams(location.search);
 const START_DEMO = params.get("demo") === "1" || !params.has("mission");
 const URL_MISSION = params.get("mission");
+/** `?fast=1` or `?speed=8` speeds up the demo fixture for smoke checks. */
+const DEMO_SPEED = Math.max(1, Number(params.get("speed") || (params.get("fast") === "1" ? 8 : 1)) || 1);
 
 export default function App() {
   const [dark, setDark] = useState(() => {
     const s = localStorage.getItem("seleric.theme");
     if (s) return s === "dark";
-    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+    // Office floorplan reads better in light; dark is opt-in via the toggle.
+    return false;
   });
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
@@ -47,7 +50,7 @@ export default function App() {
   }, []);
 
   const provider: SwarmEventProvider = useMemo(
-    () => (providerMode === "demo" ? new DemoEventProvider({ speed: 1 }) : new SelericEventProvider()),
+    () => (providerMode === "demo" ? new DemoEventProvider({ speed: DEMO_SPEED }) : new SelericEventProvider()),
     [providerMode],
   );
 

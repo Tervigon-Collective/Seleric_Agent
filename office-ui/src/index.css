@@ -5,13 +5,13 @@
 --------------------------------------------------------------------------- */
 
 :root {
-  --bg: #d9e0c8;
+  --bg: #1a2228;
   --panel: #f7f3ea;
   --panel-2: #efe9dc;
   --line: #cfc4b0;
   --text: #1c2430;
   --text-dim: #5a5348;
-  --shadow: 0 6px 24px rgba(40, 35, 20, 0.14);
+  --shadow: 0 4px 16px rgba(40, 35, 20, 0.12);
 
   --st-neutral: #9aa7bd;
   --st-working: #2f7dd1;
@@ -90,36 +90,44 @@ select, button.btn {
 button.btn:hover { border-color: var(--st-working); }
 
 /* ---- stage ---- */
-.stage { position: relative; overflow: hidden; }
+.stage { position: relative; overflow: hidden; background: #12181e; }
 .office-canvas-wrap, .office-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .office-canvas { cursor: grab; image-rendering: pixelated; image-rendering: crisp-edges; }
 .cam-hint {
-  position: absolute; left: 12px; bottom: 12px;
-  font-size: 11px; color: var(--text-dim);
-  background: color-mix(in srgb, var(--panel) 80%, transparent);
-  padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line);
-  pointer-events: none;
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+  font-size: 10px; color: var(--text-dim);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
+  pointer-events: none; white-space: nowrap; opacity: 0.85;
 }
 
 /* ---- mission header card ---- */
 .mission-header {
-  position: absolute; top: 12px; left: 12px; z-index: 4;
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 12px 14px; max-width: 340px;
+  position: absolute; top: 8px; left: 8px; z-index: 4;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: var(--shadow);
+  padding: 5px 8px; max-width: none;
+  pointer-events: none;
 }
-.mission-header h1 { font-size: 14px; margin: 0 0 6px; line-height: 1.35; }
-.mission-header .meta { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 12px; color: var(--text-dim); }
-.mission-header .meta b { color: var(--text); font-weight: 600; }
+.mission-header .meta {
+  display: flex; flex-wrap: nowrap; gap: 8px;
+  font-size: 10px; color: var(--text-dim); white-space: nowrap;
+}
+.mission-header .meta b { color: var(--text); font-weight: 700; }
 
 /* ---- mission board ---- */
 .mission-board {
-  position: absolute; top: 12px; right: 12px; z-index: 4;
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 12px 14px; width: 230px;
+  position: absolute; top: 8px; right: 8px; z-index: 4;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: var(--shadow);
+  padding: 6px 8px; width: 156px;
+  pointer-events: auto;
 }
-.mission-board h2 { font-size: 11px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-dim); margin: 0 0 8px; }
+.mission-board h2 { font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-dim); margin: 0 0 6px; }
 .board-step { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
 .board-step .mark { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--st-neutral); display: grid; place-items: center; font-size: 10px; flex: none; }
 .board-step.done .mark { background: var(--st-done); border-color: var(--st-done); color: #fff; }
@@ -173,13 +181,15 @@ button.btn:hover { border-color: var(--st-working); }
 
 /* ---- multi-mission minimap ---- */
 .minimap {
-  position: absolute; left: 12px; bottom: 44px; z-index: 7;
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: var(--shadow); padding: 8px 10px;
-  max-width: 260px;
+  position: absolute; right: 8px; bottom: 36px; z-index: 7;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: var(--shadow); padding: 4px 6px;
+  max-width: 160px;
 }
-.minimap h2 { font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-dim); margin: 0 0 6px; }
-.mm-row { display: flex; align-items: center; gap: 7px; font-size: 11px; padding: 3px 4px; border-radius: 6px; cursor: pointer; }
+.minimap h2 { font-size: 9px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-dim); margin: 0 0 3px; }
+.mm-row { display: flex; align-items: center; gap: 5px; font-size: 10px; padding: 2px 3px; border-radius: 5px; cursor: pointer; }
 .mm-row:hover { background: var(--panel-2); }
 .mm-row.active { background: var(--panel-2); font-weight: 600; }
 .mm-row .pip { width: 8px; height: 8px; border-radius: 50%; flex: none; }

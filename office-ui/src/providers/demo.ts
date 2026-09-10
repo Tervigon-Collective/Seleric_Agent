@@ -7,6 +7,39 @@ import {
   demoInitialSnapshot,
 } from "./demoScenario";
 
+/** Beats that spawn walk-meet-return scenes — wait for the floor to free up. */
+const MEETING_EVENT_TYPES = new Set([
+  "leadership_transferred",
+  "skeptic_review_started",
+  "skeptic_revise",
+  "skeptic_reject",
+  "skeptic_pass",
+  "task_assigned",
+]);
+
+function sleep(ms: number, cancelled: () => boolean): Promise<void> {
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    if (cancelled()) {
+      clearTimeout(t);
+      resolve();
+    }
+  });
+}
+
+function officeBusy(): boolean {
+  return !!(window as unknown as { __officeBusy?: boolean }).__officeBusy;
+}
+
+/** Poll until the canvas finishes its current meeting choreography. */
+async function waitUntilOfficeFree(cancelled: () => boolean, capMs: number): Promise<void> {
+  const start = Date.now();
+  while (!cancelled() && Date.now() - start < capMs) {
+    if (!officeBusy()) return;
+    await sleep(100, cancelled);
+  }
+}
+
 /**
  * Replays the scripted CAC fixture with no backend. Same interface as
  * `SelericEventProvider`, so the office cannot tell the difference.
@@ -67,6 +100,7 @@ export class DemoEventProvider implements SwarmEventProvider {
   subscribe(missionId: string, h: ProviderHandlers): () => void {
     let cancelled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
+    const isCancelled = () => cancelled;
 
     // Secondary demo mission is a finished, static snapshot — no event stream.
     if (missionId === "MS-demo-inv") {
@@ -92,34 +126,41 @@ export class DemoEventProvider implements SwarmEventProvider {
       h.onSnapshot(snap);
       h.onState("live");
 
-      let seq = 0;
-      let acc = 0;
-      for (const beat of DEMO_SCRIPT) {
-        acc += beat.delayMs / this.speed;
-        const at = acc;
-        const thisSeq = ++seq;
-        timers.push(
-          setTimeout(() => {
+      void (async () => {
+        let seq = 0;
+        for (const beat of DEMO_SCRIPT) {
+          const gap = beat.delayMs / this.speed;
+          await sleep(gap, isCancelled);
+          if (cancelled) return;
+
+          if (MEETING_EVENT_TYPES.has(beat.event.eventType)) {
+            // Wait for walk→talk→return to finish (hard cap so demos never hang)
+            await waitUntilOfficeFree(isCancelled, 25_000);
             if (cancelled) return;
-            const ev: SwarmUIEvent = {
-              eventId: `${DEMO_MISSION_ID}:${thisSeq}`,
-              seq: thisSeq,
-              timestamp: new Date().toISOString(),
-              missionId: DEMO_MISSION_ID,
-              ...beat.event,
-            };
-            h.onEvent(ev);
-            if (beat.patch) {
-              snap = { ...snap, ...beat.patch, lastSeq: thisSeq, timeline: [] };
-              h.onSnapshot(snap);
-            }
-            if (beat.event.eventType === "mission_completed") {
-              h.onDone?.("completed");
-              h.onState("closed");
-            }
-          }, at),
-        );
-      }
+          }
+
+          const thisSeq = ++seq;
+          const ev: SwarmUIEvent = {
+            eventId: `${DEMO_MISSION_ID}:${thisSeq}`,
+            seq: thisSeq,
+            timestamp: new Date().toISOString(),
+            missionId: DEMO_MISSION_ID,
+            ...beat.event,
+          };
+          h.onEvent(ev);
+          if (beat.patch) {
+            snap = { ...snap, ...beat.patch, lastSeq: thisSeq, timeline: [] };
+            // Mission-level patch only — empty agents keeps event-folded office
+            // state (statuses, currentAction, lead). Re-sending blankAgents()
+            // was wiping every agent back to idle between beats.
+            h.onSnapshot({ ...snap, agents: [], timeline: [] });
+          }
+          if (beat.event.eventType === "mission_completed") {
+            h.onDone?.("completed");
+            h.onState("closed");
+          }
+        }
+      })();
     }, 300);
     timers.push(boot);
 

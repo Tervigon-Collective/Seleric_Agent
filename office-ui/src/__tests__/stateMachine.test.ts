@@ -24,9 +24,9 @@ describe("state -> destination", () => {
     const c: OfficeAgent = { ...blankAgents()[0], status: "planning" };
     expect(destinationFor(c)).toEqual(SPOTS.planning_board);
   });
-  it("handoff sends any agent to the handoff area", () => {
+  it("handoff keeps the agent at their desk (meetings handle the walk)", () => {
     const a: OfficeAgent = { ...asMap(blankAgents()).funnel_agent, status: "handoff" };
-    expect(destinationFor(a)).toEqual(SPOTS.handoff_area);
+    expect(destinationFor(a)).toEqual(homeOf("funnel_agent"));
   });
   it("evidence retrieval walks to the data terminal", () => {
     const a: OfficeAgent = { ...asMap(blankAgents()).observer_agent, status: "retrieving_evidence" };
@@ -56,7 +56,7 @@ describe("applyEventToAgents", () => {
       metadata: { mission_lead: "performance" },
     }));
     expect(next.performance_agent.status).toBe("working");
-    expect(next.observer_agent.status).toBe("retrieving_evidence");
+    expect(next.observer_agent.status).toBe("working");
     expect(next.anomaly_agent.status).toBe("working");
   });
 

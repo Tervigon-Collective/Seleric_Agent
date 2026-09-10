@@ -1,234 +1,164 @@
 /**
- * Office navigation mesh — coarse walkable grid + A* so characters move like
- * people: down hallways, THROUGH doorways, never across a wall.
+ * Navigation on the Parcha tilemap collision grid.
  */
 
-import { DOOR_GAP, WALL_T, WORLD, ZONES, type Vec } from "./layout";
+import { MAP_H, MAP_W, TILE, getParchaAssets, tileBlocked, worldToTile, tileCenter } from "../render/parchaAssets";
+import { WORLD, type Vec } from "./layout";
 
-const CELL = 16;
-const CLEAR = 8; // half body width kept away from walls
-const MARGIN = 2;
+export const COLS = MAP_W;
+export const ROWS = MAP_H;
 
-export const COLS = Math.ceil(WORLD.w / CELL) + MARGIN * 2;
-export const ROWS = Math.ceil(WORLD.h / CELL) + MARGIN * 2;
-
-const OX = -MARGIN * CELL;
-const OY = -MARGIN * CELL;
-
-function worldToCell(x: number, y: number): [number, number] {
-  return [Math.floor((x - OX) / CELL), Math.floor((y - OY) / CELL)];
-}
-function cellCenter(cx: number, cy: number): Vec {
-  return { x: OX + cx * CELL + CELL / 2, y: OY + cy * CELL + CELL / 2 };
+function blockedAt(tx: number, ty: number): boolean {
+  const assets = getParchaAssets();
+  if (!assets) {
+    if (tx < 1 || ty < 1 || tx >= MAP_W - 1 || ty >= MAP_H - 1) return true;
+    return false;
+  }
+  return tileBlocked(tx, ty, assets.blocked);
 }
 
-function inBand(v: number, lo: number, hi: number): boolean {
-  return v >= lo - CLEAR && v <= hi + CLEAR;
-}
-
-/** Is a world point inside any wall (and not in that wall's doorway)? */
 export function pointBlocked(x: number, y: number): boolean {
-  if (x < 8 || y < 8 || x > WORLD.w - 8 || y > WORLD.h - 8) return true;
-  for (const z of ZONES) {
-    const midX = z.x + z.w / 2;
-    const midY = z.y + z.h / 2;
-    // door opening must stay wider than body — leave CLEAR margin inside gap
-    const inDoorX = Math.abs(x - midX) <= DOOR_GAP / 2 - CLEAR - 2;
-    const inDoorY = Math.abs(y - midY) <= DOOR_GAP / 2 - CLEAR - 2;
-    const spanX = x >= z.x - CLEAR && x <= z.x + z.w + CLEAR;
-    const spanY = y >= z.y - CLEAR && y <= z.y + z.h + CLEAR;
-
-    if (spanX && inBand(y, z.y, z.y + WALL_T) && !(z.door === "N" && inDoorX)) return true;
-    if (spanX && inBand(y, z.y + z.h - WALL_T, z.y + z.h) && !(z.door === "S" && inDoorX)) return true;
-    if (spanY && inBand(x, z.x, z.x + WALL_T) && !(z.door === "W" && inDoorY)) return true;
-    if (spanY && inBand(x, z.x + z.w - WALL_T, z.x + z.w) && !(z.door === "E" && inDoorY)) return true;
-  }
-  return false;
+  if (x < 0 || y < 0 || x >= WORLD.w || y >= WORLD.h) return true;
+  const [tx, ty] = worldToTile(x, y);
+  return blockedAt(tx, ty);
 }
-
-const GRID: Uint8Array = (() => {
-  const g = new Uint8Array(COLS * ROWS);
-  for (let cy = 0; cy < ROWS; cy++) {
-    for (let cx = 0; cx < COLS; cx++) {
-      const c = cellCenter(cx, cy);
-      const blocked =
-        pointBlocked(c.x, c.y) ||
-        pointBlocked(c.x - CELL / 3, c.y) ||
-        pointBlocked(c.x + CELL / 3, c.y) ||
-        pointBlocked(c.x, c.y - CELL / 3) ||
-        pointBlocked(c.x, c.y + CELL / 3);
-      g[cy * COLS + cx] = blocked ? 1 : 0;
-    }
-  }
-  return g;
-})();
 
 export function isWalkable(x: number, y: number): boolean {
-  const [cx, cy] = worldToCell(x, y);
-  if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return false;
-  return GRID[cy * COLS + cx] === 0;
+  return !pointBlocked(x, y);
 }
 
 export function snapToWalkable(p: Vec): Vec {
-  const [cx, cy] = worldToCell(p.x, p.y);
-  if (cx >= 0 && cy >= 0 && cx < COLS && cy < ROWS && GRID[cy * COLS + cx] === 0) {
-    return cellCenter(cx, cy);
-  }
-  for (let r = 1; r < 32; r++) {
+  const [cx, cy] = worldToTile(p.x, p.y);
+  if (!blockedAt(cx, cy)) return tileCenter(cx, cy);
+  for (let r = 1; r < 24; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
         const nx = cx + dx;
         const ny = cy + dy;
-        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-        if (GRID[ny * COLS + nx] === 0) return cellCenter(nx, ny);
+        if (!blockedAt(nx, ny)) return tileCenter(nx, ny);
       }
     }
   }
   return p;
 }
 
-/** A straight walk from a to b stays on open floor *with clearance* — the
- *  centre line AND a body-width either side must be walkable, sampled fine
- *  enough (~4px) that a wall corner can never be stepped over. */
+function dist(a: Vec, b: Vec) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+/** Supercover LOS — no corner-cutting through blocked tiles. */
 function lineOfSight(a: Vec, b: Vec): boolean {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const steps = Math.max(2, Math.ceil(len / 4));
-  const nx = -dy / len;
-  const ny = dx / len;
-  const off = CLEAR - 2;
+  const [x0, y0] = worldToTile(a.x, a.y);
+  const [x1, y1] = worldToTile(b.x, b.y);
+  let x = x0;
+  let y = y0;
+  const dx = Math.abs(x1 - x0);
+  const dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+  for (;;) {
+    if (blockedAt(x, y)) return false;
+    if (x === x1 && y === y1) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) {
+      err -= dy;
+      x += sx;
+      // when stepping diagonally through a corner, both adjacent edges must be open
+      if (e2 < dx) {
+        if (blockedAt(x, y - sy) && blockedAt(x - sx, y)) return false;
+      }
+    }
+    if (e2 < dx) {
+      err += dx;
+      y += sy;
+    }
+  }
+  // also dense world-space samples for feet between tile centres
+  const steps = Math.max(2, Math.ceil(dist(a, b) / Math.max(2, TILE / 8)));
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    const x = a.x + dx * t;
-    const y = a.y + dy * t;
-    if (!isWalkable(x, y)) return false;
-    if (!isWalkable(x + nx * off, y + ny * off)) return false;
-    if (!isWalkable(x - nx * off, y - ny * off)) return false;
+    if (!isWalkable(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) return false;
   }
   return true;
 }
 
-interface Node {
-  i: number;
-  g: number;
-  f: number;
-  parent: number;
-}
-
-/**
- * A* on the grid, then string-pull. Returns world waypoints (excluding start).
- * Never returns a straight clip-through-wall path — if unreachable, walks to
- * the nearest walkable cell toward the goal.
- */
-export function findPath(from: Vec, to: Vec): Vec[] {
+export function findPath(from: Vec, to: Vec, opts?: { tilePath?: boolean }): Vec[] {
   const start = snapToWalkable(from);
   const goal = snapToWalkable(to);
-  const [sx, sy] = worldToCell(start.x, start.y);
-  const [gx, gy] = worldToCell(goal.x, goal.y);
-  const si = sy * COLS + sx;
-  const gi = gy * COLS + gx;
+  const [sx, sy] = worldToTile(start.x, start.y);
+  const [gx, gy] = worldToTile(goal.x, goal.y);
+  if (sx === gx && sy === gy) return dist(from, to) < 4 ? [] : [goal];
+  // Meetings use full tile paths — diagonal LOS shortcuts often stall on furniture edges.
+  if (!opts?.tilePath && lineOfSight(start, goal)) return [goal];
 
-  if (si === gi) return dist(from, to) < 4 ? [] : [goal];
-  if (lineOfSight(from, to)) return [to];
-  if (lineOfSight(start, goal)) return [goal];
-
-  const open = new Map<number, Node>();
-  const all = new Map<number, Node>();
+  const key = (x: number, y: number) => y * COLS + x;
+  const open = new Map<number, { x: number; y: number; g: number; f: number; parent: number }>();
+  const all = new Map<number, { x: number; y: number; g: number; f: number; parent: number }>();
   const closed = new Set<number>();
-  const h = (i: number) => {
-    const x = i % COLS;
-    const y = (i / COLS) | 0;
-    const dx = Math.abs(x - gx);
-    const dy = Math.abs(y - gy);
-    return dx + dy + (Math.SQRT2 - 2) * Math.min(dx, dy);
-  };
-  const startNode: Node = { i: si, g: 0, f: h(si), parent: -1 };
-  open.set(si, startNode);
-  all.set(si, startNode);
-
+  const h = (x: number, y: number) => Math.abs(x - gx) + Math.abs(y - gy);
+  const si = key(sx, sy);
+  const startN = { x: sx, y: sy, g: 0, f: h(sx, sy), parent: -1 };
+  open.set(si, startN);
+  all.set(si, startN);
+  let best = startN;
+  let guard = 0;
   const NEI = [
-    [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
-    [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2],
+    [1, 0], [-1, 0], [0, 1], [0, -1],
   ];
 
-  let guard = 0;
-  let best: Node = startNode;
-  while (open.size && guard++ < 40000) {
-    let cur: Node | null = null;
+  while (open.size && guard++ < 20000) {
+    let cur: typeof startN | null = null;
     for (const n of open.values()) if (!cur || n.f < cur.f) cur = n;
     if (!cur) break;
-    if (h(cur.i) < h(best.i)) best = cur;
-
-    if (cur.i === gi) {
-      const cells: number[] = [];
-      let p: number = cur.i;
+    if (h(cur.x, cur.y) < h(best.x, best.y)) best = cur;
+    const ci = key(cur.x, cur.y);
+    if (cur.x === gx && cur.y === gy) {
+      const cells: { x: number; y: number }[] = [];
+      let p = ci;
       while (p !== -1) {
-        cells.push(p);
-        p = all.get(p)!.parent;
+        const n = all.get(p)!;
+        cells.push({ x: n.x, y: n.y });
+        p = n.parent;
       }
       cells.reverse();
-      const pts = cells.map((i) => cellCenter(i % COLS, (i / COLS) | 0));
-      pts.push(goal);
-      return stringPull([start, ...pts]).slice(1);
+      const pts = cells.map((c) => tileCenter(c.x, c.y));
+      // drop the start cell; keep every tile centre (no string-pull corner cuts)
+      return pts.length <= 1 ? [goal] : [...pts.slice(1), goal];
     }
-    open.delete(cur.i);
-    closed.add(cur.i);
-    const cx = cur.i % COLS;
-    const cy = (cur.i / COLS) | 0;
-    for (const [dx, dy, cost] of NEI) {
-      const nx = cx + dx;
-      const ny = cy + dy;
+    open.delete(ci);
+    closed.add(ci);
+    for (const [dx, dy] of NEI) {
+      const nx = cur.x + dx;
+      const ny = cur.y + dy;
       if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-      const ni = ny * COLS + nx;
-      if (GRID[ni] === 1 || closed.has(ni)) continue;
-      if (dx !== 0 && dy !== 0) {
-        if (GRID[cy * COLS + nx] === 1 || GRID[ny * COLS + cx] === 1) continue;
-      }
-      const g = cur.g + cost;
+      if (blockedAt(nx, ny)) continue;
+      const ni = key(nx, ny);
+      if (closed.has(ni)) continue;
+      const g = cur.g + 1;
       const ex = open.get(ni);
       if (!ex || g < ex.g) {
-        const node: Node = { i: ni, g, f: g + h(ni), parent: cur.i };
+        const node = { x: nx, y: ny, g, f: g + h(nx, ny), parent: ci };
         open.set(ni, node);
         all.set(ni, node);
       }
     }
   }
 
-  // unreachable — walk as far as A* got toward the goal (never clip walls)
-  if (best.i !== si) {
-    const cells: number[] = [];
-    let p: number = best.i;
+  if (best.parent !== -1 || (best.x === sx && best.y === sy && best.g === 0 && (best.x !== gx || best.y !== gy))) {
+    if (best.x === sx && best.y === sy && best.g === 0) return [];
+    const cells: { x: number; y: number }[] = [];
+    let p = key(best.x, best.y);
     while (p !== -1) {
-      cells.push(p);
-      p = all.get(p)!.parent;
+      const n = all.get(p)!;
+      cells.push({ x: n.x, y: n.y });
+      p = n.parent;
     }
     cells.reverse();
-    const pts = cells.map((i) => cellCenter(i % COLS, (i / COLS) | 0));
-    return stringPull([start, ...pts]).slice(1);
+    return cells.length <= 1
+      ? [tileCenter(best.x, best.y)]
+      : [...cells.slice(1).map((c) => tileCenter(c.x, c.y))];
   }
   return [];
-}
-
-/** Greedily drop waypoints a straight line already clears — but every surviving
- *  segment must pass `lineOfSight`, so a pulled path never clips a wall. */
-function stringPull(pts: Vec[]): Vec[] {
-  if (pts.length <= 2) return pts;
-  const out: Vec[] = [pts[0]];
-  let anchor = 0;
-  while (anchor < pts.length - 1) {
-    let far = anchor + 1;
-    for (let j = anchor + 2; j < pts.length; j++) {
-      if (lineOfSight(pts[anchor], pts[j])) far = j;
-      else break;
-    }
-    out.push(pts[far]);
-    anchor = far;
-  }
-  return out;
-}
-
-function dist(a: Vec, b: Vec): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
 }

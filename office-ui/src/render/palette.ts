@@ -20,8 +20,8 @@ export interface Palette {
 }
 
 export const LIGHT: Palette = {
-  bg: "#d9e0c8",
-  grid: "#cfd7b8",
+  bg: "#12181e",
+  grid: "#b8c698",
   zoneFill: "#f3efe6",
   zoneStroke: "#c4bba8",
   zoneLabel: "#5a5348",

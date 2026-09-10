@@ -21,13 +21,12 @@ export function MissionHeader() {
 
   return (
     <div className="mission-header">
-      <h1>{query}</h1>
       <div className="meta">
         <span><b>{status.toUpperCase()}</b></span>
-        <span>stage <b>{stage}</b></span>
-        <span>lead <b>{leadName}</b>{epoch ? ` · e${epoch}` : ""}</span>
-        <span><b>{activeCount}</b> agents active</span>
-        <span><b>{elapsed}</b></span>
+        <span>{stage}</span>
+        <span>{leadName}{epoch ? ` · e${epoch}` : ""}</span>
+        <span>{activeCount} active</span>
+        <span>{elapsed}</span>
       </div>
     </div>
   );
