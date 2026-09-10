@@ -304,6 +304,32 @@ class PostgresMissionStore:
             events = extract_events(self.get_raw(mission_id))
         return filter_events(events, family=family, after_seq=after_seq, limit=limit)
 
+    def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """Recent missions, newest first (durable — survives restart)."""
+        with self._engine.begin() as conn:
+            rows = conn.execute(
+                self._text(
+                    """
+                    SELECT mission_id, user_query, status, route, mission_lead
+                    FROM missions
+                    ORDER BY updated_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                {"limit": max(1, int(limit))},
+            ).mappings().all()
+        return [
+            {
+                "mission_id": r["mission_id"],
+                "query": r.get("user_query") or "",
+                "status": r.get("status") or "unknown",
+                "route": r.get("route"),
+                "mission_lead": r.get("mission_lead"),
+                "last_seq": 0,
+            }
+            for r in rows
+        ]
+
 
 def _json(value: Any) -> str:
     import json

@@ -21,6 +21,8 @@ class MissionStore(Protocol):
         limit: int = 500,
     ) -> list[dict[str, Any]]: ...
 
+    def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]: ...
+
 
 def extract_events(raw_state: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Pull structured events from a persisted raw mission payload."""
@@ -88,6 +90,8 @@ class InMemoryMissionStore:
                 cur = existing.status
             if cur is not None and str(cur) != "running":
                 return
+        # Keep most-recently-written last so list_missions can page newest-first.
+        self._results.pop(result.mission_id, None)
         self._results[result.mission_id] = result
         if raw_state is not None:
             self._raw[result.mission_id] = raw_state
@@ -115,3 +119,28 @@ class InMemoryMissionStore:
             after_seq=after_seq,
             limit=limit,
         )
+
+    def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """Recent missions, newest first — light headers for the office switcher."""
+        out: list[dict[str, Any]] = []
+        for mid in reversed(list(self._results.keys())):
+            raw = self._raw.get(mid)
+            result = self._results.get(mid)
+            events = extract_events(raw)
+            out.append(
+                {
+                    "mission_id": mid,
+                    "query": (raw or {}).get("query")
+                    or getattr(result, "final_response", None)
+                    or "",
+                    "status": (raw or {}).get("status")
+                    or (result.status if result else "unknown"),
+                    "route": (raw or {}).get("route"),
+                    "mission_lead": (raw or {}).get("mission_lead")
+                    or (result.mission_lead if result else None),
+                    "last_seq": max((int(e.get("seq") or 0) for e in events), default=0),
+                }
+            )
+            if len(out) >= max(1, limit):
+                break
+        return out
