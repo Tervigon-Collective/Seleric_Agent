@@ -2,7 +2,6 @@ import pytest
 
 from seleric_swarm.contracts.lookup import CoordinatorClassificationV1, MetricMappingV1
 from seleric_swarm.llm.adapters.fake import FakeLLMAdapter
-from seleric_swarm.llm.errors import FallbackDisabled
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 
 
@@ -143,13 +142,16 @@ async def test_fake_llm_synthesizer_reads_gated_claims_json():
 
 
 @pytest.mark.asyncio
-async def test_fallback_disabled():
+async def test_fallback_model_field_is_ignored_by_adapter():
+    """fallback_model is routing metadata for LLMGateway (see
+    test_llm_gateway.py) — a bare adapter just serves request.model and does
+    not special-case fallback_model."""
     llm = FakeLLMAdapter()
-    with pytest.raises(FallbackDisabled):
-        await llm.complete(
-            LLMRequest(
-                messages=[ChatMessage(role="user", content="ping")],
-                model="fake",
-                fallback_model="other-model",
-            )
+    response = await llm.complete(
+        LLMRequest(
+            messages=[ChatMessage(role="user", content="ping")],
+            model="fake",
+            fallback_model="other-model",
         )
+    )
+    assert response.text == "pong"

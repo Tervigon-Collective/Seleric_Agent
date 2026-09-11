@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from typing import Literal
 
@@ -29,10 +30,25 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 1024
     llm_max_retries: int = 2
     llm_fallback_model: str | None = None
+    # Comma-separated additional model ids, tried in order after the primary
+    # (azure_openai_model) and after llm_fallback_model, when the current one
+    # is unhealthy (circuit open) or exhausts its own retries. Empty = no
+    # gateway wrapping, single-model behavior unchanged.
+    llm_fallback_models: str = ""
 
     azure_openai_endpoint: str = ""
     azure_openai_api_key: str = ""
     azure_openai_model: str = ""
+    # Preferred way to list models for the LLM gateway to route across (all
+    # must be deployed on the same AZURE_OPENAI_ENDPOINT): a JSON array
+    # (AZURE_OPENAI_MODELS=["DeepSeek-V4-Flash","gpt-5-mini"]) or a plain
+    # comma-separated string (AZURE_OPENAI_MODELS=DeepSeek-V4-Flash,gpt-5-mini).
+    # First entry is primary, the rest are fallbacks tried in order.
+    azure_openai_models: str = ""
+    # Legacy numbered fallback (still supported, used only when
+    # azure_openai_models is unset): model1 is primary, model2 is fallback.
+    azure_openai_model1: str = ""
+    azure_openai_model2: str = ""
     azure_openai_api_version: str = "2024-05-01-preview"
     # "openai_compatible" -> Azure AI Inference; "azure" -> classic Azure OpenAI.
     azure_auth_style: Literal["openai_compatible", "azure"] = "openai_compatible"
@@ -101,6 +117,9 @@ class Settings(BaseSettings):
         "langsmith_endpoint",
         "azure_openai_endpoint",
         "azure_openai_model",
+        "azure_openai_models",
+        "azure_openai_model1",
+        "azure_openai_model2",
         "seleric_mcp_url",
         "a2a_public_base_url",
         "api_host",
@@ -126,6 +145,38 @@ class Settings(BaseSettings):
 
     def is_dev_surface(self) -> bool:
         return self.app_env.lower() in {"local", "development", "dev", "test"}
+
+    def resolved_models(self) -> list[str]:
+        """Ordered model ids for the LLM gateway: primary first, then
+        fallbacks. Reads azure_openai_models (JSON array or comma-separated
+        string) if set; otherwise falls back to the legacy
+        AZURE_OPENAI_MODEL1/MODEL2 pair, then the singular AZURE_OPENAI_MODEL.
+        """
+        raw = (self.azure_openai_models or "").strip()
+        if raw:
+            ids: list[str] = []
+            if raw.startswith("["):
+                try:
+                    parsed = json.loads(raw)
+                    ids = [str(m).strip() for m in parsed if str(m).strip()]
+                except (json.JSONDecodeError, TypeError):
+                    ids = []
+            if not ids:
+                ids = [m.strip() for m in raw.split(",") if m.strip()]
+            if ids:
+                return ids
+        ids = [m for m in (self.azure_openai_model1, self.azure_openai_model2) if m]
+        if ids:
+            return ids
+        return [self.azure_openai_model] if self.azure_openai_model else []
+
+    def primary_model(self) -> str:
+        models = self.resolved_models()
+        return models[0] if models else ""
+
+    def numbered_fallback_models(self) -> list[str]:
+        """Every configured model after the primary, in priority order."""
+        return self.resolved_models()[1:]
 
 
 @lru_cache
