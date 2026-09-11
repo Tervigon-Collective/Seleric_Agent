@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import itertools
 from typing import Any, Literal
 
 ConflictType = Literal[
@@ -136,36 +135,55 @@ def detect_conflicts(state: dict[str, Any], *, registry: Any = None) -> list[dic
     # resolves to the *same* metric (e.g. "cac" / "metric.cac", any bare
     # catalogue name vs its "metric."-prefixed id) are never a conflict —
     # resolved generically via MetricRegistry, not per-metric string checks.
+    #
+    # Scoped to pairs against the query's primary metric only. A mission's
+    # evidence set routinely spans hundreds of distinct metric ids across
+    # every domain (amazon_*, google_*, meta_*, session_*, product_*, ...);
+    # comparing all-pairs combinations against the loose shared-token
+    # heuristic in _name_tokens produced tens of thousands of "conflicts"
+    # between metrics that have nothing to do with each other or the
+    # question asked (e.g. amazon_gross_sales vs amazon_net_payout for a
+    # CAC query). Those can never resolve — arbitrate_conflict only clears a
+    # METRIC_SEMANTIC_CONFLICT when preferred_metric is itself one of the
+    # two ids — so they piled up as permanently-unresolved blocking
+    # conflicts and forced mission status to "partial" regardless of
+    # whether the actual query was answered. Restricting generation to
+    # pairs that include primary_metric bounds this to O(n) instead of
+    # O(n^2) and guarantees every conflict raised is one arbitrate_conflict
+    # can actually resolve. Without a primary metric there is nothing to
+    # arbitrate against, so detection is skipped rather than emitting noise.
     primary = (state.get("normalized_query") or {}).get("primary_metric")
-    metric_ids = {
-        str(e.get("metric_or_fact") or e.get("metric_id") or "")
-        for e in evidence
-        if e.get("metric_or_fact") or e.get("metric_id")
-    }
-    canonical = {m: _canonical_metric_id(m, registry) for m in metric_ids}
-    distinct = set(canonical.values())
-    for a, b in itertools.combinations(sorted(distinct), 2):
-        if not (_name_tokens(a) & _name_tokens(b)):
-            continue
-        family = {m for m, c in canonical.items() if c in (a, b)}
-        add(
-            {
-                "conflict_id": _cid("semantic", *sorted(family)),
-                "type": "METRIC_SEMANTIC_CONFLICT",
-                "artifact_refs": [
-                    e.get("artifact_id")
-                    for e in evidence
-                    if str(e.get("metric_or_fact") or e.get("metric_id") or "") in family
-                    and e.get("artifact_id")
-                ],
-                "metric_ids": sorted(family),
-                "preferred_metric": primary,
-                "description": (
-                    f"Multiple metric identities in play: {sorted(family)}"
-                    + (f"; preferred={primary}" if primary else "")
-                ),
-            }
-        )
+    canonical_primary = _canonical_metric_id(primary, registry) if primary else None
+    if canonical_primary:
+        metric_ids = {
+            str(e.get("metric_or_fact") or e.get("metric_id") or "")
+            for e in evidence
+            if e.get("metric_or_fact") or e.get("metric_id")
+        }
+        canonical = {m: _canonical_metric_id(m, registry) for m in metric_ids}
+        distinct = set(canonical.values())
+        for other in sorted(distinct - {canonical_primary}):
+            if not (_name_tokens(canonical_primary) & _name_tokens(other)):
+                continue
+            family = {m for m, c in canonical.items() if c in (canonical_primary, other)}
+            add(
+                {
+                    "conflict_id": _cid("semantic", *sorted(family)),
+                    "type": "METRIC_SEMANTIC_CONFLICT",
+                    "artifact_refs": [
+                        e.get("artifact_id")
+                        for e in evidence
+                        if str(e.get("metric_or_fact") or e.get("metric_id") or "") in family
+                        and e.get("artifact_id")
+                    ],
+                    "metric_ids": sorted(family),
+                    "preferred_metric": primary,
+                    "description": (
+                        f"Multiple metric identities in play: {sorted(family)}"
+                        f"; preferred={primary}"
+                    ),
+                }
+            )
 
     # --- TIME_RANGE_CONFLICT: same metric, overlapping incompatible windows ---
     by_metric: dict[str, list[dict[str, Any]]] = {}
