@@ -15,6 +15,47 @@ from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission
 
 
+class _FakeMetric:
+    def __init__(self, canonical_id: str) -> None:
+        self.id = canonical_id
+
+
+class _FakeRegistry:
+    """Minimal stand-in for MetricRegistry: bare catalogue name and
+    "metric."-prefixed id both resolve to the same canonical id — for ANY
+    metric, proving the conflict check isn't hardcoded to one metric name."""
+
+    def __init__(self, canonical_by_alias: dict[str, str]) -> None:
+        self._map = canonical_by_alias
+
+    def get(self, metric_id: str):
+        canonical = self._map.get(metric_id)
+        return _FakeMetric(canonical) if canonical else None
+
+
+def test_registry_resolved_aliases_are_not_a_semantic_conflict():
+    registry = _FakeRegistry(
+        {
+            "cac": "metric.cac",
+            "metric.cac": "metric.cac",
+            "bounce_rate": "metric.bounce_rate",
+            "metric.bounce_rate": "metric.bounce_rate",
+        }
+    )
+    for bare, prefixed in [("cac", "metric.cac"), ("bounce_rate", "metric.bounce_rate")]:
+        conflicts = detect_conflicts(
+            {
+                "evidence": [
+                    {"artifact_id": "EV-1", "metric_or_fact": bare, "value": 1},
+                    {"artifact_id": "EV-2", "metric_or_fact": prefixed, "value": 1},
+                ],
+            },
+            registry=registry,
+        )
+        semantic = [c for c in conflicts if c["type"] == "METRIC_SEMANTIC_CONFLICT"]
+        assert not semantic, f"{bare!r}/{prefixed!r} should resolve to one metric, got {semantic}"
+
+
 def test_metric_semantic_conflict_prefers_normalized_primary():
     conflicts = detect_conflicts(
         {

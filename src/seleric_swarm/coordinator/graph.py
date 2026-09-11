@@ -478,6 +478,7 @@ def _make_refine(ctx: SwarmV2Context):
             evidence=ctx.blackboard.by_type("evidence"),
             current_lead=lead,
             topology=ctx.policies.domain_topology,
+            registry=ctx.runtime.metrics,
         )
         lead_domain = lead.removesuffix("_agent")
         topo = ctx.policies.domain_topology.get(lead_domain)
@@ -781,7 +782,8 @@ def _make_complete(ctx: SwarmV2Context):
                         "primary_metric": (ctx.mission.context or {}).get("resolved_metric")
                         or (ctx.mission.context or {}).get("primary_metric")
                     },
-                }
+                },
+                registry=ctx.runtime.metrics,
             )
         )
         ctx.conflicts = conflicts

@@ -325,3 +325,1117 @@ metrics:
     domain: attribution
     validation:
       - non_negative
+
+  # ------------------------------------------------------------------
+  # Customer (customer_ltv, purchase_sequence)
+  # ------------------------------------------------------------------
+  - id: metric.customers
+    version: 1
+    owner: customer
+    catalogue_metric: customers
+    description: Distinct purchasing customers (Shopify) in the query window.
+    formula: count(customers)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.repeat_customers
+    version: 1
+    owner: customer
+    catalogue_metric: repeat_customers
+    description: Customers with 2+ orders in the query window.
+    formula: count(repeat_customers)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.lifetime_net_revenue
+    version: 1
+    owner: customer
+    catalogue_metric: lifetime_net_revenue
+    description: Cumulative net revenue per customer across full order history.
+    formula: sum(lifetime_net_revenue)
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.lifetime_gross_revenue
+    version: 1
+    owner: customer
+    catalogue_metric: lifetime_gross_revenue
+    description: Cumulative gross revenue per customer across full order history.
+    formula: sum(lifetime_gross_revenue)
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.lifetime_orders
+    version: 1
+    owner: customer
+    catalogue_metric: lifetime_orders
+    description: Cumulative order count per customer across full order history.
+    formula: count(lifetime_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.avg_ltv
+    version: 1
+    owner: customer
+    catalogue_metric: avg_ltv
+    aliases: [ltv, lifetime value, average ltv]
+    description: Average customer lifetime value (lifetime net revenue / customers).
+    formula: lifetime_net_revenue / customers
+    depends_on: [lifetime_net_revenue, customers]
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.avg_orders_per_customer
+    version: 1
+    owner: customer
+    catalogue_metric: avg_orders_per_customer
+    description: Average lifetime orders per customer.
+    formula: lifetime_orders / customers
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.avg_days_since_last_order
+    version: 1
+    owner: customer
+    catalogue_metric: avg_days_since_last_order
+    description: Average recency (days) since each customer's last order — rising values signal lapsing customers.
+    formula: avg(days_since_last_order)
+    direction_bad: up
+    unit: days
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.first_orders
+    version: 1
+    owner: customer
+    catalogue_metric: first_orders
+    description: Orders that were each customer's first purchase (new-customer acquisition volume).
+    formula: count(first_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.repeat_orders
+    version: 1
+    owner: customer
+    catalogue_metric: repeat_orders
+    description: Orders that were not a customer's first purchase.
+    formula: count(repeat_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.repeat_purchase_orders
+    version: 1
+    owner: customer
+    catalogue_metric: repeat_purchase_orders
+    description: Orders in the purchase-sequence fact attributed to repeat purchasers.
+    formula: count(repeat_purchase_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.repeat_purchase_net_revenue
+    version: 1
+    owner: customer
+    catalogue_metric: repeat_purchase_net_revenue
+    description: Net revenue from repeat-purchase orders.
+    formula: sum(repeat_purchase_net_revenue)
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.repeat_order_share
+    version: 1
+    owner: customer
+    catalogue_metric: repeat_order_share
+    description: Share of orders that are repeat purchases (repeat_orders / total orders).
+    formula: repeat_orders / orders
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  - id: metric.avg_days_between_orders
+    version: 1
+    owner: customer
+    catalogue_metric: avg_days_between_orders
+    description: Average gap (days) between consecutive orders for repeat customers — widening gaps signal churn risk.
+    formula: avg(days_between_orders)
+    direction_bad: up
+    unit: days
+    grain: day
+    timezone: Asia/Kolkata
+    domain: customer
+
+  # ------------------------------------------------------------------
+  # Performance marketing / Paid media (Meta/Google ad delivery)
+  # ------------------------------------------------------------------
+  - id: metric.meta_spend
+    version: 1
+    owner: performance
+    catalogue_metric: meta_spend
+    description: Meta (Facebook/Instagram) ad spend.
+    formula: sum(meta_spend)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.google_spend
+    version: 1
+    owner: performance
+    catalogue_metric: google_spend
+    description: Google Ads spend.
+    formula: sum(google_spend)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.meta_impressions
+    version: 1
+    owner: performance
+    catalogue_metric: meta_impressions
+    description: Ad impressions delivered by Meta.
+    formula: sum(meta_impressions)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.google_impressions
+    version: 1
+    owner: performance
+    catalogue_metric: google_impressions
+    description: Google Ads impressions.
+    formula: sum(google_impressions)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.meta_clicks
+    version: 1
+    owner: performance
+    catalogue_metric: meta_clicks
+    description: All clicks on Meta ads.
+    formula: sum(meta_clicks)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.google_clicks
+    version: 1
+    owner: performance
+    catalogue_metric: google_clicks
+    description: Google Ads clicks.
+    formula: sum(google_clicks)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.google_ctr
+    version: 1
+    owner: performance
+    catalogue_metric: google_ctr
+    description: Google Ads click-through rate (delivery frontier).
+    formula: google_clicks / google_impressions
+    direction_bad: down
+    frontier: true
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.google_cpc
+    version: 1
+    owner: performance
+    catalogue_metric: google_cpc
+    description: Google Ads cost per click (delivery frontier).
+    formula: google_spend / google_clicks
+    frontier: true
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.google_cpm
+    version: 1
+    owner: performance
+    catalogue_metric: google_cpm
+    description: Google Ads cost per thousand impressions (delivery frontier).
+    formula: google_spend / google_impressions * 1000
+    frontier: true
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.meta_hook_rate
+    version: 1
+    owner: performance
+    catalogue_metric: meta_hook_rate
+    description: Meta video hook rate — share of viewers retained past the first 3 seconds.
+    formula: meta_hook_rate
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.meta_thruplays
+    version: 1
+    owner: performance
+    catalogue_metric: meta_thruplays
+    description: Meta ThruPlays — 15s (or full-length) video views.
+    formula: sum(meta_thruplays)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.meta_video_completion_rate
+    version: 1
+    owner: performance
+    catalogue_metric: meta_video_completion_rate
+    description: Meta video completion rate.
+    formula: meta_video_completion_rate
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.meta_hold_rate_15s
+    version: 1
+    owner: performance
+    catalogue_metric: meta_hold_rate_15s
+    description: Meta video hold rate — share of viewers retained past 15 seconds.
+    formula: meta_hold_rate_15s
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.meta_landing_page_views
+    version: 1
+    owner: performance
+    catalogue_metric: meta_landing_page_views
+    description: Meta-tracked landing page views (account-level Graph API metric, not clicks/impressions).
+    formula: sum(meta_landing_page_views)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  - id: metric.meta_cost_per_landing_page_view
+    version: 1
+    owner: performance
+    catalogue_metric: meta_cost_per_landing_page_view
+    description: Meta cost per landing page view.
+    formula: meta_spend / meta_landing_page_views
+    frontier: true
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+
+  # ------------------------------------------------------------------
+  # Attribution (order_attribution, meta_ad_attribution)
+  # ------------------------------------------------------------------
+  - id: metric.attributed_orders
+    version: 1
+    owner: attribution
+    catalogue_metric: attributed_orders
+    description: First-party, last-touch attributed order count across channels.
+    formula: count(attributed_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.attributed_gross_revenue
+    version: 1
+    owner: attribution
+    catalogue_metric: attributed_gross_revenue
+    description: First-party, last-touch attributed gross revenue across channels.
+    formula: sum(attributed_gross_revenue)
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.attributed_refund_amount
+    version: 1
+    owner: attribution
+    catalogue_metric: attributed_refund_amount
+    description: Refund amount on attributed orders.
+    formula: sum(attributed_refund_amount)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.attributed_new_customer_orders
+    version: 1
+    owner: attribution
+    catalogue_metric: attributed_new_customer_orders
+    description: Attributed orders placed by new (first-time) customers.
+    formula: count(attributed_new_customer_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.touch_attributed_orders
+    version: 1
+    owner: attribution
+    catalogue_metric: touch_attributed_orders
+    description: Orders with at least one recorded marketing touchpoint.
+    formula: count(touch_attributed_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.attribution_rate
+    version: 1
+    owner: attribution
+    catalogue_metric: attribution_rate
+    description: Share of orders successfully matched to a marketing touchpoint.
+    formula: touch_attributed_orders / orders
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.avg_attribution_confidence
+    version: 1
+    owner: attribution
+    catalogue_metric: avg_attribution_confidence
+    description: Average confidence score of the last-touch attribution match.
+    formula: avg(attribution_confidence)
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.attributed_aov
+    version: 1
+    owner: attribution
+    catalogue_metric: attributed_aov
+    description: Average order value of attributed orders.
+    formula: attributed_net_revenue / attributed_orders
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.meta_attr_orders
+    version: 1
+    owner: attribution
+    catalogue_metric: meta_attr_orders
+    description: Orders last-touch attributed to Meta.
+    formula: count(meta_attr_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.meta_attr_net_revenue
+    version: 1
+    owner: attribution
+    catalogue_metric: meta_attr_net_revenue
+    description: Net revenue last-touch attributed to Meta.
+    formula: sum(meta_attr_net_revenue)
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.meta_attr_gross_revenue
+    version: 1
+    owner: attribution
+    catalogue_metric: meta_attr_gross_revenue
+    description: Gross revenue last-touch attributed to Meta.
+    formula: sum(meta_attr_gross_revenue)
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.meta_attr_refund_amount
+    version: 1
+    owner: attribution
+    catalogue_metric: meta_attr_refund_amount
+    description: Refund amount on orders attributed to Meta.
+    formula: sum(meta_attr_refund_amount)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.meta_attr_new_customer_orders
+    version: 1
+    owner: attribution
+    catalogue_metric: meta_attr_new_customer_orders
+    description: New-customer orders attributed to Meta.
+    formula: count(meta_attr_new_customer_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.meta_attr_new_customer_revenue
+    version: 1
+    owner: attribution
+    catalogue_metric: meta_attr_new_customer_revenue
+    description: Net revenue from new-customer orders attributed to Meta.
+    formula: sum(meta_attr_new_customer_revenue)
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  - id: metric.meta_attr_aov
+    version: 1
+    owner: attribution
+    catalogue_metric: meta_attr_aov
+    description: Average order value of orders attributed to Meta.
+    formula: meta_attr_net_revenue / meta_attr_orders
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: attribution
+
+  # ------------------------------------------------------------------
+  # Finance / P&L (canonical_pnl)
+  # ------------------------------------------------------------------
+  - id: metric.net_cogs
+    version: 1
+    owner: finance
+    catalogue_metric: net_cogs
+    description: Net cost of goods sold (ordered minus refunded units, at cost).
+    formula: sum(net_cogs)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.shipping_cost
+    version: 1
+    owner: finance
+    catalogue_metric: shipping_cost
+    description: Outbound shipping cost.
+    formula: sum(shipping_cost)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.packaging_cost
+    version: 1
+    owner: finance
+    catalogue_metric: packaging_cost
+    description: Packaging cost per order.
+    formula: sum(packaging_cost)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.payment_gateway_fees
+    version: 1
+    owner: finance
+    catalogue_metric: payment_gateway_fees
+    description: Payment gateway processing fees.
+    formula: sum(payment_gateway_fees)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.rto_cost
+    version: 1
+    owner: finance
+    catalogue_metric: rto_cost
+    description: Return-to-origin (RTO) logistics cost.
+    formula: sum(rto_cost)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.operating_cost
+    version: 1
+    owner: finance
+    catalogue_metric: operating_cost
+    description: Total operating cost (shipping + packaging + gateway fees + RTO, ex ad spend).
+    formula: shipping_cost + packaging_cost + payment_gateway_fees + rto_cost
+    depends_on: [shipping_cost, packaging_cost, payment_gateway_fees, rto_cost]
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.gross_profit
+    version: 1
+    owner: finance
+    catalogue_metric: gross_profit
+    description: Net sales minus net COGS.
+    formula: net_sales - net_cogs
+    depends_on: [net_sales, net_cogs]
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.contribution_margin
+    version: 1
+    owner: finance
+    catalogue_metric: contribution_margin
+    description: Gross profit minus operating cost and ad spend.
+    formula: gross_profit - operating_cost - total_ad_spend
+    depends_on: [gross_profit, operating_cost, total_ad_spend]
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.gross_margin_pct
+    version: 1
+    owner: finance
+    catalogue_metric: gross_margin_pct
+    description: Gross profit as a percentage of net sales.
+    formula: gross_profit / net_sales
+    direction_bad: down
+    unit: pct
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.contribution_margin_pct
+    version: 1
+    owner: finance
+    catalogue_metric: contribution_margin_pct
+    description: Contribution margin as a percentage of net sales.
+    formula: contribution_margin / net_sales
+    direction_bad: down
+    unit: pct
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.net_margin_pct
+    version: 1
+    owner: finance
+    catalogue_metric: net_margin_pct
+    description: Net profit as a percentage of net sales.
+    formula: net_profit / net_sales
+    direction_bad: down
+    unit: pct
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.mer
+    version: 1
+    owner: finance
+    catalogue_metric: mer
+    aliases: [marketing efficiency ratio, blended roas]
+    description: Marketing Efficiency Ratio — net sales / total ad spend. Higher is better.
+    formula: net_sales / total_ad_spend
+    depends_on: [net_sales, total_ad_spend]
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  - id: metric.cost_coverage_pct
+    version: 1
+    owner: finance
+    catalogue_metric: cost_coverage_pct
+    description: Share of total operating + ad cost covered by gross profit.
+    formula: gross_profit / (operating_cost + total_ad_spend)
+    direction_bad: down
+    unit: pct
+    grain: day
+    timezone: Asia/Kolkata
+    domain: finance
+
+  # ------------------------------------------------------------------
+  # Commerce (commerce_orders, commerce_performance)
+  # ------------------------------------------------------------------
+  - id: metric.active_orders
+    version: 1
+    owner: commerce
+    catalogue_metric: active_orders
+    description: Orders excluding cancelled/refunded (Shopify).
+    formula: count(active_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: commerce
+
+  - id: metric.new_customer_orders
+    version: 1
+    owner: commerce
+    catalogue_metric: new_customer_orders
+    description: Orders placed by first-time (Shopify) customers.
+    formula: count(new_customer_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: commerce
+
+  - id: metric.total_sales
+    version: 1
+    owner: commerce
+    catalogue_metric: total_sales
+    description: Total sales before discounts and returns/cancellations (Shopify, ex-GST).
+    formula: sum(total_sales)
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: commerce
+
+  - id: metric.discounts
+    version: 1
+    owner: commerce
+    catalogue_metric: discounts
+    description: Discount amount applied to orders (Shopify, ex-GST).
+    formula: sum(discounts)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: commerce
+
+  - id: metric.return_cancel_revenue
+    version: 1
+    owner: commerce
+    catalogue_metric: return_cancel_revenue
+    description: Revenue reversed by cancellations and returns (Shopify, ex-GST).
+    formula: sum(return_cancel_revenue)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: commerce
+
+  - id: metric.cancelled_orders
+    version: 1
+    owner: commerce
+    catalogue_metric: cancelled_orders
+    description: Orders cancelled on purchase date (Shopify).
+    formula: count(cancelled_orders)
+    direction_bad: up
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: commerce
+
+  - id: metric.returns_cancels
+    version: 1
+    owner: commerce
+    catalogue_metric: returns_cancels
+    description: Cancelled orders plus refunded orders (Shopify).
+    formula: cancelled_orders + refunded_orders
+    depends_on: [cancelled_orders, refunded_orders]
+    direction_bad: up
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: commerce
+
+  # ------------------------------------------------------------------
+  # Product (product_performance)
+  # ------------------------------------------------------------------
+  - id: metric.product_orders
+    version: 1
+    owner: product
+    catalogue_metric: product_orders
+    description: Order-line count per product.
+    formula: count(product_orders)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: product
+
+  - id: metric.product_net_revenue
+    version: 1
+    owner: product
+    catalogue_metric: product_net_revenue
+    description: Net revenue per product.
+    formula: sum(product_net_revenue)
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: product
+
+  - id: metric.product_cogs
+    version: 1
+    owner: product
+    catalogue_metric: product_cogs
+    description: Cost of goods sold per product.
+    formula: sum(product_cogs)
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: product
+
+  - id: metric.product_gross_profit
+    version: 1
+    owner: product
+    catalogue_metric: product_gross_profit
+    description: Product net revenue minus product COGS.
+    formula: product_net_revenue - product_cogs
+    depends_on: [product_net_revenue, product_cogs]
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: product
+
+  - id: metric.product_gross_margin_pct
+    version: 1
+    owner: product
+    catalogue_metric: product_gross_margin_pct
+    description: Product gross profit as a percentage of product net revenue.
+    formula: product_gross_profit / product_net_revenue
+    direction_bad: down
+    unit: pct
+    grain: day
+    timezone: Asia/Kolkata
+    domain: product
+
+  - id: metric.average_selling_price
+    version: 1
+    owner: product
+    catalogue_metric: average_selling_price
+    aliases: [asp]
+    description: Average selling price per unit.
+    formula: product_net_revenue / units_sold
+    depends_on: [product_net_revenue, units_sold]
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: product
+
+  # ------------------------------------------------------------------
+  # Website funnel (session_funnel, funnel_daily, web_events, web_events_daily)
+  # ------------------------------------------------------------------
+  - id: metric.bounce_rate
+    version: 1
+    owner: funnel
+    catalogue_metric: bounce_rate
+    description: Share of sessions that never reached a product detail page.
+    formula: (sessions - pdp_sessions) / sessions
+    direction_bad: up
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.funnel_conversion_rate
+    version: 1
+    owner: funnel
+    catalogue_metric: funnel_conversion_rate
+    description: Purchases (last-touch attributed orders) divided by sessions, on the channel-day funnel.
+    formula: funnel_purchases / sessions
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.funnel_purchases
+    version: 1
+    owner: funnel
+    catalogue_metric: funnel_purchases
+    description: Last-touch attributed orders on the channel-day funnel.
+    formula: count(funnel_purchases)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_add_to_carts
+    version: 1
+    owner: funnel
+    catalogue_metric: session_add_to_carts
+    description: Sessions that added an item to cart.
+    formula: count(session_add_to_carts)
+    direction_bad: down
+    frontier: true
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_atc_to_checkout_rate
+    version: 1
+    owner: funnel
+    catalogue_metric: session_atc_to_checkout_rate
+    description: Add-to-cart to checkout-start rate on the website funnel.
+    formula: checkout_sessions / atc_sessions
+    direction_bad: down
+    frontier: true
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_checkout_steps
+    version: 1
+    owner: funnel
+    catalogue_metric: session_checkout_steps
+    description: Checkout step events recorded across sessions.
+    formula: count(session_checkout_steps)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_collection_views
+    version: 1
+    owner: funnel
+    catalogue_metric: session_collection_views
+    description: Sessions that viewed a collection/category page.
+    formula: count(session_collection_views)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_product_views
+    version: 1
+    owner: funnel
+    catalogue_metric: session_product_views
+    description: Product detail page views at session grain.
+    formula: count(session_product_views)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_remove_from_carts
+    version: 1
+    owner: funnel
+    catalogue_metric: session_remove_from_carts
+    description: Sessions that removed an item from cart.
+    formula: count(session_remove_from_carts)
+    direction_bad: up
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_site_searches
+    version: 1
+    owner: funnel
+    catalogue_metric: session_site_searches
+    description: Sessions with an on-site search interaction.
+    formula: count(session_site_searches)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_avg_page_depth
+    version: 1
+    owner: funnel
+    catalogue_metric: session_avg_page_depth
+    description: Average number of pages viewed per session.
+    formula: avg(page_depth)
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_avg_seconds_to_add_to_cart
+    version: 1
+    owner: funnel
+    catalogue_metric: session_avg_seconds_to_add_to_cart
+    description: Average seconds from session start to first add-to-cart.
+    formula: avg(seconds_to_add_to_cart)
+    direction_bad: up
+    unit: s
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_avg_seconds_to_checkout
+    version: 1
+    owner: funnel
+    catalogue_metric: session_avg_seconds_to_checkout
+    description: Average seconds from session start to checkout start.
+    formula: avg(seconds_to_checkout)
+    direction_bad: up
+    unit: s
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.session_avg_seconds_to_purchase
+    version: 1
+    owner: funnel
+    catalogue_metric: session_avg_seconds_to_purchase
+    description: Average seconds from session start to purchase.
+    formula: avg(seconds_to_purchase)
+    direction_bad: up
+    unit: s
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.events_per_session
+    version: 1
+    owner: funnel
+    catalogue_metric: events_per_session
+    description: Average website events per session (event-grain).
+    formula: count(web_events) / count(distinct sessions)
+    direction_bad: down
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.add_to_cart_events
+    version: 1
+    owner: funnel
+    catalogue_metric: add_to_cart_events
+    description: Add-to-cart events (event count, not sessions).
+    formula: count(add_to_cart_events)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.product_view_events
+    version: 1
+    owner: funnel
+    catalogue_metric: product_views
+    description: Product detail page view events (event count, not sessions).
+    formula: count(product_views)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.collection_views
+    version: 1
+    owner: funnel
+    catalogue_metric: collection_views
+    description: Collection/category page view events.
+    formula: count(collection_views)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.site_search_events
+    version: 1
+    owner: funnel
+    catalogue_metric: site_search_events
+    description: On-site search interaction events (volume only, no search terms).
+    formula: count(site_search_events)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.web_events
+    version: 1
+    owner: funnel
+    catalogue_metric: web_events
+    description: All Snowplow website events (page/product/collection views, cart, checkout, search, purchase).
+    formula: count(web_events)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
+
+  - id: metric.web_page_views
+    version: 1
+    owner: funnel
+    catalogue_metric: web_page_views
+    description: Rendered page-view events.
+    formula: count(web_page_views)
+    direction_bad: down
+    unit: count
+    grain: day
+    timezone: Asia/Kolkata
+    domain: funnel
