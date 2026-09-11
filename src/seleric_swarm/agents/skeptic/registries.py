@@ -205,6 +205,21 @@ class CausalGraph:
             stack.extend(adj.get(cur, []))
         return False
 
+    def ancestors(self, node: str) -> set[str]:
+        """Nodes with a directed path to ``node`` (parents, grandparents, …)."""
+        parents: dict[str, list[str]] = {}
+        for src, dst in self.edges:
+            parents.setdefault(dst, []).append(src)
+        seen: set[str] = set()
+        stack = list(parents.get(node, []))
+        while stack:
+            cur = stack.pop()
+            if cur in seen:
+                continue
+            seen.add(cur)
+            stack.extend(parents.get(cur, []))
+        return seen
+
 
 @runtime_checkable
 class CausalGraphRegistry(Protocol):

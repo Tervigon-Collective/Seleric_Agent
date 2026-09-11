@@ -7,22 +7,6 @@ from typing import Any
 from seleric_swarm.agents.diagnostic.context import DiagnosticContext, ScopedAnomaly
 from seleric_swarm.services.metrics import MetricRegistry
 
-# When leadership has moved to a downstream domain, diagnose that domain's
-# frontier metric rather than the top-line symptom that opened the mission.
-# NOTE: this is not a text-resolvable "which metric does the query mean"
-# lookup (the MCP catalogue can't answer it) — it's domain-mesh business
-# knowledge ("what's the diagnostic outcome metric once you're in domain X"),
-# a concept config/metric_registry.yaml doesn't currently model (it only
-# flags handoff-trigger "frontier" metrics, a different semantic). Making
-# this dynamic needs a registry schema addition (e.g. a per-domain "outcome"
-# flag), not a runtime lookup — left as documented static domain knowledge.
-_DOMAIN_FRONTIER: dict[str, str] = {
-    "technical": "metric.purchase_cvr",
-    "funnel": "metric.purchase_cvr",
-    "commerce": "metric.net_sales",
-    "inventory": "metric.net_sales",
-}
-
 
 async def resolve_intake(ctx: DiagnosticContext) -> None:
     req = ctx.request
@@ -56,7 +40,7 @@ async def resolve_intake(ctx: DiagnosticContext) -> None:
     ctx.outcome_metric = _resolve_outcome(
         req.outcome_metric or req.primary_metric,
         ctx.anomalies,
-        lead_domain=(req.lead_domain or "").removesuffix("_agent") or None,
+        metrics=deps.metrics,
     )
 
     # No anomaly evidence at all, and no caller-supplied metric hint either —
@@ -90,31 +74,17 @@ def _resolve_outcome(
     hint: str,
     anomalies: list[ScopedAnomaly],
     *,
-    lead_domain: str | None = None,
     metrics: MetricRegistry | None = None,
 ) -> str:
+    """The asked metric stays the asked metric.
+
+    Leadership transfer can still recommend a different domain; intake must not
+    secretly rewrite technical → purchase_cvr (or any other frontier KPI).
+    """
     metric_ids = {a.metric_id for a in anomalies}
-
-    # Keep the asked metric when the current lead owns it. Otherwise a sibling
-    # KPI on the same domain (gross_sales vs net_sales) or a louder peer
-    # (purchase_cvr) steals the diagnosis.
-    if hint and lead_domain:
-        registry = metrics or MetricRegistry("config/metric_registry.yaml")
-        owner = (registry.owner_agent_for(hint) or "").removesuffix("_agent")
-        if owner == lead_domain:
-            return hint
-
-    # If leadership has moved to a downstream domain, diagnose that domain's
-    # frontier metric (where the causal change lives), not the top-line symptom.
-    frontier = _DOMAIN_FRONTIER.get(lead_domain or "")
-    if frontier and frontier in metric_ids and frontier != hint:
-        return frontier
-
-    if hint and hint in metric_ids:
-        return hint
     if hint:
         registry = metrics or MetricRegistry("config/metric_registry.yaml")
-        if registry.get(hint) is not None:
+        if registry.get(hint) is not None or hint in metric_ids:
             return hint
     if anomalies:
         return max(anomalies, key=lambda a: abs(a.deviation_pct or 0)).metric_id

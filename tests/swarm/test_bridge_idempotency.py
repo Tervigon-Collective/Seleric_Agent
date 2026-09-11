@@ -79,19 +79,27 @@ def test_blackboard_discard_and_discard_by():
 async def test_diagnostic_bridge_is_idempotent():
     from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
     bb = _blackboard_with_cac_scenario()
-    mission = SwarmMission(mission_id="MS-idem", query="Why did purchase CVR drop?", time_range={},
-                           initial_lead="performance_agent", intents={"diagnostic"},
-                           context={"degradation_started_at": "2026-09-01T12:00:00+05:30"})
+    mission = SwarmMission(
+        mission_id="MS-idem",
+        query="Why did purchase CVR drop?",
+        time_range={},
+        initial_lead="performance_agent",
+        intents={"diagnostic"},
+        context={
+            "primary_metric": "metric.purchase_cvr",
+            "degradation_started_at": "2026-09-01T12:00:00+05:30",
+        },
+    )
     spec = SwarmDiagnosticSpecialist(scenario=_CAC_REGRESSION_SCENARIO)
 
     await spec.run(bb, mission)
     h1, c1 = len(bb.by_type("hypothesis")), len(bb.by_type("causal"))
-    assert h1 > 0 and c1 == 1
+    assert h1 > 0 and c1 >= 1
 
     # re-run (as the orchestrator does on a Skeptic REVISE) - counts must not grow
     await spec.run(bb, mission)
     assert len(bb.by_type("hypothesis")) == h1
-    assert len(bb.by_type("causal")) == 1
+    assert len(bb.by_type("causal")) == c1
 
 
 @pytest.mark.asyncio

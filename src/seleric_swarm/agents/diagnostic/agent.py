@@ -159,4 +159,5 @@ def diagnostic_deps_from_blackboard(blackboard: Any, *, base: DiagnosticDeps | N
         causal_service=base.causal_service,
         reasoning=base.reasoning,
         ontology=base.ontology,
+        metrics=base.metrics,
     )

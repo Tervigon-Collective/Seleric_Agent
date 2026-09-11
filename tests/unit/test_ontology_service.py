@@ -317,5 +317,5 @@ async def test_diagnostic_records_cluster_neighbors_without_replacing_causal_tem
     hyps = await generate_hypotheses(ctx)
     assert ctx.scratch["semantic_neighbors"] == ["meta_spend", "google_spend"]
     assert ctx.scratch["entity_cluster"] == "paid_delivery"
-    assert any(h.treatment_metric == "metric.purchase_cvr" for h in hyps)
+    assert not any(h.treatment_metric == "metric.purchase_cvr" for h in hyps)
     assert ontology.related_calls == ["metric.cac"]

@@ -16,6 +16,7 @@ from typing import Any
 import yaml
 
 from seleric_swarm.paths import repo_root
+from seleric_swarm.services.metrics import MetricRegistry
 
 _DEFAULT_PATH = "config/diagnostic_ontology.yaml"
 
@@ -58,7 +59,11 @@ def graph_id_for_outcome(outcome_metric: str) -> str:
 
 
 def node_for_metric(metric_id: str) -> str:
-    return _load().node_by_metric.get(metric_id, metric_id)
+    o = _load()
+    mapped = o.node_by_metric.get(metric_id)
+    if mapped:
+        return mapped
+    return metric_id.removeprefix("metric.") or metric_id
 
 
 def treatment_events(treatment_metric: str) -> tuple[str, ...]:
@@ -66,5 +71,68 @@ def treatment_events(treatment_metric: str) -> tuple[str, ...]:
 
 
 def common_causes_for_outcome(outcome_metric: str) -> list[str]:
+    """YAML confounder overlay. Prefer ``confounders_from_graph`` at runtime."""
     o = _load()
     return [*o.base_common_causes, *o.extra_common_causes_by_outcome.get(outcome_metric, ())]
+
+
+def _idents_for_node(node: str) -> list[str]:
+    o = _load()
+    idents = [mid for mid, mapped in o.node_by_metric.items() if mapped == node]
+    if node.startswith("metric."):
+        idents.append(node)
+    else:
+        idents.append(f"metric.{node}")
+        idents.append(node)
+    out: list[str] = []
+    seen: set[str] = set()
+    for ident in idents:
+        if ident and ident not in seen:
+            seen.add(ident)
+            out.append(ident)
+    return out
+
+
+def confounders_from_graph(graph: Any, treatment_metric: str, outcome_metric: str) -> list[str]:
+    """Common ancestors of treatment and outcome on the registered causal graph.
+
+    Returns catalogue metric ids where we have a mapping, plus raw node labels
+    (campaign, device) so DoWhy can still adjust for dimensions present in the
+    observation frame. Not an RCA story list.
+    """
+    if graph is None or not treatment_metric or not outcome_metric:
+        return []
+    ancestors = getattr(graph, "ancestors", None)
+    if ancestors is None:
+        return []
+    common = ancestors(node_for_metric(treatment_metric)) & ancestors(node_for_metric(outcome_metric))
+    out: list[str] = []
+    seen: set[str] = set()
+    for node in sorted(common):
+        for ident in _idents_for_node(node):
+            if ident not in seen:
+                seen.add(ident)
+                out.append(ident)
+    return out
+
+
+def metric_confounders_to_fetch(
+    graph: Any,
+    *,
+    outcome: str,
+    treatments: list[str],
+    metrics: MetricRegistry | None = None,
+) -> list[str]:
+    """Fetchable ``metric.*`` confounders for each treatment→outcome pair."""
+    registry = metrics or MetricRegistry("config/metric_registry.yaml")
+    found: list[str] = []
+    seen: set[str] = set()
+    for treatment in treatments:
+        for ident in confounders_from_graph(graph, treatment, outcome):
+            if not ident.startswith("metric.") or ident in seen:
+                continue
+            if registry.get(ident) is None:
+                continue
+            seen.add(ident)
+            found.append(ident)
+    return found

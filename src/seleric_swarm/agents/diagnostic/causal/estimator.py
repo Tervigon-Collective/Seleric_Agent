@@ -18,7 +18,7 @@ from seleric_swarm.agents.diagnostic.contracts import (
     DiagnosticHypothesis,
 )
 from seleric_swarm.agents.diagnostic.ontology import (
-    common_causes_for_outcome,
+    confounders_from_graph,
     graph_id_for_outcome,
     node_for_metric,
     treatment_events,
@@ -103,7 +103,13 @@ def _common_causes(ctx: DiagnosticContext, h: DiagnosticHypothesis, graph) -> li
     declared = ctx.request.context.get("common_causes")
     if declared:
         return list(declared)
-    return common_causes_for_outcome(ctx.outcome_metric)
+    candidates = confounders_from_graph(graph, h.treatment_metric, ctx.outcome_metric)
+    obs = ctx.request.observations
+    columns = getattr(obs, "columns", None)
+    if columns is None:
+        return candidates
+    present = set(columns)
+    return [c for c in candidates if c in present]
 
 
 def _first_treatment_time(ctx: DiagnosticContext, h: DiagnosticHypothesis) -> str | None:

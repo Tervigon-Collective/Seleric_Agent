@@ -116,6 +116,24 @@ async def test_fetch_observations_includes_observed_treatments_not_yaml_seeds():
     assert "event.frontend_deployment" not in ids
     assert "campaign" not in ids
     assert "device" not in ids
+    assert "metric.sessions" not in ids
+
+
+@pytest.mark.asyncio
+async def test_fetch_observations_includes_graph_confounder_metrics():
+    providers = _FakeProviders(return_frame=None)
+
+    await _fetch_observations(
+        providers,
+        "metric.purchase_cvr",
+        {"start": "2026-09-01", "end": "2026-09-07"},
+        extra_metrics={"metric.mobile_lcp_seconds"},
+        confounder_metrics={"metric.sessions"},
+    )
+
+    ids = set(providers.captured_ids)
+    assert "metric.sessions" in ids
+    assert "metric.mobile_lcp_seconds" in ids
 
 
 @pytest.mark.asyncio
@@ -133,10 +151,10 @@ async def test_fetch_observations_caps_treatments_to_loudest_three():
 
     ids = providers.captured_ids
     assert "metric.purchase_cvr" in ids
-    assert "metric.sessions" in ids
+    assert "metric.sessions" not in ids
     assert ids.count("metric.peer_0") + ids.count("metric.peer_1") + ids.count("metric.peer_2") == 3
     assert "metric.peer_3" not in ids
-    assert len(ids) <= 2 + _MAX_CAUSAL_TREATMENTS
+    assert len(ids) <= 1 + _MAX_CAUSAL_TREATMENTS
 
 
 def test_ranked_treatment_ids_keeps_loudest_movers():
@@ -372,3 +390,33 @@ async def test_leadership_transfer_without_controller_only_records_event():
     # But the recommendation event must still be recorded for observability
     rec_events = [e for e in blackboard.events if e["kind"] == "leadership_transfer_recommended"]
     assert len(rec_events) == 1
+
+
+def test_live_runtime_wires_llm_reasoning():
+    from seleric_swarm.agents.diagnostic.reasoning import LLMPortReasoningModel, NullReasoningModel
+    from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
+
+    runtime = MagicMock()
+    runtime.settings.azure_openai_model = "gpt-test"
+    runtime.llm = MagicMock()
+    spec = SwarmDiagnosticSpecialist(runtime=runtime, trace_base={"request_id": "r1"})
+    assert isinstance(spec._reasoning_for("M-1"), LLMPortReasoningModel)
+
+    spec_off = SwarmDiagnosticSpecialist(runtime=None)
+    assert isinstance(spec_off._reasoning_for("M-1"), NullReasoningModel)
+
+
+def test_confounders_from_graph_are_common_ancestors_not_yaml_template():
+    from seleric_swarm.agents.diagnostic.ontology import confounders_from_graph, metric_confounders_to_fetch
+    from seleric_swarm.agents.diagnostic.registries import causal_graphs_from_yaml
+
+    graph = causal_graphs_from_yaml().get("causal.funnel_purchase.v1")
+    latency = confounders_from_graph(graph, "metric.mobile_lcp_seconds", "metric.purchase_cvr")
+    assert "device" in latency
+    assert "campaign" not in latency
+    fetched = metric_confounders_to_fetch(
+        graph,
+        outcome="metric.purchase_cvr",
+        treatments=["metric.mobile_lcp_seconds"],
+    )
+    assert "metric.sessions" not in fetched

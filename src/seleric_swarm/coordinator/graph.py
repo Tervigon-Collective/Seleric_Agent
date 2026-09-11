@@ -1101,11 +1101,9 @@ async def run_swarm_v2_mission(
         complexity=plan.complexity,
         initial_lead=initial_lead,
         context={
-            # No guessing here: an unresolved metric stays empty and each
-            # specialist's own resolution ladder (anomaly-driven / domain-frontier
-            # for Diagnostic, "unresolved rather than a plausible id" for
-            # Prediction) decides what to do, instead of this being clobbered by
-            # an arbitrary CAC/net_sales pick keyed off which domain is lead.
+            # Unresolved metric stays empty. Diagnostic keeps the asked metric
+            # (no domain-frontier remap). Prediction still refuses unresolved
+            # rather than a plausible id.
             "primary_metric": normalized.primary_metric,
             "resolved_metric": normalized.primary_metric,
             "decomposition_id": decomposition.decomposition_id,
@@ -1137,7 +1135,12 @@ async def run_swarm_v2_mission(
     }
     leadership_controller = LeadershipController(LeadershipManager(), policies)
     diagnostic: Any = SwarmDiagnosticSpecialist(
-        providers, scenario=scenario, trace_base=trace_base, leadership=leadership_controller
+        providers,
+        scenario=scenario,
+        trace_base=trace_base,
+        leadership=leadership_controller,
+        runtime=runtime,
+        ontology=runtime.ontology,
     )
     if full_prediction:
         from seleric_swarm.agents.prediction.swarm_bridge import SwarmPredictionSpecialist

@@ -12,7 +12,8 @@ diagnostic:
   hypotheses:
     # a hypothesis needs at least this much direct evidence overlap to be testable
     min_supporting_evidence: 1
-    # hypotheses are seeded from observed evidence; LLM only enriches
+    # hypotheses are seeded from observed evidence; LLM only enriches (live
+    # missions wire the real model; if it is down, co-movers still seed)
     llm_enrichment: true
     prior_weights:
       evidence_overlap: 0.4

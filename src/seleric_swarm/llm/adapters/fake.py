@@ -513,5 +513,7 @@ class FakeLLMAdapter:
         if prompt_id.endswith("response") or "synthesizer" in prompt_id:
             return synthesize_response(user)
         if "json schema" in joined or request.response_format == "json_schema":
+            if "treatment_metric" in joined and "hypotheses" in joined:
+                return json.dumps({"hypotheses": []})
             return json.dumps(classify_lookup_query(query, timezone, as_of))
         return "pong"

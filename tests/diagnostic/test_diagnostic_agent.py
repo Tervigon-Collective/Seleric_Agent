@@ -235,14 +235,15 @@ async def test_metadata_only_is_capped_inconclusive(make_agent):
 
 
 # --------------------------------------------------------------------------- #
-# 4. outcome pivots to the downstream frontier when leadership moved
+# 4. asked metric stays the asked metric (no domain-frontier remap)
 # --------------------------------------------------------------------------- #
-async def test_outcome_pivots_to_downstream_frontier(make_agent):
+async def test_asked_metric_stays_even_when_lead_is_technical(make_agent):
+    """technical lead must not secretly rewrite CAC into purchase_cvr."""
     agent = make_agent(
         _cvr_evidence() + [ev("EV-cac", "metric.cac", 782.0, change_pct=29.5)],
         [anomaly("AN-cac", "metric.cac", 29.5, direction="up"),
          anomaly("AN-cvr", _OUTCOME, -24.0, start_time=_DEG)],
-        causal_truth=_retain_truth(),
+        causal_truth=matching_truth(_TREATMENT, "metric.cac"),
     )
     r = await agent.diagnose(_req(
         primary_metric="metric.cac",
@@ -250,8 +251,7 @@ async def test_outcome_pivots_to_downstream_frontier(make_agent):
         degradation_started_at=_DEG,
         context={"trust_metadata_causal": True},
     ))
-    assert r.outcome_metric == _OUTCOME
-    assert r.finding is not None and r.finding.causal_confidence != "REJECTED"
+    assert r.outcome_metric == "metric.cac"
 
 
 async def test_commerce_keeps_asked_gross_sales_not_net_sales_sibling(make_agent):
@@ -389,6 +389,11 @@ async def test_llm_enrichment_is_bounded(make_agent, graphs):
     assert not any("aliens" in h.statement.lower() for h in r.hypotheses)
     alt_hyps = [h for h in r.hypotheses if h.treatment_metric == _ALT]
     assert len(alt_hyps) == 1
+    user = scripted.calls[0]["user"]
+    assert "change_pct=" in user
+    assert "Allowed catalogue metric ids:" in user
+    assert _ALT in user
+    assert "metric.cosmic_rays" not in user
 
 
 # --------------------------------------------------------------------------- #

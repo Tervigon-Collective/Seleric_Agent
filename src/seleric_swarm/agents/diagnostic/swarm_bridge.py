@@ -12,7 +12,7 @@ Enable per run: ``run_swarm_mission(runtime, query=..., scenario_id=..., full_di
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 log = logging.getLogger(__name__)
 
@@ -20,7 +20,11 @@ from seleric_swarm.agents.diagnostic.agent import DiagnosticAgent, diagnostic_de
 from seleric_swarm.agents.diagnostic.context import DiagnosticDeps
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticRequest, DiagnosticResult
 from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
-from seleric_swarm.agents.diagnostic.ontology import common_causes_for_outcome
+from seleric_swarm.agents.diagnostic.ontology import (
+    graph_id_for_outcome,
+    metric_confounders_to_fetch,
+)
+from seleric_swarm.agents.diagnostic.reasoning import LLMPortReasoningModel, NullReasoningModel
 from seleric_swarm.agents.diagnostic.registries import (
     TemplateCausalEstimationService,
     causal_graphs_from_yaml,
@@ -30,6 +34,9 @@ from seleric_swarm.coordinator.leadership.frontier import LeadershipController
 from seleric_swarm.swarm.artifacts import Causal, Hypothesis
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission
+
+if TYPE_CHECKING:
+    from seleric_swarm.runtime import SwarmRuntime
 
 
 class SwarmDiagnosticSpecialist:
@@ -48,6 +55,7 @@ class SwarmDiagnosticSpecialist:
         ontology: Any = None,
         trace_base: dict[str, str | None] | None = None,
         leadership: LeadershipController | None = None,
+        runtime: SwarmRuntime | None = None,
     ) -> None:
         self.providers = providers
         self._scenario = scenario or {}
@@ -55,12 +63,29 @@ class SwarmDiagnosticSpecialist:
         self._policies = policies or DiagnosticPolicies.load()
         self._ontology = ontology
         self._leadership = leadership
+        self._runtime = runtime
         # Trace base for LangSmith (request_id, session_id, workflow, etc.)
         # Passed by coordinator graph; used when creating LLMPortReasoningModel.
         self._trace_base = trace_base or {}
 
     def policy(self, blackboard: Blackboard, mission: SwarmMission) -> bool:
         return mission.wants("diagnostic") and bool(blackboard.by_type("anomaly"))
+
+    def _reasoning_for(self, mission_id: str):
+        if self._deps is not None:
+            return self._deps.reasoning
+        runtime = self._runtime
+        if runtime is not None and runtime.settings.azure_openai_model:
+            return LLMPortReasoningModel(
+                runtime.llm,
+                model=runtime.settings.azure_openai_model,
+                mission_id=mission_id,
+                request_id=self._trace_base.get("request_id"),
+                session_id=self._trace_base.get("session_id"),
+                workflow_name=self._trace_base.get("workflow_name"),
+                workflow_version=self._trace_base.get("workflow_version"),
+            )
+        return NullReasoningModel()
 
     async def run(self, blackboard: Blackboard, mission: SwarmMission) -> list[str]:
         # Idempotent re-run: replace this agent's prior output, don't accumulate.
@@ -78,24 +103,43 @@ class SwarmDiagnosticSpecialist:
         causal_truth = self._scenario.get("causal_truth")
         primary_metric = str(mission.context.get("primary_metric") or "")
         observations = None
+        graphs = (
+            self._deps.causal_graphs if self._deps is not None else causal_graphs_from_yaml()
+        )
+        metrics = self._deps.metrics if self._deps is not None else (
+            self._runtime.metrics if self._runtime is not None else None
+        )
         if causal_truth:
             causal_service = TemplateCausalEstimationService(causal_truth)
         else:
             causal_service = DoWhyCausalEstimationService(
                 fallback=TemplateCausalEstimationService({}),
             )
+            treatments = _ranked_treatment_ids(blackboard, outcome=primary_metric)
+            graph = graphs.get(graph_id_for_outcome(primary_metric)) if primary_metric else None
             observations = await _fetch_observations(
                 self.providers,
                 primary_metric,
                 dict(mission.time_range),
-                extra_metrics=_ranked_treatment_ids(blackboard, outcome=primary_metric),
+                extra_metrics=treatments,
+                confounder_metrics=metric_confounders_to_fetch(
+                    graph, outcome=primary_metric, treatments=treatments, metrics=metrics
+                ),
             )
 
-        base = self._deps or DiagnosticDeps(
-            causal_graphs=causal_graphs_from_yaml(),
-            causal_service=causal_service,
-            ontology=self._ontology,
-        )
+        if self._deps is not None:
+            base = self._deps
+        else:
+            ontology = self._ontology
+            if ontology is None and self._runtime is not None:
+                ontology = self._runtime.ontology
+            base = DiagnosticDeps(
+                causal_graphs=graphs,
+                causal_service=causal_service,
+                ontology=ontology,
+                reasoning=self._reasoning_for(blackboard.mission_id),
+                metrics=metrics,
+            )
         deps = diagnostic_deps_from_blackboard(blackboard, base=base)
         agent = DiagnosticAgent(deps=deps, policies=self._policies)
 
@@ -103,15 +147,6 @@ class SwarmDiagnosticSpecialist:
             # fixture/replay mode: the template causal truth is authoritative
             "trust_metadata_causal": True,
         }
-        if observations is not None:
-            # DoWhy needs exact column matches — only declare common causes we
-            # actually fetched real data for (some ontology common causes,
-            # e.g. "campaign"/"device", are categorical dimensions, not
-            # metrics fetch_series can pull; dropping the unfetchable ones
-            # here beats DoWhy rejecting the whole estimate for missing columns).
-            context["common_causes"] = [
-                c for c in common_causes_for_outcome(primary_metric) if c in observations.columns
-            ]
 
         request = DiagnosticRequest(
             mission_id=blackboard.mission_id,
@@ -127,7 +162,7 @@ class SwarmDiagnosticSpecialist:
 
         posted, retained_ids = _write_artifacts(blackboard, result)
         obs_rows = len(observations) if observations is not None else 0
-        if obs_rows == 0:
+        if obs_rows == 0 and not causal_truth:
             log.warning(
                 "diagnostic: no causal observations for '%s' — DoWhy used template fallback "
                 "(time_range=%s). Extend the mission window or check MCP series availability.",
@@ -256,6 +291,7 @@ async def _fetch_observations(
     *,
     extra_history_days: int = _CAUSAL_EXTRA_HISTORY_DAYS,
     extra_metrics: set[str] | list[str] | None = None,
+    confounder_metrics: set[str] | list[str] | None = None,
 ) -> Any:
     """Real per-day observation series for DoWhy (docs/44 ROB-002).
 
@@ -271,6 +307,8 @@ async def _fetch_observations(
 
     ``extra_metrics`` are co-movers already observed on the blackboard (evidence
     / anomalies). Treatments are whatever actually moved, not a YAML seed list.
+    ``confounder_metrics`` are fetchable graph common-ancestors for those
+    treatment→outcome pairs — not an RCA template.
     """
     if providers is None or not outcome_metric:
         return None
@@ -316,9 +354,10 @@ async def _fetch_observations(
         if len(extras) >= _MAX_CAUSAL_TREATMENTS:
             break
     needed = {outcome_metric, *extras}
-    for cause in common_causes_for_outcome(outcome_metric):
-        if str(cause).startswith("metric."):
-            needed.add(str(cause))
+    for mid in confounder_metrics or ():
+        key = str(mid)
+        if key.startswith("metric.") and key not in needed:
+            needed.add(key)
 
     log.info(
         "_fetch_observations: fetching %d series metrics over %s→%s (treatments capped at %d)",

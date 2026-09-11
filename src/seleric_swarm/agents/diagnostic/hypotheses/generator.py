@@ -5,20 +5,22 @@ Seeds, in order:
      outcome is diagnosable from what actually moved — no per-metric YAML
      story list.
   2. Caller-declared alternatives.
-  3. Optional LLM enrichment, bounded to metrics already in evidence or the
-     causal graph.
+  3. Optional LLM enrichment, bounded to allowed catalogue metric ids
+     (observed evidence or metrics mapped onto the causal graph).
 
 Total is capped by ``budgets.max_hypotheses``.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 from pydantic import BaseModel
 
 from seleric_swarm.agents.diagnostic.context import DiagnosticContext
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticHypothesis
-from seleric_swarm.agents.diagnostic.ontology import graph_id_for_outcome
+from seleric_swarm.agents.diagnostic.ontology import graph_id_for_outcome, node_for_metric
 from seleric_swarm.services.metrics import MetricRegistry
 
 _log = structlog.get_logger("seleric_swarm.agents.diagnostic")
@@ -40,8 +42,9 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
     cap = ctx.policies.budget("max_hypotheses")
     outcome = ctx.outcome_metric
     observed = {(e.get("metric_id") or e.get("metric_or_fact")) for e in ctx.evidence}
+    observed.update(a.metric_id for a in ctx.anomalies)
     graph = ctx.deps.causal_graphs.get(_graph_id_for(ctx))
-    graph_nodes = set(graph.nodes) if graph else set()
+    allowed = _allowed_treatment_ids(ctx, observed, graph)
 
     out: list[DiagnosticHypothesis] = []
 
@@ -74,7 +77,7 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
             )
         )
 
-    # 3. optional LLM enrichment (bounded to known metrics)
+    # 3. optional LLM enrichment (bounded to allowed catalogue ids)
     if ctx.policies.llm_enrichment() and len(out) < cap:
         try:
             from seleric_swarm.agents.diagnostic.prompts import (
@@ -84,13 +87,13 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
 
             extra = await ctx.deps.reasoning.generate_structured(
                 system=HYPOTHESIS_SYSTEM,
-                user=hypothesis_user(ctx),
+                user=hypothesis_user(ctx, existing=out, allowed=sorted(allowed)),
                 schema=_LLMHypoList,
                 tags=["diagnostic", "hypotheses"],
             )
             for cand in extra.hypotheses:
                 tm = cand.treatment_metric.strip()
-                if tm and (tm in observed or tm in graph_nodes):
+                if tm and tm in allowed:
                     out.append(
                         DiagnosticHypothesis(
                             statement=cand.statement,
@@ -131,11 +134,34 @@ def _graph_id_for(ctx: DiagnosticContext) -> str:
     return ctx.request.context.get("graph_id") or graph_id_for_outcome(ctx.outcome_metric)
 
 
-def _metrics() -> MetricRegistry:
+def _registry(ctx: DiagnosticContext | None = None) -> MetricRegistry:
+    if ctx is not None and ctx.deps.metrics is not None:
+        return ctx.deps.metrics
     global _METRICS
     if _METRICS is None:
         _METRICS = MetricRegistry("config/metric_registry.yaml")
     return _METRICS
+
+
+def _allowed_treatment_ids(ctx: DiagnosticContext, observed: set[Any], graph: Any) -> set[str]:
+    """Catalogue ids the LLM may name: observed registered metrics, plus
+    registered metrics that map onto the active causal graph. Invented ids
+    (metric.cosmic_rays) are not in this set.
+    """
+    registry = _registry(ctx)
+    allowed: set[str] = set()
+    for raw in observed:
+        mid = str(raw or "")
+        if mid and _usable_treatment(mid, ctx.outcome_metric) and registry.get(mid) is not None:
+            allowed.add(mid)
+    if graph is not None:
+        nodes = set(graph.nodes)
+        for metric in registry.all():
+            if not _usable_treatment(metric.id, ctx.outcome_metric):
+                continue
+            if node_for_metric(metric.id) in nodes:
+                allowed.add(metric.id)
+    return allowed
 
 
 def _usable_treatment(metric_id: str, outcome: str) -> bool:
@@ -151,7 +177,7 @@ def _label(metric_id: str) -> str:
 
 
 def _domains_for(metric_id: str, ctx: DiagnosticContext) -> list[str]:
-    owner = _metrics().owner_agent_for(metric_id)
+    owner = _registry(ctx).owner_agent_for(metric_id)
     if owner:
         return [owner.removesuffix("_agent")]
     for e in ctx.evidence_for_metric(metric_id):
