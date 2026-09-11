@@ -204,14 +204,13 @@ class MetricRegistry:
 
 
 def lead_agent_for_hints(hints: list[str], metrics: MetricRegistry | None = None) -> str:
-    """Lead from metric ownership. CAC still starts on performance."""
-    if "metric.cac" in hints or "cac" in hints:
-        return "performance_agent"
+    """Lead from registered metric ownership — every metric's ``domain`` in
+    metric_registry.yaml already decides this generically; no per-metric
+    special case needed (CAC -> performance, sales -> commerce fall out of
+    ``owner_agent_for`` for free, same as any other metric)."""
     if metrics is not None:
         for hint in hints:
             owner = metrics.owner_agent_for(hint)
             if owner:
                 return owner
-    if "metric.gross_sales" in hints or "metric.net_sales" in hints:
-        return "commerce_agent"
     return "coordinator_agent"

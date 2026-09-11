@@ -21,12 +21,35 @@ def detect_leadership_loop(history: list[dict[str, Any]], window: int = 4) -> bo
     return False
 
 
+# Fallback only for metric ids the registry doesn't know about (e.g. raw
+# catalogue ids not yet overlaid, synthetic fixtures). Real routing should
+# come from each metric's registered ``domain`` — see _domain_for below.
+_KEYWORD_DOMAINS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("performance", ("cpm", "cpc", "ctr", "cac", "spend", "roas")),
+    ("funnel", ("cvr", "conversion", "checkout", "session", "atc", "pdp")),
+    ("commerce", ("sales", "orders", "revenue")),
+)
+
+
+def _domain_for(mid: str, registry: Any) -> str | None:
+    if registry is not None:
+        definition = registry.get(mid)
+        if definition is not None and definition.domain:
+            return definition.domain
+    lowered = mid.lower()
+    for domain, keywords in _KEYWORD_DOMAINS:
+        if any(k in lowered for k in keywords):
+            return domain
+    return None
+
+
 def evaluate_frontier(
     *,
     anomalies: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
     current_lead: str,
     topology: dict[str, dict[str, list[str]]] | None = None,
+    registry: Any = None,
 ) -> dict[str, Any]:
     """Causal frontier = domain closest to the strongest unresolved driver."""
     topology = topology or {}
@@ -39,17 +62,14 @@ def evaluate_frontier(
         "finance": 0.0,
     }
     for a in pool:
-        mid = str(a.get("metric_id") or a.get("metric_or_fact") or "").lower()
+        mid = str(a.get("metric_id") or a.get("metric_or_fact") or "")
         dims = a.get("dimensions") or {}
         dev = abs(float(a.get("deviation_pct") or a.get("change_pct") or 0))
-        if any(k in mid for k in ("cpm", "cpc", "ctr", "cac", "spend", "roas")):
-            scores["performance"] += dev
-        if any(k in mid for k in ("cvr", "conversion", "checkout", "session", "atc", "pdp")):
-            scores["funnel"] += dev
-        if dims.get("device") == "mobile" or any(k in mid for k in ("lcp", "js_error", "latency", "mobile")):
+        domain = _domain_for(mid, registry)
+        if domain:
+            scores[domain] = scores.get(domain, 0.0) + dev
+        if dims.get("device") == "mobile" or any(k in mid.lower() for k in ("lcp", "js_error", "latency", "mobile")):
             scores["technical"] += dev * 1.2
-        if any(k in mid for k in ("sales", "orders", "revenue")):
-            scores["commerce"] += dev
 
     ranked = sorted(scores.items(), key=lambda kv: -kv[1])
     best_domain, best_score = ranked[0]

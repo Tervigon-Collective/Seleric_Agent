@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 from typing import Any, Literal
 
 ConflictType = Literal[
@@ -47,8 +48,34 @@ def _time_key(tr: Any) -> str:
     return f"{tr.get('start')}|{tr.get('end')}|{tr.get('timezone') or ''}"
 
 
-def detect_conflicts(state: dict[str, Any]) -> list[dict[str, Any]]:
-    """Detect material conflicts across evidence, hypotheses, forecasts, strategy."""
+def _canonical_metric_id(metric_id: str, registry: Any) -> str:
+    """Resolve any spelling of a metric (bare catalogue name, "metric." id,
+    live-catalogue id) to one canonical id via the shared MetricRegistry —
+    generic across every metric, no per-metric string list to maintain."""
+    if registry is not None:
+        definition = registry.get(metric_id)
+        if definition is not None:
+            return definition.id
+    return metric_id
+
+
+def _name_tokens(metric_id: str) -> set[str]:
+    slug = metric_id.rsplit(".", 1)[-1].lower()
+    # ponytail: shared-token heuristic for "these two DIFFERENT registered
+    # metrics look confusable" (e.g. cac vs blended_paid_cac) — has no
+    # negative-alias escape hatch. Upgrade to a registry `concept:`/family
+    # field if this starts pairing genuinely unrelated metrics.
+    return {t for t in slug.split("_") if len(t) > 2}
+
+
+def detect_conflicts(state: dict[str, Any], *, registry: Any = None) -> list[dict[str, Any]]:
+    """Detect material conflicts across evidence, hypotheses, forecasts, strategy.
+
+    ``registry`` (a ``MetricRegistry``) is optional so callers/tests without
+    one still get id-conflict detection based on raw string identity — they
+    just lose canonical-id resolution (bare vs "metric."-prefixed spellings
+    of the same metric may then look like two different metrics).
+    """
     conflicts: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -64,11 +91,18 @@ def detect_conflicts(state: dict[str, Any]) -> list[dict[str, Any]]:
 
     evidence = list(state.get("evidence") or [])
 
+    def _mid(e: dict[str, Any]) -> str:
+        raw = str(e.get("metric_or_fact") or e.get("metric_id") or "")
+        return _canonical_metric_id(raw, registry) if raw else raw
+
     # --- DATA_CONTRADICTION: same metric+dims+window, different values --------
+    # Grouped by *canonical* metric id — otherwise the same metric tagged two
+    # different ways (e.g. "cac" vs "metric.cac") lands in separate buckets
+    # and a real contradiction between them is silently never compared.
     by_key: dict[str, list[dict[str, Any]]] = {}
     for e in evidence:
         key = (
-            f"{e.get('metric_or_fact')}|{sorted((e.get('dimensions') or {}).items())}|"
+            f"{_mid(e)}|{sorted((e.get('dimensions') or {}).items())}|"
             f"{_time_key(e.get('time_range'))}"
         )
         by_key.setdefault(key, []).append(e)
@@ -96,30 +130,38 @@ def detect_conflicts(state: dict[str, Any]) -> list[dict[str, Any]]:
                 }
             )
 
-    # --- METRIC_SEMANTIC_CONFLICT: same alias family, different metric ids ----
-    # e.g. metric.cac vs metric.blended_paid_cac both treated as primary CAC
+    # --- METRIC_SEMANTIC_CONFLICT: distinct registered metrics whose names
+    # overlap enough that evidence may be conflating them (e.g. metric.cac vs
+    # metric.blended_paid_cac both treated as "CAC"). Ids that the registry
+    # resolves to the *same* metric (e.g. "cac" / "metric.cac", any bare
+    # catalogue name vs its "metric."-prefixed id) are never a conflict —
+    # resolved generically via MetricRegistry, not per-metric string checks.
     primary = (state.get("normalized_query") or {}).get("primary_metric")
     metric_ids = {
         str(e.get("metric_or_fact") or e.get("metric_id") or "")
         for e in evidence
         if e.get("metric_or_fact") or e.get("metric_id")
     }
-    cac_family = {m for m in metric_ids if "cac" in m.lower()}
-    if len(cac_family) > 1:
+    canonical = {m: _canonical_metric_id(m, registry) for m in metric_ids}
+    distinct = set(canonical.values())
+    for a, b in itertools.combinations(sorted(distinct), 2):
+        if not (_name_tokens(a) & _name_tokens(b)):
+            continue
+        family = {m for m, c in canonical.items() if c in (a, b)}
         add(
             {
-                "conflict_id": _cid("semantic", *sorted(cac_family)),
+                "conflict_id": _cid("semantic", *sorted(family)),
                 "type": "METRIC_SEMANTIC_CONFLICT",
                 "artifact_refs": [
                     e.get("artifact_id")
                     for e in evidence
-                    if str(e.get("metric_or_fact") or "").lower().find("cac") >= 0
+                    if str(e.get("metric_or_fact") or e.get("metric_id") or "") in family
                     and e.get("artifact_id")
                 ],
-                "metric_ids": sorted(cac_family),
+                "metric_ids": sorted(family),
                 "preferred_metric": primary,
                 "description": (
-                    f"Multiple CAC metric identities in play: {sorted(cac_family)}"
+                    f"Multiple metric identities in play: {sorted(family)}"
                     + (f"; preferred={primary}" if primary else "")
                 ),
             }
@@ -128,7 +170,7 @@ def detect_conflicts(state: dict[str, Any]) -> list[dict[str, Any]]:
     # --- TIME_RANGE_CONFLICT: same metric, overlapping incompatible windows ---
     by_metric: dict[str, list[dict[str, Any]]] = {}
     for e in evidence:
-        mid = str(e.get("metric_or_fact") or "")
+        mid = _mid(e)
         if mid:
             by_metric.setdefault(mid, []).append(e)
     for mid, rows in by_metric.items():

@@ -122,17 +122,15 @@ def _table_fallback(
             lines.append(f"{i}. {label} — {value}{unit_str}")
         return "\n".join(lines)
 
-    # Plain aggregate path: return the first most-relevant claim text only
+    # Plain aggregate path: a single metric returns its claim text; a
+    # multi-metric domain snapshot (funnel/finance/etc. status queries) lists
+    # every claim so the fallback doesn't silently drop the other metrics.
     if claims:
-        # Prefer claim whose text mentions the primary metric, else use first.
-        target = claims[0]
-        if primary_metric:
-            for c in claims:
-                if primary_metric in (c.get("text") or ""):
-                    target = c
-                    break
-        text = _ID_STRIP_RE.sub("", target.get("text", "")).strip()
-        return text or "No validated claims are available."
+        if len(claims) == 1:
+            text = _ID_STRIP_RE.sub("", claims[0].get("text", "")).strip()
+            return text or "No validated claims are available."
+        lines = [_ID_STRIP_RE.sub("", c.get("text", "")).strip() for c in claims]
+        return "\n".join(f"- {line}" for line in lines if line) or "No validated claims are available."
 
     if evidence:
         parts = [f"{row.get('metric_or_fact')}={row.get('value')}" for row in evidence]
