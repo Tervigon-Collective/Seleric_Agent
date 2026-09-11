@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import itertools
 from typing import Any, Literal
 
 ConflictType = Literal[
@@ -130,12 +129,15 @@ def detect_conflicts(state: dict[str, Any], *, registry: Any = None) -> list[dic
                 }
             )
 
-    # --- METRIC_SEMANTIC_CONFLICT: distinct registered metrics whose names
-    # overlap enough that evidence may be conflating them (e.g. metric.cac vs
-    # metric.blended_paid_cac both treated as "CAC"). Ids that the registry
-    # resolves to the *same* metric (e.g. "cac" / "metric.cac", any bare
-    # catalogue name vs its "metric."-prefixed id) are never a conflict —
-    # resolved generically via MetricRegistry, not per-metric string checks.
+    # --- METRIC_SEMANTIC_CONFLICT: evidence conflating a metric with the
+    # mission's actual primary metric (e.g. metric.cac vs metric.blended_paid_cac
+    # both treated as "CAC" when the query is about CAC). Only compared
+    # against the query's primary_metric — comparing every metric in evidence
+    # against every other one is O(n^2) and both generic tokens (amazon, net,
+    # orders, revenue...) and sheer metric-catalogue size make that produce
+    # hundreds of unrelated "conflicts" that never resolve. Ids the registry
+    # resolves to the *same* metric (e.g. "cac" / "metric.cac") are never a
+    # conflict — resolved generically via MetricRegistry, not string checks.
     primary = (state.get("normalized_query") or {}).get("primary_metric")
     metric_ids = {
         str(e.get("metric_or_fact") or e.get("metric_id") or "")
@@ -143,11 +145,11 @@ def detect_conflicts(state: dict[str, Any], *, registry: Any = None) -> list[dic
         if e.get("metric_or_fact") or e.get("metric_id")
     }
     canonical = {m: _canonical_metric_id(m, registry) for m in metric_ids}
-    distinct = set(canonical.values())
-    for a, b in itertools.combinations(sorted(distinct), 2):
-        if not (_name_tokens(a) & _name_tokens(b)):
+    primary_canonical = _canonical_metric_id(primary, registry) if primary else None
+    for other in sorted(set(canonical.values()) - {primary_canonical}):
+        if primary_canonical is None or not (_name_tokens(primary_canonical) & _name_tokens(other)):
             continue
-        family = {m for m, c in canonical.items() if c in (a, b)}
+        family = {m for m, c in canonical.items() if c in (primary_canonical, other)}
         add(
             {
                 "conflict_id": _cid("semantic", *sorted(family)),

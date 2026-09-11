@@ -28,7 +28,7 @@ class ContradictionValidator(Validator):
         by_metric: dict[str, list] = {}
         for ev in rows:
             if ev.metric_id and _numeric(ev.value) is not None:
-                by_metric.setdefault(ev.metric_id, []).append(ev)
+                by_metric.setdefault(ctx.deps.canonical_metric_id(ev.metric_id), []).append(ev)
 
         for metric_id, group in by_metric.items():
             for a, b in combinations(group, 2):
