@@ -363,80 +363,6 @@ metrics:
     timezone: Asia/Kolkata
     domain: customer
 
-  - id: metric.lifetime_net_revenue
-    version: 1
-    owner: customer
-    catalogue_metric: lifetime_net_revenue
-    description: Cumulative net revenue per customer across full order history.
-    formula: sum(lifetime_net_revenue)
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.lifetime_gross_revenue
-    version: 1
-    owner: customer
-    catalogue_metric: lifetime_gross_revenue
-    description: Cumulative gross revenue per customer across full order history.
-    formula: sum(lifetime_gross_revenue)
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.lifetime_orders
-    version: 1
-    owner: customer
-    catalogue_metric: lifetime_orders
-    description: Cumulative order count per customer across full order history.
-    formula: count(lifetime_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.avg_ltv
-    version: 1
-    owner: customer
-    catalogue_metric: avg_ltv
-    aliases: [ltv, lifetime value, average ltv]
-    description: Average customer lifetime value (lifetime net revenue / customers).
-    formula: lifetime_net_revenue / customers
-    depends_on: [lifetime_net_revenue, customers]
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.avg_orders_per_customer
-    version: 1
-    owner: customer
-    catalogue_metric: avg_orders_per_customer
-    description: Average lifetime orders per customer.
-    formula: lifetime_orders / customers
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.avg_days_since_last_order
-    version: 1
-    owner: customer
-    catalogue_metric: avg_days_since_last_order
-    description: Average recency (days) since each customer's last order — rising values signal lapsing customers.
-    formula: avg(days_since_last_order)
-    direction_bad: up
-    unit: days
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
   - id: metric.first_orders
     version: 1
     owner: customer
@@ -445,66 +371,6 @@ metrics:
     formula: count(first_orders)
     direction_bad: down
     unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.repeat_orders
-    version: 1
-    owner: customer
-    catalogue_metric: repeat_orders
-    description: Orders that were not a customer's first purchase.
-    formula: count(repeat_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.repeat_purchase_orders
-    version: 1
-    owner: customer
-    catalogue_metric: repeat_purchase_orders
-    description: Orders in the purchase-sequence fact attributed to repeat purchasers.
-    formula: count(repeat_purchase_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.repeat_purchase_net_revenue
-    version: 1
-    owner: customer
-    catalogue_metric: repeat_purchase_net_revenue
-    description: Net revenue from repeat-purchase orders.
-    formula: sum(repeat_purchase_net_revenue)
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.repeat_order_share
-    version: 1
-    owner: customer
-    catalogue_metric: repeat_order_share
-    description: Share of orders that are repeat purchases (repeat_orders / total orders).
-    formula: repeat_orders / orders
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.avg_days_between_orders
-    version: 1
-    owner: customer
-    catalogue_metric: avg_days_between_orders
-    description: Average gap (days) between consecutive orders for repeat customers — widening gaps signal churn risk.
-    formula: avg(days_between_orders)
-    direction_bad: up
-    unit: days
     grain: day
     timezone: Asia/Kolkata
     domain: customer
@@ -619,48 +485,12 @@ metrics:
     timezone: Asia/Kolkata
     domain: performance
 
-  - id: metric.meta_hook_rate
-    version: 1
-    owner: performance
-    catalogue_metric: meta_hook_rate
-    description: Meta video hook rate — share of viewers retained past the first 3 seconds.
-    formula: meta_hook_rate
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.meta_thruplays
-    version: 1
-    owner: performance
-    catalogue_metric: meta_thruplays
-    description: Meta ThruPlays — 15s (or full-length) video views.
-    formula: sum(meta_thruplays)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
   - id: metric.meta_video_completion_rate
     version: 1
     owner: performance
     catalogue_metric: meta_video_completion_rate
     description: Meta video completion rate.
     formula: meta_video_completion_rate
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.meta_hold_rate_15s
-    version: 1
-    owner: performance
-    catalogue_metric: meta_hold_rate_15s
-    description: Meta video hold rate — share of viewers retained past 15 seconds.
-    formula: meta_hold_rate_15s
     direction_bad: down
     unit: ratio
     grain: day
@@ -741,42 +571,6 @@ metrics:
     timezone: Asia/Kolkata
     domain: attribution
 
-  - id: metric.touch_attributed_orders
-    version: 1
-    owner: attribution
-    catalogue_metric: touch_attributed_orders
-    description: Orders with at least one recorded marketing touchpoint.
-    formula: count(touch_attributed_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.attribution_rate
-    version: 1
-    owner: attribution
-    catalogue_metric: attribution_rate
-    description: Share of orders successfully matched to a marketing touchpoint.
-    formula: touch_attributed_orders / orders
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.avg_attribution_confidence
-    version: 1
-    owner: attribution
-    catalogue_metric: avg_attribution_confidence
-    description: Average confidence score of the last-touch attribution match.
-    formula: avg(attribution_confidence)
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
   - id: metric.attributed_aov
     version: 1
     owner: attribution
@@ -819,41 +613,6 @@ metrics:
     catalogue_metric: meta_attr_gross_revenue
     description: Gross revenue last-touch attributed to Meta.
     formula: sum(meta_attr_gross_revenue)
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.meta_attr_refund_amount
-    version: 1
-    owner: attribution
-    catalogue_metric: meta_attr_refund_amount
-    description: Refund amount on orders attributed to Meta.
-    formula: sum(meta_attr_refund_amount)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.meta_attr_new_customer_orders
-    version: 1
-    owner: attribution
-    catalogue_metric: meta_attr_new_customer_orders
-    description: New-customer orders attributed to Meta.
-    formula: count(meta_attr_new_customer_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.meta_attr_new_customer_revenue
-    version: 1
-    owner: attribution
-    catalogue_metric: meta_attr_new_customer_revenue
-    description: Net revenue from new-customer orders attributed to Meta.
-    formula: sum(meta_attr_new_customer_revenue)
     direction_bad: down
     unit: INR
     grain: day
@@ -1018,33 +777,9 @@ metrics:
     timezone: Asia/Kolkata
     domain: finance
 
-  - id: metric.cost_coverage_pct
-    version: 1
-    owner: finance
-    catalogue_metric: cost_coverage_pct
-    description: Share of total operating + ad cost covered by gross profit.
-    formula: gross_profit / (operating_cost + total_ad_spend)
-    direction_bad: down
-    unit: pct
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
   # ------------------------------------------------------------------
   # Commerce (commerce_orders, commerce_performance)
   # ------------------------------------------------------------------
-  - id: metric.active_orders
-    version: 1
-    owner: commerce
-    catalogue_metric: active_orders
-    description: Orders excluding cancelled/refunded (Shopify).
-    formula: count(active_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-
   - id: metric.new_customer_orders
     version: 1
     owner: commerce
@@ -1143,30 +878,6 @@ metrics:
     timezone: Asia/Kolkata
     domain: product
 
-  - id: metric.product_cogs
-    version: 1
-    owner: product
-    catalogue_metric: product_cogs
-    description: Cost of goods sold per product.
-    formula: sum(product_cogs)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: product
-
-  - id: metric.product_gross_profit
-    version: 1
-    owner: product
-    catalogue_metric: product_gross_profit
-    description: Product net revenue minus product COGS.
-    formula: product_net_revenue - product_cogs
-    depends_on: [product_net_revenue, product_cogs]
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: product
-
   - id: metric.product_gross_margin_pct
     version: 1
     owner: product
@@ -1175,20 +886,6 @@ metrics:
     formula: product_gross_profit / product_net_revenue
     direction_bad: down
     unit: pct
-    grain: day
-    timezone: Asia/Kolkata
-    domain: product
-
-  - id: metric.average_selling_price
-    version: 1
-    owner: product
-    catalogue_metric: average_selling_price
-    aliases: [asp]
-    description: Average selling price per unit.
-    formula: product_net_revenue / units_sold
-    depends_on: [product_net_revenue, units_sold]
-    direction_bad: down
-    unit: INR
     grain: day
     timezone: Asia/Kolkata
     domain: product

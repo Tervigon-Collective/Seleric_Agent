@@ -1156,7 +1156,7 @@ async def run_swarm_v2_mission(
     if full_skeptic:
         from seleric_swarm.agents.skeptic.swarm_bridge import SwarmSkepticSpecialist
 
-        skeptic: Any = SwarmSkepticSpecialist(providers)
+        skeptic: Any = SwarmSkepticSpecialist(providers, runtime=runtime)
     else:
         skeptic = SkepticAgent(providers)
 

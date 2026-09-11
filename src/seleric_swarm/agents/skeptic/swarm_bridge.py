@@ -44,6 +44,7 @@ class SwarmSkepticSpecialist:
         deps: SkepticDeps | None = None,
         policies: SkepticPolicies | None = None,
         ontology: Any = None,
+        runtime: Any = None,
     ) -> None:
         self.providers = providers
         # Wire the registries the causal / metric validators need. Without the
@@ -53,6 +54,7 @@ class SwarmSkepticSpecialist:
             metric_registry=metric_registry_from_yaml(),
             causal_graphs=causal_graphs_from_yaml(),
             ontology=ontology,
+            catalogue=runtime.metrics if runtime is not None else None,
         )
         self._policies = policies or SkepticPolicies.load()
 
