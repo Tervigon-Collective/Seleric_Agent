@@ -43,6 +43,7 @@ from seleric_swarm.agents.skeptic.registries import (
     NullDriftMonitor,
     StatisticalValidatorService,
 )
+from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.services.ontology import OntologyPort
 
 
@@ -60,9 +61,21 @@ class SkepticDeps:
     causal_service: CausalValidationService | None = None
     reasoning: ReasoningModel = field(default_factory=NullReasoningModel)
     ontology: OntologyPort | None = None
+    # The real metric/catalogue registry (bare alias <-> "metric." id <-> live
+    # catalogue id resolution) — distinct from metric_registry above, which is
+    # a flat YAML-only semantics lookup with no alias resolution at all.
+    catalogue: MetricRegistry | None = None
 
     def resolved_causal_service(self) -> CausalValidationService:
         return self.causal_service or BasicCausalValidationService(self.causal_graphs)
+
+    def canonical_metric_id(self, metric_id: str) -> str:
+        """Resolve any spelling of a metric to one id via the bound catalogue."""
+        if self.catalogue is not None:
+            definition = self.catalogue.get(metric_id)
+            if definition is not None:
+                return definition.id
+        return metric_id
 
 
 @dataclass

@@ -34,7 +34,7 @@ class MetricValidator(Validator):
         by_metric: dict[str, list] = {}
         for ev in rows:
             if ev.metric_id:
-                by_metric.setdefault(ev.metric_id, []).append(ev)
+                by_metric.setdefault(ctx.deps.canonical_metric_id(ev.metric_id), []).append(ev)
 
         conflicts: list[dict] = []
         for metric_id, group in by_metric.items():
