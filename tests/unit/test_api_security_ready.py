@@ -74,6 +74,20 @@ def test_readyz_and_health(runtime, monkeypatch):
     assert "mcp" in body["checks"]
 
 
+def test_cors_preflight_allows_localhost_docs_origin():
+    client = TestClient(app, raise_server_exceptions=True)
+    preflight = client.options(
+        "/v1/missions",
+        headers={
+            "Origin": "http://localhost:8000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert preflight.status_code in {200, 204}
+    assert preflight.headers.get("access-control-allow-origin") in {"*", "http://localhost:8000"}
+
+
 def test_check_readiness_helper(runtime):
     payload = check_readiness(runtime)
     assert payload["ready"] is True

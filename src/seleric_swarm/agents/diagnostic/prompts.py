@@ -25,7 +25,7 @@ HYPOTHESIS_SYSTEM = DIAGNOSTIC_SYSTEM_PROMPT + """
 
 TASK: given the outcome metric, the observed anomalies and the candidate
 treatment metrics, list additional plausible hypotheses NOT already covered by
-the deterministic templates. Return each as: statement, mechanism,
+the observation-seeded candidates. Return each as: statement, mechanism,
 treatment_metric, domains.
 """
 
@@ -44,7 +44,7 @@ def hypothesis_user(ctx: DiagnosticContext) -> str:
             f"Degradation started at: {ctx.degradation_started_at}",
             f"Observed metrics: {observed}",
             f"Anomalies: {anomalies}",
-            f"Existing template hypotheses: {[h.statement for h in ctx.hypotheses]}",
+            f"Existing hypotheses: {[h.statement for h in ctx.hypotheses]}",
             f"Semantic neighbors (same entity cluster, not causes): {ctx.scratch.get('semantic_neighbors') or []}",
             f"Max new hypotheses: {max(0, ctx.policies.budget('max_hypotheses') - len(ctx.hypotheses))}",
         ]

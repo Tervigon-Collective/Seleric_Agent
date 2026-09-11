@@ -26,7 +26,16 @@ from seleric_swarm.agents.diagnostic.contracts import (
     DiagnosticResult,
     FindingRole,
 )
-from seleric_swarm.agents.diagnostic.ontology import incident_type_for_treatment
+from seleric_swarm.services.metrics import MetricRegistry
+
+_METRICS: MetricRegistry | None = None
+
+
+def _metrics() -> MetricRegistry:
+    global _METRICS
+    if _METRICS is None:
+        _METRICS = MetricRegistry("config/metric_registry.yaml")
+    return _METRICS
 
 
 def _contradictions_for(h: DiagnosticHypothesis) -> list[DiagnosticContradiction]:
@@ -200,22 +209,30 @@ def _apply_leadership_and_incident_type(ctx: DiagnosticContext, result: Diagnost
     Diagnostic only recommends; the Coordinator's Leadership Manager decides
     whether to honor it (spec §59, §128).
     """
-    viable = [h for h in result.hypotheses if h.status != "rejected"]
-    best = next(iter(result.retained()), None) or (viable[0] if viable else None)
+    best = next(iter(result.retained()), None)
     if best is None or not best.treatment_metric:
         return
 
-    result.incident_type = incident_type_for_treatment(result.outcome_metric, best.treatment_metric)
+    result.incident_type = best.domains[0] if best.domains else None
 
     current_lead = (ctx.request.lead_domain or "").removesuffix("_agent") or None
     mechanism_domain = best.domains[0] if best.domains else None
-    if mechanism_domain and current_lead and mechanism_domain != current_lead:
-        result.recommended_domain_lead = f"{mechanism_domain}_agent"
-        result.leadership_transfer_recommended = True
-        result.leadership_transfer_reason = (
-            f"Retained mechanism '{best.statement}' is owned by {mechanism_domain}, "
-            f"not the current lead {current_lead}."
-        )
+    if not (mechanism_domain and current_lead and mechanism_domain != current_lead):
+        return
+
+    # Stay on the domain that owns the user's asked metric. A funnel co-mover
+    # driving ROAS is a finding, not a reason to abandon the performance question.
+    asked = (ctx.request.primary_metric or ctx.request.outcome_metric or result.outcome_metric or "").strip()
+    asked_owner = (_metrics().owner_agent_for(asked) or "").removesuffix("_agent") if asked else ""
+    if asked_owner and asked_owner == current_lead:
+        return
+
+    result.recommended_domain_lead = f"{mechanism_domain}_agent"
+    result.leadership_transfer_recommended = True
+    result.leadership_transfer_reason = (
+        f"Retained mechanism '{best.statement}' is owned by {mechanism_domain}, "
+        f"not the current lead {current_lead}."
+    )
 
 
 def _hypo_row(h: DiagnosticHypothesis) -> dict[str, Any]:

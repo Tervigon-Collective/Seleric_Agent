@@ -70,7 +70,12 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
             score = 10
         else:
             for alias in metric.aliases:
-                if alias not in q:
+                alias_parts = [p for p in alias.split() if p]
+                short_alias = len(alias_parts) == 1 and len(alias_parts[0]) <= 3
+                if short_alias:
+                    if alias_parts[0] not in q_words:
+                        continue
+                elif alias not in q:
                     continue
                 if metric.id == "metric.net_sales" and wants_gross and not mentions_net:
                     continue
@@ -257,10 +262,6 @@ def classify_lookup_query(query: str, timezone: str, as_of: str | None) -> dict[
             "metric_hints": hints,
             "unsupported_reason": None,
         }
-
-    # Unregistered glossary terms still get a domain so gold/eval can assert lead.
-    if "roas" in lower:
-        return _unsupported("performance_agent", "No registered ROAS metric could be inferred")
 
     return {
         "query_class": "unsupported",

@@ -502,3 +502,22 @@ async def test_observer_refuses_period_total_when_grain_unsupported():
     assert result["error_code"] == "INSUFFICIENT_EVIDENCE"
     assert result["evidence"] == []
 
+
+def test_registry_match_resolves_gs_and_roas_abbreviations():
+    from seleric_swarm.llm.adapters.fake import classify_swarm_query, hints_from_registry
+
+    assert hints_from_registry("Why has gs increased over the last three days?") == [
+        "metric.gross_sales"
+    ]
+    assert hints_from_registry("Why has roas increased over the last three days?") == [
+        "metric.gross_roas"
+    ]
+    gs = classify_swarm_query("Why has gs increased over the last three days?", "Asia/Kolkata", None)
+    assert gs["domain_lead"] == "commerce_agent"
+    assert gs["metric_hints"] == ["metric.gross_sales"]
+    assert "diagnostic" in gs["intents"]
+    roas = classify_swarm_query("Why has roas increased over the last three days?", "Asia/Kolkata", None)
+    assert roas["domain_lead"] == "performance_agent"
+    assert "metric.gross_roas" in roas["metric_hints"]
+    assert "diagnostic" in roas["intents"]
+    assert roas["unsupported_reason"] is None

@@ -7,6 +7,8 @@ A domain either has live Seleric catalogue data or it has none (reported as
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -29,6 +31,13 @@ from seleric_swarm.swarm.providers.template import (
     TemplateOptimizer,
     TemplateStatsEngine,
 )
+
+log = logging.getLogger(__name__)
+
+# ``metrics_query`` is one HTTP call per (metric, day) for ``fetch_series``.
+# Keep this modest so we do not stampede the catalogue; 8 is enough to turn a
+# 33-day × 5-metric sequential wait (~minutes) into a few seconds.
+_MCP_QUERY_CONCURRENCY = 8
 
 
 @dataclass
@@ -289,6 +298,7 @@ class HybridMcpDataProvider:
         directions: dict[str, str] = {}
         source_label = "seleric.metrics_query"
         missing: list[str] = []
+        resolved: list[tuple[str, MetricDefinition, str]] = []
         for metric_id in want:
             definition = self._metrics.get(metric_id)
             if definition is None:
@@ -309,6 +319,13 @@ class HybridMcpDataProvider:
                 )
                 missing.append(metric_id)
                 continue
+            resolved.append((metric_id, definition, measure))
+
+        sem = asyncio.Semaphore(_MCP_QUERY_CONCURRENCY)
+
+        async def _query_metric(
+            metric_id: str, definition: MetricDefinition, measure: str
+        ) -> tuple[str, MetricDefinition, str, dict[str, Any] | None, str | None]:
             args: dict[str, Any] = {
                 "measures": [measure],
                 "time_range": {"start": start, "end": end},
@@ -316,14 +333,21 @@ class HybridMcpDataProvider:
             }
             if "seleric_module" in definition.raw:
                 args["module"] = definition.seleric_module
-            self._stats.mcp_attempts += 1
-            try:
-                result = await self._mcp.call(
-                    agent_id=self._agent_id, capability="seleric.metrics_query", arguments=args
-                )
-            except Exception as exc:
+            async with sem:
+                self._stats.mcp_attempts += 1
+                try:
+                    result = await self._mcp.call(
+                        agent_id=self._agent_id, capability="seleric.metrics_query", arguments=args
+                    )
+                except Exception as exc:
+                    return metric_id, definition, measure, None, f"{metric_id}: {type(exc).__name__}"
+                return metric_id, definition, measure, result, None
+
+        gathered = await asyncio.gather(*[_query_metric(*item) for item in resolved]) if resolved else []
+        for metric_id, definition, measure, result, err in gathered:
+            if result is None:
                 self._stats.mcp_fallbacks += 1
-                self._stats.fallback_reasons.append(f"{metric_id}: {type(exc).__name__}")
+                self._stats.fallback_reasons.append(err or f"{metric_id}: query failed")
                 missing.append(metric_id)
                 continue
             rows = result.get("rows") or []
@@ -399,11 +423,12 @@ class HybridMcpDataProvider:
         exactly the fabrication the project's evidence rules exist to prevent.
         Below this floor, callers should get ``None`` and fall back.
 
-        # ponytail: one HTTP call per (metric, day) — fine for the ~7-30 day
-        # windows diagnostic missions actually use. If missions start asking
-        # for multi-month windows, switch to seleric.metrics_drilldown (a
-        # registered-but-unused MCP capability that can return a series in
-        # one call) instead of raising max_days further.
+        One HTTP call per (metric, day). Those calls run concurrently
+        (``_MCP_QUERY_CONCURRENCY``) so a 33-day diagnostic window does not
+        serialize into minutes of Swagger ``LOADING``. If missions start
+        asking for multi-month windows, switch to ``seleric.metrics_drilldown``
+        (a registered-but-unused MCP capability that can return a series in
+        one call) instead of raising max_days further.
         """
         import pandas as pd
         from datetime import date, timedelta
@@ -423,7 +448,7 @@ class HybridMcpDataProvider:
         if n_days < min_rows or n_days > max_days:
             return None
 
-        columns: dict[str, dict[str, float]] = {}
+        jobs: list[tuple[str, str, dict[str, Any], str]] = []
         for metric_id in metric_ids:
             definition = self._metrics.get(metric_id)
             if definition is None:
@@ -434,28 +459,59 @@ class HybridMcpDataProvider:
             args: dict[str, Any] = {}
             if "seleric_module" in definition.raw:
                 args["module"] = definition.seleric_module
-            day_values: dict[str, float] = {}
             day = start
             while day <= end:
-                day_s = day.isoformat()
+                jobs.append((metric_id, measure, args, day.isoformat()))
+                day = day + timedelta(days=1)
+
+        log.info(
+            "fetch_series: %d metrics × %d days = %d MCP calls (concurrency=%d)",
+            len({job[0] for job in jobs}),
+            n_days,
+            len(jobs),
+            _MCP_QUERY_CONCURRENCY,
+        )
+
+        sem = asyncio.Semaphore(_MCP_QUERY_CONCURRENCY)
+
+        async def _query_day(
+            metric_id: str, measure: str, args: dict[str, Any], day_s: str
+        ) -> tuple[str, str, float | None]:
+            async with sem:
                 self._stats.mcp_attempts += 1
                 try:
                     result = await self._mcp.call(
                         agent_id=self._agent_id,
                         capability="seleric.metrics_query",
-                        arguments={**args, "measures": [measure], "time_range": {"start": day_s, "end": day_s}},
+                        arguments={
+                            **args,
+                            "measures": [measure],
+                            "time_range": {"start": day_s, "end": day_s},
+                        },
                     )
                 except Exception:
-                    day = day + timedelta(days=1)
-                    continue
+                    return metric_id, day_s, None
                 rows = result.get("rows") or []
                 if not result.get("error") and rows and rows[0].get(measure) is not None:
-                    day_values[day_s] = float(rows[0][measure])
-                day = day + timedelta(days=1)
-            if len(day_values) >= min_rows:
-                columns[metric_id] = day_values
+                    return metric_id, day_s, float(rows[0][measure])
+                return metric_id, day_s, None
 
-        if len(columns) < 2:
+        gathered = await asyncio.gather(*[_query_day(*job) for job in jobs]) if jobs else []
+        day_values_by_metric: dict[str, dict[str, float]] = {}
+        for metric_id, day_s, value in gathered:
+            if value is None:
+                continue
+            day_values_by_metric.setdefault(metric_id, {})[day_s] = value
+
+        columns: dict[str, dict[str, float]] = {
+            metric_id: day_values
+            for metric_id, day_values in day_values_by_metric.items()
+            if len(day_values) >= min_rows
+        }
+        # One column is enough here: DoWhy merges per-owner frames in
+        # ``_fetch_observations``. Requiring two columns per provider dropped
+        # outcome-only owners (e.g. performance gross ROAS) as None.
+        if not columns:
             return None
         frame = pd.DataFrame(columns)
         frame = frame.dropna(how="any")

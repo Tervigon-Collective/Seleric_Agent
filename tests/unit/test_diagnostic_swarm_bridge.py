@@ -21,8 +21,12 @@ import pytest
 
 from seleric_swarm.agents.diagnostic.swarm_bridge import (
     _CAUSAL_EXTRA_HISTORY_DAYS,
+    _MAX_CAUSAL_TREATMENTS,
     _fetch_observations,
+    _providers_for_metrics,
+    _ranked_treatment_ids,
 )
+from seleric_swarm.swarm.artifacts import Anomaly
 from seleric_swarm.swarm.blackboard import Blackboard
 
 
@@ -41,11 +45,16 @@ class _FakeProviders:
 
     async def fetch_series(self, *, metric_ids: list[str], time_range: dict[str, Any]):
         self._captured = dict(time_range)
+        self._captured_ids = list(metric_ids)
         return self._return
 
     @property
     def captured_time_range(self) -> dict[str, Any]:
         return self._captured
+
+    @property
+    def captured_ids(self) -> list[str]:
+        return getattr(self, "_captured_ids", [])
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +96,117 @@ async def test_fetch_observations_preserves_end_date():
     )
 
     assert providers.captured_time_range["end"] == mission_end
+
+
+@pytest.mark.asyncio
+async def test_fetch_observations_includes_observed_treatments_not_yaml_seeds():
+    """DoWhy columns come from observed co-movers, not a canned YAML mechanism list."""
+    providers = _FakeProviders(return_frame=None)
+
+    await _fetch_observations(
+        providers,
+        "metric.purchase_cvr",
+        {"start": "2026-09-01", "end": "2026-09-07"},
+        extra_metrics={"metric.mobile_lcp_seconds", "event.frontend_deployment"},
+    )
+
+    ids = set(providers.captured_ids)
+    assert "metric.purchase_cvr" in ids
+    assert "metric.mobile_lcp_seconds" in ids
+    assert "event.frontend_deployment" not in ids
+    assert "campaign" not in ids
+    assert "device" not in ids
+
+
+@pytest.mark.asyncio
+async def test_fetch_observations_caps_treatments_to_loudest_three():
+    """A full peer-probe catalogue must not become one MCP series per KPI."""
+    providers = _FakeProviders(return_frame=None)
+    extras = [f"metric.peer_{i}" for i in range(10)]
+
+    await _fetch_observations(
+        providers,
+        "metric.purchase_cvr",
+        {"start": "2026-09-01", "end": "2026-09-07"},
+        extra_metrics=extras,
+    )
+
+    ids = providers.captured_ids
+    assert "metric.purchase_cvr" in ids
+    assert "metric.sessions" in ids
+    assert ids.count("metric.peer_0") + ids.count("metric.peer_1") + ids.count("metric.peer_2") == 3
+    assert "metric.peer_3" not in ids
+    assert len(ids) <= 2 + _MAX_CAUSAL_TREATMENTS
+
+
+def test_ranked_treatment_ids_keeps_loudest_movers():
+    blackboard = Blackboard("MS-rank")
+    blackboard.post(
+        Anomaly.new(
+            mission_id="MS-rank",
+            created_by="anomaly_agent",
+            metric_id="metric.checkout_rate",
+            deviation_pct=40.0,
+        )
+    )
+    blackboard.post(
+        Anomaly.new(
+            mission_id="MS-rank",
+            created_by="anomaly_agent",
+            metric_id="metric.ctr",
+            deviation_pct=5.0,
+        )
+    )
+    blackboard.post(
+        Anomaly.new(
+            mission_id="MS-rank",
+            created_by="anomaly_agent",
+            metric_id="metric.cpc",
+            deviation_pct=12.0,
+        )
+    )
+    blackboard.post(
+        Anomaly.new(
+            mission_id="MS-rank",
+            created_by="anomaly_agent",
+            metric_id="metric.spend",
+            deviation_pct=8.0,
+        )
+    )
+    ranked = _ranked_treatment_ids(blackboard, outcome="metric.gross_roas")
+    assert ranked == ["metric.checkout_rate", "metric.cpc", "metric.spend"]
+
+
+def test_providers_for_metrics_routes_each_id_to_owning_domain():
+    class _Def:
+        def __init__(self, domain: str) -> None:
+            self.domain = domain
+
+    class _Registry:
+        def __init__(self, mapping: dict[str, str]) -> None:
+            self._mapping = mapping
+
+        def get(self, mid: str) -> Any:
+            domain = self._mapping.get(mid)
+            return _Def(domain) if domain else None
+
+    class _Provider:
+        def __init__(self, registry: _Registry) -> None:
+            self._metrics = registry
+
+        async def fetch_series(self, **kwargs: Any) -> None:
+            return None
+
+    registry = _Registry({"metric.gross_roas": "performance", "metric.sessions": "funnel"})
+    performance = _Provider(registry)
+    funnel = _Provider(registry)
+    bundle = type("Bundle", (), {"data": {"performance": performance, "funnel": funnel}})()
+
+    grouped = {id(provider): ids for provider, ids in _providers_for_metrics(
+        bundle, {"metric.gross_roas", "metric.sessions"}
+    )}
+    assert grouped[id(performance)] == ["metric.gross_roas"]
+    assert grouped[id(funnel)] == ["metric.sessions"]
 
 
 @pytest.mark.asyncio

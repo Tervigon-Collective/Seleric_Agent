@@ -28,4 +28,21 @@ class ObserverAgent(SpecialistAgent):
         if domain is None:
             blackboard.record_event("observe_no_domain", lead=lead)
             return []
-        return await domain.observe(blackboard, time_range=mission.time_range)
+        return await domain.observe(
+            blackboard,
+            time_range=mission.time_range,
+            extra_metrics=_asked_metrics(mission),
+        )
+
+
+def _asked_metrics(mission: SwarmMission) -> list[str]:
+    ctx = mission.context or {}
+    out: list[str] = []
+    for key in ("primary_metric", "resolved_metric"):
+        value = ctx.get(key)
+        if value and str(value) not in out:
+            out.append(str(value))
+    for hint in ctx.get("metric_hints") or []:
+        if hint and str(hint) not in out:
+            out.append(str(hint))
+    return out

@@ -67,7 +67,7 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         path = request.url.path
-        if _is_exempt(path):
+        if _is_exempt(path) or request.method == "OPTIONS":
             return await call_next(request)
 
         # Prefer live settings so .env loaded after import still applies.

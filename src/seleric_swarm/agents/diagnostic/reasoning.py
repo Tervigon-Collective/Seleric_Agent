@@ -2,8 +2,8 @@
 
 The reasoning model is used ONLY for semantic hypothesis generation and mechanism
 phrasing. It never decides retain/reject, never estimates an effect, never emits
-a root cause. Deterministic template hypotheses are always present; the LLM only
-adds constrained, ontology-bounded alternatives.
+a root cause. Observation-seeded hypotheses are always present; the LLM only
+adds constrained, evidence-bounded alternatives.
 """
 
 from __future__ import annotations

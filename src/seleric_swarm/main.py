@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # event families the control plane emits (without the trailing "_")
@@ -55,7 +56,14 @@ async def lifespan(_app: FastAPI):
                     await maybe
 
 
-app = FastAPI(title="Seleric Intelligence Swarm", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="Seleric Intelligence Swarm",
+    version="0.1.0",
+    lifespan=lifespan,
+    # Relative server URL so Swagger Try-it-out posts to whatever host served
+    # /docs (localhost vs 127.0.0.1 vs a preview proxy), not a hardcoded origin.
+    servers=[{"url": "/", "description": "this host"}],
+)
 
 # Read-only spatial AI-Office UI gateway (SSE snapshot + event stream).
 try:
@@ -95,7 +103,8 @@ try:
 except Exception:
     _settings_boot = None
 
-# Starlette applies middleware in reverse add order: RequestId outermost.
+# Starlette applies middleware in reverse add order: CORS outermost so
+# Swagger / Cursor-preview preflights never hit API-key or rate-limit 401s.
 app.add_middleware(
     ApiSecurityMiddleware,
     api_key=getattr(_settings_boot, "api_key", "") or "",
@@ -103,6 +112,15 @@ app.add_middleware(
     rate_limit_enabled=bool(getattr(_settings_boot, "rate_limit_enabled", True)),
 )
 app.add_middleware(RequestIdMiddleware)
+_local_cors = _settings_boot is None or _settings_boot.is_dev_surface()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if _local_cors else [],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?" if _local_cors else None,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 _KNOWN_SCENARIO_IDS = {"cac_regression"}

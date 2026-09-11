@@ -18,7 +18,7 @@ metrics:
     version: 1
     owner: commerce
     catalogue_metric: gross_sales
-    aliases: [gross sale, gross sales]
+    aliases: [gs, gross sale, gross sales]
     description: Gross Sales (Shopify-only, ex-GST) before discounts.
     formula: sum(gross_sales)
     direction_bad: down
@@ -66,6 +66,47 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: performance
+
+  - id: metric.gross_roas
+    version: 1
+    owner: performance
+    catalogue_metric: gross_roas
+    # Blended ROAS lives on canonical_pnl with spend — unscoped, same as CAC.
+    seleric_module: null
+    aliases: [roas, gross roas, return on ad spend, return on adspend]
+    description: Gross return on ad spend (gross sales or attributed revenue per unit of paid media spend).
+    formula: gross_sales / total_ad_spend
+    depends_on: [gross_sales, total_ad_spend]
+    direction_bad: down
+    frontier: false
+    probe: false
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+    validation:
+      - denominator_non_negative
+      - spend_non_negative
+
+  - id: metric.net_roas
+    version: 1
+    owner: performance
+    catalogue_metric: net_roas
+    seleric_module: null
+    aliases: [net roas]
+    description: Net return on ad spend (net sales per unit of paid media spend).
+    formula: net_sales / total_ad_spend
+    depends_on: [net_sales, total_ad_spend]
+    direction_bad: down
+    frontier: false
+    probe: false
+    unit: ratio
+    grain: day
+    timezone: Asia/Kolkata
+    domain: performance
+    validation:
+      - denominator_non_negative
+      - spend_non_negative
 
   - id: metric.cpm
     version: 1
@@ -213,38 +254,7 @@ metrics:
     timezone: Asia/Kolkata
     domain: funnel
 
-  - id: metric.mobile_lcp_seconds
-    version: 1
-    owner: technical
-    catalogue_metric: mobile_lcp_seconds
-    description: Mobile Largest Contentful Paint (seconds).
-    formula: avg(lcp_seconds)
-    grain: day
-    timezone: Asia/Kolkata
-    domain: technical
-    unit: s
-
-  - id: metric.js_error_rate
-    version: 1
-    owner: technical
-    catalogue_metric: js_error_rate
-    description: JavaScript error rate on storefront sessions.
-    formula: errored_sessions / sessions
-    grain: day
-    timezone: Asia/Kolkata
-    domain: technical
-    unit: pct
-
-  - id: metric.api_error_rate
-    version: 1
-    owner: technical
-    catalogue_metric: api_error_rate
-    description: API error rate for checkout/commerce backends.
-    formula: errored_requests / requests
-    grain: day
-    timezone: Asia/Kolkata
-    domain: technical
-    unit: pct
+  # APM / technical metrics are omitted until they exist in the live catalogue.
 
   - id: metric.return_rate
     version: 2

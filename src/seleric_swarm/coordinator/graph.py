@@ -482,7 +482,14 @@ def _make_refine(ctx: SwarmV2Context):
         lead_domain = lead.removesuffix("_agent")
         topo = ctx.policies.domain_topology.get(lead_domain)
         neighbors = [d for vs in topo.values() for d in vs] if topo else None
-        proposal = ctx.domains[lead].evaluate_handoff(ctx.blackboard, topology_neighbors=neighbors)
+        primary_metric = str(
+            (ctx.mission.context or {}).get("primary_metric")
+            or (ctx.mission.context or {}).get("resolved_metric")
+            or ""
+        ) or None
+        proposal = ctx.domains[lead].evaluate_handoff(
+            ctx.blackboard, topology_neighbors=neighbors, primary_metric=primary_metric
+        )
         if proposal is not None:
             decision = ctx.leadership.decide_transfer(
                 ctx.blackboard.leadership_state(),

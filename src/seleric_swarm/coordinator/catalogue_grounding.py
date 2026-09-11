@@ -50,44 +50,64 @@ _GRAIN_LANGUAGE_RE = re.compile(
 )
 
 
+def _alias_hits(query_tokens: set[str], runtime: SwarmRuntime) -> list[tuple[int, str]]:
+    """Glossary synonyms from the metric registry — gs→gross_sales, roas→gross_roas."""
+    scored: list[tuple[int, str]] = []
+    for metric in runtime.metrics.all():
+        for alias in metric.aliases:
+            parts = [p for p in re.findall(r"[a-z0-9]+", alias) if p not in _STOPWORDS]
+            if not parts:
+                continue
+            if set(parts) <= query_tokens:
+                scored.append((len(parts) + 10, metric.id))
+                break
+    return scored
+
+
 async def hints_from_catalogue(query: str, *, runtime: SwarmRuntime, agent_id: str = "coordinator_agent") -> list[str]:
     """Resolve query language to registry metric ids via catalogue_search_metrics."""
-    if "seleric.catalogue_search_metrics" not in runtime.mcp.capabilities:
-        return []
-    try:
-        result = await runtime.mcp.call(
-            agent_id=agent_id,
-            capability="seleric.catalogue_search_metrics",
-            arguments={"query": query},
-        )
-    except Exception:
-        return []
-    out: list[str] = []
-    scored: list[tuple[int, str]] = []
     q_tokens = {tok for tok in re.findall(r"[a-z0-9]+", (query or "").lower()) if tok not in _STOPWORDS}
-    for match in result.get("matches") or []:
-        how = str(match.get("matched_on") or "")
-        if how.startswith("description"):
-            continue
-        registry_id = runtime.metrics.id_for_catalogue(match.get("id"))
-        if not registry_id:
-            continue
-        hay = f"{match.get('id') or ''} {match.get('display_name') or ''}".lower().replace("_", " ")
-        hay_tokens = set(re.findall(r"[a-z0-9]+", hay))
-        overlap_tokens = hay_tokens & q_tokens
-        overlap = len(overlap_tokens)
-        cid = str(match.get("id") or "")
-        if overlap >= _MIN_MULTI_TOKEN_OVERLAP:
-            scored.append((overlap, registry_id))
-        elif overlap == 1:
-            tok = next(iter(overlap_tokens))
-            if tok == cid or cid.split("_") == [tok]:
-                scored.append((overlap, registry_id))
+    alias_scored = _alias_hits(q_tokens, runtime)
+
+    catalogue_scored: list[tuple[int, str]] = []
+    if "seleric.catalogue_search_metrics" in runtime.mcp.capabilities:
+        try:
+            result = await runtime.mcp.call(
+                agent_id=agent_id,
+                capability="seleric.catalogue_search_metrics",
+                arguments={"query": query},
+            )
+        except Exception:
+            result = {}
+        for match in result.get("matches") or []:
+            how = str(match.get("matched_on") or "")
+            if how.startswith("description"):
+                continue
+            registry_id = runtime.metrics.id_for_catalogue(match.get("id"))
+            if not registry_id:
+                continue
+            hay = f"{match.get('id') or ''} {match.get('display_name') or ''}".lower().replace("_", " ")
+            hay_tokens = set(re.findall(r"[a-z0-9]+", hay))
+            overlap_tokens = hay_tokens & q_tokens
+            overlap = len(overlap_tokens)
+            cid = str(match.get("id") or "")
+            cid_parts = [p for p in cid.split("_") if p]
+            if overlap >= _MIN_MULTI_TOKEN_OVERLAP:
+                catalogue_scored.append((overlap, registry_id))
+            elif overlap == 1:
+                tok = next(iter(overlap_tokens))
+                # "roas" must match gross_roas / net_roas, not only a metric whose
+                # entire id is the single token "roas".
+                if tok == cid or cid_parts == [tok] or tok in cid_parts:
+                    catalogue_scored.append((overlap, registry_id))
+
+    scored = alias_scored + catalogue_scored
     if not scored:
         # Token-overlap search misses single strong terms whose id is a compound
         # (e.g. "roas" vs "net_roas_all_channels" — overlap of 1, not the full id).
         # Fall back to the glossary-backed resolver for exactly that case.
         return await _resolve_metric_term(query, runtime=runtime, agent_id=agent_id)
+    out: list[str] = []
     best = max(item[0] for item in scored)
     for overlap, registry_id in scored:
         if overlap == best and registry_id not in out:

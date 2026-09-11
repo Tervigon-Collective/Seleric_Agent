@@ -104,3 +104,28 @@ async def test_normalize_query_without_runtime_fails_closed(runtime):
     assert nq.intents == []
     assert nq.primary_metric is None
     assert nq.unsupported_reason == UNSUPPORTED_NO_LLM
+
+
+@pytest.mark.asyncio
+async def test_classify_query_via_llm_resolves_gs_and_roas_abbreviations(runtime):
+    gs = await classify_query_via_llm(
+        "Why has gs increased over the last three days?",
+        runtime=runtime,
+        timezone="Asia/Kolkata",
+        as_of="2026-09-03",
+    )
+    assert gs is not None
+    assert "diagnostic" in gs.intents
+    assert gs.primary_metric == "metric.gross_sales"
+    assert gs.unsupported_reason is None
+
+    roas = await classify_query_via_llm(
+        "Why has roas increased over the last three days?",
+        runtime=runtime,
+        timezone="Asia/Kolkata",
+        as_of="2026-09-03",
+    )
+    assert roas is not None
+    assert "diagnostic" in roas.intents
+    assert roas.primary_metric == "metric.gross_roas"
+    assert roas.unresolved is False

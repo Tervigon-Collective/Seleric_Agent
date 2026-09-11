@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from seleric_swarm.agents.diagnostic.context import DiagnosticContext, ScopedAnomaly
-from seleric_swarm.agents.diagnostic.ontology import known_outcomes
+from seleric_swarm.services.metrics import MetricRegistry
 
 # When leadership has moved to a downstream domain, diagnose that domain's
 # frontier metric rather than the top-line symptom that opened the mission.
@@ -87,9 +87,22 @@ def _scope(a: dict[str, Any]) -> ScopedAnomaly:
 
 
 def _resolve_outcome(
-    hint: str, anomalies: list[ScopedAnomaly], *, lead_domain: str | None = None
+    hint: str,
+    anomalies: list[ScopedAnomaly],
+    *,
+    lead_domain: str | None = None,
+    metrics: MetricRegistry | None = None,
 ) -> str:
     metric_ids = {a.metric_id for a in anomalies}
+
+    # Keep the asked metric when the current lead owns it. Otherwise a sibling
+    # KPI on the same domain (gross_sales vs net_sales) or a louder peer
+    # (purchase_cvr) steals the diagnosis.
+    if hint and lead_domain:
+        registry = metrics or MetricRegistry("config/metric_registry.yaml")
+        owner = (registry.owner_agent_for(hint) or "").removesuffix("_agent")
+        if owner == lead_domain:
+            return hint
 
     # If leadership has moved to a downstream domain, diagnose that domain's
     # frontier metric (where the causal change lives), not the top-line symptom.
@@ -99,8 +112,10 @@ def _resolve_outcome(
 
     if hint and hint in metric_ids:
         return hint
-    if hint and hint in known_outcomes():
-        return hint
+    if hint:
+        registry = metrics or MetricRegistry("config/metric_registry.yaml")
+        if registry.get(hint) is not None:
+            return hint
     if anomalies:
         return max(anomalies, key=lambda a: abs(a.deviation_pct or 0)).metric_id
     return hint

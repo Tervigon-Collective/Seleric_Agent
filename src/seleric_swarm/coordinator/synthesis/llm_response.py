@@ -87,9 +87,7 @@ async def synthesize_swarm_response(
         return fallback()
 
     claims = select_allowed_claims(list(managed_claims or []))
-    anomalies = sorted(
-        blackboard.by_type("anomaly"), key=lambda x: abs(x.get("deviation_pct") or 0), reverse=True
-    )[:8]
+    anomalies = _anomalies_for_answer(blackboard, mission)
     predictions = blackboard.by_type("prediction")
     prediction = predictions[0] if predictions else None
     strategies = blackboard.by_type("strategy")
@@ -145,3 +143,41 @@ async def synthesize_swarm_response(
     if any(not _is_rounding_of_allowed(token, extra_allowed) for token in leaked):
         return fallback()
     return prose
+
+
+def _asked_metric_id(mission: SwarmMission) -> str:
+    ctx = mission.context or {}
+    return str(ctx.get("primary_metric") or ctx.get("resolved_metric") or "")
+
+
+def _anomalies_for_answer(blackboard: Blackboard, mission: SwarmMission) -> list[dict[str, Any]]:
+    """Top movers, with the asked metric pinned even when quieter than peers.
+
+    Without this, a ROAS question can be answered from louder checkout/revenue
+    anomalies while the payload never mentions ``metric.gross_roas``.
+    """
+    all_anoms = list(blackboard.by_type("anomaly"))
+    primary = _asked_metric_id(mission)
+    ranked = sorted(all_anoms, key=lambda x: abs(x.get("deviation_pct") or 0), reverse=True)
+    pinned = [a for a in all_anoms if primary and a.get("metric_id") == primary]
+    rest = [a for a in ranked if not primary or a.get("metric_id") != primary][:8]
+    out: list[dict[str, Any]] = list(pinned) + rest
+    if primary and not pinned:
+        evidence = [
+            e
+            for e in blackboard.by_type("evidence")
+            if e.get("metric_id") == primary or e.get("metric_or_fact") == primary
+        ]
+        if evidence:
+            row = evidence[0]
+            out.insert(
+                0,
+                {
+                    "metric_id": primary,
+                    "observed": row.get("value"),
+                    "deviation_pct": row.get("change_pct"),
+                    "direction": "up" if (row.get("change_pct") or 0) > 0 else "down",
+                    "from_evidence": True,
+                },
+            )
+    return out

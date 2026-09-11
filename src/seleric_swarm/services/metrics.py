@@ -138,7 +138,10 @@ class MetricRegistry:
         lines = []
         for metric in self.yaml_all():
             cat = metric.catalogue_metric or "(unresolved — discovered via live catalogue)"
-            lines.append(f"- {metric.id} (domain={metric.domain}, catalogue={cat}): {metric.description}")
+            alias_bit = f", aliases={', '.join(metric.aliases)}" if metric.aliases else ""
+            lines.append(
+                f"- {metric.id} (domain={metric.domain}, catalogue={cat}{alias_bit}): {metric.description}"
+            )
         return "\n".join(lines)
 
     def id_for_catalogue(self, catalogue_id: str | None) -> str | None:

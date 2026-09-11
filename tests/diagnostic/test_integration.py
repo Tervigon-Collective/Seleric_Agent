@@ -19,7 +19,8 @@ from seleric_swarm.agents.skeptic.registries import (
     InMemoryEvidenceRepository,
     causal_graphs_from_yaml,
 )
-from tests.diagnostic.conftest import MISSION, anomaly, latency_bundle
+from tests.diagnostic.conftest import MISSION
+from tests.diagnostic.test_diagnostic_agent import _OUTCOME, _TREATMENT, _cvr_anoms, _cvr_evidence, _retain_truth
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
 
@@ -28,15 +29,12 @@ pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
 # Diagnostic output feeds straight into the Skeptic and PASSES
 # --------------------------------------------------------------------------- #
 async def test_diagnostic_claim_passes_skeptic(make_agent):
-    diag = make_agent(
-        latency_bundle(),
-        [anomaly("AN-cvr", "metric.purchase_cvr", -24.0, start_time="2026-09-01T12:05:00+05:30")],
-    )
+    diag = make_agent(_cvr_evidence(), _cvr_anoms(), causal_truth=_retain_truth())
     result = await diag.diagnose(
         DiagnosticRequest(
             mission_id=MISSION,
             question="Why did purchase CVR drop?",
-            outcome_metric="metric.purchase_cvr",
+            outcome_metric=_OUTCOME,
             degradation_started_at="2026-09-01T12:05:00+05:30",
             context={"trust_metadata_causal": True},
         )
@@ -46,7 +44,7 @@ async def test_diagnostic_claim_passes_skeptic(make_agent):
 
     # hand the Diagnostic's artifacts to the Skeptic verbatim
     ev_repo = InMemoryEvidenceRepository(
-        [{**e, "evidence_id": e.get("evidence_id") or e.get("artifact_id")} for e in latency_bundle()]
+        [{**e, "evidence_id": e.get("evidence_id") or e.get("artifact_id")} for e in _cvr_evidence()]
     )
     art_repo = InMemoryArtifactRepository(
         [
@@ -73,21 +71,21 @@ async def test_diagnostic_claim_passes_skeptic(make_agent):
 # --------------------------------------------------------------------------- #
 async def test_a2a_adapter(make_agent):
     adapter = DiagnosticA2AAdapter(
-        make_agent(latency_bundle(), [anomaly("AN-cvr", "metric.purchase_cvr", -24.0, start_time="2026-09-01T12:05:00+05:30")])
+        make_agent(_cvr_evidence(), _cvr_anoms(), causal_truth=_retain_truth())
     )
     out = await adapter.handle(
         {
             "mission_id": MISSION,
             "intent": "causal_diagnosis",
             "question": "Why did purchase CVR drop?",
-            "outcome_metric": "metric.purchase_cvr",
+            "outcome_metric": _OUTCOME,
             "degradation_started_at": "2026-09-01T12:05:00+05:30",
             "context": {"trust_metadata_causal": True},
         }
     )
     assert out["ok"] is True
     assert out["produced"] == "diagnostic_artifact"
-    assert out["causal_artifact"]["treatment"] == "metric.mobile_lcp_seconds"
+    assert out["causal_artifact"]["treatment"] == _TREATMENT
     assert out["claims"]
 
 
@@ -101,12 +99,12 @@ async def test_dowhy_estimation_service_fits_observations():
     confounder = rng.normal(size=n)
     latency = 0.7 * confounder + rng.normal(size=n)
     cvr = -0.55 * latency + 0.4 * confounder + rng.normal(scale=0.3, size=n)
-    df = pd.DataFrame({"metric.mobile_lcp_seconds": latency, "metric.purchase_cvr": cvr, "metric.sessions": confounder})
+    df = pd.DataFrame({"metric.spend": latency, "metric.purchase_cvr": cvr, "metric.sessions": confounder})
 
     svc = DoWhyCausalEstimationService()
     art = await svc.estimate(
         CausalEstimationQuery(
-            treatment="metric.mobile_lcp_seconds",
+            treatment="metric.spend",
             outcome="metric.purchase_cvr",
             common_causes=["metric.sessions"],
             graph_id="causal.funnel_purchase.v1",

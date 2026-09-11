@@ -25,7 +25,9 @@ class DomainWiring:
 
     agent_id: str
     domain: str
-    # Empty frontier => terminal domain (diagnoses; does not hand off on quiet frontier).
+    # Empty frontier => outcome-owner domain: diagnose in place when the asked
+    # metric is ours. Terminal domains never hand off; others still walk when
+    # the asked metric is foreign and none of our metrics moved.
     terminal: bool = False
     probe_dimensions: tuple[dict[str, str], ...] = ({},)
     ontology: tuple[str, ...] = ()

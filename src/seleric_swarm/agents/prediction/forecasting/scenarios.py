@@ -14,8 +14,9 @@ from __future__ import annotations
 from seleric_swarm.agents.prediction.context import PredictionContext
 from seleric_swarm.agents.prediction.contracts import ForecastRun, ScenarioProjection
 
-# metrics where "up" is the bad direction
-_BAD_IS_UP = {"metric.cac", "metric.return_rate", "metric.cpm", "metric.cpc", "metric.js_error_rate", "metric.mobile_lcp_seconds"}
+# Cost KPIs where "up" is adverse. Do not add catalogue IDs that are not in
+# config/metric_registry.yaml (no live APM measures yet).
+_BAD_IS_UP = {"metric.cac", "metric.return_rate", "metric.cpm", "metric.cpc"}
 
 
 def build_scenarios(ctx: PredictionContext, run: ForecastRun) -> list[ScenarioProjection]:

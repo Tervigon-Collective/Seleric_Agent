@@ -1,9 +1,14 @@
 """Hypothesis generation (constrained).
 
-Deterministic template hypotheses from the ontology are ALWAYS produced. The
-reasoning model may add extra candidates, but only ones whose treatment metric is
-already present in evidence or in the causal graph for the outcome -- it cannot
-invent free-form causes. Total is capped by ``budgets.max_hypotheses``.
+Seeds, in order:
+  1. Observed co-moving metrics (anomalies / evidence). Any registered
+     outcome is diagnosable from what actually moved — no per-metric YAML
+     story list.
+  2. Caller-declared alternatives.
+  3. Optional LLM enrichment, bounded to metrics already in evidence or the
+     causal graph.
+
+Total is capped by ``budgets.max_hypotheses``.
 """
 
 from __future__ import annotations
@@ -13,9 +18,11 @@ from pydantic import BaseModel
 
 from seleric_swarm.agents.diagnostic.context import DiagnosticContext
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticHypothesis
-from seleric_swarm.agents.diagnostic.ontology import graph_id_for_outcome, mechanisms_for
+from seleric_swarm.agents.diagnostic.ontology import graph_id_for_outcome
+from seleric_swarm.services.metrics import MetricRegistry
 
 _log = structlog.get_logger("seleric_swarm.agents.diagnostic")
+_METRICS: MetricRegistry | None = None
 
 
 class _LLMHypo(BaseModel):
@@ -39,8 +46,8 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
     out: list[DiagnosticHypothesis] = []
 
     # 0. semantic neighbors from the OM entity cluster (not causal).
-    # An ontology-port failure must never break diagnosis — the deterministic
-    # template hypotheses below do not depend on it.
+    # An ontology-port failure must never break diagnosis — observed
+    # co-movers below do not depend on it.
     if ctx.deps.ontology is not None:
         try:
             related = await ctx.deps.ontology.related_metrics(outcome)
@@ -51,25 +58,9 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
         except Exception as exc:  # noqa: BLE001 - resilience boundary
             _log.debug("diagnostic.hypotheses.ontology_skipped", error=str(exc))
 
-    # 1. deterministic template hypotheses
-    for tpl in mechanisms_for(outcome):
-        support = [
-            e["evidence_id"] if "evidence_id" in e else e.get("artifact_id", "")
-            for e in ctx.evidence
-            if (e.get("metric_id") or e.get("metric_or_fact")) in set(tpl.evidence_hints)
-        ]
-        out.append(
-            DiagnosticHypothesis(
-                statement=tpl.statement,
-                mechanism=tpl.mechanism,
-                treatment_metric=tpl.treatment_metric,
-                outcome_metric=outcome,
-                domains=list(tpl.domains),
-                supporting_evidence=[s for s in support if s],
-                required_tests=["temporal_precedence", "segment_specificity", "control_divergence"],
-                synthetic=ctx.synthetic_inputs(),
-            )
-        )
+    # 1. observed co-movers — any registered/observed metric can be a treatment
+    for hypo in _hypotheses_from_observations(ctx, outcome, already=set()):
+        out.append(hypo)
 
     # 2. explicit alternatives requested by the caller
     for alt in ctx.request.context.get("alternatives_to_test", []) or []:
@@ -116,12 +107,10 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
             _log.debug("diagnostic.hypotheses.llm_skipped", error=str(exc))
 
     # De-dupe by canonical mechanism fingerprint (treatment -> outcome), not raw
-    # wording — an LLM-phrased hypothesis and a template-generated one describing
-    # the same mechanism (e.g. "mobile frontend slowdown cut conversion" vs "a
-    # frontend regression increased mobile latency, reducing purchase CVR") must
-    # collapse to one hypothesis rather than each getting its own id/test plan.
-    # Domains are a derived label, not part of what makes two explanations the
-    # same mechanism, so they are intentionally excluded from the key.
+    # wording — an LLM-phrased hypothesis and an observation-seeded one describing
+    # the same driver must collapse to one hypothesis rather than each getting
+    # its own id/test plan. Domains are a derived label, not part of what makes
+    # two explanations the same mechanism, so they are intentionally excluded.
     seen: set[tuple[str, str]] = set()
     deduped: list[DiagnosticHypothesis] = []
     for h in out:
@@ -140,3 +129,80 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
 
 def _graph_id_for(ctx: DiagnosticContext) -> str:
     return ctx.request.context.get("graph_id") or graph_id_for_outcome(ctx.outcome_metric)
+
+
+def _metrics() -> MetricRegistry:
+    global _METRICS
+    if _METRICS is None:
+        _METRICS = MetricRegistry("config/metric_registry.yaml")
+    return _METRICS
+
+
+def _usable_treatment(metric_id: str, outcome: str) -> bool:
+    if not metric_id or metric_id == outcome:
+        return False
+    if metric_id.startswith("event.") or metric_id.endswith(".delta"):
+        return False
+    return True
+
+
+def _label(metric_id: str) -> str:
+    return metric_id.removeprefix("metric.").replace("_", " ")
+
+
+def _domains_for(metric_id: str, ctx: DiagnosticContext) -> list[str]:
+    owner = _metrics().owner_agent_for(metric_id)
+    if owner:
+        return [owner.removesuffix("_agent")]
+    for e in ctx.evidence_for_metric(metric_id):
+        domain = (e.get("provenance") or {}).get("domain")
+        if domain:
+            return [str(domain).removesuffix("_agent")]
+    return []
+
+
+def _hypotheses_from_observations(
+    ctx: DiagnosticContext, outcome: str, *, already: set[str]
+) -> list[DiagnosticHypothesis]:
+    """Seed treatments from co-moving anomalies/evidence, not a YAML outcome list."""
+    ranked: dict[str, tuple[float, str, list[str]]] = {}
+    for a in ctx.anomalies:
+        mid = a.metric_id
+        if not _usable_treatment(mid, outcome) or mid in already:
+            continue
+        refs = list(a.evidence_refs or [])
+        ranked[mid] = (abs(a.deviation_pct or 0.0), a.direction, refs)
+    for e in ctx.evidence:
+        mid = str(e.get("metric_id") or e.get("metric_or_fact") or "")
+        if not _usable_treatment(mid, outcome) or mid in already:
+            continue
+        eid = str(e.get("evidence_id") or e.get("artifact_id") or "")
+        prev = ranked.get(mid)
+        refs = list(prev[2] if prev else [])
+        if eid and eid not in refs:
+            refs.append(eid)
+        try:
+            score = abs(float(e.get("change_pct") or 0.0))
+        except (TypeError, ValueError):
+            score = 0.0
+        direction = str((e.get("direction") or (prev[1] if prev else "") or ""))
+        ranked[mid] = (max(score, prev[0] if prev else 0.0), direction, refs)
+
+    out: list[DiagnosticHypothesis] = []
+    for mid, (_score, direction, refs) in sorted(ranked.items(), key=lambda kv: -kv[1][0]):
+        moved = f"moved {direction}" if direction in {"up", "down"} else "moved"
+        treat = _label(mid)
+        target = _label(outcome)
+        out.append(
+            DiagnosticHypothesis(
+                statement=f"{treat} {moved}, which may have driven {target}.",
+                mechanism=f"concurrent movement in {treat} is a candidate driver of {target}",
+                treatment_metric=mid,
+                outcome_metric=outcome,
+                domains=_domains_for(mid, ctx),
+                supporting_evidence=refs,
+                required_tests=["temporal_precedence", "segment_specificity", "control_divergence"],
+                synthetic=ctx.synthetic_inputs(),
+            )
+        )
+    return out

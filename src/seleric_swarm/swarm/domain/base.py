@@ -94,14 +94,34 @@ class DomainAgent:
         return None
 
     # -- Observer delegates data retrieval here (only domains + Observer hold data access)
-    async def observe(self, blackboard: Blackboard, *, time_range: dict[str, Any]) -> list[str]:
+    def _observe_metric_ids(self, extra_metrics: list[str] | None = None) -> list[str]:
+        """Probe set plus the asked metric, even when that KPI is ``probe: false``.
+
+        Outcome KPIs like gross ROAS are not on the delivery frontier, but a
+        question about them still has to retrieve the number.
+        """
+        ids = list(self.config.probe_metrics)
+        owned = set(self.config.owned_metrics)
+        for mid in extra_metrics or ():
+            if mid and mid in owned and mid not in ids:
+                ids.append(mid)
+        return ids
+
+    async def observe(
+        self,
+        blackboard: Blackboard,
+        *,
+        time_range: dict[str, Any],
+        extra_metrics: list[str] | None = None,
+    ) -> list[str]:
         if self.data is None:
             blackboard.record_event("observe_skipped", agent=self.agent_id, reason="no data provider")
             return []
         posted: list[str] = []
+        metric_ids = self._observe_metric_ids(extra_metrics)
         for dims in self.config.probe_dimensions or [{}]:
             result = await self.data.fetch(
-                metric_ids=self.config.probe_metrics,
+                metric_ids=metric_ids,
                 time_range=time_range,
                 dimensions=dims or None,
             )
@@ -203,14 +223,20 @@ class DomainAgent:
             evidence_refs=blackboard.evidence_ledger[-8:],
         )
 
-    def _owns_frontier(self, anomalies: list[dict[str, Any]]) -> bool:
+    def _owns_frontier(
+        self, anomalies: list[dict[str, Any]], *, primary_metric: str | None = None
+    ) -> bool:
         if self.config.terminal:
             return True  # terminal domain diagnoses; never hands off
+        owned = set(self.config.owned_metrics)
         frontier = set(self.config.frontier_metrics)
         if not frontier:
-            # Non-terminal with no frontier metrics configured — do not claim ownership
-            # (empty frontier must not block handoffs the way terminals do).
-            return False
+            # Empty process frontier: this domain is an outcome owner, not a
+            # hop. Stay on the asked metric (or any owned movement) instead of
+            # reframing onto a louder peer KPI (gs → purchase_cvr).
+            if primary_metric and primary_metric in owned:
+                return True
+            return any(a.get("metric_id") in owned for a in anomalies)
         return any(a.get("metric_id") in frontier for a in anomalies)
 
     def _metric_is_frontier(self, metric_id: str) -> bool:
@@ -235,10 +261,14 @@ class DomainAgent:
 
     # -- leadership handoff (architecture sec. 18-19, 32) -------------------
     def evaluate_handoff(
-        self, blackboard: Blackboard, *, topology_neighbors: list[str] | None = None
+        self,
+        blackboard: Blackboard,
+        *,
+        topology_neighbors: list[str] | None = None,
+        primary_metric: str | None = None,
     ) -> HandoffProposal | None:
         anomalies = blackboard.by_type("anomaly")
-        if self._owns_frontier(anomalies):
+        if self._owns_frontier(anomalies, primary_metric=primary_metric):
             return None  # the cause is in my domain; keep leading
 
         peers = set(self.config.handoff_targets)

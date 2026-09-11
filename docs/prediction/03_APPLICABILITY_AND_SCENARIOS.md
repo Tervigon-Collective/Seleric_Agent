@@ -39,6 +39,5 @@ referenced `CausalAnalysisArtifact` has `passed=True`, else
 pessimistic case toward the point rather than the interval edge
 (`test_scenarios_bounded_by_interval`).
 
-Metric polarity: `metric.cac`, `metric.return_rate`, `metric.cpm`, `metric.cpc`,
-`metric.js_error_rate`, `metric.mobile_lcp_seconds` are "up is bad"; everything
-else is "down is bad".
+Metric polarity: `metric.cac`, `metric.return_rate`, `metric.cpm`, `metric.cpc`
+are "up is bad"; everything else is "down is bad".

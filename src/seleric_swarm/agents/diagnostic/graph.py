@@ -2,7 +2,7 @@
 
     START
       -> load_inputs           (evidence + anomalies + outcome metric + degradation start)
-      -> generate_hypotheses   (template + constrained LLM, capped)
+      -> generate_hypotheses   (observed co-movers + constrained LLM, capped)
       -> rank_hypotheses       (deterministic prior)
       -> test_hypotheses       (per-hypothesis plan + deterministic runners)
       -> classify              (hard gates -> reject; score -> testing/reject)

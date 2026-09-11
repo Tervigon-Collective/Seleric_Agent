@@ -20,7 +20,7 @@ from seleric_swarm.agents.diagnostic.agent import DiagnosticAgent, diagnostic_de
 from seleric_swarm.agents.diagnostic.context import DiagnosticDeps
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticRequest, DiagnosticResult
 from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
-from seleric_swarm.agents.diagnostic.ontology import common_causes_for_outcome, mechanisms_for
+from seleric_swarm.agents.diagnostic.ontology import common_causes_for_outcome
 from seleric_swarm.agents.diagnostic.registries import (
     TemplateCausalEstimationService,
     causal_graphs_from_yaml,
@@ -85,7 +85,10 @@ class SwarmDiagnosticSpecialist:
                 fallback=TemplateCausalEstimationService({}),
             )
             observations = await _fetch_observations(
-                self.providers, primary_metric, dict(mission.time_range)
+                self.providers,
+                primary_metric,
+                dict(mission.time_range),
+                extra_metrics=_ranked_treatment_ids(blackboard, outcome=primary_metric),
             )
 
         base = self._deps or DiagnosticDeps(
@@ -188,6 +191,63 @@ The user's visible answer is still anchored to their original query window; only
 causal evidence layer uses the extended history.
 """
 
+# ``fetch_series`` is one MCP call per metric per day. Asking every peer KPI
+# on every domain provider turns a 3-day question into thousands of sequential
+# HTTP calls (the ~20 minute spinner). Cap treatments; route by owner.
+_MAX_CAUSAL_TREATMENTS = 3
+
+
+def _ranked_treatment_ids(
+    blackboard: Blackboard, *, outcome: str, limit: int = _MAX_CAUSAL_TREATMENTS
+) -> list[str]:
+    """Loudest co-movers only — not the full peer-probe catalogue."""
+    scored: dict[str, float] = {}
+    for row in blackboard.by_type("anomaly"):
+        mid = str(row.get("metric_id") or "")
+        if not mid or mid == outcome or mid.startswith("event."):
+            continue
+        try:
+            scored[mid] = max(scored.get(mid, 0.0), abs(float(row.get("deviation_pct") or 0.0)))
+        except (TypeError, ValueError):
+            scored.setdefault(mid, 0.0)
+    for row in blackboard.by_type("evidence"):
+        mid = str(row.get("metric_id") or row.get("metric_or_fact") or "")
+        if not mid or mid == outcome or mid.startswith("event."):
+            continue
+        try:
+            score = abs(float(row.get("change_pct") or 0.0))
+        except (TypeError, ValueError):
+            score = 0.0
+        scored[mid] = max(scored.get(mid, 0.0), score)
+    return sorted(scored, key=lambda mid: -scored[mid])[:limit]
+
+
+def _providers_for_metrics(providers: Any, metric_ids: set[str]) -> list[tuple[Any, list[str]]]:
+    """Each metric goes to its owning domain's ``fetch_series`` only."""
+    data = getattr(providers, "data", {}) or {}
+    by_id: dict[int, tuple[Any, list[str]]] = {}
+    fallback = next((p for p in data.values() if getattr(p, "fetch_series", None)), None)
+    for mid in sorted(metric_ids):
+        domain = None
+        for provider in data.values():
+            registry = getattr(provider, "_metrics", None)
+            if registry is None:
+                continue
+            definition = registry.get(mid)
+            if definition is not None:
+                domain = getattr(definition, "domain", None)
+                break
+        provider = data.get(domain) if domain else None
+        if provider is None or getattr(provider, "fetch_series", None) is None:
+            provider = fallback
+        if provider is None:
+            continue
+        key = id(provider)
+        if key not in by_id:
+            by_id[key] = (provider, [])
+        by_id[key][1].append(mid)
+    return list(by_id.values())
+
 
 async def _fetch_observations(
     providers: Any,
@@ -195,6 +255,7 @@ async def _fetch_observations(
     time_range: dict[str, Any],
     *,
     extra_history_days: int = _CAUSAL_EXTRA_HISTORY_DAYS,
+    extra_metrics: set[str] | list[str] | None = None,
 ) -> Any:
     """Real per-day observation series for DoWhy (docs/44 ROB-002).
 
@@ -207,6 +268,9 @@ async def _fetch_observations(
     user query windows (e.g. 7 days) do not fall below the 8-row floor that
     ``fetch_series`` enforces.  The causal estimate covers this extended period;
     the user-facing answer remains scoped to the original query window.
+
+    ``extra_metrics`` are co-movers already observed on the blackboard (evidence
+    / anomalies). Treatments are whatever actually moved, not a YAML seed list.
     """
     if providers is None or not outcome_metric:
         return None
@@ -236,18 +300,43 @@ async def _fetch_observations(
         extra_history_days,
     )
 
-    needed = {outcome_metric, *common_causes_for_outcome(outcome_metric)}
-    needed |= {tmpl.treatment_metric for tmpl in mechanisms_for(outcome_metric)}
+    extras: list[str] = []
+    seen_extra: set[str] = set()
+    for mid in extra_metrics or ():
+        key = str(mid)
+        if (
+            not key
+            or key.startswith("event.")
+            or key == outcome_metric
+            or key in seen_extra
+        ):
+            continue
+        seen_extra.add(key)
+        extras.append(key)
+        if len(extras) >= _MAX_CAUSAL_TREATMENTS:
+            break
+    needed = {outcome_metric, *extras}
+    for cause in common_causes_for_outcome(outcome_metric):
+        if str(cause).startswith("metric."):
+            needed.add(str(cause))
+
+    log.info(
+        "_fetch_observations: fetching %d series metrics over %s→%s (treatments capped at %d)",
+        len(needed),
+        extended_start,
+        time_range.get("end"),
+        _MAX_CAUSAL_TREATMENTS,
+    )
 
     seen: set[int] = set()
     frame = None
-    for provider in getattr(providers, "data", {}).values():
+    for provider, metric_ids in _providers_for_metrics(providers, needed):
         fetch_series = getattr(provider, "fetch_series", None)
         if fetch_series is None or id(provider) in seen:
             continue
         seen.add(id(provider))
         try:
-            candidate = await fetch_series(metric_ids=sorted(needed), time_range=causal_time_range)
+            candidate = await fetch_series(metric_ids=sorted(metric_ids), time_range=causal_time_range)
         except Exception:
             continue
         if candidate is None:
@@ -259,7 +348,7 @@ async def _fetch_observations(
 
             frame = pd.concat([frame, candidate], axis=1, join="outer")
             frame = frame.loc[:, ~frame.columns.duplicated()]
-    if frame is None or outcome_metric not in frame.columns:
+    if frame is None or outcome_metric not in frame.columns or len(frame.columns) < 2:
         return None
     frame = frame.dropna(how="any")
     # Same 8-row floor as fetch_series's own min_rows default — merging

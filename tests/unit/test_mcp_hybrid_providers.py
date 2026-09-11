@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
@@ -78,6 +80,58 @@ async def test_fetch_series_returns_dataframe_when_enough_days(runtime):
 
 
 @pytest.mark.asyncio
+async def test_fetch_series_returns_single_metric_frame(runtime):
+    bundle, _stats = build_hybrid_bundle(
+        mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
+    )
+    provider = bundle.data_for("performance")
+
+    async def fake_call(*, agent_id, capability, arguments):
+        if capability == "seleric.catalogue_get_metric":
+            return {"id": arguments.get("metric_id", ""), "display_name": "test"}
+        measure = arguments["measures"][0]
+        return {"rows": [{measure: 1.0}]}
+
+    provider._mcp.call = fake_call
+    frame = await provider.fetch_series(
+        metric_ids=["metric.cac"],
+        time_range={"start": "2026-09-01", "end": "2026-09-08"},
+    )
+    assert frame is not None
+    assert list(frame.columns) == ["metric.cac"]
+    assert len(frame) == 8
+
+
+@pytest.mark.asyncio
+async def test_fetch_series_runs_day_queries_concurrently(runtime):
+    bundle, _stats = build_hybrid_bundle(
+        mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
+    )
+    provider = bundle.data_for("performance")
+    in_flight = 0
+    max_in_flight = 0
+
+    async def fake_call(*, agent_id, capability, arguments):
+        nonlocal in_flight, max_in_flight
+        if capability == "seleric.catalogue_get_metric":
+            return {"id": arguments.get("metric_id", ""), "display_name": "test"}
+        in_flight += 1
+        max_in_flight = max(max_in_flight, in_flight)
+        await asyncio.sleep(0.02)
+        in_flight -= 1
+        measure = arguments["measures"][0]
+        return {"rows": [{measure: 1.0}]}
+
+    provider._mcp.call = fake_call
+    frame = await provider.fetch_series(
+        metric_ids=["metric.cac", "metric.cpm"],
+        time_range={"start": "2026-09-01", "end": "2026-09-08"},
+    )
+    assert frame is not None
+    assert max_in_flight > 1
+
+
+@pytest.mark.asyncio
 async def test_hybrid_direction_bad_comes_from_registry_not_hardcoded(runtime):
     # docs/44 ROB-001: net_sales is "more is better" (direction_bad: down in
     # metric_registry.yaml) — an upward move must never be reported adverse.
@@ -111,11 +165,11 @@ async def test_hybrid_production_returns_nothing_for_domain_with_no_module(runti
     technical = bundle.data_for("technical")
     assert type(technical).__name__ == "EmptyDataProvider"
     result = await technical.fetch(
-        metric_ids=["metric.js_error_rate"],
+        metric_ids=["metric.unregistered"],
         time_range={"start": "2026-08-31", "end": "2026-09-03"},
     )
     assert result.readings == []
-    assert result.missing == ["metric.js_error_rate"]
+    assert result.missing == ["metric.unregistered"]
     assert result.synthetic is False
     assert stats.mcp_attempts == 0
 

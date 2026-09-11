@@ -1,4 +1,9 @@
-"""Fixtures for the Diagnostic test-suite. Deterministic, offline, no LLM."""
+"""Fixtures for the Diagnostic test-suite. Deterministic, offline, no LLM.
+
+This module is a harness (row builders + an in-memory agent factory). It does
+not encode a product RCA story: no default treatment/outcome pair, no canned
+causal truth, no domain labels that are not on the evidence row itself.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +14,6 @@ import pytest
 from seleric_swarm.agents.diagnostic import DiagnosticAgent, DiagnosticDeps
 from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
 from seleric_swarm.agents.diagnostic.registries import (
-    CausalGraph,
     InMemoryAnomalyRepository,
     InMemoryArtifactRepository,
     InMemoryCausalGraphRegistry,
@@ -19,21 +23,6 @@ from seleric_swarm.agents.diagnostic.registries import (
 )
 
 MISSION = "MS-DIAG"
-
-CAC_TRUTH = {
-    "graph_id": "causal.funnel_purchase.v1",
-    "treatment": "metric.mobile_lcp_seconds",
-    "outcome": "metric.purchase_cvr",
-    "common_causes": ["metric.sessions", "campaign", "device"],
-    "effect": -0.62,
-    "effect_ci": [-0.81, -0.44],
-    "refutations": [
-        {"name": "placebo_treatment", "passed": True},
-        {"name": "random_common_cause", "passed": True},
-        {"name": "data_subset", "passed": True},
-    ],
-    "passed": True,
-}
 
 
 def ev(
@@ -47,6 +36,8 @@ def ev(
     start_time: str | None = None,
     source: str = "seleric.metrics_query",
     is_event: bool = False,
+    provenance: dict | None = None,
+    sample_size: int | None = None,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "evidence_id": eid,
@@ -63,10 +54,21 @@ def ev(
         row["metric_or_fact"] = metric
     else:
         row["metric_id"] = metric
+    if provenance:
+        row["provenance"] = provenance
+    if sample_size is not None:
+        row["sample_size"] = sample_size
     return row
 
 
-def anomaly(aid: str, metric: str, deviation: float, *, direction: str = "down", start_time: str | None = None) -> dict[str, Any]:
+def anomaly(
+    aid: str,
+    metric: str,
+    deviation: float,
+    *,
+    direction: str = "down",
+    start_time: str | None = None,
+) -> dict[str, Any]:
     return {
         "anomaly_id": aid,
         "mission_id": MISSION,
@@ -78,6 +80,30 @@ def anomaly(aid: str, metric: str, deviation: float, *, direction: str = "down",
     }
 
 
+def matching_truth(treatment: str, outcome: str, **overrides: Any) -> dict[str, Any]:
+    """Offline estimator answer for one (treatment, outcome) pair.
+
+    Tests that need a retained causal finding pass this explicitly. The agent
+    factory does not inject a default pair.
+    """
+    row: dict[str, Any] = {
+        "graph_id": "causal.funnel_purchase.v1",
+        "treatment": treatment,
+        "outcome": outcome,
+        "common_causes": ["metric.sessions", "campaign", "device"],
+        "effect": -0.62,
+        "effect_ci": [-0.81, -0.44],
+        "refutations": [
+            {"name": "placebo_treatment", "passed": True},
+            {"name": "random_common_cause", "passed": True},
+            {"name": "data_subset", "passed": True},
+        ],
+        "passed": True,
+    }
+    row.update(overrides)
+    return row
+
+
 @pytest.fixture
 def policies() -> DiagnosticPolicies:
     return DiagnosticPolicies.load()
@@ -85,17 +111,7 @@ def policies() -> DiagnosticPolicies:
 
 @pytest.fixture
 def graphs() -> InMemoryCausalGraphRegistry:
-    reg = causal_graphs_from_yaml()
-    if reg.get("causal.funnel_purchase.v1") is None:
-        reg.add(
-            CausalGraph(
-                "causal.funnel_purchase.v1",
-                nodes=["page_latency", "add_to_cart", "purchase", "price", "stock", "payment_failure"],
-                edges=[("page_latency", "add_to_cart"), ("add_to_cart", "purchase"),
-                       ("price", "add_to_cart"), ("stock", "purchase"), ("payment_failure", "purchase")],
-            )
-        )
-    return reg
+    return causal_graphs_from_yaml()
 
 
 @pytest.fixture
@@ -104,7 +120,7 @@ def make_agent(policies: DiagnosticPolicies, graphs: InMemoryCausalGraphRegistry
         evidence: list[dict] | None = None,
         anomalies: list[dict] | None = None,
         *,
-        causal_truth: dict | None = CAC_TRUTH,
+        causal_truth: dict | None = None,
         artifacts: list[dict] | None = None,
     ) -> DiagnosticAgent:
         deps = DiagnosticDeps(
@@ -117,15 +133,3 @@ def make_agent(policies: DiagnosticPolicies, graphs: InMemoryCausalGraphRegistry
         return DiagnosticAgent(deps=deps, policies=policies)
 
     return _factory
-
-
-# a reusable "mobile latency regression" evidence bundle
-def latency_bundle() -> list[dict[str, Any]]:
-    return [
-        ev("EV-cvr", "metric.purchase_cvr", 2.35, change_pct=-24.0),
-        ev("EV-mcvr", "metric.purchase_cvr", 2.03, change_pct=-31.0, dims={"device": "mobile"}),
-        ev("EV-dcvr", "metric.purchase_cvr", 3.30, change_pct=-3.0, dims={"device": "desktop", "segment": "control"}),
-        ev("EV-lcp", "metric.mobile_lcp_seconds", 5.8, change_pct=164.0, start_time="2026-09-01T11:47:00+05:30"),
-        ev("EV-js", "metric.js_error_rate", 6.1, change_pct=771.0, start_time="2026-09-01T11:47:00+05:30"),
-        ev("EV-dep", "event.frontend_deployment", "2026-09-01T11:40:00+05:30", is_event=True),
-    ]
