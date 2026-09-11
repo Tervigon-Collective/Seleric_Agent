@@ -23,7 +23,6 @@ from tenacity import (
 from seleric_swarm.config.secrets import resolve_secret
 from seleric_swarm.config.settings import Settings
 from seleric_swarm.llm.errors import (
-    FallbackDisabled,
     LLMError,
     LLMErrorCode,
     LLMStructuredOutputError,
@@ -85,7 +84,7 @@ class AzureOpenAICompatibleAdapter:
                 retryable=False,
             )
         self._settings = settings
-        self._model = settings.azure_openai_model
+        self._model = settings.primary_model()
         self._dev = settings.is_dev_surface()
         client = self._build_client(settings, api_key)
         self._client, self._traced = self._wrap_tracing(client)
@@ -123,8 +122,9 @@ class AzureOpenAICompatibleAdapter:
             return client, False
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        if request.fallback_model:
-            raise FallbackDisabled()
+        # Model-to-model fallback is handled by LLMGateway, which swaps
+        # request.model per attempt before calling this adapter — this
+        # adapter only ever talks to the single model it's asked for.
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
         resolved_model = request.model or self._model
         retry_count = 0

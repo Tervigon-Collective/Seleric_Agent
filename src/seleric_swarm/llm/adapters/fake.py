@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel
 
-from seleric_swarm.llm.errors import FallbackDisabled
 from seleric_swarm.llm.port import LLMRequest, LLMResponse, StructuredLLMResponse, TokenUsage
 from seleric_swarm.llm.structured import parse_structured, with_schema_instruction
 from seleric_swarm.services.metrics import MetricRegistry, lead_agent_for_hints
@@ -451,8 +450,6 @@ class FakeLLMAdapter:
         self.model = model
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        if request.fallback_model:
-            raise FallbackDisabled()
         started = time.perf_counter()
         text = self._render(request)
         latency_ms = (time.perf_counter() - started) * 1000
