@@ -62,6 +62,34 @@ async def test_03_metric_semantic_conflict_not_factual(make_agent):
     assert v.verdict == "REVISE"
 
 
+async def test_03b_alias_spellings_of_one_metric_are_still_compared(deps, policies):
+    """"cac" and "metric.cac" name the same registered metric — the
+    contradiction validator must canonicalize before grouping, or a genuine
+    disagreement between the two spellings is silently never compared."""
+    from seleric_swarm.agents.skeptic.agent import SkepticAgent
+    from seleric_swarm.agents.skeptic.context import SkepticDeps
+    from seleric_swarm.agents.skeptic.registries import InMemoryArtifactRepository, InMemoryEvidenceRepository
+    from seleric_swarm.services.metrics import MetricRegistry
+
+    d = SkepticDeps(
+        metric_registry=deps.metric_registry,
+        model_registry=deps.model_registry,
+        causal_graphs=deps.causal_graphs,
+        rules=deps.rules,
+        catalogue=MetricRegistry("config/metric_registry.yaml"),
+    )
+    rows = [evidence("EV-a", "cac", 700.0), evidence("EV-b", "metric.cac", 999.0)]
+    agent = SkepticAgent(
+        evidence_repo=InMemoryEvidenceRepository(rows),
+        artifact_repo=InMemoryArtifactRepository([]),
+        deps=d,
+        policies=policies,
+    )
+    v = await agent.validate_claim(_req(_claim("numeric", "CAC was 700", support_refs=["EV-a", "EV-b"])))
+    cats = {c.detail.get("contradiction_type") for c in v.challenges}
+    assert "factual_conflict" in cats
+
+
 # --------------------------------------------------------------------------- #
 # 4. anomaly from insufficient sample -> REVISE
 # --------------------------------------------------------------------------- #
