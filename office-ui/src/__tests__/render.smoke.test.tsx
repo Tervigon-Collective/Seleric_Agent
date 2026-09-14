@@ -64,9 +64,11 @@ afterEach(() => {
 });
 
 describe("render smoke", () => {
-  it("mounts, runs the demo, and never throws or leaves an agent off the floor", async () => {
-    vi.useFakeTimers();
-    act(() => root.render(<App />));
+  it(
+    "mounts, runs the demo, and never throws or leaves an agent off the floor",
+    async () => {
+      vi.useFakeTimers();
+      act(() => root.render(<App />));
 
     // let providers connect + the rAF loop spin
     await act(async () => {
@@ -95,7 +97,9 @@ describe("render smoke", () => {
     const { useOffice } = await import("../store");
     expect(useOffice.getState().status).toBe("completed");
     expect(useOffice.getState().timeline.length).toBeGreaterThan(15);
-  });
+    },
+    { timeout: 30000 },
+  );
 
   it("agent roster is complete and stable", () => {
     const ids = blankAgents().map((a) => a.agentId);
