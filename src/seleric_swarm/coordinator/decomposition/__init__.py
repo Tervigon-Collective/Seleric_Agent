@@ -59,6 +59,52 @@ def _cap_added_to_open_limit(
     return [s for s in added if s.question_id in accepted_ids]
 
 
+def merge_domain_retrieves(
+    steps: list[dict[str, Any]],
+    normalized: NormalizedQuery,
+) -> list[dict[str, Any]]:
+    """Replace generic retrieve steps with one retrieve per DomainQuestion.
+
+    Diagnostic / predictive / other purposes are kept. Executive-health
+    already has a per-branch scan — do not overlay it. When the LLM or
+    template listed no retrieve, the domain retrieves are prepended.
+    """
+
+    dqs = list(normalized.domain_questions or [])
+    if not dqs or "executive_health" in set(normalized.intents):
+        return steps
+    domain_set = {dq.domain for dq in dqs}
+    retrieves = [
+        {
+            "purpose": "retrieve",
+            "question": dq.question,
+            "priority": 9,
+            "branch": dq.domain,
+            "metadata": {
+                "metrics": list(dq.metrics),
+                "grain": list(dq.grain),
+                "domain_question": True,
+            },
+        }
+        for dq in dqs
+    ]
+    out: list[dict[str, Any]] = []
+    replaced = False
+    for step in steps:
+        purpose = str(step.get("purpose") or "")
+        branch = step.get("branch")
+        seedable = purpose == "retrieve" and (not branch or branch in domain_set)
+        if seedable:
+            if not replaced:
+                out.extend(retrieves)
+                replaced = True
+            continue
+        out.append(step)
+    if not replaced:
+        return retrieves + out
+    return out
+
+
 def is_duplicate_subquestion(existing: list[SubQuestion], question: str) -> bool:
     norm = _normalize_question_text(question)
     for sq in existing:
@@ -107,6 +153,7 @@ async def initial_decomposition(
     if steps is None:
         template_name = select_template(normalized.intents, normalized.primary_metric, normalized.original_query)
         steps = TEMPLATES.get(template_name) or TEMPLATES["diagnostic"]
+    steps = merge_domain_retrieves(steps, normalized)
     dec_id = _dec_id(mission_id, 1)
 
     objectives = [
@@ -142,6 +189,7 @@ async def initial_decomposition(
             expected_information_gain=information_gain(priority=int(step.get("priority") or 5)),
             status="ready" if int(step.get("priority") or 5) >= 7 else "pending",
             branch=step.get("branch"),
+            metadata=dict(step.get("metadata") or {}),
         )
         if not is_duplicate_subquestion(subquestions, sq.question):
             subquestions.append(sq)
@@ -153,7 +201,14 @@ async def initial_decomposition(
         version=1,
         objectives=objectives,
         subquestions=subquestions,
-        candidate_domains=list(normalized.candidate_domains),
+        candidate_domains=list(
+            dict.fromkeys(
+                [
+                    *normalized.candidate_domains,
+                    *(dq.domain for dq in normalized.domain_questions),
+                ]
+            )
+        ),
         status="active",
         questions_added=[s.question_id for s in subquestions],
         template=template_name,
@@ -171,7 +226,7 @@ def _caps_for_purpose(purpose: str) -> list[str]:
         "skeptic_validation": ["challenge"],
         "test_hypotheses": ["hypothesis_test"],
     }
-    return list(mapping.get(purpose) or ["metric_observation"])
+    return list(mapping.get(purpose) or [])
 
 
 def _artifacts_for_purpose(purpose: str) -> list[str]:
@@ -184,7 +239,7 @@ def _artifacts_for_purpose(purpose: str) -> list[str]:
         "generate_interventions": ["strategy"],
         "skeptic_validation": ["skeptic"],
     }
-    return list(mapping.get(purpose) or ["evidence"])
+    return list(mapping.get(purpose) or [])
 
 
 def refine_from_evidence(

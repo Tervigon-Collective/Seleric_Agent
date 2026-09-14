@@ -287,6 +287,7 @@ def build_graph(runtime: SwarmRuntime):
                     payload={
                         "metric_hints": state.get("metric_hints") or [],
                         "metric_id": state.get("metric_id"),
+                        "domain_questions": state.get("domain_questions") or [],
                         "fetched_metrics": [
                             row.get("metric_or_fact")
                             for row in (state.get("evidence") or [])
@@ -323,6 +324,13 @@ def build_graph(runtime: SwarmRuntime):
                 obs_span.set_outputs({"error_code": over, "reason": "Observer budget exceeded"})
                 return {"error_code": over, "error_message": "Observer budget exceeded", "status": "failed"}
             lead = state.get("mission_lead") or (domain_ids[0] if domain_ids else "observer_agent")
+            lead_domain = str(lead).removesuffix("_agent")
+            assigned_grain = list(state.get("assigned_grain") or [])
+            if not assigned_grain:
+                for dq in state.get("domain_questions") or []:
+                    if isinstance(dq, dict) and dq.get("domain") == lead_domain:
+                        assigned_grain = [str(g) for g in (dq.get("grain") or []) if g]
+                        break
             _mid = state.get("metric_id")
             metric_def = runtime.metrics.get(_mid) if _mid else None
             tool_name = "seleric.metrics_query" if metric_def else "unresolved"
@@ -344,8 +352,9 @@ def build_graph(runtime: SwarmRuntime):
                         "allowed_metrics": state.get("allowed_metrics") or [],
                         "metric_hints": state.get("metric_hints") or [],
                         "metric_id": state.get("metric_id"),
+                        "domain_questions": state.get("domain_questions") or [],
                         "entities": state.get("entities") or [],
-                        "resolved_dimensions": state.get("resolved_dimensions") or [],
+                        "resolved_dimensions": assigned_grain or (state.get("resolved_dimensions") or []),
                         "time_range": state.get("time_range") or {},
                         "query_class": state.get("query_class"),
                     },

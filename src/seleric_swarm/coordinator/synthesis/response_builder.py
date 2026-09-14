@@ -7,8 +7,61 @@ from typing import Any
 
 from seleric_swarm.coordinator.policies import CoordinatorPolicies, load_coordinator_policies
 from seleric_swarm.coordinator.synthesis.claim_selector import select_allowed_claims
+from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission
+
+_GAP_RE = re.compile(r"^([A-Za-z0-9_.]+):\s*no data for")
+
+
+def gapped_metric_ids(limitations: list[str] | None, metrics: MetricRegistry | None) -> set[str]:
+    """Metric ids reported as having no data for the mission window
+    (``McpFetchStats.limitations()`` lines), canonicalized so "X" and
+    "metric.X" collapse to the same id. An anomaly for one of these must
+    never be rendered as a confident % — the number has nothing behind it.
+    """
+    ids: set[str] = set()
+    for line in limitations or []:
+        m = _GAP_RE.match(line.strip())
+        if not m:
+            continue
+        raw = m.group(1)
+        ids.add(metrics.canonical_id(raw) if metrics is not None else raw)
+    return ids
+
+
+def clean_anomalies(
+    anomalies: list[dict[str, Any]],
+    *,
+    limitations: list[str] | None = None,
+    metrics: MetricRegistry | None = None,
+) -> list[dict[str, Any]]:
+    """Anomalies safe to state as fact: deduped by canonical metric id (a
+    bare id and its "metric."-prefixed alias must not both surface as
+    separate findings) and stripped of anything whose metric has a reported
+    data gap for this window.
+
+    # ponytail: matches gaps by exact metric id only; a derived/composite
+    # metric (e.g. a rate) whose *component* events are gapped but which
+    # itself returned data still passes through. Add a metric dependency
+    # graph if that undercatches in practice.
+    """
+    gapped = gapped_metric_ids(limitations, metrics)
+    best: dict[str, dict[str, Any]] = {}
+    for a in anomalies:
+        mid = a.get("metric_id")
+        if not mid:
+            continue
+        canon = metrics.canonical_id(mid) if metrics is not None else mid
+        if canon in gapped:
+            continue
+        dims_key = tuple(sorted((a.get("dimensions") or {}).items()))
+        key = (canon, dims_key)
+        existing = best.get(key)
+        if existing is None or abs(a.get("deviation_pct") or 0) > abs(existing.get("deviation_pct") or 0):
+            best[key] = a
+    return list(best.values())
+
 
 _CAUSAL_LANGUAGE = {
     "ASSOCIATION_ONLY": "associated with",
@@ -41,6 +94,7 @@ def build_claim_aware_response(
     policies: CoordinatorPolicies | None = None,
     conflicts: list[dict[str, Any]] | None = None,
     extra_limitations: list[str] | None = None,
+    metrics: MetricRegistry | None = None,
 ) -> str:
     policies = policies or load_coordinator_policies()
     claims = select_allowed_claims(list(managed_claims or []))
@@ -64,6 +118,17 @@ def build_claim_aware_response(
     elif summary.get("mixed"):
         lines += [
             f"MIXED PROVENANCE - {summary['synthetic']}/{summary['total']} artifacts are SYNTHETIC.",
+            "",
+        ]
+
+    if completion_status not in (None, "completed", "prototype_completed"):
+        # Mission ran out of budget/rounds without satisfying its objectives —
+        # the anomalies/claims below are raw signals, not a confirmed
+        # diagnosis. Independent of the synthetic/mixed banners above (a
+        # mission can be all-real-data AND still incomplete).
+        lines += [
+            f"MISSION {str(completion_status).upper()} - not all objectives were satisfied this run; "
+            "treat the findings below as raw signals, not a confirmed diagnosis.",
             "",
         ]
 
@@ -114,7 +179,9 @@ def build_claim_aware_response(
                 lines.append("  Skeptic verdict: REVISE — conclusion is not validated.")
         lines.append("")
 
-    anomalies = blackboard.by_type("anomaly")
+    anomalies = clean_anomalies(
+        blackboard.by_type("anomaly"), limitations=extra_limitations, metrics=metrics
+    )
     if anomalies:
         lines.append("Key anomalies:")
         for a in sorted(anomalies, key=lambda x: abs(x.get("deviation_pct") or 0), reverse=True)[:5]:

@@ -14,7 +14,7 @@ from seleric_swarm.services.metrics import lead_agent_for_hints
 
 
 def _def(metric_id: str, catalogue: str, domain: str = "commerce") -> SimpleNamespace:
-    return SimpleNamespace(id=metric_id, catalogue_metric=catalogue, domain=domain)
+    return SimpleNamespace(id=metric_id, catalogue_metric=catalogue, domain=domain, aliases=[])
 
 
 class _Registry:
@@ -73,6 +73,28 @@ _CACHE = [
     {"id": "web_sessions", "supported_dimensions": ["channel"]},
     {"id": "units_sold", "supported_dimensions": ["product_title"]},
 ]
+
+
+def test_sku_list_drops_pnl_metric_that_cannot_slice():
+    hints = ["metric.units_sold", "metric.net_profit"]
+    defs = [
+        *_DEFS,
+        _def("metric.net_profit", "net_profit_all_channels", "finance"),
+    ]
+    cache = [
+        *_CACHE,
+        {"id": "units_sold", "supported_dimensions": ["product_title", "sku"]},
+        {"id": "net_profit_all_channels", "supported_dimensions": ["brand_id", "report_date"]},
+    ]
+    out, dims = constrain_hints_to_grain(
+        hints,
+        query="Give me the list of SKUs sold in the last 30 days",
+        metrics=_Registry(defs),
+        bootstrap=_bootstrap(cache),
+    )
+    assert dims == ["sku"]
+    assert out == ["metric.units_sold"]
+    assert "metric.net_profit" not in out
 
 
 def test_no_grain_leaves_hints_unchanged():
@@ -172,24 +194,29 @@ def test_generic_status_word_does_not_collide_with_fulfillment_status():
 
 
 @pytest.mark.asyncio
-async def test_apply_catalogue_grain_skips_live_resolution_without_breakdown_language():
-    """A plain 'X status' aggregate ask must never reach the live dimension
-    resolver — regression for a production bug where the live
-    catalogue_resolve_dimension capability fuzzy-matched the generic word
-    'status' to nearly every *_status dimension in the catalogue (order_status,
-    fulfillment_status, financial_status, ...), silently replacing the
-    requested metrics with an unrelated fulfillment-status breakdown."""
+async def test_apply_catalogue_grain_ignores_live_dims_the_hinted_metric_cannot_slice():
+    """Live resolve is always consulted — but 'funnel status' matching
+    fulfillment_status must not replace sessions with an orders breakdown.
+    Grounding is 'does the asked metric support this dim?', not a keyword gate.
+    """
 
-    class _BoomMcp:
+    class _Mcp:
         capabilities = {"seleric.catalogue_resolve_dimension"}
 
         async def call(self, **kwargs):
-            raise AssertionError("live dimension resolution must not be called without breakdown language")
+            return {
+                "kind": "ambiguous",
+                "candidates": [
+                    {"dimension_id": "fulfillment_status"},
+                    {"dimension_id": "order_status"},
+                    {"dimension_id": "financial_status"},
+                ],
+            }
 
     runtime = SimpleNamespace(
         bootstrap=_bootstrap(_CACHE),
         metrics=_Registry(_DEFS),
-        mcp=_BoomMcp(),
+        mcp=_Mcp(),
     )
     hints = ["metric.sessions"]
     out, dims = await apply_catalogue_grain("funnel status on 2026-08-01", hints, runtime=runtime)
@@ -244,6 +271,83 @@ async def test_apply_catalogue_grain_rejects_uncorroborated_live_suggestion():
     assert "item_count" not in dims
     assert dims == ["channel"]
     assert out == ["metric.sessions"]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_product_question_uses_live_dim_supported_by_units_sold():
+    """'How are products doing' is not a keyword hit. Catalogue returns
+    product_id (ambiguous); units_sold can slice it so we keep that grain
+    and drop P&L net_profit which cannot.
+    """
+
+    class _Mcp:
+        capabilities = {"seleric.catalogue_resolve_dimension"}
+
+        async def call(self, **kwargs):
+            return {
+                "kind": "ambiguous",
+                "candidates": [
+                    {"dimension_id": "product_id", "confidence": 0.6},
+                    {"dimension_id": "item_count", "confidence": 0.4},
+                ],
+            }
+
+    defs = [
+        *_DEFS,
+        _def("metric.net_profit", "net_profit_all_channels", "finance"),
+    ]
+    cache = [
+        *_CACHE,
+        {"id": "units_sold", "supported_dimensions": ["product_title", "sku", "product_id"]},
+        {"id": "net_profit_all_channels", "supported_dimensions": ["brand_id", "report_date"]},
+        {"id": "item_count_measure", "supported_dimensions": ["item_count"]},
+    ]
+    runtime = SimpleNamespace(
+        bootstrap=_bootstrap(cache),
+        metrics=_Registry(defs),
+        mcp=_Mcp(),
+    )
+    out, dims = await apply_catalogue_grain(
+        "How are products doing?",
+        ["metric.units_sold", "metric.net_profit"],
+        runtime=runtime,
+        entities=["product"],
+    )
+    assert dims == ["product_id"]
+    assert out == ["metric.units_sold"]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_sku_vs_seller_sku_keeps_hinted_metric_dim():
+    class _Mcp:
+        capabilities = {"seleric.catalogue_resolve_dimension"}
+
+        async def call(self, **kwargs):
+            return {
+                "kind": "ambiguous",
+                "candidates": [
+                    {"dimension_id": "sku", "confidence": 1.0},
+                    {"dimension_id": "seller_sku", "confidence": 1.0},
+                ],
+            }
+
+    cache = [
+        *_CACHE,
+        {"id": "units_sold", "supported_dimensions": ["product_title", "sku"]},
+    ]
+    runtime = SimpleNamespace(
+        bootstrap=_bootstrap(cache),
+        metrics=_Registry(_DEFS),
+        mcp=_Mcp(),
+    )
+    out, dims = await apply_catalogue_grain(
+        "What moved?",
+        ["metric.units_sold"],
+        runtime=runtime,
+        entities=["sku"],
+    )
+    assert dims == ["sku"]
+    assert out == ["metric.units_sold"]
 
 
 def test_evidence_covers_grain():

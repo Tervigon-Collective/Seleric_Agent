@@ -51,7 +51,7 @@ async def test_01_simple_lookup_minimal_swarm(runtime):
     assert intent_band_for_activation(nq) == "LOOKUP"
     dec = await initial_decomposition(mission_id="M1", normalized=nq)
     assert dec.template == "lookup"
-    assert len(dec.subquestions) <= 6
+    assert len(dec.subquestions) <= 8
     plan = build_mission_plan(
         mission_id="M1", normalized=nq, decomposition=dec, initial_lead="commerce_agent"
     )
@@ -72,8 +72,9 @@ async def test_02_executive_health_decomposition(runtime):
     assert dec.template == "executive_health"
     assert len(dec.objectives) >= 4
     purposes = {sq.purpose for sq in dec.subquestions}
-    assert "business_performance" in purposes
-    assert "paid_acquisition" in purposes
+    branches = {sq.branch for sq in dec.subquestions}
+    assert purposes == {"retrieve"}
+    assert {"commerce", "performance", "funnel", "finance"} <= branches
     # no deep diagnosis until anomaly
     assert all(sq.purpose != "causal_validation" for sq in dec.subquestions)
 

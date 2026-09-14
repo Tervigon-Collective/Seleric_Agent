@@ -54,6 +54,19 @@ class EntityRef(BaseModel):
     resolution_reason: str | None = None
 
 
+class DomainQuestion(BaseModel):
+    """One retrieve work-item owned by a single registry domain.
+
+    Built after classify + grain from metric ownership — not from keyword
+    matching. Each row is one Observer fetch: those metrics, that grain.
+    """
+
+    domain: str
+    metrics: list[str] = Field(default_factory=list)
+    grain: list[str] = Field(default_factory=list)
+    question: str
+
+
 class TimeRange(BaseModel):
     start: str
     end: str
@@ -118,6 +131,7 @@ class NormalizedQuery(BaseModel):
     comparison_range: TimeRange | None = None
     requested_outputs: list[str] = Field(default_factory=list)
     candidate_domains: list[str] = Field(default_factory=list)
+    domain_questions: list[DomainQuestion] = Field(default_factory=list)
     unresolved_semantics: list[str] = Field(default_factory=list)
     metric_resolution_reason: str | None = None
     unsupported_reason: str | None = None

@@ -6,7 +6,8 @@ import re
 from typing import Any
 
 from seleric_swarm.agents.base import AgentContext, SwarmAgent
-from seleric_swarm.contracts.lookup import DimensionMappingV1, MetricMappingV1
+from seleric_swarm.contracts.lookup import DimensionMappingV1
+from seleric_swarm.coordinator.catalogue_grounding import pick_grain, resolve_catalogue_dimension
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.runtime import SwarmRuntime
@@ -15,15 +16,6 @@ from seleric_swarm.services.evidence import make_evidence
 AGENT_VERSION = "0.1.0"
 _TOP_N_RE = re.compile(r"\btop\s+(\d+)\b", re.IGNORECASE)
 _DEFAULT_TOP_N = 10
-
-# Cheap pre-filter so a plain aggregate lookup doesn't pay for an extra LLM
-# call: only worth asking "does this need a breakdown?" when there's some
-# ranking/grouping language at all. This never decides WHICH dimension — that
-# real decision is grounded in the metric's actual supported_dimensions via
-# the observer.dimension_map prompt (see _resolve_breakdown_dimensions).
-_RANKING_LANGUAGE_RE = re.compile(
-    r"\b(top|best|worst|highest|lowest|leading|lagging|breakdown|by)\b", re.IGNORECASE
-)
 
 
 def _dimension_value(row: dict[str, Any], dim_id: str) -> Any:
@@ -192,15 +184,14 @@ class Agent(SwarmAgent):
     async def _resolve_metric_ids(
         self, ctx: AgentContext, allowed: list[str]
     ) -> tuple[list[str], int, dict[str, Any] | None]:
-        hints = [h for h in (ctx.payload.get("metric_hints") or []) if h in allowed]
-        if len(hints) > 1:
+        allowed_set = set(allowed)
+        hints = [h for h in (ctx.payload.get("metric_hints") or []) if h in allowed_set]
+        if hints:
             return hints, 0, None
         preset = ctx.payload.get("metric_id")
-        if preset and preset in allowed:
+        if preset and preset in allowed_set:
             return [preset], 0, None
-        if len(hints) == 1:
-            return hints, 0, None
-        if ctx.payload.get("resolved_dimensions") and not hints:
+        if ctx.payload.get("resolved_dimensions"):
             return [], 0, {
                 "metric_id": None,
                 "error_code": "INSUFFICIENT_EVIDENCE",
@@ -208,69 +199,13 @@ class Agent(SwarmAgent):
                 "limitations": ["No registered metric supports the requested dimension"],
                 "llm_calls": 0,
             }
-
-        spec = self.runtime.prompts.load("observer.metric_map")
-        user = spec.render_user(
-            {
-                "query": ctx.question,
-                "allowed_metric_ids": ", ".join(allowed),
-                "metric_hints": ", ".join(ctx.payload.get("metric_hints") or []),
-            }
-        )
-        request = LLMRequest(
-            messages=[
-                ChatMessage(role="system", content=spec.system),
-                ChatMessage(role="user", content=user),
-            ],
-            model=spec.model,
-            temperature=spec.temperature,
-            max_tokens=spec.max_tokens,
-            timeout_s=self.runtime.settings.llm_timeout_s,
-            metadata=LLMRequestMetadata(
-                request_id=str(ctx.payload.get("request_id") or ctx.mission_id),
-                session_id=str(ctx.payload.get("session_id") or ctx.mission_id),
-                mission_id=ctx.mission_id,
-                task_id=ctx.task_id,
-                agent_id=self.agent_id,
-                agent_version=self.runtime.agents.version(self.agent_id, AGENT_VERSION),
-                prompt_id=spec.id,
-                prompt_version=spec.version,
-                workflow_name=self.runtime.settings.workflow_name,
-                workflow_version=self.runtime.settings.workflow_version,
-                model=spec.model,
-                query_class=str(ctx.payload.get("query_class") or "") or None,
-            ),
-            tags=["observer", "metric_map"],
-        )
-        try:
-            mapped = await self.runtime.llm.complete_structured(request, MetricMappingV1)
-        except (LLMError, LLMStructuredOutputError) as exc:
-            message = getattr(exc, "message", str(exc))
-            return [], 1, {
-                "error_code": "LLM_UNAVAILABLE",
-                "error_message": message,
-                "limitations": ["Observer could not map a canonical metric"],
-                "llm_calls": 1,
-            }
-        mapping = mapped.value
-        raw_ids = list(dict.fromkeys(mapping.metric_ids))
-        unknown = [m for m in raw_ids if self.runtime.metrics.get(m) is None]
-        metric_ids = [m for m in raw_ids if m in allowed and m not in unknown]
-        if mapping.ambiguous or not metric_ids:
-            if unknown:
-                message = f"{unknown[0]} is not in the metric registry"
-                limitation = "Unknown metric id; observer will not invent a formula"
-            else:
-                message = mapping.reason or "Metric is ambiguous or not in the commerce registry"
-                limitation = "No registered metric could be selected without improvising a formula"
-            return [], 1, {
-                "metric_id": raw_ids[0] if raw_ids else None,
-                "error_code": "INSUFFICIENT_EVIDENCE",
-                "error_message": message,
-                "limitations": [limitation],
-                "llm_calls": 1,
-            }
-        return metric_ids, 1, None
+        return [], 0, {
+            "metric_id": None,
+            "error_code": "INSUFFICIENT_EVIDENCE",
+            "error_message": "No assigned metric for this domain retrieve",
+            "limitations": ["Observer will not map the raw query against the domain dump"],
+            "llm_calls": 0,
+        }
 
     async def _resolve_seleric_measure(self, *, definition: Any, owner_agent_id: str) -> str | None:
         """Resolve the catalogue measure id for this registry metric."""
@@ -298,10 +233,13 @@ class Agent(SwarmAgent):
     async def _resolve_breakdown_dimensions(
         self, ctx: AgentContext, *, supported: list[str]
     ) -> list[str]:
-        """Ask the LLM which supported dimension (if any) the query wants to
-        break down by — grounded in the metric's real dimension list (unlike
-        the classify-time ``entities`` field, which has no dimension catalogue
-        in its prompt context and so can only ever guess)."""
+        """Pick a breakdown dim from catalogue ∩ this metric's supported list.
+
+        Ambiguous catalogue candidates are resolved by intersection with
+        ``supported`` (the metric's real dimensions), then ontology
+        ``grain_defaults``. The LLM dimension_map prompt is only the last
+        tie-break when the catalogue did not settle.
+        """
         if not supported:
             return []
         preset = [
@@ -311,9 +249,29 @@ class Agent(SwarmAgent):
         ]
         if preset:
             return preset[:1]
-        # Classify-time grain already applied; only ask dimension_map when
-        # the question still has ranking/grouping language.
-        if not _RANKING_LANGUAGE_RE.search(ctx.question or ""):
+        live = await resolve_catalogue_dimension(ctx.question or "", runtime=self.runtime)
+        for entity in ctx.payload.get("entities") or []:
+            more = await resolve_catalogue_dimension(str(entity), runtime=self.runtime)
+            for dim in more:
+                if dim not in live:
+                    live.append(dim)
+        grounded = [d for d in live if d in supported]
+        if len(grounded) == 1:
+            return grounded
+        if len(grounded) > 1:
+            defaults = {}
+            bootstrap = getattr(self.runtime, "bootstrap", None)
+            if bootstrap is not None and getattr(bootstrap, "grain_defaults", None):
+                defaults = bootstrap.grain_defaults()
+            picked = pick_grain(
+                grounded,
+                query=ctx.question or "",
+                defaults=defaults,
+                registry_supported=set(supported),
+            )
+            if picked:
+                return [picked]
+        if getattr(self.runtime, "llm", None) is None:
             return []
         spec = self.runtime.prompts.load("observer.dimension_map")
         user = spec.render_user({"query": ctx.question, "supported_dimensions": ", ".join(supported)})

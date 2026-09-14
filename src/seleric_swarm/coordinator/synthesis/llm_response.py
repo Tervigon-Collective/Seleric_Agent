@@ -12,7 +12,11 @@ from typing import Any
 
 from seleric_swarm.coordinator.policies import CoordinatorPolicies
 from seleric_swarm.coordinator.synthesis.claim_selector import select_allowed_claims
-from seleric_swarm.coordinator.synthesis.response_builder import build_claim_aware_response
+from seleric_swarm.coordinator.synthesis.response_builder import (
+    build_claim_aware_response,
+    clean_anomalies,
+    gapped_metric_ids,
+)
 from seleric_swarm.llm.errors import LLMError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.runtime import SwarmRuntime
@@ -79,6 +83,7 @@ async def synthesize_swarm_response(
             policies=policies,
             conflicts=conflicts,
             extra_limitations=extra_limitations,
+            metrics=runtime.metrics,
         )
 
     try:
@@ -87,7 +92,9 @@ async def synthesize_swarm_response(
         return fallback()
 
     claims = select_allowed_claims(list(managed_claims or []))
-    anomalies = _anomalies_for_answer(blackboard, mission)
+    anomalies = _anomalies_for_answer(
+        blackboard, mission, metrics=runtime.metrics, limitations=extra_limitations
+    )
     predictions = blackboard.by_type("prediction")
     prediction = predictions[0] if predictions else None
     strategies = blackboard.by_type("strategy")
@@ -98,6 +105,7 @@ async def synthesize_swarm_response(
     user = spec.render_user(
         {
             "query": mission.query,
+            "completion_status": completion_status or "unknown",
             "claims_json": json.dumps(claims, default=str),
             "anomalies_json": json.dumps(anomalies, default=str),
             "prediction_json": json.dumps(prediction, default=str) if prediction else "none",
@@ -150,19 +158,37 @@ def _asked_metric_id(mission: SwarmMission) -> str:
     return str(ctx.get("primary_metric") or ctx.get("resolved_metric") or "")
 
 
-def _anomalies_for_answer(blackboard: Blackboard, mission: SwarmMission) -> list[dict[str, Any]]:
+def _anomalies_for_answer(
+    blackboard: Blackboard,
+    mission: SwarmMission,
+    *,
+    metrics: Any = None,
+    limitations: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Top movers, with the asked metric pinned even when quieter than peers.
 
     Without this, a ROAS question can be answered from louder checkout/revenue
     anomalies while the payload never mentions ``metric.gross_roas``.
+
+    Deduped by canonical metric id and stripped of anything with a reported
+    data gap for this window (see ``clean_anomalies``) — the LLM must never
+    be handed a number that has no data behind it or the same finding twice
+    under two id spellings.
     """
-    all_anoms = list(blackboard.by_type("anomaly"))
+    all_anoms = clean_anomalies(
+        blackboard.by_type("anomaly"), limitations=limitations, metrics=metrics
+    )
     primary = _asked_metric_id(mission)
+    primary_canon = metrics.canonical_id(primary) if (metrics is not None and primary) else primary
     ranked = sorted(all_anoms, key=lambda x: abs(x.get("deviation_pct") or 0), reverse=True)
-    pinned = [a for a in all_anoms if primary and a.get("metric_id") == primary]
-    rest = [a for a in ranked if not primary or a.get("metric_id") != primary][:8]
+
+    def _canon(mid: Any) -> Any:
+        return metrics.canonical_id(mid) if (metrics is not None and mid) else mid
+
+    pinned = [a for a in all_anoms if primary and _canon(a.get("metric_id")) == primary_canon]
+    rest = [a for a in ranked if not primary or _canon(a.get("metric_id")) != primary_canon][:8]
     out: list[dict[str, Any]] = list(pinned) + rest
-    if primary and not pinned:
+    if primary and not pinned and primary_canon not in gapped_metric_ids(limitations, metrics):
         evidence = [
             e
             for e in blackboard.by_type("evidence")

@@ -32,6 +32,9 @@ class _FakeRegistry:
         canonical = self._map.get(metric_id)
         return _FakeMetric(canonical) if canonical else None
 
+    def canonical_id(self, metric_id: str) -> str:
+        return self._map.get(metric_id, metric_id)
+
 
 def test_registry_resolved_aliases_are_not_a_semantic_conflict():
     registry = _FakeRegistry(

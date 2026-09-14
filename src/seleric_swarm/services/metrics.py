@@ -196,6 +196,28 @@ class MetricRegistry:
                 return metric.id
         return None
 
+    def canonical_id(self, metric_id: str) -> str:
+        """Collapse every spelling of a metric (legacy "metric." id, bare
+        live-catalogue id) to ONE id.
+
+        ``get()`` alone does not do this: once the live catalogue is warm,
+        a bare live id (e.g. "session_atc_to_checkout_rate") and its legacy
+        YAML overlay id (e.g. "metric.session_atc_to_checkout_rate") each
+        resolve to a *different* ``MetricDefinition`` with a different
+        ``.id`` — so two differently-spelled artifacts for the same real
+        metric never collapse via ``get()`` alone. Prefer the live
+        catalogue id as canonical (it's the production source of truth);
+        fall back to the YAML id when the catalogue isn't warm.
+        """
+        definition = self.get(metric_id)
+        if definition is None:
+            return metric_id
+        if definition.catalogue_metric and definition.catalogue_metric in self._live_defs:
+            return definition.catalogue_metric
+        if metric_id in self._live_defs:
+            return metric_id
+        return definition.id
+
     def require(self, metric_id: str) -> MetricDefinition:
         metric = self.get(metric_id)
         if metric is None:

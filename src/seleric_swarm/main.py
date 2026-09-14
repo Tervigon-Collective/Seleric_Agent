@@ -126,13 +126,23 @@ app.add_middleware(
 _KNOWN_SCENARIO_IDS = {"cac_regression"}
 
 
+_SWAGGER_PLACEHOLDERS = {"string"}
+
+
+def _is_swagger_placeholder(value: object) -> bool:
+    return isinstance(value, str) and value.strip().lower() in _SWAGGER_PLACEHOLDERS
+
+
 class MissionRequest(BaseModel):
-    query: str
+    query: str = Field(
+        ...,
+        json_schema_extra={"examples": ["Why has CAC increased over the last three days?"]},
+    )
     # docs/24_API_CONTRACTS.md documents this for fixture/replay-mode swarm
     # testing. Previously accepted-but-silently-ignored by pydantic (no field
     # existed) — an unknown id now 400s instead of being dropped (docs/44
     # ROB-004).
-    scenario_id: str | None = None
+    scenario_id: str | None = Field(default=None, json_schema_extra={"examples": [None]})
     scope: dict[str, Any] = Field(
         default_factory=dict,
         json_schema_extra={"examples": [{"timezone": "Asia/Kolkata"}]},
@@ -265,9 +275,16 @@ async def create_mission(
             status_code=400,
             detail="execution_mode must be one of: staging, production",
         )
+    if _is_swagger_placeholder(req.scenario_id):
+        req.scenario_id = None
     if req.scenario_id is not None and req.scenario_id not in _KNOWN_SCENARIO_IDS:
         raise HTTPException(status_code=400, detail=f"Unknown scenario_id: {req.scenario_id!r}")
     query = (req.query or "").strip()
+    if _is_swagger_placeholder(query):
+        raise HTTPException(
+            status_code=400,
+            detail="query must be a real question, not the OpenAPI placeholder 'string'",
+        )
     if not query:
         raise HTTPException(status_code=400, detail="query must be a non-empty string")
     if req.session_id is not None and req.session_id.strip() in {"", "string"}:
@@ -275,7 +292,11 @@ async def create_mission(
         req.session_id = None
 
     timezone = str(req.scope.get("timezone") or "Asia/Kolkata")
+    if _is_swagger_placeholder(timezone):
+        timezone = "Asia/Kolkata"
     as_of = req.scope.get("as_of") or req.scope.get("asOf")
+    if _is_swagger_placeholder(as_of):
+        as_of = None
     if as_of is not None:
         if not isinstance(as_of, str):
             raise HTTPException(status_code=400, detail="scope.as_of must be a date string (YYYY-MM-DD)")

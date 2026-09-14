@@ -1,4 +1,4 @@
-from seleric_swarm.config.settings import Settings
+from seleric_swarm.config.settings import Settings, configured_chat_model
 from seleric_swarm.observability.tracing import (
     REQUIRED_SPAN_METADATA,
     mission_metadata,
@@ -6,7 +6,14 @@ from seleric_swarm.observability.tracing import (
 )
 
 
-def test_settings_do_not_default_secrets():
+def test_configured_chat_model_uses_models_list_when_singular_empty():
+    settings = Settings(
+        _env_file=None,
+        azure_openai_model="",
+        azure_openai_models='["DeepSeek-V4-Flash","gpt-5-mini"]',
+    )
+    assert settings.primary_model() == "DeepSeek-V4-Flash"
+    assert configured_chat_model(settings) == "DeepSeek-V4-Flash"
     settings = Settings(azure_openai_api_key="", langsmith_api_key="")
     assert settings.azure_openai_api_key == ""
     assert settings.langsmith_api_key == ""
