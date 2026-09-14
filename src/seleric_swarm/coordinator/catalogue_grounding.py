@@ -54,7 +54,8 @@ def _alias_hits(query_tokens: set[str], runtime: SwarmRuntime) -> list[tuple[int
     """Glossary synonyms from the metric registry — gs→gross_sales, roas→gross_roas."""
     scored: list[tuple[int, str]] = []
     for metric in runtime.metrics.all():
-        for alias in metric.aliases:
+        aliases = getattr(metric, "aliases", [])
+        for alias in aliases:
             parts = [p for p in re.findall(r"[a-z0-9]+", alias) if p not in _STOPWORDS]
             if not parts:
                 continue
