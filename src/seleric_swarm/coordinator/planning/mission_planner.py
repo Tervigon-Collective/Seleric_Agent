@@ -66,7 +66,9 @@ def tasks_from_subquestions(
     tasks: list[TaskSpec] = []
     prev_id: str | None = None
     for sq in sorted(selected, key=lambda s: (-s.priority, s.question_id)):
-        caps = list(sq.required_capabilities) or ["metric_observation"]
+        caps = list(sq.required_capabilities)
+        if not caps:
+            continue
         agent = _agent_for_capability(caps[0], sq.branch)
         tid = f"T-{sq.question_id}"
         tasks.append(
@@ -147,23 +149,21 @@ def append_remediation_tasks(
     followups: list[dict[str, Any]],
     existing: list[TaskSpec],
 ) -> list[TaskSpec]:
-    """Map Skeptic FollowUpTasks to targeted TaskSpecs (never blind full-agent reruns)."""
+    """Map Skeptic FollowUpTasks to targeted TaskSpecs (never blind full-agent reruns).
+
+    ``requested_capability`` is trusted as-is: the one real caller
+    (``governance/remediation.targeted_remediation_plan``) already runs each
+    followup through ``classify_followup`` and normalizes the capability
+    (e.g. causal-graph gaps -> "causal_graph_resolve") before calling here.
+    Re-detecting "is this a causal-graph gap" from raw text a second time
+    with different rules let this function silently disagree with — and
+    override — the upstream classification.
+    """
     out = list(existing)
     seen_keys = {t.idempotency_key for t in existing}
     for f in followups:
         cap = str(f.get("requested_capability") or "metric_observation")
-        # Normalize causal-graph gaps to registry resolve — not full diagnostic.
         objective = str(f.get("objective") or f.get("question") or "")
-        question = str(f.get("question") or objective)
-        _obj_l, _q_l = objective.lower(), question.lower()
-        _is_causal_graph = (
-            "causal graph" in _obj_l
-            or "causal graph" in _q_l
-            or cap in {"causal_diagnosis", "causal_graph"}
-        )
-        _is_missing = "missing" in _obj_l or "missing" in _q_l or "unavailable" in _q_l
-        if _is_causal_graph and _is_missing:
-            cap = "causal_graph_resolve"
         agent = _agent_for_capability(cap, f.get("preferred_domain"))
         key = _idempotency_key(mission_id, cap, f.get("task_id"), agent)
         if key in seen_keys:
@@ -174,7 +174,7 @@ def append_remediation_tasks(
                 task_id=str(f.get("task_id") or f"REM-{key[:10]}"),
                 mission_id=mission_id,
                 task_type="remediation",
-                objective=objective or question,
+                objective=objective,
                 requested_capabilities=[cap],
                 preferred_domain=f.get("preferred_domain"),
                 requested_artifacts=[],

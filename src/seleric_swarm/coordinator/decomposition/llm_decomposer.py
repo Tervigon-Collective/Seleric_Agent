@@ -6,6 +6,7 @@ isn't usable so callers fall back to the offline templates.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -48,13 +49,20 @@ async def decompose_mission_via_llm(
     except Exception:
         return None
 
+    domain_questions = (
+        json.dumps([dq.model_dump() for dq in normalized.domain_questions], indent=2)
+        if normalized.domain_questions
+        else "none"
+    )
     user = spec.render_user(
         {
             "query": normalized.original_query,
             "intents": ", ".join(normalized.intents) or "none",
             "primary_metric": normalized.primary_metric or "none",
-            "entities": ", ".join(e.entity_id for e in normalized.entities) or "none",
+            "secondary_metrics": ", ".join(normalized.secondary_metrics) or "none",
+            "entities": ", ".join(e.entity_id or e.raw for e in normalized.entities) or "none",
             "candidate_domains": ", ".join(normalized.candidate_domains) or "none",
+            "domain_questions": domain_questions,
         }
     )
     request = LLMRequest(

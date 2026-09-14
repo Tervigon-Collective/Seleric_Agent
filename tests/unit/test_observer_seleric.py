@@ -216,13 +216,11 @@ async def test_observer_fetches_every_allowed_hint():
 
 
 @pytest.mark.asyncio
-async def test_observer_bundles_domain_metrics_for_area_status_query():
-    """'funnel status' names an area, not one measure — the metric_map
-    fallback (used when classify hands no hints) must resolve every allowed
-    metric in that area instead of failing closed on a single pick."""
-    from seleric_swarm.llm.adapters.fake import FakeLLMAdapter
-    from seleric_swarm.prompts.registry import PromptRegistry
+async def test_observer_fetches_assigned_area_metrics_without_metric_map():
+    """Assigned funnel metrics (from DomainQuestion / hints) are fetched as-is.
 
+    Observer does not call metric_map to expand the domain dump.
+    """
     sessions = _commerce_def("metric.sessions", "sessions")
     sessions.domain = "funnel"
     checkout = _commerce_def("metric.checkout_rate", "checkout_rate")
@@ -230,29 +228,50 @@ async def test_observer_bundles_domain_metrics_for_area_status_query():
     gateway = _FakeGateway(
         {
             "seleric.catalogue_search_metrics": [
-                {"matches": [{"id": "checkout_rate"}]},
                 {"matches": [{"id": "sessions"}]},
+                {"matches": [{"id": "checkout_rate"}]},
             ],
             "seleric.metrics_query": [
-                {
-                    "rows": [{"checkout_rate": "0.12"}],
-                    "provenance": {"cube_view": "funnel_daily", "query_id": "q_c"},
-                },
                 {
                     "rows": [{"sessions": "1000"}],
                     "provenance": {"cube_view": "funnel_daily", "query_id": "q_s"},
                 },
+                {
+                    "rows": [{"checkout_rate": "0.12"}],
+                    "provenance": {"cube_view": "funnel_daily", "query_id": "q_c"},
+                },
             ],
         }
     )
+    runtime = SimpleNamespace(metrics=_MapMetrics([sessions, checkout]), mcp=gateway, ontology=None)
+    result = await ObserverAgent(runtime).observe(
+        AgentContext(
+            mission_id="M-test",
+            task_id="T-1",
+            question="funnel status for website today",
+            mission_lead="funnel_agent",
+            payload={
+                "allowed_metrics": ["metric.sessions", "metric.checkout_rate"],
+                "metric_hints": ["metric.sessions", "metric.checkout_rate"],
+                "time_range": {"kind": "point", "start": "2026-09-09"},
+            },
+        )
+    )
+    values = {row["metric_or_fact"]: row["value"] for row in result["evidence"]}
+    assert values["metric.sessions"] == pytest.approx(1000.0)
+    assert values["metric.checkout_rate"] == pytest.approx(0.12)
+    assert result["error_code"] is None
+    assert result["llm_calls"] == 0
+
+
+@pytest.mark.asyncio
+async def test_observer_refuses_domain_dump_without_assigned_metrics():
+    sessions = _commerce_def("metric.sessions", "sessions")
+    sessions.domain = "funnel"
     runtime = SimpleNamespace(
-        metrics=_MapMetrics([sessions, checkout]),
-        mcp=gateway,
+        metrics=_MapMetrics([sessions]),
+        mcp=_FakeGateway({"seleric.catalogue_search_metrics": []}),
         ontology=None,
-        llm=FakeLLMAdapter(),
-        prompts=PromptRegistry("prompts", "config/prompt_versions.yaml"),
-        settings=SimpleNamespace(llm_timeout_s=5.0, workflow_name="swarm_v2", workflow_version="1.0.0"),
-        agents=SimpleNamespace(version=lambda agent_id, default: default),
     )
     result = await ObserverAgent(runtime).observe(
         AgentContext(
@@ -266,11 +285,58 @@ async def test_observer_bundles_domain_metrics_for_area_status_query():
             },
         )
     )
-    values = {row["metric_or_fact"]: row["value"] for row in result["evidence"]}
-    assert values["metric.sessions"] == pytest.approx(1000.0)
-    assert values["metric.checkout_rate"] == pytest.approx(0.12)
-    assert result["error_code"] is None
-    assert result["llm_calls"] == 1
+    assert result["error_code"] == "INSUFFICIENT_EVIDENCE"
+    assert result["llm_calls"] == 0
+    assert "domain dump" in (result.get("limitations") or [""])[0]
+
+
+@pytest.mark.asyncio
+async def test_observer_sku_list_requests_sku_dimension_not_period_total():
+    units = _commerce_def("metric.units_sold", "units_sold")
+    units.domain = "product"
+    gateway = _FakeGateway(
+        {
+            "seleric.catalogue_search_metrics": [{"matches": [{"id": "units_sold"}]}],
+            "seleric.catalogue_get_metric": [{"supported_dimensions": ["product_title", "sku"]}],
+            "seleric.catalogue_resolve_dimension": [
+                {
+                    "kind": "ambiguous",
+                    "candidates": [
+                        {"dimension_id": "sku", "confidence": 1.0},
+                        {"dimension_id": "seller_sku", "confidence": 1.0},
+                    ],
+                }
+            ],
+            "seleric.metrics_query": [
+                {
+                    "rows": [
+                        {"units_sold": "20", "sku": "SERUM-01"},
+                        {"units_sold": "12", "sku": "CLEAN-02"},
+                    ],
+                    "provenance": {"cube_view": "product_performance", "query_id": "q_sku"},
+                }
+            ],
+        }
+    )
+    runtime = _runtime_with_llm(metrics=_MapMetrics([units]), mcp=gateway, dimensions=["product_title"])
+    result = await ObserverAgent(runtime).observe(
+        AgentContext(
+            mission_id="M-test",
+            task_id="T-1",
+            question="Give me the list of SKUs sold last 30 days",
+            mission_lead="product_agent",
+            payload={
+                "metric_id": "metric.units_sold",
+                "allowed_metrics": ["metric.units_sold"],
+                "time_range": {"kind": "absolute", "start": "2026-08-16", "end": "2026-09-14"},
+            },
+        )
+    )
+    query = gateway.calls[-1]["arguments"]
+    assert query["dimensions"] == ["sku"]
+    assert query["sort"] == [{"field": "units_sold", "direction": "desc"}]
+    skus = [row["dimensions"]["sku"] for row in result["evidence"]]
+    assert skus == ["SERUM-01", "CLEAN-02"]
 
 
 @pytest.mark.asyncio

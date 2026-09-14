@@ -1,0 +1,47 @@
+﻿F..................................                                      [100%]
+================================== FAILURES ===================================
+_________ test_registry_resolved_aliases_are_not_a_semantic_conflict __________
+
+    def test_registry_resolved_aliases_are_not_a_semantic_conflict():
+        registry = _FakeRegistry(
+            {
+                "cac": "metric.cac",
+                "metric.cac": "metric.cac",
+                "bounce_rate": "metric.bounce_rate",
+                "metric.bounce_rate": "metric.bounce_rate",
+            }
+        )
+        for bare, prefixed in [("cac", "metric.cac"), ("bounce_rate", "metric.bounce_rate")]:
+>           conflicts = detect_conflicts(
+                {
+                    "evidence": [
+                        {"artifact_id": "EV-1", "metric_or_fact": bare, "value": 1},
+                        {"artifact_id": "EV-2", "metric_or_fact": prefixed, "value": 1},
+                    ],
+                },
+                registry=registry,
+            )
+
+tests\coordinator\test_conflicts_arbitration.py:46: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\seleric_swarm\coordinator\governance\conflicts.py:102: in detect_conflicts
+    f"{_mid(e)}|{sorted((e.get('dimensions') or {}).items())}|"
+src\seleric_swarm\coordinator\governance\conflicts.py:93: in _mid
+    return _canonical_metric_id(raw, registry) if raw else raw
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+metric_id = 'cac'
+registry = <test_conflicts_arbitration._FakeRegistry object at 0x000001BC73B2B390>
+
+    def _canonical_metric_id(metric_id: str, registry: Any) -> str:
+        """Resolve any spelling of a metric (bare catalogue name, "metric." id,
+        live-catalogue id) to one canonical id via the shared MetricRegistry �
+        generic across every metric, no per-metric string list to maintain."""
+        if registry is not None:
+>           return registry.canonical_id(metric_id)
+E           AttributeError: '_FakeRegistry' object has no attribute 'canonical_id'
+
+src\seleric_swarm\coordinator\governance\conflicts.py:55: AttributeError
+=========================== short test summary info ===========================
+FAILED tests/coordinator/test_conflicts_arbitration.py::test_registry_resolved_aliases_are_not_a_semantic_conflict
+1 failed, 34 passed in 290.68s (0:04:50)

@@ -25,6 +25,7 @@ from seleric_swarm.agents.diagnostic.ontology import (
 )
 from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
 from seleric_swarm.agents.diagnostic.reasoning import LLMPortReasoningModel, NullReasoningModel
+from seleric_swarm.config.settings import configured_chat_model
 from seleric_swarm.agents.diagnostic.registries import (
     TemplateCausalEstimationService,
     causal_graphs_from_yaml,
@@ -75,10 +76,11 @@ class SwarmDiagnosticSpecialist:
         if self._deps is not None:
             return self._deps.reasoning
         runtime = self._runtime
-        if runtime is not None and runtime.settings.azure_openai_model:
+        model = configured_chat_model(runtime.settings) if runtime is not None else ""
+        if runtime is not None and model:
             return LLMPortReasoningModel(
                 runtime.llm,
-                model=runtime.settings.azure_openai_model,
+                model=model,
                 mission_id=mission_id,
                 request_id=self._trace_base.get("request_id"),
                 session_id=self._trace_base.get("session_id"),
@@ -101,7 +103,7 @@ class SwarmDiagnosticSpecialist:
         # - Fixture/test mode: scenario has causal_truth → use template service
         # - Production mode: no fixture → use DoWhy with template fallback
         causal_truth = self._scenario.get("causal_truth")
-        primary_metric = str(mission.context.get("primary_metric") or "")
+        primary_metric = _mission_outcome_metric(mission, blackboard)
         observations = None
         graphs = (
             self._deps.causal_graphs if self._deps is not None else causal_graphs_from_yaml()
@@ -230,6 +232,40 @@ causal evidence layer uses the extended history.
 # on every domain provider turns a 3-day question into thousands of sequential
 # HTTP calls (the ~20 minute spinner). Cap treatments; route by owner.
 _MAX_CAUSAL_TREATMENTS = 3
+
+
+def _mission_outcome_metric(mission: SwarmMission, blackboard: Blackboard) -> str:
+    """Outcome series to fetch for DoWhy.
+
+    Intake can leave ``primary_metric`` empty when the asked KPI is catalogue-
+    only (not in the YAML registry). Diagnostic still resolves that KPI from
+    anomalies; observations must use the same id or DoWhy gets no rows.
+    """
+    ctx = mission.context or {}
+    for key in ("primary_metric", "resolved_metric"):
+        value = str(ctx.get(key) or "").strip()
+        if value:
+            return value
+    for hint in ctx.get("metric_hints") or []:
+        value = str(hint or "").strip()
+        if value:
+            return value
+    scored: dict[str, float] = {}
+    for row in blackboard.by_type("anomaly"):
+        mid = str(row.get("metric_id") or "").strip()
+        if not mid or mid.startswith("event."):
+            continue
+        try:
+            scored[mid] = max(scored.get(mid, 0.0), abs(float(row.get("deviation_pct") or 0.0)))
+        except (TypeError, ValueError):
+            scored.setdefault(mid, 0.0)
+    if scored:
+        return max(scored, key=scored.get)
+    for row in blackboard.by_type("evidence"):
+        mid = str(row.get("metric_id") or row.get("metric_or_fact") or "").strip()
+        if mid and not mid.startswith("event."):
+            return mid
+    return ""
 
 
 def _ranked_treatment_ids(

@@ -72,9 +72,7 @@ class SkepticDeps:
     def canonical_metric_id(self, metric_id: str) -> str:
         """Resolve any spelling of a metric to one id via the bound catalogue."""
         if self.catalogue is not None:
-            definition = self.catalogue.get(metric_id)
-            if definition is not None:
-                return definition.id
+            return self.catalogue.canonical_id(metric_id)
         return metric_id
 
 

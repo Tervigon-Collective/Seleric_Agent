@@ -52,9 +52,7 @@ def _canonical_metric_id(metric_id: str, registry: Any) -> str:
     live-catalogue id) to one canonical id via the shared MetricRegistry —
     generic across every metric, no per-metric string list to maintain."""
     if registry is not None:
-        definition = registry.get(metric_id)
-        if definition is not None:
-            return definition.id
+        return registry.canonical_id(metric_id)
     return metric_id
 
 

@@ -45,6 +45,7 @@ from seleric_swarm.coordinator.intake import (
     UNRESOLVED_NO_LLM,
     UNRESOLVED_PRIMARY_METRIC,
     apply_full_flags,
+    metric_hints_for_mission,
     normalize_query,
     resolve_mission_time_range,
 )
@@ -1108,6 +1109,8 @@ async def run_swarm_v2_mission(
             # rather than a plausible id.
             "primary_metric": normalized.primary_metric,
             "resolved_metric": normalized.primary_metric,
+            "metric_hints": metric_hints_for_mission(normalized),
+            "domain_questions": [dq.model_dump() for dq in normalized.domain_questions],
             "decomposition_id": decomposition.decomposition_id,
             "plan_errors": plan_errors,
             "degradation_started_at": (scenario.get("domains", {}).get("technical", {}) or {}).get(

@@ -134,7 +134,7 @@ async def classify_query_via_llm(
     catalogue_hints = await hints_from_catalogue(query, runtime=runtime, agent_id=agent_id)
     merged_hints = list(dict.fromkeys([*classification.metric_hints, *catalogue_hints]))
     merged_hints, resolved_dimensions = await apply_catalogue_grain(
-        query, merged_hints, runtime=runtime
+        query, merged_hints, runtime=runtime, entities=classification.entities
     )
     canonical = [m for m in merged_hints if runtime.metrics.get(m) is not None]
 

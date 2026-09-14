@@ -5,7 +5,15 @@ from typing import Any
 
 _NUMBER_RE = re.compile(r"(?<![A-Za-z])[-+]?\d[\d,]*(?:\.\d+)?(?![A-Za-z])")
 _ISO_DATE_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
-_ID_RE = re.compile(r"\b(?:EV|CL|M|T)-[A-Za-z0-9]+\b")
+
+# Internal artifact-id token (EV-/CL-/M-/T- prefix, e.g. "EV-5d68e2c96e68"),
+# with an optional leading space and enclosing []/() — the single source of
+# truth for this id shape. A second hand-rolled copy in orchestration/
+# synthesize.py used a hex-only body ([0-9a-f]) instead of this one's
+# alnum body; an id with a non-hex suffix char would strip here but not
+# there, so both now import ARTIFACT_ID_RE from here instead of each
+# maintaining their own pattern.
+ARTIFACT_ID_RE = re.compile(r"\s*[\[(]?\b(?:EV|CL|M|T)-[A-Za-z0-9]+\b[\])]?", re.IGNORECASE)
 
 
 def _normalize_number(token: str) -> str:
@@ -55,7 +63,7 @@ def allowed_numbers(
 
 def extract_numbers(text: str) -> list[str]:
     cleaned = _ISO_DATE_RE.sub(" ", text)
-    cleaned = _ID_RE.sub(" ", cleaned)
+    cleaned = ARTIFACT_ID_RE.sub(" ", cleaned)
     return [_normalize_number(match.group(0)) for match in _NUMBER_RE.finditer(cleaned)]
 
 

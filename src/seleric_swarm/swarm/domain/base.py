@@ -95,17 +95,17 @@ class DomainAgent:
 
     # -- Observer delegates data retrieval here (only domains + Observer hold data access)
     def _observe_metric_ids(self, extra_metrics: list[str] | None = None) -> list[str]:
-        """Probe set plus the asked metric, even when that KPI is ``probe: false``.
+        """Assigned extras only. Probe set is the discovery fallback.
 
         Outcome KPIs like gross ROAS are not on the delivery frontier, but a
-        question about them still has to retrieve the number.
+        question about them still has to retrieve the number — they arrive
+        via ``extra_metrics`` and are kept even when ``probe: false``.
         """
-        ids = list(self.config.probe_metrics)
         owned = set(self.config.owned_metrics)
-        for mid in extra_metrics or ():
-            if mid and mid in owned and mid not in ids:
-                ids.append(mid)
-        return ids
+        assigned = [m for m in (extra_metrics or ()) if m and m in owned]
+        if assigned:
+            return assigned
+        return list(self.config.probe_metrics)
 
     async def observe(
         self,
@@ -113,13 +113,22 @@ class DomainAgent:
         *,
         time_range: dict[str, Any],
         extra_metrics: list[str] | None = None,
+        grain: list[str] | None = None,
     ) -> list[str]:
         if self.data is None:
             blackboard.record_event("observe_skipped", agent=self.agent_id, reason="no data provider")
             return []
         posted: list[str] = []
         metric_ids = self._observe_metric_ids(extra_metrics)
-        for dims in self.config.probe_dimensions or [{}]:
+        owned = set(self.config.owned_metrics)
+        assigned = bool([m for m in (extra_metrics or ()) if m and m in owned])
+        if grain:
+            dim_sets: list[dict[str, str]] = [{d: "" for d in grain}]
+        elif assigned:
+            dim_sets = [{}]
+        else:
+            dim_sets = list(self.config.probe_dimensions or [{}])
+        for dims in dim_sets:
             result = await self.data.fetch(
                 metric_ids=metric_ids,
                 time_range=time_range,
@@ -159,8 +168,8 @@ class DomainAgent:
                     ev.mark_synthetic()
                 posted.append(blackboard.post(ev))
 
-        # Shallow read of every peer domain so RCA can hand off wherever data points.
-        posted += await self._observe_peers(blackboard, time_range=time_range)
+        if not assigned:
+            posted += await self._observe_peers(blackboard, time_range=time_range)
 
         blackboard.record_event("observed", agent=self.agent_id, evidence=len(posted))
         return posted

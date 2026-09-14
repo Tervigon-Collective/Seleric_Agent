@@ -54,6 +54,19 @@ system: |
   A question with several intents plans the union of their starting frontiers,
   each stage once, ordered diagnostic -> predictive -> prescriptive -> skeptic.
 
+  ## Domain-level retrieve partition
+
+  Metric ownership is already partitioned into Domain questions (registry
+  domain, metrics, grain). When that field is not "none":
+
+    - Emit exactly one retrieve step per row. Use that row's domain as
+      branch. Do not merge two domains into one retrieve. Do not add
+      metrics that are not listed.
+    - Then add the rest of the starting frontier for the classified
+      intents (anomaly / forecast / strategy) without duplicating those
+      retrieves.
+    - Never invent a metric or a domain that is not in Candidate domains.
+
   ## Fields per step
 
     - purpose: a short snake_case slug. These eight route the step to a specific
@@ -79,5 +92,7 @@ user_template: |
   Query: {{ query }}
   Intents: {{ intents }}
   Primary metric: {{ primary_metric }}
+  Secondary metrics: {{ secondary_metrics }}
   Entities: {{ entities }}
   Candidate domains: {{ candidate_domains }}
+  Domain questions: {{ domain_questions }}

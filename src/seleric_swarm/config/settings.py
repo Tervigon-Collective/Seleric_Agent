@@ -179,6 +179,21 @@ class Settings(BaseSettings):
         return self.resolved_models()[1:]
 
 
+def configured_chat_model(settings: object) -> str:
+    """Model id for agent LLM calls.
+
+    Prefer ``primary_model()`` so ``AZURE_OPENAI_MODELS`` / MODEL1+MODEL2 work
+    when the legacy singular ``AZURE_OPENAI_MODEL`` is empty.
+    """
+
+    getter = getattr(settings, "primary_model", None)
+    if callable(getter):
+        resolved = getter()
+        if isinstance(resolved, str) and resolved.strip():
+            return resolved.strip()
+    return str(getattr(settings, "azure_openai_model", "") or "").strip()
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

@@ -31,12 +31,19 @@ class ObserverAgent(SpecialistAgent):
         return await domain.observe(
             blackboard,
             time_range=mission.time_range,
-            extra_metrics=_asked_metrics(mission),
+            extra_metrics=_asked_metrics(mission, lead=lead),
+            grain=_asked_grain(mission, lead=lead),
         )
 
 
-def _asked_metrics(mission: SwarmMission) -> list[str]:
+def _asked_metrics(mission: SwarmMission, *, lead: str | None = None) -> list[str]:
     ctx = mission.context or {}
+    domain = (lead or "").removesuffix("_agent")
+    for dq in ctx.get("domain_questions") or []:
+        if not isinstance(dq, dict):
+            continue
+        if dq.get("domain") == domain and dq.get("metrics"):
+            return [str(m) for m in dq["metrics"] if m]
     out: list[str] = []
     for key in ("primary_metric", "resolved_metric"):
         value = ctx.get(key)
@@ -46,3 +53,14 @@ def _asked_metrics(mission: SwarmMission) -> list[str]:
         if hint and str(hint) not in out:
             out.append(str(hint))
     return out
+
+
+def _asked_grain(mission: SwarmMission, *, lead: str | None = None) -> list[str]:
+    ctx = mission.context or {}
+    domain = (lead or "").removesuffix("_agent")
+    for dq in ctx.get("domain_questions") or []:
+        if not isinstance(dq, dict):
+            continue
+        if dq.get("domain") == domain:
+            return [str(g) for g in (dq.get("grain") or []) if g]
+    return []

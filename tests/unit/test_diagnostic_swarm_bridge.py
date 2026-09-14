@@ -23,6 +23,7 @@ from seleric_swarm.agents.diagnostic.swarm_bridge import (
     _CAUSAL_EXTRA_HISTORY_DAYS,
     _MAX_CAUSAL_TREATMENTS,
     _fetch_observations,
+    _mission_outcome_metric,
     _providers_for_metrics,
     _ranked_treatment_ids,
 )
@@ -396,13 +397,37 @@ def test_live_runtime_wires_llm_reasoning():
     from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
 
     runtime = MagicMock()
-    runtime.settings.azure_openai_model = "gpt-test"
+    runtime.settings.azure_openai_model = ""
+    runtime.settings.primary_model = lambda: "DeepSeek-V4-Flash"
     runtime.llm = MagicMock()
     spec = SwarmDiagnosticSpecialist(runtime=runtime, trace_base={"request_id": "r1"})
     assert isinstance(spec._reasoning_for("M-1"), LLMPortReasoningModel)
 
     spec_off = SwarmDiagnosticSpecialist(runtime=None)
     assert isinstance(spec_off._reasoning_for("M-1"), NullReasoningModel)
+
+
+def test_mission_outcome_metric_uses_loudest_anomaly_when_context_empty():
+    blackboard = Blackboard("MS-empty-primary")
+    blackboard.post(
+        Anomaly.new(
+            mission_id="MS-empty-primary",
+            created_by="anomaly_agent",
+            metric_id="session_atc_to_checkout_rate",
+            deviation_pct=-18.0,
+            direction="down",
+        )
+    )
+    from seleric_swarm.swarm.mission import SwarmMission
+
+    mission = SwarmMission(
+        mission_id="MS-empty-primary",
+        query="Why did ATC to checkout drop?",
+        time_range={"start": "2026-09-14", "end": "2026-09-14"},
+        intents={"diagnostic"},
+        context={"primary_metric": None},
+    )
+    assert _mission_outcome_metric(mission, blackboard) == "session_atc_to_checkout_rate"
 
 
 def test_confounders_from_graph_are_common_ancestors_not_yaml_template():

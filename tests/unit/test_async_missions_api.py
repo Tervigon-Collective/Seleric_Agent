@@ -53,6 +53,44 @@ def test_async_mission_accept_then_poll_to_terminal(client):
     assert final.get("mission_id") == mission_id
 
 
+def test_async_strips_swagger_scenario_id_placeholder(client, monkeypatch):
+    async def _fake_classify(*_args, **_kwargs):
+        from seleric_swarm.coordinator.intake.llm_classifier import LlmClassification
+        from seleric_swarm.contracts.lookup import TimeRangeV1
+
+        return LlmClassification(
+            intents=["diagnostic"],
+            domain_lead="funnel_agent",
+            entities=[],
+            time_range=TimeRangeV1(),
+            primary_metric="metric.cac",
+            secondary_metrics=[],
+            unresolved=False,
+            unsupported_reason=None,
+        )
+
+    async def _fake_run(*_args, **_kwargs):
+        return {"route": "swarm", "result": {"mission_id": "MS-swagger", "status": "completed"}}
+
+    monkeypatch.setattr(
+        "seleric_swarm.coordinator.intake.llm_classifier.classify_query_via_llm",
+        _fake_classify,
+    )
+    monkeypatch.setattr(main_mod, "run_any_mission", _fake_run)
+    ok = client.post(
+        "/v1/missions",
+        json={
+            "query": "Why has CAC increased?",
+            "mode": "read_only",
+            "scenario_id": "string",
+            "session_id": "string",
+            "scope": {"timezone": "string", "as_of": "string"},
+        },
+    )
+    assert ok.status_code == 200
+    assert ok.json()["mission_id"] == "MS-swagger"
+
+
 def test_async_rejects_unknown_scenario(client):
     bad = client.post(
         "/v1/missions",

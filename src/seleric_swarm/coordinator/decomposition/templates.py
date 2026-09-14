@@ -51,11 +51,11 @@ TEMPLATES: dict[str, list[dict[str, Any]]] = {
         {"purpose": "skeptic_validation", "question": "Validate recommendations with Skeptic.", "priority": 4},
     ],
     "executive_health": [
-        {"purpose": "business_performance", "question": "How is revenue / orders performing today?", "priority": 9, "branch": "commerce"},
-        {"purpose": "paid_acquisition", "question": "How is paid acquisition (CAC/ROAS) performing?", "priority": 8, "branch": "performance"},
-        {"purpose": "funnel_health", "question": "Is the purchase funnel healthy?", "priority": 7, "branch": "funnel"},
-        {"purpose": "profitability", "question": "Are margins/profitability within norms?", "priority": 6, "branch": "finance"},
-        {"purpose": "operational_risk", "question": "Are there major operational incidents?", "priority": 5, "branch": "technical"},
+        {"purpose": "retrieve", "question": "How is revenue / orders performing today?", "priority": 9, "branch": "commerce"},
+        {"purpose": "retrieve", "question": "How is paid acquisition (CAC/ROAS) performing?", "priority": 8, "branch": "performance"},
+        {"purpose": "retrieve", "question": "Is the purchase funnel healthy?", "priority": 7, "branch": "funnel"},
+        {"purpose": "retrieve", "question": "Are margins/profitability within norms?", "priority": 6, "branch": "finance"},
+        {"purpose": "retrieve", "question": "Are there major operational incidents?", "priority": 5, "branch": "operations"},
     ],
     "cac_diagnostic": [
         {"purpose": "verify_cac", "question": "Did CAC actually increase?", "priority": 9, "branch": "cac"},

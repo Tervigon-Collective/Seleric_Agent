@@ -17,6 +17,7 @@ from seleric_swarm.agents.strategy.context import StrategyDeps
 from seleric_swarm.agents.strategy.contracts import StrategyRequest, StrategyResult
 from seleric_swarm.agents.strategy.policies import StrategyPolicies
 from seleric_swarm.agents.strategy.reasoning import LLMPortReasoningModel, NullReasoningModel
+from seleric_swarm.config.settings import configured_chat_model
 from seleric_swarm.swarm.artifacts import Strategy
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission
@@ -51,10 +52,11 @@ class SwarmStrategySpecialist:
     def _deps_for_run(self) -> StrategyDeps:
         if self._deps is not None:
             return self._deps
-        if self._runtime is not None and self._runtime.settings.azure_openai_model:
+        model = configured_chat_model(self._runtime.settings) if self._runtime is not None else ""
+        if self._runtime is not None and model:
             reasoning = LLMPortReasoningModel(
                 self._runtime.llm,
-                model=self._runtime.settings.azure_openai_model,
+                model=model,
             )
             return StrategyDeps(reasoning=reasoning)
         return StrategyDeps(reasoning=NullReasoningModel())

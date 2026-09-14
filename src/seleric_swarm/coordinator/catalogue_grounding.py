@@ -42,20 +42,47 @@ _RESOLVE_TERM_CAP = "seleric.catalogue_resolve_term"
 # single generic word like "status" comes back matching nearly every
 # *_status dimension in the catalogue. Only worth asking at all when the
 # query actually shows breakdown/grouping intent; a plain "X status" or
-# "X performance" aggregate ask never should. Mirrors observer.py's
-# _RANKING_LANGUAGE_RE gate for the same reason.
+# "X performance" aggregate ask never should. Observer uses the same gate.
 _GRAIN_LANGUAGE_RE = re.compile(
     r"\b(top|best|worst|highest|lowest|leading|lagging|breakdown|by|wise|split|per|grouped)\b",
     re.IGNORECASE,
 )
+# SKU is itself a catalogue dimension (product_performance.sku). "list of SKUs"
+# / "which products" are grain asks even without "top"/"by". Bare "product"
+# is not — "product cost" is a P&L line, not a product_title breakdown.
+_SKU_RE = re.compile(r"\bskus?\b", re.IGNORECASE)
+_PRODUCT_LIST_RE = re.compile(
+    r"\b(?:which|list of|each|per|top|best)\s+products?\b"
+    r"|product[- ](?:title|level|list|wise)"
+    r"|best[- ]selling products?",
+    re.IGNORECASE,
+)
+_DIM_QUERY_SYNONYMS: dict[str, frozenset[str]] = {
+    "sku": frozenset({"sku", "skus"}),
+}
+
+
+def query_has_grain_intent(query: str) -> bool:
+    q = query or ""
+    return bool(_GRAIN_LANGUAGE_RE.search(q) or _SKU_RE.search(q) or _PRODUCT_LIST_RE.search(q))
+
+
+def breakdown_from_query(query: str, supported: list[str]) -> list[str]:
+    """Deterministic grain from the question against a metric's real dimensions."""
+    supported_set = set(supported)
+    q = query or ""
+    if _SKU_RE.search(q) and "sku" in supported_set:
+        return ["sku"]
+    if _PRODUCT_LIST_RE.search(q) and "product_title" in supported_set:
+        return ["product_title"]
+    return []
 
 
 def _alias_hits(query_tokens: set[str], runtime: SwarmRuntime) -> list[tuple[int, str]]:
     """Glossary synonyms from the metric registry — gs→gross_sales, roas→gross_roas."""
     scored: list[tuple[int, str]] = []
     for metric in runtime.metrics.all():
-        aliases = getattr(metric, "aliases", [])
-        for alias in aliases:
+        for alias in getattr(metric, "aliases", None) or []:
             parts = [p for p in re.findall(r"[a-z0-9]+", alias) if p not in _STOPWORDS]
             if not parts:
                 continue
@@ -197,6 +224,10 @@ def dimensions_in_query(
             continue
         if dim_tokens and any(t in q_tokens and t not in _GENERIC_DIM_TOKENS for t in dim_tokens):
             hits.append(dim)
+            continue
+        synonyms = _DIM_QUERY_SYNONYMS.get(dim, ())
+        if synonyms and (q_tokens & set(synonyms)):
+            hits.append(dim)
     if alias_index:
         for alias, dim_id in alias_index.items():
             if not dim_id or _is_time_dimension(dim_id) or dim_id in hits:
@@ -319,10 +350,56 @@ def _dims_from_resolve(result: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def ground_live_grain(
+    live: list[str],
+    hints: list[str],
+    *,
+    metrics: MetricRegistry,
+    bootstrap: CatalogueBootstrap,
+) -> list[str]:
+    """Keep live catalogue dims only when the already-resolved metric can slice them.
+
+    The resolver has no relevance threshold (``funnel status`` → every ``*_status``
+    dimension). Swapping the asked metric for whatever supports that hallucination
+    is the bug. Intersection with the hinted metric's ``supported_dimensions`` is
+    the corroboration — not a keyword table.
+
+    No hints = grain-first: keep the live candidates so constrain_hints can pick
+    a default measure.
+    """
+    ordered = list(dict.fromkeys(d for d in live if d and not _is_time_dimension(d)))
+    if not ordered:
+        return []
+    if not hints:
+        return ordered
+    allowed: set[str] = set()
+    for hint in hints:
+        allowed.update(_supported_for_hint(hint, metrics, bootstrap))
+    if not allowed:
+        return []
+    return [d for d in ordered if d in allowed]
+
+
+async def resolve_grain_texts(texts: list[str], *, runtime: SwarmRuntime) -> list[str]:
+    """Union of catalogue_resolve_dimension hits for the query and LLM entities."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for text in texts:
+        raw = str(text or "").strip()
+        if not raw or raw.startswith("metric."):
+            continue
+        for dim in await resolve_catalogue_dimension(raw, runtime=runtime):
+            if dim not in seen:
+                seen.add(dim)
+                out.append(dim)
+    return out
+
+
 async def resolve_catalogue_dimension(query: str, *, runtime: SwarmRuntime) -> list[str]:
     """Dimension ids from catalogue_resolve_dimension (or typed resolve_term).
 
-    Untyped metric-only resolve_term payloads are ignored.
+    Untyped metric-only resolve_term payloads are ignored. Ambiguous payloads
+    return every candidate id; callers ground those against the hinted metric.
     """
     mcp = getattr(runtime, "mcp", None)
     if mcp is None:
@@ -366,6 +443,9 @@ def constrain_hints_to_grain(
     grain = [d for d in (resolved_grain or []) if d]
     if not grain:
         grain = dimensions_in_query(query, bootstrap.dimension_ids(), bootstrap.alias_index())
+    known_dims = bootstrap.dimension_ids()
+    if not grain:
+        grain = breakdown_from_query(query, list(known_dims))
     if not grain:
         return list(hints), []
 
@@ -432,27 +512,29 @@ async def apply_catalogue_grain(
     hints: list[str],
     *,
     runtime: SwarmRuntime,
+    entities: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
+    """Resolve grain from the live catalogue, then keep dims the hinted metric can slice.
+
+    Ambiguous questions are not keyword-matched. ``catalogue_resolve_dimension``
+    returns resolved | ambiguous | unknown; we intersect candidates with the
+    asked metric's supported_dimensions. Hallucinated dims (status →
+    fulfillment_status on a sessions question) drop out. Remaining ties go
+    through ontology ``grain_defaults`` via constrain_hints/pick_grain.
+    """
     bootstrap = getattr(runtime, "bootstrap", None)
     if bootstrap is None:
         return list(hints), []
-    if not _GRAIN_LANGUAGE_RE.search(query or ""):
-        return list(hints), []
     await bootstrap.refresh_if_stale()
     runtime.metrics.bind_catalogue(bootstrap)
-    resolved = await resolve_catalogue_dimension(query, runtime=runtime)
-    if resolved:
-        # The live resolver has no relevance threshold and can return a
-        # dimension with no real connection to the query (e.g. "top channels
-        # by sessions" resolving to "item_count"). Only trust suggestions the
-        # query text itself corroborates; anything else falls through to the
-        # local, query-grounded heuristic below instead of silently steering
-        # the mission at a domain the resolver hallucinated.
-        resolved = dimensions_in_query(query, set(resolved))
+    live = await resolve_grain_texts([query, *(entities or [])], runtime=runtime)
+    grounded = ground_live_grain(
+        live, hints, metrics=runtime.metrics, bootstrap=bootstrap
+    )
     return constrain_hints_to_grain(
         hints,
         query=query,
         metrics=runtime.metrics,
         bootstrap=bootstrap,
-        resolved_grain=resolved or None,
+        resolved_grain=grounded or None,
     )

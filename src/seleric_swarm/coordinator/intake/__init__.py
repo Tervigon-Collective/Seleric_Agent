@@ -20,10 +20,11 @@ classifier, which is a syntactic tokenizer — not intent classification.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
-from seleric_swarm.coordinator.contracts import EntityRef, NormalizedQuery, TimeRange
+from seleric_swarm.coordinator.contracts import DomainQuestion, EntityRef, NormalizedQuery, TimeRange
 from seleric_swarm.services.metrics import MetricRegistry, lead_agent_for_hints
 
 UNSUPPORTED_NO_LLM = "LLM_CLASSIFICATION_UNAVAILABLE"
@@ -68,6 +69,7 @@ def candidate_domains(
     intents: list[str] | set[str],
     primary_metric: str | None,
     metrics: MetricRegistry | None = None,
+    extra_metrics: Sequence[str] | None = None,
 ) -> list[str]:
     """Derive the mission's candidate domains from registry metric ownership.
 
@@ -76,8 +78,9 @@ def candidate_domains(
     is a pure lookup.
 
     * ``executive_health`` fans out to the broad investigation set.
-    * A resolved ``primary_metric`` with a registered owner returns that
-      single domain.
+    * Every hinted metric (primary first, then extras) contributes its owner.
+      Cross-domain asks such as units sold + net profit become
+      ``[product, finance]``, not a single primary-only lead.
     * Anything else returns ``[]`` — the caller is expected to fall through
       to a documented default lead (``commerce_agent`` today) rather than
       guessing another domain here.
@@ -86,11 +89,93 @@ def candidate_domains(
     intent_set = set(intents)
     if "executive_health" in intent_set:
         return list(_BROAD_INVESTIGATION_DOMAINS)
-    if metrics is not None and primary_metric is not None:
-        lead = lead_agent_for_hints([primary_metric], metrics)
-        if lead != "coordinator_agent":
-            return [lead.removesuffix("_agent")]
-    return []
+    if metrics is None:
+        return []
+    ordered: list[str] = []
+    for mid in [primary_metric, *(extra_metrics or [])]:
+        if not mid:
+            continue
+        lead = lead_agent_for_hints([mid], metrics)
+        if lead == "coordinator_agent":
+            continue
+        domain = lead.removesuffix("_agent")
+        if domain not in ordered:
+            ordered.append(domain)
+    return ordered
+
+
+def partition_domain_questions(
+    *,
+    original_query: str,
+    metric_ids: Sequence[str],
+    grain: Sequence[str] = (),
+    metrics: MetricRegistry | None = None,
+) -> list[DomainQuestion]:
+    """Split a classified metric bag into one retrieve question per owning domain.
+
+    Grain is the already-resolved dimension list from catalogue grounding —
+    it is attached as-is, not guessed from the query text. Metrics the
+    registry cannot place stay out of the partition rather than inventing
+    a domain.
+    """
+
+    if metrics is None:
+        return []
+    grouped: dict[str, list[str]] = {}
+    order: list[str] = []
+    for mid in metric_ids:
+        if not mid:
+            continue
+        lead = lead_agent_for_hints([mid], metrics)
+        if lead == "coordinator_agent":
+            continue
+        domain = lead.removesuffix("_agent")
+        if domain not in grouped:
+            grouped[domain] = []
+            order.append(domain)
+        if mid not in grouped[domain]:
+            grouped[domain].append(mid)
+    grain_list = [g for g in grain if g]
+    out: list[DomainQuestion] = []
+    for domain in order:
+        mids = grouped[domain]
+        supported: set[str] = set()
+        for mid in mids:
+            defn = metrics.get(mid)
+            raw = getattr(defn, "raw", None) or {} if defn is not None else {}
+            supported.update(str(d) for d in (raw.get("supported_dimensions") or []) if d)
+        domain_grain = [g for g in grain_list if not supported or g in supported]
+        metric_bit = ", ".join(mids)
+        if domain_grain:
+            question = (
+                f"[{domain}] {original_query} — retrieve {metric_bit} "
+                f"sliced by {', '.join(domain_grain)}."
+            )
+        else:
+            question = f"[{domain}] {original_query} — retrieve {metric_bit}."
+        out.append(
+            DomainQuestion(domain=domain, metrics=mids, grain=domain_grain, question=question)
+        )
+    return out
+
+
+def metric_hints_for_mission(normalized: NormalizedQuery) -> list[str]:
+    """Primary + secondary, de-duplicated, primary first. Never secondary-only."""
+
+    return list(
+        dict.fromkeys(
+            m for m in [normalized.primary_metric, *normalized.secondary_metrics] if m
+        )
+    )
+
+
+def _grain_from_entities(entities: Sequence[EntityRef]) -> list[str]:
+    grain: list[str] = []
+    for entity in entities:
+        gid = entity.entity_id or entity.raw
+        if gid and gid not in grain:
+            grain.append(gid)
+    return grain
 
 
 UNSUPPORTED_PRIMARY_METRIC_UNRESOLVED = "PRIMARY_METRIC_UNRESOLVED"
@@ -121,6 +206,7 @@ def _unsupported(
         comparison_range=None,
         requested_outputs=list(requested_outputs or []),
         candidate_domains=[],
+        domain_questions=[],
         unresolved_semantics=list(unresolved_semantics or [reason.lower()]),
         metric_resolution_reason=None,
         unsupported_reason=reason,
@@ -198,10 +284,26 @@ async def normalize_query(
         else None
     )
 
-    domains = (
-        [llm_result.domain_lead.removesuffix("_agent")]
-        if llm_result.domain_lead
-        else candidate_domains(intents, primary, metrics)
+    from_metrics = candidate_domains(intents, primary, metrics, extra_metrics=secondary)
+    if "executive_health" in intents:
+        domains = from_metrics
+    else:
+        llm_lead = (
+            [llm_result.domain_lead.removesuffix("_agent")]
+            if llm_result.domain_lead
+            else []
+        )
+        domains = list(dict.fromkeys([*llm_lead, *from_metrics]))
+    grain = _grain_from_entities(entities)
+    domain_qs = (
+        []
+        if "executive_health" in intents
+        else partition_domain_questions(
+            original_query=query,
+            metric_ids=[m for m in [primary, *secondary] if m],
+            grain=grain,
+            metrics=metrics,
+        )
     )
 
     # Intake-boundary fail-closed: a targeted investigation (why/forecast/action)
@@ -232,6 +334,7 @@ async def normalize_query(
         comparison_range=None,
         requested_outputs=list(requested_outputs or []),
         candidate_domains=domains,
+        domain_questions=domain_qs,
         unresolved_semantics=unresolved,
         metric_resolution_reason=reason,
         unsupported_reason=llm_result.unsupported_reason if llm_result.unresolved else None,

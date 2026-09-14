@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import json
-import re as _re
 
 from seleric_swarm.llm.errors import LLMError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.runtime import SwarmRuntime
-from seleric_swarm.services.numeric_audit import unaudited_numbers
-
-_ID_STRIP_RE = _re.compile(r"\s*[\[(]?(CL|EV|M|T)-[0-9a-f]+[\])]?", _re.IGNORECASE)
+from seleric_swarm.services.numeric_audit import ARTIFACT_ID_RE, unaudited_numbers
 
 
 async def synthesize_response(runtime: SwarmRuntime, state: dict) -> dict:
@@ -127,9 +124,9 @@ def _table_fallback(
     # every claim so the fallback doesn't silently drop the other metrics.
     if claims:
         if len(claims) == 1:
-            text = _ID_STRIP_RE.sub("", claims[0].get("text", "")).strip()
+            text = ARTIFACT_ID_RE.sub("",claims[0].get("text", "")).strip()
             return text or "No validated claims are available."
-        lines = [_ID_STRIP_RE.sub("", c.get("text", "")).strip() for c in claims]
+        lines = [ARTIFACT_ID_RE.sub("",c.get("text", "")).strip() for c in claims]
         return "\n".join(f"- {line}" for line in lines if line) or "No validated claims are available."
 
     if evidence:

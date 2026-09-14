@@ -11,6 +11,7 @@ from seleric_swarm.coordinator.catalogue_grounding import (
     apply_catalogue_grain,
     hints_from_catalogue,
 )
+from seleric_swarm.coordinator.intake import partition_domain_questions
 from seleric_swarm.coordinator.planning.complexity import looks_like_diagnostic
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
@@ -125,7 +126,7 @@ class Agent(SwarmAgent):
             catalogue_hints = await hints_from_catalogue(query, runtime=self.runtime, agent_id=self.agent_id)
         merged_hints = list(dict.fromkeys([*classification.metric_hints, *catalogue_hints]))
         merged_hints, resolved_dimensions = await apply_catalogue_grain(
-            query, merged_hints, runtime=self.runtime
+            query, merged_hints, runtime=self.runtime, entities=classification.entities
         )
         canonical = [m for m in merged_hints if self.runtime.metrics.get(m) is not None]
         preset_metric = canonical[0] if len(canonical) == 1 else None
@@ -168,6 +169,15 @@ class Agent(SwarmAgent):
                 unsupported_reason = None
 
         entities = list(resolved_dimensions or classification.entities or [])
+        domain_questions = [
+            dq.model_dump()
+            for dq in partition_domain_questions(
+                original_query=query,
+                metric_ids=canonical,
+                grain=entities,
+                metrics=self.runtime.metrics,
+            )
+        ]
 
         return {
             "query_class": query_class,
@@ -178,6 +188,7 @@ class Agent(SwarmAgent):
             "time_range": resolved.model_dump(),
             "metric_hints": merged_hints,
             "metric_id": preset_metric,
+            "domain_questions": domain_questions,
             "unsupported_reason": unsupported_reason,
             "task_graph": {"tasks": [{"id": task_id or f"T-{uuid4().hex[:8]}", "agent": "observer_agent"}]},
             "llm_calls": 1,
