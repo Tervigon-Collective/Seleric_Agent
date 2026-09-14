@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
 
 from seleric_swarm.swarm.artifacts import SwarmArtifact
 from seleric_swarm.swarm.blackboard import Blackboard
