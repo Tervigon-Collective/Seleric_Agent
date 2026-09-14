@@ -15,13 +15,13 @@ from seleric_swarm.api.async_missions import (
 from seleric_swarm.api.request_id import REQUEST_ID_HEADER
 from seleric_swarm.api.status import coerce_typed_status
 from seleric_swarm.contracts.lookup import MissionResult, TraceInfo
+from seleric_swarm.coordinator.graph import _swarm_mission_view
 from seleric_swarm.coordinator.intake import (
     apply_full_flags,
     normalize_query,
     resolve_mission_time_range,
 )
 from seleric_swarm.main import app
-from seleric_swarm.coordinator.graph import _swarm_mission_view
 from seleric_swarm.swarm.mission import SwarmMissionResult
 
 

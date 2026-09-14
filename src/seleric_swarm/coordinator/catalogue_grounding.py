@@ -146,7 +146,7 @@ async def _resolve_metric_term(query: str, *, runtime: SwarmRuntime, agent_id: s
                 capability=_RESOLVE_TERM_CAP,
                 arguments={"text": term},
             )
-        except Exception:
+        except Exception:  # noqa: S112 - term resolve soft-fail; try next token
             continue
         if not isinstance(result, dict) or result.get("kind") != "resolved":
             continue
@@ -339,7 +339,7 @@ async def resolve_catalogue_dimension(query: str, *, runtime: SwarmRuntime) -> l
                 capability=capability,
                 arguments=arguments,
             )
-        except Exception:
+        except Exception:  # noqa: S112 - dimension resolve soft-fail; try next capability
             continue
         if isinstance(result, dict):
             dims = _dims_from_resolve(result)

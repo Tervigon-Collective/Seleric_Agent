@@ -10,7 +10,7 @@ accumulates usage by ``request.metadata.mission_id`` so
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TypeVar
 
 from pydantic import BaseModel

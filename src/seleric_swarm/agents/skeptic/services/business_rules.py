@@ -17,10 +17,10 @@ fallback, same pattern as the Diagnostic/Skeptic LLM-enrichment modules.
 
 from __future__ import annotations
 
-import structlog
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+import structlog
 from pydantic import BaseModel
 
 from seleric_swarm.agents.skeptic.contracts import StrategyArtifact
@@ -78,7 +78,10 @@ class ConstraintStoreBusinessRuleService:
     async def _classify_action(self, action: str) -> _ActionClassification:
         if self._reasoning is not None and not isinstance(self._reasoning, NullReasoningModel):
             try:
-                from seleric_swarm.agents.skeptic.prompts import BUSINESS_ACTION_SYSTEM, business_action_user
+                from seleric_swarm.agents.skeptic.prompts import (
+                    BUSINESS_ACTION_SYSTEM,
+                    business_action_user,
+                )
 
                 return await self._reasoning.generate_structured(
                     system=BUSINESS_ACTION_SYSTEM,

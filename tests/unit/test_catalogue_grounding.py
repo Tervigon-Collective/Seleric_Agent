@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import time
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import MagicMock
 
 import pytest
 
-from seleric_swarm.coordinator.catalogue_grounding import apply_catalogue_grain, constrain_hints_to_grain
+from seleric_swarm.coordinator.catalogue_grounding import (
+    apply_catalogue_grain,
+    constrain_hints_to_grain,
+)
 from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap, CatalogueMetricMeta
 from seleric_swarm.services.metrics import lead_agent_for_hints
 
@@ -181,7 +185,7 @@ async def test_apply_catalogue_grain_skips_live_resolution_without_breakdown_lan
     requested metrics with an unrelated fulfillment-status breakdown."""
 
     class _BoomMcp:
-        capabilities = {"seleric.catalogue_resolve_dimension"}
+        capabilities: ClassVar[set[str]] = {"seleric.catalogue_resolve_dimension"}
 
         async def call(self, **kwargs):
             raise AssertionError("live dimension resolution must not be called without breakdown language")
@@ -200,7 +204,7 @@ async def test_apply_catalogue_grain_skips_live_resolution_without_breakdown_lan
 @pytest.mark.asyncio
 async def test_apply_catalogue_grain_still_resolves_real_breakdown_requests():
     class _Mcp:
-        capabilities = {"seleric.catalogue_resolve_dimension"}
+        capabilities: ClassVar[set[str]] = {"seleric.catalogue_resolve_dimension"}
 
         async def call(self, **kwargs):
             return {"kind": "resolved", "dimension_id": "lt_channel"}
@@ -227,7 +231,7 @@ async def test_apply_catalogue_grain_rejects_uncorroborated_live_suggestion():
     query-grounded heuristic (which correctly finds 'channel')."""
 
     class _Mcp:
-        capabilities = {"seleric.catalogue_resolve_dimension"}
+        capabilities: ClassVar[set[str]] = {"seleric.catalogue_resolve_dimension"}
 
         async def call(self, **kwargs):
             return {"kind": "resolved", "dimension_id": "item_count"}
@@ -289,7 +293,7 @@ async def test_untyped_resolve_term_is_ignored():
     from seleric_swarm.coordinator.catalogue_grounding import resolve_catalogue_dimension
 
     class _Mcp:
-        capabilities = {"seleric.catalogue_resolve_term"}
+        capabilities: ClassVar[set[str]] = {"seleric.catalogue_resolve_term"}
 
         async def call(self, *, agent_id, capability, arguments):
             assert arguments.get("kind") == "dimension"
@@ -310,7 +314,7 @@ async def test_resolve_dimension_ambiguous_returns_catalogue_ids():
     from seleric_swarm.coordinator.catalogue_grounding import resolve_catalogue_dimension
 
     class _Mcp:
-        capabilities = {"seleric.catalogue_resolve_dimension"}
+        capabilities: ClassVar[set[str]] = {"seleric.catalogue_resolve_dimension"}
 
         async def call(self, *, agent_id, capability, arguments):
             del agent_id, capability, arguments
@@ -360,7 +364,10 @@ async def test_hints_from_catalogue_falls_back_to_resolve_term_for_single_strong
     from seleric_swarm.coordinator.catalogue_grounding import hints_from_catalogue
 
     class _Mcp:
-        capabilities = {"seleric.catalogue_search_metrics", "seleric.catalogue_resolve_term"}
+        capabilities: ClassVar[set[str]] = {
+            "seleric.catalogue_search_metrics",
+            "seleric.catalogue_resolve_term",
+        }
 
         async def call(self, *, agent_id, capability, arguments):
             del agent_id
@@ -382,7 +389,10 @@ async def test_hints_from_catalogue_ignores_unresolved_term():
     from seleric_swarm.coordinator.catalogue_grounding import hints_from_catalogue
 
     class _Mcp:
-        capabilities = {"seleric.catalogue_search_metrics", "seleric.catalogue_resolve_term"}
+        capabilities: ClassVar[set[str]] = {
+            "seleric.catalogue_search_metrics",
+            "seleric.catalogue_resolve_term",
+        }
 
         async def call(self, *, agent_id, capability, arguments):
             del agent_id, arguments

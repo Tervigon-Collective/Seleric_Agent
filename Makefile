@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck eval eval-llm validate ci dev
+.PHONY: install test lint typecheck eval eval-llm validate ci dev docker-build docker-up docker-down office-ui-test
 
 install:
 	uv sync --extra dev
@@ -26,4 +26,16 @@ eval:
 eval-llm:
 	uv run python -m seleric_swarm.eval lookup_v1 --live-llm --judge
 
-ci: lint test validate eval
+office-ui-test:
+	npm --prefix office-ui test
+
+docker-build:
+	docker compose build api
+
+docker-up:
+	docker compose up -d --build
+
+docker-down:
+	docker compose down
+
+ci: lint test validate eval office-ui-test

@@ -18,6 +18,6 @@ class ModelSpec:
 
     def supports(self, request: LLMRequest) -> bool:
         """Capability-aware routing gate: is this model even eligible for the request?"""
-        if request.response_format == "json_schema" and not self.supports_structured_output:
-            return False
-        return True
+        return not (
+            request.response_format == "json_schema" and not self.supports_structured_output
+        )

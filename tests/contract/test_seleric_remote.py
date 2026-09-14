@@ -8,7 +8,6 @@ from seleric_swarm.protocols.mcp.servers.seleric_remote import (
     _parse_jsonrpc_response,
 )
 
-
 _REQ = httpx.Request("POST", "https://example.invalid/mcp")
 
 

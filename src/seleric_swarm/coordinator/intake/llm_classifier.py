@@ -20,10 +20,13 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
-from seleric_swarm.coordinator.catalogue_grounding import apply_catalogue_grain, hints_from_catalogue
-from seleric_swarm.services.metrics import lead_agent_for_hints
+from seleric_swarm.coordinator.catalogue_grounding import (
+    apply_catalogue_grain,
+    hints_from_catalogue,
+)
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
+from seleric_swarm.services.metrics import lead_agent_for_hints
 from seleric_swarm.services.time_range import resolve_time_range, window_from_query
 
 if TYPE_CHECKING:

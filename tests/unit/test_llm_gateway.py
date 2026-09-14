@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import BaseModel
 
 from seleric_swarm.llm.errors import LLMError, LLMErrorCode
 from seleric_swarm.llm.gateway import LLMGateway
@@ -23,7 +22,7 @@ class _ScriptedPort:
             raise outcome
         return outcome
 
-    async def complete_structured(self, request: LLMRequest, schema):  # noqa: ANN001
+    async def complete_structured(self, request: LLMRequest, schema):
         raise NotImplementedError
 
 

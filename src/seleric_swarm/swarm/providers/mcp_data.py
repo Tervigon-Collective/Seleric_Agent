@@ -430,8 +430,9 @@ class HybridMcpDataProvider:
         (a registered-but-unused MCP capability that can return a series in
         one call) instead of raising max_days further.
         """
-        import pandas as pd
         from datetime import date, timedelta
+
+        import pandas as pd
 
         start_s = str(time_range.get("start") or time_range.get("end") or "")[:10]
         end_s = str(time_range.get("end") or time_range.get("start") or "")[:10]

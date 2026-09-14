@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import pytest
 
+from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.services.time_range import (
     _sub_months,
     resolve_time_range,
     window_from_query,
 )
-from seleric_swarm.contracts.lookup import TimeRangeV1
-
 
 # ---------------------------------------------------------------------------
 # _sub_months — calendar-correct subtraction

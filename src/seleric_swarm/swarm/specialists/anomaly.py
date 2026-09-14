@@ -58,10 +58,8 @@ class AnomalyAgent(SpecialistAgent):
 
         # Build detector context from mission context (no scenario-specific glue)
         detect_ctx: dict[str, Any] = {}
-        if mission.context:
-            # Pass through time_range for detectors that need window info
-            if "time_range" in mission.context:
-                detect_ctx["time_range"] = mission.context["time_range"]
+        if mission.context and "time_range" in mission.context:
+            detect_ctx["time_range"] = mission.context["time_range"]
 
         findings = await detector.detect(readings, context=detect_ctx)
 

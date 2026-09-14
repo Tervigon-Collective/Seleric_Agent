@@ -97,7 +97,7 @@ class DiagnosticAgent:
                 timeout_s=timeout_s,
                 hypotheses_collected=len(ctx.hypotheses),
             )
-        except Exception as exc:  # noqa: BLE001 - a failed workflow is a valid, reportable outcome
+        except Exception as exc:
             # A node failure must not abort the mission pipeline. Return the best
             # evidence gathered so far, tagged INSUFFICIENT_EVIDENCE, exactly like
             # the timeout path (per 01-evidence-policy.mdc).

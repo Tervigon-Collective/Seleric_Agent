@@ -58,12 +58,11 @@ async def generate_hypotheses(ctx: DiagnosticContext) -> list[DiagnosticHypothes
             ctx.scratch["semantic_neighbors"] = neighbors
             ctx.scratch["entity_cluster"] = related.get("entity_cluster")
             ctx.scratch["om_data_product"] = related.get("data_product")
-        except Exception as exc:  # noqa: BLE001 - resilience boundary
+        except Exception as exc:
             _log.debug("diagnostic.hypotheses.ontology_skipped", error=str(exc))
 
     # 1. observed co-movers — any registered/observed metric can be a treatment
-    for hypo in _hypotheses_from_observations(ctx, outcome, already=set()):
-        out.append(hypo)
+    out.extend(_hypotheses_from_observations(ctx, outcome, already=set()))
 
     # 2. explicit alternatives requested by the caller
     for alt in ctx.request.context.get("alternatives_to_test", []) or []:
@@ -167,9 +166,7 @@ def _allowed_treatment_ids(ctx: DiagnosticContext, observed: set[Any], graph: An
 def _usable_treatment(metric_id: str, outcome: str) -> bool:
     if not metric_id or metric_id == outcome:
         return False
-    if metric_id.startswith("event.") or metric_id.endswith(".delta"):
-        return False
-    return True
+    return not (metric_id.startswith("event.") or metric_id.endswith(".delta"))
 
 
 def _label(metric_id: str) -> str:
@@ -211,7 +208,7 @@ def _hypotheses_from_observations(
             score = abs(float(e.get("change_pct") or 0.0))
         except (TypeError, ValueError):
             score = 0.0
-        direction = str((e.get("direction") or (prev[1] if prev else "") or ""))
+        direction = str(e.get("direction") or (prev[1] if prev else "") or "")
         ranked[mid] = (max(score, prev[0] if prev else 0.0), direction, refs)
 
     out: list[DiagnosticHypothesis] = []
