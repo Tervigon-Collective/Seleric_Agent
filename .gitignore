@@ -9,6 +9,7 @@ config/mcp_servers.local.yaml
 *.log
 .DS_Store
 artifacts/
+!src/seleric_swarm/coordinator/artifacts/
 
 # Node / Vite (office-ui)
 node_modules/
