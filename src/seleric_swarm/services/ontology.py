@@ -110,19 +110,3 @@ class OntologyService:
             return {}
         self._related[key] = result
         return result
-
-
-class NullOntology:
-    """Offline stand-in used when seleric MCP is not configured."""
-
-    async def for_agent(self, agent_id: str) -> dict[str, Any]:
-        return {}
-
-    async def for_module(self, module: str, *, agent_id: str = "observer_agent") -> dict[str, Any]:
-        return {}
-
-    async def metric_context(self, metric_id: str, *, agent_id: str = "observer_agent") -> dict[str, Any]:
-        return {}
-
-    async def related_metrics(self, metric_id: str, *, agent_id: str = "observer_agent") -> dict[str, Any]:
-        return {}

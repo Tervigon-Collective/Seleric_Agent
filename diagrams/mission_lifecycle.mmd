@@ -1,8 +1,14 @@
 flowchart LR
-    Q[User Question] --> PLAN[Coordinator Plan]
+    Q[User Question] --> OV{Overview-shaped?<br/>"how are we doing today"}
+    OV -- yes --> SNAP[Read DomainStateSnapshot<br/>cron-resolved, not recomputed]
+    SNAP --> R
+    OV -- no --> PLAN[Coordinator Plan]
+
     PLAN --> OBS[Observe]
+    OBS --> BS[(Business State Service<br/>get_metric_state)]
     OBS --> ANOM{Anomaly needed?}
     ANOM -- yes --> A[Anomaly]
+    A --> BS
     ANOM -- no --> DIAG
     A --> DIAG{Diagnosis needed?}
     DIAG -- yes --> D[Diagnostic]
@@ -12,6 +18,7 @@ flowchart LR
     X --> D
     H -- no --> PRED{Prediction needed?}
     PRED -- yes --> P[Prediction]
+    P --> BS
     PRED -- no --> STRAT
     P --> STRAT{Strategy needed?}
     STRAT -- yes --> S[Strategy]

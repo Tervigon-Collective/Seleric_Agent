@@ -17,7 +17,6 @@ from seleric_swarm.agents.skeptic.services.business_rules import (
 from seleric_swarm.agents.skeptic.services.dowhy_causal import DoWhyCausalValidationService
 from seleric_swarm.agents.skeptic.services.model_registry import (
     DriftMonitor,
-    NullDriftMonitor,
     YamlModelRegistry,
     model_registry_from_yaml,
 )
@@ -28,7 +27,6 @@ __all__ = [
     "DoWhyCausalValidationService",
     "DriftMonitor",
     "InMemoryConstraintStore",
-    "NullDriftMonitor",
     "YamlModelRegistry",
     "model_registry_from_yaml",
 ]

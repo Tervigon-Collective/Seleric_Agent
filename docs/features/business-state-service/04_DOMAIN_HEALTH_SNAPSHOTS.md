@@ -17,11 +17,22 @@ data — daily/hourly grain metrics don't change between two overview asks
 five minutes apart.
 
 **Goal:** a background job (cron) pre-resolves each domain's health into a
-small structured snapshot, stored as JSONB with a timestamp. Overview
-queries **read** the latest snapshot(s) and let the LLM narrate; they do not
-recompute. Anything the overview snapshot doesn't cover, or that the user
-asks a sharper follow-up about, is fetched **live, in parallel**, same as
-today.
+small structured snapshot, stored with a timestamp. Overview queries **read**
+the latest snapshot(s) and let the LLM narrate; they do not recompute.
+Anything the overview snapshot doesn't cover, or that the user asks a
+sharper follow-up about, is fetched **live, in parallel**, same as today.
+
+**[2026-09-14 decision] Storage: JSON files for now, Postgres later.** The
+snapshot store writes one JSON file per `(domain, as_of)` to disk
+(`snapshot_store.py`) instead of a new Postgres table. This is a deliberate
+sequencing choice, not a rejection of the original JSONB design — the shape
+below (`DomainStateSnapshot`) is unchanged either way, only the write/read
+implementation differs, so moving to Postgres later is a `snapshot_store.py`
+rewrite behind the same interface, not a schema migration for callers. Move
+when there's a real reason to (multi-brand rollout needing cross-snapshot
+queries, concurrent-write safety, or an ops need to query snapshot history
+that `ls`-ing JSON files can't answer) — not a hard blocker for the Sprint 3
+vertical slice.
 
 This is **not** a new metrics engine. It is a consumer of
 [`BusinessStateService`](02_SELERIC_AGENT_INTEGRATION.md) (`MetricState`,
@@ -30,7 +41,7 @@ freshness, quality flags) plus a thin **resolution layer** that turns N
 
 ```text
 cron ──> DomainStateResolver (per domain) ──> BusinessStateService.get_metric_state() x N
-                                           └─> DomainStateSnapshot (JSONB) ──> snapshot store
+                                           └─> DomainStateSnapshot (JSON file for now) ──> snapshot store
 overview query ──> read latest snapshot(s) ──> LLM synthesis ──> answer
                 └─(if question needs it)──> live domain-agent call, in parallel, merged in
 ```
@@ -44,7 +55,7 @@ overview query ──> read latest snapshot(s) ──> LLM synthesis ──> ans
 | Domain → MCP module pin, ontology | `config/agent_registry.yaml` (`seleric_module`, `ontology` per domain agent) | Yes |
 | Anomaly detection | `services/business_state/detectors.py` (robust z-score) | Yes — flags "needs attention" per metric |
 | Quality flag enum (`STALE`, `SPARSE_HISTORY`, …) | 03_DEFINITIONS_TO_MAKE_FUNCTIONAL §5 | Yes — a snapshot is `DEGRADED` if any underlying metric carries one |
-| JSONB persistence pattern | `persistence/postgres.py` (`PostgresMissionStore`), `migrations/001_init.sql` | Yes — new table follows the same `CAST(:x AS JSONB)` pattern, no new persistence framework |
+| Persistence | n/a for V0 — JSON files on disk, see storage decision above | No — file read/write is stdlib `json` + `pathlib`, no new persistence framework. `persistence/postgres.py`'s JSONB pattern is the reference for the *later* migration, not built now. |
 | Evidence provenance shape | `EvidenceArtifact` / Claim Gate | Yes — snapshot values that get quoted in an answer still need evidence refs |
 
 **Do not build:** a second metric catalogue, a second scheduler framework, a
@@ -53,7 +64,8 @@ one cron entry point.
 
 ## What's new (small)
 
-1. **`DomainStateSnapshot`** — one JSONB row per `(domain, as_of)`, holding a
+1. **`DomainStateSnapshot`** — one record per `(domain, as_of)` (a JSON file
+   for now, a JSONB row later — see storage decision above), holding a
    handful of resolved metrics + their state, not raw series.
 2. **`DomainStateResolver`** — per domain, decides *which* metrics constitute
    "health" for that domain (below), calls `BusinessStateService` for each,
@@ -78,14 +90,22 @@ src/seleric_swarm/services/domain_health/
                         # calls BusinessStateService per metric, assembles
                         # + writes DomainStateSnapshot
   models.py             # DomainStateSnapshot, HealthSignal
-  snapshot_store.py      # Postgres JSONB read/write, same pattern as
-                        # persistence/postgres.py — no new store abstraction
+  snapshot_store.py      # [2026-09-14] JSON file read/write for now — one
+                        # file per (domain, as_of) under a data dir (e.g.
+                        # var/domain_health_snapshots/{domain}/{as_of}.json).
+                        # Same get_latest(domain) / save(snapshot) interface
+                        # a Postgres-backed store would expose, so swapping
+                        # the implementation later doesn't touch resolver.py
+                        # or any caller.
   scheduler.py           # cron entry point (Sprint 4)
 
 config/domain_health_profiles.yaml
-
-migrations/00X_domain_state_snapshots.sql
 ```
+
+**Deferred, not built now:** `migrations/00X_domain_state_snapshots.sql` and
+the Postgres JSONB table — see the storage decision above. `persistence/postgres.py`'s
+`CAST(:x AS JSONB)` pattern is the reference to follow *when* that migration
+happens, not a Sprint 3 dependency.
 
 `config/domain_health_profiles.yaml` is the config-driven version of the
 domain tables above — the markdown tables are the human-readable spec, this
@@ -330,9 +350,10 @@ dispatch), just with a snapshot read replacing most of the fan-out.
   03_DEFINITIONS_TO_MAKE_FUNCTIONAL — anomaly is already scoped there).
 - **Modifies, doesn't fork:** Coordinator gets one new intent branch
   (overview classification → snapshot read); no parallel coordinator.
-- Persistence reuses the existing Postgres JSONB pattern
-  (`persistence/postgres.py`) — one new table, same driver, no new store
-  abstraction.
+- Persistence is JSON files for V0 ([2026-09-14 decision](#problem)) — no
+  new table, no migration, no new persistence framework. The Postgres JSONB
+  pattern (`persistence/postgres.py`) is the reference for the later
+  migration, behind the same `snapshot_store.py` interface.
 
 ## Open questions for sprint planning (not decided here)
 

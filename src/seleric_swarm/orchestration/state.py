@@ -25,6 +25,7 @@ class MissionState(TypedDict, total=False):
     metric_hints: list[str]
     metric_id: str | None
     resolved_dimensions: list[str]
+    requested_dimensions: list[str]
     allowed_metrics: list[str]
     domain_questions: list[dict[str, Any]]
     assigned_grain: list[str]

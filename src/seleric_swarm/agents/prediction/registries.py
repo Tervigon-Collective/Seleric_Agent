@@ -30,7 +30,6 @@ from seleric_swarm.agents.skeptic.registries import (  # noqa: F401
     InMemoryModelRegistry,
     ModelRecord,
     ModelRegistry,
-    NullDriftMonitor,
     repositories_from_blackboard,
 )
 

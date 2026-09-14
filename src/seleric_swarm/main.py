@@ -63,6 +63,7 @@ app = FastAPI(
     # Relative server URL so Swagger Try-it-out posts to whatever host served
     # /docs (localhost vs 127.0.0.1 vs a preview proxy), not a hardcoded origin.
     servers=[{"url": "/", "description": "this host"}],
+    swagger_ui_parameters={"displayRequestDuration": True},
 )
 
 # Read-only spatial AI-Office UI gateway (SSE snapshot + event stream).

@@ -19,7 +19,6 @@ from seleric_swarm.agents.prediction.registries import (
     InMemoryFeatureStore,
     InMemoryModelRegistry,
     ModelRegistry,
-    NullDriftMonitor,
     StatisticalBaselineForecaster,
     TemplateForecastModelService,
 )
@@ -33,7 +32,7 @@ class PredictionDeps:
     feature_store: FeatureStore = field(default_factory=InMemoryFeatureStore)
     model_service: ForecastModelService = field(default_factory=TemplateForecastModelService)
     baseline: StatisticalBaselineForecaster = field(default_factory=StatisticalBaselineForecaster)
-    drift_monitor: DriftMonitor = field(default_factory=NullDriftMonitor)
+    drift_monitor: DriftMonitor | None = None
     reasoning: ReasoningModel = field(default_factory=NullReasoningModel)
 
 

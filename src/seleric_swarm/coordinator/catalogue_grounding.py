@@ -8,6 +8,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from seleric_swarm.services.metrics import cadence_stem, is_intraday_id
+
 if TYPE_CHECKING:
     from seleric_swarm.runtime import SwarmRuntime
     from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
@@ -21,61 +23,130 @@ _STOPWORDS = {
 
 _MIN_DIM_TOKEN = 3
 _TIME_SUFFIXES = ("_date", "_time", "_at")
-# Generic English words that show up as a dimension-id suffix (fulfillment_status,
-# order_status, ...) but are also common in ordinary phrasing ("funnel status",
-# "ad performance status"). Matching on these alone false-positives a grain the
-# user never asked for — require the fuller phrase (see dim_as_words check
-# below) instead of a lone-token hit.
 _GENERIC_DIM_TOKENS = {"status"}
-
-# The catalogue's search endpoint doesn't return a relevance score, so token
-# overlap with the query is the only ranking signal available. A single-token
-# overlap only counts as a match when that token *is* the metric id/name
-# (not just any shared word) to avoid false positives from generic terms.
 _MIN_MULTI_TOKEN_OVERLAP = 2
-
 _RESOLVE_DIM_CAP = "seleric.catalogue_resolve_dimension"
 _RESOLVE_TERM_CAP = "seleric.catalogue_resolve_term"
-
-# Grain/breakdown resolution (live catalogue_resolve_dimension included) is
-# expensive and, worse, the live resolver has no relevance threshold — a
-# single generic word like "status" comes back matching nearly every
-# *_status dimension in the catalogue. Only worth asking at all when the
-# query actually shows breakdown/grouping intent; a plain "X status" or
-# "X performance" aggregate ask never should. Observer uses the same gate.
-_GRAIN_LANGUAGE_RE = re.compile(
-    r"\b(top|best|worst|highest|lowest|leading|lagging|breakdown|by|wise|split|per|grouped)\b",
-    re.IGNORECASE,
-)
-# SKU is itself a catalogue dimension (product_performance.sku). "list of SKUs"
-# / "which products" are grain asks even without "top"/"by". Bare "product"
-# is not — "product cost" is a P&L line, not a product_title breakdown.
-_SKU_RE = re.compile(r"\bskus?\b", re.IGNORECASE)
-_PRODUCT_LIST_RE = re.compile(
-    r"\b(?:which|list of|each|per|top|best)\s+products?\b"
-    r"|product[- ](?:title|level|list|wise)"
-    r"|best[- ]selling products?",
-    re.IGNORECASE,
-)
+_RESOLVED_TERM_KINDS = frozenset({"resolved", "auto_resolved"})
+_GRAIN_WORDS = frozenset({
+    "top", "best", "worst", "highest", "lowest", "leading", "lagging",
+    "breakdown", "by", "wise", "split", "per", "grouped",
+})
+_PRODUCT_GRAIN_WORDS = frozenset({"which", "list", "each", "per", "top", "best", "title", "wise"})
 _DIM_QUERY_SYNONYMS: dict[str, frozenset[str]] = {
     "sku": frozenset({"sku", "skus"}),
 }
 
 
+def _tokens(query: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", (query or "").lower())
+
+
 def query_has_grain_intent(query: str) -> bool:
-    q = query or ""
-    return bool(_GRAIN_LANGUAGE_RE.search(q) or _SKU_RE.search(q) or _PRODUCT_LIST_RE.search(q))
+    words = set(_tokens(query))
+    if words & _GRAIN_WORDS or words & {"sku", "skus"}:
+        return True
+    return bool(words & {"product", "products"} and words & _PRODUCT_GRAIN_WORDS)
+
+
+def _catalogue_id(mid: str, metrics: Any) -> str:
+    defn = metrics.get(mid) if metrics is not None and hasattr(metrics, "get") else None
+    return str(getattr(defn, "catalogue_metric", None) or mid)
+
+
+def _bootstrap_meta(cid: str, metrics: Any, bootstrap: Any) -> Any:
+    if bootstrap is None or not hasattr(bootstrap, "get"):
+        return None
+    return bootstrap.get(cid) or bootstrap.get(_catalogue_id(cid, metrics))
+
+
+def _is_intraday(cid: str, metrics: Any, bootstrap: Any) -> bool:
+    meta = _bootstrap_meta(cid, metrics, bootstrap)
+    if meta is not None:
+        grain = str((getattr(meta, "raw", None) or {}).get("grain") or "").lower()
+        view = str(getattr(meta, "view", None) or "").lower()
+        blob = f"{grain} {view}".strip()
+        if blob:
+            return "hour" in blob or "intraday" in blob
+    return is_intraday_id(cid)
+
+
+def _concept_key(cid: str, metrics: Any) -> str:
+    return cadence_stem(_catalogue_id(cid, metrics)).lower()
+
+
+def collapse_assigned_metrics(
+    ids: list[str],
+    metrics: Any,
+    query: str = "",
+    bootstrap: Any = None,
+) -> list[str]:
+    """One retrieve per concept. Cadence siblings collapse via catalogue grain/view.
+
+    ``metric.ctr`` + ``meta_ctr`` + ``meta_ctr_hourly`` on "what is meta CTR"
+    becomes the default (non-intraday) catalogue id. Intraday stays only when
+    the question names hourly/intraday, or when no daily sibling was assigned.
+    Conjunctions (gross and net, Meta and Google CTR) stay distinct concepts.
+    """
+    tokens = set(_tokens(query))
+    want_intraday = bool(tokens & {"hourly", "intraday"})
+    canonical_of = getattr(metrics, "canonical_id", None)
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for mid in ids:
+        if not mid:
+            continue
+        cid = canonical_of(mid) if callable(canonical_of) else mid
+        if cid not in seen:
+            seen.add(cid)
+            ordered.append(cid)
+    families: dict[str, list[str]] = {}
+    for cid in ordered:
+        families.setdefault(_concept_key(cid, metrics), []).append(cid)
+    preferred: set[str] = set()
+    for group in families.values():
+        intra = [m for m in group if _is_intraday(m, metrics, bootstrap)]
+        daily = [m for m in group if m not in intra]
+        if want_intraday and intra:
+            preferred.add(intra[0])
+        elif daily:
+            preferred.add(daily[0])
+        else:
+            preferred.add(group[0])
+    return _attributed_revenue_hints(query, [cid for cid in ordered if cid in preferred])
 
 
 def breakdown_from_query(query: str, supported: list[str]) -> list[str]:
-    """Deterministic grain from the question against a metric's real dimensions."""
+    """Pick a supported dim the question actually names. Catalogue ∩ words."""
     supported_set = set(supported)
-    q = query or ""
-    if _SKU_RE.search(q) and "sku" in supported_set:
+    words = set(_tokens(query))
+    if words & {"sku", "skus"} and "sku" in supported_set:
         return ["sku"]
-    if _PRODUCT_LIST_RE.search(q) and "product_title" in supported_set:
+    if (
+        words & {"product", "products"}
+        and words & _PRODUCT_GRAIN_WORDS
+        and "product_title" in supported_set
+    ):
         return ["product_title"]
+    if words & {"channel", "channels"}:
+        for dim in ("lt_channel", "channel"):
+            if dim in supported_set:
+                return [dim]
     return []
+
+
+def _attributed_revenue_hints(query: str, ids: list[str]) -> list[str]:
+    """Drop Shopify net-sales ids from an attributed-revenue ask."""
+    q = (query or "").lower()
+    if "attributed" not in q or "net sale" in q:
+        return list(ids)
+    kept: list[str] = []
+    for item in ids:
+        key = item.replace("-", "_").lower()
+        if "net_sales" in key or "commerce_net_revenue" in key:
+            continue
+        kept.append(item)
+    return kept
 
 
 def _alias_hits(query_tokens: set[str], runtime: SwarmRuntime) -> list[tuple[int, str]]:
@@ -83,7 +154,7 @@ def _alias_hits(query_tokens: set[str], runtime: SwarmRuntime) -> list[tuple[int
     scored: list[tuple[int, str]] = []
     for metric in runtime.metrics.all():
         for alias in getattr(metric, "aliases", None) or []:
-            parts = [p for p in re.findall(r"[a-z0-9]+", alias) if p not in _STOPWORDS]
+            parts = [p for p in _tokens(alias) if p not in _STOPWORDS]
             if not parts:
                 continue
             if set(parts) <= query_tokens:
@@ -92,9 +163,21 @@ def _alias_hits(query_tokens: set[str], runtime: SwarmRuntime) -> list[tuple[int
     return scored
 
 
+def _collapse_hints(ids: list[str], *, runtime: SwarmRuntime, query: str) -> list[str]:
+    return collapse_assigned_metrics(
+        ids, runtime.metrics, query, getattr(runtime, "bootstrap", None)
+    )
+
+
 async def hints_from_catalogue(query: str, *, runtime: SwarmRuntime, agent_id: str = "coordinator_agent") -> list[str]:
-    """Resolve query language to registry metric ids via catalogue_search_metrics."""
-    q_tokens = {tok for tok in re.findall(r"[a-z0-9]+", (query or "").lower()) if tok not in _STOPWORDS}
+    """Resolve query language to assigned catalogue ids — one concept, not a sibling dump."""
+    resolved = await _resolve_one_term(query, runtime=runtime, agent_id=agent_id)
+    if resolved:
+        collapsed = _collapse_hints(resolved, runtime=runtime, query=query)
+        if collapsed:
+            return collapsed
+
+    q_tokens = {tok for tok in _tokens(query) if tok not in _STOPWORDS}
     alias_scored = _alias_hits(q_tokens, runtime)
 
     catalogue_scored: list[tuple[int, str]] = []
@@ -115,7 +198,7 @@ async def hints_from_catalogue(query: str, *, runtime: SwarmRuntime, agent_id: s
             if not registry_id:
                 continue
             hay = f"{match.get('id') or ''} {match.get('display_name') or ''}".lower().replace("_", " ")
-            hay_tokens = set(re.findall(r"[a-z0-9]+", hay))
+            hay_tokens = set(_tokens(hay))
             overlap_tokens = hay_tokens & q_tokens
             overlap = len(overlap_tokens)
             cid = str(match.get("id") or "")
@@ -134,13 +217,41 @@ async def hints_from_catalogue(query: str, *, runtime: SwarmRuntime, agent_id: s
         # Token-overlap search misses single strong terms whose id is a compound
         # (e.g. "roas" vs "net_roas_all_channels" — overlap of 1, not the full id).
         # Fall back to the glossary-backed resolver for exactly that case.
-        return await _resolve_metric_term(query, runtime=runtime, agent_id=agent_id)
+        return _collapse_hints(
+            await _resolve_metric_term(query, runtime=runtime, agent_id=agent_id),
+            runtime=runtime,
+            query=query,
+        )
     out: list[str] = []
     best = max(item[0] for item in scored)
     for overlap, registry_id in scored:
         if overlap == best and registry_id not in out:
             out.append(registry_id)
-    return out
+    return _collapse_hints(out, runtime=runtime, query=query)
+
+
+async def _resolve_one_term(text: str, *, runtime: SwarmRuntime, agent_id: str) -> list[str]:
+    if _RESOLVE_TERM_CAP not in runtime.mcp.capabilities or not (text or "").strip():
+        return []
+    try:
+        result = await runtime.mcp.call(
+            agent_id=agent_id,
+            capability=_RESOLVE_TERM_CAP,
+            arguments={"text": text},
+        )
+    except Exception:
+        return []
+    if not isinstance(result, dict) or result.get("kind") not in _RESOLVED_TERM_KINDS:
+        return []
+    metric_id = result.get("metric_id")
+    if not metric_id:
+        return []
+    bootstrap = getattr(runtime, "bootstrap", None)
+    if bootstrap is not None:
+        await bootstrap.refresh_if_stale()
+        runtime.metrics.bind_catalogue(bootstrap)
+    registry_id = runtime.metrics.id_for_catalogue(metric_id) or str(metric_id)
+    return [registry_id]
 
 
 async def _resolve_metric_term(query: str, *, runtime: SwarmRuntime, agent_id: str) -> list[str]:
@@ -149,51 +260,22 @@ async def _resolve_metric_term(query: str, *, runtime: SwarmRuntime, agent_id: s
     catalogue_resolve_term matches a single business term ("roas"), not a
     full sentence — "how much roas increased over 3 days" comes back
     "unknown". Try each non-stopword token in isolation instead, stopping at
-    the first "resolved" hit. The server already refuses to silently resolve
-    weak/ambiguous matches (see catalogue_resolve_term docs).
-
-    Warms/binds the catalogue bootstrap before returning — this only runs
-    when the id is live-catalogue-only (search already failed), so without
-    binding, MetricRegistry.get() would reject the very id we just resolved.
-    Scoped to this fallback only: binding unconditionally in the caller let
-    the search branch's id_for_catalogue() accept any live catalogue id
-    instead of only ones the YAML registry already maps, which pulled in
-    unrelated metrics (e.g. "net sales" also matching amazon_net_sales).
+    the first resolved/auto_resolved hit. Never run this on a token like
+    "meta" while search already ranked "meta CTR" — the caller only reaches
+    here after search scored nothing.
     """
-    if _RESOLVE_TERM_CAP not in runtime.mcp.capabilities:
-        return []
-    tokens = [
-        tok
-        for tok in re.findall(r"[a-z0-9]+", (query or "").lower())
-        if tok not in _STOPWORDS and len(tok) >= 3
-    ]
+    tokens = [tok for tok in _tokens(query) if tok not in _STOPWORDS and len(tok) >= 3]
     for term in dict.fromkeys(tokens):
-        try:
-            result = await runtime.mcp.call(
-                agent_id=agent_id,
-                capability=_RESOLVE_TERM_CAP,
-                arguments={"text": term},
-            )
-        except Exception:
-            continue
-        if not isinstance(result, dict) or result.get("kind") != "resolved":
-            continue
-        metric_id = result.get("metric_id")
-        if not metric_id:
-            continue
-        bootstrap = getattr(runtime, "bootstrap", None)
-        if bootstrap is not None:
-            await bootstrap.refresh_if_stale()
-            runtime.metrics.bind_catalogue(bootstrap)
-        registry_id = runtime.metrics.id_for_catalogue(metric_id) or str(metric_id)
-        return [registry_id]
+        hit = await _resolve_one_term(term, runtime=runtime, agent_id=agent_id)
+        if hit:
+            return hit
     return []
 
 
 def _query_tokens(query: str) -> set[str]:
     return {
         tok
-        for tok in re.findall(r"[a-z0-9]+", (query or "").lower().replace("-", " "))
+        for tok in _tokens((query or "").replace("-", " "))
         if tok not in _STOPWORDS and len(tok) >= _MIN_DIM_TOKEN
     }
 
@@ -364,8 +446,9 @@ def ground_live_grain(
     is the bug. Intersection with the hinted metric's ``supported_dimensions`` is
     the corroboration — not a keyword table.
 
-    No hints = grain-first: keep the live candidates so constrain_hints can pick
-    a default measure.
+    No hints = no metric to invent. Grain stays for Observer to report
+    GRAIN_UNSUPPORTED; we do not pick a different measure that happens to
+    support the dim.
     """
     ordered = list(dict.fromkeys(d for d in live if d and not _is_time_dimension(d)))
     if not ordered:
@@ -434,8 +517,9 @@ def constrain_hints_to_grain(
     bootstrap: CatalogueBootstrap | None,
     resolved_grain: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Filter or replace metric hints so they can actually slice by a named grain.
+    """Filter assigned hints to those that can slice the named grain.
 
+    Does not replace the asked measure with a sibling that supports the dim.
     Returns (hints, resolved_dimensions). No-op when bootstrap is cold.
     """
     if bootstrap is None or not bootstrap.is_warm():
@@ -472,27 +556,7 @@ def constrain_hints_to_grain(
     ]
     if supporting:
         return supporting, resolved
-
-    _, default_metric = _defaults_for_query(bootstrap.grain_defaults(), query)
-    if default_metric:
-        hid = metrics.id_for_catalogue(default_metric)
-        if hid:
-            return [hid], resolved
-
-    filled: list[str] = []
-    target = set(resolved)
-    for definition in metrics.all():
-        cat_id = getattr(definition, "catalogue_metric", None) or definition.id
-        if not cat_id:
-            continue
-        meta = bootstrap.get(cat_id) or bootstrap.get(definition.id)
-        if meta is None:
-            continue
-        if target & set(meta.supported_dimensions or []):
-            mid = definition.id
-            if mid not in filled:
-                filled.append(mid)
-    return filled, resolved
+    return list(hints), resolved
 
 
 def evidence_covers_grain(evidence: list[dict], resolved_dimensions: list[str]) -> bool:
@@ -525,9 +589,12 @@ async def apply_catalogue_grain(
     bootstrap = getattr(runtime, "bootstrap", None)
     if bootstrap is None:
         return list(hints), []
+    if not query_has_grain_intent(query):
+        return list(hints), []
     await bootstrap.refresh_if_stale()
     runtime.metrics.bind_catalogue(bootstrap)
-    live = await resolve_grain_texts([query, *(entities or [])], runtime=runtime)
+    grain_texts = [query, *(entities or [])]
+    live = await resolve_grain_texts(grain_texts, runtime=runtime)
     grounded = ground_live_grain(
         live, hints, metrics=runtime.metrics, bootstrap=bootstrap
     )

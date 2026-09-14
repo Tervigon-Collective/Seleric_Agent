@@ -7,7 +7,11 @@ from uuid import uuid4
 
 from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.contracts.lookup import CoordinatorClassificationV1
-from seleric_swarm.coordinator.catalogue_grounding import apply_catalogue_grain, hints_from_catalogue
+from seleric_swarm.coordinator.catalogue_grounding import (
+    apply_catalogue_grain,
+    collapse_assigned_metrics,
+    hints_from_catalogue,
+)
 from seleric_swarm.coordinator.intake import partition_domain_questions
 from seleric_swarm.coordinator.planning.complexity import looks_like_diagnostic
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
@@ -122,10 +126,25 @@ class Agent(SwarmAgent):
         if not looks_like_diagnostic(query):
             catalogue_hints = await hints_from_catalogue(query, runtime=self.runtime, agent_id=self.agent_id)
         merged_hints = list(dict.fromkeys([*classification.metric_hints, *catalogue_hints]))
+        # Collapse cadence siblings before grain. Hourly CTR supports
+        # campaign_objective; daily meta_ctr does not. Grain against the
+        # uncollapsed set was keeping that dim, then Observer skip-fetched.
+        bootstrap = getattr(self.runtime, "bootstrap", None)
+        merged_hints = collapse_assigned_metrics(
+            [m for m in merged_hints if self.runtime.metrics.get(m) is not None] or merged_hints,
+            self.runtime.metrics,
+            query,
+            bootstrap,
+        )
         merged_hints, resolved_dimensions = await apply_catalogue_grain(
             query, merged_hints, runtime=self.runtime, entities=classification.entities
         )
-        canonical = [m for m in merged_hints if self.runtime.metrics.get(m) is not None]
+        canonical = collapse_assigned_metrics(
+            [m for m in merged_hints if self.runtime.metrics.get(m) is not None],
+            self.runtime.metrics,
+            query,
+            bootstrap,
+        )
         preset_metric = canonical[0] if len(canonical) == 1 else None
 
         query_class = classification.query_class
@@ -165,7 +184,10 @@ class Agent(SwarmAgent):
                 # surfacing as mission failure on an otherwise-dispatchable plan.
                 unsupported_reason = None
 
-        entities = list(resolved_dimensions or classification.entities or [])
+        # Grain is catalogue-grounded only. LLM entity lists are input to
+        # apply_catalogue_grain, not a fallback breakdown — ``[] or entities``
+        # was slicing Meta CTR by campaign_objective.
+        entities = list(resolved_dimensions or [])
         domain_questions = [
             dq.model_dump()
             for dq in partition_domain_questions(
@@ -183,7 +205,7 @@ class Agent(SwarmAgent):
             "entities": entities,
             "resolved_dimensions": resolved_dimensions,
             "time_range": resolved.model_dump(),
-            "metric_hints": merged_hints,
+            "metric_hints": canonical,
             "metric_id": preset_metric,
             "domain_questions": domain_questions,
             "unsupported_reason": unsupported_reason,

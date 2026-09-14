@@ -20,7 +20,11 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
-from seleric_swarm.coordinator.catalogue_grounding import apply_catalogue_grain, hints_from_catalogue
+from seleric_swarm.coordinator.catalogue_grounding import (
+    apply_catalogue_grain,
+    collapse_assigned_metrics,
+    hints_from_catalogue,
+)
 from seleric_swarm.services.metrics import lead_agent_for_hints
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
@@ -130,12 +134,24 @@ async def classify_query_via_llm(
 
     catalogue_hints = await hints_from_catalogue(query, runtime=runtime, agent_id=agent_id)
     merged_hints = list(dict.fromkeys([*classification.metric_hints, *catalogue_hints]))
+    bootstrap = getattr(runtime, "bootstrap", None)
+    merged_hints = collapse_assigned_metrics(
+        [m for m in merged_hints if runtime.metrics.get(m) is not None] or merged_hints,
+        runtime.metrics,
+        query,
+        bootstrap,
+    )
     merged_hints, resolved_dimensions = await apply_catalogue_grain(
         query, merged_hints, runtime=runtime, entities=classification.entities
     )
-    canonical = [m for m in merged_hints if runtime.metrics.get(m) is not None]
+    canonical = collapse_assigned_metrics(
+        [m for m in merged_hints if runtime.metrics.get(m) is not None],
+        runtime.metrics,
+        query,
+        bootstrap,
+    )
 
-    entities = list(resolved_dimensions or classification.entities or [])
+    entities = list(resolved_dimensions or [])
 
     # "coordinator_agent" is the orchestrating role, never a domain lead —
     # treat it the same as "no lead determined" so callers fall back safely.

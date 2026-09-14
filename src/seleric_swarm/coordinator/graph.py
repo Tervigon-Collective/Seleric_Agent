@@ -1030,6 +1030,7 @@ async def run_swarm_v2_mission(
             metrics=runtime.metrics,
             agents=runtime.agents,
             bootstrap=runtime.bootstrap,
+            business_state=runtime.business_state,
         )
     request = MissionRequest(
         query=query,

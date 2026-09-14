@@ -62,8 +62,7 @@ def _build_allowlist(agents: AgentRegistry) -> tuple[dict[str, set[str]], dict[s
 
 
 class MCPGateway:
-    def __init__(self, config_path: str, fixture_path: str | None = None, agents: AgentRegistry | None = None) -> None:
-        del fixture_path  # leftover kw from older fixture-backed gateway
+    def __init__(self, config_path: str, agents: AgentRegistry | None = None) -> None:
         root = repo_root()
         path = Path(config_path)
         if not path.is_absolute():

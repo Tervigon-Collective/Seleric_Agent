@@ -40,7 +40,6 @@ from seleric_swarm.agents.skeptic.registries import (
     InMemoryModelRegistry,
     MetricSemanticsRegistry,
     ModelRegistry,
-    NullDriftMonitor,
     StatisticalValidatorService,
 )
 from seleric_swarm.services.metrics import MetricRegistry
@@ -57,7 +56,7 @@ class SkepticDeps:
     incident_registry: IncidentRegistry = field(default_factory=InMemoryIncidentRegistry)
     rules: BusinessRuleService = field(default_factory=InMemoryBusinessRuleService)
     stats: StatisticalValidatorService = field(default_factory=DeterministicStatsValidator)
-    drift_monitor: DriftMonitor = field(default_factory=NullDriftMonitor)
+    drift_monitor: DriftMonitor | None = None
     causal_service: CausalValidationService | None = None
     reasoning: ReasoningModel = field(default_factory=NullReasoningModel)
     ontology: OntologyPort | None = None

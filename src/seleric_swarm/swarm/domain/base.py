@@ -114,6 +114,8 @@ class DomainAgent:
         time_range: dict[str, Any],
         extra_metrics: list[str] | None = None,
         grain: list[str] | None = None,
+        limit: int | None = None,
+        sort: list[dict[str, Any]] | None = None,
     ) -> list[str]:
         if self.data is None:
             blackboard.record_event("observe_skipped", agent=self.agent_id, reason="no data provider")
@@ -133,6 +135,8 @@ class DomainAgent:
                 metric_ids=metric_ids,
                 time_range=time_range,
                 dimensions=dims or None,
+                limit=limit,
+                sort=sort,
             )
             for r in result.readings:
                 ev = Evidence.new(

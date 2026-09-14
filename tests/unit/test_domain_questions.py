@@ -38,8 +38,41 @@ def test_partition_splits_product_and_finance(runtime):
     assert list(by_domain) == ["product", "finance"]
     assert by_domain["product"].metrics == ["metric.units_sold"]
     assert by_domain["finance"].metrics == ["metric.net_profit"]
-    assert "sku" in by_domain["product"].question
-    assert "net_profit" in by_domain["finance"].question
+    assert "sku" not in by_domain["finance"].grain
+
+
+def test_partition_drops_unsupported_and_unknown_grain():
+    def _m(mid: str, domain: str, supported: list[str]) -> SimpleNamespace:
+        return SimpleNamespace(
+            id=mid,
+            domain=domain,
+            catalogue_metric=mid,
+            raw={"supported_dimensions": supported},
+        )
+
+    class _Reg:
+        def __init__(self) -> None:
+            self._d = {
+                "metric.units_sold": _m("metric.units_sold", "product", ["sku", "product_title"]),
+                "metric.net_profit": _m("metric.net_profit", "finance", ["brand_id"]),
+            }
+
+        def get(self, metric_id: str):
+            return self._d.get(metric_id)
+
+        def owner_agent_for(self, metric_id: str) -> str | None:
+            d = self.get(metric_id)
+            return f"{d.domain}_agent" if d else None
+
+    rows = partition_domain_questions(
+        original_query="how are SKUs doing and what is net profit",
+        metric_ids=["metric.units_sold", "metric.net_profit"],
+        grain=["sku"],
+        metrics=_Reg(),
+    )
+    by_domain = {dq.domain: dq for dq in rows}
+    assert by_domain["product"].grain == ["sku"]
+    assert by_domain["finance"].grain == []
 
 
 def test_partition_drops_unregistered_metrics(runtime):
@@ -282,7 +315,7 @@ async def test_swarm_observe_fetches_only_assigned_metrics_not_peers():
         def __init__(self) -> None:
             self.calls: list[dict] = []
 
-        async def fetch(self, *, metric_ids, time_range, dimensions=None):
+        async def fetch(self, *, metric_ids, time_range, dimensions=None, limit=None, sort=None):
             self.calls.append({"metric_ids": list(metric_ids), "dimensions": dimensions})
             return DataResult(
                 readings=[
@@ -329,7 +362,7 @@ async def test_swarm_observe_uses_assigned_grain_not_probe_dimensions():
         domain = "product"
         calls: list[dict] = []
 
-        async def fetch(self, *, metric_ids, time_range, dimensions=None):
+        async def fetch(self, *, metric_ids, time_range, dimensions=None, limit=None, sort=None):
             self.calls.append({"metric_ids": list(metric_ids), "dimensions": dimensions})
             return DataResult(readings=[], events=[], missing=list(metric_ids))
 

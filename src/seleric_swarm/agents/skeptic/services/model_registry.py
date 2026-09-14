@@ -18,14 +18,12 @@ from seleric_swarm.agents.skeptic.registries import (
     DriftReport,
     InMemoryModelRegistry,
     ModelRecord,
-    NullDriftMonitor,
 )
 from seleric_swarm.paths import repo_root
 
 __all__ = [
     "DriftMonitor",
     "DriftReport",
-    "NullDriftMonitor",
     "YamlModelRegistry",
     "model_registry_from_yaml",
 ]
@@ -79,6 +77,6 @@ def _resolve(path: str | Path | None) -> Path | None:
     return None
 
 
-# DriftMonitor / DriftReport / NullDriftMonitor are defined in
+# DriftMonitor / DriftReport are defined in
 # ``agents.skeptic.registries`` (with the other ports) and re-exported above so a
 # real monitor -- PSI / KS / Jensen-Shannon / calibration -- has one import site.

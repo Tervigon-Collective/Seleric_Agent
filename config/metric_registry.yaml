@@ -138,6 +138,7 @@ metrics:
     formula: clicks / impressions
     direction_bad: down
     frontier: true
+    unit: ratio
     grain: day
     timezone: Asia/Kolkata
     domain: performance
@@ -283,6 +284,7 @@ metrics:
     version: 1
     owner: product
     catalogue_metric: units_sold
+    aliases: [best selling product, best selling products, top selling product, top selling products, units, units sold]
     description: Net units (ordered minus refunded) on eligible placement lines.
     formula: ordered_units - refunded_units
     direction_bad: down

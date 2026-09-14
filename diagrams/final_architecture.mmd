@@ -170,13 +170,16 @@ flowchart TB
         FE["Feature Engine"]
         FS["Feature Store"]
 
+        BSS["Business State Service<br/>MetricState: features / anomaly / forecast / freshness / provenance"]
+        PCFG["Provider Config<br/>(config/provider_registry.yaml)<br/>selects AnomalyDetector / Forecaster impl"]
+
         ST["Statistical Analysis Engine"]
 
         AMR["Anomaly Model Router"]
-        AML["Anomaly Detection Models<br/>Isolation Forest / STL / EWMA / Change Point"]
+        AML["Anomaly Detection Models<br/>Isolation Forest / STL / EWMA / Change Point<br/>+ Business State robust z-score (selectable)"]
 
         PMR["Prediction Model Router"]
-        PML["Forecast / Prediction Models"]
+        PML["Forecast / Prediction Models<br/>+ Business State EWMA / drift (selectable)"]
 
         CR["Causal Knowledge Registry"]
         DW["DoWhy Causal Engine"]
@@ -190,21 +193,30 @@ flowchart TB
 
     %% Intelligence agent -> compute
 
+    OA --> BSS
     OA --> MS
     OA --> ER
 
+    AA --> BSS
     AA --> AMR
     AMR --> AML
+    PCFG -. "selects impl" .-> AMR
 
     DA --> ST
     DA --> CR
     CR --> DW
     DW --> RF
 
+    PRED --> BSS
     PRED --> FE
     FE --> FS
     PRED --> PMR
     PMR --> PML
+    PCFG -. "selects impl" .-> PMR
+
+    BSS --> MS
+    BSS -. "detector/forecaster strategy" .-> AML
+    BSS -. "detector/forecaster strategy" .-> PML
 
     SA --> OPT
     SA --> BR
@@ -339,6 +351,26 @@ flowchart TB
     SK --> HC
 
     HC --> CG
+
+
+    %% =========================
+    %% DOMAIN HEALTH SNAPSHOTS (cron, pre-resolved overview state)
+    %% =========================
+
+    subgraph SNAPSHOT["DOMAIN HEALTH SNAPSHOT (cron, read-not-compute overview path)"]
+
+        CRON["Cron Scheduler"]
+        DHR["DomainStateResolver<br/>per domain, config-driven<br/>(config/domain_health_profiles.yaml)"]
+        SNAPDB[("DomainStateSnapshot<br/>JSON file for now, keyed (brand_id, domain, as_of)<br/>brand_id pinned = 20<br/>-&gt; Postgres JSONB later")]
+
+        CRON --> DHR
+        DHR --> SNAPDB
+    end
+
+    DHR --> BSS
+
+    IC -. "overview-shaped query<br/>(\"how are we doing today?\")" .-> SNAPDB
+    SNAPDB -. "read, not recompute" .-> SYN
 
 
     %% =========================

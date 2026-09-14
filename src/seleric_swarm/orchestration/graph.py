@@ -16,7 +16,7 @@ from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.agents.coordinator import Agent as CoordinatorAgent
 from seleric_swarm.agents.intelligence.observer import Agent as ObserverAgent
 from seleric_swarm.coordinator import ControlPlane
-from seleric_swarm.coordinator.catalogue_grounding import evidence_covers_grain
+from seleric_swarm.coordinator.catalogue_grounding import evidence_covers_grain, query_has_grain_intent
 from seleric_swarm.coordinator.execution.lookup_dag import (
     dag_progress_summary,
     mark_ready_tasks_done,
@@ -384,7 +384,7 @@ def build_graph(runtime: SwarmRuntime):
             prior_limits = list(state.get("limitations") or [])
             new_limits = list(result.get("limitations") or [])
             result["limitations"] = prior_limits + [item for item in new_limits if item not in prior_limits]
-            if result.get("error_code") == "INSUFFICIENT_EVIDENCE" and not new_rows:
+            if result.get("error_code") in {"INSUFFICIENT_EVIDENCE", "GRAIN_UNSUPPORTED"} and not new_rows:
                 result["status"] = "failed"
             else:
                 # Authoritative DAG: mark observe_metric tasks done after a successful wave.
@@ -572,8 +572,12 @@ def build_graph(runtime: SwarmRuntime):
                     "error_message": "No claims passed the provenance gate",
                     "status": "failed",
                 }
-            wanted = [d for d in (state.get("resolved_dimensions") or []) if d]
-            if wanted and not evidence_covers_grain(state.get("evidence") or [], wanted):
+            wanted = [d for d in (state.get("requested_dimensions") or []) if d]
+            if (
+                wanted
+                and query_has_grain_intent(str(state.get("user_query") or ""))
+                and not evidence_covers_grain(state.get("evidence") or [], wanted)
+            ):
                     limitation = (
                         "Grain was requested but evidence has no dimension breakdown"
                     )

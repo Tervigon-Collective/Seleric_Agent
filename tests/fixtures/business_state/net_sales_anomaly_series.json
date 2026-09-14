@@ -1,0 +1,32 @@
+{
+  "metric_id": "metric.net_sales",
+  "catalogue_metric_id": "commerce_net_revenue_daily",
+  "profile_id": "default_v1",
+  "as_of": "2026-09-07",
+  "notes": "Synthetic scenario for Sprint 2 anomaly detection (robust_zscore, median + MAD). Not the same series as net_sales_series.json's trend fixture -- this one is engineered so the 14-point history alternates 100/90/110 (median=100, MAD=10) and the observed point (150 on the last day) is a clean, deliberate spike. Expected values computed by detectors.robust_zscore directly, not hand-derived, to avoid arithmetic mistakes -- see tests/unit/test_business_state_anomaly.py.",
+  "series": [
+    { "ts": "2026-08-24", "value": 100.0 },
+    { "ts": "2026-08-25", "value": 90.0 },
+    { "ts": "2026-08-26", "value": 110.0 },
+    { "ts": "2026-08-27", "value": 100.0 },
+    { "ts": "2026-08-28", "value": 90.0 },
+    { "ts": "2026-08-29", "value": 110.0 },
+    { "ts": "2026-08-30", "value": 100.0 },
+    { "ts": "2026-08-31", "value": 90.0 },
+    { "ts": "2026-09-01", "value": 110.0 },
+    { "ts": "2026-09-02", "value": 100.0 },
+    { "ts": "2026-09-03", "value": 90.0 },
+    { "ts": "2026-09-04", "value": 110.0 },
+    { "ts": "2026-09-05", "value": 100.0 },
+    { "ts": "2026-09-06", "value": 90.0 },
+    { "ts": "2026-09-07", "value": 150.0 }
+  ],
+  "expected_anomaly": {
+    "observed": 150.0,
+    "expected": 100.0,
+    "deviation_pct": 50.0,
+    "score": 3.3724537973829762,
+    "direction": "up",
+    "is_anomaly": true
+  }
+}

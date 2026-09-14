@@ -1,6 +1,9 @@
 flowchart LR
     MCP[MCP Result] --> N[Normalizer]
+    MCP --> BS["Business State<br/>MetricState: features / anomaly / forecast"]
+    BS --> EM["Evidence Map<br/>metric_id / .feature.X / .anomaly / .forecast"]
     N --> E[Evidence Artifact]
+    EM --> E
     E --> L[Evidence Ledger]
     L --> C[Claim]
     C --> P{Provenance policy}

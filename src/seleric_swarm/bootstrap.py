@@ -14,6 +14,7 @@ from seleric_swarm.prompts.registry import PromptRegistry
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
 from seleric_swarm.registry.agent_registry import AgentRegistry
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.services.business_state import BusinessStateService
 from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
 from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.services.ontology import OntologyService
@@ -52,7 +53,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     cat_bootstrap = CatalogueBootstrap(mcp)
     metrics = MetricRegistry(settings.metric_registry_path)
     metrics.bind_catalogue(cat_bootstrap)
-    return SwarmRuntime(
+    runtime = SwarmRuntime(
         settings=settings,
         llm=MeteredLLMPort(build_llm(settings)),
         prompts=PromptRegistry(settings.prompts_dir, settings.prompt_versions_path),
@@ -63,3 +64,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         ontology=OntologyService(mcp),
         bootstrap=cat_bootstrap,
     )
+    # BusinessStateService holds a runtime reference (needs mcp/metrics at call
+    # time, not construction time) -- built after so the two aren't circular.
+    runtime.business_state = BusinessStateService(runtime)
+    return runtime

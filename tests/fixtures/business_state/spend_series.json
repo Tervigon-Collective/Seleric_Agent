@@ -1,0 +1,23 @@
+{
+  "metric_id": "metric.spend",
+  "catalogue_metric_id": "total_ad_spend",
+  "profile_id": "default_v1",
+  "as_of": "2026-09-07",
+  "series": [
+    { "ts": "2026-09-01", "value": 42.0 },
+    { "ts": "2026-09-02", "value": 44.0 },
+    { "ts": "2026-09-03", "value": 46.0 },
+    { "ts": "2026-09-04", "value": 48.0 },
+    { "ts": "2026-09-05", "value": 50.0 },
+    { "ts": "2026-09-06", "value": 52.0 },
+    { "ts": "2026-09-07", "value": 54.0 }
+  ],
+  "expected_features": {
+    "current_value": 54.0,
+    "period_delta_pct": 3.8461538461538463,
+    "rolling_mean_7d": 48.0,
+    "rolling_std_7d": 4.0,
+    "freshness_age": "0d (last point == as_of)"
+  },
+  "notes": "Arithmetic series, step +2. rolling_std_7d is population stdev (ddof=0) over all 7 points. period_delta_pct = (54-52)/52*100 = 2/52*100. metric.spend is seleric_module: null (canonical_pnl, unscoped) per config/metric_registry.yaml -- series.py must not pin a paidmedia module allowlist for this metric. Anomaly/forecast fixtures deferred to Sprint 2 (03 section 8)."
+}

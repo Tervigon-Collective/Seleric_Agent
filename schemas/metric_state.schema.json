@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MetricState",
+  "description": "Core output type of BusinessStateService.get_metric_state. Frozen at Sprint 0 (docs/features/business-state-service/03_DEFINITIONS_TO_MAKE_FUNCTIONAL.md#1-metricstate--core-output-type). Mirrors seleric_swarm.domain.models.MetricState.",
+  "type": "object",
+  "required": ["metric_id", "catalogue_metric_id", "as_of", "freshness", "status"],
+  "properties": {
+    "metric_id": { "type": "string" },
+    "catalogue_metric_id": { "type": "string" },
+    "as_of": { "type": "string" },
+    "window": {
+      "type": "object",
+      "properties": {
+        "start": { "type": "string" },
+        "end": { "type": "string" },
+        "grain": { "type": "string" },
+        "timezone": { "type": "string" }
+      }
+    },
+    "dimensions": { "type": "object" },
+    "actual": { "type": ["number", "null"] },
+    "series": {
+      "type": "array",
+      "description": "Ordered ascending, optional on cache hits.",
+      "items": {
+        "type": "object",
+        "required": ["ts", "value"],
+        "properties": {
+          "ts": { "type": "string" },
+          "value": { "type": ["number", "null"] },
+          "finality": { "$ref": "#/$defs/finality" }
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "description": "feature_id -> {value, window, strategy_version}",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "value": { "type": ["number", "null"] },
+          "window": { "type": ["string", "null"] },
+          "strategy_version": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "baseline": { "type": ["number", "null"] },
+    "anomaly": { "type": ["object", "null"] },
+    "forecast": { "type": ["object", "null"] },
+    "freshness": { "$ref": "#/$defs/freshness" },
+    "finality": { "$ref": "#/$defs/finality" },
+    "confidence": { "type": ["number", "null"] },
+    "direction_bad": { "type": ["string", "null"], "enum": ["up", "down", null] },
+    "quality_flags": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/quality_flag" }
+    },
+    "provenance": {
+      "type": "object",
+      "description": "mcp_query_ids[], catalogue_version?, metric_version, feature_profile_id, detector_profile_id?, forecast_profile_id?, computed_at"
+    },
+    "status": { "type": "string", "enum": ["OK", "PARTIAL", "UNAVAILABLE"] },
+    "error_code": { "type": ["string", "null"] }
+  },
+  "$defs": {
+    "freshness": { "type": "string", "enum": ["CURRENT", "LATE", "STALE", "UNKNOWN"] },
+    "finality": { "type": ["string", "null"], "enum": ["INTRADAY", "PROVISIONAL", "FINAL", null] },
+    "quality_flag": {
+      "type": "string",
+      "enum": [
+        "MISSING_DATA",
+        "STALE",
+        "LATE",
+        "SPARSE_HISTORY",
+        "CATALOGUE_MISS",
+        "BINDING_UNSUPPORTED_DIM",
+        "PARTIAL_SERIES",
+        "MCP_ERROR",
+        "INSUFFICIENT_EVIDENCE",
+        "CROSS_AXIS_RATIO_UNSUPPORTED"
+      ]
+    }
+  }
+}

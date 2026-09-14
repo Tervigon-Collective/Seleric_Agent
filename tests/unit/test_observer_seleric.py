@@ -87,10 +87,10 @@ async def test_seleric_backed_metric_builds_evidence_and_pins_owner_agent():
     definition = _seleric_definition()
     gateway = _FakeGateway(
         {
-            "seleric.catalogue_search_metrics": [{"matches": [{"id": "net_profit"}]}],
+            "seleric.catalogue_search_metrics": [{"matches": [{"id": "net_profit_all_channels"}]}],
             "seleric.metrics_query": [
                 {
-                    "rows": [{"net_profit": "-51190.98"}],
+                    "rows": [{"net_profit_all_channels": "-51190.98"}],
                     "provenance": {"cube_view": "canonical_pnl", "query_id": "q_1", "catalogue_version": "abc123"},
                 }
             ],
@@ -108,9 +108,8 @@ async def test_seleric_backed_metric_builds_evidence_and_pins_owner_agent():
     # behalf of the owning domain agent -- that's what lets the gateway pin
     # the correct module. No local metric -> tool table involved.
     assert gateway.calls[0]["agent_id"] == "finance_agent"
-    assert gateway.calls[0]["capability"] == "seleric.catalogue_search_metrics"
-    assert gateway.calls[1]["capability"] == "seleric.metrics_query"
-    assert gateway.calls[1]["arguments"]["measures"] == ["net_profit"]
+    assert gateway.calls[0]["capability"] == "seleric.metrics_query"
+    assert gateway.calls[0]["arguments"]["measures"] == ["net_profit_all_channels"]
 
 
 @pytest.mark.asyncio
@@ -453,7 +452,8 @@ async def test_observer_units_sold_without_top_stays_period_total():
             },
         )
     )
-    assert "dimensions" not in gateway.calls[1]["arguments"]
+    query = next(c["arguments"] for c in gateway.calls if c["capability"] == "seleric.metrics_query")
+    assert "dimensions" not in query
     assert result["evidence"][0]["value"] == 44.0
     assert result["evidence"][0]["dimensions"] == {}
 
@@ -565,8 +565,203 @@ async def test_observer_refuses_period_total_when_grain_unsupported():
         )
     )
     assert "seleric.metrics_query" not in [c["capability"] for c in gateway.calls]
-    assert result["error_code"] == "INSUFFICIENT_EVIDENCE"
+    assert result["error_code"] == "GRAIN_UNSUPPORTED"
     assert result["evidence"] == []
+
+
+@pytest.mark.asyncio
+async def test_observer_meta_ctr_is_aggregate_ratio_not_hourly_slice():
+    """Daily Meta CTR is an aggregate ratio. Leftover campaign_objective grain
+    (hourly sibling) must not skip the fetch or attach Cube INR."""
+    ctr = SimpleNamespace(
+        id="meta_ctr",
+        unit="ratio",
+        version=1,
+        formula="clicks / impressions",
+        description="Click-through rate",
+        domain="performance",
+        catalogue_metric="meta_ctr",
+        seleric_module=None,
+        raw={"catalogue_metric": "meta_ctr"},
+    )
+    gateway = _FakeGateway(
+        {
+            "seleric.catalogue_search_metrics": [
+                {"matches": [{"id": "meta_ctr_hourly"}, {"id": "meta_ctr"}]}
+            ],
+            "seleric.catalogue_get_metric": [
+                {"supported_dimensions": ["brand_id", "report_date", "campaign_id", "campaign_name"]}
+            ],
+            "seleric.metrics_query": [
+                {
+                    "rows": [{"meta_ctr": "0.0179"}],
+                    "provenance": {
+                        "cube_view": "meta_ad_performance",
+                        "query_id": "q_ctr",
+                        "currency": "INR",
+                    },
+                }
+            ],
+        }
+    )
+    runtime = SimpleNamespace(metrics=_MapMetrics([ctr]), mcp=gateway, ontology=None, llm=None)
+    result = await ObserverAgent(runtime).observe(
+        AgentContext(
+            mission_id="M-ctr",
+            task_id="T-1",
+            question="What is the meta CTR last 7 days?",
+            mission_lead="performance_agent",
+            payload={
+                "metric_id": "meta_ctr",
+                "metric_hints": ["meta_ctr", "meta_ctr_hourly"],
+                "allowed_metrics": ["meta_ctr"],
+                "resolved_dimensions": ["campaign_objective", "campaign_id"],
+                "time_range": {
+                    "kind": "absolute",
+                    "start": "2026-09-08",
+                    "end": "2026-09-14",
+                },
+            },
+        )
+    )
+    query = next(c["arguments"] for c in gateway.calls if c["capability"] == "seleric.metrics_query")
+    assert query["measures"] == ["meta_ctr"]
+    assert "dimensions" not in query
+    assert result["error_code"] is None
+    assert result["evidence"][0]["unit"] == "ratio"
+    assert result["evidence"][0]["dimensions"] == {}
+    assert result["evidence"][0]["metric_or_fact"] == "meta_ctr"
+    assert result.get("requested_dimensions") == []
+
+
+def _paid_def(metric_id: str, catalogue: str, *, unit: str | None = "ratio") -> SimpleNamespace:
+    return SimpleNamespace(
+        id=metric_id,
+        unit=unit,
+        version=1,
+        formula=catalogue,
+        description=metric_id,
+        domain="performance",
+        catalogue_metric=catalogue,
+        seleric_module=None,
+        raw={"catalogue_metric": catalogue},
+    )
+
+
+@pytest.mark.asyncio
+async def test_observer_cpc_aggregate_ignores_hourly_sibling_grain():
+    cpc = _paid_def("meta_cpc", "meta_cpc")
+    gateway = _FakeGateway(
+        {
+            "seleric.catalogue_get_metric": [
+                {
+                    "supported_dimensions": ["brand_id", "report_date"],
+                    "unit": "INR",
+                }
+            ],
+            "seleric.metrics_query": [
+                {
+                    "rows": [{"meta_cpc": "12.5"}],
+                    "provenance": {"cube_view": "meta_ad_performance", "currency": "INR"},
+                }
+            ],
+        }
+    )
+    runtime = SimpleNamespace(metrics=_MapMetrics([cpc]), mcp=gateway, ontology=None, llm=None)
+    result = await ObserverAgent(runtime).observe(
+        AgentContext(
+            mission_id="M-cpc",
+            task_id="T-1",
+            question="What is the meta CPC last 7 days?",
+            mission_lead="performance_agent",
+            payload={
+                "metric_id": "meta_cpc",
+                "metric_hints": ["meta_cpc", "meta_cpc_hourly"],
+                "allowed_metrics": ["meta_cpc"],
+                "resolved_dimensions": ["campaign_objective"],
+                "time_range": {"kind": "absolute", "start": "2026-09-08", "end": "2026-09-14"},
+            },
+        )
+    )
+    query = next(c["arguments"] for c in gateway.calls if c["capability"] == "seleric.metrics_query")
+    assert query["measures"] == ["meta_cpc"]
+    assert "dimensions" not in query
+    assert result["error_code"] is None
+    assert result["evidence"][0]["unit"] == "INR"
+    assert result.get("requested_dimensions") == []
+
+
+@pytest.mark.asyncio
+async def test_observer_leftover_supported_dim_without_breakdown_stays_aggregate():
+    sessions = _commerce_def("metric.sessions", "web_sessions")
+    sessions.domain = "funnel"
+    sessions.unit = "count"
+    gateway = _FakeGateway(
+        {
+            "seleric.catalogue_get_metric": [
+                {"supported_dimensions": ["channel", "brand_id"], "unit": "count"}
+            ],
+            "seleric.metrics_query": [
+                {"rows": [{"web_sessions": "1500"}], "provenance": {"currency": "INR"}}
+            ],
+        }
+    )
+    runtime = SimpleNamespace(metrics=_MapMetrics([sessions]), mcp=gateway, ontology=None, llm=None)
+    result = await ObserverAgent(runtime).observe(
+        AgentContext(
+            mission_id="M-sess",
+            task_id="T-1",
+            question="What are sessions last 7 days?",
+            mission_lead="funnel_agent",
+            payload={
+                "metric_id": "metric.sessions",
+                "allowed_metrics": ["metric.sessions"],
+                "resolved_dimensions": ["channel"],
+                "time_range": {"kind": "absolute", "start": "2026-09-08", "end": "2026-09-14"},
+            },
+        )
+    )
+    query = next(c["arguments"] for c in gateway.calls if c["capability"] == "seleric.metrics_query")
+    assert "dimensions" not in query
+    assert result["evidence"][0]["value"] == pytest.approx(1500.0)
+    assert result["evidence"][0]["unit"] == "count"
+    assert result["evidence"][0]["dimensions"] == {}
+    assert result.get("requested_dimensions") == []
+
+
+@pytest.mark.asyncio
+async def test_observer_uses_catalogue_unit_not_cube_currency_for_ratio():
+    ctr = _paid_def("meta_ctr", "meta_ctr", unit=None)
+    gateway = _FakeGateway(
+        {
+            "seleric.catalogue_get_metric": [
+                {"supported_dimensions": ["report_date"], "unit": "ratio"}
+            ],
+            "seleric.metrics_query": [
+                {
+                    "rows": [{"meta_ctr": "0.02"}, {"meta_ctr": "0.03"}],
+                    "provenance": {"currency": "INR"},
+                }
+            ],
+        }
+    )
+    runtime = SimpleNamespace(metrics=_MapMetrics([ctr]), mcp=gateway, ontology=None, llm=None)
+    result = await ObserverAgent(runtime).observe(
+        AgentContext(
+            mission_id="M-unit",
+            task_id="T-1",
+            question="What is CTR today?",
+            mission_lead="performance_agent",
+            payload={
+                "metric_id": "meta_ctr",
+                "allowed_metrics": ["meta_ctr"],
+                "time_range": {"kind": "point", "start": "2026-09-14"},
+            },
+        )
+    )
+    assert result["evidence"][0]["unit"] == "ratio"
+    assert result["evidence"][0]["value"] == pytest.approx(0.02)
+    assert len(result["evidence"]) == 1
 
 
 def test_registry_match_resolves_gs_and_roas_abbreviations():

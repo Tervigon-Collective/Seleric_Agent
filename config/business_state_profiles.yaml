@@ -1,0 +1,43 @@
+# Business State Service profiles (feature / detector / forecast bundles).
+# Frozen at Sprint 0 — docs/features/business-state-service/03_DEFINITIONS_TO_MAKE_FUNCTIONAL.md#4-feature--detector--forecast-profile-config
+# No runtime code reads this yet; series.py/features.py land in Sprint 1.
+#
+# Feature class split (Sprint 0 checklist, see 06_DATA_VALIDATION_FINDINGS.md#4):
+#   daily_series    - metric has a GROUP BY date axis, features below apply as-is
+#                     (commerce/finance/paidmedia/attribution/product pilot metrics).
+#   windowed_point  - metric returns one row per window (e.g. repeat_rate); only
+#                     current_value + a cron-run-over-cron-run delta apply. Not
+#                     implemented until the customer domain (Sprint 4).
+#
+# Cross-view ratio rule: a feature/health-signal dividing two separately fetched
+# catalogue metrics must confirm both resolve to the same view + date axis via
+# catalogue_get_metric first, else flag CROSS_AXIS_RATIO_UNSUPPORTED. Pre-built
+# ratio metrics (net_roas, mer, gross_margin_pct, ...) are computed server-side
+# and are not subject to this rule.
+
+profiles:
+  default_v1:
+    feature_class: daily_series
+    features:
+      - { id: current_value, strategy: current_value }
+      - { id: period_delta_pct, strategy: period_delta_pct, window: compare }
+      - { id: rolling_mean_7d, strategy: rolling_mean, window: 7d, min_points: 5 }
+      - { id: rolling_std_7d, strategy: rolling_std, window: 7d, min_points: 5 }
+      - { id: freshness_age, strategy: freshness_age }
+    anomaly:
+      strategy: robust_zscore
+      window: 28d
+      min_points: 14
+      z_threshold: 3.0
+      use_direction_bad: true
+    forecast:
+      strategy: ewma          # or drift_projection from prediction_policies
+      horizon: 7d
+      min_points: 8
+      interval_z: 1.28
+    freshness:
+      stale_after_hours: 36
+      late_after_hours: 12
+    series:
+      max_lookback_days: 90
+      gap_policy: drop        # drop | UNAVAILABLE — no silent forward-fill in V0

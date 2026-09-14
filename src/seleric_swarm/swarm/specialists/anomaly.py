@@ -58,10 +58,14 @@ class AnomalyAgent(SpecialistAgent):
 
         # Build detector context from mission context (no scenario-specific glue)
         detect_ctx: dict[str, Any] = {}
-        if mission.context:
-            # Pass through time_range for detectors that need window info
-            if "time_range" in mission.context:
-                detect_ctx["time_range"] = mission.context["time_range"]
+        # mission.context["time_range"] is never actually populated anywhere
+        # in the mission graph (Template doesn't need it, so this went
+        # unnoticed) -- the real resolved window lives on mission.time_range
+        # itself. A history-based detector (BusinessStateService's
+        # robust_zscore) needs a real window, so fall back to that field.
+        window = (mission.context or {}).get("time_range") or mission.time_range
+        if window:
+            detect_ctx["time_range"] = window
 
         findings = await detector.detect(readings, context=detect_ctx)
 

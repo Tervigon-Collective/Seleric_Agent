@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from seleric_swarm.config.settings import Settings
 from seleric_swarm.llm.port import LLMPort
@@ -11,6 +12,9 @@ from seleric_swarm.registry.agent_registry import AgentRegistry
 from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
 from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.services.ontology import OntologyPort
+
+if TYPE_CHECKING:
+    from seleric_swarm.services.business_state import BusinessStateService
 
 
 @dataclass
@@ -26,3 +30,6 @@ class SwarmRuntime:
     # Live Cube catalogue cache — created by build_runtime(), warmed lazily on
     # first _resolve_measure() call.  None only in tests that bypass build_runtime.
     bootstrap: CatalogueBootstrap | None = None
+    # docs/features/business-state-service — None only in tests that bypass
+    # build_runtime and don't need it.
+    business_state: BusinessStateService | None = None

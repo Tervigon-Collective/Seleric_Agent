@@ -6,6 +6,12 @@ from seleric_swarm.main import app
 from seleric_swarm.observability.tracing import traced_span
 
 
+def test_docs_show_request_duration():
+    page = TestClient(app).get("/docs")
+    assert page.status_code == 200
+    assert "displayRequestDuration" in page.text
+
+
 def test_health_and_ping_and_mission(runtime, monkeypatch):
     monkeypatch.setattr(main_mod, "_runtime", runtime)
     client = TestClient(app, raise_server_exceptions=True)

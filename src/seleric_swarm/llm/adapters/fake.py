@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from difflib import SequenceMatcher
 from datetime import UTC, date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -33,6 +34,14 @@ def _words(text: str) -> set[str]:
         if word in {"sale", "sales"}:
             out.update({"sale", "sales"})
     return out
+
+
+# ponytail: word-level typo tolerance via ratio, not a real spellchecker —
+# upgrade to a proper fuzzy-match lib if aliases start needing more slack.
+def _fuzzy_word_in(word: str, q_words: set[str]) -> bool:
+    if word in q_words:
+        return True
+    return any(len(w) >= 4 and SequenceMatcher(None, word, w).ratio() >= 0.8 for w in q_words)
 
 
 def _mention_index(query: str, phrases: list[str]) -> int:
@@ -74,7 +83,7 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
                 if short_alias:
                     if alias_parts[0] not in q_words:
                         continue
-                elif alias not in q:
+                elif alias not in q and not all(_fuzzy_word_in(p, q_words) for p in alias_parts):
                     continue
                 if metric.id == "metric.net_sales" and wants_gross and not mentions_net:
                     continue
@@ -253,9 +262,10 @@ def classify_lookup_query(query: str, timezone: str, as_of: str | None) -> dict[
     hints = _collect_hints(lower)
     if hints:
         time_range, query_class = _time_range_for(q, lower)
+        domain_lead = "performance_agent" if has_performance else _lead_for_hints(hints)
         return {
             "query_class": query_class,
-            "domain_lead": _lead_for_hints(hints),
+            "domain_lead": domain_lead,
             "entities": [],
             "time_range": time_range,
             "metric_hints": hints,

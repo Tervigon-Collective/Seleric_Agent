@@ -108,15 +108,12 @@ async def test_product_observer_honours_top_n(runtime):
 
 @pytest.mark.asyncio
 async def test_best_performing_channel_last_3_days_ranks_by_channel(runtime):
-    runtime.settings.mission_timeout_s = 45
     result = await run_mission(
         runtime,
         query="What is the best performing channel is the last 3 days",
         timezone="Asia/Kolkata",
         as_of="2026-09-03",
     )
-    if result.error and result.error.code == "TIMEOUT":
-        pytest.skip("Cube timed out on attributed revenue by channel")
     assert result.status == "completed", (result.status, result.error)
     assert result.query_class == "lookup"
     assert result.mission_lead == "attribution_agent"

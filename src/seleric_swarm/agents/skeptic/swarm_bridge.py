@@ -7,7 +7,7 @@ exposes the *same* specialist interface (``agent_id`` / ``produces`` /
 Blackboard artifact so the synthesizer, completion gate and existing tests keep
 working unchanged.
 
-Swap it in from ``swarm/orchestrator.py``::
+Swap it in from ``coordinator/graph.py`` when ``full_skeptic=True``::
 
     from seleric_swarm.agents.skeptic.swarm_bridge import SwarmSkepticSpecialist
     skeptic = SwarmSkepticSpecialist(providers, deps=skeptic_deps)

@@ -4,7 +4,79 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from seleric_swarm.contracts.lookup import TimeRangeV1
+
 TrustLabel = Literal["VERIFIED", "STRONG", "PROBABLE", "WEAK", "INSUFFICIENT"]
+
+# Business State Service contracts (docs/features/business-state-service).
+# Frozen at Sprint 0 — no runtime code consumes these yet.
+Freshness = Literal["CURRENT", "LATE", "STALE", "UNKNOWN"]
+Finality = Literal["INTRADAY", "PROVISIONAL", "FINAL"]
+MetricStateStatus = Literal["OK", "PARTIAL", "UNAVAILABLE"]
+StateNeed = Literal["actual", "features", "anomaly", "forecast"]
+QualityFlag = Literal[
+    "MISSING_DATA",
+    "STALE",
+    "LATE",
+    "SPARSE_HISTORY",
+    "CATALOGUE_MISS",
+    "BINDING_UNSUPPORTED_DIM",
+    "PARTIAL_SERIES",
+    "MCP_ERROR",
+    "INSUFFICIENT_EVIDENCE",
+    "CROSS_AXIS_RATIO_UNSUPPORTED",
+]
+
+
+class SeriesPoint(BaseModel):
+    ts: str
+    value: float | None
+    finality: Finality | None = None
+
+
+class FeatureValue(BaseModel):
+    value: float | None
+    window: str | None = None
+    strategy_version: str | None = None
+
+
+class StateRequest(BaseModel):
+    """Input contract for BusinessStateService.get_metric_state (03 §2)."""
+
+    metric_id: str
+    catalogue_metric_id: str | None = None
+    time_range: TimeRangeV1
+    dimensions: dict[str, Any] = Field(default_factory=dict)
+    agent_id: str
+    as_of: str | None = None
+    profile_id: str = "default_v1"
+    need: list[StateNeed] = Field(default_factory=lambda: ["actual"])
+
+
+class MetricState(BaseModel):
+    """Core output type of BusinessStateService.get_metric_state (03 §1)."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    metric_id: str
+    catalogue_metric_id: str
+    as_of: str
+    window: dict[str, Any] = Field(default_factory=dict)  # {start, end, grain, timezone}
+    dimensions: dict[str, Any] = Field(default_factory=dict)
+    actual: float | None = None
+    series: list[SeriesPoint] = Field(default_factory=list)
+    features: dict[str, FeatureValue] = Field(default_factory=dict)
+    baseline: float | None = None
+    anomaly: dict[str, Any] | None = None
+    forecast: dict[str, Any] | None = None
+    freshness: Freshness = "UNKNOWN"
+    finality: Finality | None = None
+    confidence: float | None = None
+    direction_bad: Literal["up", "down"] | None = None
+    quality_flags: list[QualityFlag] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    status: MetricStateStatus = "UNAVAILABLE"
+    error_code: str | None = None
 
 
 class EvidenceArtifact(BaseModel):
