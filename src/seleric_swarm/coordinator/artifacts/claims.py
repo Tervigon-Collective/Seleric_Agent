@@ -7,7 +7,6 @@ from uuid import uuid4
 
 from seleric_swarm.coordinator.contracts import ClaimState, ManagedClaim
 
-
 # Skeptic verdict to claim state mapping
 _SKEPTIC_MAP: dict[str, ClaimState] = {
     "PASS": "VALIDATED",
