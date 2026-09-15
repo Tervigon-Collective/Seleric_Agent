@@ -171,6 +171,7 @@ class Skeptic(SwarmArtifact):
     target_ref: str | None = None
     verdict: Literal["PASS", "REVISE", "REJECT"] = "PASS"
     attacks_run: list[str] = Field(default_factory=list)
+    attacks_skipped: list[str] = Field(default_factory=list)
     problems: list[dict[str, Any]] = Field(default_factory=list)
     required_followups: list[dict[str, Any]] = Field(default_factory=list)
 

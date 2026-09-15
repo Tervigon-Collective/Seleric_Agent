@@ -8,6 +8,7 @@ cooldown.
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -18,25 +19,39 @@ class CircuitBreaker:
     cooldown_s: float = 30.0
     _consecutive_failures: int = field(default=0, init=False, repr=False)
     _opened_at: float | None = field(default=None, init=False, repr=False)
+    _probing: bool = field(default=False, init=False, repr=False)
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def allow(self) -> bool:
-        if self._opened_at is None:
+        with self._lock:
+            if self._opened_at is None:
+                return True
+            if time.monotonic() - self._opened_at < self.cooldown_s:
+                return False
+            # Half-open: admit exactly one probe until success/failure is recorded.
+            if self._probing:
+                return False
+            self._probing = True
             return True
-        return time.monotonic() - self._opened_at >= self.cooldown_s
 
     def record_success(self) -> None:
-        self._consecutive_failures = 0
-        self._opened_at = None
+        with self._lock:
+            self._consecutive_failures = 0
+            self._opened_at = None
+            self._probing = False
 
     def record_failure(self) -> None:
-        self._consecutive_failures += 1
-        if self._consecutive_failures >= self.failure_threshold:
-            self._opened_at = time.monotonic()
+        with self._lock:
+            self._consecutive_failures += 1
+            self._probing = False
+            if self._consecutive_failures >= self.failure_threshold:
+                self._opened_at = time.monotonic()
 
     @property
     def state(self) -> str:
-        if self._opened_at is None:
-            return "closed"
-        if time.monotonic() - self._opened_at >= self.cooldown_s:
-            return "half_open"
-        return "open"
+        with self._lock:
+            if self._opened_at is None:
+                return "closed"
+            if time.monotonic() - self._opened_at >= self.cooldown_s:
+                return "half_open"
+            return "open"

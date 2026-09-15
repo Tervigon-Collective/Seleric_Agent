@@ -62,7 +62,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from seleric_swarm.services.domain_health.models import DomainStateSnapshot
 from seleric_swarm.services.domain_health.scheduler import ALL_DOMAINS
@@ -114,7 +114,22 @@ def _is_stale(snapshot: DomainStateSnapshot, *, now: datetime, max_age_hours: fl
     return age_hours > max_age_hours
 
 
-def read_overview_snapshots(
+_STATUS_PLAIN = {
+    "OK": "healthy",
+    "DEGRADED": "some data gaps",
+    "UNAVAILABLE": "data unavailable",
+}
+
+
+def _plain_unavailable_reason(reason: str) -> str:
+    if reason.startswith("snapshot stale"):
+        return "data is out of date"
+    if reason == "no snapshot available":
+        return "data isn't ready yet"
+    return "data isn't ready yet"
+
+
+async def read_overview_snapshots(
     store: SnapshotStore,
     domains: list[str] = OVERVIEW_DOMAINS,
     *,
@@ -128,7 +143,7 @@ def read_overview_snapshots(
     fresh: list[DomainStateSnapshot] = []
     unavailable: list[tuple[str, str]] = []
     for domain in domains:
-        snapshot = store.get_latest(domain)
+        snapshot = await store.aget_latest(domain)
         if snapshot is None:
             unavailable.append((domain, "no snapshot available"))
         elif _is_stale(snapshot, now=now, max_age_hours=max_age_hours):
@@ -138,17 +153,44 @@ def read_overview_snapshots(
     return fresh, unavailable
 
 
+_DETAIL_WORDS = re.compile(
+    r"\b(detail|details|detailed|elaborate|breakdown|in depth|in-depth|explain)\b", re.IGNORECASE
+)
+
+
+def _wants_detail(query: str) -> bool:
+    """A query asking to elaborate deserves more than the one-line headline
+    narration -- the per-metric values are already on the snapshot
+    (``ResolvedMetric``), narrate_overview just wasn't reading them."""
+    return bool(_DETAIL_WORDS.search(query))
+
+
+def _metric_detail_line(m: Any) -> str:
+    value = "no data" if m.value is None else f"{m.value:,.2f}"
+    delta = "" if m.period_delta_pct is None else f" (Δ {m.period_delta_pct:+.1f}%)"
+    return f"  - {m.metric_id}: {value}{delta}"
+
+
 def narrate_overview(
-    snapshots: list[DomainStateSnapshot], unavailable: list[tuple[str, str]]
+    snapshots: list[DomainStateSnapshot], unavailable: list[tuple[str, str]], *, detail: bool = False
 ) -> tuple[str, list[str]]:
     """Deterministic narration straight from snapshot fields. Returns
-    ``(final_response, limitations)``.
+    ``(final_response, limitations)``. ``detail=True`` appends every
+    resolved metric's value/delta under each domain's headline line instead
+    of only the metrics that tripped a threshold.
     """
-    lines = [
-        f"{s.domain}: " + ("; ".join(s.headline_signals) if s.headline_signals else f"no threshold breaches (status {s.status}).")
-        for s in snapshots
+    lines = []
+    for s in snapshots:
+        if s.headline_signals:
+            lines.append(f"{s.domain}: " + "; ".join(s.headline_signals))
+        else:
+            status_plain = _STATUS_PLAIN.get(s.status, "status unknown")
+            lines.append(f"{s.domain}: no threshold breaches ({status_plain}).")
+        if detail:
+            lines.extend(_metric_detail_line(m) for m in s.metrics)
+    limitations = [
+        f"{domain}: {_plain_unavailable_reason(reason)}." for domain, reason in unavailable
     ]
-    limitations = [f"{domain}: {reason} -- run the domain_health scheduler." for domain, reason in unavailable]
     return "\n".join(lines), limitations
 
 
@@ -159,7 +201,7 @@ def build_overview_result(
     snapshots: list[DomainStateSnapshot],
     unavailable: list[tuple[str, str]],
 ) -> SwarmMissionResult:
-    final_response, limitations = narrate_overview(snapshots, unavailable)
+    final_response, limitations = narrate_overview(snapshots, unavailable, detail=_wants_detail(query))
     status = "completed" if snapshots and not unavailable else "partial"
     return SwarmMissionResult(
         mission_id=mission_id,

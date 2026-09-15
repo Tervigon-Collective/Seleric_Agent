@@ -106,6 +106,11 @@ def _breakdown_evidence_row(metric_id: str, reading: MetricReading, time_range: 
     )
 
 
+def _humanize_metric(metric_id: str) -> str:
+    bare = metric_id.removeprefix("metric.")
+    return bare.replace("_", " ")
+
+
 def _narrate(evidence: list[EvidenceView]) -> str:
     if not evidence:
         return "No data available for the requested metric(s)."
@@ -114,18 +119,19 @@ def _narrate(evidence: list[EvidenceView]) -> str:
         by_metric.setdefault(row.metric_or_fact, []).append(row)
     lines = []
     for metric_id, rows in by_metric.items():
+        label = _humanize_metric(metric_id)
         # Multiple rows for one metric only happens via the dimensioned
         # breakdown fetch (_fetch_breakdown) -- the ungrained path
         # (BusinessStateService) always carries a "brand_id" dimension on
         # its single row too, which must NOT trigger breakdown-style
         # rendering (that showed "20=<value>" instead of "<value>").
         if len(rows) == 1:
-            lines.append(f"{metric_id}: {rows[0].value}")
+            lines.append(f"{label}: {rows[0].value}")
         else:
             breakdown = ", ".join(
                 f"{'/'.join(str(v) for v in row.dimensions.values()) or 'total'}={row.value}" for row in rows
             )
-            lines.append(f"{metric_id}: {breakdown}")
+            lines.append(f"{label}: {breakdown}")
     return "\n".join(lines)
 
 
@@ -137,7 +143,7 @@ async def _fetch_breakdown(
     """
     provider = providers.data_for(dq.domain)
     if provider is None:
-        return [], [f"{', '.join(dq.metrics)}: no data provider for domain {dq.domain}"]
+        return [], [f"No data available for {_humanize_metric(m)}." for m in dq.metrics]
 
     result = await provider.fetch(
         metric_ids=dq.metrics,
@@ -151,7 +157,7 @@ async def _fetch_breakdown(
         return definition.id if definition else mid
 
     rows = [_breakdown_evidence_row(_canon(reading.metric_id), reading, time_range) for reading in result.readings]
-    limitations = [f"{_canon(mid)}: no data available for the requested breakdown" for mid in result.missing]
+    limitations = [f"No data available for {_humanize_metric(_canon(mid))}." for mid in result.missing]
     return rows, limitations
 
 
@@ -210,7 +216,7 @@ async def _comparison_rows(
     means period A, the one named first in the query, is higher).
     """
     if reading_a is None or reading_b is None:
-        return [], f"{canonical_id}: no data available for one or both comparison periods"
+        return [], f"No data available for {_humanize_metric(canonical_id)}."
     row_a = _reading_evidence_row(canonical_id, reading_a, time_range_a)
     row_b = _reading_evidence_row(canonical_id, reading_b, time_range_b)
     delta_value = (
@@ -314,7 +320,7 @@ async def run_lookup_fast_path(
                 continue
             delta_row = rows[-1]
             comparison_lines.append(
-                f"{canonical_id}: period A={rows[0].value}, period B={rows[1].value}, delta={delta_row.value}"
+                f"{_humanize_metric(canonical_id)}: period A={rows[0].value}, period B={rows[1].value}, delta={delta_row.value}"
             )
         narration = "\n".join(comparison_lines) if comparison_lines else None
     else:
@@ -342,14 +348,14 @@ async def run_lookup_fast_path(
                 for (domain, metric_id), reading in zip(pairs, readings):
                     canonical_id = _canon(metric_id)
                     if reading is None:
-                        limitations.append(f"{canonical_id}: no data available")
+                        limitations.append(f"No data available for {_humanize_metric(canonical_id)}.")
                         continue
                     evidence.append(_reading_evidence_row(canonical_id, reading, time_range))
             else:
                 tasks = [_fetch(domain, metric_id, time_range) for domain, metric_id in pairs]
                 for metric_id, state in await asyncio.gather(*tasks):
                     if state.status == "UNAVAILABLE":
-                        limitations.append(f"{metric_id}: {', '.join(state.quality_flags) or 'no data available'}")
+                        limitations.append(f"No data available for {_humanize_metric(metric_id)}.")
                         continue
                     evidence.append(_evidence_row(metric_id, state))
 

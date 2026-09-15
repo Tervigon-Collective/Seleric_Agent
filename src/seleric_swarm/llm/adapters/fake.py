@@ -76,6 +76,7 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
             return ["metric.units_sold"]
 
     scored: list[tuple[int, int, str]] = []
+    weak_channel_desc_matches: list[tuple[int, int, str]] = []
     for metric in metrics.all():
         slug = metric.id.removeprefix("metric.")
         slug_phrase = slug.replace("_", " ")
@@ -118,12 +119,22 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
             score = 6
             phrases = [metric.domain, *phrases]
         if score == 0 and "channel" in q_words and re.search(r"\bacross channels\b", metric.description or "", re.IGNORECASE):
-            score = 8
-            phrases = ["channel", *phrases]
+            # Weakest signal here: any query merely containing the word
+            # "channel" matches every metric whose *description* happens to
+            # say "across channels", regardless of whether that metric is
+            # actually what the query named (e.g. "net profit by channel"
+            # dragging in attributed_net_revenue/orders/gross_revenue purely
+            # because their descriptions all end in "across channels").
+            # Tracked separately so a real slug/alias match elsewhere in the
+            # same query can suppress just this weak tier, not every hint.
+            weak_channel_desc_matches.append((8, _mention_index(q, ["channel", *phrases]), metric.id))
+            continue
         if score == 0:
             continue
         scored.append((score, _mention_index(q, phrases), metric.id))
 
+    if not scored:
+        scored = weak_channel_desc_matches
     scored.sort(key=lambda item: item[1])
     out: list[str] = []
     for _score, _index, metric_id in scored:

@@ -95,7 +95,11 @@ def test_read_overview_snapshots_flags_missing_and_stale(tmp_path):
     store.save(stale)
     # "performance" is never saved -- no snapshot at all.
 
-    snapshots, unavailable = read_overview_snapshots(store, ["commerce", "finance", "performance"])
+    import asyncio
+
+    snapshots, unavailable = asyncio.run(
+        read_overview_snapshots(store, ["commerce", "finance", "performance"])
+    )
 
     assert [s.domain for s in snapshots] == ["commerce"]
     assert dict(unavailable)["finance"].startswith("snapshot stale")
@@ -111,7 +115,8 @@ def test_narrate_overview_includes_headline_signals_and_gaps():
 
     assert "commerce: net_sales_drop: -20%" in text
     assert "funnel: no threshold breaches" in text
-    assert limitations == ["finance: no snapshot available -- run the domain_health scheduler."]
+    assert "healthy" in text or "no threshold breaches" in text
+    assert limitations == ["finance: data isn't ready yet."]
 
 
 def test_build_overview_result_partial_when_any_domain_unavailable():
@@ -123,7 +128,7 @@ def test_build_overview_result_partial_when_any_domain_unavailable():
     assert result.status == "partial"
     assert result.team == []
     assert all(v == [] for v in result.artifacts.values())
-    assert "finance: no snapshot available -- run the domain_health scheduler." in result.limitations
+    assert "finance: data isn't ready yet." in result.limitations
 
 
 def test_build_overview_result_completed_when_all_domains_fresh():
@@ -132,3 +137,38 @@ def test_build_overview_result_completed_when_all_domains_fresh():
 
     assert result.status == "completed"
     assert result.limitations == []
+
+
+def test_narrate_overview_omits_per_metric_detail_by_default():
+    """Regression: a plain "how are we doing" ask stays a terse one-liner
+    per domain -- detail is opt-in, not always-on."""
+    snapshots = [_snapshot("finance", computed_at="2026-09-15T00:00:00+00:00", headline_signals=["net_profit_drop: -419.1%"])]
+    text, _ = narrate_overview(snapshots, [])
+    assert text == "finance: net_profit_drop: -419.1%"
+
+
+def test_narrate_overview_detail_lists_every_resolved_metric():
+    """Regression: "how is finance doing? give me in detail" used to get the
+    exact same one-line headline-only answer as a plain "how are we doing" --
+    the per-metric values (ResolvedMetric.value/period_delta_pct) were
+    already on the snapshot and simply never read."""
+    snapshots = [_snapshot("finance", computed_at="2026-09-15T00:00:00+00:00", headline_signals=["net_profit_drop: -419.1%"])]
+    text, _ = narrate_overview(snapshots, [], detail=True)
+    assert "finance: net_profit_drop: -419.1%" in text
+    assert "metric.finance_x: 1.00" in text
+
+
+@pytest.mark.parametrize(
+    "query, expect_detail",
+    [
+        ("How is finance doing? Give me in detail", True),
+        ("How is finance doing, in depth please", True),
+        ("Can you elaborate on finance performance", True),
+        ("How is finance doing?", False),
+        ("how are we doing today?", False),
+    ],
+)
+def test_build_overview_result_detects_detail_request(query, expect_detail):
+    snapshots = [_snapshot("finance", computed_at="2026-09-15T00:00:00+00:00", headline_signals=["net_profit_drop: -419.1%"])]
+    result = build_overview_result(mission_id="M1", query=query, snapshots=snapshots, unavailable=[])
+    assert ("metric.finance_x" in result.final_response) is expect_detail

@@ -34,6 +34,20 @@ def test_check_swarm_budget_token_budget():
     assert check_swarm_budget({"usage": {}}, MissionBudget(), token_usage=10_000).ok
 
 
+def test_check_swarm_budget_wall_clock_deadline():
+    budgets = MissionBudget(max_runtime_s=30.0)
+    assert check_swarm_budget(
+        {"started_at": "2099-01-01T00:00:00Z", "usage": {}},
+        budgets,
+    ).ok
+    v = check_swarm_budget(
+        {"started_at": "2000-01-01T00:00:00Z", "usage": {}},
+        budgets,
+    )
+    assert not v.ok
+    assert v.exhausted_key == "max_runtime"
+
+
 def test_check_swarm_budget_leadership_and_remediation():
     budgets = MissionBudget(max_leadership_transfers=2, max_remediation_rounds=1)
     assert not check_swarm_budget(

@@ -165,7 +165,7 @@ async def test_unavailable_metric_becomes_limitation_not_silent_drop(monkeypatch
     assert result is not None
     assert result.status == "failed"
     assert result.evidence == []
-    assert result.limitations == ["metric.net_sales: MISSING_DATA"]
+    assert result.limitations == ["No data available for net sales."]
 
 
 @pytest.mark.asyncio
@@ -276,7 +276,7 @@ async def test_breakdown_missing_metric_becomes_limitation(monkeypatch):
     assert result is not None
     assert result.status == "failed"
     assert result.evidence == []
-    assert result.limitations == ["metric.attributed_net_revenue: no data available for the requested breakdown"]
+    assert result.limitations == ["No data available for attributed net revenue."]
 
 
 @pytest.mark.asyncio

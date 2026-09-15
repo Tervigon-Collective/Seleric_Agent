@@ -719,23 +719,34 @@ def build_graph(runtime: SwarmRuntime):
             inputs={"query_class": state.get("query_class"), "complexity": state.get("complexity_label")},
         ) as span:
             reason = state.get("unsupported_reason") or "Query class or domain is not enabled in V1"
+            code = state.get("error_code") or "ROUTING_UNSUPPORTED"
             span.set_outputs(
                 {
                     "status": "failed",
-                    "error_code": state.get("error_code") or "ROUTING_UNSUPPORTED",
+                    "error_code": code,
                     "reason": reason,
                     "blocked_reasons": state.get("plan_blocked_reasons"),
                 }
             )
-            return {
+            patch: dict[str, Any] = {
                 "status": "failed",
-                "error_code": state.get("error_code") or "ROUTING_UNSUPPORTED",
+                "error_code": code,
                 "error_message": reason,
                 "mcp_called": False,
                 "final_response": reason,
                 "limitations": [reason],
                 "active_specialist": None,
             }
+            patch.update(
+                _emit_lookup_event(
+                    {**dict(state), **patch},
+                    "mission_failed",
+                    status="failed",
+                    error_code=code,
+                    error_message=reason,
+                )
+            )
+            return patch
 
     def finalize_error_node(state: MissionState) -> dict[str, Any]:
         with traced_span(
@@ -746,13 +757,23 @@ def build_graph(runtime: SwarmRuntime):
             code = state.get("error_code") or "LLM_UNAVAILABLE"
             message = state.get("error_message") or "Mission failed"
             span.set_outputs({"status": "failed", "error_code": code, "error_message": message})
-            return {
+            patch: dict[str, Any] = {
                 "status": "failed",
                 "error_code": code,
                 "error_message": message,
                 "final_response": message,
                 "limitations": list(state.get("limitations") or [message]),
             }
+            patch.update(
+                _emit_lookup_event(
+                    {**dict(state), **patch},
+                    "mission_failed",
+                    status="failed",
+                    error_code=code,
+                    error_message=message,
+                )
+            )
+            return patch
 
     def finalize_success_node(state: MissionState) -> dict[str, Any]:
         with traced_span(
@@ -769,8 +790,11 @@ def build_graph(runtime: SwarmRuntime):
             patch: dict[str, Any] = {"status": status}
             completion = plane.completion(dict(state))
             patch.update(completion)
-            kind = "mission_completed" if status == "completed" else "mission_partial"
             if status == "failed":
+                kind = "mission_failed"
+            elif status == "completed":
+                kind = "mission_completed"
+            else:
                 kind = "mission_partial"
             patch.update(
                 _emit_lookup_event(

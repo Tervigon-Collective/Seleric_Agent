@@ -188,13 +188,49 @@ async def _mechanism_consistency(ctx: DiagnosticContext, h: DiagnosticHypothesis
             test_id=t.test_id, hypothesis_id=h.hypothesis_id, kind=t.kind, passed=True,
             detail={"skipped": "insufficient change data"}, note="cannot check direction; not failing",
         )
-    # a degrading mechanism: treatment worsened and outcome worsened (opposite signs OK per metric polarity)
-    consistent = abs(tm_row["change_pct"]) >= 5 and abs(out_row["change_pct"]) >= 3
+    tm_pct = float(tm_row["change_pct"])
+    out_pct = float(out_row["change_pct"])
+    # a degrading mechanism: treatment worsened and outcome worsened
+    # (opposite raw signs OK when metrics have opposite direction_bad polarity)
+    tm_bad = _direction_bad(ctx, tm)
+    out_bad = _direction_bad(ctx, ctx.outcome_metric)
+    treatment_worsened = _moved_bad(tm_pct, tm_bad)
+    outcome_worsened = _moved_bad(out_pct, out_bad)
+    magnitudes_ok = abs(tm_pct) >= 5 and abs(out_pct) >= 3
+    consistent = magnitudes_ok and treatment_worsened and outcome_worsened
     return TestResult(
         test_id=t.test_id, hypothesis_id=h.hypothesis_id, kind=t.kind, passed=consistent,
-        detail={"treatment_change_pct": tm_row["change_pct"], "outcome_change_pct": out_row["change_pct"]},
-        note="both treatment and outcome moved materially" if consistent else "movement too small to support the mechanism",
+        detail={
+            "treatment_change_pct": tm_pct,
+            "outcome_change_pct": out_pct,
+            "treatment_direction_bad": tm_bad,
+            "outcome_direction_bad": out_bad,
+        },
+        note=(
+            "treatment and outcome both worsened in polarity-aware direction"
+            if consistent
+            else "mechanism directions disagree or movement too small"
+        ),
     )
+
+
+def _direction_bad(ctx: DiagnosticContext, metric_id: str | None) -> str:
+    metrics = getattr(ctx.deps, "metrics", None) if getattr(ctx, "deps", None) else None
+    if metrics is not None and metric_id:
+        try:
+            defn = metrics.get(metric_id)
+            if defn is not None:
+                return str(getattr(defn, "direction_bad", "up") or "up")
+        except Exception:
+            pass
+    return "up"
+
+
+def _moved_bad(change_pct: float, direction_bad: str) -> bool:
+    if direction_bad == "down":
+        return change_pct < 0
+    return change_pct > 0
+
 
 
 _RUNNERS = {

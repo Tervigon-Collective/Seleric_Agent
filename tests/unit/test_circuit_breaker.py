@@ -38,6 +38,19 @@ def test_half_opens_after_cooldown_and_allows_probe():
     assert cb.allow()
 
 
+def test_half_open_admits_only_one_concurrent_probe():
+    cb = CircuitBreaker(failure_threshold=1, cooldown_s=0.01)
+    cb.record_failure()
+    time.sleep(0.02)
+    assert cb.state == "half_open"
+    assert cb.allow() is True
+    # Second caller while probe is in flight must be denied.
+    assert cb.allow() is False
+    cb.record_success()
+    assert cb.state == "closed"
+    assert cb.allow() is True
+
+
 def test_failed_probe_reopens_and_restarts_cooldown():
     cb = CircuitBreaker(failure_threshold=1, cooldown_s=0.01)
     cb.record_failure()

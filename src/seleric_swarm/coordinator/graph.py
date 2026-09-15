@@ -77,6 +77,7 @@ from seleric_swarm.coordinator.observability.events import (
     TASK_SPECIALISTS_ACTIVATED,
     TASK_WAVE_EXECUTED,
     MissionEventEmitter,
+    now_iso,
     summarize_event_families,
 )
 from seleric_swarm.coordinator.overview import (
@@ -233,15 +234,20 @@ def build_swarm_v2_graph(ctx: SwarmV2Context) -> Any:
     return g.compile()
 
 
+def _mission_token_usage(ctx: SwarmV2Context) -> int:
+    """Tokens recorded for this mission via MeteredLLMPort (0 if unmetered)."""
+    usage = getattr(ctx.runtime.llm, "usage_for", lambda _mid: None)(ctx.mission.mission_id)
+    return int(usage.total_tokens) if usage else 0
+
+
 def _route_after_refine(ctx: SwarmV2Context):
     def _route(state: MissionState) -> str:
         max_iter = ctx.policies.leadership.max_transfers + 1
-        token_usage = getattr(ctx.runtime.llm, "usage_for", lambda _mid: None)(ctx.mission.mission_id)
         budget = check_swarm_budget(
             dict(state),
             ctx.policies.budgets,
             agent_calls_needed=2,
-            token_usage=(token_usage.total_tokens if token_usage else 0),
+            token_usage=_mission_token_usage(ctx),
         )
         if not budget.ok:
             ctx.budget_exhausted = True
@@ -352,6 +358,7 @@ def _make_execute(ctx: SwarmV2Context):
             {**dict(state), "usage": usage, "handoff_history": list(ctx.blackboard.handoff_history)},
             ctx.policies.budgets,
             agent_calls_needed=2,
+            token_usage=_mission_token_usage(ctx),
         )
         if not precheck.ok:
             ctx.budget_exhausted = True
@@ -399,6 +406,7 @@ def _make_execute(ctx: SwarmV2Context):
         post = check_swarm_budget(
             {**dict(state), "usage": usage, "handoff_history": list(ctx.blackboard.handoff_history)},
             ctx.policies.budgets,
+            token_usage=_mission_token_usage(ctx),
         )
         if not post.ok:
             ctx.budget_exhausted = True
@@ -556,6 +564,7 @@ def _make_specialists(ctx: SwarmV2Context):
                 },
                 ctx.policies.budgets,
                 agent_calls_needed=1,
+                token_usage=_mission_token_usage(ctx),
             )
             if not budget.ok:
                 ctx.budget_exhausted = True
@@ -1090,7 +1099,7 @@ async def run_swarm_v2_mission(
     # at the API layer (main.py's MissionRequest), so they can't signal a
     # genuine per-query escalation; the classified intent is authoritative.
     if is_overview_query(normalized):
-        overview_snapshots, overview_unavailable = read_overview_snapshots(
+        overview_snapshots, overview_unavailable = await read_overview_snapshots(
             SnapshotStore(), overview_domains_for_query(query)
         )
         if overview_snapshots:
@@ -1411,6 +1420,7 @@ async def run_swarm_v2_mission(
         "timezone": timezone,
         "as_of": as_of,
         "status": "received",
+        "started_at": now_iso(),
         "workflow_name": "swarm_v2",
         "workflow_version": "1.4.0",
         "normalized_query": normalized.model_dump(),

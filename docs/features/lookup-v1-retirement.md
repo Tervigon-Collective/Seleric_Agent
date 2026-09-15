@@ -45,3 +45,17 @@ Both structural blockers (comparison, dimensioned breakdowns) are closed, but de
 - The classifier's `grain`-detection gap (Phase 2a) means some "per channel"-style queries will keep answering with an aggregate via the fast path once lookup_v1 no longer exists as a fallback — that's a quality gap, not a crash, but worth deciding if it's acceptable before deleting the fallback that currently masks it.
 
 `leadership/manager.py` and `orchestration/state.py::MissionState` are shared with swarm_v2 and are never deleted regardless.
+
+## Dead / parallel stacks (delete candidates with lookup_v1)
+
+These modules implement a **second** planning/budget/leadership path that swarm_v2 does **not** call. Leave them until Phase 2 deletion; do not dual-maintain:
+
+| Module | Role | Live swarm_v2 equivalent |
+|---|---|---|
+| `coordinator/plane.py` | Legacy control-plane facade (budget + completion) | `coordinator/graph.py` + `governance/*` |
+| `coordinator/planning/complexity.py` | Legacy complexity band | `coordinator/intake` complexity_band |
+| `coordinator/planning/dag_builder.py` | Legacy DAG builder | `coordinator/planning/mission_planner.py` |
+| `coordinator/leadership/lead_selector.py` | Legacy initial lead | intake candidate_domains → `{domain}_agent` |
+| `coordinator/governance/budget.py::MissionLimits` | Legacy per-mission ceilings | `MissionBudget` / `check_swarm_budget` |
+
+Changing a limit in only one of `MissionLimits` / `MissionBudget` will drift — prefer `MissionBudget` for any new swarm_v2 work.

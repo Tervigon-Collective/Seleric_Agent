@@ -124,7 +124,7 @@ class DomainStateResolver:
         # goes through facade.get_metric_state's own (per-metric-timezone)
         # resolution unchanged.
         resolved_range = resolve_time_range(time_range, "UTC", None)
-        previous = store.get_latest(domain) if store else None
+        previous = await store.aget_latest(domain) if store else None
         previous_by_metric = {m.metric_id: m for m in previous.metrics} if previous else {}
 
         resolved: list[ResolvedMetric] = []

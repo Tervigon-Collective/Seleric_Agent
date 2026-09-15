@@ -313,12 +313,11 @@ async def _seed_dependency_evidence(
     except Exception:
         return
     have = {row.get("metric_or_fact") for row in blackboard.by_type("evidence")}
-    for dep_id in depends_on[:_MAX_CAUSAL_TREATMENTS]:
-        if dep_id == outcome_metric or dep_id in have:
-            continue
+
+    async def _fetch(dep_id: str) -> tuple[str, Any] | None:
         dep_def = metrics.get(dep_id)
         if dep_def is None:
-            continue
+            return None
         request = StateRequest(
             metric_id=dep_id,
             time_range=time_range,
@@ -328,15 +327,26 @@ async def _seed_dependency_evidence(
         try:
             state = await business_state.get_metric_state(request)
         except Exception:  # noqa: S112 - best-effort seed; missing data just skips this dep
-            continue
+            return None
         if state.status == "UNAVAILABLE" or state.actual is None:
+            return None
+        return dep_id, state.actual
+
+    candidates = [d for d in depends_on[:_MAX_CAUSAL_TREATMENTS] if d != outcome_metric and d not in have]
+    if not candidates:
+        return
+    import asyncio
+
+    for result in await asyncio.gather(*(_fetch(dep_id) for dep_id in candidates)):
+        if result is None:
             continue
+        dep_id, actual = result
         blackboard.post(
             Evidence.new(
                 mission_id=blackboard.mission_id,
                 created_by="diagnostic_agent",
                 metric_or_fact=dep_id,
-                value=state.actual,
+                value=actual,
                 data_origin="BUSINESS_STATE",
                 synthetic=False,
             )
