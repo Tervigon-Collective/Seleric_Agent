@@ -44,18 +44,23 @@ def _emit_lookup_event(state: MissionState | dict[str, Any], kind: str, **data: 
     payload = {k: v for k, v in data.items() if v is not None}
     if kind != canon:
         payload["legacy_kind"] = kind
-    events.append(
-        {
-            "kind": canon,
-            "ts": now_iso(),
-            "seq": len(events) + 1,
-            "mission_id": state.get("mission_id"),
-            "workflow_name": "lookup_v1",
-            "workflow_version": state.get("workflow_version") or "1.0.0",
-            "family": family_of(canon),
-            **payload,
-        }
-    )
+    event = {
+        "kind": canon,
+        "ts": now_iso(),
+        "seq": len(events) + 1,
+        "mission_id": state.get("mission_id"),
+        "workflow_name": "lookup_v1",
+        "workflow_version": state.get("workflow_version") or "1.0.0",
+        "family": family_of(canon),
+        **payload,
+    }
+    events.append(event)
+    try:
+        from seleric_swarm.observability.flow import log_mission_event
+
+        log_mission_event(event)
+    except Exception:
+        pass
     return {"events": events}
 
 
@@ -107,6 +112,12 @@ def build_graph(runtime: SwarmRuntime):
         return None if ok else (code or "BUDGET_EXCEEDED")
 
     async def coordinator_node(state: MissionState) -> dict[str, Any]:
+        try:
+            from seleric_swarm.observability.flow import log_mission_step
+
+            log_mission_step(state.get("mission_id"), "node_enter", node="coordinator")
+        except Exception:
+            pass
         with traced_span(
             "node.coordinator",
             _meta(runtime, state, "coordinator_agent"),
@@ -273,6 +284,12 @@ def build_graph(runtime: SwarmRuntime):
 
     def _make_domain_node(agent_id: str, agent: SwarmAgent):
         async def _domain_node(state: MissionState) -> dict[str, Any]:
+            try:
+                from seleric_swarm.observability.flow import log_mission_step
+
+                log_mission_step(state.get("mission_id"), "node_enter", node=agent_id)
+            except Exception:
+                pass
             with traced_span(
                 f"node.{agent_id}",
                 _meta(runtime, state, agent_id),
@@ -309,6 +326,12 @@ def build_graph(runtime: SwarmRuntime):
         return _domain_node
 
     async def observer_node(state: MissionState) -> dict[str, Any]:
+        try:
+            from seleric_swarm.observability.flow import log_mission_step
+
+            log_mission_step(state.get("mission_id"), "node_enter", node="observer")
+        except Exception:
+            pass
         with traced_span(
             "node.observer",
             _meta(runtime, state, "observer_agent"),
@@ -413,11 +436,20 @@ def build_graph(runtime: SwarmRuntime):
         return candidate if candidate in domain_agents else None
 
     def _unresolved_foreign(state: MissionState) -> list[str]:
-        have = {row.get("metric_or_fact") for row in (state.get("evidence") or [])}
+        # Canonicalize both sides before comparing -- a metric already
+        # fetched under one id form (e.g. the bare live-catalogue name)
+        # must be recognized as resolved even if handoff_needed_metrics
+        # holds a different form (e.g. the registry-YAML id) of the same
+        # underlying data. See MetricRegistry.canonical_id's docstring.
+        have = {
+            runtime.metrics.canonical_id(mid)
+            for row in (state.get("evidence") or [])
+            if (mid := row.get("metric_or_fact"))
+        }
         return [
             metric_id
             for metric_id in (state.get("handoff_needed_metrics") or [])
-            if metric_id not in have and _owning_domain_agent(metric_id)
+            if runtime.metrics.canonical_id(metric_id) not in have and _owning_domain_agent(metric_id)
         ]
 
     def route_after_observer(state: MissionState) -> AfterObserver:
@@ -610,6 +642,12 @@ def build_graph(runtime: SwarmRuntime):
             return patch
 
     async def synthesize_node(state: MissionState) -> dict[str, Any]:
+        try:
+            from seleric_swarm.observability.flow import log_mission_step
+
+            log_mission_step(state.get("mission_id"), "node_enter", node="synthesize")
+        except Exception:
+            pass
         with traced_span(
             "node.synthesizer",
             _meta(runtime, state, "response_synthesizer"),

@@ -36,13 +36,20 @@ class AnomalyAgent(SpecialistAgent):
             metric = e.get("metric_or_fact")
             if not metric or str(metric).startswith("event."):
                 continue
-            if e.get("value") is None or e.get("baseline") is None:
+            if e.get("value") is None:
                 continue
+            # No baseline requirement here: the template detector needs one
+            # and skips readings without it (see TemplateAnomalyDetector's
+            # own no_baseline handling); robust_zscore pulls its expected
+            # band from BusinessStateService history and never reads
+            # reading.baseline, so a missing baseline must not drop the row
+            # before it reaches the detector.
+            baseline = e.get("baseline")
             readings.append(
                 MetricReading(
                     metric_id=metric,
                     value=float(e["value"]),
-                    baseline=float(e["baseline"]),
+                    baseline=float(baseline) if baseline is not None else None,
                     unit=e.get("unit"),
                     dimensions=dict(e.get("dimensions") or {}),
                     direction_bad=(e.get("provenance") or {}).get("direction_bad", "up"),
@@ -66,6 +73,13 @@ class AnomalyAgent(SpecialistAgent):
         window = (mission.context or {}).get("time_range") or mission.time_range
         if window:
             detect_ctx["time_range"] = window
+        # A "why" mission wants real BusinessStateService history for
+        # whatever Observer fetched (the asked metric + its co-movers, not
+        # the full catalogue) -- not just the commerce/spend/net_profit
+        # subset config/provider_registry.yaml defaults to. Lookup/overview
+        # missions never set this intent, so they keep the current default.
+        if mission.wants("diagnostic") or mission.wants("executive_health"):
+            detect_ctx["force_robust_zscore"] = True
 
         findings = await detector.detect(readings, context=detect_ctx)
 

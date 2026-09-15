@@ -394,19 +394,110 @@ Sprint 3, unchanged).
 
 ## Sprint 5 — Overview answer path (Coordinator integration)
 
-- [ ] Coordinator overview-intent classification (status/health-shaped
-      query → snapshot read branch, not full mission decomposition)
-- [ ] Snapshot read + LLM synthesis for "how are we doing today" /
-      "what needs attention" style queries
-- [ ] Parallel live-fetch fallback for the part of a question a snapshot
-      doesn't cover (drill-down dispatch to the normal domain-agent path,
-      run alongside the snapshot read, not after it)
-- [ ] `UNAVAILABLE` handling: missing/stale snapshot surfaces as a gap in
-      the answer, never silently dropped
+- [x] **Coordinator overview-intent classification: already existed.** The
+      LLM classifier (`coordinator/intake/llm_classifier.py`) already
+      produces an `executive_health` intent for "how are we doing today?"
+      -style queries, and `decomposition/templates.py`'s `executive_health`
+      template already scopes it to 5 branches (commerce, performance,
+      funnel, finance, operations) — that scope is reused as-is
+      (`coordinator/overview.py::OVERVIEW_DOMAINS`), no new classification
+      work needed. What was missing was the branch that reads snapshots
+      instead of running the full live fan-out; `coordinator/overview.py`
+      + a ~25-line early-return in `graph.py::run_swarm_v2_mission` (right
+      after the existing `unsupported_reason` early-return, same pattern)
+      is that branch. `is_overview_query()` gates on `set(normalized.intents)
+      == {"executive_health"}` (a *pure* overview ask, nothing else
+      requested).
+- [x] Snapshot read + synthesis — **[Sprint 5 simplification]** deterministic
+      template narration straight from `DomainStateSnapshot.headline_signals`
+      /`.status` (`overview.py::narrate_overview`), not an LLM call. Doc
+      says "LLM synthesis reads the snapshot(s)"; both are equally
+      Claim-Gate-safe since the numbers are real either way, this just
+      skips a round trip a template already answers. Swap in an LLM
+      narration pass later if stakeholders want more natural phrasing.
+- [x] **Parallel live-fetch fallback — built differently, same outcome.**
+      No new parallel-dispatch/merge system. Instead, `is_overview_query`
+      only takes the shortcut for a *pure* overview ask; any query with a
+      specific metric/domain/diagnostic intent (a drill-down) never
+      qualifies and falls straight through to the existing full live
+      pipeline, unchanged. Live-verified: "why did net sales drop this
+      week?" classifies to `intents=['diagnostic']`,
+      `is_overview_query(...) == False`. Satisfies "a drill-down follow-up
+      still gets a live, accurate answer" without a merge system to build
+      or test.
+- [x] `UNAVAILABLE` handling: `read_overview_snapshots()` returns
+      `(fresh_snapshots, unavailable)` — every domain that's missing or
+      stale beyond `MAX_SNAPSHOT_AGE_HOURS` (36h — daily cron cadence +
+      buffer) lands in `unavailable` with a reason, never silently dropped;
+      `build_overview_result` turns that into a `limitations` line per gap
+      and downgrades `status` to `partial` whenever any domain is missing.
+      **One scope decision, documented in `overview.py`'s module docstring:**
+      if *zero* snapshots exist for *any* branch domain (nothing to answer
+      from at all — e.g. the scheduler has never run), the fast path is
+      skipped entirely and the query falls through to the normal live
+      pipeline, rather than returning an all-`UNAVAILABLE` non-answer.
 
 **Exit criteria:** an overview query is answered primarily from stored
 snapshots with correct latency improvement vs. full live fan-out, and a
-drill-down follow-up still gets a live, accurate answer.
+drill-down follow-up still gets a live, accurate answer. **Met,
+live-verified end-to-end**: populated real snapshots for all 5 branch
+domains via `scheduler.run_once` against live `seleric-mcp`, then ran
+`run_swarm_v2_mission(runtime, query="How are we doing today?")` for real —
+returned `status=completed`, `team=[]`, all `artifacts` empty (proof the
+full LangGraph fan-out never ran), and a `final_response` built entirely
+from the live snapshot data (real headline signals for commerce/funnel/
+finance that day). A drill-down query ("why did net sales drop this
+week?") classified to `diagnostic` only and correctly did not take the
+shortcut. 8 new unit tests (`tests/unit/test_overview.py`) cover
+`is_overview_query`'s gating, missing/stale detection, narration, and
+status rollup. No regressions: 78 passed / 1 pre-existing-flaky deselected
+across `tests/coordinator/` + the `business_state`/`domain_health` suites
+(confirmed the 2 flaky failures — a CAC diagnostic live-data issue —
+reproduce identically on the base branch, unrelated to this sprint).
+
+**[Bug found + fixed, 2026-09-15, #1] The shortcut never fired in production.**
+Traced the exact `/v1/missions` request the Swagger UI's own example body
+sends for "How are we doing today??" (`full_diagnostic`/`full_prediction`/
+`full_skeptic`/`full_strategy` all `true`, `execution_mode=production`) and
+found `is_overview_query`'s original `and not forced` clause always
+evaluated `forced=True` — `main.py`'s `MissionRequest` defaults all four
+flags to `True` for *every* request, not just ones that intend an
+escalation, so the "explicit override" theory behind that clause was wrong
+for real traffic. Confirmed live, pre-fix: the same query ran the full
+174-second pipeline, got misrouted to `commerce_agent` chasing a
+`google_clicks` causal hypothesis (nothing to do with the question asked),
+produced 308 artifacts, and ended `status=partial` with a REJECTED claim
+— a slow, wrong, low-confidence answer to what should be a cheap snapshot
+read. Fix: `is_overview_query()` no longer takes a `forced` argument at
+all — it now looks only at `normalized.intents` (the classifier's raw,
+query-specific output, computed before `apply_full_flags` folds the
+API-wide-default booleans in), which is the correct signal a pure
+"how are we doing" ask actually took place. Re-verified live post-fix:
+same request, `7.4s`, `status=completed`, `team=[]`, correct per-domain
+snapshot narration. Regression test added:
+`test_is_overview_query_ignores_full_flag_defaults`
+(`tests/unit/test_overview.py`).
+
+**[Bug found + fixed, 2026-09-15, #2] The shortcut ignored which domain was
+asked about.** Live trace via the actual `/v1/missions` endpoint: "how is
+attribution doing" hit the overview shortcut (classifier still returns
+`intents=["executive_health"]` for a single-domain health question, same
+as a fully generic ask) and answered with the fixed `OVERVIEW_DOMAINS`
+5-domain dump (commerce/performance/funnel/finance/operations) —
+attribution was never mentioned, because it isn't even in that list, and
+the classifier's own `candidate_domains` for that query didn't include it
+either. Fix: `overview_domains_for_query()` deterministically checks
+whether the query names one of `services.domain_health.scheduler
+.ALL_DOMAINS` (all 8, not just the 5-branch template) via word-boundary
+match and scopes the snapshot read to just that domain when it does,
+falling back to `OVERVIEW_DOMAINS` only for a truly generic ask. No LLM
+involved — same deterministic style as `narrate_overview`. Re-verified
+live: "how is attribution doing" → `attribution: attributed_revenue_drop:
+metric.attributed_net_revenue period_delta_pct -97.6% below threshold
+-15.0%` (correct domain, correct real number). 6 new regression tests
+(`test_overview_domains_for_query_*` in `tests/unit/test_overview.py`),
+including one that checks every `ALL_DOMAINS` entry resolves correctly,
+not just the 5 in the executive_health template.
 
 ---
 

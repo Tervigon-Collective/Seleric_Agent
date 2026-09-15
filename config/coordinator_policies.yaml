@@ -57,6 +57,11 @@ budgets:
   max_leadership_transfers: 6
   max_runtime_s: 120.0
   max_parallel_tasks: 4
+  # PRD-002: token_budget was already enforced by check_swarm_budget /
+  # MeteredLLMPort but left unset (None = unlimited). 6 llm_calls x ~20k
+  # tokens (generous ceiling for a decompose/hypothesis/synthesis call) is
+  # the cost proxy this mission shape should never exceed.
+  token_budget: 120000
 
 routing:
   weights:

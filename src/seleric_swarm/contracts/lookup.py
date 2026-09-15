@@ -30,6 +30,12 @@ class TimeRangeV1(BaseModel):
     kind: Literal["absolute", "relative", "comparison", "none"] = "none"
     start: str | None = None
     end: str | None = None
+    # Second period for kind="comparison" only — "start"/"end" is period A,
+    # "start_b"/"end_b" is period B. Both periods are full ranges (a month,
+    # a week, a quarter, ...), not single points; a same-day range (start ==
+    # end) still works for a literal day-vs-day ask.
+    start_b: str | None = None
+    end_b: str | None = None
     relative_token: str | None = None
 
 

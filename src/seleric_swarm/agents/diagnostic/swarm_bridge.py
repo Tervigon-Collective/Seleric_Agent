@@ -117,6 +117,10 @@ class SwarmDiagnosticSpecialist:
             causal_service = DoWhyCausalEstimationService(
                 fallback=TemplateCausalEstimationService({}),
             )
+            if primary_metric and metrics is not None and self._runtime is not None:
+                await _seed_dependency_evidence(
+                    blackboard, mission, primary_metric, metrics, self._runtime.business_state
+                )
             treatments = _ranked_treatment_ids(blackboard, outcome=primary_metric)
             graph = graphs.get(graph_id_for_outcome(primary_metric)) if primary_metric else None
             observations = await _fetch_observations(
@@ -127,6 +131,7 @@ class SwarmDiagnosticSpecialist:
                 confounder_metrics=metric_confounders_to_fetch(
                     graph, outcome=primary_metric, treatments=treatments, metrics=metrics
                 ),
+                business_state=self._runtime.business_state if self._runtime else None,
             )
 
         if self._deps is not None:
@@ -146,8 +151,12 @@ class SwarmDiagnosticSpecialist:
         agent = DiagnosticAgent(deps=deps, policies=self._policies)
 
         context: dict[str, Any] = {
-            # fixture/replay mode: the template causal truth is authoritative
-            "trust_metadata_causal": True,
+            # Only fixture/replay mode (a declared causal_truth) gets the
+            # metadata-confidence ceiling lifted -- estimator.py otherwise
+            # caps a no-observations live run at PLAUSIBLE_CAUSAL /
+            # inconclusive, which is the honest outcome when DoWhy had no
+            # series to estimate from.
+            "trust_metadata_causal": bool(causal_truth),
         }
 
         request = DiagnosticRequest(
@@ -267,6 +276,73 @@ def _mission_outcome_metric(mission: SwarmMission, blackboard: Blackboard) -> st
     return ""
 
 
+async def _seed_dependency_evidence(
+    blackboard: Blackboard,
+    mission: SwarmMission,
+    outcome_metric: str,
+    metrics: Any,
+    business_state: Any,
+) -> None:
+    """Fall back to the outcome metric's own formula dependencies as treatment
+    candidates when nothing else co-moved.
+
+    A single-metric "why" question (e.g. "why has CAC increased") only ever
+    gets the outcome itself on the blackboard -- Observer fetches what the
+    classifier asked for, nothing more. ``generate_hypotheses`` then has zero
+    treatment candidates and posts zero hypotheses, even though CAC's own
+    ``depends_on`` (total_ad_spend, new_customers) are real, fetchable
+    co-movers. Post them as ordinary evidence so hypothesis generation and
+    ``_ranked_treatment_ids`` (both of which already scan blackboard evidence)
+    pick them up for free -- no changes needed there.
+    """
+    if business_state is None or _ranked_treatment_ids(blackboard, outcome=outcome_metric):
+        return  # already have real co-movers; don't dilute with formula deps
+    definition = metrics.get(outcome_metric)
+    if definition is None:
+        return
+    depends_on = [str(d) for d in (definition.raw.get("depends_on") or []) if d]
+    if not depends_on:
+        return
+
+    from seleric_swarm.contracts.lookup import TimeRangeV1
+    from seleric_swarm.domain.models import StateRequest
+    from seleric_swarm.swarm.artifacts import Evidence
+
+    try:
+        time_range = TimeRangeV1.model_validate(dict(mission.time_range))
+    except Exception:
+        return
+    have = {row.get("metric_or_fact") for row in blackboard.by_type("evidence")}
+    for dep_id in depends_on[:_MAX_CAUSAL_TREATMENTS]:
+        if dep_id == outcome_metric or dep_id in have:
+            continue
+        dep_def = metrics.get(dep_id)
+        if dep_def is None:
+            continue
+        request = StateRequest(
+            metric_id=dep_id,
+            time_range=time_range,
+            agent_id=f"{dep_def.domain}_agent",
+            need=["actual"],
+        )
+        try:
+            state = await business_state.get_metric_state(request)
+        except Exception:  # noqa: S112 - best-effort seed; missing data just skips this dep
+            continue
+        if state.status == "UNAVAILABLE" or state.actual is None:
+            continue
+        blackboard.post(
+            Evidence.new(
+                mission_id=blackboard.mission_id,
+                created_by="diagnostic_agent",
+                metric_or_fact=dep_id,
+                value=state.actual,
+                data_origin="BUSINESS_STATE",
+                synthetic=False,
+            )
+        )
+
+
 def _ranked_treatment_ids(
     blackboard: Blackboard, *, outcome: str, limit: int = _MAX_CAUSAL_TREATMENTS
 ) -> list[str]:
@@ -319,6 +395,59 @@ def _providers_for_metrics(providers: Any, metric_ids: set[str]) -> list[tuple[A
     return list(by_id.values())
 
 
+async def _fetch_observations_bss(
+    business_state: Any,
+    needed: set[str],
+    outcome_metric: str,
+    time_range: dict[str, Any],
+) -> Any:
+    """Per-day observation frame from BusinessStateService (03 §1), the same
+    ``MetricState.series`` the lookup fast path already trusts, instead of a
+    second MCP round-trip via ``fetch_series``.
+
+    One ``get_metric_state`` call per metric (need=["actual", "anomaly"]);
+    joined on date. Returns ``None`` on anything short of a usable frame so
+    the caller can fall back to MCP ``fetch_series`` -- never partially wired.
+    """
+    if business_state is None:
+        return None
+    from seleric_swarm.contracts.lookup import TimeRangeV1
+    from seleric_swarm.domain.models import StateRequest
+
+    try:
+        range_v1 = TimeRangeV1.model_validate(time_range)
+    except Exception:
+        return None
+
+    columns: dict[str, dict[str, float]] = {}
+    for mid in needed:
+        definition = business_state.runtime.metrics.get(mid)
+        if definition is None:
+            continue
+        request = StateRequest(
+            metric_id=mid,
+            time_range=range_v1,
+            agent_id=f"{definition.domain}_agent",
+            need=["actual", "anomaly"],
+        )
+        try:
+            state = await business_state.get_metric_state(request)
+        except Exception:  # noqa: S112 - BSS soft-fail; MCP fallback still available
+            continue
+        if state.status == "UNAVAILABLE" or not state.series:
+            continue
+        columns[mid] = {p.ts[:10]: p.value for p in state.series if p.value is not None}
+
+    if outcome_metric not in columns or len(columns) < 2:
+        return None
+
+    import pandas as pd
+
+    frame = pd.DataFrame(columns).dropna(how="any")
+    # Same 8-row floor _fetch_observations already enforces for the MCP path.
+    return frame if len(frame) >= 8 else None
+
+
 async def _fetch_observations(
     providers: Any,
     outcome_metric: str,
@@ -327,9 +456,13 @@ async def _fetch_observations(
     extra_history_days: int = _CAUSAL_EXTRA_HISTORY_DAYS,
     extra_metrics: set[str] | list[str] | None = None,
     confounder_metrics: set[str] | list[str] | None = None,
+    business_state: Any = None,
 ) -> Any:
     """Real per-day observation series for DoWhy (docs/44 ROB-002).
 
+    Tries ``BusinessStateService.get_metric_state`` first (same series the
+    lookup fast path already trusts); only falls back to MCP ``fetch_series``
+    via ``providers`` when BSS is unavailable or returns too little history.
     ``providers`` is a ``ProviderBundle`` (domain -> DataProvider). Only
     ``HybridMcpDataProvider`` implements ``fetch_series``; fixture/template
     providers don't, and that's fine — this stays ``None`` for them, same as
@@ -345,7 +478,7 @@ async def _fetch_observations(
     ``confounder_metrics`` are fetchable graph common-ancestors for those
     treatment→outcome pairs — not an RCA template.
     """
-    if providers is None or not outcome_metric:
+    if not outcome_metric:
         return None
 
     # Extend backwards so DoWhy gets enough context for a stable estimate.
@@ -401,6 +534,13 @@ async def _fetch_observations(
         time_range.get("end"),
         _MAX_CAUSAL_TREATMENTS,
     )
+
+    bss_frame = await _fetch_observations_bss(business_state, needed, outcome_metric, causal_time_range)
+    if bss_frame is not None:
+        return bss_frame
+
+    if providers is None:
+        return None
 
     seen: set[int] = set()
     frame = None

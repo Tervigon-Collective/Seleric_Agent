@@ -66,7 +66,8 @@ domains:
     agent_id: attribution_agent
     metrics:
       - { metric_id: metric.attributed_net_revenue, features: [period_delta_pct] }
-    health_signals: []
+    health_signals:
+      - { id: attributed_revenue_drop, metric_id: metric.attributed_net_revenue, rule: period_delta_pct_below, threshold: -15 }
 
   funnel:
     agent_id: funnel_agent
@@ -82,7 +83,8 @@ domains:
     metrics:
       - { metric_id: metric.product_net_revenue, features: [period_delta_pct] }
       - { metric_id: metric.product_gross_margin_pct, features: [] }
-    health_signals: []
+    health_signals:
+      - { id: product_revenue_drop, metric_id: metric.product_net_revenue, rule: period_delta_pct_below, threshold: -15 }
 
   customer:
     agent_id: customer_agent

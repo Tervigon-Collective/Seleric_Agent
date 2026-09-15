@@ -90,6 +90,7 @@ async def test_configured_anomaly_detector_live_end_to_end(runtime):
     )
     readings = [
         MetricReading(metric_id="metric.spend", value=100.0, baseline=90.0, direction_bad="up"),
+        MetricReading(metric_id="total_ad_spend", value=100.0, baseline=90.0, direction_bad="up"),
         MetricReading(
             metric_id="metric.attributed_net_revenue", value=100.0, baseline=80.0,
             direction_bad="down", data_origin="MCP",
@@ -100,5 +101,8 @@ async def test_configured_anomaly_detector_live_end_to_end(runtime):
     by_metric = {f.metric_id: f for f in findings}
     # metric.spend is overridden -> real BusinessStateService/MCP history.
     assert by_metric["metric.spend"].data_origin == "BUSINESS_STATE"
+    # Live intake spelling of the same metric must not miss the YAML override.
+    assert by_metric["total_ad_spend"].data_origin == "BUSINESS_STATE"
+    assert by_metric["total_ad_spend"].detector.get("strategy") == "robust_zscore"
     # attributed_net_revenue has no override -> stays on the Template path.
     assert by_metric["metric.attributed_net_revenue"].data_origin == "MCP"

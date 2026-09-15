@@ -60,10 +60,14 @@ system: |
      the SAME requested metric ("compare", "vs", "versus", period-over-period,
      "Meta and Google ROAS"). Two different metrics joined by "and" ("sales and
      orders yesterday") stay a "lookup". Ranking / breakdown questions ("best",
-     "top", "by <dimension>") are "lookup" — put the catalogue dimension id the
-     metric actually supports, not an English noun, in entities. The pipeline
-     also grounds dimension ids from the live catalogue; you do not have to be
-     the only source.
+     "top", "by <dimension>", "per <dimension>", "broken down by <dimension>",
+     "split by <dimension>", "across <dimension>") are "lookup" — put the
+     catalogue dimension id the metric actually supports, not an English noun,
+     in entities. A bare "<dimension> performance" ("channel performance",
+     "product performance") also implies a per-<dimension> breakdown, not an
+     aggregate — treat it the same as "performance by <dimension>". The
+     pipeline also grounds dimension ids from the live catalogue; you do not
+     have to be the only source.
 
   time_range.kind is one of: absolute, relative, comparison, none.
   relative_token may be "yesterday", "today", "last_Nd" (e.g. "last_3d" for 3
@@ -72,6 +76,20 @@ system: |
   "this_month", "this_year", or null. Use the most specific matching token —
   "last 5 months" → "last_5m", "last 2 weeks" → "last_2w". Never invent a
   token outside this list.
+
+  kind "comparison": two named periods (weeks/months/quarters/years/date
+  ranges), not two single points. Fill start/end with the FULL span of period
+  A (e.g. a whole month is its 1st through its last day) and start_b/end_b
+  with the FULL span of period B, both as YYYY-MM-DD. "Compare net sales in
+  June 2026 vs August 2026" -> start=2026-06-01, end=2026-06-30,
+  start_b=2026-08-01, end_b=2026-08-31. A single day vs a single day (e.g.
+  "yesterday vs today") still uses this shape with start==end and
+  start_b==end_b. Only reach for this schema when the deterministic date
+  parser could not already resolve it (dates or named months are handled
+  before you're asked) — you are the fallback for phrasing like "Q2 2026 vs
+  Q3 2026" or "H1 vs H2". Never leave start_b/end_b empty for a comparison —
+  if you cannot resolve concrete dates for both periods, do not classify as
+  comparison at all; fall back to "lookup" instead.
 
   If the question names no explicit time period at all (no "yesterday", "today",
   "last N days/weeks/months", date, or period-over-period phrase) but is still

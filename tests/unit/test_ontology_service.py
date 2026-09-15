@@ -67,6 +67,9 @@ class _FakeMetrics:
     def ids_for_domain(self, domain):
         return [self._definition.id]
 
+    def canonical_id(self, metric_id):
+        return metric_id
+
 
 _COMMERCE_SLICE = {
     "module": "commerce",

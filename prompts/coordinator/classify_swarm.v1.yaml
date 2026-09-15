@@ -22,16 +22,22 @@ system: |
        - diagnostic: asks why something changed, or names a root cause / driver.
        - predictive: asks what happens next — a forecast or projection.
        - prescriptive: asks what action to take / a recommendation.
-       - executive_health: a vague "how's the business doing" health check.
-         Return it ALONE — do not also add diagnostic. It triggers a broad
-         discovery scan; the swarm adds diagnostic later, from evidence, only if
-         a material anomaly is found.
+       - executive_health: a vague, no-metric-named status/health check on the
+         business as a whole — "how's the business doing", "how are we doing
+         today", "what are we doing today", "what's going on", "how's
+         everything looking", "give me an update", "status check", "any
+         issues today". These are NOT gibberish or unsupported just because
+         no metric is named — a bare "how/what ... today/going" health-check
+         phrasing IS the signal; do not require it to also name a metric or
+         business area. Return it ALONE — do not also add diagnostic. It
+         triggers a broad discovery scan; the swarm adds diagnostic later,
+         from evidence, only if a material anomaly is found.
      Classify only what the question asks for. Do not add diagnostic to a
      prescriptive question just because a mechanism will be needed — the planner
      handles that.
-     If the query gives no real signal (gibberish, empty, nothing to do with a
-     business metric or intent), return an empty intents list and say why in
-     unsupported_reason.
+     If the query gives no real signal at all (gibberish, empty, or truly
+     unrelated to any business question — not a vague health-check ask),
+     return an empty intents list and say why in unsupported_reason.
 
   2. Metric resolution. metric_hints must be registry ids (metric.*) from
      "Registered metrics" below that are directly required to answer the
@@ -67,11 +73,15 @@ system: |
      for a genuinely business-area-agnostic question (including
      executive_health) — the caller decides. Never return coordinator_agent.
 
-  4. Ranking / breakdown questions ("best", "top", "by <dimension>") are lookup
-     or comparison unless the user also asks why. Put the catalogue dimension id
-     the metric actually supports — not an English noun — in entities. The
-     pipeline also grounds dimension ids from the live catalogue; you do not
-     have to be the only source.
+  4. Ranking / breakdown questions ("best", "top", "by <dimension>",
+     "per <dimension>", "broken down by <dimension>", "split by <dimension>",
+     "across <dimension>") are lookup or comparison unless the user also asks
+     why. A bare "<dimension> performance" ("channel performance", "product
+     performance") also implies a per-<dimension> breakdown, not an
+     aggregate — treat it the same as "performance by <dimension>". Put the
+     catalogue dimension id the metric actually supports — not an English
+     noun — in entities. The pipeline also grounds dimension ids from the
+     live catalogue; you do not have to be the only source.
 
   time_range.kind is one of: absolute, relative, comparison, none.
   relative_token may be "yesterday", "today", "last_Nd" (e.g. "last_3d" for 3
@@ -80,6 +90,20 @@ system: |
   "this_month", "this_year", or null. Use the most specific matching token —
   "last 5 months" → "last_5m", "last 2 weeks" → "last_2w". Never invent a
   token outside this list.
+
+  kind "comparison": two named periods (weeks/months/quarters/years/date
+  ranges), not two single points. Fill start/end with the FULL span of period
+  A (e.g. a whole month is its 1st through its last day) and start_b/end_b
+  with the FULL span of period B, both as YYYY-MM-DD. "Compare net sales in
+  June 2026 vs August 2026" -> start=2026-06-01, end=2026-06-30,
+  start_b=2026-08-01, end_b=2026-08-31. A single day vs a single day (e.g.
+  "yesterday vs today") still uses this shape with start==end and
+  start_b==end_b. Only reach for this schema when the deterministic date
+  parser could not already resolve it (dates or named months are handled
+  before you're asked) — you are the fallback for phrasing like "Q2 2026 vs
+  Q3 2026" or "H1 vs H2". Never leave start_b/end_b empty for a comparison —
+  if you cannot resolve concrete dates for both periods, do not classify as
+  comparison at all; fall back to the closest single-period intent instead.
 
   If the question names no explicit time period at all (no "yesterday", "today",
   "last N days/weeks/months", date, or period-over-period phrase) but is still

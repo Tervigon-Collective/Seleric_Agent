@@ -58,6 +58,7 @@ REMEDIATION_ACTIVATED = "remediation_activated"
 REMEDIATION_ROUND_DONE = "remediation_round_done"
 
 SPECIALIST_ERROR = "specialist_error"
+SPECIALIST_SKIPPED_POLICY = "specialist_skipped_policy"
 
 # Backward-compatible aliases → canonical kind
 _ALIASES: dict[str, str] = {
@@ -116,6 +117,12 @@ class MissionEventEmitter:
             **payload,
         }
         self.blackboard.events.append(event)
+        try:
+            from seleric_swarm.observability.flow import log_mission_event
+
+            log_mission_event(event)
+        except Exception:
+            pass
         return event
 
     def kinds(self) -> list[str]:

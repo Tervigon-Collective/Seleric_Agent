@@ -304,7 +304,24 @@ def classify_swarm_query(query: str, timezone: str, as_of: str | None) -> dict[s
         intents += ["executive_health", "diagnostic"]
     if any(k in lower for k in ("why", "root cause", "reason for", "explain", "diagnose", "driver of", "what changed")):
         intents.append("diagnostic")
-    if any(k in lower for k in ("forecast", "predict", "what happens", "if this continues", "projection")):
+    if any(
+        k in lower
+        for k in (
+            "forecast",
+            "predict",
+            "what happens",
+            "if this continues",
+            "if this trend continues",
+            "if the trend continues",
+            "trend continues",
+            "projection",
+            "project ",
+            "projected",
+            "next week",
+            "next month",
+            "next quarter",
+        )
+    ):
         intents.append("predictive")
     if any(k in lower for k in ("what should", "recommend", "what do we do", "how do we fix")):
         intents.append("prescriptive")
@@ -533,7 +550,37 @@ class FakeLLMAdapter:
         if prompt_id.endswith("response") or "synthesizer" in prompt_id:
             return synthesize_response(user)
         if "json schema" in joined or request.response_format == "json_schema":
+            if "diagnosed mechanism" in joined and "treatment metric" in joined:
+                # StrategyAgent.generate_options (agents/strategy/prompts.py
+                # options_user) — no prompt_id is set on this request, so it
+                # was falling through to classify_lookup_query()'s unrelated
+                # JSON shape, which InterventionOptionsLLM can't parse. That
+                # silently zeroed every prescriptive mission's strategy
+                # artifact (source stayed "insufficient" even with a
+                # retained hypothesis) whenever a chat model was configured.
+                return json.dumps(_deterministic_intervention_options(user))
             if "treatment_metric" in joined and "hypotheses" in joined:
                 return json.dumps({"hypotheses": []})
             return json.dumps(classify_lookup_query(query, timezone, as_of))
         return "pong"
+
+
+def _deterministic_intervention_options(user: str) -> dict[str, Any]:
+    """One scripted InterventionOption for the fake LLM path -- proves the
+    StrategyAgent -> Skeptic -> synthesis chain end to end without a real
+    reasoning model, same spirit as ``classify_lookup_query``'s stand-ins."""
+    mechanism = _extract_field(user, "Diagnosed mechanism") or "the diagnosed driver"
+    treatment = _extract_field(user, "Treatment metric") or "the treatment metric"
+    return {
+        "options": [
+            {
+                "action": f"Address {mechanism} by adjusting {treatment}.",
+                "mechanism_fit": "medium",
+                "expected_impact": "Directional improvement in the outcome metric.",
+                "cost": "low",
+                "risk": "low",
+                "reversibility": "high",
+                "rationale": f"Targets the retained hypothesis linking {treatment} to the outcome.",
+            }
+        ]
+    }

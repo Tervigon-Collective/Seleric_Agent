@@ -17,7 +17,11 @@ async def test_comparison_computes_deterministic_delta(runtime):
     assert len(day_rows) == 2
     delta_rows = [row for row in result.evidence if row.metric_or_fact.endswith(".delta")]
     assert delta_rows
-    assert delta_rows[0].value == pytest.approx(float(day_rows[1].value) - float(day_rows[0].value))
+    # day_rows[0]/[1] are period A (2026-08-01) / period B (2026-08-02) in
+    # query order. observer.py::_comparison_deltas computes period_a -
+    # period_b (positive = period A higher, matching how the question was
+    # asked), not chronological "later minus earlier".
+    assert delta_rows[0].value == pytest.approx(float(day_rows[0].value) - float(day_rows[1].value))
 
 
 @pytest.mark.asyncio

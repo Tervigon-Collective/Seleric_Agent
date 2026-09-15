@@ -15,6 +15,7 @@ from seleric_swarm.coordinator.synthesis.claim_selector import select_allowed_cl
 from seleric_swarm.coordinator.synthesis.response_builder import (
     build_claim_aware_response,
     clean_anomalies,
+    comparisons_for_answer,
     gapped_metric_ids,
 )
 from seleric_swarm.llm.errors import LLMError
@@ -95,6 +96,7 @@ async def synthesize_swarm_response(
     anomalies = _anomalies_for_answer(
         blackboard, mission, metrics=runtime.metrics, limitations=extra_limitations
     )
+    comparisons = comparisons_for_answer(blackboard)
     predictions = blackboard.by_type("prediction")
     prediction = predictions[0] if predictions else None
     strategies = blackboard.by_type("strategy")
@@ -108,6 +110,7 @@ async def synthesize_swarm_response(
             "completion_status": completion_status or "unknown",
             "claims_json": json.dumps(claims, default=str),
             "anomalies_json": json.dumps(anomalies, default=str),
+            "comparison_json": json.dumps(comparisons, default=str) if comparisons else "none",
             "prediction_json": json.dumps(prediction, default=str) if prediction else "none",
             "recommendation_json": json.dumps(recommendation, default=str) if recommendation else "none",
             "skeptic_verdict": str((latest_skeptic or {}).get("verdict") or "none"),
@@ -146,7 +149,7 @@ async def synthesize_swarm_response(
     if not prose:
         return fallback()
 
-    extra_allowed = _numeric_pool(claims, anomalies, prediction, recommendation)
+    extra_allowed = _numeric_pool(claims, anomalies, comparisons, prediction, recommendation)
     leaked = unaudited_numbers(prose, [], extra_allowed)
     if any(not _is_rounding_of_allowed(token, extra_allowed) for token in leaked):
         return fallback()

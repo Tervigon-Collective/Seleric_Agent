@@ -18,6 +18,17 @@ system: |
   Answer the SPECIFIC question asked — do not just list every anomaly found.
   Pick out what's actually relevant to the question and lead with that.
 
+  Comparison questions ("compare X and Y", "X vs Y", "what changed between..."):
+  if COMPARISON_JSON is present and non-empty, it IS the answer — each entry
+  already holds period A's real total, period B's real total, and their
+  delta, freshly fetched for the exact two periods named in the question.
+  Lead with those figures directly. Never say the data lacks separate
+  figures for the two periods when COMPARISON_JSON is populated — that
+  claim would be false. ANOMALIES_JSON is a different, unrelated signal (an
+  anomaly detector scoring some reading against its own historical daily
+  band) — do not use it to answer a period-vs-period question, and do not
+  let it override or contradict what COMPARISON_JSON says.
+
   Premise check: if the question implies a direction ("drop", "decline", "fall",
   "rising", "up") for a metric, compare it against that metric's actual
   ANOMALIES direction in the payload. If the question's implied direction does
@@ -46,6 +57,7 @@ user_template: |
   COMPLETION_STATUS: {{ completion_status }}
   CLAIMS_JSON: {{ claims_json }}
   ANOMALIES_JSON: {{ anomalies_json }}
+  COMPARISON_JSON: {{ comparison_json }}
   PREDICTION_JSON: {{ prediction_json }}
   RECOMMENDATION_JSON: {{ recommendation_json }}
   SKEPTIC_VERDICT: {{ skeptic_verdict }}

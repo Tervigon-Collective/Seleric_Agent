@@ -18,7 +18,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-DataOrigin = Literal["FIXTURE", "MCP", "MODEL", "STATS", "DERIVED", "TEMPLATE"]
+DataOrigin = Literal["FIXTURE", "MCP", "MODEL", "STATS", "DERIVED", "TEMPLATE", "BUSINESS_STATE"]
 ArtifactType = Literal[
     "evidence",
     "anomaly",
