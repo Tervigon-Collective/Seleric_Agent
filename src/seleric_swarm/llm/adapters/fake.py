@@ -67,6 +67,14 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
     for metric in metrics.all():
         by_domain.setdefault(metric.domain, []).append(metric)
 
+    # Special pattern: "top"/"best" + "product" = units_sold
+    # Handle both correct spelling and common typos (seeling for selling)
+    top_best_product_pattern = re.compile(r"\b(top|best).*\b(product|seeling|selling)")
+    if top_best_product_pattern.search(q):
+        units_metric = metrics.get("metric.units_sold")
+        if units_metric:
+            return ["metric.units_sold"]
+
     scored: list[tuple[int, int, str]] = []
     for metric in metrics.all():
         slug = metric.id.removeprefix("metric.")
@@ -226,6 +234,11 @@ def _collect_hints(lower: str) -> list[str]:
 
 
 def _lead_for_hints(hints: list[str]) -> str:
+    # Performance metrics (CAC, ROAS, etc.) take priority when mixed with other domains
+    performance_priority = ["metric.cac", "metric.roas", "metric.gross_roas", "metric.net_roas"]
+    for metric_id in performance_priority:
+        if metric_id in hints:
+            return "performance_agent"
     return lead_agent_for_hints(hints, _registry())
 
 

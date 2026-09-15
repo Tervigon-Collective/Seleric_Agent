@@ -30,7 +30,6 @@ from seleric_swarm.agents.diagnostic.swarm_bridge import (
 from seleric_swarm.swarm.artifacts import Anomaly
 from seleric_swarm.swarm.blackboard import Blackboard
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -432,7 +431,10 @@ def test_mission_outcome_metric_uses_loudest_anomaly_when_context_empty():
 
 
 def test_confounders_from_graph_are_common_ancestors_not_yaml_template():
-    from seleric_swarm.agents.diagnostic.ontology import confounders_from_graph, metric_confounders_to_fetch
+    from seleric_swarm.agents.diagnostic.ontology import (
+        confounders_from_graph,
+        metric_confounders_to_fetch,
+    )
     from seleric_swarm.agents.diagnostic.registries import causal_graphs_from_yaml
 
     graph = causal_graphs_from_yaml().get("causal.funnel_purchase.v1")

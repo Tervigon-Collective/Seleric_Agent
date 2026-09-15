@@ -19,11 +19,11 @@ log = logging.getLogger(__name__)
 from seleric_swarm.agents.diagnostic.agent import DiagnosticAgent, diagnostic_deps_from_blackboard
 from seleric_swarm.agents.diagnostic.context import DiagnosticDeps
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticRequest, DiagnosticResult
-from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
 from seleric_swarm.agents.diagnostic.ontology import (
     graph_id_for_outcome,
     metric_confounders_to_fetch,
 )
+from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
 from seleric_swarm.agents.diagnostic.reasoning import LLMPortReasoningModel, NullReasoningModel
 from seleric_swarm.config.settings import configured_chat_model
 from seleric_swarm.agents.diagnostic.registries import (
@@ -411,7 +411,7 @@ async def _fetch_observations(
         seen.add(id(provider))
         try:
             candidate = await fetch_series(metric_ids=sorted(metric_ids), time_range=causal_time_range)
-        except Exception:
+        except Exception:  # noqa: S112 - provider soft-fail; try next source
             continue
         if candidate is None:
             continue

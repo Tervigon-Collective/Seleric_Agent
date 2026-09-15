@@ -68,7 +68,10 @@ async def test_03b_alias_spellings_of_one_metric_are_still_compared(deps, polici
     disagreement between the two spellings is silently never compared."""
     from seleric_swarm.agents.skeptic.agent import SkepticAgent
     from seleric_swarm.agents.skeptic.context import SkepticDeps
-    from seleric_swarm.agents.skeptic.registries import InMemoryArtifactRepository, InMemoryEvidenceRepository
+    from seleric_swarm.agents.skeptic.registries import (
+        InMemoryArtifactRepository,
+        InMemoryEvidenceRepository,
+    )
     from seleric_swarm.services.metrics import MetricRegistry
 
     d = SkepticDeps(

@@ -284,8 +284,9 @@ class HybridMcpDataProvider:
         Returns a pandas DataFrame indexed by date, or ``None`` if the window is
         shorter than ``min_rows``, longer than ``max_days``, or too sparse.
         """
-        import pandas as pd
         from datetime import date
+
+        import pandas as pd
 
         start_s = str(time_range.get("start") or time_range.get("end") or "")[:10]
         end_s = str(time_range.get("end") or time_range.get("start") or "")[:10]

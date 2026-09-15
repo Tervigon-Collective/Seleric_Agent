@@ -168,7 +168,7 @@ class CatalogueBootstrap:
                 capability=capability,
                 arguments=arguments,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning(
                 "CatalogueBootstrap %s failed (%s: %s)",
                 capability,

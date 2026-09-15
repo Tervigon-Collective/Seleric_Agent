@@ -20,7 +20,13 @@ from seleric_swarm.agents.skeptic.registries import (
     causal_graphs_from_yaml,
 )
 from tests.diagnostic.conftest import MISSION
-from tests.diagnostic.test_diagnostic_agent import _OUTCOME, _TREATMENT, _cvr_anoms, _cvr_evidence, _retain_truth
+from tests.diagnostic.test_diagnostic_agent import (
+    _OUTCOME,
+    _TREATMENT,
+    _cvr_anoms,
+    _cvr_evidence,
+    _retain_truth,
+)
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
 

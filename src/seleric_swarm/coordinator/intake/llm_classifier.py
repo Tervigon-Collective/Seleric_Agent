@@ -25,9 +25,9 @@ from seleric_swarm.coordinator.catalogue_grounding import (
     collapse_assigned_metrics,
     hints_from_catalogue,
 )
-from seleric_swarm.services.metrics import lead_agent_for_hints
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
+from seleric_swarm.services.metrics import lead_agent_for_hints
 from seleric_swarm.services.time_range import resolve_time_range, window_from_query
 
 if TYPE_CHECKING:

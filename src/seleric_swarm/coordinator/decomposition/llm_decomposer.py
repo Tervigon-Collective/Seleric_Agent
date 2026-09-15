@@ -34,9 +34,9 @@ class MissionDecompositionV1(BaseModel):
 
 
 async def decompose_mission_via_llm(
-    normalized: "NormalizedQuery",
+    normalized: NormalizedQuery,
     *,
-    runtime: "SwarmRuntime",
+    runtime: SwarmRuntime,
     mission_id: str | None = None,
     request_id: str | None = None,
     session_id: str | None = None,

@@ -14,10 +14,29 @@ cp .env.example .env
 uv sync
 ```
 
-## 3. Start local state services
+## 3. Start local state services (or full stack)
+
+Postgres + Redis only:
 
 ```bash
-docker compose up -d
+docker compose up -d postgres redis
+```
+
+Full deployable stack (API + Postgres + Redis):
+
+```bash
+docker compose up -d --build
+# API: http://127.0.0.1:8090/health
+```
+
+Or build the API image alone:
+
+```bash
+docker build -t seleric-swarm-api .
+docker run --rm -p 8090:8000 \
+  -e API_HOST=0.0.0.0 -e API_PORT=8000 \
+  -e LLM_PROVIDER=fake -e PERSISTENCE_BACKEND=memory \
+  seleric-swarm-api
 ```
 
 ## 4. Configure MCP servers

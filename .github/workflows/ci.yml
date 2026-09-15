@@ -18,9 +18,58 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - name: Install
         run: uv sync --extra dev
+      - name: Lint
+        run: uv run ruff check .
       - name: Unit, contract, replay, adversarial
         run: uv run pytest -q
       - name: Validate repo contracts
         run: uv run python scripts/validate_repo.py
       - name: Deterministic eval
         run: uv run python -m seleric_swarm.eval lookup_v1
+
+  office-ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: office-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: office-ui/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -t seleric-swarm-api:ci .
+      - name: Smoke healthcheck
+        run: |
+          docker run -d --name seleric-api \
+            -e APP_ENV=production \
+            -e API_HOST=0.0.0.0 \
+            -e API_PORT=8000 \
+            -e LLM_PROVIDER=fake \
+            -e PERSISTENCE_BACKEND=memory \
+            -e LANGSMITH_TRACING=false \
+            -p 8000:8000 \
+            seleric-swarm-api:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health; then
+              docker rm -f seleric-api
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs seleric-api || true
+          docker rm -f seleric-api
+          exit 1

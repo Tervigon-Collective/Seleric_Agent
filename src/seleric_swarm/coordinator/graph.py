@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
+from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
 from seleric_swarm.coordinator.artifacts.claims import ClaimManager
 from seleric_swarm.coordinator.artifacts.manager import ArtifactManager
 from seleric_swarm.coordinator.contracts import (
@@ -68,9 +69,9 @@ from seleric_swarm.coordinator.observability.events import (
     REMEDIATION_ROUND_DONE,
     SKEPTIC_GATE,
     SKEPTIC_PASS,
-    SPECIALIST_ERROR,
     SKEPTIC_REJECT,
     SKEPTIC_REVISE,
+    SPECIALIST_ERROR,
     TASK_PLAN_CREATED,
     TASK_SPECIALISTS_ACTIVATED,
     TASK_WAVE_EXECUTED,
@@ -85,8 +86,8 @@ from seleric_swarm.coordinator.planning.mission_planner import (
 from seleric_swarm.coordinator.policies import CoordinatorPolicies, load_coordinator_policies
 from seleric_swarm.coordinator.routing.invocation import A2AAgentInvoker, assemble_team
 from seleric_swarm.coordinator.state import empty_mission_extensions
-from seleric_swarm.coordinator.synthesis.provenance_builder import build_provenance_summary
 from seleric_swarm.coordinator.synthesis.llm_response import synthesize_swarm_response
+from seleric_swarm.coordinator.synthesis.provenance_builder import build_provenance_summary
 from seleric_swarm.leadership.manager import LeadershipManager
 from seleric_swarm.observability.tracing import coordinator_task_metadata, traced_span
 from seleric_swarm.orchestration.state import MissionState
@@ -98,7 +99,6 @@ from seleric_swarm.swarm.envelope import Intent, SwarmMessage
 from seleric_swarm.swarm.mission import SwarmMission, SwarmMissionResult, TeamMember
 from seleric_swarm.swarm.providers.base import ProviderBundle
 from seleric_swarm.swarm.providers.mcp_data import McpFetchStats, build_hybrid_bundle
-from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
 from seleric_swarm.swarm.specialists.anomaly import AnomalyAgent
 from seleric_swarm.swarm.specialists.observer import ObserverAgent
 from seleric_swarm.swarm.specialists.prediction import PredictionAgent
@@ -1180,7 +1180,7 @@ async def run_swarm_v2_mission(
             try:
                 ids = await _spec.run(blackboard, mission)
                 return {"ok": True, "artifact_refs": ids, "produced": _spec.produces}
-            except Exception as exc:  # noqa: BLE001 — we log and continue
+            except Exception as exc:
                 blackboard.record_event(
                     SPECIALIST_ERROR,
                     agent_id=_spec.agent_id,

@@ -9,11 +9,54 @@ services:
       - "5432:5432"
     volumes:
       - seleric_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seleric -d seleric_swarm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "${API_PUBLISH_PORT:-8090}:8000"
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-memory}
+      DATABASE_URL: ${DATABASE_URL:-}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      ALLOW_WRITE_ACTIONS: "false"
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
+      AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
+      SELERIC_MCP_URL: ${SELERIC_MCP_URL:-}
+      SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
+      API_KEY: ${API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
 
 volumes:
   seleric_postgres:
