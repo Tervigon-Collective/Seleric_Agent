@@ -1,0 +1,98 @@
+# Domain Health Snapshot profiles.
+# See docs/features/business-state-service/04_DOMAIN_HEALTH_SNAPSHOTS.md and
+# 05_SPRINT_PLAN.md Sprint 3/4. Adding a metric to a domain's snapshot, adding
+# a domain, or tuning a threshold is a YAML edit here -- resolver.py is
+# generic over this config, no code change needed.
+#
+# `features` values must be feature ids already produced by
+# business_state_profiles.yaml's default_v1 profile (period_delta_pct,
+# rolling_mean_7d, ...) -- this file only selects which ones a domain
+# snapshot surfaces, it does not define new feature strategies.
+#
+# `feature_class: windowed_point` (customer/repeat_rate only) skips
+# BusinessStateService's daily-series features entirely -- resolver.py
+# computes `period_delta_pct` itself as this-run-vs-previous-snapshot
+# instead (03 SS0's feature-class split; repeat_rate has no report_date
+# dimension, see 06_DATA_VALIDATION_FINDINGS.md#4).
+#
+# Sprint 4 scope cuts (mechanical extension, not full 04-doc parity):
+#   - attribution: channel_orders-by-channel and product: SKU-level
+#     concentration/negative-margin views are dimensioned "query pattern"
+#     metrics (04 doc), not plain catalogue scalars -- BusinessStateService
+#     only fetches one undimensioned series per call today, so these are
+#     left out until a dimensioned/top-N capability exists. Attribution and
+#     product snapshots below use the plain aggregate metrics instead.
+#   - customer: new_customer_orders-vs-orders retention ratio needs the
+#     cross-view ratio capability (CROSS_AXIS_RATIO_UNSUPPORTED), not built
+#     yet -- only repeat_rate is in the customer snapshot.
+#   - operations: `refund_count` has no catalogue metric id (only
+#     refunded_amount_excl_tax exists) -- single-metric snapshot.
+
+domains:
+  commerce:
+    agent_id: commerce_agent
+    metrics:
+      - { metric_id: metric.net_sales, features: [period_delta_pct, rolling_mean_7d] }
+      - { metric_id: metric.gross_sales, features: [period_delta_pct] }
+      - { metric_id: metric.orders, features: [period_delta_pct] }
+      - { metric_id: metric.returns_cancels, features: [] }
+    health_signals:
+      # thresholds are in the same percent-scale as features.py's
+      # period_delta_pct (e.g. -15 means -15%, not a -0.15 fraction).
+      - { id: net_sales_drop, metric_id: metric.net_sales, rule: period_delta_pct_below, threshold: -15 }
+      - { id: order_volume_drop, metric_id: metric.orders, rule: period_delta_pct_below, threshold: -20 }
+
+  finance:
+    agent_id: finance_agent
+    metrics:
+      - { metric_id: metric.net_profit, features: [period_delta_pct, rolling_mean_7d] }
+      - { metric_id: metric.gross_margin_pct, features: [] }
+      - { metric_id: metric.mer, features: [period_delta_pct] }
+      - { metric_id: metric.rto_cost, features: [] }
+    health_signals:
+      - { id: net_profit_drop, metric_id: metric.net_profit, rule: period_delta_pct_below, threshold: -15 }
+
+  performance:
+    agent_id: performance_agent
+    metrics:
+      - { metric_id: metric.spend, features: [period_delta_pct] }
+      - { metric_id: metric.net_roas, features: [period_delta_pct] }
+      - { metric_id: metric.cac, features: [rolling_mean_7d] }
+      - { metric_id: metric.cpm, features: [] }
+    health_signals:
+      - { id: net_roas_drop, metric_id: metric.net_roas, rule: period_delta_pct_below, threshold: -15 }
+
+  attribution:
+    agent_id: attribution_agent
+    metrics:
+      - { metric_id: metric.attributed_net_revenue, features: [period_delta_pct] }
+    health_signals: []
+
+  funnel:
+    agent_id: funnel_agent
+    metrics:
+      - { metric_id: metric.sessions, features: [period_delta_pct] }
+      - { metric_id: metric.purchase_cvr, features: [rolling_mean_7d] }
+      - { metric_id: metric.checkout_rate, features: [] }
+    health_signals:
+      - { id: traffic_drop, metric_id: metric.sessions, rule: period_delta_pct_below, threshold: -20 }
+
+  product:
+    agent_id: product_agent
+    metrics:
+      - { metric_id: metric.product_net_revenue, features: [period_delta_pct] }
+      - { metric_id: metric.product_gross_margin_pct, features: [] }
+    health_signals: []
+
+  customer:
+    agent_id: customer_agent
+    metrics:
+      - { metric_id: metric.repeat_rate, feature_class: windowed_point, features: [] }
+    health_signals: []
+
+  operations:
+    agent_id: operations_agent
+    metrics:
+      - { metric_id: metric.refunded_amount_excl_tax, features: [period_delta_pct] }
+    health_signals:
+      - { id: refund_spike, metric_id: metric.refunded_amount_excl_tax, rule: period_delta_pct_above, threshold: 30 }
