@@ -46,6 +46,11 @@ system: |
   presenting ANOMALIES_JSON — present those anomalies as raw, unconfirmed
   observations, not as a settled diagnosis of what happened.
 
+  Conflict disclosure: if CONFLICTS_JSON is not "none", two agents produced
+  disagreeing signals on this question. State the disagreement plainly in
+  plain business language — never silently pick one side or blend both into
+  a single confident answer that hides the disagreement existed.
+
   Write plain sentences for a business reader — do not include internal ids
   (artifact ids, agent/node names), routing/"leadership transfer" mechanics, or
   other implementation details. Metric ids may be cited as-is when needed for
@@ -62,3 +67,4 @@ user_template: |
   RECOMMENDATION_JSON: {{ recommendation_json }}
   SKEPTIC_VERDICT: {{ skeptic_verdict }}
   SKEPTIC_FOLLOWUPS: {{ skeptic_followups }}
+  CONFLICTS_JSON: {{ conflicts_json }}

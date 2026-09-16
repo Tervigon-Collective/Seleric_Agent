@@ -103,6 +103,7 @@ async def synthesize_swarm_response(
     recommendation = strategies[0] if strategies else None
     skeptic_arts = blackboard.by_type("skeptic")
     latest_skeptic = skeptic_arts[-1] if skeptic_arts else None
+    surfaced_conflicts = _conflicts_for_answer(conflicts)
 
     user = spec.render_user(
         {
@@ -115,6 +116,7 @@ async def synthesize_swarm_response(
             "recommendation_json": json.dumps(recommendation, default=str) if recommendation else "none",
             "skeptic_verdict": str((latest_skeptic or {}).get("verdict") or "none"),
             "skeptic_followups": json.dumps((latest_skeptic or {}).get("required_followups") or []),
+            "conflicts_json": json.dumps(surfaced_conflicts, default=str) if surfaced_conflicts else "none",
         }
     )
     request = LLMRequest(
@@ -149,11 +151,28 @@ async def synthesize_swarm_response(
     if not prose:
         return fallback()
 
-    extra_allowed = _numeric_pool(claims, anomalies, comparisons, prediction, recommendation)
+    extra_allowed = _numeric_pool(claims, anomalies, comparisons, prediction, recommendation, surfaced_conflicts)
     leaked = unaudited_numbers(prose, [], extra_allowed)
     if any(not _is_rounding_of_allowed(token, extra_allowed) for token in leaked):
         return fallback()
     return prose
+
+
+def _conflicts_for_answer(conflicts: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Conflicts worth surfacing to the reader: unresolved blocking disagreements,
+    or ones already handled with a recorded resolution — same selection
+    `build_claim_aware_response` uses, so the LLM path can disclose disagreement
+    between agents instead of silently picking one side (see coordinator/synthesis/response_builder.py).
+    """
+    unresolved = [
+        c for c in (conflicts or [])
+        if c.get("blocking") and not c.get("resolved") and not c.get("accepted_as_limitation")
+    ]
+    noted = [
+        c for c in (conflicts or [])
+        if c.get("accepted_as_limitation") or (c.get("resolved") and c.get("resolution"))
+    ]
+    return unresolved[:5] + noted[:5]
 
 
 def _asked_metric_id(mission: SwarmMission) -> str:

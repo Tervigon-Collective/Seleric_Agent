@@ -1,46 +1,34 @@
-%% Current architecture — built by reading source code directly (not docs/*.md),
-%% last verified 2026-09-16 (post lookup_v1 retirement + post diagnostic-agent
-%% causal-graph-builder merge). One mission pipeline now, not two — see notes.
+%% Current architecture — built by reading source code directly, last
+%% verified 2026-09-16. Long-form rationale lives in the referenced docs,
+%% not in these node labels (see NOTE1-4) — keep labels short here.
 
 flowchart TB
 
-    %% =========================
-    %% ENTRY
-    %% =========================
-
-    U["Client<br/>(HTTP)"]
+    U["Client (HTTP)"]
     API["main.py :: create_mission<br/>POST /v1/missions"]
     U --> API
 
-    subgraph ROUTING["ROUTING — orchestration/dispatch.py<br/>[2026-09-16: lookup_v1 retired, one pipeline now]"]
-        RF["route_for()<br/>classify_query_via_llm<br/>-> 'swarm' if intents ∩<br/>{diagnostic, predictive,<br/>prescriptive, executive_health}<br/>else 'lookup'"]
-        RAM["run_any_mission()<br/>no fallback pipeline —<br/>one retry of route_for()<br/>on ROUTING_UNSUPPORTED only"]
+    subgraph ROUTING["orchestration/dispatch.py"]
+        RF["route_for()<br/>LLM classify -> lookup | swarm"]
+        RAM["run_any_mission()"]
         RF --> RAM
     end
 
-    API -- "wait=true (sync)" --> RF
-    API -- "wait=false" --> BGJOB["run_mission_job()<br/>(background task, same routing)"]
+    API -- sync --> RF
+    API -- async --> BGJOB["run_mission_job()"]
     BGJOB --> RF
 
-    %% =========================
-    %% LOOKUP PATH (route == "lookup")
-    %% =========================
-
-    subgraph LOOKUPPATH["LOOKUP ROUTE — the only lookup pipeline"]
-        LFP["coordinator/lookup_fast_path.py<br/>run_lookup_fast_path()<br/>no agent handoff — direct fetch<br/>None -> _unsupported_lookup_result()<br/>(NOT a fallback to a second pipeline)"]
+    subgraph LOOKUPPATH["lookup route"]
+        LFP["lookup_fast_path.py<br/>run_lookup_fast_path()"]
     end
 
-    RAM -- "route=lookup" --> LFP
-    LFP -. "None -> retry route_for() once;<br/>if still not 'swarm' -> ROUTING_UNSUPPORTED" .-> RF
-
-    %% =========================
-    %% SWARM_V2 PATH (route == "swarm")
-    %% =========================
+    RAM -- lookup --> LFP
+    LFP -. "None -> retry once<br/>-> ROUTING_UNSUPPORTED" .-> RF
 
     SWARMENTRY["coordinator/graph.py<br/>run_swarm_v2_mission()"]
-    RAM -- "route=swarm" --> SWARMENTRY
+    RAM -- swarm --> SWARMENTRY
 
-    subgraph SWARMGRAPH["coordinator/graph.py :: build_swarm_v2_graph (LangGraph)"]
+    subgraph SWARMGRAPH["build_swarm_v2_graph (LangGraph)"]
         N_INTAKE["intake"]
         N_DECOMP["decompose"]
         N_PLAN["plan"]
@@ -54,60 +42,52 @@ flowchart TB
         N_SYNTH["synthesize"]
 
         N_INTAKE --> N_DECOMP --> N_PLAN --> N_ASSEMBLE --> N_EXECUTE --> N_REFINE
-        N_REFINE -- "_route_after_refine():<br/>frontier moved & budget ok" --> N_EXECUTE
-        N_REFINE -- "_route_after_refine():<br/>else" --> N_SPEC
+        N_REFINE -- "frontier moved" --> N_EXECUTE
+        N_REFINE -- else --> N_SPEC
         N_SPEC --> N_SKGATE
-        N_SKGATE -- "_route_after_skeptic():<br/>REVISE/REJECT + tasks" --> N_REMED
-        N_SKGATE -- "PASS / no claim" --> N_COMPLETE
-        N_SKGATE -- "else" --> N_SYNTH
+        N_SKGATE -- "REVISE/REJECT" --> N_REMED
+        N_SKGATE -- PASS --> N_COMPLETE
+        N_SKGATE -- else --> N_SYNTH
         N_REMED --> N_SKGATE
         N_COMPLETE --> N_SYNTH
     end
 
+    CATGROUND["catalogue_grounding.py<br/>ground_live_grain()"]
+    N_DECOMP -.-> CATGROUND
+
     SWARMENTRY --> N_INTAKE
-    N_SYNTH --> OUT["SwarmMissionResult /<br/>MissionResult"]
+    N_SYNTH --> OUT["MissionResult"]
     LFP --> OUT
     OUT --> U
 
-    %% =========================
-    %% EXECUTE: domain + observer fan-out
-    %% =========================
-
-    subgraph DOMAINMESH["DOMAIN AGENTS — swarm/domain/base.py :: DomainAgent.observe()"]
-        PA["performance_agent<br/>(meta_ads, google_ads)"]
-        ATTR["attribution_agent<br/>(meta_ads, google_ads)"]
-        CA["commerce_agent<br/>(shopify)"]
-        PROD["product_agent<br/>(shopify)"]
-        CUST["customer_agent<br/>(shopify)"]
-        OPS["operations_agent<br/>(shopify)"]
+    subgraph DOMAINMESH["Domain agents — DomainAgent.observe()"]
+        PA["performance_agent"]
+        ATTR["attribution_agent"]
+        CA["commerce_agent"]
+        PROD["product_agent"]
+        CUST["customer_agent"]
+        OPS["operations_agent"]
         FIA["finance_agent"]
-        FA["funnel_agent<br/>[enabled: false —<br/>no PostHog connector]"]
+        FA["funnel_agent (disabled)"]
     end
 
-    OA["observer_agent<br/>(intelligence type,<br/>evidence_collection)"]
+    OA["observer_agent"]
 
-    N_EXECUTE -- "activate() per mission lead" --> PA
-    N_EXECUTE -- "activate()" --> OA
-    PA -.->|"leadership handoff<br/>(evaluate_frontier)"| CA
+    N_EXECUTE --> PA
+    N_EXECUTE --> OA
+    PA -.-> CA
     CA -.-> PROD
     CA -.-> OPS
     PA -.-> ATTR
     PA -.-> FIA
     CA -.-> FA
 
-    %% =========================
-    %% DATA ACCESS — real call chain (3 independent implementations,
-    %% see docs/46_ARCHITECTURE_CONSOLIDATION_PLAN.md Item 2 — open)
-    %% =========================
-
-    subgraph DATAACCESS["swarm/providers — domain agents' ONLY data path"]
-        DP["DataProvider protocol<br/>(swarm/providers/base.py)"]
-        HMP["HybridMcpDataProvider.fetch()<br/>+ its own separate .fetch_series()<br/>(swarm/providers/mcp_data.py)<br/>— TWO independent query builders<br/>in the same class"]
-        RM["resolve_measure()<br/>(services/measure.py)"]
-        CMQ["call_metrics_query()<br/>(services/mcp_query.py)"]
-        DP --> HMP
-        HMP --> RM
-        RM --> CMQ
+    subgraph DATAACCESS["swarm/providers"]
+        DP["DataProvider"]
+        HMP["HybridMcpDataProvider<br/>.fetch() + .fetch_series()"]
+        RM["resolve_measure()"]
+        CMQ["call_metrics_query()"]
+        DP --> HMP --> RM --> CMQ
     end
 
     PA --> DP
@@ -119,54 +99,39 @@ flowchart TB
     FIA --> DP
     OA --> DP
 
-    MCPGW["MCPGateway<br/>(protocols/mcp/gateway.py)<br/>ONE 'seleric' server<br/>(config/mcp_servers.yaml),<br/>multiplexed into per-capability<br/>remote wrappers, e.g.<br/>seleric.metrics_query"]
+    MCPGW["MCPGateway<br/>one 'seleric' server, multiplexed"]
     CMQ --> MCPGW
-    MCPGW --> SELERIC[("Seleric MCP<br/>(external)")]
+    MCPGW --> SELERIC[("Seleric MCP")]
 
-    %% =========================
-    %% BUSINESS STATE SERVICE — 3rd independent MCP-caller path
-    %% =========================
-
-    subgraph BSSBOX["services/business_state — a 3rd independent data-fetch<br/>implementation, not layered on swarm/providers"]
-        BSS["BusinessStateService<br/>.get_metric_state()<br/>(facade.py)"]
-        FSERIES["business_state/series.py<br/>::fetch_series()<br/>(module-level, own impl)"]
-        FEAT["compute_features()<br/>(features.py)"]
-        ROBZ["robust_zscore()<br/>(detectors.py)"]
+    subgraph BSSBOX["services/business_state"]
+        BSS["BusinessStateService<br/>.get_metric_state()"]
+        FSERIES["series.py :: fetch_series()"]
+        FEAT["compute_features()"]
+        ROBZ["robust_zscore()"]
         BSS --> FSERIES --> RM
         BSS --> FEAT
         BSS --> ROBZ
     end
 
     LFP --> BSS
-    N_EXECUTE -. "anomaly detection reads BSS history" .-> BSS
+    N_EXECUTE -.-> BSS
 
-    %% =========================
-    %% INTELLIGENCE SPECIALISTS (swarm_v2 "specialists" node)
-    %% Two deliberate tiers — lightweight (swarm/specialists/) and
-    %% full-subsystem bridge (agents/*/swarm_bridge.py) — NOT an
-    %% inconsistency, see docs/46 Item 4 (retracted).
-    %% =========================
-
-    subgraph INTEL["INTELLIGENCE SPECIALISTS"]
-        AA["AnomalyAgent — lightweight tier<br/>(swarm/specialists/anomaly.py)<br/>reads: evidence -> produces: anomaly<br/>uses providers.anomaly.detect()<br/>(robust_zscore via BSS history)"]
-        DA["SwarmDiagnosticSpecialist — full-subsystem tier<br/>(agents/diagnostic/swarm_bridge.py)<br/>policy: requires anomaly present<br/>reads: evidence, anomaly<br/>produces: hypothesis + causal<br/><br/>[2026-09-16 update] now also builds/merges<br/>a causal graph AUTOMATICALLY from the metric<br/>registry (causal_graph_builder.py::<br/>build_diagnostic_causal_graphs) on top of any<br/>YAML-declared graphs, and pre-fetches every<br/>ancestor metric of the primary outcome<br/>(causal_discovery.py::graph_candidate_metric_ids)<br/>before running diagnosis — diagnosis is no longer<br/>limited to hand-authored causal graphs only.<br/>Uses DoWhyCausalEstimationService<br/>(TemplateCausalEstimationService fallback)"]
-        PRED["SwarmPredictionSpecialist — full-subsystem tier<br/>(agents/prediction/swarm_bridge.py)<br/>reads: causal refs, evidence_ledger<br/>produces: prediction<br/>uses InMemoryModelRegistry /<br/>StatisticalBaselineForecaster<br/>(same ModelRegistry class skeptic uses —<br/>reused, not duplicated; see docs/46 Item 3)"]
-        SA["SwarmStrategySpecialist — full-subsystem tier<br/>(agents/strategy/swarm_bridge.py)<br/>reads: hypothesis(retained), causal<br/>produces: strategy<br/>uses LLMPortReasoningModel<br/>(NullReasoningModel if no LLM)"]
-        SK["SwarmSkepticSpecialist — full-subsystem tier<br/>(agents/skeptic/swarm_bridge.py)<br/>policy: requires causal or strategy<br/>reads: hypothesis, evidence_ledger<br/>produces: skeptic<br/>uses validators/*.py +<br/>CausalGraphRegistry (YAML) +<br/>ModelRegistry (shared with prediction)"]
+    subgraph INTEL["Intelligence specialists"]
+        AA["AnomalyAgent<br/>swarm/specialists/"]
+        DA["SwarmDiagnosticSpecialist<br/>agents/diagnostic/"]
+        PRED["SwarmPredictionSpecialist<br/>agents/prediction/"]
+        SA["SwarmStrategySpecialist<br/>agents/strategy/"]
+        SK["SwarmSkepticSpecialist<br/>agents/skeptic/"]
     end
 
-    N_SPEC -- "if 'diagnostic'/'executive_health'<br/>in intents" --> DA
-    N_SPEC -- "if 'predictive'" --> PRED
-    N_SPEC -- "if 'prescriptive'" --> SA
-    N_EXECUTE -- "anomaly_agent activated<br/>alongside observer_agent" --> AA
-    N_SKGATE -- "activate 'challenge'" --> SK
-    DA -. "SK REJECT -> re-challenge<br/>alternate retained hypothesis" .-> DA
+    N_SPEC -- diagnostic --> DA
+    N_SPEC -- predictive --> PRED
+    N_SPEC -- prescriptive --> SA
+    N_EXECUTE --> AA
+    N_SKGATE -- challenge --> SK
+    DA -.-> DA
 
-    %% =========================
-    %% BLACKBOARD — shared mission state
-    %% =========================
-
-    subgraph BB["swarm/blackboard.py :: Blackboard<br/>(7 artifact types — swarm/artifacts.py)"]
+    subgraph BB["Blackboard (7 artifact types)"]
         direction LR
         EV["evidence"]
         AN["anomaly"]
@@ -184,55 +149,43 @@ flowchart TB
     PRED --> PR
     SA --> ST
     SK --> SKA
-    AN -.->|"read"| DA
-    EV -.->|"read"| DA
-    CS -.->|"read"| PRED
-    HY -.->|"read"| SA
-    CS -.->|"read"| SA
-    HY -.->|"read"| SK
-    CS -.->|"read"| SK
-    ST -.->|"read"| SK
 
-    %% =========================
-    %% LEADERSHIP
-    %% =========================
-
-    subgraph LEAD["LEADERSHIP"]
-        LM["LeadershipManager<br/>(top-level leadership/manager.py)<br/>the actual handoff decision logic"]
-        LC["LeadershipController<br/>(coordinator/leadership/frontier.py)<br/>wraps LeadershipManager +<br/>evaluate_frontier / loop_detector /<br/>lead_selector.select_initial_lead"]
+    subgraph LEAD["Leadership"]
+        LM["LeadershipManager"]
+        LC["LeadershipController"]
         LC --> LM
     end
 
-    SWARMGRAPH -. "swarm_v2 uses" .-> LC
+    SWARMGRAPH -.-> LC
 
-    %% =========================
-    %% REGISTRIES
-    %% =========================
-
-    subgraph REG["REGISTRIES — config-backed, code-defined classes"]
-        AGREG["AgentRegistry<br/>(registry/agent_registry.py)<br/>reads config/agent_registry.yaml"]
-        METREG["MetricRegistry<br/>(services/metrics.py)<br/>reads config/metric_registry.yaml<br/>[now ALSO the source diagnostic derives<br/>its default causal graph from]"]
-        CGREG["CausalGraphRegistry /<br/>InMemoryCausalGraphRegistry<br/>(agents/skeptic/registries.py)<br/>holds YAML graphs + the new<br/>metric-registry-derived business graph<br/>(build_diagnostic_causal_graphs, merged)"]
-        MODREG["ModelRegistry (Protocol) /<br/>InMemoryModelRegistry<br/>(agents/skeptic/registries.py)<br/>YamlModelRegistry extends it<br/>(agents/skeptic/services/model_registry.py)<br/>— ONE class, imported and reused by<br/>agents/prediction/registries.py, not duplicated"]
-        SEMREG["MetricSemanticsRegistry<br/>(agents/skeptic/registries.py)"]
-        PROVREG["ProviderRegistry<br/>(registry/provider_registry.py)<br/>reads config/provider_registry.yaml"]
-        PROMPTREG["PromptRegistry<br/>(prompts/registry.py)"]
+    subgraph REG["Registries"]
+        AGREG["AgentRegistry"]
+        METREG["MetricRegistry"]
+        CGREG["CausalGraphRegistry"]
+        MODREG["ModelRegistry<br/>(shared, prediction+skeptic)"]
+        SEMREG["MetricSemanticsRegistry"]
+        PROVREG["ProviderRegistry"]
+        PROMPTREG["PromptRegistry"]
     end
 
-    MCPGW -. "allowlist built from" .-> AGREG
-    RM -. "resolves against" .-> METREG
-    DA -- "build_diagnostic_causal_graphs()" --> METREG
+    MCPGW -.-> AGREG
+    RM -.-> METREG
+    DA --> METREG
     DA --> CGREG
     SK --> CGREG
     PRED --> MODREG
     SK --> MODREG
     SK --> SEMREG
-    HMP -. "anomaly strategy selection" .-> PROVREG
+    HMP -.-> PROVREG
 
-    %% =========================
-    %% NOTES
-    %% =========================
+    NOTE1["agent_registry.yaml enabled flags for<br/>the 5 non-observer specialists have<br/>flipped across sessions — verify current<br/>state. docs/46_..._PLAN.md Item 5 (open)"]
+    NOTE2["lookup_v1 retired + deleted 2026-09-16.<br/>docs/features/lookup-v1-retirement.md"]
+    NOTE3["3 independent MCP-query-shaping paths<br/>still exist (HybridMcpDataProvider.fetch,<br/>.fetch_series, business_state fetch_series).<br/>Characterized, not yet merged.<br/>docs/46_..._PLAN.md Item 2 (open)"]
+    NOTE4["diagnostic now derives a causal graph<br/>from MetricRegistry automatically, and is<br/>remediation-round-aware (widens candidates<br/>+ history per retry). catalogue_grounding's<br/>generic-dim-token guard now also covers<br/>calendar words, not just 'status'.<br/>See docs/BUG_SHEET.md"]
 
-    NOTE1["NOTE: config/agent_registry.yaml enabled flags for the 5 non-observer<br/>intelligence agents have flipped between true/false across sessions —<br/>verify current on-disk state before relying on it. See<br/>docs/46_ARCHITECTURE_CONSOLIDATION_PLAN.md Item 5 (open): no load/cost<br/>validation has been done for running all five together in production."]
-    NOTE2["NOTE: lookup_v1 (orchestration/graph.py + runner.py) was retired and<br/>deleted 2026-09-16 — this diagram reflects the single-pipeline state.<br/>See docs/features/lookup-v1-retirement.md."]
-    NOTE3["NOTE: three independent MCP-query-shaping implementations still exist<br/>(HybridMcpDataProvider.fetch, .fetch_series, business_state/series.py<br/>::fetch_series) — consolidation proposed but not yet done.<br/>See docs/46_ARCHITECTURE_CONSOLIDATION_PLAN.md Item 2 (open)."]
+    AGREG -.- NOTE1
+    RAM -.- NOTE2
+    DATAACCESS -.- NOTE3
+    BSSBOX -.- NOTE3
+    DA -.- NOTE4
+    CATGROUND -.- NOTE4

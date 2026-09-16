@@ -6,6 +6,7 @@ to the Domain Agent that currently leads and posts EvidenceArtifacts.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 from seleric_swarm.swarm.artifacts import Evidence
@@ -14,6 +15,8 @@ from seleric_swarm.swarm.domain.base import DomainAgent
 from seleric_swarm.swarm.mission import SwarmMission
 from seleric_swarm.swarm.providers.base import ProviderBundle
 from seleric_swarm.swarm.specialists.base import SpecialistAgent
+
+_MAX_DAILY_WINDOW_DAYS = 31
 
 
 class ObserverAgent(SpecialistAgent):
@@ -36,6 +39,20 @@ class ObserverAgent(SpecialistAgent):
 
         tr = mission.time_range or {}
         if tr.get("kind") != "comparison" or not tr.get("start_b") or not tr.get("end_b"):
+            days = _daily_windows(tr) if (mission.context or {}).get("granularity") == "day" else None
+            if days:
+                # "why did X change over the last N days" (docs/BUG_SHEET.md
+                # #14): the LLM classified this as a per-day investigation
+                # (Phase 1's granularity field) -- fetch one Evidence row per
+                # day instead of a single window aggregate, so anomaly
+                # detection compares real daily figures against the
+                # single-day baseline instead of a multi-day sum.
+                posted: list[str] = []
+                for day_tr in days:
+                    posted += await domain.observe(
+                        blackboard, time_range=day_tr, extra_metrics=extra_metrics, grain=grain
+                    )
+                return posted
             return await domain.observe(
                 blackboard, time_range=tr, extra_metrics=extra_metrics, grain=grain
             )
@@ -115,6 +132,29 @@ def _post_comparison_deltas(
         )
         posted.append(blackboard.post(ev))
     return posted
+
+
+def _daily_windows(tr: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Split a multi-day window into one {start, end} per day. ``None`` (not
+    an empty list) when the window is missing, malformed, or already a
+    single day — caller falls back to the one-shot aggregate fetch."""
+    start, end = tr.get("start"), tr.get("end")
+    if not start or not end or start == end:
+        return None
+    try:
+        start_d, end_d = date.fromisoformat(str(start)[:10]), date.fromisoformat(str(end)[:10])
+    except ValueError:
+        return None
+    span_days = (end_d - start_d).days + 1
+    if end_d < start_d or span_days > _MAX_DAILY_WINDOW_DAYS:
+        # A misclassified long window ("last year" tagged granularity=day)
+        # must not fan out into dozens of MCP calls -- fall back to the
+        # single aggregate fetch instead.
+        return None
+    return [
+        {**tr, "start": (start_d + timedelta(days=i)).isoformat(), "end": (start_d + timedelta(days=i)).isoformat()}
+        for i in range((end_d - start_d).days + 1)
+    ]
 
 
 def _asked_metrics(mission: SwarmMission, *, lead: str | None = None) -> list[str]:

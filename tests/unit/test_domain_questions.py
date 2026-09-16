@@ -24,7 +24,8 @@ from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.domain.base import DomainAgent, DomainConfig
 from seleric_swarm.swarm.mission import SwarmMission
 from seleric_swarm.swarm.providers.base import DataResult, MetricReading
-from seleric_swarm.swarm.specialists.observer import _asked_grain, _asked_metrics
+from seleric_swarm.swarm.providers.base import ProviderBundle
+from seleric_swarm.swarm.specialists.observer import ObserverAgent, _asked_grain, _asked_metrics
 
 
 def test_partition_splits_product_and_finance(runtime):
@@ -220,6 +221,53 @@ def test_observer_scopes_extra_metrics_to_current_domain():
     ]
     assert _asked_grain(mission, lead="product_agent") == ["sku"]
     assert _asked_grain(mission, lead="finance_agent") == []
+
+
+@pytest.mark.asyncio
+async def test_observer_fetches_one_evidence_row_per_day_when_granularity_is_day():
+    """docs/BUG_SHEET.md #14: a diagnostic mission over a multi-day window
+    with granularity="day" (Phase 1's classifier field) must fetch one
+    Evidence row per day, not a single summed-window aggregate."""
+
+    class _Rec:
+        domain = "commerce"
+
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def fetch(self, *, metric_ids, time_range, dimensions=None, limit=None, sort=None):
+            self.calls.append(dict(time_range))
+            return DataResult(
+                readings=[MetricReading(metric_id=m, value=1.0, data_origin="MCP", synthetic=False) for m in metric_ids],
+                events=[],
+                missing=[],
+            )
+
+        async def events(self, *, time_range):
+            return []
+
+    rec = _Rec()
+    cfg = DomainConfig(agent_id="commerce_agent", domain="commerce", owned_metrics=["metric.net_sales"], probe_metrics=["metric.net_sales"])
+    domain_agent = DomainAgent(cfg, data_provider=rec)
+    mission = SwarmMission(
+        mission_id="M-daily",
+        query="why did net sales drop over the last 5 days",
+        time_range={"start": "2026-09-12", "end": "2026-09-16"},
+        context={
+            "domain_questions": [{"domain": "commerce", "metrics": ["metric.net_sales"], "grain": []}],
+            "granularity": "day",
+        },
+    )
+    board = Blackboard("M-daily")
+    board.mission_lead = "commerce_agent"
+    observer = ObserverAgent(providers=ProviderBundle(data={}, anomaly=None), domains={"commerce_agent": domain_agent})
+    posted = await observer.run(board, mission)
+
+    assert [c["start"] for c in rec.calls] == [
+        "2026-09-12", "2026-09-13", "2026-09-14", "2026-09-15", "2026-09-16",
+    ]
+    assert all(c["start"] == c["end"] for c in rec.calls)
+    assert len(posted) == 5
 
 
 def test_caps_for_purpose_retrieve_only_observes():

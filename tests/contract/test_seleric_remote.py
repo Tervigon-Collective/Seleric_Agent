@@ -157,3 +157,23 @@ def test_invalid_sse_json_raises_runtime_error():
     )
     with pytest.raises(RuntimeError, match="invalid JSON"):
         _parse_jsonrpc_response(resp)
+
+
+@pytest.mark.asyncio
+async def test_stuck_connection_is_bounded_by_hard_timeout_backstop():
+    """docs/BUG_SHEET.md #5: a real request hung 10+ minutes with the asyncio
+    event loop genuinely idle -- httpx's own `timeout=` never fired. A call
+    that never resolves (simulating that stuck-socket-read failure mode)
+    must still be bounded by the asyncio.wait_for backstop, not hang forever."""
+    import asyncio
+
+    transport = SelericMCPTransport(url="https://example.invalid/mcp", token="t")
+    transport._hard_timeout_s = 0.05  # keep the test fast
+
+    async def never_returns(url, *, json, headers):
+        await asyncio.Event().wait()  # never set -- simulates the stuck read
+
+    monkeypatch_target = transport._client
+    monkeypatch_target.post = never_returns
+    with pytest.raises(MCPUnavailableError):
+        await transport.call_tool("metrics_query", {})

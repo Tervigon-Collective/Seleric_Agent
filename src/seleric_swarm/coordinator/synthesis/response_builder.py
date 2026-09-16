@@ -186,13 +186,6 @@ def build_claim_aware_response(
                 ]
                 break
 
-    lines.append("Leadership path:")
-    path = [mission.initial_lead] + [h.get("to_agent") for h in blackboard.handoff_history]
-    lines.append("  " + " -> ".join(str(p) for p in path))
-    for h in blackboard.handoff_history:
-        lines.append(f"  transfer: {h.get('from_agent')} -> {h.get('to_agent')} | {h.get('reason')}")
-    lines.append("")
-
     # Primary finding — wording depends on claim state
     retained = [h for h in blackboard.by_type("hypothesis") if h.get("status") == "retained"]
     if validated:
@@ -203,7 +196,6 @@ def build_claim_aware_response(
         verb = _CAUSAL_LANGUAGE.get(strength, "evidence supports")
         lines.append("Primary finding:")
         lines.append(f"  {verb}: {c.get('statement')}")
-        lines.append("  claim_state: VALIDATED")
         lines.append("")
     elif challenged:
         c = challenged[0]
@@ -215,7 +207,7 @@ def build_claim_aware_response(
         c = supported[0]
         lines.append("Evidence-supported hypothesis:")
         lines.append(f"  {c.get('statement')}")
-        lines.append("  claim_state: SUPPORTED (pending Skeptic)")
+        lines.append("  This finding is evidence-supported but not yet independently verified.")
         lines.append("")
     elif retained:
         # No managed claim yet — do NOT call it root cause if skeptic != PASS
@@ -228,7 +220,7 @@ def build_claim_aware_response(
             lines.append("Leading (unresolved) hypothesis:")
             lines.append(f"  CHALLENGED: {retained[0]['statement']}")
             if verdict == "REVISE":
-                lines.append("  Skeptic verdict: REVISE — conclusion is not validated.")
+                lines.append("  This conclusion needs revision and is not validated.")
         lines.append("")
 
     comparisons = comparisons_for_answer(blackboard)
@@ -307,9 +299,14 @@ def build_claim_aware_response(
 
     if skeptic_arts:
         k = skeptic_arts[-1]
-        lines.append(f"Skeptic verdict: {k.get('verdict')}")
+        verdict_text = {
+            "PASS": "Independent verification passed.",
+            "REVISE": "Independent verification found issues that need revision.",
+            "REJECT": "Independent verification rejected this finding.",
+        }.get(k.get("verdict"), "Independent verification status is unclear.")
+        lines.append(verdict_text)
         if k.get("required_followups"):
-            lines.append("  required follow-ups:")
+            lines.append("  Open questions before this can be trusted:")
             for f in k["required_followups"][:5]:
                 lines.append(f"    - {f.get('question') or f.get('objective') or f}")
         lines.append("")

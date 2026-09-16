@@ -12,6 +12,7 @@ import pytest
 from seleric_swarm.coordinator.catalogue_grounding import (
     apply_catalogue_grain,
     constrain_hints_to_grain,
+    dimensions_in_query,
 )
 from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap, CatalogueMetricMeta
 from seleric_swarm.services.metrics import lead_agent_for_hints
@@ -775,6 +776,25 @@ async def test_apply_catalogue_grain_skips_campaign_objective_on_aggregate_ctr()
     )
     assert dims == []
     assert out == ["metric.ctr", "meta_ctr", "meta_ctr_hourly"]
+
+
+def test_per_day_does_not_match_session_day_of_week():
+    """Bug: "get per day data" single-token-matched "day" against
+    session_day_of_week (tokens: session/day/week), a funnel-only dimension
+    net_sales can't slice by -- same hallucination class as status ->
+    fulfillment_status. Calendar words are generic now, like "status"."""
+    hits = dimensions_in_query(
+        "why did sales drop from 5 days, get per day data",
+        {"session_day_of_week", "brand_id", "report_date"},
+    )
+    assert "session_day_of_week" not in hits
+
+
+def test_real_multi_word_dimension_still_matches():
+    """The fix must not blanket-suppress every multi-word dimension --
+    only single generic-calendar-word overlaps."""
+    hits = dimensions_in_query("break down by product title", {"product_title", "brand_id"})
+    assert "product_title" in hits
 
 
 def test_hourly_live_metric_inherits_yaml_ctr_unit():

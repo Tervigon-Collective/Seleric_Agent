@@ -119,7 +119,14 @@ class SwarmDiagnosticSpecialist:
             causal_service = DoWhyCausalEstimationService(
                 fallback=TemplateCausalEstimationService({}),
             )
-            cap = self._policies.budget("max_causal_candidates") or _MAX_CAUSAL_TREATMENTS
+            # A remediation retry with the exact same candidate set and history
+            # window reproduces the exact same hypotheses/rejection -- wasting
+            # the round instead of adding information (docs/BUG_SHEET.md #6).
+            # Widen both per round: more ancestor candidates considered, more
+            # pre-treatment history for DoWhy to estimate against.
+            remediation_round = int((mission.context or {}).get("remediation_round") or 0)
+            cap = (self._policies.budget("max_causal_candidates") or _MAX_CAUSAL_TREATMENTS) + remediation_round
+            history_days = _CAUSAL_EXTRA_HISTORY_DAYS * (1 + remediation_round)
             graph = graphs.get(graph_id_for_outcome(primary_metric)) if primary_metric else None
             ancestor_ids = (
                 graph_candidate_metric_ids(
@@ -138,6 +145,7 @@ class SwarmDiagnosticSpecialist:
                 self.providers,
                 primary_metric,
                 dict(mission.time_range),
+                extra_history_days=history_days,
                 extra_metrics=treatments,
                 confounder_metrics=metric_confounders_to_fetch(
                     graph, outcome=primary_metric, treatments=treatments, metrics=metrics
