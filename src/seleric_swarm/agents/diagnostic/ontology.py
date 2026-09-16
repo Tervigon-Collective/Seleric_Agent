@@ -66,6 +66,26 @@ def node_for_metric(metric_id: str) -> str:
     return metric_id.removeprefix("metric.") or metric_id
 
 
+def graph_identity(metric_id: str, metrics: MetricRegistry) -> str:
+    """The legacy ``metric.*`` id for a metric, when one exists.
+
+    ``node_by_metric`` (and the hand-authored causal graphs) are keyed to the
+    legacy YAML spelling, but ``MetricRegistry`` prefers handing back the bare
+    live-catalogue id once the catalogue is warm (``metric.cac`` and ``cac``
+    are the same real metric -- see ``MetricRegistry.canonical_id``). Resolve
+    to the legacy spelling first so an explicit ``node_by_metric`` override
+    still applies regardless of which spelling the caller has in hand;
+    metrics with no legacy counterpart (e.g. a live-only KPI) pass through
+    unchanged.
+    """
+    if metric_id.startswith("metric."):
+        return metric_id
+    for m in metrics.yaml_all():
+        if m.catalogue_metric == metric_id or m.id == f"metric.{metric_id}":
+            return m.id
+    return metric_id
+
+
 def treatment_events(treatment_metric: str) -> tuple[str, ...]:
     return _load().treatment_events.get(treatment_metric, ())
 

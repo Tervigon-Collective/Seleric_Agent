@@ -3,7 +3,7 @@
 # node_by_metric / treatment_events map catalogue metrics onto the registered
 # causal graph; they are not RCA narratives.
 
-default_graph_id: causal.funnel_purchase.v1
+default_graph_id: causal.business.v1
 
 base_common_causes:
   - metric.sessions
@@ -19,7 +19,6 @@ node_by_metric:
   metric.mobile_lcp_seconds: page_latency
   metric.js_error_rate: page_latency
   metric.purchase_cvr: purchase
-  metric.cac: purchase
   metric.avg_price: price
   metric.in_stock_rate: stock
   metric.payment_failure_rate: payment_failure

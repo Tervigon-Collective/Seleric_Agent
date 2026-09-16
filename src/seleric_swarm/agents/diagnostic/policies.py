@@ -48,46 +48,18 @@ class DiagnosticPolicies:
     # -- budgets ------------------------------------------------------
     def budget(self, name: str) -> int:
         table = {
-            "max_hypotheses": 6,
-            "max_primary_candidates": 2,
-            "max_tests_per_hypothesis": 6,
+            "max_causal_candidates": 6,
             "max_llm_calls": 3,
             "max_runtime_seconds": 90,
         }
         return int(self._get("budgets", name, default=table.get(name, 0)))
 
-    # -- hypotheses -------------------------------------------------
-    def min_supporting_evidence(self) -> int:
-        return int(self._get("hypotheses", "min_supporting_evidence", default=1))
-
+    # -- LLM enrichment (used by the scenario-narration step) --------
     def llm_enrichment(self) -> bool:
-        return bool(self._get("hypotheses", "llm_enrichment", default=True))
+        return bool(self._get("scenarios", "llm_enrichment", default=True))
 
-    def prior_weights(self) -> dict[str, float]:
-        default = {
-            "evidence_overlap": 0.4,
-            "incident_match": 0.3,
-            "temporal_alignment": 0.2,
-            "mechanism_specificity": 0.1,
-        }
-        return {**default, **(self._get("hypotheses", "prior_weights", default={}) or {})}
-
-    def mechanism_specificity_scores(self) -> dict[str, float]:
-        default = {"base": 0.2, "detailed_mechanism": 0.7, "has_treatment_metric_bonus": 0.3}
-        return {**default, **(self._get("hypotheses", "mechanism_specificity_scores", default={}) or {})}
-
-    # -- testing --------------------------------------------------
-    def hard_gates(self) -> set[str]:
-        return set(self._get("testing", "hard_gates", default=["temporal_precedence"]))
-
-    def temporal_tolerance_minutes(self) -> int:
-        return int(self._get("testing", "temporal_tolerance_minutes", default=90))
-
-    def min_segment_divergence_pct(self) -> float:
-        return float(self._get("testing", "min_segment_divergence_pct", default=10))
-
-    def dose_response_min_pairs(self) -> int:
-        return int(self._get("testing", "dose_response_min_pairs", default=2))
+    def max_scenarios(self) -> int:
+        return int(self._get("scenarios", "max_scenarios", default=6))
 
     # -- causal ------------------------------------------------
     def causal_flag(self, name: str) -> bool:

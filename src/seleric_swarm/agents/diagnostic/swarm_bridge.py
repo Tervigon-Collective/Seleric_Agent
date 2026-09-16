@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 log = logging.getLogger(__name__)
 
 from seleric_swarm.agents.diagnostic.agent import DiagnosticAgent, diagnostic_deps_from_blackboard
+from seleric_swarm.agents.diagnostic.causal_discovery import graph_candidate_metric_ids
+from seleric_swarm.agents.diagnostic.causal_graph_builder import build_diagnostic_causal_graphs
 from seleric_swarm.agents.diagnostic.context import DiagnosticDeps
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticRequest, DiagnosticResult
 from seleric_swarm.agents.diagnostic.ontology import (
@@ -26,10 +28,8 @@ from seleric_swarm.agents.diagnostic.ontology import (
 from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
 from seleric_swarm.agents.diagnostic.reasoning import LLMPortReasoningModel, NullReasoningModel
 from seleric_swarm.config.settings import configured_chat_model
-from seleric_swarm.agents.diagnostic.registries import (
-    TemplateCausalEstimationService,
-    causal_graphs_from_yaml,
-)
+from seleric_swarm.agents.diagnostic.registries import TemplateCausalEstimationService
+from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.agents.diagnostic.services.dowhy_estimation import DoWhyCausalEstimationService
 from seleric_swarm.coordinator.leadership.frontier import LeadershipController
 from seleric_swarm.swarm.artifacts import Causal, Hypothesis
@@ -105,11 +105,13 @@ class SwarmDiagnosticSpecialist:
         causal_truth = self._scenario.get("causal_truth")
         primary_metric = _mission_outcome_metric(mission, blackboard)
         observations = None
-        graphs = (
-            self._deps.causal_graphs if self._deps is not None else causal_graphs_from_yaml()
-        )
         metrics = self._deps.metrics if self._deps is not None else (
             self._runtime.metrics if self._runtime is not None else None
+        )
+        graphs = (
+            self._deps.causal_graphs
+            if self._deps is not None
+            else build_diagnostic_causal_graphs(metrics or MetricRegistry("config/metric_registry.yaml"))
         )
         if causal_truth:
             causal_service = TemplateCausalEstimationService(causal_truth)
@@ -117,8 +119,21 @@ class SwarmDiagnosticSpecialist:
             causal_service = DoWhyCausalEstimationService(
                 fallback=TemplateCausalEstimationService({}),
             )
-            treatments = _ranked_treatment_ids(blackboard, outcome=primary_metric)
+            cap = self._policies.budget("max_causal_candidates") or _MAX_CAUSAL_TREATMENTS
             graph = graphs.get(graph_id_for_outcome(primary_metric)) if primary_metric else None
+            ancestor_ids = (
+                graph_candidate_metric_ids(
+                    graph, primary_metric, metrics or MetricRegistry("config/metric_registry.yaml")
+                )
+                if graph is not None
+                else []
+            )
+            # Every ancestor node on the causal graph is a candidate the
+            # diagnostic pipeline will actually run DoWhy against (spec: find
+            # ALL responsible nodes, not just the loudest co-mover) -- observed
+            # movement only orders which ones get fetched first when capped.
+            movers = _ranked_treatment_ids(blackboard, outcome=primary_metric, limit=cap)
+            treatments = _prioritized_treatment_ids(ancestor_ids, movers, cap=cap)
             observations = await _fetch_observations(
                 self.providers,
                 primary_metric,
@@ -127,6 +142,7 @@ class SwarmDiagnosticSpecialist:
                 confounder_metrics=metric_confounders_to_fetch(
                     graph, outcome=primary_metric, treatments=treatments, metrics=metrics
                 ),
+                max_treatments=cap,
             )
 
         if self._deps is not None:
@@ -147,7 +163,7 @@ class SwarmDiagnosticSpecialist:
 
         context: dict[str, Any] = {
             # fixture/replay mode: the template causal truth is authoritative
-            "trust_metadata_causal": True,
+            "trust_metadata_causal": bool(causal_truth),
         }
 
         request = DiagnosticRequest(
@@ -292,6 +308,19 @@ def _ranked_treatment_ids(
     return sorted(scored, key=lambda mid: -scored[mid])[:limit]
 
 
+def _prioritized_treatment_ids(ancestor_ids: list[str], movers: list[str], *, cap: int) -> list[str]:
+    """Observed co-movers first (they're the ones most likely to matter), then
+    fill remaining budget with the rest of the causal graph's ancestor set.
+    Treatments are restricted to ancestors -- a metric that moved but isn't
+    upstream of the outcome on the graph can't be estimated against it."""
+    ancestor_set = set(ancestor_ids)
+    ordered = [m for m in movers if m in ancestor_set]
+    for a in ancestor_ids:
+        if a not in ordered:
+            ordered.append(a)
+    return ordered[:cap]
+
+
 def _providers_for_metrics(providers: Any, metric_ids: set[str]) -> list[tuple[Any, list[str]]]:
     """Each metric goes to its owning domain's ``fetch_series`` only."""
     data = getattr(providers, "data", {}) or {}
@@ -327,6 +356,7 @@ async def _fetch_observations(
     extra_history_days: int = _CAUSAL_EXTRA_HISTORY_DAYS,
     extra_metrics: set[str] | list[str] | None = None,
     confounder_metrics: set[str] | list[str] | None = None,
+    max_treatments: int = _MAX_CAUSAL_TREATMENTS,
 ) -> Any:
     """Real per-day observation series for DoWhy (docs/44 ROB-002).
 
@@ -386,7 +416,7 @@ async def _fetch_observations(
             continue
         seen_extra.add(key)
         extras.append(key)
-        if len(extras) >= _MAX_CAUSAL_TREATMENTS:
+        if len(extras) >= max_treatments:
             break
     needed = {outcome_metric, *extras}
     for mid in confounder_metrics or ():
@@ -399,7 +429,7 @@ async def _fetch_observations(
         len(needed),
         extended_start,
         time_range.get("end"),
-        _MAX_CAUSAL_TREATMENTS,
+        max_treatments,
     )
 
     seen: set[int] = set()

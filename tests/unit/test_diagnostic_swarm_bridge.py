@@ -447,3 +447,41 @@ def test_confounders_from_graph_are_common_ancestors_not_yaml_template():
         treatments=["metric.mobile_lcp_seconds"],
     )
     assert "metric.sessions" not in fetched
+
+
+@pytest.mark.asyncio
+async def test_trust_metadata_causal_toggle_in_production_vs_fixture():
+    """trust_metadata_causal must be False in production mode and True only when causal_truth is passed."""
+    from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
+    from seleric_swarm.swarm.mission import SwarmMission
+
+    mission = SwarmMission(
+        mission_id="MS-trust-toggle",
+        query="Why did CAC change?",
+        time_range={"start": "2026-09-01", "end": "2026-09-07"},
+        intents={"diagnostic"},
+    )
+    blackboard = Blackboard("MS-trust-toggle")
+
+    captured_requests = []
+
+    async def fake_diagnose(*args, **kwargs):
+        req = args[-1]
+        captured_requests.append(req)
+        from seleric_swarm.agents.diagnostic.contracts import DiagnosticResult
+        return DiagnosticResult(
+            mission_id=req.mission_id,
+            question=req.question,
+            outcome_metric="metric.cac",
+        )
+
+    spec_prod = SwarmDiagnosticSpecialist()
+    with patch("seleric_swarm.agents.diagnostic.swarm_bridge.DiagnosticAgent.diagnose", new=fake_diagnose):
+        await spec_prod.run(blackboard, mission)
+    assert captured_requests[-1].context.get("trust_metadata_causal") is False
+
+    spec_fixture = SwarmDiagnosticSpecialist(scenario={"causal_truth": {"treatment": "metric.spend", "outcome": "metric.cac"}})
+    with patch("seleric_swarm.agents.diagnostic.swarm_bridge.DiagnosticAgent.diagnose", new=fake_diagnose):
+        await spec_fixture.run(blackboard, mission)
+    assert captured_requests[-1].context.get("trust_metadata_causal") is True
+

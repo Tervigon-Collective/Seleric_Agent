@@ -14,6 +14,7 @@ import pytest
 from seleric_swarm.agents.diagnostic import DiagnosticAgent, DiagnosticDeps
 from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
 from seleric_swarm.agents.diagnostic.registries import (
+    CausalGraph,
     InMemoryAnomalyRepository,
     InMemoryArtifactRepository,
     InMemoryCausalGraphRegistry,
@@ -23,6 +24,27 @@ from seleric_swarm.agents.diagnostic.registries import (
 )
 
 MISSION = "MS-DIAG"
+
+# A synthetic ``causal.business.v1`` graph for the test harness -- deliberately
+# not the real metric-registry-derived graph (that's covered by the live
+# integration test against the real registry). Node labels follow the same
+# convention ``ontology.node_for_metric`` applies in production: a metric with
+# no explicit ``node_by_metric`` override is its own bare (unprefixed) label;
+# ``metric.purchase_cvr`` AND ``metric.cac`` both map onto "purchase" per
+# ``config/diagnostic_ontology.yaml`` (pre-existing, not test-specific), so
+# both outcomes share one ancestor set here.
+_TEST_BUSINESS_GRAPH = CausalGraph(
+    graph_id="causal.business.v1",
+    version="v1",
+    nodes=["purchase", "spend", "ctr", "cpc", "gross_sales", "net_sales", "gross_roas", "checkout_rate"],
+    edges=[
+        ("spend", "purchase"),
+        ("ctr", "purchase"),
+        ("cpc", "purchase"),
+        ("net_sales", "gross_sales"),
+        ("checkout_rate", "gross_roas"),
+    ],
+)
 
 
 def ev(
@@ -87,7 +109,7 @@ def matching_truth(treatment: str, outcome: str, **overrides: Any) -> dict[str, 
     factory does not inject a default pair.
     """
     row: dict[str, Any] = {
-        "graph_id": "causal.funnel_purchase.v1",
+        "graph_id": "causal.business.v1",
         "treatment": treatment,
         "outcome": outcome,
         "common_causes": ["metric.sessions", "campaign", "device"],
@@ -111,7 +133,9 @@ def policies() -> DiagnosticPolicies:
 
 @pytest.fixture
 def graphs() -> InMemoryCausalGraphRegistry:
-    return causal_graphs_from_yaml()
+    registry = causal_graphs_from_yaml()
+    registry.add(_TEST_BUSINESS_GRAPH)
+    return registry
 
 
 @pytest.fixture
