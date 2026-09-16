@@ -381,3 +381,15 @@ async def test_multiple_contributors_ranked_not_forced_to_one(make_agent):
     assert len(r.claims) == 1
     assert r.residual_unexplained is True
     assert r.finding is r.findings[0]
+
+
+async def test_net_sales_has_causal_ancestors_and_candidates():
+    from seleric_swarm.agents.diagnostic.causal_discovery import graph_candidate_metric_ids
+    from seleric_swarm.agents.diagnostic.causal_graph_builder import build_business_graph
+    from seleric_swarm.services.metrics import MetricRegistry
+
+    metrics = MetricRegistry("config/metric_registry.yaml")
+    graph = build_business_graph(metrics)
+    candidates = graph_candidate_metric_ids(graph, "metric.net_sales", metrics)
+    assert len(candidates) > 0
+    assert any("purchase" in c or "gross_sales" in c or "discount" in c for c in candidates)

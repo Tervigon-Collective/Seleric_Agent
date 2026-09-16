@@ -188,6 +188,22 @@ async def identify_candidate_nodes(ctx: DiagnosticContext) -> list[DiagnosticHyp
     no_obs_frame = ctx.request.observations is None
     explicit_alts = {str(a) for a in ctx.request.context.get("alternatives_to_test", []) or []}
 
+    def _build(metric_id: str, direction: str, refs: list[str], *, is_formula: bool) -> DiagnosticHypothesis:
+        if direction in {"up", "down"}:
+            moved = f"moved {direction}"
+        elif is_formula:
+            moved = "is a direct formula component"
+        else:
+            moved = "is an unobserved upstream candidate on the causal graph"
+        return DiagnosticHypothesis(
+            statement=f"{_label(metric_id)} {moved} of {_label(outcome)}.",
+            treatment_metric=metric_id,
+            outcome_metric=outcome,
+            domains=_domains_for(metric_id, ctx),
+            supporting_evidence=refs,
+            synthetic=ctx.synthetic_inputs(),
+        )
+
     out: list[DiagnosticHypothesis] = []
     for metric_id, (rank_score, direction, refs) in ranked:
         is_formula = metric_id in formula_deps
@@ -199,20 +215,17 @@ async def identify_candidate_nodes(ctx: DiagnosticContext) -> list[DiagnosticHyp
                 outcome=outcome,
             )
             continue
-        if direction in {"up", "down"}:
-            moved = f"moved {direction}"
-        elif is_formula:
-            moved = "is a direct formula component"
-        else:
-            moved = "is an unobserved upstream candidate on the causal graph"
-        out.append(
-            DiagnosticHypothesis(
-                statement=f"{_label(metric_id)} {moved} of {_label(outcome)}.",
-                treatment_metric=metric_id,
-                outcome_metric=outcome,
-                domains=_domains_for(metric_id, ctx),
-                supporting_evidence=refs,
-                synthetic=ctx.synthetic_inputs(),
-            )
-        )
+        out.append(_build(metric_id, direction, refs, is_formula=is_formula))
+
+    if not out and ranked:
+        # Every graph ancestor got filtered for lacking observed movement --
+        # that heuristic exists to deprioritize noise when there's at least
+        # one real signal, not to make a structurally-connected outcome (one
+        # with real ancestors on the causal graph) report zero candidates.
+        # Fall back to the graph's own ranking so DoWhy still gets a shot at
+        # metadata-only evidence instead of an empty, silently-dropped result.
+        _log.debug("diagnostic.discovery.fallback_to_unfiltered_candidates", outcome=outcome)
+        for metric_id, (_rank_score, direction, refs) in ranked:
+            out.append(_build(metric_id, direction, refs, is_formula=metric_id in formula_deps))
+
     return out

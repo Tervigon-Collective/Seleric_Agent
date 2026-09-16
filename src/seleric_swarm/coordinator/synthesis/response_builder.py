@@ -221,6 +221,10 @@ def build_claim_aware_response(
             lines.append(f"  CHALLENGED: {retained[0]['statement']}")
             if verdict == "REVISE":
                 lines.append("  This conclusion needs revision and is not validated.")
+        if len(retained) > 1:
+            lines.append("Contributing causal drivers (drill-down):")
+            for h in retained[1:]:
+                lines.append(f"  - {h.get('statement')}")
         lines.append("")
 
     comparisons = comparisons_for_answer(blackboard)
@@ -245,16 +249,21 @@ def build_claim_aware_response(
             tag = f" [{','.join(f'{k}={v}' for k, v in dims.items())}]" if dims else ""
             _dev = a.get("deviation_pct")
             pct = f"{float(_dev):+.1f}%" if isinstance(_dev, (int, float)) else str(_dev)
-            lines.append(f"  {a.get('metric_id')}{tag}: {pct} ({a.get('direction')})")
+            mid_name = str(a.get('metric_id') or '').removeprefix("metric.").replace("_", " ").title()
+            lines.append(f"  {mid_name}{tag}: {pct} ({a.get('direction')})")
         lines.append("")
 
     predictions = blackboard.by_type("prediction")
     if predictions:
         p = predictions[0]
+        model_info = p.get("model")
+        model_name = model_info.get("id") if isinstance(model_info, dict) else str(model_info or "")
+        target_name = str(p.get("target") or "").removeprefix("metric.").replace("_", " ").title()
+        _pred_val = p.get("prediction")
+        pred_val = f"{float(_pred_val):,.2f}" if isinstance(_pred_val, (int, float)) else str(_pred_val)
         lines.append("Projection if unchanged:")
         lines.append(
-            f"  {p.get('target')} ~ {p.get('prediction')} over {p.get('horizon')} "
-            f"(interval {p.get('interval')}; model {p.get('model')})"
+            f"  {target_name}: projected {pred_val} over {p.get('horizon')} (model: {model_name})"
         )
         lines.append("")
 

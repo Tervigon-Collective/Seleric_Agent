@@ -333,3 +333,27 @@ def test_business_state_data_origin_validates_in_anomaly_artifact():
     )
     assert anomaly.data_origin == "BUSINESS_STATE"
 
+
+@pytest.mark.asyncio
+async def test_synthesize_swarm_response_unaudited_numbers_signature(runtime):
+    from seleric_swarm.coordinator.synthesis.llm_response import synthesize_swarm_response
+    from seleric_swarm.swarm.blackboard import Blackboard
+    from seleric_swarm.swarm.mission import SwarmMission
+
+    bb = Blackboard(mission_id="MS-test-synthesis")
+    mission = SwarmMission(
+        mission_id="MS-test-synthesis",
+        query="Why has sales decreased over the last 3 days?",
+        initial_lead="commerce_agent",
+        time_range={"start": "2026-09-01", "end": "2026-09-03"},
+    )
+    # Mock LLM response to complete without error or AttributeError
+    res = await synthesize_swarm_response(
+        runtime=runtime,
+        blackboard=bb,
+        mission=mission,
+        completion_status="completed",
+    )
+    assert isinstance(res, str)
+    assert len(res) > 0
+

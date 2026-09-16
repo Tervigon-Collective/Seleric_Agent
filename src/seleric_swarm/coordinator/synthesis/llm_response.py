@@ -43,22 +43,39 @@ def _numeric_pool(*payloads: Any) -> list[Any]:
 
 def _is_rounding_of_allowed(token: str, allowed: list[Any]) -> bool:
     """A business-readable answer legitimately rounds a raw figure (deviation_pct
-    etc. carry full float precision, e.g. 85.294117647 -> "85.3%"). The audit
-    must not treat that as fabrication — only a number with no real basis at
-    any rounding precision counts as a leak.
+    etc. carry full float precision, e.g. -94.285714 -> "94.3%"). The audit
+    must not treat that as fabrication — comparing absolute values accounts for
+    prose describing negative movements as positive drop magnitudes.
     """
     try:
         t = float(token)
     except ValueError:
         return False
+    abs_t = abs(t)
     for item in allowed:
         try:
             a = float(item)
         except (TypeError, ValueError):
             continue
-        if any(round(a, d) == t for d in (0, 1, 2)):
+        abs_a = abs(a)
+        if any(round(a, d) == t or round(abs_a, d) == abs_t for d in (0, 1, 2)):
             return True
     return False
+
+
+def _clean_anomaly_for_prompt(a: dict[str, Any]) -> dict[str, Any]:
+    out = dict(a)
+    mid = str(a.get("metric_id") or "")
+    if mid:
+        out["metric_name"] = mid.removeprefix("metric.").replace("_", " ").title()
+    if isinstance(a.get("deviation_pct"), (int, float)):
+        out["deviation_pct"] = round(float(a["deviation_pct"]), 2)
+    if isinstance(a.get("observed"), (int, float)):
+        out["observed"] = round(float(a["observed"]), 2)
+    exp = a.get("expected_range")
+    if isinstance(exp, (list, tuple)):
+        out["expected_range"] = [round(float(x), 2) if isinstance(x, (int, float)) else x for x in exp]
+    return out
 
 
 async def synthesize_swarm_response(
@@ -93,10 +110,12 @@ async def synthesize_swarm_response(
         return fallback()
 
     claims = select_allowed_claims(list(managed_claims or []))
+    retained_hypotheses = [h for h in blackboard.by_type("hypothesis") if h.get("status") == "retained"]
     anomalies = _anomalies_for_answer(
         blackboard, mission, metrics=runtime.metrics, limitations=extra_limitations
     )
     comparisons = comparisons_for_answer(blackboard)
+    anomalies_prompt = [_clean_anomaly_for_prompt(a) for a in anomalies]
     predictions = blackboard.by_type("prediction")
     prediction = predictions[0] if predictions else None
     strategies = blackboard.by_type("strategy")
@@ -110,7 +129,8 @@ async def synthesize_swarm_response(
             "query": mission.query,
             "completion_status": completion_status or "unknown",
             "claims_json": json.dumps(claims, default=str),
-            "anomalies_json": json.dumps(anomalies, default=str),
+            "hypotheses_json": json.dumps(retained_hypotheses, default=str),
+            "anomalies_json": json.dumps(anomalies_prompt, default=str),
             "comparison_json": json.dumps(comparisons, default=str) if comparisons else "none",
             "prediction_json": json.dumps(prediction, default=str) if prediction else "none",
             "recommendation_json": json.dumps(recommendation, default=str) if recommendation else "none",
@@ -151,8 +171,22 @@ async def synthesize_swarm_response(
     if not prose:
         return fallback()
 
-    extra_allowed = _numeric_pool(claims, anomalies, comparisons, prediction, recommendation, surfaced_conflicts)
-    leaked = unaudited_numbers(prose, [], extra_allowed)
+    extra_allowed = _numeric_pool(
+        mission.query,
+        mission.time_range,
+        claims,
+        retained_hypotheses,
+        blackboard.by_type("hypothesis"),
+        blackboard.by_type("causal"),
+        blackboard.by_type("evidence"),
+        anomalies,
+        anomalies_prompt,
+        comparisons,
+        prediction,
+        recommendation,
+        surfaced_conflicts,
+    )
+    leaked = unaudited_numbers(prose, [], extra_allowed, query_text=mission.query)
     if any(not _is_rounding_of_allowed(token, extra_allowed) for token in leaked):
         return fallback()
     return prose

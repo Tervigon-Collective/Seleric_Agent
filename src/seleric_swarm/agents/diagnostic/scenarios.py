@@ -25,22 +25,20 @@ CandidateResult = tuple[DiagnosticHypothesis, str, CausalAnalysisArtifact | None
 SCENARIO_SYSTEM_PROMPT = """\
 You are the Diagnostic Agent of the Seleric Intelligence Swarm.
 
-A causal engine (DoWhy) has already tested a fixed set of candidate drivers
-against the outcome metric and produced, for each, an estimated effect and a
-confidence tier. Your ONLY job is to explain, in plain language, what likely
-happened for the user's specific question -- grounded strictly in the results
-given to you.
+A causal engine (DoWhy) has tested candidate drivers against the outcome metric and produced estimated effects and confidence tiers. Your job is to explain, in plain, natural business language, what likely happened for the user's specific question.
 
-Rules:
-- Reference ONLY the node ids given to you. Never name a metric not listed.
-- Never invent or change a confidence tier -- echo the one given.
-- Never claim a node not listed is responsible for the outcome.
-- State whether a metric went up or down ONLY from its "observed movement"
-  value given to you.
-- If no observed movement is given for a node, state that data for that metric
-  was unrecorded/missing this period. NEVER output vague tautologies like
-  "X is associated with Y, but we don't know if X changed".
-- Keep each narrative to 1-3 sentences, concrete and evidence-grounded.
+Writing & Style Rules:
+- Write continuous, fluent executive business prose or clean unnumbered bullet points. NEVER output numbered section titles like "1. Primary Outcome:" or "2. Full-Funnel Causal Drill-Down:".
+- NEVER cite internal schema names, JSON payload keys, or prompt variables (do NOT write "ANOMALIES_JSON", "CLAIMS_JSON", "HYPOTHESES_JSON", "SKEPTIC_VERDICT", or "STRONGLY_SUPPORTED").
+- Format metric names for human readers: remove "metric." prefixes and convert snake_case to Title Case (e.g. "Net Sales" instead of "metric.net_sales", "Gross Sales" instead of "gross_sales", "Session Conversion Rate" instead of "purchase_cvr", "Web Sessions" instead of "sessions" or "web_sessions").
+- Format numeric figures cleanly: round percentages to 1 or 2 decimal places (e.g. "-98.3%"), format numbers with commas or currency ($1,355), and NEVER print raw 15-digit float strings.
+- Reference ONLY the nodes given to you. Never invent metrics or change confidence tiers.
+- Explain the multi-level causal chain step-by-step:
+  - Top-Level Outcome: What metric moved and by how much.
+  - Intermediate Driver: How intermediate funnel metrics (like Gross Sales) were impacted.
+  - Upstream Root Cause: How root drivers (like conversion rate or web sessions) initiated the drop.
+- Explain clearly to the user how each component in the chain is responsible for the overall outcome.
+- If no observed movement is given for a node, state clearly that data for that metric was unrecorded or missing this period.
 """
 
 
@@ -54,13 +52,20 @@ class _ScenarioList(BaseModel):
     scenarios: list[_Scenario] = []
 
 
+def _humanize_metric(mid: str) -> str:
+    return mid.removeprefix("metric.").replace("_", " ").title()
+
+
 def _fallback_narrative(h: DiagnosticHypothesis, artifact: CausalAnalysisArtifact | None, confidence: str) -> str:
+    treatment_label = _humanize_metric(h.treatment_metric)
+    outcome_label = _humanize_metric(h.outcome_metric)
+    conf_label = confidence.lower().replace("_", " ")
     if artifact is not None and artifact.estimated_effect is not None:
         return (
-            f"{h.treatment_metric} was tested as a driver of {h.outcome_metric}; DoWhy estimated an "
-            f"effect of {artifact.estimated_effect:+.4g} ({confidence})."
+            f"{treatment_label} was identified as a key driver of {outcome_label}, with a modeled "
+            f"causal effect of {artifact.estimated_effect:+.4g} ({conf_label})."
         )
-    return f"{h.treatment_metric} is a causally {confidence.lower()} candidate driver of {h.outcome_metric}."
+    return f"{treatment_label} is a causally {conf_label} candidate driver of {outcome_label}."
 
 
 def _observed_movement(ctx: DiagnosticContext, metric_id: str) -> str | None:
@@ -86,7 +91,8 @@ def _observed_movement(ctx: DiagnosticContext, metric_id: str) -> str | None:
 
 
 def _candidate_line(ctx: DiagnosticContext, h: DiagnosticHypothesis, artifact: CausalAnalysisArtifact | None, confidence: str) -> str:
-    parts = [f"node={h.treatment_metric}", f"confidence={confidence}"]
+    treatment_label = _humanize_metric(h.treatment_metric)
+    parts = [f"node={h.treatment_metric} ({treatment_label})", f"confidence={confidence}"]
     movement = _observed_movement(ctx, h.treatment_metric)
     parts.append(f"observed_movement={movement}" if movement else "observed_movement=not recorded this period")
     if artifact is not None:
