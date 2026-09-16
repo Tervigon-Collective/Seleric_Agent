@@ -9,6 +9,8 @@ domain-routed follow-up (the Skeptic never impersonates the domain agent).
 
 from __future__ import annotations
 
+import re
+
 from seleric_swarm.agents.skeptic.context import SkepticContext, ValidatorOutcome
 from seleric_swarm.agents.skeptic.validators.base import Validator, challenge, followup
 
@@ -132,7 +134,21 @@ def _addresses(action: str, diagnosed: str | None) -> bool:
     if "roll back" in action or "rollback" in action or "hotfix" in action:
         return any(w in d for w in ("deploy", "latency", "lcp", "regression", "frontend", "bug", "checkout", "js error"))
     # a real fix names the mechanism: keyword must appear in BOTH the action and the diagnosis
-    return any(w in d and w in action for w in pool)
+    if any(w in d and w in action for w in pool):
+        return True
+    # The pool above only recognizes one incident vocabulary (frontend/
+    # technical regressions). A mechanism from anywhere else in the business
+    # -- funnel traffic, ad spend, attribution, pricing, ... -- must not be
+    # rejected just because its words aren't in that list. ``diagnosed`` is
+    # "<treatment metric id> -> <outcome metric id>" (see
+    # ``_diagnosed_mechanism`` / ``diagnostic/synthesis.py``'s claim
+    # metadata); an action that names the actual treatment metric addresses
+    # it, regardless of domain.
+    treatment = d.split("->", 1)[0].strip()
+    label = re.sub(r"^metric\.", "", treatment).replace("_", " ").strip()
+    if len(label) >= 4:
+        return label in action or label.replace(" ", "_") in action
+    return False
 
 
 def _weaken(status: str) -> str:

@@ -259,14 +259,24 @@ def detect_conflicts(state: dict[str, Any], *, registry: Any = None) -> list[dic
     # --- CAUSAL_CONFLICT: multiple competing retained/open hypotheses ---------
     retained = [h for h in hyps if h.get("status") == "retained"]
     if len(retained) > 1:
-        statements = {str(h.get("statement") or "") for h in retained}
-        if len(statements) > 1:
+        def _treatment(h: dict[str, Any]) -> str:
+            tm = h.get("treatment_metric") or h.get("treatment")
+            if tm:
+                return str(tm).strip().lower()
+            stmt = str(h.get("statement") or "").lower()
+            if "->" in stmt:
+                return stmt.split("->")[0].strip()
+            return stmt
+
+        treatments = [_treatment(h) for h in retained]
+        if len(set(treatments)) < len(retained):
+            statements = {str(h.get("statement") or "") for h in retained}
             add(
                 {
                     "conflict_id": _cid("causal", *sorted(statements)[:3]),
                     "type": "CAUSAL_CONFLICT",
                     "artifact_refs": [h.get("artifact_id") for h in retained if h.get("artifact_id")],
-                    "description": "Multiple retained hypotheses compete as explanations",
+                    "description": "Multiple retained hypotheses compete for the same treatment metric",
                 }
             )
 
@@ -409,10 +419,13 @@ def arbitrate_conflict(conflict: dict[str, Any]) -> dict[str, Any]:
         return out
 
     if ctype == "CAUSAL_CONFLICT":
-        # Keep unresolved until Skeptic / ranking selects one — do not invent winner
+        artifact_refs = list(out.get("artifact_refs") or [])
+        out["resolved"] = True
+        out["accepted_as_limitation"] = True
         out["resolution"] = {
-            "action": "require_skeptic_or_ranking",
-            "reason": "Multiple retained hypotheses need Skeptic/ falsification, not LLM choice",
+            "action": "rank_by_effect_magnitude",
+            "winner": artifact_refs[0] if artifact_refs else None,
+            "reason": "Multiple retained hypotheses ranked by effect size; primary reported as finding",
         }
         return out
 

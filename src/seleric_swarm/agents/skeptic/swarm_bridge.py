@@ -49,13 +49,28 @@ class SwarmSkepticSpecialist:
         self.providers = providers
         # Wire the registries the causal / metric validators need. Without the
         # causal-graph registry every causal claim REVISEs on
-        # "graph '<id>' is not registered".
-        self._deps = deps or SkepticDeps(
-            metric_registry=metric_registry_from_yaml(),
-            causal_graphs=causal_graphs_from_yaml(),
-            ontology=ontology,
-            catalogue=runtime.metrics if runtime is not None else None,
-        )
+        # "graph '<id>' is not registered". The Diagnostic Agent's causal
+        # artifacts reference "causal.business.v1" (the metric-registry-
+        # derived graph, built fresh per mission from the live catalogue) --
+        # the bare YAML-only registry never has that id, so build the same
+        # graph the Diagnostic Agent used instead of just the hand-authored
+        # dimension-level one.
+        if deps is not None:
+            self._deps = deps
+        else:
+            causal_graphs = causal_graphs_from_yaml()
+            if runtime is not None and runtime.metrics is not None:
+                from seleric_swarm.agents.diagnostic.causal_graph_builder import (
+                    build_diagnostic_causal_graphs,
+                )
+
+                causal_graphs = build_diagnostic_causal_graphs(runtime.metrics)
+            self._deps = SkepticDeps(
+                metric_registry=metric_registry_from_yaml(),
+                causal_graphs=causal_graphs,
+                ontology=ontology,
+                catalogue=runtime.metrics if runtime is not None else None,
+            )
         self._policies = policies or SkepticPolicies.load()
 
     # -- same policy gate as the lightweight specialist --------------------

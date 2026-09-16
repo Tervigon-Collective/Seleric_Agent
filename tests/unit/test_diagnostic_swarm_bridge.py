@@ -656,3 +656,4 @@ async def test_fixture_causal_truth_run_trusts_metadata_causal():
         await specialist.run(blackboard, mission)
 
     assert captured["context"]["trust_metadata_causal"] is True
+

@@ -3,36 +3,13 @@
 
 diagnostic:
   budgets:
-    max_hypotheses: 6
-    max_primary_candidates: 2      # how many top hypotheses get a causal estimate
-    max_tests_per_hypothesis: 6
+    # how many causal-graph ancestor nodes get a DoWhy run per diagnosis.
+    # Raised from the old max_primary_candidates(=2) since the goal is finding
+    # every responsible node, not validating a single LLM guess -- still
+    # bounded for DoWhy runtime/cost.
+    max_causal_candidates: 6
     max_llm_calls: 3
     max_runtime_seconds: 90
-
-  hypotheses:
-    # a hypothesis needs at least this much direct evidence overlap to be testable
-    min_supporting_evidence: 1
-    # hypotheses are seeded from observed evidence; LLM only enriches (live
-    # missions wire the real model; if it is down, co-movers still seed)
-    llm_enrichment: true
-    prior_weights:
-      evidence_overlap: 0.4
-      incident_match: 0.3
-      temporal_alignment: 0.2
-      mechanism_specificity: 0.1
-    # per-hypothesis mechanism_specificity sub-score inputs (see prior_weights above)
-    mechanism_specificity_scores:
-      base: 0.2
-      detailed_mechanism: 0.7
-      has_treatment_metric_bonus: 0.3
-
-  testing:
-    # hard gates: a failed hard-gate test rejects the hypothesis regardless of score
-    hard_gates:
-      - temporal_precedence
-    temporal_tolerance_minutes: 90      # treatment may lag the event by up to this
-    min_segment_divergence_pct: 10      # affected vs control segment gap for "specific"
-    dose_response_min_pairs: 2
 
   causal:
     require_graph: true
@@ -48,7 +25,13 @@ diagnostic:
     # a passing metadata-only causal check (no observations) caps confidence here
     metadata_only_ceiling: PLAUSIBLE_CAUSAL
 
+  scenarios:
+    # LLM narrates DoWhy-confirmed candidates only; never proposes a mechanism
+    # or a confidence tier. Deterministic fallback sentence used if false.
+    llm_enrichment: true
+    max_scenarios: 6
+
   synthesis:
-    # if no hypothesis reaches retain, emit the best as "inconclusive" not "retained"
+    # if no candidate reaches retain, emit the best as "inconclusive" not "retained"
     emit_inconclusive_finding: true
     always_note_confounding: true

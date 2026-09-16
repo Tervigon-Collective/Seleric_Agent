@@ -299,9 +299,9 @@ async def test_skeptic_flags_paidmedia_metric_used_as_roas_claim():
 
 @pytest.mark.asyncio
 async def test_diagnostic_records_cluster_neighbors_without_replacing_causal_templates():
+    from seleric_swarm.agents.diagnostic.causal_discovery import identify_candidate_nodes
     from seleric_swarm.agents.diagnostic.context import DiagnosticContext, DiagnosticDeps
     from seleric_swarm.agents.diagnostic.contracts import DiagnosticRequest
-    from seleric_swarm.agents.diagnostic.hypotheses.generator import generate_hypotheses
     from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
 
     ontology = _FakeOntology(
@@ -317,7 +317,7 @@ async def test_diagnostic_records_cluster_neighbors_without_replacing_causal_tem
         deps=DiagnosticDeps(ontology=ontology),
         outcome_metric="metric.cac",
     )
-    hyps = await generate_hypotheses(ctx)
+    hyps = await identify_candidate_nodes(ctx)
     assert ctx.scratch["semantic_neighbors"] == ["meta_spend", "google_spend"]
     assert ctx.scratch["entity_cluster"] == "paid_delivery"
     assert not any(h.treatment_metric == "metric.purchase_cvr" for h in hyps)

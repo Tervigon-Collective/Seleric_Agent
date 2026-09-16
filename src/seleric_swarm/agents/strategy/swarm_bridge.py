@@ -101,14 +101,24 @@ class SwarmStrategySpecialist:
 def _resolve_mechanism(
     retained: list[dict[str, Any]], causal: list[dict[str, Any]]
 ) -> tuple[str, str | None, str | None, str | None]:
+    """Prefer the retained hypothesis's narrated statement -- with the causal
+    graph now finding candidates automatically, a causal artifact is nearly
+    always present, so unconditionally using the bare "treatment -> outcome"
+    id pairing here always discarded the actual narrative (e.g. "rising ad
+    spend without a matching lift in new customers"), leaving the Strategy
+    Agent's LLM to guess an intervention from two metric ids alone. Only fall
+    back to the bare pairing when no narrated statement is available."""
+    statement = str(retained[0].get("statement") or "").strip() if retained else ""
     if causal:
         c = causal[0]
         treatment, outcome = c.get("treatment") or "", c.get("outcome") or ""
         if treatment and outcome:
-            return f"{treatment} -> {outcome}", c.get("artifact_id"), treatment, outcome
+            mechanism = statement or f"{treatment} -> {outcome}"
+            mechanism_ref = (retained[0].get("artifact_id") if retained else None) or c.get("artifact_id")
+            return mechanism, mechanism_ref, treatment, outcome
     if retained:
         h = retained[0]
-        return str(h.get("statement") or ""), h.get("artifact_id"), None, None
+        return statement, h.get("artifact_id"), None, None
     return "", None, None, None
 
 

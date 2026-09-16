@@ -152,19 +152,33 @@ def test_model_conflict_rejects_invalid_forecast():
     assert resolved["accepted_as_limitation"] is True
 
 
-def test_causal_conflict_stays_unresolved_for_skeptic():
+def test_causal_conflict_arbitrates_to_limitation():
     conflicts = detect_conflicts(
         {
             "hypotheses": [
-                {"artifact_id": "H1", "status": "retained", "statement": "Cause A"},
-                {"artifact_id": "H2", "status": "retained", "statement": "Cause B"},
+                {"artifact_id": "H1", "status": "retained", "treatment_metric": "conversion_rate", "statement": "Cause A"},
+                {"artifact_id": "H2", "status": "retained", "treatment_metric": "conversion_rate", "statement": "Cause B"},
             ]
         }
     )
     causal = next(c for c in conflicts if c["type"] == "CAUSAL_CONFLICT")
     resolved = arbitrate_conflict(causal)
-    assert resolved["resolved"] is False
-    assert unresolved_blocking([resolved])
+    assert resolved["resolved"] is True
+    assert resolved["accepted_as_limitation"] is True
+    assert not unresolved_blocking([resolved])
+
+
+def test_distinct_treatment_hypotheses_do_not_cause_conflict():
+    conflicts = detect_conflicts(
+        {
+            "hypotheses": [
+                {"artifact_id": "H1", "status": "retained", "treatment_metric": "conversion_rate", "statement": "Cause A"},
+                {"artifact_id": "H2", "status": "retained", "treatment_metric": "web_sessions", "statement": "Cause B"},
+            ]
+        }
+    )
+    causal = [c for c in conflicts if c["type"] == "CAUSAL_CONFLICT"]
+    assert len(causal) == 0
 
 
 def test_completion_blocks_on_unresolved_causal_only():

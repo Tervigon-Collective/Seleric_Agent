@@ -310,3 +310,26 @@ def test_failed_cancel_clears_process_flag(runtime):
         cancel_running_mission(runtime, mission_id=mid)
     assert is_cancel_requested(mid) is False
     clear_cancel(mid)
+
+
+def test_business_state_data_origin_validates_in_anomaly_artifact():
+    from seleric_swarm.swarm.artifacts import Anomaly
+    anomaly = Anomaly(
+        artifact_id="AN-test-123",
+        artifact_type="anomaly",
+        mission_id="MS-test",
+        created_by="anomaly_agent",
+        metric_id="commerce_net_revenue_daily",
+        observed=32121.87,
+        expected_range=[100000.0, 150000.0],
+        deviation_pct=-89.25,
+        score=0.89,
+        direction="down",
+        direction_bad="down",
+        adverse=True,
+        magnitude_score=0.89,
+        adversity_score=0.89,
+        data_origin="BUSINESS_STATE",
+    )
+    assert anomaly.data_origin == "BUSINESS_STATE"
+

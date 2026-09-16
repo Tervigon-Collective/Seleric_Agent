@@ -16,9 +16,20 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 DataOrigin = Literal["FIXTURE", "MCP", "MODEL", "STATS", "DERIVED", "TEMPLATE", "BUSINESS_STATE"]
+_ALLOWED_DATA_ORIGINS: set[str] = {
+    "FIXTURE", "MCP", "MODEL", "STATS", "DERIVED", "TEMPLATE", "BUSINESS_STATE"
+}
+
+
+def coerce_data_origin(origin: Any) -> DataOrigin:
+    if isinstance(origin, str) and origin.upper() in _ALLOWED_DATA_ORIGINS:
+        return origin.upper()  # type: ignore[return-value]
+    return "DERIVED"
+
+
 ArtifactType = Literal[
     "evidence",
     "anomaly",
@@ -50,6 +61,11 @@ class SwarmArtifact(BaseModel):
     data_origin: DataOrigin = "DERIVED"
     synthetic: bool = False
     quality_flags: list[str] = Field(default_factory=list)
+
+    @field_validator("data_origin", mode="before")
+    @classmethod
+    def _validate_data_origin(cls, v: Any) -> str:
+        return coerce_data_origin(v)
 
     def mark_synthetic(self) -> None:
         self.synthetic = True
