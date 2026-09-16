@@ -40,6 +40,7 @@ Rules:
 - If no observed movement is given for a node, state that data for that metric
   was unrecorded/missing this period. NEVER output vague tautologies like
   "X is associated with Y, but we don't know if X changed".
+- Connect full-funnel relationships explicitly when present (e.g., explain how upstream drivers like session conversion rate or traffic drive downstream sales/revenue metrics).
 - Keep each narrative to 1-3 sentences, concrete and evidence-grounded.
 """
 
