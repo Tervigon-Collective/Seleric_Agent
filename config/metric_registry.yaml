@@ -6,6 +6,7 @@ metrics:
     aliases: [sales, revenue, net sale, net sales]
     description: Shopify Net Sales (ex-GST), dashboard-parity daily rollup.
     formula: commerce_net_revenue_daily
+    depends_on: [gross_sales, discounts, returns, purchase]
     direction_bad: down
     unit: INR
     grain: day
@@ -21,6 +22,7 @@ metrics:
     aliases: [gs, gross sale, gross sales]
     description: Gross Sales (Shopify-only, ex-GST) before discounts.
     formula: sum(gross_sales)
+    depends_on: [purchase, avg_price]
     direction_bad: down
     unit: INR
     grain: day

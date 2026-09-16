@@ -51,13 +51,40 @@ async def estimate_for_hypothesis(
     artifact = await ctx.deps.causal_service.estimate(query, observations=ctx.request.observations)
 
     confidence = _confidence(ctx, artifact, graph, treatment_at, outcome_at)
-    # Metadata-only estimates are capped unless the caller explicitly trusts the
-    # declared causal truth (fixture / replay mode). A real Coordinator call with
-    # no observation frame stays capped -> the finding is 'inconclusive', which is
-    # the honest outcome.
-    if ctx.request.observations is None and not ctx.request.context.get("trust_metadata_causal"):
+    # Metadata-only estimates, or estimates for treatment metrics with no observed
+    # movement in this period, are capped unless the caller explicitly trusts the
+    # declared causal truth (fixture / replay mode). A real call stays capped ->
+    # finding is 'inconclusive', which is the honest outcome.
+    unobserved = not _has_observed_movement(ctx, h.treatment_metric)
+    if (ctx.request.observations is None or unobserved) and not ctx.request.context.get("trust_metadata_causal"):
         confidence = ctx.policies.cap_metadata_confidence(confidence)  # type: ignore[assignment]
     return artifact, confidence  # type: ignore[return-value]
+
+
+def _has_observed_movement(ctx: DiagnosticContext, metric_id: str) -> bool:
+    for a in ctx.anomalies:
+        if a.metric_id == metric_id and a.direction in {"up", "down"}:
+            return True
+    for e in ctx.evidence_for_metric(metric_id):
+        if e.get("direction") in {"up", "down"} or e.get("change_pct") is not None:
+            return True
+    obs = ctx.request.observations
+    if obs is not None and hasattr(obs, "columns") and metric_id in obs.columns:
+        try:
+            col = obs[metric_id].dropna()
+            if len(col) >= 4:
+                n_mission = min(3, len(col) // 2)
+                baseline = col.iloc[:-n_mission]
+                mission = col.iloc[-n_mission:]
+                b_mean = float(baseline.mean())
+                m_mean = float(mission.mean())
+                if abs(b_mean) > 1e-9:
+                    change_pct = (m_mean - b_mean) / abs(b_mean) * 100.0
+                    if abs(change_pct) >= 1.0:
+                        return True
+        except Exception:
+            pass
+    return False
 
 
 def _confidence(

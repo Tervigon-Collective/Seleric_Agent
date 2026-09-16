@@ -74,29 +74,34 @@ class AnomalyAgent(SpecialistAgent):
             key = (f.metric_id, tuple(sorted((f.dimensions or {}).items())))
             if key in already:
                 continue
-            art = Anomaly.new(
-                mission_id=blackboard.mission_id,
-                created_by=self.agent_id,
-                metric_id=f.metric_id,
-                observed=f.observed,
-                expected_range=f.expected_range,
-                deviation_pct=f.deviation_pct,
-                score=f.score,
-                magnitude_score=f.magnitude_score,
-                adversity_score=f.adversity_score,
-                direction_bad=f.direction_bad,  # type: ignore[arg-type]
-                adverse=f.adverse,
-                detector=f.detector,
-                dimensions=f.dimensions,
-                start_time=f.start_time,
-                direction=f.direction,  # type: ignore[arg-type]
-                data_origin=f.data_origin,  # type: ignore[arg-type]
-                evidence_refs=[
-                    e["artifact_id"]
-                    for e in evidence
-                    if e.get("metric_or_fact") == f.metric_id
-                ],
-            )
+            try:
+                art = Anomaly.new(
+                    mission_id=blackboard.mission_id,
+                    created_by=self.agent_id,
+                    metric_id=f.metric_id,
+                    observed=f.observed,
+                    expected_range=f.expected_range,
+                    deviation_pct=f.deviation_pct,
+                    score=f.score,
+                    magnitude_score=f.magnitude_score,
+                    adversity_score=f.adversity_score,
+                    direction_bad=f.direction_bad,  # type: ignore[arg-type]
+                    adverse=f.adverse,
+                    detector=f.detector,
+                    dimensions=f.dimensions,
+                    start_time=f.start_time,
+                    direction=f.direction,  # type: ignore[arg-type]
+                    data_origin=f.data_origin,  # type: ignore[arg-type]
+                    evidence_refs=[
+                        e["artifact_id"]
+                        for e in evidence
+                        if e.get("metric_or_fact") == f.metric_id
+                    ],
+                )
+            except Exception as exc:
+                blackboard.record_event("anomaly_creation_failed", metric_id=f.metric_id, error=str(exc))
+                continue
+
             if f.synthetic:
                 art.mark_synthetic()
             ok, problems = self.validate(art.model_dump())

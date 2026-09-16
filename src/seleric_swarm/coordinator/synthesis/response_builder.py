@@ -134,6 +134,25 @@ def build_claim_aware_response(
 
     lines += [f"Question: {mission.query}", ""]
 
+    # Directional premise verification (e.g. asking why CAC increased when data shows CAC dropped)
+    q_lower = mission.query.lower()
+    up = any(w in q_lower for w in ("increase", "increas", "rise", "risen", "rising", "grew", "growing", "growth", "higher", "up", "spike", "surge"))
+    down = any(w in q_lower for w in ("decrease", "decreas", "drop", "dropped", "fell", "fallen", "falling", "declin", "lower", "down", "dip", "plunge"))
+    implied_dir = "up" if (up and not down) else ("down" if (down and not up) else None)
+    if implied_dir:
+        for a in blackboard.by_type("anomaly"):
+            actual_dir = a.get("direction")
+            mid = a.get("metric_id") or ""
+            if actual_dir in {"up", "down"} and actual_dir != implied_dir:
+                dev = a.get("deviation_pct")
+                pct_str = f" ({float(dev):+.1f}%)" if isinstance(dev, (int, float)) else ""
+                lines += [
+                    f"[Premise Notice]: The question asks why {mid or 'the metric'} went {implied_dir}, but observed "
+                    f"data for this period shows it actually went {actual_dir}{pct_str}.",
+                    "",
+                ]
+                break
+
     lines.append("Leadership path:")
     path = [mission.initial_lead] + [h.get("to_agent") for h in blackboard.handoff_history]
     lines.append("  " + " -> ".join(str(p) for p in path))
