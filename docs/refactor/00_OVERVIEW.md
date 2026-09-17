@@ -53,7 +53,46 @@ scratch. Confirm this by direct inspection of the `seleric-mcp` server repo
 before Sprint 1; if any of those tools turn out to be stubs, that's a
 Sprint-1-blocking finding, not a Sprint-3 surprise.
 
-## 4. Relationship to existing docs — what this supersedes
+## 4. Existing conversation/memory/artifact platform — reuse, don't rebuild
+
+Confirmed by direct read 2026-09-17: `src/seleric_swarm/conversations/`
+(~5,000 lines: `contracts.py`, `memory.py`, `repositories.py`, `postgres.py`,
+`phase7.py`, `events.py`, `privacy.py`, `blobs.py`) plus `api/conversations.py`
+is a mature, already-live platform that implements several things the spec
+(§24–26, non-negotiable rules 6/13) asks the runtime to have. This is not
+Profile A greenfield work — it's existing infrastructure Profile A wires the
+new agent into.
+
+| Spec ask | Already implemented as |
+|---|---|
+| Evidence-backed artifacts (rule 6) | `Artifact.require_provenance()` — factual/derived artifacts already require `evidence_ids` + a calculation/query/prompt/tool/model version, enforced at write time. |
+| Propose → validate → preview → confirm → commit → audit (rule 13) | `ApprovalRequest` (`dry_run`, `action_preview`, `idempotency_key`) + `ApprovalDecisionEvent` + `RollbackRecord`, in `conversations/phase7.py`. |
+| Memory with consent (spec §26, `docs/47_CONVERSATION_DATA_POLICY.md`) | `MemoryItem` full lifecycle: `PENDING_CONSENT → ACTIVE`, supersession (`memories_contradict`), expiry, opt-out preference — `conversations/memory.py`. |
+| Mission/runtime context assembly (`SelericDeps`) | `ContextBuilder.build()` — token-budgeted assembly of recent messages + latest summary + scored memories + artifacts into one `ContextBundle`. |
+| Durable execution / worker recovery | `Run`/`RunAttempt` already has lease/heartbeat/claim/CAS semantics (`conversations/memory.py::InMemoryRunRepository`) — a working alternative to Temporal, not a blank slate. |
+| Mission Store | `persistence/memory.py::InMemoryMissionStore` already exists, including cancellation-race protection (won't let a late background write clobber a client-cancelled mission). |
+
+**Correction to the mental model in `new.mmd`/spec §30-31:** `Run.mission_id`
+already links a `Run` (inside a `Thread`) to a `Mission` — missions already
+execute *inside* this conversation platform's Run/Thread model via
+`api/conversations.py`, not as an independent top-level API. Profile A's
+"Mission Service"/"API" work is about wiring the new agent loop to *this*
+existing Run-attempt execution path, not building a parallel one.
+
+**Genuinely retires with the old pipeline (LangGraph-specific, not reusable):**
+- `checkpointing.py`'s `CheckpointProvider` family (`InMemoryCheckpointProvider`,
+  `PostgresCheckpointProvider`) — wraps `langgraph.checkpoint.*` directly;
+  goes when `coordinator/graph.py` goes. Whatever durability the new agent
+  loop needs should be evaluated against the *existing* `Run`/`RunAttempt`
+  lease mechanism first (already Postgres-backable via `conversations/postgres.py`)
+  before reaching for Temporal or a new checkpoint mechanism.
+
+This finding **directly changes Profile A's Sprint 1/3 tasks** (state stores,
+Temporal decision) and **Profile B's Sprint 3 `ActionToolset` task**
+(approval flow already exists) — see those briefs and `SPRINT_PLAN.md`,
+updated accordingly.
+
+## 5. Relationship to existing docs — what this supersedes
 
 - **`docs/46_ARCHITECTURE_CONSOLIDATION_PLAN.md` Item 2** (consolidate the
   three MCP data-access paths) is absorbed into **Profile 2, Sprint 2**. Its

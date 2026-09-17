@@ -5,10 +5,37 @@ alwaysApply: true
 
 # Architecture Rules
 
+**Status (2026-09-17):** this repo is mid-migration from the swarm_v2
+architecture below to a single PydanticAI agent loop over Cube — see
+`docs/refactor/` (source of truth, `00_OVERVIEW.md` + three profile briefs +
+`SPRINT_PLAN.md`/`TASK_SHEET.md`). Migration execution has not started
+(`docs/refactor/TASK_SHEET.md` is all "Not started") — rules 1-7 below still
+describe what's actually live in `src/` today and still apply to it. Rules
+8+ describe the V3 target and apply to any new code written against the
+V3 profile briefs. Once Sprint 5 (old pipeline deletion,
+`docs/refactor/SPRINT_PLAN.md`) lands, rules 1-3 and 6 go away entirely —
+update this file again at that point, don't leave it describing a deleted
+architecture.
+
+## Current (swarm_v2) — applies to existing `src/` code until cutover
+
 1. Keep LangGraph orchestration, A2A inter-agent communication and MCP tool/data access conceptually separate.
 2. Domain agents and intelligence specialist agents are different axes; do not duplicate specialist roles per domain without a strong reason.
 3. Persist `mission_lead` and `active_specialist` separately.
 4. Prefer deterministic services for metrics, statistics, ML, causal inference and optimization.
 5. No business-data direct connector may bypass the governed MCP/data gateway in production code.
 6. New agent capabilities must be added to the registry and have versioned contracts/tests.
-7. Do not introduce autonomous write actions in the intelligence milestone.
+7. Do not introduce autonomous write actions in the intelligence milestone — superseded for new work by rule 13 below (propose→confirm→commit is now implemented, see `conversations/phase7.py`), kept here as the still-applicable default for any swarm_v2-path code that hasn't been wired to it.
+
+## V3 target — applies to new code under `docs/refactor/`'s profiles (`agent/`, `toolsets/`, etc.)
+
+8. Cube is the only authority for business metrics — no local heuristic layer resolves a metric/dimension; always validate against the live catalogue (this is the direct fix for the bug rule 1/5 above didn't fully prevent — `docs/BUG_SHEET.md` #8).
+9. Only the central `SelericAgent` decides the next tool call — no sub-agent or tool decides independently. This replaces rules 1-3's domain/specialist-axis model; there is no handoff, no `mission_lead`/`active_specialist` state to persist.
+10. Tools never call other tools. Only `Agent → Tool → Agent`.
+11. Analytics/causal/prediction tools calculate; they don't independently fetch data — they consume evidence already fetched via the semantic toolset (still keeps rule 4's "prefer deterministic services").
+12. Every agent loop is bounded (`max_tool_calls`, `max_cube_queries`, etc.) and the bound is actually enforced.
+13. Write/action operations always follow propose → validate → preview → confirm → commit → audit — already implemented via `conversations/phase7.py`'s `ApprovalRequest`/`RollbackRecord`; new capabilities wire into that, they don't build a parallel flow.
+14. A new autonomous agent is added only if there's a genuine isolation boundary that can't be represented as a tool — default assumption is "this is a tool."
+
+Full rationale and the rest of the non-negotiable list: see Claude memory
+`feedback_ai_multiagent_principles.md` and `docs/refactor/00_OVERVIEW.md` §6.
