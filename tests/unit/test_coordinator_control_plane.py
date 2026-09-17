@@ -216,21 +216,17 @@ def test_score_agent_prefers_capability_match():
 # --------------------------------------------------------------------------- #
 
 
-def test_check_budget_matches_legacy_semantics():
-    limits = MissionLimits(max_llm_calls=6, max_tool_calls=8)
-    assert check_budget({"llm_calls": 5}, limits, llm_needed=1).ok is True
-    verdict = check_budget({"llm_calls": 6}, limits, llm_needed=1)
-    assert verdict.ok is False
-    assert verdict.error_code == "BUDGET_EXCEEDED"
-    tight = MissionLimits(max_llm_calls=0, max_tool_calls=8)
-    assert check_budget({"llm_calls": 0}, tight, llm_needed=1).ok is False
+def test_check_budget_is_disabled():
+    """Budget enforcement was removed system-wide (see TASK_SHEET.md) --
+    check_budget is a no-op regardless of state/limits."""
+    tight = MissionLimits(max_llm_calls=0, max_tool_calls=0)
+    assert check_budget({"llm_calls": 999}, tight, llm_needed=1).ok is True
 
 
-def test_check_hard_stops_trips_on_iterations_and_transfers():
-    limits = MissionLimits(max_llm_calls=6, max_tool_calls=8, max_iterations=3, max_leadership_transfers=2)
-    assert check_hard_stops({"coordinator_iterations": 3}, limits).ok is True
-    assert check_hard_stops({"coordinator_iterations": 4}, limits).ok is False
-    assert check_hard_stops({"handoff_history": [1, 2, 3]}, limits).ok is False
+def test_check_hard_stops_is_disabled():
+    """Same removal as above -- check_hard_stops never trips."""
+    tight = MissionLimits(max_llm_calls=6, max_tool_calls=8, max_iterations=0, max_leadership_transfers=0)
+    assert check_hard_stops({"coordinator_iterations": 999, "handoff_history": [1, 2, 3]}, tight).ok is True
 
 
 # --------------------------------------------------------------------------- #
@@ -314,8 +310,8 @@ def test_control_plane_marks_diagnostic_unsupported_reason(runtime):
     assert "Blocked:" in reason
 
 
-def test_control_plane_budget_verdict_bridges_to_error_code(runtime):
+def test_control_plane_budget_verdict_is_disabled(runtime):
     runtime.settings.max_llm_calls = 0
     plane = ControlPlane(runtime)  # limits are snapshotted at construction, as in build_graph
-    ok, code, _reason = plane.budget_verdict({"llm_calls": 0}, llm_needed=1)
-    assert ok is False and code == "BUDGET_EXCEEDED"
+    ok, code, _reason = plane.budget_verdict({"llm_calls": 999}, llm_needed=1)
+    assert ok is True and code is None

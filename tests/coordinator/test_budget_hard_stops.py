@@ -1,4 +1,10 @@
-"""swarm_v2 budget hard-stop tests."""
+"""swarm_v2 budget hard-stop tests.
+
+Budget enforcement was removed system-wide per explicit request -- see
+docs/TASK_SHEET.md's "Re-enable budget/hard-stop enforcement" backlog item
+(low priority). ``check_swarm_budget`` is now a no-op; these tests assert
+that no-op behavior instead of the old enforcement semantics.
+"""
 
 from __future__ import annotations
 
@@ -10,51 +16,21 @@ from seleric_swarm.coordinator.governance.completion_gate import decide_completi
 from seleric_swarm.coordinator.graph import run_swarm_v2_mission
 
 
-def test_check_swarm_budget_agent_calls():
-    budgets = MissionBudget(max_agent_calls=4)
-    assert check_swarm_budget({"usage": {"agent_calls": 2}}, budgets).ok
-    assert not check_swarm_budget({"usage": {"agent_calls": 4}}, budgets).ok
-    assert not check_swarm_budget(
-        {"usage": {"agent_calls": 3}}, budgets, agent_calls_needed=2
+def test_check_swarm_budget_is_disabled():
+    budgets = MissionBudget(max_agent_calls=4, max_leadership_transfers=2, max_remediation_rounds=1)
+    assert check_swarm_budget({"usage": {"agent_calls": 999}}, budgets).ok
+    assert check_swarm_budget({"usage": {"agent_calls": 3}}, budgets, agent_calls_needed=999).ok
+    assert check_swarm_budget(
+        {"handoff_history": [{"epoch": 1}, {"epoch": 2}], "usage": {}}, budgets
     ).ok
-    v = check_swarm_budget({"usage": {"agent_calls": 4}}, budgets)
-    assert v.exhausted_key == "agent_calls"
-    assert v.error_code == "BUDGET_EXCEEDED"
-
-
-def test_check_swarm_budget_token_budget():
-    # docs/44 PRD-002: token_budget is opt-in (None by default) and, when set,
-    # enforced the same way max_llm_calls already is.
+    assert check_swarm_budget({"remediation_round": 999, "usage": {}}, budgets).ok
     budgets = MissionBudget(token_budget=100)
-    assert check_swarm_budget({"usage": {}}, budgets, token_usage=50).ok
-    v = check_swarm_budget({"usage": {}}, budgets, token_usage=100)
-    assert not v.ok
-    assert v.exhausted_key == "token_budget"
-    # unset (default) never blocks, regardless of usage
-    assert check_swarm_budget({"usage": {}}, MissionBudget(), token_usage=10_000).ok
-
-
-def test_check_swarm_budget_wall_clock_deadline():
+    assert check_swarm_budget({"usage": {}}, budgets, token_usage=10_000).ok
     budgets = MissionBudget(max_runtime_s=30.0)
     assert check_swarm_budget(
-        {"started_at": "2099-01-01T00:00:00Z", "usage": {}},
-        budgets,
-    ).ok
-    v = check_swarm_budget(
         {"started_at": "2000-01-01T00:00:00Z", "usage": {}},
         budgets,
-    )
-    assert not v.ok
-    assert v.exhausted_key == "max_runtime"
-
-
-def test_check_swarm_budget_leadership_and_remediation():
-    budgets = MissionBudget(max_leadership_transfers=2, max_remediation_rounds=1)
-    assert not check_swarm_budget(
-        {"handoff_history": [{"epoch": 1}, {"epoch": 2}], "usage": {}},
-        budgets,
     ).ok
-    assert not check_swarm_budget({"remediation_round": 1, "usage": {}}, budgets).ok
 
 
 def test_completion_gate_leadership_budget_key():
@@ -83,7 +59,7 @@ def test_completion_gate_leadership_budget_key():
 
 
 @pytest.mark.asyncio
-async def test_swarm_v2_budget_exhaustion_emits_event_and_partial(runtime):
+async def test_swarm_v2_agent_call_budget_no_longer_truncates_mission(runtime):
     result = await run_swarm_v2_mission(
         runtime,
         query="Why has CAC increased?",
@@ -91,27 +67,5 @@ async def test_swarm_v2_budget_exhaustion_emits_event_and_partial(runtime):
         as_of="2026-08-01",
         budget_overrides={"max_agent_calls": 2},
     )
-    assert result.status == "partial"
     kinds = [e.get("kind") for e in result.events]
-    assert "mission_budget_exhausted" in kinds
-    assert any("Agent call budget" in lim for lim in (result.limitations or []))
-    control = next(e for e in result.events if e.get("kind") == "mission_control_plane")
-    assert control.get("budget_exhausted") is True
-    assert int((control.get("usage") or {}).get("agent_calls") or 0) >= 2
-
-
-@pytest.mark.asyncio
-async def test_swarm_v2_token_budget_degrades_mission(runtime):
-    # A token_budget of 1 is exhausted by the mission's first LLM call
-    # (FakeLLMAdapter reports 36 total_tokens per call) — the mission should
-    # degrade to partial via the same route as other budget exhaustion, not
-    # run unbounded LLM calls.
-    result = await run_swarm_v2_mission(
-        runtime,
-        query="Why has CAC increased?",
-        timezone="Asia/Kolkata",
-        as_of="2026-08-01",
-        budget_overrides={"token_budget": 1},
-    )
-    assert result.status == "partial"
-    assert runtime.llm.usage_for(result.mission_id).total_tokens >= 1
+    assert "mission_budget_exhausted" not in kinds

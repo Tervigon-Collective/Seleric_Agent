@@ -25,7 +25,10 @@ async def test_comparison_computes_deterministic_delta(runtime):
 
 
 @pytest.mark.asyncio
-async def test_llm_budget_is_enforced(runtime):
+async def test_llm_budget_is_not_enforced(runtime):
+    """Budget enforcement was removed system-wide (see TASK_SHEET.md);
+    governance/budget.py's checks are no-ops, so an exhausted `max_llm_calls`
+    no longer fails a mission."""
     runtime.settings.max_llm_calls = 0
     result = await run_mission(
         runtime,
@@ -33,6 +36,4 @@ async def test_llm_budget_is_enforced(runtime):
         timezone="Asia/Kolkata",
         as_of="2026-09-03",
     )
-    assert result.status == "failed"
-    assert result.error is not None
-    assert result.error.code == "BUDGET_EXCEEDED"
+    assert result.status != "failed" or (result.error is None or result.error.code != "BUDGET_EXCEEDED")
