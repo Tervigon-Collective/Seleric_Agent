@@ -113,12 +113,31 @@ def test_thread_crud_and_message_submission_are_owner_scoped(monkeypatch):
     assert response.status_code == 202
     assert set(response.json()) == {"message_id", "run_id", "mission_id"}
     assert len(client.get(f"/v1/threads/{thread_id}/messages").json()) == 1
+    renamed = client.patch(
+        f"/v1/threads/{thread_id}", json={"title": "Retention diagnosis"}
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["title"] == "Retention diagnosis"
     assert client.post(f"/v1/threads/{thread_id}/archive").json()["status"] == "ARCHIVED"
 
     foreign = repositories.threads.create(
         Thread(workspace_id="workspace_2", owner_user_id="user_2")
     )
     assert client.get(f"/v1/threads/{foreign.id}").status_code == 404
+
+
+def test_first_message_names_an_untitled_thread(monkeypatch):
+    client, _ = _client(monkeypatch)
+    thread_id = client.post("/v1/threads", json={}).json()["id"]
+    response = client.post(
+        f"/v1/threads/{thread_id}/messages",
+        json={"parts": [{"type": "TEXT", "content": "Why did CAC increase this week?"}]},
+    )
+    assert response.status_code == 202
+    assert (
+        client.get(f"/v1/threads/{thread_id}").json()["title"]
+        == "Why did CAC increase this week?"
+    )
 
 
 def test_archived_thread_rejects_new_messages(monkeypatch):

@@ -8,6 +8,7 @@ export function ThreadSidebar() {
   const setSearch = useConversationStore((s) => s.setSearch);
   const createThread = useConversationStore((s) => s.createThread);
   const selectThread = useConversationStore((s) => s.selectThread);
+  const renameThread = useConversationStore((s) => s.renameThread);
   const archiveThread = useConversationStore((s) => s.archiveThread);
   const filtered = useMemo(
     () => threads.filter((thread) => (thread.title ?? "Untitled").toLowerCase().includes(search.toLowerCase())),
@@ -15,23 +16,29 @@ export function ThreadSidebar() {
   );
 
   return (
-    <aside className="thread-sidebar" aria-label="Conversation threads">
+    <aside className="thread-sidebar" aria-label="Conversations">
       <div className="sidebar-head">
-        <strong>Threads</strong>
+        <strong>Conversations</strong>
         <button className="primary-btn" onClick={() => void createThread()}>+ New</button>
       </div>
       <label className="search-field">
         <span className="sr-only">Search threads</span>
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations" type="search" />
       </label>
-      <nav aria-label="Thread list">
+      <nav aria-label="Conversation list">
         {filtered.map((thread) => (
           <div className={`thread-row ${selected === thread.id ? "selected" : ""}`} key={thread.id}>
             <button className="thread-select" onClick={() => void selectThread(thread.id)} aria-current={selected === thread.id ? "page" : undefined}>
               <span>{thread.title || "Untitled conversation"}</span>
               <small>{new Date(thread.updated_at).toLocaleDateString()}</small>
             </button>
-            <button className="icon-btn archive" aria-label={`Archive ${thread.title || "conversation"}`} onClick={() => void archiveThread(thread.id)}>×</button>
+            <div className="thread-actions">
+              <button className="icon-btn rename" aria-label={`Rename ${thread.title || "conversation"}`} onClick={() => {
+                const title = window.prompt("Rename conversation", thread.title || "");
+                if (title?.trim()) void renameThread(thread.id, title);
+              }}>✎</button>
+              <button className="icon-btn archive" aria-label={`Archive ${thread.title || "conversation"}`} onClick={() => void archiveThread(thread.id)}>×</button>
+            </div>
           </div>
         ))}
         {!filtered.length && <p className="empty-note">No matching threads.</p>}

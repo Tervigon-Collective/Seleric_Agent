@@ -14,8 +14,6 @@ export function TopBar({
   missions,
   missionId,
   onPickMission,
-  providerMode,
-  onPickProvider,
   dark,
   onToggleTheme,
   onOpenConversations,
@@ -23,8 +21,6 @@ export function TopBar({
   missions: MissionRef[];
   missionId: string | null;
   onPickMission: (id: string) => void;
-  providerMode: "demo" | "seleric";
-  onPickProvider: (m: "demo" | "seleric") => void;
   dark: boolean;
   onToggleTheme: () => void;
   onOpenConversations: () => void;
@@ -47,11 +43,6 @@ export function TopBar({
       <button className="btn office-chat-btn" onClick={onOpenConversations}>
         ← Chat
       </button>
-
-      <select value={providerMode} onChange={(e) => onPickProvider(e.target.value as "demo" | "seleric")}>
-        <option value="demo">Demo fixture</option>
-        <option value="seleric">Live swarm</option>
-      </select>
 
       <select
         value={missionId ?? ""}

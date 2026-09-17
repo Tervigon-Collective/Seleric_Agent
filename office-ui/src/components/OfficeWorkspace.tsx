@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useOffice } from "../store";
 import type { MissionRef } from "../types";
-import { DemoEventProvider } from "../providers/demo";
 import { SelericEventProvider } from "../providers/seleric";
 import type { ProviderHandlers, SwarmEventProvider } from "../providers/types";
 import { OfficeCanvas } from "../render/OfficeCanvas";
@@ -15,9 +14,7 @@ import { AgentInspector } from "./AgentInspector";
 import { DebugPanel } from "./DebugPanel";
 
 const params = new URLSearchParams(location.search);
-const START_DEMO = params.get("demo") === "1" || !params.has("mission");
 const URL_MISSION = params.get("mission");
-const DEMO_SPEED = Math.max(1, Number(params.get("speed") || (params.get("fast") === "1" ? 8 : 1)) || 1);
 
 export function OfficeWorkspace({
   dark,
@@ -28,8 +25,6 @@ export function OfficeWorkspace({
   onToggleTheme: () => void;
   onOpenConversations: () => void;
 }) {
-  const providerMode = useOffice((s) => s.providerMode);
-  const setProviderMode = useOffice((s) => s.setProviderMode);
   const hydrate = useOffice((s) => s.hydrate);
   const ingestEvent = useOffice((s) => s.ingestEvent);
   const setConn = useOffice((s) => s.setConn);
@@ -39,11 +34,7 @@ export function OfficeWorkspace({
   const [pointer, setPointer] = useState({ x: 0, y: 0 });
   const unsubRef = useRef<null | (() => void)>(null);
 
-  useEffect(() => { setProviderMode(START_DEMO ? "demo" : "seleric"); }, [setProviderMode]);
-  const provider: SwarmEventProvider = useMemo(
-    () => providerMode === "demo" ? new DemoEventProvider({ speed: DEMO_SPEED }) : new SelericEventProvider(),
-    [providerMode],
-  );
+  const provider: SwarmEventProvider = useMemo(() => new SelericEventProvider(), []);
   useEffect(() => {
     let alive = true;
     const load = () => provider.listMissions().then((items) => {
@@ -71,14 +62,9 @@ export function OfficeWorkspace({
     return () => { unsubRef.current?.(); unsubRef.current = null; };
   }, [provider, missionId, hydrate, ingestEvent, setConn, reset]);
 
-  const pickProvider = useCallback((mode: "demo" | "seleric") => {
-    setProviderMode(mode);
-    setMissionId(null);
-  }, [setProviderMode]);
-
   return (
     <div className="office-workspace">
-      <TopBar missions={missions} missionId={missionId} onPickMission={setMissionId} providerMode={providerMode} onPickProvider={pickProvider} dark={dark} onToggleTheme={onToggleTheme} onOpenConversations={onOpenConversations} />
+      <TopBar missions={missions} missionId={missionId} onPickMission={setMissionId} dark={dark} onToggleTheme={onToggleTheme} onOpenConversations={onOpenConversations} />
       <div className="stage" onMouseMove={(event) => setPointer({ x: event.clientX, y: event.clientY })}>
         <OfficeCanvas dark={dark} /><MissionHeader /><MissionBoard />
         <AgentHoverCard x={pointer.x} y={pointer.y} /><AgentInspector />

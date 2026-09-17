@@ -68,6 +68,10 @@ class CreateThreadRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class UpdateThreadRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+
+
 class SubmitMessageRequest(BaseModel):
     parts: list[MessagePart] = Field(min_length=1)
     parent_message_id: str | None = None
@@ -255,6 +259,22 @@ def list_threads(
 def get_thread(thread_id: str, request: Request) -> Thread:
     runtime = _runtime(request)
     return _owned_thread(_repositories(runtime), _principal(request), thread_id)
+
+
+@router.patch("/threads/{thread_id}")
+def update_thread(
+    thread_id: str, body: UpdateThreadRequest, request: Request
+) -> Thread:
+    runtime = _runtime(request)
+    repositories = _repositories(runtime)
+    thread = _owned_thread(repositories, _principal(request), thread_id)
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="title must not be blank")
+    updated = thread.model_copy(
+        update={"title": title, "updated_at": datetime.now(UTC)}
+    )
+    return repositories.threads.update(updated)
 
 
 @router.post("/threads/{thread_id}/archive")
@@ -1090,7 +1110,12 @@ def submit_message(
     MemoryService(repositories).ingest_candidates(
         MemoryCandidateExtractor().extract(message, thread)
     )
-    repositories.threads.update(thread.model_copy(update={"updated_at": datetime.now(UTC)}))
+    title = thread.title
+    if not title or title.strip().lower() == "untitled conversation":
+        title = " ".join(query.split())[:80]
+    repositories.threads.update(
+        thread.model_copy(update={"title": title, "updated_at": datetime.now(UTC)})
+    )
     _event_sink(runtime, repositories).emit(
         run,
         "run.queued",

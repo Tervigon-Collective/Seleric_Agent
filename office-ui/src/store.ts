@@ -111,7 +111,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
   seenSeq: new Set<number>(),
   lastEvent: null,
   conn: "idle",
-  providerMode: "demo",
+  providerMode: "seleric",
   selectedAgentId: null,
   hoveredAgentId: null,
   followMode: "off",

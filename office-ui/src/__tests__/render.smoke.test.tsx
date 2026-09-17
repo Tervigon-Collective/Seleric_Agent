@@ -1,9 +1,8 @@
 /**
  * Headless render smoke test — the closest thing to "open it in a browser"
  * without a browser. Stubs a 2D canvas context, mounts the whole <App/> with
- * the demo provider, runs the rAF draw loop for the full CAC scenario, and
- * asserts nothing throws, every agent gets a position, and no agent ends up
- * outside the walkable floor.
+ * the live office shell and asserts that rendering and the animation loop do
+ * not throw even when no mission is currently available.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -67,7 +66,7 @@ afterEach(() => {
 
 describe("render smoke", () => {
   it(
-    "mounts, runs the demo, and never throws or leaves an agent off the floor",
+    "mounts the live office and runs its animation loop without throwing",
     { timeout: 30000 },
     async () => {
       vi.useFakeTimers();
@@ -77,11 +76,6 @@ describe("render smoke", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(2000);
       });
-      // Full CAC script with walk→talk→return gates (speed 1) needs several minutes
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(300_000);
-      });
-
       vi.useRealTimers();
 
       // no React render errors
@@ -92,14 +86,7 @@ describe("render smoke", () => {
 
       // the office rendered a canvas
       expect(container.querySelector("canvas.office-canvas")).toBeTruthy();
-      // full roster present in the store-backed DOM (timeline / board rendered)
-      expect(container.querySelector(".mission-board")).toBeTruthy();
-
-      // the whole scripted mission (incl. all the meeting choreography) ran to the
-      // end without wedging — proof the interaction/separation churn is stable
-      const { useOffice } = await import("../store");
-      expect(useOffice.getState().status).toBe("completed");
-      expect(useOffice.getState().timeline.length).toBeGreaterThan(15);
+      expect(container.textContent).not.toContain("Demo fixture");
     },
   );
 
@@ -112,8 +99,8 @@ describe("render smoke", () => {
   });
 });
 
-// keep isWalkable import meaningful — spot-check the demo desks
-it("all demo desk homes are on walkable floor", async () => {
+// keep isWalkable import meaningful — spot-check the office desks
+it("all office desk homes are on walkable floor", async () => {
   const { DESKS } = await import("../office/layout");
   for (const d of DESKS) expect(isWalkable(d.home.x, d.home.y), d.agentId).toBe(true);
 });

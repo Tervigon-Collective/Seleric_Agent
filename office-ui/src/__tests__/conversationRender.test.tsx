@@ -25,7 +25,7 @@ describe("conversation shell rendering and accessibility", () => {
   it("exposes navigation, transcript, details, and a labeled composer", () => {
     act(() => root.render(<App />));
     expect(container.querySelector("header")).toBeTruthy();
-    expect(container.querySelector('[aria-label="Conversation threads"]')).toBeTruthy();
+    expect(container.querySelector('[aria-label="Conversations"]')).toBeTruthy();
     expect(container.querySelector('[aria-label="Conversation transcript"]')).toBeTruthy();
     expect(container.querySelector('[aria-label="Conversation details"]')).toBeTruthy();
     expect(container.querySelector('textarea[aria-label="Message"]')).toBeTruthy();

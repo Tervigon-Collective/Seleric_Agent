@@ -90,19 +90,21 @@ button { color: inherit; }
 
 .conversation-layout { min-height: 0; display: grid; grid-template-columns: 250px minmax(360px, 1fr) 330px; background: var(--panel); }
 .thread-sidebar, .detail-panel { min-width: 0; overflow: hidden; background: var(--panel-2); }
-.thread-sidebar { border-right: 1px solid var(--line); padding: 14px 10px; overflow-y: auto; }
-.sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 0 5px 12px; }
+.thread-sidebar { border-right: 1px solid var(--line); padding: 12px; overflow-y: auto; }
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 10px; }
 .primary-btn { border: 0; border-radius: 8px; padding: 6px 10px; background: var(--text); color: var(--panel); cursor: pointer; font-size: 12px; font-weight: 650; }
 .search-field input { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); padding: 8px 9px; outline: none; }
 .search-field input:focus { border-color: var(--st-working); box-shadow: 0 0 0 2px color-mix(in srgb, var(--st-working) 18%, transparent); }
-.thread-sidebar nav { margin-top: 12px; }
+.thread-sidebar nav { margin-top: 10px; }
 .thread-row { display: grid; grid-template-columns: 1fr auto; align-items: center; border-radius: 9px; margin-bottom: 3px; }
 .thread-row.selected { background: var(--panel); box-shadow: inset 3px 0 var(--st-working); }
-.thread-select { text-align: left; display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 9px 7px 9px 11px; border: 0; background: transparent; cursor: pointer; }
+.thread-select { text-align: left; display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 10px 8px 10px 12px; border: 0; background: transparent; cursor: pointer; }
 .thread-select span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .thread-select small { color: var(--text-dim); font-size: 10px; }
-.thread-row .archive { opacity: 0; margin-right: 4px; }
-.thread-row:hover .archive, .thread-row:focus-within .archive { opacity: 1; }
+.thread-actions { display: flex; gap: 1px; padding-right: 4px; }
+.thread-row .rename, .thread-row .archive { opacity: 0; }
+.thread-row:hover .rename, .thread-row:hover .archive,
+.thread-row:focus-within .rename, .thread-row:focus-within .archive { opacity: 1; }
 
 .conversation-main { min-height: 0; display: flex; flex-direction: column; background: var(--panel); position: relative; }
 .error-banner { padding: 8px 18px; background: color-mix(in srgb, var(--st-failed) 12%, var(--panel)); color: var(--st-failed); border-bottom: 1px solid color-mix(in srgb, var(--st-failed) 30%, var(--line)); font-size: 12px; }

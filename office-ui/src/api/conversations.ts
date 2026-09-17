@@ -28,6 +28,12 @@ export class ConversationApi {
   getThread(threadId: string): Promise<Thread> {
     return this.http.request(`/v1/threads/${enc(threadId)}`);
   }
+  updateThread(threadId: string, body: { title: string }): Promise<Thread> {
+    return this.http.request(`/v1/threads/${enc(threadId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  }
   archiveThread(threadId: string): Promise<Thread> {
     return this.http.request(`/v1/threads/${enc(threadId)}/archive`, { method: "POST" });
   }

@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { conversationsApi } from "../api/conversations";
 import type { ActivityEvent, MemoryItem, Message, Thread } from "../api/contracts";
 import { subscribeToRunEvents } from "../api/runEvents";
+import { useOffice } from "../store";
+import type { SwarmUIEvent } from "../types";
 
 interface ConversationState {
   threads: Thread[];
@@ -20,6 +22,7 @@ interface ConversationState {
   loadThreads: () => Promise<void>;
   createThread: () => Promise<void>;
   selectThread: (id: string) => Promise<void>;
+  renameThread: (id: string, title: string) => Promise<void>;
   archiveThread: (id: string) => Promise<void>;
   setSearch: (value: string) => void;
   setDemoMode: (demo: boolean) => void;
@@ -66,19 +69,44 @@ const textMessage = (threadId: string, role: "USER" | "ASSISTANT", text: string,
   role, parts: [{ type: "TEXT", content: text }], run_id: null,
   parent_message_id: null, created_at: now(),
 });
+const optionalString = (value: unknown): string | undefined =>
+  typeof value === "string" && value ? value : undefined;
+const toOfficeEvent = (event: ActivityEvent): SwarmUIEvent => {
+  const sourceKind = optionalString(event.payload.source_kind);
+  const eventType = (sourceKind ?? event.event_type).replaceAll(".", "_");
+  const artifactId = optionalString(event.payload.artifact_id);
+  return {
+    eventId: event.id,
+    seq: event.sequence,
+    timestamp: event.created_at,
+    missionId: optionalString(event.payload.mission_id) ?? event.run_id ?? "current-run",
+    taskId: optionalString(event.payload.task_id),
+    agentId:
+      event.actor_id
+      ?? optionalString(event.payload.agent_id)
+      ?? optionalString(event.payload.agent),
+    eventType,
+    summary:
+      event.summary
+      ?? event.title
+      ?? eventType.replaceAll("_", " "),
+    artifactRefs: [...event.evidence_ids, ...(artifactId ? [artifactId] : [])],
+    metadata: { ...event.metadata, ...event.payload, conversationEventType: event.event_type },
+  };
+};
 
 export const useConversationStore = create<ConversationState>((set, get) => ({
-  threads: [DEMO_THREAD],
-  selectedThreadId: DEMO_THREAD.id,
-  messages: { [DEMO_THREAD.id]: [DEMO_MESSAGE] },
+  threads: [],
+  selectedThreadId: null,
+  messages: {},
   loading: false,
   submitting: false,
   uploads: {},
   error: null,
   search: "",
-  demoMode: new URLSearchParams(location.search).get("demo") !== "0",
-  memories: [DEMO_MEMORY],
-  usedMemories: [DEMO_MEMORY],
+  demoMode: false,
+  memories: [],
+  usedMemories: [],
   memoryOptedOut: false,
   currentRunId: null,
 
@@ -111,13 +139,41 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
   selectThread: async (id) => {
     set({ selectedThreadId: id, error: null });
-    if (get().messages[id] || get().demoMode) return;
+    if (get().demoMode) return;
     set({ loading: true });
     try {
-      const messages = await conversationsApi.listMessages(id);
+      const [messages, events] = await Promise.all([
+        conversationsApi.listMessages(id),
+        conversationsApi.listThreadEvents(id),
+      ]);
+      const latestRunId = [...messages]
+        .reverse()
+        .find((message) => message.run_id)?.run_id;
+      const office = useOffice.getState();
+      office.reset();
+      events
+        .filter((event) => !latestRunId || event.run_id === latestRunId)
+        .forEach((event) => office.ingestEvent(toOfficeEvent(event)));
       set((s) => ({ messages: { ...s.messages, [id]: messages }, loading: false }));
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : "Unable to load messages" });
+    }
+  },
+
+  renameThread: async (id, value) => {
+    const title = value.trim();
+    if (!title) return;
+    try {
+      const existing = get().threads.find((item) => item.id === id);
+      if (!existing) return;
+      const thread = get().demoMode
+        ? { ...existing, title, updated_at: now() }
+        : await conversationsApi.updateThread(id, { title });
+      set((state) => ({
+        threads: state.threads.map((item) => item.id === id ? thread : item),
+      }));
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : "Unable to rename conversation" });
     }
   },
 
@@ -146,9 +202,15 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       ...textMessage(threadId, "USER", value, `optimistic_${Date.now()}`),
       parent_message_id: parentMessageId,
     };
+    useOffice.getState().reset();
     set((s) => ({
       submitting: true, error: null,
       messages: { ...s.messages, [threadId]: [...(s.messages[threadId] ?? []), optimistic] },
+      threads: s.threads.map((thread) =>
+        thread.id === threadId && (!thread.title || thread.title === "Untitled conversation")
+          ? { ...thread, title: value.replace(/\s+/g, " ").slice(0, 80), updated_at: now() }
+          : thread
+      ),
     }));
     if (get().demoMode) {
       const submission = ++demoSubmission;
@@ -331,6 +393,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   applyRunEvent: (event) => {
+    useOffice.getState().ingestEvent(toOfficeEvent(event));
     const terminal = ["run.completed", "run.failed", "run.cancelled"].includes(event.event_type);
     if (event.event_type === "answer.completed" || terminal) {
       void conversationsApi.listMessages(event.thread_id).then((messages) => {

@@ -25,12 +25,10 @@ export default function App() {
   const setWorkspace = useShellStore((s) => s.setWorkspace);
   const sidebarOpen = useShellStore((s) => s.sidebarOpen);
   const detailsOpen = useShellStore((s) => s.detailsOpen);
-  const demoMode = useConversationStore((s) => s.demoMode);
-  const setDemoMode = useConversationStore((s) => s.setDemoMode);
   const loadThreads = useConversationStore((s) => s.loadThreads);
   const error = useConversationStore((s) => s.error);
   const selectThread = useConversationStore((s) => s.selectThread);
-  useEffect(() => { void loadThreads(); }, [loadThreads, demoMode]);
+  useEffect(() => { void loadThreads(); }, [loadThreads]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -72,7 +70,6 @@ export default function App() {
           aria-keyshortcuts="Control+K Meta+K">Search <kbd>⌘/Ctrl K</kbd></button>
         <button className="icon-btn" onClick={() => setDiagnosticsOpen(true)}
           aria-label="Open admin diagnostics">Diagnostics</button>
-        <label className="mode-switch">Mode <select value={demoMode ? "demo" : "live"} onChange={(e) => setDemoMode(e.target.value === "demo")}><option value="demo">Demo</option><option value="live">Live</option></select></label>
         <button className="icon-btn" onClick={() => setDark((value) => !value)} aria-label={`Use ${dark ? "light" : "dark"} theme`}>{dark ? "☀" : "◐"}</button>
       </header>
       <main className={`conversation-layout ${!sidebarOpen ? "sidebar-closed" : ""} ${!detailsOpen ? "details-closed" : ""}`}>
