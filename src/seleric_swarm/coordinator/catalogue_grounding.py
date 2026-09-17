@@ -23,7 +23,27 @@ _STOPWORDS = {
 
 _MIN_DIM_TOKEN = 3
 _TIME_SUFFIXES = ("_date", "_time", "_at")
-_GENERIC_DIM_TOKENS = {"status"}
+_GENERIC_DIM_TOKENS = {
+    "status",
+    # Calendar words are single-token overlaps with unrelated dimensions
+    # (session_day_of_week, report_date, ...) whenever the query is asking
+    # for time granularity ("per day", "daily", "by month"), not a real
+    # dimensional breakdown. Same hallucination class as "status" ->
+    # "fulfillment_status" -- see ground_live_grain's docstring.
+    "day",
+    "days",
+    "daily",
+    "week",
+    "weeks",
+    "weekly",
+    "month",
+    "months",
+    "monthly",
+    "year",
+    "years",
+    "yearly",
+    "date",
+}
 _MIN_MULTI_TOKEN_OVERLAP = 2
 _RESOLVE_DIM_CAP = "seleric.catalogue_resolve_dimension"
 _RESOLVE_TERM_CAP = "seleric.catalogue_resolve_term"
@@ -587,6 +607,31 @@ def evidence_covers_grain(evidence: list[dict], resolved_dimensions: list[str]) 
         for row in evidence or []
         for dim in wanted
     )
+
+
+def validate_dimensions_for_metric(
+    dimensions: list[str],
+    metric_id: str | None,
+    metrics: MetricRegistry,
+) -> list[str]:
+    """Keep only the LLM's directly-picked dimensions the resolved metric
+    actually declares (Phase 1's ``SwarmClassificationV1.dimensions``) —
+    swarm_v2's replacement for grounding a dimension by re-deriving it from
+    query text (``dimensions_in_query``/``apply_catalogue_grain``).
+
+    No declared ``supported_dimensions`` on the metric (still true for many
+    YAML-overlay-only entries) means no information to validate against —
+    trust the LLM's picks rather than silently dropping every breakdown.
+    """
+    if not dimensions or not metric_id:
+        return list(dict.fromkeys(dimensions))
+    definition = metrics.get(metric_id)
+    if definition is None:
+        return list(dict.fromkeys(dimensions))
+    supported = set((getattr(definition, "raw", None) or {}).get("supported_dimensions") or [])
+    if not supported:
+        return list(dict.fromkeys(dimensions))
+    return [d for d in dict.fromkeys(dimensions) if d in supported]
 
 
 async def apply_catalogue_grain(

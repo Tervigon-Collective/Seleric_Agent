@@ -280,6 +280,48 @@ async def test_breakdown_missing_metric_becomes_limitation(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_comparison_with_grain_computes_per_dimension_delta(monkeypatch):
+    """Comparison + a dimensioned breakdown ("compare attribution per channel
+    on aug 1 vs aug 2") used to fall back to the legacy lookup_v1 pipeline --
+    the last structural gap named in docs/features/lookup-v1-retirement.md.
+    Each period is fetched via the same MCP breakdown path as a plain
+    grained lookup, then delta-matched by (metric, dimensions)."""
+    normalized = _normalized(
+        intents=["comparison"],
+        domain_questions=[
+            DomainQuestion(domain="attribution", metrics=["attributed_net_revenue"], grain=["channel"], question="q")
+        ],
+        time_range=TimeRange(start="2026-08-01", end="2026-08-01"),
+        comparison_range=TimeRange(start="2026-08-02", end="2026-08-02"),
+    )
+    monkeypatch.setattr(lookup_fast_path, "normalize_query", lambda *a, **k: _async(normalized))
+    results = [
+        DataResult(
+            readings=[MetricReading(metric_id="attributed_net_revenue", value=170.0, dimensions={"channel": "meta"})],
+            missing=[],
+        ),
+        DataResult(
+            readings=[MetricReading(metric_id="attributed_net_revenue", value=100.0, dimensions={"channel": "meta"})],
+            missing=[],
+        ),
+    ]
+    fake_provider = _FakeDataProvider(results)
+    bundle = _FakeProviderBundle({"attribution": fake_provider})
+    monkeypatch.setattr(lookup_fast_path, "build_hybrid_bundle", lambda **k: (bundle, None))
+    runtime = _runtime({})
+
+    result = await lookup_fast_path.run_lookup_fast_path(runtime, query="compare attribution per channel")
+
+    assert result is not None
+    assert result.status == "completed"
+    assert result.query_class == "comparison"
+    delta_rows = [row for row in result.evidence if row.metric_or_fact.endswith(".delta")]
+    assert len(delta_rows) == 1
+    assert delta_rows[0].value == pytest.approx(70.0)
+    assert delta_rows[0].dimensions == {"channel": "meta"}
+
+
+@pytest.mark.asyncio
 async def test_mixed_grained_and_ungrained_domain_questions(monkeypatch):
     """One question needs a per-channel breakdown, another is a plain
     aggregate -- both fetch mechanisms run and merge into one result."""

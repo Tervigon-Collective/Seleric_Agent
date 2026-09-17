@@ -67,9 +67,27 @@ class SelericMCPTransport:
             "Accept": "application/json, text/event-stream",
         }
         self._client = httpx.AsyncClient(timeout=timeout_s)
+        # httpx's own `timeout=` has been observed to not fire on a stalled
+        # connection under real load (docs/BUG_SHEET.md #5: a request hung
+        # 10+ minutes with the asyncio event loop genuinely idle in
+        # `select()`, not looping -- a true stuck socket read the configured
+        # timeout never caught). This is a hard backstop at the asyncio layer
+        # so a single stuck call can never hang the mission indefinitely,
+        # regardless of why httpx's own timeout missed it.
+        self._timeout_s = timeout_s
+        self._hard_timeout_s = timeout_s + 10.0
         self._ids = itertools.count(1)
         self._session_id: str | None = None
         self._init_lock = asyncio.Lock()
+
+    async def _post(self, body: dict[str, Any]) -> httpx.Response:
+        try:
+            return await asyncio.wait_for(
+                self._client.post(self._url, json=body, headers=self._headers),
+                timeout=self._hard_timeout_s,
+            )
+        except TimeoutError as exc:
+            raise httpx.ReadTimeout(f"hard timeout after {self._hard_timeout_s:g}s (httpx's own timeout did not fire)") from exc
 
     async def _ensure_session(self) -> None:
         if self._session_id is not None:
@@ -94,7 +112,7 @@ class SelericMCPTransport:
             self._session_id = session_id
             self._headers["Mcp-Session-Id"] = session_id
             notif = {"jsonrpc": "2.0", "method": "notifications/initialized"}
-            await self._client.post(self._url, json=notif, headers=self._headers)
+            await self._post(notif)
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         await self._ensure_session()
@@ -136,7 +154,7 @@ class SelericMCPTransport:
                 reraise=True,
             ):
                 with attempt:
-                    resp = await self._client.post(self._url, json=body, headers=self._headers)
+                    resp = await self._post(body)
                     resp.raise_for_status()
                     return resp
         except (httpx.ConnectError, httpx.TimeoutException, httpx.ReadError, httpx.HTTPStatusError) as exc:

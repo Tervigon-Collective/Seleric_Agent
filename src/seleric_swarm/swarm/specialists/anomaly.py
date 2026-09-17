@@ -7,6 +7,7 @@ statistics decide expected vs observed. This prototype routes to
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from seleric_swarm.swarm.artifacts import Anomaly
@@ -36,8 +37,33 @@ class AnomalyAgent(SpecialistAgent):
             metric = e.get("metric_or_fact")
             if not metric or str(metric).startswith("event."):
                 continue
-            if e.get("value") is None:
+            value = e.get("value")
+            if value is None:
                 continue
+            # Defensive fallback, not the primary path: a diagnostic mission
+            # whose classifier output set granularity="day" (Phase 1) now
+            # gets real per-day Evidence rows from
+            # swarm/specialists/observer.py's ObserverAgent (Phase 3) --
+            # each with start==end, so this branch never fires for them. It
+            # only still matters when Observer returns one window-aggregate
+            # reading (comparison missions, or a diagnostic phrasing the
+            # classifier didn't flag as a per-day investigation) -- that is
+            # a window SUM, not a single day's figure, and not directly
+            # comparable to a single-day expected_range baseline.
+            # docs/BUG_SHEET.md #14: comparing a raw multi-day sum against a
+            # single-day band produced a false "+208% spike" for a metric
+            # that was actually declining day over day. Normalize to a
+            # per-day average instead of dropping the reading outright.
+            value = float(value)
+            tr = e.get("time_range") or {}
+            start, end = tr.get("start"), tr.get("end")
+            if start and end and start != end:
+                try:
+                    days = (date.fromisoformat(end[:10]) - date.fromisoformat(start[:10])).days + 1
+                    if days > 1:
+                        value = value / days
+                except ValueError:
+                    pass
             # No baseline requirement here: the template detector needs one
             # and skips readings without it (see TemplateAnomalyDetector's
             # own no_baseline handling); robust_zscore pulls its expected
@@ -48,7 +74,7 @@ class AnomalyAgent(SpecialistAgent):
             readings.append(
                 MetricReading(
                     metric_id=metric,
-                    value=float(e["value"]),
+                    value=value,
                     baseline=float(baseline) if baseline is not None else None,
                     unit=e.get("unit"),
                     dimensions=dict(e.get("dimensions") or {}),

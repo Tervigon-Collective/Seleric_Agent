@@ -160,15 +160,12 @@ class MetricRegistry:
         """Classifier context. Live catalogue is authoritative; this is not a metric list."""
         if self._live_defs:
             lines = [
-                "The live MCP catalogue is the only metric repository. Use catalogue ids.",
-                "Domain lead is deterministic from catalogue category:",
+                "The live MCP catalogue is the metric repository. Use catalogue ids exactly as listed.",
             ]
-            seen: set[str] = set()
-            for category, domain in _CATEGORY_DOMAIN.items():
-                if domain in seen:
-                    continue
-                seen.add(domain)
-                lines.append(f"- {category} → {domain}_agent")
+            for metric in sorted(self._live_defs.values(), key=lambda m: m.id):
+                dims = list((metric.raw or {}).get("supported_dimensions") or [])
+                dim_bit = f" [dims: {', '.join(dims)}]" if dims else ""
+                lines.append(f"- {metric.id} (domain={metric.domain}): {metric.description}{dim_bit}")
             return "\n".join(lines)
         lines = []
         for metric in self.yaml_all():

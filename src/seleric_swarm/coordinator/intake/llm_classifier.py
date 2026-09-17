@@ -21,9 +21,8 @@ from pydantic import BaseModel, Field
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.coordinator.catalogue_grounding import (
-    apply_catalogue_grain,
     collapse_assigned_metrics,
-    hints_from_catalogue,
+    validate_dimensions_for_metric,
 )
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
@@ -46,6 +45,16 @@ class SwarmClassificationV1(BaseModel):
     entities: list[str] = Field(default_factory=list)
     time_range: TimeRangeV1 = Field(default_factory=TimeRangeV1)
     metric_hints: list[str] = Field(default_factory=list)
+    # Real catalogue dimension ids the resolved metric supports (from the
+    # "[dims: ...]" list in registry_catalog), not English nouns — the
+    # direct-parameter output Phase 1 adds so the pipeline doesn't have to
+    # re-derive grain from query text (docs/BUG_SHEET.md #8).
+    dimensions: list[str] = Field(default_factory=list)
+    # "day" when the question investigates change over a multi-day window
+    # (why/diagnostic, or an explicit per-day ask) so evidence is fetched as
+    # a real daily series instead of one window aggregate
+    # (docs/BUG_SHEET.md #14). "none" is the default single-aggregate fetch.
+    granularity: Literal["day", "week", "month", "none"] = "none"
     unsupported_reason: str | None = None
 
 
@@ -60,6 +69,7 @@ class LlmClassification(BaseModel):
     time_range: TimeRangeV1
     primary_metric: str | None
     secondary_metrics: list[str]
+    granularity: str = "none"
     unresolved: bool
     unsupported_reason: str | None
 
@@ -132,23 +142,22 @@ async def classify_query_via_llm(
     except ValueError:
         resolved_window = TimeRangeV1()
 
-    catalogue_hints = await hints_from_catalogue(query, runtime=runtime, agent_id=agent_id)
-    merged_hints = list(dict.fromkeys([*classification.metric_hints, *catalogue_hints]))
+    # Trust the LLM's own metric_hints/dimensions directly — they were
+    # picked against the real catalogue listed in registry_catalog
+    # (services/metrics.MetricRegistry.catalog_prompt), not re-derived from
+    # query text via keyword/alias matching. An id the LLM invented simply
+    # doesn't resolve here and drops out; normalize_query's existing
+    # one-shot reclassification retry (coordinator/intake) handles the case
+    # where that leaves no primary metric at all.
     bootstrap = getattr(runtime, "bootstrap", None)
-    merged_hints = collapse_assigned_metrics(
-        [m for m in merged_hints if runtime.metrics.get(m) is not None] or merged_hints,
-        runtime.metrics,
-        query,
-        bootstrap,
-    )
-    merged_hints, resolved_dimensions = await apply_catalogue_grain(
-        query, merged_hints, runtime=runtime, entities=classification.entities
-    )
     canonical = collapse_assigned_metrics(
-        [m for m in merged_hints if runtime.metrics.get(m) is not None],
+        [m for m in classification.metric_hints if runtime.metrics.get(m) is not None],
         runtime.metrics,
         query,
         bootstrap,
+    )
+    resolved_dimensions = validate_dimensions_for_metric(
+        classification.dimensions, canonical[0] if canonical else None, runtime.metrics
     )
 
     entities = list(resolved_dimensions or [])
@@ -170,6 +179,7 @@ async def classify_query_via_llm(
         time_range=resolved_window,
         primary_metric=canonical[0] if canonical else None,
         secondary_metrics=canonical[1:],
+        granularity=classification.granularity,
         unresolved=not canonical and classification.unsupported_reason is not None,
         unsupported_reason=classification.unsupported_reason,
     )

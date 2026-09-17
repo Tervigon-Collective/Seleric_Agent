@@ -129,6 +129,7 @@ class NormalizedQuery(BaseModel):
     entities: list[EntityRef] = Field(default_factory=list)
     time_range: TimeRange | None = None
     comparison_range: TimeRange | None = None
+    granularity: str = "none"
     requested_outputs: list[str] = Field(default_factory=list)
     candidate_domains: list[str] = Field(default_factory=list)
     domain_questions: list[DomainQuestion] = Field(default_factory=list)

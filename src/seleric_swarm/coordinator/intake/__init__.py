@@ -403,6 +403,7 @@ async def normalize_query(
         entities=entities,
         time_range=time_range,
         comparison_range=comparison_range,
+        granularity=llm_result.granularity,
         requested_outputs=list(requested_outputs or []),
         candidate_domains=domains,
         domain_questions=domain_qs,

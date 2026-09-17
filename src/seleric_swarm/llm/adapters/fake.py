@@ -356,12 +356,19 @@ def classify_swarm_query(query: str, timezone: str, as_of: str | None) -> dict[s
     if domain_lead == "coordinator_agent":
         domain_lead = ""
     time_range, _query_class = _time_range_for(query.strip(), lower)
+    # Mirrors the real prompt's granularity rule 6: a diagnostic question
+    # investigating change over an explicit multi-day window wants a real
+    # per-day series, not one summed total (docs/BUG_SHEET.md #14).
+    multi_day = re.search(r"\blast\s+(\d+)\s+days?\b", lower)
+    granularity = "day" if ("diagnostic" in intents and multi_day and int(multi_day.group(1)) > 1) else "none"
     return {
         "intents": list(dict.fromkeys(intents)),
         "domain_lead": domain_lead,
         "entities": [],
         "time_range": time_range,
         "metric_hints": hints,
+        "dimensions": [],
+        "granularity": granularity,
         "unsupported_reason": None if intents else "No recognizable intent or metric",
     }
 

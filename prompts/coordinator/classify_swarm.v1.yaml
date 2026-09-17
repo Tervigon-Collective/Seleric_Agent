@@ -83,6 +83,21 @@ system: |
      noun — in entities. The pipeline also grounds dimension ids from the
      live catalogue; you do not have to be the only source.
 
+  5. dimensions: real catalogue dimension ids from the "[dims: ...]" list on the
+     resolved metric's row in "Registered metrics" — never an English noun, never
+     a dimension not listed there. Leave empty when the question asks for a plain
+     aggregate with no slice/breakdown. This is the same signal as entities in
+     rule 4; fill both.
+
+  6. granularity: "day" when the question investigates how a metric changed
+     over a multi-day window — any "why did X change/drop/rise over the last N
+     days" diagnostic question — or explicitly asks for a per-day/daily
+     breakdown. This tells the pipeline to fetch one evidence row per day
+     instead of a single summed total, which is required for correct anomaly
+     detection over a multi-day window (comparing a multi-day sum against a
+     single day's expected range is wrong). Use "week"/"month" only when the
+     question explicitly asks for weekly/monthly grouping. Otherwise "none".
+
   time_range.kind is one of: absolute, relative, comparison, none.
   relative_token may be "yesterday", "today", "last_Nd" (e.g. "last_3d" for 3
   days), "last_Nw" (e.g. "last_2w" for 2 weeks), "last_Nm" (e.g. "last_5m" for

@@ -749,6 +749,17 @@ def _make_remediate(ctx: SwarmV2Context):
         plan_rem = await targeted_remediation_plan(
             mission_id=ctx.mission.mission_id, followups=followups, runtime=ctx.runtime
         )
+        # Diagnostic (and any other re-activated specialist) has no other way
+        # to know this run is a remediation retry, not the first attempt --
+        # ``mission_context`` on the SwarmMessage transport is transient
+        # per-call metadata, but ``run(blackboard, mission)`` receives the
+        # same long-lived SwarmMission object every time. Without this, a
+        # remediation round re-runs with byte-identical inputs and produces
+        # the byte-identical result, wasting the round (see docs/BUG_SHEET.md
+        # #6). ctx.remediation_round is pre-increment here (about to become
+        # ctx.remediation_round + 1 below), so specialists see "which attempt
+        # is this" as 1, 2, 3, ... not 0-based.
+        ctx.mission.context["remediation_round"] = ctx.remediation_round + 1
 
         async def _activate(
             agent_id: str, objective: str, intent: str = "task_request", extra: dict | None = None
@@ -1178,6 +1189,7 @@ async def run_swarm_v2_mission(
             "resolved_metric": normalized.primary_metric,
             "metric_hints": metric_hints_for_mission(normalized),
             "domain_questions": [dq.model_dump() for dq in normalized.domain_questions],
+            "granularity": normalized.granularity,
             "decomposition_id": decomposition.decomposition_id,
             "plan_errors": plan_errors,
             "degradation_started_at": (scenario.get("domains", {}).get("technical", {}) or {}).get(
