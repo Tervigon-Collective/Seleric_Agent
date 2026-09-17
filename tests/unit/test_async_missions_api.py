@@ -55,8 +55,8 @@ def test_async_mission_accept_then_poll_to_terminal(client):
 
 def test_async_strips_swagger_scenario_id_placeholder(client, monkeypatch):
     async def _fake_classify(*_args, **_kwargs):
-        from seleric_swarm.coordinator.intake.llm_classifier import LlmClassification
         from seleric_swarm.contracts.lookup import TimeRangeV1
+        from seleric_swarm.coordinator.intake.llm_classifier import LlmClassification
 
         return LlmClassification(
             intents=["diagnostic"],

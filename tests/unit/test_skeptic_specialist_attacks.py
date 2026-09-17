@@ -7,7 +7,7 @@ import pytest
 from seleric_swarm.swarm.artifacts import Causal, Strategy
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission
-from seleric_swarm.swarm.specialists.skeptic import SkepticAgent, _ATTACKS
+from seleric_swarm.swarm.specialists.skeptic import _ATTACKS, SkepticAgent
 
 
 class _NoStatsProviders:

@@ -4,7 +4,13 @@ from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
-from seleric_swarm.domain.models import FeatureValue, MetricState, QualityFlag, SeriesPoint, StateRequest
+from seleric_swarm.domain.models import (
+    FeatureValue,
+    MetricState,
+    QualityFlag,
+    SeriesPoint,
+    StateRequest,
+)
 from seleric_swarm.services.business_state.detectors import robust_zscore
 from seleric_swarm.services.business_state.features import classify_freshness, compute_features
 from seleric_swarm.services.business_state.profiles import ProfileLoader

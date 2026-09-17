@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { isWalkable } from "../office/navmesh";
 import { blankAgents } from "../office/agents";
+import { useShellStore } from "../stores/shell";
 
 // --- minimal 2D context stub ------------------------------------------------
 function stubCtx(): CanvasRenderingContext2D {
@@ -35,6 +36,7 @@ let container: HTMLDivElement;
 const errors: string[] = [];
 
 beforeEach(() => {
+  useShellStore.getState().setWorkspace("office");
   errors.length = 0;
   vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => {
     errors.push(a.map((x) => String(x)).join(" "));
@@ -66,6 +68,7 @@ afterEach(() => {
 describe("render smoke", () => {
   it(
     "mounts, runs the demo, and never throws or leaves an agent off the floor",
+    { timeout: 30000 },
     async () => {
       vi.useFakeTimers();
       act(() => root.render(<App />));
@@ -98,7 +101,6 @@ describe("render smoke", () => {
       expect(useOffice.getState().status).toBe("completed");
       expect(useOffice.getState().timeline.length).toBeGreaterThan(15);
     },
-    { timeout: 30000 },
   );
 
   it("agent roster is complete and stable", () => {

@@ -23,6 +23,25 @@ class Settings(BaseSettings):
 
     persistence_backend: Literal["memory", "postgres"] = "memory"
     database_url: str = ""
+    checkpoint_backend: Literal["none", "memory", "postgres"] = "none"
+    cancellation_backend: Literal["memory", "redis"] = "memory"
+    redis_url: str = ""
+    run_worker_id: str = ""
+    run_lease_s: float = 60.0
+    run_heartbeat_s: float = 15.0
+    run_max_attempts: int = 3
+    run_retry_delay_s: float = 5.0
+    blob_backend: Literal["local", "minio"] = "local"
+    blob_local_path: str = ".data/attachments"
+    attachment_max_size_bytes: int = 25 * 1024 * 1024
+    attachment_allowed_mime_types: str = (
+        "application/json,application/pdf,text/csv,text/plain,image/jpeg,image/png,image/webp"
+    )
+    minio_endpoint: str = ""
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_bucket: str = "seleric-attachments"
+    minio_secure: bool = True
 
     llm_provider: Literal["fake", "azure_openai_compatible"] = "fake"
     llm_timeout_s: float = 30.0
@@ -60,6 +79,13 @@ class Settings(BaseSettings):
     langsmith_workspace_id: str = ""
     langsmith_org: str = ""
     langsmith_endpoint: str = ""
+    otel_enabled: bool = False
+    otel_service_name: str = "seleric-swarm"
+    otel_exporter_otlp_endpoint: str = ""
+    otel_exporter_otlp_headers: str = ""
+    otel_trace_sample_ratio: float = 1.0
+    langfuse_otel_endpoint: str = ""
+    langfuse_otel_headers: str = ""
 
     mcp_config_path: str = "config/mcp_servers.yaml"
     seleric_mcp_url: str = ""
@@ -104,6 +130,13 @@ class Settings(BaseSettings):
     )
     rate_limit_enabled: bool = True
     rate_limit_per_minute: int = 60
+    # Compatibility identity used until a first-class identity provider is configured.
+    default_workspace_id: str = "default"
+    default_user_id: str = "default"
+    # Only enable behind a proxy that overwrites (rather than appends user-supplied)
+    # forwarding headers.
+    trust_x_forwarded_for: bool = False
+    trust_identity_headers: bool = False
 
     @field_validator("llm_fallback_model", "azure_key_vault_url", mode="before")
     @classmethod
@@ -115,6 +148,8 @@ class Settings(BaseSettings):
     @field_validator(
         "langsmith_project",
         "langsmith_endpoint",
+        "otel_exporter_otlp_endpoint",
+        "langfuse_otel_endpoint",
         "azure_openai_endpoint",
         "azure_openai_model",
         "azure_openai_models",
@@ -123,6 +158,8 @@ class Settings(BaseSettings):
         "seleric_mcp_url",
         "a2a_public_base_url",
         "api_host",
+        "redis_url",
+        "run_worker_id",
         mode="before",
     )
     @classmethod

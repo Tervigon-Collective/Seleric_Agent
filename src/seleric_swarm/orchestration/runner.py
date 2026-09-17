@@ -144,7 +144,13 @@ async def run_mission(
                     initial["langsmith_run_id"] = str(tree.id)
             except Exception:
                 pass
-            final_state = await graph.ainvoke(initial)
+            provider = getattr(runtime, "checkpoint_provider", None)
+            config = (
+                provider.config(thread_id=mid, run_id=rid)
+                if provider is not None
+                else None
+            )
+            final_state = await graph.ainvoke(initial, config=config)
             mission_span.set_outputs(
                 {
                     "status": final_state.get("status"),

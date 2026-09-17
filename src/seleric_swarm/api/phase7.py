@@ -1,0 +1,209 @@
+"""Phase 7 scoped search, diagnostics, replay metadata, and approval APIs."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
+
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
+
+from seleric_swarm.conversations.contracts import (
+    ApprovalRequest,
+    ApprovalStatus,
+    Principal,
+    RollbackRecord,
+    SearchResult,
+)
+from seleric_swarm.conversations.phase7 import transition_approval
+from seleric_swarm.conversations.repositories import ConversationRepositories
+from seleric_swarm.runtime import SwarmRuntime
+
+router = APIRouter(prefix="/v1", tags=["phase7"])
+
+
+def _runtime(request: Request) -> SwarmRuntime:
+    provider = getattr(request.app.state, "runtime_provider", None)
+    runtime = provider() if callable(provider) else provider
+    if not isinstance(runtime, SwarmRuntime):
+        raise HTTPException(status_code=503, detail="runtime unavailable")
+    return runtime
+
+
+def _repositories(request: Request) -> ConversationRepositories:
+    repositories = _runtime(request).conversations
+    if repositories is None:
+        raise HTTPException(status_code=503, detail="conversation persistence unavailable")
+    return repositories
+
+
+def _principal(request: Request) -> Principal:
+    principal = getattr(request.state, "principal", None)
+    if not isinstance(principal, Principal):
+        raise HTTPException(status_code=401, detail="principal unavailable")
+    return principal
+
+
+def _admin(request: Request) -> Principal:
+    principal = _principal(request)
+    if not principal.is_admin:
+        raise HTTPException(status_code=403, detail="admin role required")
+    return principal
+
+
+@router.get("/search", response_model=list[SearchResult])
+def search(
+    request: Request,
+    q: str = Query(min_length=1, max_length=500),
+    kinds: str | None = None,
+    limit: int = Query(default=20, ge=1, le=100),
+) -> list[SearchResult]:
+    principal = _principal(request)
+    selected = {item.strip() for item in kinds.split(",") if item.strip()} if kinds else None
+    valid = {"thread", "message", "memory", "artifact", "run"}
+    if selected and not selected <= valid:
+        raise HTTPException(status_code=400, detail="invalid search kind")
+    repositories = _repositories(request)
+    return repositories.search.search(
+        q, principal.workspace_id, principal.user_id, kinds=selected, limit=limit
+    )
+
+
+class CreateApprovalBody(BaseModel):
+    action_type: str = Field(min_length=1, max_length=200)
+    action_preview: dict[str, Any]
+    required_role: str = Field(min_length=1, max_length=100)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    run_id: str | None = None
+    dry_run: bool = True
+    checkpoint_resume_token: str | None = None
+    expires_in_seconds: int = Field(default=3600, ge=1, le=604800)
+
+
+@router.post("/approvals", response_model=ApprovalRequest, status_code=status.HTTP_201_CREATED)
+def create_approval(body: CreateApprovalBody, request: Request) -> ApprovalRequest:
+    principal = _principal(request)
+    repositories = _repositories(request)
+    if body.run_id:
+        run = repositories.runs.get(body.run_id)
+        if run is None or not principal.owns(
+            workspace_id=run.workspace_id, user_id=run.requested_by_user_id
+        ):
+            raise HTTPException(status_code=404, detail="run not found")
+    now = datetime.now(UTC)
+    approval = ApprovalRequest(
+        workspace_id=principal.workspace_id,
+        owner_user_id=principal.user_id,
+        run_id=body.run_id,
+        action_type=body.action_type,
+        action_preview=body.action_preview,
+        required_role=body.required_role,
+        idempotency_key=body.idempotency_key,
+        dry_run=body.dry_run,
+        checkpoint_resume_token=body.checkpoint_resume_token,
+        expires_at=now + timedelta(seconds=body.expires_in_seconds),
+    )
+    return repositories.approvals.create(approval)
+
+
+class ApprovalDecisionBody(BaseModel):
+    decision: Literal[
+        "APPROVED", "REJECTED", "CANCELLED", "EXECUTED", "ROLLED_BACK"
+    ]
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+@router.get("/approvals/{approval_id}")
+def get_approval(approval_id: str, request: Request) -> dict[str, Any]:
+    principal = _principal(request)
+    repository = _repositories(request).approvals
+    approval = repository.get(approval_id, principal.workspace_id, principal.user_id)
+    if approval is None:
+        raise HTTPException(status_code=404, detail="approval not found")
+    return {
+        "approval": approval,
+        "events": repository.list_events(approval.id),
+    }
+
+
+@router.post("/approvals/{approval_id}/decision", response_model=ApprovalRequest)
+def decide_approval(
+    approval_id: str, body: ApprovalDecisionBody, request: Request
+) -> ApprovalRequest:
+    principal = _principal(request)
+    runtime = _runtime(request)
+    repository = _repositories(request).approvals
+    approval = repository.get(approval_id, principal.workspace_id, principal.user_id)
+    if approval is None:
+        raise HTTPException(status_code=404, detail="approval not found")
+    target = ApprovalStatus(body.decision)
+    try:
+        updated = transition_approval(
+            repository, approval, target, principal, reason=body.reason,
+            allow_write_actions=runtime.settings.allow_write_actions,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if target is ApprovalStatus.ROLLED_BACK:
+        repository.add_rollback(RollbackRecord(
+            approval_id=approval.id, actor_principal_id=principal.principal_id,
+            action={"action_type": approval.action_type},
+            outcome={"recorded": True, "dry_run": approval.dry_run},
+        ))
+    return updated
+
+
+@router.get("/admin/runs/{run_id}/diagnostics")
+def run_diagnostics(run_id: str, request: Request) -> dict[str, Any]:
+    principal = _admin(request)
+    runtime = _runtime(request)
+    repositories = _repositories(request)
+    run = repositories.runs.get(run_id)
+    if run is None or not principal.can_access_workspace(run.workspace_id):
+        raise HTTPException(status_code=404, detail="run not found")
+    trace = run.metadata.get("trace", {}) if isinstance(run.metadata, dict) else {}
+    memory_items: Any = repositories.memories.list_used_by_run(
+        run.id, run.workspace_id, run.requested_by_user_id
+    )
+    return {
+        "run": run,
+        "replay": {
+            "dry_run": True,
+            "read_only": True,
+            "mission_id": run.mission_id,
+            "checkpoint_resume_token": run.metadata.get("checkpoint_resume_token"),
+        },
+        "versions": {
+            "workflow": runtime.settings.workflow_version,
+            "model": runtime.settings.primary_model(),
+            "prompt": run.metadata.get("prompt_version"),
+            "tool": run.metadata.get("tool_version"),
+        },
+        "telemetry": {
+            "trace_id": trace.get("trace_id"),
+            "lost_spans": run.metadata.get("telemetry_lost", 0),
+            "trace_url": trace.get("url"),
+        },
+        "memory_provenance": [
+            item.model_dump(mode="json")
+            for item in memory_items
+        ],
+        "retention": {
+            "status": run.metadata.get("retention_status", "active"),
+            "deletion_status": run.metadata.get("deletion_status", "not_requested"),
+        },
+    }
+
+
+@router.post("/admin/runs/{run_id}/replay")
+def replay_metadata(run_id: str, request: Request, dry_run: bool = True) -> dict[str, Any]:
+    _admin(request)
+    if not dry_run:
+        raise HTTPException(
+            status_code=409,
+            detail="replay execution is disabled; inspect dry-run metadata first",
+        )
+    diagnostics = run_diagnostics(run_id, request)
+    return {"accepted": False, "dry_run": True, "read_only": True, **diagnostics["replay"]}

@@ -16,7 +16,10 @@ from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.agents.coordinator import Agent as CoordinatorAgent
 from seleric_swarm.agents.intelligence.observer import Agent as ObserverAgent
 from seleric_swarm.coordinator import ControlPlane
-from seleric_swarm.coordinator.catalogue_grounding import evidence_covers_grain, query_has_grain_intent
+from seleric_swarm.coordinator.catalogue_grounding import (
+    evidence_covers_grain,
+    query_has_grain_intent,
+)
 from seleric_swarm.coordinator.execution.lookup_dag import (
     dag_progress_summary,
     mark_ready_tasks_done,
@@ -59,7 +62,7 @@ def _emit_lookup_event(state: MissionState | dict[str, Any], kind: str, **data: 
         from seleric_swarm.observability.flow import log_mission_event
 
         log_mission_event(event)
-    except Exception:
+    except Exception:  # noqa: S110 - telemetry must never block event emission
         pass
     return {"events": events}
 
@@ -116,7 +119,7 @@ def build_graph(runtime: SwarmRuntime):
             from seleric_swarm.observability.flow import log_mission_step
 
             log_mission_step(state.get("mission_id"), "node_enter", node="coordinator")
-        except Exception:
+        except Exception:  # noqa: S110 - telemetry must never block node execution
             pass
         with traced_span(
             "node.coordinator",
@@ -288,7 +291,7 @@ def build_graph(runtime: SwarmRuntime):
                 from seleric_swarm.observability.flow import log_mission_step
 
                 log_mission_step(state.get("mission_id"), "node_enter", node=agent_id)
-            except Exception:
+            except Exception:  # noqa: S110 - telemetry must never block node execution
                 pass
             with traced_span(
                 f"node.{agent_id}",
@@ -330,7 +333,7 @@ def build_graph(runtime: SwarmRuntime):
             from seleric_swarm.observability.flow import log_mission_step
 
             log_mission_step(state.get("mission_id"), "node_enter", node="observer")
-        except Exception:
+        except Exception:  # noqa: S110 - telemetry must never block node execution
             pass
         with traced_span(
             "node.observer",
@@ -646,7 +649,7 @@ def build_graph(runtime: SwarmRuntime):
             from seleric_swarm.observability.flow import log_mission_step
 
             log_mission_step(state.get("mission_id"), "node_enter", node="synthesize")
-        except Exception:
+        except Exception:  # noqa: S110 - telemetry must never block node execution
             pass
         with traced_span(
             "node.synthesizer",
@@ -849,4 +852,6 @@ def build_graph(runtime: SwarmRuntime):
     graph.add_edge("finalize", END)
     graph.add_edge("finalize_unsupported", END)
     graph.add_edge("finalize_error", END)
-    return graph.compile()
+    provider = getattr(runtime, "checkpoint_provider", None)
+    checkpointer = provider.get_checkpointer() if provider is not None else None
+    return graph.compile(checkpointer=checkpointer) if checkpointer is not None else graph.compile()

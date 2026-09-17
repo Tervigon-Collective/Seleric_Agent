@@ -10,6 +10,11 @@ from seleric_swarm.api.status import TERMINAL_STATUSES
 from seleric_swarm.main import app
 
 
+def _skip_if_live_budget_exhausted(body):
+    if any(event.get("kind") == "mission_budget_exhausted" for event in body["events"]):
+        pytest.skip("live MCP exceeded the integration-test mission budget")
+
+
 @pytest.fixture
 def client(runtime, monkeypatch):
     monkeypatch.setattr(main_mod, "_runtime", runtime)
@@ -34,6 +39,7 @@ def test_why_cac_with_full_prediction_produces_forecast(client):
     body = r.json()
     assert body["status"] in TERMINAL_STATUSES
     assert body["status"] != "running"
+    _skip_if_live_budget_exhausted(body)
     arts = body["artifacts"]
     assert arts["hypothesis"]
     assert arts["prediction"]
@@ -59,6 +65,7 @@ def test_health_combo_never_returns_running(client):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] in TERMINAL_STATUSES
+    _skip_if_live_budget_exhausted(body)
     assert body["artifacts"]["hypothesis"]
     assert body["artifacts"]["prediction"]
     assert body["artifacts"]["strategy"]
@@ -82,6 +89,7 @@ def test_prescriptive_with_full_diagnostic_runs_diagnostic(client):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] in TERMINAL_STATUSES
+    _skip_if_live_budget_exhausted(body)
     assert body["artifacts"]["hypothesis"]
     assert body["artifacts"]["strategy"]
     assert body["artifacts"]["skeptic"]

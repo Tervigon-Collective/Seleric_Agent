@@ -10,11 +10,13 @@ dependencies = [
   "langgraph>=1.2",
   "langsmith>=0.3",
   "mcp[cli]>=2.0",
+  "minio>=7.2.20",
   "numpy>=2.0",
   "openai>=1.60",
   "pandas>=2.2",
   "pydantic>=2.10",
   "pydantic-settings>=2.7",
+  "psycopg[binary]>=3.2",
   "pyyaml>=6.0",
   "scikit-learn>=1.6",
   "sqlalchemy>=2.0",
@@ -22,6 +24,11 @@ dependencies = [
   "structlog>=25.0",
   "tenacity>=9.0",
   "uvicorn[standard]>=0.34",
+  "langgraph-checkpoint-postgres>=3.1.2",
+  "opentelemetry-api>=1.44.0",
+  "opentelemetry-sdk>=1.44.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.44.0",
+  "opentelemetry-instrumentation-fastapi>=0.65b0",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +43,9 @@ dev = [
 [project.scripts]
 seleric-eval = "seleric_swarm.eval.cli:main"
 seleric-api = "seleric_swarm.main:serve"
+seleric-migrate = "seleric_swarm.persistence.migrate:main"
+seleric-recover = "seleric_swarm.recovery:main"
+seleric-conversation-schema = "seleric_swarm.conversations.schema:main"
 
 [tool.ruff]
 line-length = 100

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 from seleric_swarm.api.status import TERMINAL_STATUSES
+from seleric_swarm.cancellation import InMemoryCancellationBackend
 from seleric_swarm.contracts.lookup import MissionResult, TraceInfo
 from seleric_swarm.orchestration.dispatch import run_any_mission
 from seleric_swarm.runtime import SwarmRuntime
@@ -17,16 +19,25 @@ _log = logging.getLogger("seleric.api.async_missions")
 # Re-export for callers / tests
 _TERMINAL = TERMINAL_STATUSES
 
-# Cooperative cancel flags for async background jobs (per process).
-_cancel_requested: dict[str, bool] = {}
+_default_cancellation = InMemoryCancellationBackend()
 
 
-def request_cancel(mission_id: str) -> None:
-    _cancel_requested[mission_id] = True
+def _cancellation(runtime: SwarmRuntime | None = None):
+    return getattr(runtime, "cancellation", None) or _default_cancellation
+
+
+def request_cancel(mission_id: str, runtime: SwarmRuntime | None = None) -> None:
+    _default_cancellation.request(mission_id)
+    backend = _cancellation(runtime)
+    if backend is not _default_cancellation:
+        backend.request(mission_id)
 
 
 def is_cancel_requested(mission_id: str, runtime: SwarmRuntime | None = None) -> bool:
-    if bool(_cancel_requested.get(mission_id)):
+    if _default_cancellation.is_requested(mission_id):
+        return True
+    backend = _cancellation(runtime)
+    if backend is not _default_cancellation and backend.is_requested(mission_id):
         return True
     if runtime is None:
         return False
@@ -39,8 +50,11 @@ def is_cancel_requested(mission_id: str, runtime: SwarmRuntime | None = None) ->
     return bool(got is not None and got.status == "cancelled")
 
 
-def clear_cancel(mission_id: str) -> None:
-    _cancel_requested.pop(mission_id, None)
+def clear_cancel(mission_id: str, runtime: SwarmRuntime | None = None) -> None:
+    _default_cancellation.clear(mission_id)
+    backend = _cancellation(runtime)
+    if backend is not _default_cancellation:
+        backend.clear(mission_id)
 
 
 def new_mission_id(*, swarm_likely: bool = True) -> str:
@@ -55,6 +69,10 @@ def seed_running_mission(
     query: str,
     request_id: str,
     session_id: str,
+    workspace_id: str | None = None,
+    owner_user_id: str | None = None,
+    thread_id: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Persist a pollable running placeholder before background execution starts."""
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -65,6 +83,10 @@ def seed_running_mission(
         "query": query,
         "async": True,
         "trace": {"request_id": request_id, "session_id": session_id},
+        "workspace_id": workspace_id,
+        "owner_user_id": owner_user_id,
+        "thread_id": thread_id,
+        "run_id": run_id,
         "artifacts": {
             "evidence": [],
             "anomaly": [],
@@ -119,27 +141,28 @@ async def run_mission_job(
         _log.info("async_mission_skipped_cancelled", extra={"mission_id": mission_id})
         return
     try:
-        dispatched = await run_any_mission(
-            runtime,
-            query=query,
-            timezone=timezone,
-            as_of=as_of,
-            session_id=session_id,
-            request_id=request_id,
-            mission_id=mission_id,
-            full_diagnostic=full_diagnostic,
-            full_prediction=full_prediction,
-            full_skeptic=full_skeptic,
-            full_strategy=full_strategy,
-            execution_mode=execution_mode,
-        )
+        async with asyncio.timeout(runtime.settings.mission_timeout_s):
+            dispatched = await run_any_mission(
+                runtime,
+                query=query,
+                timezone=timezone,
+                as_of=as_of,
+                session_id=session_id,
+                request_id=request_id,
+                mission_id=mission_id,
+                full_diagnostic=full_diagnostic,
+                full_prediction=full_prediction,
+                full_skeptic=full_skeptic,
+                full_strategy=full_strategy,
+                execution_mode=execution_mode,
+            )
         if is_cancel_requested(mission_id, runtime):
             # Cancel won — store.put refuses overwrite of cancelled; restore if needed.
             _log.info("async_mission_discarded_after_cancel", extra={"mission_id": mission_id})
             raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
             if not (isinstance(raw, dict) and raw.get("status") == "cancelled"):
                 cancel_running_mission(runtime, mission_id=mission_id, request_id=request_id)
-            clear_cancel(mission_id)
+            clear_cancel(mission_id, runtime)
             return
         # run_* already persists; ensure async marker survives on raw
         raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
@@ -148,17 +171,24 @@ async def run_mission_job(
             got = runtime.store.get(mission_id)
             if got is not None and got.status != "cancelled":
                 runtime.store.put(got, raw)
-        clear_cancel(mission_id)
+        clear_cancel(mission_id, runtime)
     except Exception as exc:  # never leave a hung running mission
         if is_cancel_requested(mission_id, runtime):
-            clear_cancel(mission_id)
+            clear_cancel(mission_id, runtime)
             return
         _log.exception("async_mission_failed", extra={"mission_id": mission_id})
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        timed_out = isinstance(exc, TimeoutError)
+        error_code = "MISSION_TIMEOUT" if timed_out else "ASYNC_EXECUTION_FAILED"
+        detail = (
+            f"Mission exceeded its {runtime.settings.mission_timeout_s:g}s timeout."
+            if timed_out
+            else f"Async mission failed: {type(exc).__name__}: {exc}"
+        )
         fail = MissionResult(
             mission_id=mission_id,
             status="failed",
-            limitations=[f"Async mission failed: {type(exc).__name__}: {exc}"],
+            limitations=[detail],
             final_response=None,
             trace=TraceInfo(request_id=request_id, session_id=session_id or request_id),
         )
@@ -170,7 +200,7 @@ async def run_mission_job(
                 "status": "failed",
                 "query": query,
                 "async": True,
-                "error_code": "ASYNC_EXECUTION_FAILED",
+                "error_code": error_code,
                 "error_message": str(exc),
                 "events": [
                     {
@@ -185,7 +215,7 @@ async def run_mission_job(
                 "limitations": fail.limitations,
             },
         )
-        clear_cancel(mission_id)
+        clear_cancel(mission_id, runtime)
 
 
 def cancel_running_mission(
@@ -209,7 +239,7 @@ def cancel_running_mission(
     if str(status or "") != "running":
         raise ValueError(f"mission not cancellable (status={status})")
 
-    request_cancel(mission_id)
+    request_cancel(mission_id, runtime)
     try:
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         # Re-check immediately before write (job may have just finished).
@@ -269,7 +299,7 @@ def cancel_running_mission(
         return payload
     except Exception:
         # Do not leave a sticky cancel flag after a 409 / race loss.
-        clear_cancel(mission_id)
+        clear_cancel(mission_id, runtime)
         raise
 
 

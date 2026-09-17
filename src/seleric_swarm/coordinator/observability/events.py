@@ -138,7 +138,7 @@ class MissionEventEmitter:
             from seleric_swarm.observability.flow import log_mission_event
 
             log_mission_event(event)
-        except Exception:
+        except Exception:  # noqa: S110 - telemetry must never block event emission
             pass
         return event
 

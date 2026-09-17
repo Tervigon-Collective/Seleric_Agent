@@ -687,7 +687,6 @@ async def test_remediation_round_widens_history_and_candidate_cap():
     async def _fake_fetch_observations(*args, **kwargs):
         captured["extra_history_days"] = kwargs.get("extra_history_days")
         captured["max_treatments"] = kwargs.get("max_treatments")
-        return None
 
     specialist = SwarmDiagnosticSpecialist()
     blackboard = Blackboard("MS-rem-unit")

@@ -24,7 +24,12 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
-from seleric_swarm.coordinator.contracts import DomainQuestion, EntityRef, NormalizedQuery, TimeRange
+from seleric_swarm.coordinator.contracts import (
+    DomainQuestion,
+    EntityRef,
+    NormalizedQuery,
+    TimeRange,
+)
 from seleric_swarm.services.metrics import MetricRegistry, lead_agent_for_hints
 
 UNSUPPORTED_NO_LLM = "LLM_CLASSIFICATION_UNAVAILABLE"

@@ -12,6 +12,7 @@ RunType = Literal["tool", "chain", "llm", "retriever", "embedding", "prompt", "p
 import structlog
 
 from seleric_swarm.config.settings import Settings
+from seleric_swarm.conversations.privacy import redact_data
 
 SENSITIVE_KEY_FRAGMENTS = (
     "api_key",
@@ -71,7 +72,7 @@ def redact_value(key: str, value: Any) -> Any:
         return redact_mapping(value)
     if isinstance(value, list):
         return [redact_value(key, item) for item in value]
-    return value
+    return redact_data(value, key=key)
 
 
 def redact_mapping(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -125,6 +126,107 @@ def configure_langsmith_env(settings: Settings) -> None:
             os.environ["LANGSMITH_WORKSPACE_ID"] = settings.langsmith_workspace_id
     except Exception:
         return
+
+
+_otel_configured = False
+
+
+def _headers(raw: str) -> dict[str, str]:
+    return dict(
+        part.split("=", 1) for part in raw.split(",")
+        if "=" in part and part.split("=", 1)[0].strip()
+    )
+
+
+def configure_opentelemetry(settings: Settings) -> bool:
+    """Configure OTLP once; Langfuse is supported through its stable OTLP endpoint."""
+    global _otel_configured
+    if _otel_configured or not settings.otel_enabled:
+        return _otel_configured
+    try:
+        from opentelemetry import trace
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
+
+        provider = TracerProvider(
+            resource=Resource.create({"service.name": settings.otel_service_name}),
+            sampler=ParentBased(TraceIdRatioBased(settings.otel_trace_sample_ratio)),
+        )
+        endpoints = [
+            (settings.otel_exporter_otlp_endpoint, settings.otel_exporter_otlp_headers),
+            (settings.langfuse_otel_endpoint, settings.langfuse_otel_headers),
+        ]
+        for endpoint, headers in endpoints:
+            if endpoint:
+                provider.add_span_processor(BatchSpanProcessor(
+                    OTLPSpanExporter(endpoint=endpoint, headers=_headers(headers))
+                ))
+        trace.set_tracer_provider(provider)
+        _otel_configured = True
+    except Exception:
+        logging.getLogger("seleric.observability").warning(
+            "otel_configuration_failed", exc_info=True
+        )
+    return _otel_configured
+
+
+def instrument_fastapi(app: Any) -> None:
+    if not _otel_configured:
+        return
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        FastAPIInstrumentor.instrument_app(
+            app,
+            excluded_urls="health,readyz",
+            http_capture_headers_server_request=["x-request-id"],
+        )
+    except Exception:
+        logging.getLogger("seleric.observability").warning(
+            "otel_fastapi_instrumentation_failed", exc_info=True
+        )
+
+
+@contextmanager
+def operation_span(
+    kind: Literal["http", "run", "task", "agent", "llm", "mcp", "retrieval", "persistence"],
+    name: str,
+    attributes: Mapping[str, Any] | None = None,
+) -> Iterator[Any]:
+    """Create a sanitized OTel span and propagate the active trace context."""
+    try:
+        from opentelemetry import trace
+
+        manager = trace.get_tracer("seleric_swarm").start_as_current_span(
+            f"{kind}.{name}",
+            attributes={
+                str(key): value if isinstance(value, (str, bool, int, float)) else str(value)
+                for key, value in redact_mapping(attributes or {}).items()
+            },
+        )
+    except Exception:
+        yield None
+        return
+    with manager as span:
+        yield span
+
+
+def current_trace_context() -> dict[str, str]:
+    try:
+        from opentelemetry import trace
+
+        context = trace.get_current_span().get_span_context()
+        if not context.is_valid:
+            return {}
+        return {
+            "trace_id": format(context.trace_id, "032x"),
+            "span_id": format(context.span_id, "016x"),
+        }
+    except Exception:
+        return {}
 
 
 def mission_metadata(
@@ -249,7 +351,7 @@ class SpanHandle:
 
 
 @contextmanager
-def traced_span(
+def _langsmith_span(
     name: str,
     metadata: dict[str, Any],
     enabled: bool,
@@ -301,6 +403,30 @@ def traced_span(
             cm.__exit__(*exc_info)
         except Exception:
             pass
+
+
+@contextmanager
+def traced_span(
+    name: str,
+    metadata: dict[str, Any],
+    enabled: bool,
+    *,
+    inputs: dict[str, Any] | None = None,
+    run_type: RunType = "chain",
+    tags: list[str] | None = None,
+) -> Iterator[SpanHandle]:
+    """Emit matching OTel and optional LangSmith spans from existing call sites."""
+    kind: Literal["run", "task", "agent", "llm", "retrieval"] = (
+        "llm" if run_type in {"llm", "embedding", "prompt"}
+        else "retrieval" if run_type == "retriever"
+        else "agent" if "agent" in name or name.startswith("node.")
+        else "task" if "task" in name
+        else "run"
+    )
+    with operation_span(kind, name, metadata), _langsmith_span(
+        name, metadata, enabled, inputs=inputs, run_type=run_type, tags=tags
+    ) as handle:
+        yield handle
 
 
 def langsmith_run_url(project: str, run_id: str | None, org: str = "default") -> str | None:

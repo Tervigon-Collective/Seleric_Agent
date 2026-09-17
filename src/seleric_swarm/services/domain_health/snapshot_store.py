@@ -51,7 +51,7 @@ class SnapshotStore:
         for file_path in reversed(files):
             try:
                 return DomainStateSnapshot.model_validate_json(file_path.read_text(encoding="utf-8"))
-            except Exception:
+            except Exception:  # noqa: S112 - skip corrupt snapshots and try the next newest
                 continue
         return None
 

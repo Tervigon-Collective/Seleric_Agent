@@ -45,7 +45,9 @@ def test_extract_returns_empty_when_getter_raises():
 @pytest.mark.asyncio
 async def test_dowhy_estimation_passes_ci_through():
     from seleric_swarm.agents.diagnostic.registries import CausalEstimationQuery
-    from seleric_swarm.agents.diagnostic.services.dowhy_estimation import DoWhyCausalEstimationService
+    from seleric_swarm.agents.diagnostic.services.dowhy_estimation import (
+        DoWhyCausalEstimationService,
+    )
 
     est = DoWhyEstimate(
         treatment="t",

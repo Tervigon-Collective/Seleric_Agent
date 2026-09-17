@@ -1,8 +1,8 @@
-# Seleric AI Office
+# Seleric Conversation Platform + AI Office
 
-Spatial, real-time visualization of the Seleric intelligence swarm. A 2D walkable
-office where each agent is a character at a desk and **every visible behaviour is a
-projection of a real Seleric mission event** — not a simulation layered on top.
+The Phase 3 React shell adds persistent conversation threads, transcript/composer,
+run activity and context panels around the existing spatial office. The Office tab
+retains the 2D walkable swarm visualization.
 
 Full docs: [`../docs/office-ui/`](../docs/office-ui/00_OVERVIEW.md).
 
@@ -24,9 +24,12 @@ curl -X POST http://127.0.0.1:8090/v1/missions -H "Content-Type: application/jso
 
 # terminal C — office UI (proxies /v1 → API)
 SELERIC_API_URL=http://127.0.0.1:8090 npm run dev
-# open http://localhost:5173/?mission=<mission_id>
-# TopBar should show "Live swarm"
+# open http://localhost:5173/?demo=0 (conversation shell)
+# use ?office=1&mission=<mission_id> to open the spatial workspace directly
 ```
+
+If the API enables shared-key authentication, set `seleric.apiKey` in browser
+local storage. HTTP and fetch-based SSE requests both send it as a bearer token.
 
 ## Scripts
 
@@ -37,7 +40,12 @@ SELERIC_API_URL=http://127.0.0.1:8090 npm run dev
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run build` | production bundle to `dist/` |
 
-## Architecture (one paragraph)
+## Architecture
+
+`api/` mirrors backend contracts and owns HTTP, conversation/mission endpoints,
+and authenticated fetch-based SSE with cursor reconnection. `stores/conversation.ts`,
+`stores/missionRuntime.ts`, and `stores/shell.ts` keep server data, spatial runtime,
+and layout preferences separate.
 
 `providers/` expose one `SwarmEventProvider` interface with two implementations —
 `DemoEventProvider` (scripted CAC fixture) and `SelericEventProvider` (SSE bridge to
@@ -47,6 +55,18 @@ draws a **pixel-office world** (textured floors, walled rooms, desks, furniture,
 characters) on a single `requestAnimationFrame` loop — same spatial metaphor as
 [Parcha AI Office](https://github.com/Parcha-ai/ai-office), without Convex/Pinecone/Clerk.
 HUD overlays (header, board, hover, inspector, timeline) are plain DOM.
+
+### Assistant UI runtime boundary
+
+`SelericAssistantRuntimeProvider` adapts the externally owned
+`useConversationStore` to `@assistant-ui/react` through
+`useExternalStoreRuntime`. Assistant UI supplies the provider plus thread,
+message, composer, attachment, cancel, and retry primitives; Zustand remains the
+single owner of server messages, run state, and SSE reconnection. Seleric typed
+parts cross the runtime as named data parts and are still rendered by
+`MessagePartRenderer`, so approval, artifact, source, chart, and activity-panel
+semantics remain domain-owned. Retry maps to a new Seleric submission linked to
+the source turn because the backend has no regenerate endpoint.
 
 ## Influences
 

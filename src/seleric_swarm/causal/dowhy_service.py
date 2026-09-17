@@ -10,6 +10,7 @@ can fall back to a metadata-only audit rather than fake a causal result.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -129,7 +130,7 @@ def _drop_collinear_common_causes(
         except Exception:
             kept.append(cause)
             continue
-        if corr == corr and abs(corr) >= _COLLINEARITY_THRESHOLD:  # NaN-safe (corr==corr is False for NaN)
+        if not math.isnan(corr) and abs(corr) >= _COLLINEARITY_THRESHOLD:
             dropped.append(cause)
         else:
             kept.append(cause)
@@ -243,13 +244,13 @@ def _extract_confidence_interval(estimate: Any) -> list[float]:
         getter = getattr(estimate, "get_confidence_intervals", None)
         if callable(getter):
             return _normalize_confidence_interval(getter())
-    except Exception:
+    except Exception:  # noqa: S110 - DoWhy versions expose CI through different optional APIs
         pass
     for attr in ("confidence_intervals", "confidence_interval"):
         try:
             raw = getattr(estimate, attr, None)
             if raw is not None:
                 return _normalize_confidence_interval(raw)
-        except Exception:
+        except Exception:  # noqa: S112 - malformed optional CI attributes are tried in fallback order
             continue
     return []

@@ -158,7 +158,7 @@ async def finalize_node(state: DiagnosticState) -> dict[str, Any]:
     }
 
 
-def build_diagnostic_graph():
+def build_diagnostic_graph(*, checkpointer=None):
     g = StateGraph(DiagnosticState)
     g.add_node("load_inputs", load_inputs)
     g.add_node("no_anomaly", no_anomaly_node)
@@ -178,4 +178,4 @@ def build_diagnostic_graph():
     g.add_edge("causal_estimate", "generate_scenarios")
     g.add_edge("generate_scenarios", "finalize")
     g.add_edge("finalize", END)
-    return g.compile()
+    return g.compile(checkpointer=checkpointer) if checkpointer is not None else g.compile()

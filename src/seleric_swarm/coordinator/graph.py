@@ -231,7 +231,9 @@ def build_swarm_v2_graph(ctx: SwarmV2Context) -> Any:
     g.add_edge("remediate", "skeptic_gate")
     g.add_edge("complete", "synthesize")
     g.add_edge("synthesize", END)
-    return g.compile()
+    provider = getattr(ctx.runtime, "checkpoint_provider", None)
+    checkpointer = provider.get_checkpointer() if provider is not None else None
+    return g.compile(checkpointer=checkpointer) if checkpointer is not None else g.compile()
 
 
 def _mission_token_usage(ctx: SwarmV2Context) -> int:
@@ -1053,7 +1055,7 @@ async def run_swarm_v2_mission(
             full_skeptic=full_skeptic,
             full_strategy=full_strategy,
         )
-    except Exception:
+    except Exception:  # noqa: S110 - telemetry must never block mission execution
         pass
     policies = load_coordinator_policies(
         getattr(runtime.settings, "coordinator_policies_path", None)
@@ -1268,6 +1270,11 @@ async def run_swarm_v2_mission(
                 blackboard.record_event(SPECIALIST_SKIPPED_POLICY, agent_id=_spec.agent_id)
                 return {"ok": True, "artifact_refs": [], "produced": _spec.produces, "skipped": True}
             try:
+                cancellation = getattr(runtime, "cancellation", None)
+                if cancellation is not None and cancellation.is_requested(mission_id):
+                    from seleric_swarm.cancellation import MissionCancelledError
+
+                    raise MissionCancelledError(f"mission {mission_id} was cancelled")
                 ids = await _spec.run(blackboard, mission)
                 return {"ok": True, "artifact_refs": ids, "produced": _spec.produces}
             except Exception as exc:
@@ -1479,7 +1486,13 @@ async def run_swarm_v2_mission(
         runtime.settings.langsmith_tracing,
         inputs={"query": query, "intents": sorted(intents), "complexity": plan.complexity, "execution_mode": mode},
     ) as span:
-        final_state: dict[str, Any] = await graph.ainvoke(initial_state)
+        provider = getattr(runtime, "checkpoint_provider", None)
+        config = (
+            provider.config(thread_id=mission_id, run_id=rid)
+            if provider is not None
+            else None
+        )
+        final_state: dict[str, Any] = await graph.ainvoke(initial_state, config=config)
         artifacts = {
             t: blackboard.refs_by_type(t)
             for t in ("evidence", "anomaly", "hypothesis", "causal", "prediction", "strategy", "skeptic")
@@ -1605,6 +1618,6 @@ async def run_swarm_v2_mission(
             mission_lead=blackboard.mission_lead or initial_lead,
             iterations=ctx.investigate_iterations,
         )
-    except Exception:
+    except Exception:  # noqa: S110 - telemetry must never alter a completed mission result
         pass
     return result

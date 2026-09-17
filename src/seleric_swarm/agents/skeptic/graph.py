@@ -287,7 +287,7 @@ def _limitations(ctx: SkepticContext, outcomes: list[ValidatorOutcome]) -> list[
     return sorted(set(lims))
 
 
-def build_skeptic_graph():
+def build_skeptic_graph(*, checkpointer=None):
     g = StateGraph(SkepticState)
     g.add_node("load_claim", load_claim)
     g.add_node("classify_claim", classify_claim_node)
@@ -323,4 +323,4 @@ def build_skeptic_graph():
     )
     g.add_edge("build_remediation", "finalize")
     g.add_edge("finalize", END)
-    return g.compile()
+    return g.compile(checkpointer=checkpointer) if checkpointer is not None else g.compile()

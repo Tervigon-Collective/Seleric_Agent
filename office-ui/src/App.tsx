@@ -1,137 +1,93 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useOffice } from "./store";
-import type { MissionRef } from "./types";
-import { DemoEventProvider } from "./providers/demo";
-import { SelericEventProvider } from "./providers/seleric";
-import type { ProviderHandlers, SwarmEventProvider } from "./providers/types";
-import { TopBar } from "./components/TopBar";
-import { MissionHeader } from "./components/MissionHeader";
-import { MissionBoard } from "./components/MissionBoard";
-import { MissionMinimap } from "./components/MissionMinimap";
-import { MissionTimeline } from "./components/MissionTimeline";
-import { AgentHoverCard } from "./components/AgentHoverCard";
-import { AgentInspector } from "./components/AgentInspector";
-import { DebugPanel } from "./components/DebugPanel";
-import { OfficeCanvas } from "./render/OfficeCanvas";
-
-const params = new URLSearchParams(location.search);
-const START_DEMO = params.get("demo") === "1" || !params.has("mission");
-const URL_MISSION = params.get("mission");
-/** `?fast=1` or `?speed=8` speeds up the demo fixture for smoke checks. */
-const DEMO_SPEED = Math.max(1, Number(params.get("speed") || (params.get("fast") === "1" ? 8 : 1)) || 1);
+import { useEffect, useState } from "react";
+import { Composer } from "./components/Composer";
+import { DetailPanel } from "./components/DetailPanel";
+import { OfficeWorkspace } from "./components/OfficeWorkspace";
+import { ThreadSidebar } from "./components/ThreadSidebar";
+import { Transcript } from "./components/Transcript";
+import { CommandSearch } from "./components/CommandSearch";
+import { AdminDiagnostics } from "./components/AdminDiagnostics";
+import { SelericAssistantRuntimeProvider } from "./providers/SelericAssistantRuntime";
+import { useConversationStore } from "./stores/conversation";
+import { useShellStore } from "./stores/shell";
 
 export default function App() {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [dark, setDark] = useState(() => {
-    const s = localStorage.getItem("seleric.theme");
-    if (s) return s === "dark";
-    // Office floorplan reads better in light; dark is opt-in via the toggle.
-    return false;
+    const saved = localStorage.getItem("seleric.theme");
+    return saved ? saved === "dark" : false;
   });
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("seleric.theme", dark ? "dark" : "light");
   }, [dark]);
-
-  const providerMode = useOffice((s) => s.providerMode);
-  const setProviderMode = useOffice((s) => s.setProviderMode);
-  const hydrate = useOffice((s) => s.hydrate);
-  const ingestEvent = useOffice((s) => s.ingestEvent);
-  const setConn = useOffice((s) => s.setConn);
-  const reset = useOffice((s) => s.reset);
-
-  const [missions, setMissions] = useState<MissionRef[]>([]);
-  const [missionId, setMissionId] = useState<string | null>(null);
-  const [pointer, setPointer] = useState({ x: 0, y: 0 });
-  const unsubRef = useRef<null | (() => void)>(null);
-
+  const workspace = useShellStore((s) => s.workspace);
+  const setWorkspace = useShellStore((s) => s.setWorkspace);
+  const sidebarOpen = useShellStore((s) => s.sidebarOpen);
+  const detailsOpen = useShellStore((s) => s.detailsOpen);
+  const demoMode = useConversationStore((s) => s.demoMode);
+  const setDemoMode = useConversationStore((s) => s.setDemoMode);
+  const loadThreads = useConversationStore((s) => s.loadThreads);
+  const error = useConversationStore((s) => s.error);
+  const selectThread = useConversationStore((s) => s.selectThread);
+  useEffect(() => { void loadThreads(); }, [loadThreads, demoMode]);
   useEffect(() => {
-    setProviderMode(START_DEMO ? "demo" : "seleric");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const provider: SwarmEventProvider = useMemo(
-    () => (providerMode === "demo" ? new DemoEventProvider({ speed: DEMO_SPEED }) : new SelericEventProvider()),
-    [providerMode],
-  );
-
-  // load mission list on provider change, then keep it fresh (multi-mission view)
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      provider
-        .listMissions()
-        .then((ms) => {
-          if (!alive) return;
-          setMissions(ms);
-          setMissionId((cur) => cur ?? URL_MISSION ?? ms[0]?.missionId ?? null);
-        })
-        .catch(() => alive && setMissions([]));
-    load();
-    const t = setInterval(load, 10_000);
+    const keyboard = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault(); setSearchOpen(true);
+      }
+    };
+    const result = (event: Event) => {
+      const detail = (event as CustomEvent<{ thread_id?: string }>).detail;
+      if (detail?.thread_id) { setWorkspace("conversation"); void selectThread(detail.thread_id); }
+    };
+    window.addEventListener("keydown", keyboard);
+    window.addEventListener("seleric:search-result", result);
     return () => {
-      alive = false;
-      clearInterval(t);
+      window.removeEventListener("keydown", keyboard);
+      window.removeEventListener("seleric:search-result", result);
     };
-  }, [provider]);
+  }, [selectThread, setWorkspace]);
 
-  // (re)subscribe on mission / provider change
-  useEffect(() => {
-    unsubRef.current?.();
-    reset();
-    if (!missionId) return;
-
-    const handlers: ProviderHandlers = {
-      onSnapshot: hydrate,
-      onEvent: ingestEvent,
-      onState: (st) => setConn(st === "live" ? "live" : st),
-      onDone: () => setConn("closed"),
-    };
-    setConn("connecting");
-    provider
-      .getSnapshot(missionId)
-      .then(hydrate)
-      .catch(() => void 0)
-      .finally(() => {
-        unsubRef.current = provider.subscribe(missionId, handlers);
-      });
-
-    return () => {
-      unsubRef.current?.();
-      unsubRef.current = null;
-    };
-  }, [provider, missionId, hydrate, ingestEvent, setConn, reset]);
-
-  const onPickProvider = useCallback(
-    (m: "demo" | "seleric") => {
-      setProviderMode(m);
-      setMissionId(null);
-    },
-    [setProviderMode],
-  );
+  if (workspace === "office") {
+    return (
+      <OfficeWorkspace
+        dark={dark}
+        onToggleTheme={() => setDark((value) => !value)}
+        onOpenConversations={() => setWorkspace("conversation")}
+      />
+    );
+  }
 
   return (
-    <div className="app">
-      <TopBar
-        missions={missions}
-        missionId={missionId}
-        onPickMission={setMissionId}
-        providerMode={providerMode}
-        onPickProvider={onPickProvider}
-        dark={dark}
-        onToggleTheme={() => setDark((d) => !d)}
-      />
-
-      <div className="stage" onMouseMove={(e) => setPointer({ x: e.clientX, y: e.clientY })}>
-        <OfficeCanvas dark={dark} />
-        <MissionHeader />
-        <MissionBoard />
-        <AgentHoverCard x={pointer.x} y={pointer.y} />
-        <AgentInspector />
-        <MissionMinimap missions={missions} missionId={missionId} onPick={setMissionId} />
-        <DebugPanel />
-      </div>
-
-      <MissionTimeline />
+    <div className="app-shell">
+      <header className="shell-header">
+        <button className="brand-button" onClick={() => setWorkspace("conversation")} aria-label="Open conversations"><span className="brand-mark">S</span><strong>Seleric</strong></button>
+        <nav aria-label="Workspace">
+          <button className={workspace === "conversation" ? "active" : ""} onClick={() => setWorkspace("conversation")}>Conversations</button>
+          <button onClick={() => setWorkspace("office")}>Office</button>
+        </nav>
+        <span className="header-spacer" />
+        <button className="search-trigger" onClick={() => setSearchOpen(true)}
+          aria-keyshortcuts="Control+K Meta+K">Search <kbd>⌘/Ctrl K</kbd></button>
+        <button className="icon-btn" onClick={() => setDiagnosticsOpen(true)}
+          aria-label="Open admin diagnostics">Diagnostics</button>
+        <label className="mode-switch">Mode <select value={demoMode ? "demo" : "live"} onChange={(e) => setDemoMode(e.target.value === "demo")}><option value="demo">Demo</option><option value="live">Live</option></select></label>
+        <button className="icon-btn" onClick={() => setDark((value) => !value)} aria-label={`Use ${dark ? "light" : "dark"} theme`}>{dark ? "☀" : "◐"}</button>
+      </header>
+      <main className={`conversation-layout ${!sidebarOpen ? "sidebar-closed" : ""} ${!detailsOpen ? "details-closed" : ""}`}>
+        {sidebarOpen && <ThreadSidebar />}
+        <div className="conversation-main">
+          {error && <div className="error-banner" role="alert">{error}</div>}
+          <SelericAssistantRuntimeProvider>
+            <Transcript />
+            <Composer />
+          </SelericAssistantRuntimeProvider>
+        </div>
+        {detailsOpen && <DetailPanel />}
+      </main>
+      <CommandSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <AdminDiagnostics open={diagnosticsOpen} onClose={() => setDiagnosticsOpen(false)} />
     </div>
   );
 }

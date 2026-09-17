@@ -107,7 +107,16 @@ async def run_any_mission(
     to whichever route runs. ``**swarm_only`` (e.g. ``providers``) applies only
     when the swarm route is taken and is ignored on the lookup route.
     """
+    cancellation = getattr(runtime, "cancellation", None)
+    if mission_id and cancellation is not None and cancellation.is_requested(mission_id):
+        from seleric_swarm.cancellation import MissionCancelledError
+
+        raise MissionCancelledError(f"mission {mission_id} was cancelled")
     route = await route_for(runtime, query=query, timezone=timezone, as_of=as_of)
+    if mission_id and cancellation is not None and cancellation.is_requested(mission_id):
+        from seleric_swarm.cancellation import MissionCancelledError
+
+        raise MissionCancelledError(f"mission {mission_id} was cancelled")
     try:
         from seleric_swarm.observability.flow import log_mission_step
 
@@ -118,7 +127,7 @@ async def run_any_mission(
             query=query[:160],
             request_id=request_id,
         )
-    except Exception:
+    except Exception:  # noqa: S110 - telemetry must never block mission routing
         pass
     if route == "lookup":
         fast_result = await run_lookup_fast_path(

@@ -18,6 +18,7 @@ export function TopBar({
   onPickProvider,
   dark,
   onToggleTheme,
+  onOpenConversations,
 }: {
   missions: MissionRef[];
   missionId: string | null;
@@ -26,6 +27,7 @@ export function TopBar({
   onPickProvider: (m: "demo" | "seleric") => void;
   dark: boolean;
   onToggleTheme: () => void;
+  onOpenConversations: () => void;
 }) {
   const conn = useOffice((s) => s.conn);
   const query = useOffice((s) => s.query);
@@ -42,6 +44,9 @@ export function TopBar({
   return (
     <header className="topbar">
       <span className="brand">SELERIC OFFICE</span>
+      <button className="btn office-chat-btn" onClick={onOpenConversations}>
+        ← Chat
+      </button>
 
       <select value={providerMode} onChange={(e) => onPickProvider(e.target.value as "demo" | "seleric")}>
         <option value="demo">Demo fixture</option>

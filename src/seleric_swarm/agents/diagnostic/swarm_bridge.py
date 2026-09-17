@@ -27,11 +27,11 @@ from seleric_swarm.agents.diagnostic.ontology import (
 )
 from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
 from seleric_swarm.agents.diagnostic.reasoning import LLMPortReasoningModel, NullReasoningModel
-from seleric_swarm.config.settings import configured_chat_model
 from seleric_swarm.agents.diagnostic.registries import TemplateCausalEstimationService
-from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.agents.diagnostic.services.dowhy_estimation import DoWhyCausalEstimationService
+from seleric_swarm.config.settings import configured_chat_model
 from seleric_swarm.coordinator.leadership.frontier import LeadershipController
+from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.swarm.artifacts import Causal, Hypothesis
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.mission import SwarmMission

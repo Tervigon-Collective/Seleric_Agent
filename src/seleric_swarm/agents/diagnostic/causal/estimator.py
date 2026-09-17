@@ -96,7 +96,7 @@ def _has_observed_movement(ctx: DiagnosticContext, metric_id: str) -> bool:
                     change_pct = (m_mean - b_mean) / abs(b_mean) * 100.0
                     if abs(change_pct) >= 1.0:
                         return True
-        except Exception:
+        except Exception:  # noqa: S110 - optional provider frames may not support pandas operations
             pass
     return False
 

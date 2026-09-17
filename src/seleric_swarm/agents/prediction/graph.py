@@ -91,7 +91,7 @@ async def assemble(state: PredictionState) -> dict[str, Any]:
     }
 
 
-def build_prediction_graph():
+def build_prediction_graph(*, checkpointer=None):
     g = StateGraph(PredictionState)
     g.add_node("load_inputs", load_inputs)
     g.add_node("select_forecast", select_forecast)
@@ -103,4 +103,4 @@ def build_prediction_graph():
     g.add_edge("select_forecast", "check_applicability")
     g.add_edge("check_applicability", "assemble")
     g.add_edge("assemble", END)
-    return g.compile()
+    return g.compile(checkpointer=checkpointer) if checkpointer is not None else g.compile()

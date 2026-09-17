@@ -104,7 +104,7 @@ def _breakdown_evidence_row(metric_id: str, reading: MetricReading, time_range: 
         time_range={"start": time_range.start, "end": time_range.end},
         source=reading.source or "deterministic.mcp_breakdown",
         dimensions=reading.dimensions,
-        provenance={"data_origin": reading.data_origin},
+        provenance={"data_origin": reading.data_origin, **reading.source_metadata},
     )
 
 
@@ -202,7 +202,7 @@ def _reading_evidence_row(metric_id: str, reading: MetricReading, time_range: Ti
         time_range={"start": time_range.start, "end": time_range.end},
         source=reading.source or "deterministic.mcp",
         dimensions=reading.dimensions,
-        provenance={"data_origin": reading.data_origin},
+        provenance={"data_origin": reading.data_origin, **reading.source_metadata},
     )
 
 
@@ -232,6 +232,12 @@ async def _comparison_rows(
         source="deterministic.metrics",
         provenance={
             "calculation": "period_a - period_b",
+            "calculation_version": "1",
+            "evidence_refs": [row_a.evidence_id, row_b.evidence_id],
+            "source_metadata": {
+                "period_a": row_a.provenance,
+                "period_b": row_b.provenance,
+            },
             "period_a_evidence_id": row_a.evidence_id,
             "period_b_evidence_id": row_b.evidence_id,
         },
@@ -367,6 +373,12 @@ async def run_lookup_fast_path(
                             dimensions=row_a.dimensions,
                             provenance={
                                 "calculation": "period_a - period_b",
+                                "calculation_version": "1",
+                                "evidence_refs": [row_a.evidence_id, row_b.evidence_id],
+                                "source_metadata": {
+                                    "period_a": row_a.provenance,
+                                    "period_b": row_b.provenance,
+                                },
                                 "period_a_evidence_id": row_a.evidence_id,
                                 "period_b_evidence_id": row_b.evidence_id,
                             },
@@ -376,8 +388,7 @@ async def run_lookup_fast_path(
                     comparison_lines.append(
                         f"{_humanize_metric(row_a.metric_or_fact)} ({dims_label}): period A={row_a.value}, period B={row_b.value}, delta={delta_value}"
                     )
-                for row_b in by_key_b.values():
-                    evidence.append(row_b)
+                evidence.extend(by_key_b.values())
 
         narration = "\n".join(comparison_lines) if comparison_lines else None
     else:

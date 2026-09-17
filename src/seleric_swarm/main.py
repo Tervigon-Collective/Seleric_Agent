@@ -9,25 +9,31 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-# event families the control plane emits (without the trailing "_")
-_EVENT_FAMILIES = frozenset(
-    {"mission", "decomposition", "task", "artifact", "leadership", "claim", "skeptic", "remediation"}
-)
-
 from seleric_swarm.api.async_missions import (
     cancel_running_mission,
     new_mission_id,
     run_mission_job,
     seed_running_mission,
 )
+from seleric_swarm.api.conversations import router as conversations_router
+from seleric_swarm.api.phase7 import router as phase7_router
 from seleric_swarm.api.ready import check_readiness
 from seleric_swarm.api.request_id import RequestIdMiddleware
 from seleric_swarm.api.security import ApiSecurityMiddleware
 from seleric_swarm.bootstrap import build_runtime
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
-from seleric_swarm.observability.tracing import traced_span
+from seleric_swarm.observability.tracing import (
+    configure_opentelemetry,
+    instrument_fastapi,
+    traced_span,
+)
 from seleric_swarm.orchestration.dispatch import _SWARM_INTENTS, run_any_mission
 from seleric_swarm.runtime import SwarmRuntime
+
+# event families the control plane emits (without the trailing "_")
+_EVENT_FAMILIES = frozenset(
+    {"mission", "decomposition", "task", "artifact", "leadership", "claim", "skeptic", "remediation"}
+)
 
 _runtime: SwarmRuntime | None = None
 
@@ -49,6 +55,10 @@ async def lifespan(_app: FastAPI):
     finally:
         rt = _runtime
         if rt is not None:
+            checkpoint_provider = getattr(rt, "checkpoint_provider", None)
+            checkpoint_closer = getattr(checkpoint_provider, "close", None)
+            if checkpoint_closer is not None:
+                checkpoint_closer()
             closer = getattr(rt.mcp, "aclose", None)
             if closer is not None:
                 maybe = closer()
@@ -65,6 +75,9 @@ app = FastAPI(
     servers=[{"url": "/", "description": "this host"}],
     swagger_ui_parameters={"displayRequestDuration": True},
 )
+app.state.runtime_provider = get_runtime
+app.include_router(conversations_router)
+app.include_router(phase7_router)
 
 # Read-only spatial AI-Office UI gateway (SSE snapshot + event stream).
 try:
@@ -111,6 +124,14 @@ app.add_middleware(
     api_key=getattr(_settings_boot, "api_key", "") or "",
     rate_limit_per_minute=int(getattr(_settings_boot, "rate_limit_per_minute", 60) or 60),
     rate_limit_enabled=bool(getattr(_settings_boot, "rate_limit_enabled", True)),
+    default_workspace_id=getattr(_settings_boot, "default_workspace_id", "default"),
+    default_user_id=getattr(_settings_boot, "default_user_id", "default"),
+    trust_x_forwarded_for=bool(
+        getattr(_settings_boot, "trust_x_forwarded_for", False)
+    ),
+    trust_identity_headers=bool(
+        getattr(_settings_boot, "trust_identity_headers", False)
+    ),
 )
 app.add_middleware(RequestIdMiddleware)
 _local_cors = _settings_boot is None or _settings_boot.is_dev_surface()
@@ -122,6 +143,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+if _settings_boot is not None:
+    configure_opentelemetry(_settings_boot)
+    instrument_fastapi(app)
 
 
 _KNOWN_SCENARIO_IDS = {"cac_regression"}
@@ -365,7 +389,7 @@ async def create_mission(
             query=query[:160],
             request_id=request_id,
         )
-    except Exception:
+    except Exception:  # noqa: S110 - optional telemetry must not fail mission handling
         pass
 
     # Async accept path.

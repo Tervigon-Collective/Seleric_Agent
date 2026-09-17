@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from seleric_swarm.domain.models import Freshness, MetricStateStatus, QualityFlag
+from seleric_swarm.domain.models import Freshness, QualityFlag
 
 # Domain Health Snapshot contracts (docs/features/business-state-service/04_DOMAIN_HEALTH_SNAPSHOTS.md).
 # Sprint 3: commerce only, JSON-file persistence (see snapshot_store.py).

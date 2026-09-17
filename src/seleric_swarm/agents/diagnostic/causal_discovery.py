@@ -15,7 +15,11 @@ import structlog
 
 from seleric_swarm.agents.diagnostic.context import DiagnosticContext
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticHypothesis
-from seleric_swarm.agents.diagnostic.ontology import graph_id_for_outcome, graph_identity, node_for_metric
+from seleric_swarm.agents.diagnostic.ontology import (
+    graph_id_for_outcome,
+    graph_identity,
+    node_for_metric,
+)
 from seleric_swarm.services.metrics import MetricRegistry
 
 _log = structlog.get_logger("seleric_swarm.agents.diagnostic")
@@ -73,8 +77,8 @@ def _movement_score(ctx: DiagnosticContext, metric_id: str) -> tuple[float, str,
                     dir_str = "up" if change_pct > 1.0 else ("down" if change_pct < -1.0 else "")
                     if abs(change_pct) >= 1.0:
                         return abs(change_pct), dir_str, refs
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.debug("diagnostic.discovery.observation_movement_skipped", metric_id=metric_id, error=str(exc))
 
     return score, direction, refs
 

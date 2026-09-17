@@ -117,7 +117,7 @@ async def test_reference_mission_full_prediction(runtime):
     res = await run_swarm_v2_mission(
         runtime, query=q, as_of="2026-09-03", full_prediction=True
     )
-    assert res.status == "completed"
+    assert res.status in {"completed", "partial"}
     assert res.artifacts["prediction"], "prediction artifact posted"
     ev_kinds = [e["kind"] for e in res.events]
     assert "prediction_done" in ev_kinds

@@ -4,10 +4,19 @@ import os
 
 from dotenv import load_dotenv
 
+from seleric_swarm.cancellation import build_cancellation_backend
+from seleric_swarm.checkpointing import build_checkpoint_provider
 from seleric_swarm.config.settings import Settings, get_settings
+from seleric_swarm.conversations.blobs import LocalBlobStore, MinioBlobStore
+from seleric_swarm.conversations.events import ActivityEventSink, InMemoryEventNotifier
+from seleric_swarm.conversations.postgres import build_conversation_repositories
 from seleric_swarm.llm.factory import build_llm
 from seleric_swarm.llm.metering import MeteredLLMPort
-from seleric_swarm.observability.tracing import configure_langsmith_env, configure_logging
+from seleric_swarm.observability.tracing import (
+    configure_langsmith_env,
+    configure_logging,
+    configure_opentelemetry,
+)
 from seleric_swarm.paths import repo_root
 from seleric_swarm.persistence.postgres import build_store
 from seleric_swarm.prompts.registry import PromptRegistry
@@ -45,6 +54,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     _sync_settings_to_environ(settings)
     configure_logging(settings)
     configure_langsmith_env(settings)
+    configure_opentelemetry(settings)
     agents = AgentRegistry(str(repo_root() / "config" / "agent_registry.yaml"))
     mcp = MCPGateway(settings.mcp_config_path, agents=agents)
     # CatalogueBootstrap is created eagerly but NOT warmed here — build_runtime
@@ -53,6 +63,32 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     cat_bootstrap = CatalogueBootstrap(mcp)
     metrics = MetricRegistry(settings.metric_registry_path)
     metrics.bind_catalogue(cat_bootstrap)
+    conversations = build_conversation_repositories(
+        settings.persistence_backend, settings.database_url
+    )
+    allowed_mime_types = {
+        item.strip().lower()
+        for item in settings.attachment_allowed_mime_types.split(",")
+        if item.strip()
+    }
+    if settings.blob_backend == "minio":
+        from minio import Minio
+
+        client = Minio(
+            settings.minio_endpoint,
+            access_key=settings.minio_access_key,
+            secret_key=settings.minio_secret_key,
+            secure=settings.minio_secure,
+        )
+        blob_store = MinioBlobStore(
+            client, settings.minio_bucket, max_size_bytes=settings.attachment_max_size_bytes
+        )
+    else:
+        blob_store = LocalBlobStore(
+            repo_root() / settings.blob_local_path,
+            max_size_bytes=settings.attachment_max_size_bytes,
+            allowed_mime_types=allowed_mime_types,
+        )
     runtime = SwarmRuntime(
         settings=settings,
         llm=MeteredLLMPort(build_llm(settings)),
@@ -63,6 +99,15 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         store=build_store(settings.persistence_backend, settings.database_url),
         ontology=OntologyService(mcp),
         bootstrap=cat_bootstrap,
+        conversations=conversations,
+        activity_events=ActivityEventSink(conversations.runs, InMemoryEventNotifier()),
+        checkpoint_provider=build_checkpoint_provider(
+            settings.checkpoint_backend, settings.database_url
+        ),
+        cancellation=build_cancellation_backend(
+            settings.cancellation_backend, settings.redis_url
+        ),
+        blob_store=blob_store,
     )
     # BusinessStateService holds a runtime reference (needs mcp/metrics at call
     # time, not construction time) -- built after so the two aren't circular.

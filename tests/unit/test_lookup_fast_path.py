@@ -17,12 +17,12 @@ from seleric_swarm.swarm.providers.base import DataResult, MetricReading
 
 
 def _normalized(**overrides) -> NormalizedQuery:
-    defaults = dict(
-        original_query="how is attribution doing",
-        intents=["lookup"],
-        domain_questions=[],
-        candidate_domains=[],
-    )
+    defaults = {
+        "original_query": "how is attribution doing",
+        "intents": ["lookup"],
+        "domain_questions": [],
+        "candidate_domains": [],
+    }
     defaults.update(overrides)
     return NormalizedQuery(**defaults)
 

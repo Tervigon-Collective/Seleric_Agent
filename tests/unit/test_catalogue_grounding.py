@@ -285,7 +285,7 @@ async def test_ambiguous_product_question_uses_live_dim_supported_by_units_sold(
     """
 
     class _Mcp:
-        capabilities = {"seleric.catalogue_resolve_dimension"}
+        capabilities: ClassVar[set[str]] = {"seleric.catalogue_resolve_dimension"}
 
         async def call(self, **kwargs):
             return {
@@ -324,7 +324,7 @@ async def test_ambiguous_product_question_uses_live_dim_supported_by_units_sold(
 @pytest.mark.asyncio
 async def test_product_wise_question_filters_to_slicable_metric():
     class _Mcp:
-        capabilities = {"seleric.catalogue_resolve_dimension"}
+        capabilities: ClassVar[set[str]] = {"seleric.catalogue_resolve_dimension"}
 
         async def call(self, **kwargs):
             return {
@@ -363,7 +363,7 @@ async def test_product_wise_question_filters_to_slicable_metric():
 @pytest.mark.asyncio
 async def test_ambiguous_sku_vs_seller_sku_keeps_hinted_metric_dim():
     class _Mcp:
-        capabilities = {"seleric.catalogue_resolve_dimension"}
+        capabilities: ClassVar[set[str]] = {"seleric.catalogue_resolve_dimension"}
 
         async def call(self, **kwargs):
             return {
@@ -556,7 +556,10 @@ async def test_hints_from_catalogue_collapses_cadence_siblings():
     from seleric_swarm.coordinator.catalogue_grounding import hints_from_catalogue
 
     class _Mcp:
-        capabilities = {"seleric.catalogue_search_metrics", "seleric.catalogue_resolve_term"}
+        capabilities: ClassVar[set[str]] = {
+            "seleric.catalogue_search_metrics",
+            "seleric.catalogue_resolve_term",
+        }
 
         async def call(self, *, agent_id, capability, arguments):
             del agent_id, arguments
@@ -745,7 +748,7 @@ def test_collapse_assigned_metrics_keeps_conjunction_across_concepts():
 @pytest.mark.asyncio
 async def test_apply_catalogue_grain_skips_campaign_objective_on_aggregate_ctr():
     class _Mcp:
-        capabilities = {"seleric.catalogue_resolve_dimension"}
+        capabilities: ClassVar[set[str]] = {"seleric.catalogue_resolve_dimension"}
 
         async def call(self, **kwargs):
             return {"kind": "resolved", "dimension_id": "campaign_objective"}

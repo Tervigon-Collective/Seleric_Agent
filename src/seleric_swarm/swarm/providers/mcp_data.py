@@ -254,6 +254,18 @@ class HybridMcpDataProvider:
                         data_origin="MCP",
                         synthetic=False,
                         source=source_label,
+                        source_metadata={
+                            **(result.get("provenance") or {}),
+                            "tool": "seleric.metrics_query",
+                            "tool_version": str(result.get("tool_version") or "1"),
+                            "query": {
+                                "measure": measure,
+                                "start": start,
+                                "end": end,
+                                "dimensions": breakdown,
+                                "filters": extra_filters,
+                            },
+                        },
                     )
                 )
                 emitted = True

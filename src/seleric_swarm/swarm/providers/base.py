@@ -35,6 +35,7 @@ class MetricReading:
     data_origin: str = "TEMPLATE"
     synthetic: bool = True
     source: str = "template"
+    source_metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def change_pct(self) -> float | None:

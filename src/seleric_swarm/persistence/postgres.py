@@ -64,11 +64,13 @@ class PostgresMissionStore:
                     """
                     INSERT INTO missions (
                         mission_id, user_query, normalized_query, status, mission_lead,
-                        active_specialist, leadership_epoch, route, result_json, raw_json
+                        active_specialist, leadership_epoch, route, result_json, raw_json,
+                        workspace_id, owner_user_id, thread_id, run_id
                     ) VALUES (
                         :mission_id, :user_query, :normalized_query, :status, :mission_lead,
                         :active_specialist, :leadership_epoch, :route,
-                        CAST(:result_json AS JSONB), CAST(:raw_json AS JSONB)
+                        CAST(:result_json AS JSONB), CAST(:raw_json AS JSONB),
+                        :workspace_id, :owner_user_id, :thread_id, :run_id
                     )
                     ON CONFLICT (mission_id) DO UPDATE SET
                         status = EXCLUDED.status,
@@ -78,6 +80,10 @@ class PostgresMissionStore:
                         route = EXCLUDED.route,
                         result_json = EXCLUDED.result_json,
                         raw_json = EXCLUDED.raw_json,
+                        workspace_id = COALESCE(EXCLUDED.workspace_id, missions.workspace_id),
+                        owner_user_id = COALESCE(EXCLUDED.owner_user_id, missions.owner_user_id),
+                        thread_id = COALESCE(EXCLUDED.thread_id, missions.thread_id),
+                        run_id = COALESCE(EXCLUDED.run_id, missions.run_id),
                         updated_at = NOW()
                     WHERE (
                         EXCLUDED.status IS DISTINCT FROM 'cancelled'
@@ -100,6 +106,10 @@ class PostgresMissionStore:
                     "route": route,
                     "result_json": _json(payload),
                     "raw_json": _json(raw),
+                    "workspace_id": raw.get("workspace_id"),
+                    "owner_user_id": raw.get("owner_user_id"),
+                    "thread_id": raw.get("thread_id"),
+                    "run_id": raw.get("run_id"),
                 },
             )
             # Lost CAS (cancel after completed, or completion after cancel): do not

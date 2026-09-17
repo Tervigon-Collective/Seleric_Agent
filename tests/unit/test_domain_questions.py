@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
@@ -23,8 +24,7 @@ from seleric_swarm.coordinator.planning.mission_planner import tasks_from_subque
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.domain.base import DomainAgent, DomainConfig
 from seleric_swarm.swarm.mission import SwarmMission
-from seleric_swarm.swarm.providers.base import DataResult, MetricReading
-from seleric_swarm.swarm.providers.base import ProviderBundle
+from seleric_swarm.swarm.providers.base import DataResult, MetricReading, ProviderBundle
 from seleric_swarm.swarm.specialists.observer import ObserverAgent, _asked_grain, _asked_metrics
 
 
@@ -412,7 +412,7 @@ async def test_swarm_observe_fetches_only_assigned_metrics_not_peers():
 async def test_swarm_observe_uses_assigned_grain_not_probe_dimensions():
     class _Rec:
         domain = "product"
-        calls: list[dict] = []
+        calls: ClassVar[list[dict]] = []
 
         async def fetch(self, *, metric_ids, time_range, dimensions=None, limit=None, sort=None):
             self.calls.append({"metric_ids": list(metric_ids), "dimensions": dimensions})

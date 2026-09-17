@@ -160,8 +160,10 @@ def build_claim_aware_response(
         # diagnosis. Independent of the synthetic/mixed banners above (a
         # mission can be all-real-data AND still incomplete).
         lines += [
-            f"MISSION {str(completion_status).upper()} - not all objectives were satisfied this run; "
-            "treat the findings below as raw signals, not a confirmed diagnosis.",
+            (
+                f"MISSION {str(completion_status).upper()} - not all objectives were satisfied this run; "
+                "treat the findings below as raw signals, not a confirmed diagnosis."
+            ),
             "",
         ]
 
@@ -180,8 +182,10 @@ def build_claim_aware_response(
                 dev = a.get("deviation_pct")
                 pct_str = f" ({float(dev):+.1f}%)" if isinstance(dev, (int, float)) else ""
                 lines += [
-                    f"[Premise Notice]: The question asks why {mid or 'the metric'} went {implied_dir}, but observed "
-                    f"data for this period shows it actually went {actual_dir}{pct_str}.",
+                    (
+                        f"[Premise Notice]: The question asks why {mid or 'the metric'} went {implied_dir}, but observed "
+                        f"data for this period shows it actually went {actual_dir}{pct_str}."
+                    ),
                     "",
                 ]
                 break
