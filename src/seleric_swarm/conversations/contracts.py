@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -119,6 +119,14 @@ class AttachmentStatus(StrEnum):
     DELETED = "DELETED"
 
 
+class AttachmentScanStatus(StrEnum):
+    PENDING = "PENDING"
+    CLEAN = "CLEAN"
+    QUARANTINED = "QUARANTINED"
+    FAILED = "FAILED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
 class MemoryScope(StrEnum):
     THREAD = "THREAD"
     USER = "USER"
@@ -166,6 +174,7 @@ class Thread(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
+    deleted_at: datetime | None = None
 
     def is_owned_by(self, principal: Principal) -> bool:
         return principal.owns(workspace_id=self.workspace_id, user_id=self.owner_user_id)
@@ -177,6 +186,37 @@ class ThreadParticipant(ContractModel):
     user_id: str
     role: str = "member"
     joined_at: datetime = Field(default_factory=_utc_now)
+
+
+class SourcePartContent(ContractModel):
+    evidence_id: str = Field(min_length=1)
+    title: str | None = None
+    url: str | None = None
+    excerpt: str | None = None
+
+
+class ChartPartContent(ContractModel):
+    chart_type: str = Field(min_length=1)
+    artifact_id: str | None = None
+    data: dict[str, Any] | list[Any] | None = None
+
+    @model_validator(mode="after")
+    def require_chart_source(self) -> ChartPartContent:
+        if self.artifact_id is None and self.data is None:
+            raise ValueError("CHART parts require artifact_id or data")
+        return self
+
+
+class ArtifactPartContent(ContractModel):
+    artifact_id: str = Field(min_length=1)
+    label: str | None = None
+    artifact_type: str | None = None
+
+
+class ToolCallPartContent(ContractModel):
+    tool: str = Field(min_length=1)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    call_id: str | None = None
 
 
 class MessagePart(ContractModel):
@@ -203,16 +243,35 @@ class MessagePart(ContractModel):
             MessagePartType.APPROVAL,
         } and not isinstance(self.content, dict):
             raise ValueError(f"{self.type.value} parts require object content")
-        object_content = cast(dict[str, Any], self.content)
-        if self.type is MessagePartType.SOURCE and not any(
-            object_content.get(key) for key in ("evidence_id", "url", "title")
+        if self.type is MessagePartType.SOURCE:
+            object.__setattr__(
+                self,
+                "content",
+                SourcePartContent.model_validate(self.content).model_dump(exclude_none=True),
+            )
+        if self.type is MessagePartType.TOOL_CALL:
+            object.__setattr__(
+                self,
+                "content",
+                ToolCallPartContent.model_validate(self.content).model_dump(exclude_none=True),
+            )
+        if self.type is MessagePartType.ARTIFACT:
+            object.__setattr__(
+                self,
+                "content",
+                ArtifactPartContent.model_validate(self.content).model_dump(exclude_none=True),
+            )
+        if self.type is MessagePartType.CHART:
+            object.__setattr__(
+                self,
+                "content",
+                ChartPartContent.model_validate(self.content).model_dump(exclude_none=True),
+            )
+        if (
+            self.type is MessagePartType.APPROVAL
+            and isinstance(self.content, dict)
+            and not self.content.get("approval_id")
         ):
-            raise ValueError("SOURCE parts require evidence_id, url, or title")
-        if self.type is MessagePartType.TOOL_CALL and not object_content.get("tool"):
-            raise ValueError("TOOL_CALL parts require tool")
-        if self.type is MessagePartType.ARTIFACT and not object_content.get("artifact_id"):
-            raise ValueError("ARTIFACT parts require artifact_id")
-        if self.type is MessagePartType.APPROVAL and not object_content.get("approval_id"):
             raise ValueError("APPROVAL parts require approval_id")
         return self
 
@@ -227,6 +286,7 @@ class Message(ContractModel):
     run_id: str | None = None
     parent_message_id: str | None = None
     created_at: datetime = Field(default_factory=_utc_now)
+    updated_at: datetime = Field(default_factory=_utc_now)
 
 
 class Run(ContractModel):
@@ -271,6 +331,7 @@ class ActivityEvent(ContractModel):
     owner_user_id: str | None = None
     actor_user_id: str | None = None
     sequence: int = Field(default=0, ge=0)
+    thread_sequence: int = Field(default=0, ge=0)
     event_type: str
     actor_type: str | None = None
     actor_id: str | None = None
@@ -285,6 +346,18 @@ class ActivityEvent(ContractModel):
     completed_at: datetime | None = None
     duration_ms: int | None = Field(default=None, ge=0)
     created_at: datetime = Field(default_factory=_utc_now)
+
+
+class ThreadPage(ContractModel):
+    items: list[Thread]
+    next_cursor: str | None = None
+    has_more: bool = False
+
+
+class MessagePage(ContractModel):
+    items: list[Message]
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 class ArtifactProvenance(ContractModel):
@@ -306,7 +379,7 @@ class Artifact(ContractModel):
     workspace_id: str
     artifact_type: str
     payload: dict[str, Any]
-    classification: Literal["ui", "factual", "derived"] = "ui"
+    classification: Literal["ui", "factual", "derived"]
     evidence_ids: list[str] = Field(default_factory=list)
     provenance: ArtifactProvenance = Field(default_factory=ArtifactProvenance)
     mission_id: str | None = None
@@ -314,6 +387,37 @@ class Artifact(ContractModel):
     run_id: str | None = None
     message_id: str | None = None
     created_at: datetime = Field(default_factory=_utc_now)
+
+    @model_validator(mode="after")
+    def validate_classification_boundary(self) -> Artifact:
+        evidence_ids = list(dict.fromkeys([*self.evidence_ids, *self.provenance.evidence_ids]))
+        if self.classification == "ui":
+            if evidence_ids or any(
+                (
+                    self.provenance.calculation_version,
+                    self.provenance.query_version,
+                    self.provenance.prompt_version,
+                    self.provenance.tool_version,
+                    self.provenance.model_version,
+                    self.provenance.source_metadata,
+                )
+            ):
+                raise ValueError("ui artifacts cannot carry evidence or derived provenance")
+            return self
+        if not evidence_ids:
+            raise ValueError("factual/derived artifacts require evidence IDs")
+        versions = (
+            self.provenance.calculation_version,
+            self.provenance.query_version,
+            self.provenance.prompt_version,
+            self.provenance.tool_version,
+            self.provenance.model_version,
+        )
+        if self.classification == "derived" and not any(versions):
+            raise ValueError(
+                "derived artifacts require a calculation/query/prompt/tool/model version"
+            )
+        return self
 
     def require_provenance(self) -> Artifact:
         """Validate durable factual/derived output without constraining UI envelopes."""
@@ -330,7 +434,9 @@ class Artifact(ContractModel):
             self.provenance.model_version,
         )
         if self.classification == "derived" and not any(versions):
-            raise ValueError("derived artifacts require a calculation/query/prompt/tool/model version")
+            raise ValueError(
+                "derived artifacts require a calculation/query/prompt/tool/model version"
+            )
         return self.model_copy(
             update={
                 "evidence_ids": evidence_ids,
@@ -351,7 +457,19 @@ class Attachment(ContractModel):
     storage_uri: str | None = None
     checksum_sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
     status: AttachmentStatus = AttachmentStatus.PENDING
+    scan_status: AttachmentScanStatus = AttachmentScanStatus.PENDING
+    scan_detail: str = ""
     created_at: datetime = Field(default_factory=_utc_now)
+
+    @model_validator(mode="after")
+    def ready_requires_verified_clean_scan(self) -> Attachment:
+        if self.status is AttachmentStatus.READY and (
+            self.scan_status is not AttachmentScanStatus.CLEAN
+            or not self.storage_uri
+            or not self.checksum_sha256
+        ):
+            raise ValueError("READY attachments require storage, checksum, and a CLEAN scan")
+        return self
 
 
 class ThreadSummary(ContractModel):
@@ -423,6 +541,7 @@ class MemoryPreference(ContractModel):
 
 
 class ContextBundle(ContractModel):
+    permissions: dict[str, bool] = Field(default_factory=dict)
     workspace_config: dict[str, Any] = Field(default_factory=dict)
     recent_messages: list[dict[str, Any]] = Field(default_factory=list)
     latest_summary: ThreadSummary | None = None
@@ -430,13 +549,15 @@ class ContextBundle(ContractModel):
     artifacts: list[Artifact] = Field(default_factory=list)
     memory_ids: list[str] = Field(default_factory=list)
     artifact_ids: list[str] = Field(default_factory=list)
+    provenance: dict[str, dict[str, Any]] = Field(default_factory=dict)
     character_count: int = Field(default=0, ge=0)
     token_estimate: int = Field(default=0, ge=0)
+    token_budget: int = Field(default=0, ge=0)
 
 
 class SearchResult(ContractModel):
     id: str
-    kind: Literal["thread", "message", "memory", "artifact", "run"]
+    kind: Literal["thread", "message", "memory", "artifact", "report", "run"]
     title: str
     snippet: str = ""
     thread_id: str | None = None

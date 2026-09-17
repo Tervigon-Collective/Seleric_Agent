@@ -433,3 +433,13 @@ def langsmith_run_url(project: str, run_id: str | None, org: str = "default") ->
     if not run_id:
         return None
     return f"https://smith.langchain.com/o/{org}/projects/p/{project}/r/{run_id}"
+
+
+def langfuse_trace_url(
+    base_url: str, project_id: str, trace_id: str | None
+) -> str | None:
+    if not trace_id or not project_id:
+        return None
+    return (
+        f"{base_url.rstrip('/')}/project/{project_id}/traces/{trace_id}"
+    )

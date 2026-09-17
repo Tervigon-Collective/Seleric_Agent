@@ -38,7 +38,7 @@ QUERY_CLASSES_SUPPORTED = {"lookup", "comparison"}
 AfterObserver = Literal["propose_handoff", "claim_gate"]
 
 
-def _emit_lookup_event(state: MissionState | dict[str, Any], kind: str, **data: Any) -> dict[str, Any]:
+def _emit_lookup_event(state: dict[str, Any], kind: str, **data: Any) -> dict[str, Any]:
     """Append a structured event onto lookup MissionState (for GET .../events)."""
     from seleric_swarm.coordinator.observability.events import canonical_kind, family_of, now_iso
 
@@ -47,7 +47,7 @@ def _emit_lookup_event(state: MissionState | dict[str, Any], kind: str, **data: 
     payload = {k: v for k, v in data.items() if v is not None}
     if kind != canon:
         payload["legacy_kind"] = kind
-    event = {
+    event: dict[str, Any] = {
         "kind": canon,
         "ts": now_iso(),
         "seq": len(events) + 1,
@@ -58,6 +58,9 @@ def _emit_lookup_event(state: MissionState | dict[str, Any], kind: str, **data: 
         **payload,
     }
     events.append(event)
+    from seleric_swarm.swarm.blackboard import notify_mission_event
+
+    notify_mission_event(event)
     try:
         from seleric_swarm.observability.flow import log_mission_event
 

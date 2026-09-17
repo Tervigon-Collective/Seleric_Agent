@@ -1231,7 +1231,9 @@ async def run_swarm_v2_mission(
     if full_prediction:
         from seleric_swarm.agents.prediction.swarm_bridge import SwarmPredictionSpecialist
 
-        prediction: Any = SwarmPredictionSpecialist(providers, scenario=scenario)
+        prediction: Any = SwarmPredictionSpecialist(
+            providers, scenario=scenario, runtime=runtime
+        )
     else:
         prediction = PredictionAgent(providers)
     from seleric_swarm.agents.strategy.swarm_bridge import SwarmStrategySpecialist
@@ -1384,7 +1386,11 @@ async def run_swarm_v2_mission(
         team[0] = TeamMember(initial_lead, "domain", "lead")
 
     invoker = A2AAgentInvoker(transport, from_agent="coordinator_agent")
-    engine = ExecutionEngine(invoker, budgets=policies.budgets)
+    engine = ExecutionEngine(
+        invoker,
+        budgets=policies.budgets,
+        cancellation=getattr(runtime, "cancellation", None),
+    )
     emitter = MissionEventEmitter(
         blackboard, workflow_name="swarm_v2", workflow_version="1.4.0"
     )

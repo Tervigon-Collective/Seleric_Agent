@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from seleric_swarm.coordinator.contracts import AgentExecutionResult, TaskSpec
@@ -12,10 +13,20 @@ from seleric_swarm.observability.tracing import coordinator_task_metadata, trace
 
 
 class Dispatcher:
-    def __init__(self, invoker: AgentInvoker, *, max_parallel: int = 4, max_retries: int = 2) -> None:
+    def __init__(
+        self,
+        invoker: AgentInvoker,
+        *,
+        max_parallel: int = 4,
+        max_retries: int = 2,
+        task_timeout_s: float = 45.0,
+        cancellation: Any = None,
+    ) -> None:
         self.invoker = invoker
         self.max_parallel = max_parallel
         self.max_retries = max_retries
+        self.task_timeout_s = task_timeout_s
+        self.cancellation = cancellation
 
     async def execute(
         self,
@@ -48,6 +59,11 @@ class Dispatcher:
                 synthetic=state.get("synthetic"),
             )
             while True:
+                mission_id = str(state.get("mission_id") or task.mission_id)
+                if self.cancellation is not None and self.cancellation.is_requested(mission_id):
+                    from seleric_swarm.cancellation import MissionCancelledError
+
+                    raise MissionCancelledError(f"mission {mission_id} was cancelled")
                 with traced_span(
                     f"swarm.task.{agent_id}",
                     meta,
@@ -59,7 +75,21 @@ class Dispatcher:
                     },
                     tags=["swarm_v2", "task", agent_id],
                 ) as span:
-                    last = await self.invoker.invoke(agent_id, task, context)
+                    try:
+                        last = await asyncio.wait_for(
+                            self.invoker.invoke(agent_id, task, context),
+                            timeout=self.task_timeout_s,
+                        )
+                    except TimeoutError:
+                        last = AgentExecutionResult(
+                            agent_id=agent_id,
+                            task_id=task.task_id,
+                            status="retryable_failure",
+                            error_code="TIMEOUT",
+                            error_message=(
+                                f"Agent task exceeded the {self.task_timeout_s:g}s hard timeout"
+                            ),
+                        )
                     span.set_outputs(
                         {
                             "status": last.status,

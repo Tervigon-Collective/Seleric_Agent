@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+import asyncio
+from typing import Any, Protocol, cast
 
 
 class CheckpointProvider(Protocol):
@@ -12,7 +13,9 @@ class CheckpointProvider(Protocol):
 
     def config(self, *, thread_id: str, run_id: str | None = None) -> dict[str, Any]: ...
 
-    def close(self) -> None: ...
+    async def setup(self) -> None: ...
+
+    async def close(self) -> None: ...
 
 
 class NoOpCheckpointProvider:
@@ -22,7 +25,10 @@ class NoOpCheckpointProvider:
     def config(self, *, thread_id: str, run_id: str | None = None) -> dict[str, Any]:
         return {}
 
-    def close(self) -> None:
+    async def setup(self) -> None:
+        return None
+
+    async def close(self) -> None:
         return None
 
 
@@ -41,29 +47,44 @@ class InMemoryCheckpointProvider:
             configurable["checkpoint_ns"] = run_id
         return {"configurable": configurable}
 
-    def close(self) -> None:
+    async def setup(self) -> None:
+        return None
+
+    async def close(self) -> None:
         return None
 
 
 class PostgresCheckpointProvider:
-    """Process-safe LangGraph checkpointer backed by the audit database."""
+    """Async LangGraph checkpointer backed by a concurrency-safe connection pool."""
 
-    def __init__(self, database_url: str, *, setup: bool = True) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        min_size: int = 1,
+        max_size: int = 10,
+    ) -> None:
         if not database_url.strip():
             raise ValueError("checkpoint_backend=postgres requires database_url")
-        from langgraph.checkpoint.postgres import PostgresSaver
-        from psycopg import Connection
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from psycopg.rows import dict_row
+        from psycopg_pool import AsyncConnectionPool
 
-        self._connection = Connection.connect(
-            database_url,
-            autocommit=True,
-            prepare_threshold=0,
-            row_factory=dict_row,
+        pool_url = database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+        self._pool = AsyncConnectionPool(
+            pool_url,
+            min_size=min_size,
+            max_size=max_size,
+            open=False,
+            kwargs={
+                "autocommit": True,
+                "prepare_threshold": 0,
+                "row_factory": dict_row,
+            },
         )
-        self._checkpointer = PostgresSaver(self._connection)
-        if setup:
-            self._checkpointer.setup()
+        self._checkpointer = AsyncPostgresSaver(cast(Any, self._pool))
+        self._setup_lock = asyncio.Lock()
+        self._ready = False
 
     def get_checkpointer(self) -> Any:
         return self._checkpointer
@@ -74,8 +95,24 @@ class PostgresCheckpointProvider:
             configurable["checkpoint_ns"] = run_id
         return {"configurable": configurable}
 
-    def close(self) -> None:
-        self._connection.close()
+    async def setup(self) -> None:
+        if self._ready:
+            return
+        async with self._setup_lock:
+            if self._ready:
+                return
+            await self._pool.open(wait=True)
+            try:
+                await self._checkpointer.setup()
+            except BaseException:
+                await self._pool.close()
+                raise
+            self._ready = True
+
+    async def close(self) -> None:
+        if self._ready:
+            await self._pool.close()
+            self._ready = False
 
 
 def build_checkpoint_provider(backend: str, database_url: str = "") -> CheckpointProvider:

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { conversationsApi } from "../api/conversations";
 import { useOffice } from "../store";
 import { useConversationStore } from "../stores/conversation";
@@ -14,6 +14,7 @@ describe("conversation store submit", () => {
       messages: { t1: [] },
     });
   });
+  afterEach(() => vi.restoreAllMocks());
 
   it("optimistically renders a user message and resolves the running placeholder", async () => {
     vi.useFakeTimers();
@@ -91,5 +92,64 @@ describe("conversation store submit", () => {
     expect(state.threads[0]?.title).toBe("Investigate checkout conversion");
     expect(state.messages["new-thread"][0]?.role).toBe("USER");
     useConversationStore.getState().reset();
+  });
+
+  it("cancels a run that is requested before submit returns its run id", async () => {
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: "t1",
+      threads: [],
+      messages: { t1: [] },
+    });
+    let resolveSubmit!: (value: { message_id: string; run_id: string; mission_id: string }) => void;
+    vi.spyOn(conversationsApi, "submitMessage").mockReturnValue(new Promise((resolve) => {
+      resolveSubmit = resolve;
+    }));
+    const cancel = vi.spyOn(conversationsApi, "cancelRun").mockResolvedValue({
+      run_id: "run-late", status: "CANCELLED",
+    });
+
+    const submission = useConversationStore.getState().submit("Stop this");
+    await useConversationStore.getState().cancelRun();
+    resolveSubmit({ message_id: "m1", run_id: "run-late", mission_id: "mission-1" });
+    await submission;
+
+    expect(cancel).toHaveBeenCalledWith("run-late");
+    expect(useConversationStore.getState().submitting).toBe(false);
+    expect(useConversationStore.getState().currentRunId).toBeNull();
+  });
+
+  it("auto-creates a thread before uploading an attachment", async () => {
+    useConversationStore.setState({
+      demoMode: false, selectedThreadId: null, threads: [], messages: {},
+    });
+    vi.spyOn(conversationsApi, "createThread").mockResolvedValue({
+      id: "attachment-thread", workspace_id: "w", owner_user_id: "u", project_id: null,
+      title: null, status: "ACTIVE", metadata: {}, created_at: "now", updated_at: "now",
+    });
+    vi.spyOn(conversationsApi, "uploadAttachment").mockResolvedValue({
+      id: "a1", filename: "note.txt", content_type: "text/plain", size_bytes: 1,
+      checksum_sha256: "abc", status: "READY",
+    });
+
+    const id = await useConversationStore.getState().uploadAttachment(
+      new File(["x"], "note.txt", { type: "text/plain" }),
+    );
+
+    expect(id).toBe("a1");
+    expect(conversationsApi.uploadAttachment).toHaveBeenCalledWith(
+      "attachment-thread",
+      expect.any(File),
+    );
+  });
+
+  it("ignores events belonging to another selected thread", () => {
+    useConversationStore.getState().applyRunEvent({
+      id: "stale", thread_id: "other", workspace_id: "w", run_id: "run-old",
+      sequence: 2, event_type: "agent.completed", actor_type: null, actor_id: null,
+      title: null, summary: "Wrong thread", evidence_ids: [], payload: {}, metadata: {},
+      started_at: null, completed_at: null, duration_ms: null, created_at: "now",
+    });
+    expect(useOffice.getState().timeline).toHaveLength(0);
   });
 });

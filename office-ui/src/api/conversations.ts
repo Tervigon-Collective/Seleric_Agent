@@ -15,6 +15,35 @@ import type {
 import { api, type HttpClient } from "./http";
 
 const enc = encodeURIComponent;
+export const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
+export const ALLOWED_ATTACHMENT_TYPES = new Set([
+  "application/json",
+  "application/pdf",
+  "text/csv",
+  "text/plain",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+export function validateAttachment(file: File): void {
+  const type = (file.type || "application/octet-stream").split(";", 1)[0].toLowerCase();
+  if (file.size > MAX_ATTACHMENT_SIZE) throw new Error("Attachments must be 25 MB or smaller");
+  if (!ALLOWED_ATTACHMENT_TYPES.has(type)) throw new Error(`Attachment type is not supported: ${type}`);
+}
+
+export async function sha256(file: Blob): Promise<string> {
+  const bytes = typeof file.arrayBuffer === "function"
+    ? await file.arrayBuffer()
+    : await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error ?? new Error("Unable to read attachment"));
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.readAsArrayBuffer(file);
+      });
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
 
 export class ConversationApi {
   constructor(private readonly http: HttpClient = api) {}
@@ -50,6 +79,7 @@ export class ConversationApi {
     return this.http.request(`/v1/runs/${enc(runId)}/cancel`, { method: "POST" });
   }
   initiateAttachment(threadId: string, file: File): Promise<InitiateAttachmentResponse> {
+    validateAttachment(file);
     return this.http.request(`/v1/threads/${enc(threadId)}/attachments`, {
       method: "POST",
       body: JSON.stringify({
@@ -60,17 +90,37 @@ export class ConversationApi {
     });
   }
   async uploadAttachment(threadId: string, file: File): Promise<Attachment> {
+    validateAttachment(file);
+    const checksum = await sha256(file);
     const initiated = await this.initiateAttachment(threadId, file);
     const url = /^https?:\/\//.test(initiated.upload.url)
       ? initiated.upload.url
       : `${this.http.baseUrl}${initiated.upload.url}`;
+    const apiOrigin = new URL(this.http.baseUrl || location.origin, location.origin).origin;
+    const uploadOrigin = new URL(url, location.origin).origin;
+    const headers = new Headers({ "Content-Type": file.type || "application/octet-stream" });
+    if (uploadOrigin === apiOrigin) {
+      const authorization = this.http.headers().get("Authorization");
+      if (authorization) headers.set("Authorization", authorization);
+    }
     const response = await this.http.fetchImpl(url, {
       method: initiated.upload.method,
-      headers: this.http.headers({ "Content-Type": file.type || "application/octet-stream" }),
+      headers,
       body: file,
     });
     if (!response.ok) throw new Error(`Attachment upload failed (${response.status})`);
-    return response.json() as Promise<Attachment>;
+    const body = await response.text();
+    if (body) {
+      const attachment = JSON.parse(body) as Attachment;
+      if (attachment.status !== "PENDING") return attachment;
+    }
+    return this.completeAttachment(initiated.attachment.id, checksum);
+  }
+  completeAttachment(attachmentId: string, checksumSha256: string): Promise<Attachment> {
+    return this.http.request(`/v1/attachments/${enc(attachmentId)}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ checksum_sha256: checksumSha256 }),
+    });
   }
   listThreadEvents(threadId: string, afterSequence = 0): Promise<ActivityEvent[]> {
     return this.http.request(

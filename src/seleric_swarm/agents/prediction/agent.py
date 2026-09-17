@@ -10,6 +10,7 @@ writes a narrative string and never a number.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -42,20 +43,37 @@ class PredictionAgent:
         *,
         deps: PredictionDeps | None = None,
         policies: PredictionPolicies | None = None,
+        checkpointer: Any = None,
     ) -> None:
         self.deps = deps or PredictionDeps()
         self.policies = policies or PredictionPolicies.load()
+        self.checkpointer = checkpointer
+
+    def _graph(self) -> Any:
+        if self.checkpointer is not None:
+            return build_prediction_graph(checkpointer=self.checkpointer)
+        return _graph()
 
     async def predict(self, request: PredictionRequest) -> PredictionResult:
         started = time.perf_counter()
         ctx = PredictionContext(request=request, policies=self.policies, deps=self.deps)
-        final_state = await _graph().ainvoke(
-            {
-                "mission_id": request.mission_id,
-                "prediction_run_id": f"PREDRUN-{int(started * 1000) % 10_000_000}",
-                "request": request.model_dump(exclude={"observations"}),
-                "_context": ctx,
-            }
+        run_id = f"PREDRUN-{int(started * 1000) % 10_000_000}"
+        final_state = await asyncio.wait_for(
+            self._graph().ainvoke(
+                {
+                    "mission_id": request.mission_id,
+                    "prediction_run_id": run_id,
+                    "request": request.model_dump(exclude={"observations"}),
+                    "_context": ctx,
+                },
+                config={
+                    "configurable": {
+                        "thread_id": request.mission_id,
+                        "checkpoint_ns": run_id,
+                    }
+                },
+            ),
+            timeout=self.policies.budget("max_runtime_seconds") or 45,
         )
         result: PredictionResult = final_state["_result"]
 

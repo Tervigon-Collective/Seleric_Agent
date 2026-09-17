@@ -10,7 +10,12 @@ from fastapi.testclient import TestClient
 
 from seleric_swarm.api import conversations as conversations_api
 from seleric_swarm.api.security import ApiSecurityMiddleware
-from seleric_swarm.conversations.blobs import BlobValidationError, LocalBlobStore
+from seleric_swarm.conversations.blobs import (
+    BlobValidationError,
+    LocalBlobStore,
+    MalwareScanResult,
+    MalwareScanStatus,
+)
 from seleric_swarm.conversations.contracts import (
     Artifact,
     ArtifactProvenance,
@@ -25,9 +30,18 @@ async def _chunks(*values: bytes):
         yield value
 
 
+class _CleanScanner:
+    def scan(self, path: Path) -> MalwareScanResult:
+        assert path.exists()
+        return MalwareScanResult(MalwareScanStatus.CLEAN)
+
+
 async def test_local_blob_hash_size_mime_and_path(tmp_path: Path):
     store = LocalBlobStore(
-        tmp_path, max_size_bytes=5, allowed_mime_types={"text/plain"}
+        tmp_path,
+        max_size_bytes=5,
+        allowed_mime_types={"text/plain"},
+        scanner=_CleanScanner(),
     )
     result = await store.put(
         "safe/blob", _chunks(b"he", b"llo"), content_type="text/plain", expected_size=5
@@ -43,12 +57,26 @@ async def test_local_blob_hash_size_mime_and_path(tmp_path: Path):
         store.open("../escape")
 
 
+async def test_local_blob_without_scanner_stays_quarantined(tmp_path: Path):
+    store = LocalBlobStore(tmp_path, max_size_bytes=5, allowed_mime_types={"text/plain"})
+    result = await store.put("note.txt", _chunks(b"hello"), content_type="text/plain")
+    assert result.scan.status is MalwareScanStatus.UNAVAILABLE
+    assert not result.ready
+    assert not (tmp_path / "note.txt").exists()
+    assert (tmp_path / "note.txt.quarantine").exists()
+
+
 def test_message_parts_are_typed():
     assert MessagePart(type="TABLE", content=[{"a": 1}]).type.value == "TABLE"
-    with pytest.raises(ValueError, match="TOOL_CALL"):
+    with pytest.raises(ValueError, match="tool"):
         MessagePart(type="TOOL_CALL", content={})
     with pytest.raises(ValueError, match="object"):
         MessagePart(type="CHART", content="unsafe")
+    with pytest.raises(ValueError, match="evidence_id"):
+        MessagePart(type="SOURCE", content={"title": "untraceable"})
+    chart = MessagePart(type="CHART", content={"chart_type": "line", "data": {"series": []}})
+    assert isinstance(chart.content, dict)
+    assert chart.content["chart_type"] == "line"
 
 
 def test_provenance_round_trip_and_boundary_rejection():
@@ -59,9 +87,7 @@ def test_provenance_round_trip_and_boundary_rejection():
         classification="derived",
         payload={"value": 2},
         evidence_ids=["EV-1"],
-        provenance=ArtifactProvenance(
-            evidence_ids=["EV-1"], calculation_version="1"
-        ),
+        provenance=ArtifactProvenance(evidence_ids=["EV-1"], calculation_version="1"),
     )
     persisted = repositories.artifacts.put(artifact)
     assert repositories.artifacts.get(persisted.id) == persisted
@@ -75,8 +101,16 @@ def test_provenance_round_trip_and_boundary_rejection():
             )
         )
     repositories.artifacts.put(
-        Artifact(workspace_id="w", artifact_type="layout", payload={})
+        Artifact(workspace_id="w", artifact_type="layout", payload={}, classification="ui")
     )
+    with pytest.raises(ValueError, match="ui artifacts"):
+        Artifact(
+            workspace_id="w",
+            artifact_type="layout",
+            payload={},
+            classification="ui",
+            evidence_ids=["EV-1"],
+        )
 
 
 def _client(tmp_path: Path):
@@ -85,7 +119,10 @@ def _client(tmp_path: Path):
     runtime = SimpleNamespace(
         conversations=repositories,
         blob_store=LocalBlobStore(
-            tmp_path, max_size_bytes=100, allowed_mime_types={"text/plain"}
+            tmp_path,
+            max_size_bytes=100,
+            allowed_mime_types={"text/plain"},
+            scanner=_CleanScanner(),
         ),
     )
     app = FastAPI()
@@ -128,9 +165,10 @@ def test_api_local_upload_download_and_ownership(tmp_path: Path):
     assert uploaded.status_code == 200
     assert uploaded.json()["status"] == "READY"
     assert uploaded.json()["checksum_sha256"] == hashlib.sha256(b"hello").hexdigest()
-    assert client.get(
-        f"/v1/attachments/{attachment_id}/download", headers=_headers()
-    ).content == b"hello"
-    assert client.get(
-        f"/v1/attachments/{attachment_id}", headers=_headers("other")
-    ).status_code == 404
+    assert (
+        client.get(f"/v1/attachments/{attachment_id}/download", headers=_headers()).content
+        == b"hello"
+    )
+    assert (
+        client.get(f"/v1/attachments/{attachment_id}", headers=_headers("other")).status_code == 404
+    )

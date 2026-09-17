@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useConversationStore } from "../stores/conversation";
+import { useShellStore } from "../stores/shell";
 
 export function ThreadSidebar() {
   const threads = useConversationStore((s) => s.threads);
@@ -10,6 +11,7 @@ export function ThreadSidebar() {
   const selectThread = useConversationStore((s) => s.selectThread);
   const renameThread = useConversationStore((s) => s.renameThread);
   const archiveThread = useConversationStore((s) => s.archiveThread);
+  const toggleSidebar = useShellStore((s) => s.toggleSidebar);
   const filtered = useMemo(
     () => threads.filter((thread) => (thread.title ?? "Untitled").toLowerCase().includes(search.toLowerCase())),
     [threads, search],
@@ -19,6 +21,7 @@ export function ThreadSidebar() {
     <aside className="thread-sidebar" aria-label="Conversations">
       <div className="sidebar-head">
         <strong>Conversations</strong>
+        <button className="icon-btn mobile-panel-close" aria-label="Close conversations" onClick={toggleSidebar}>×</button>
         <button className="primary-btn" onClick={() => void createThread()}>+ New</button>
       </div>
       <label className="search-field">

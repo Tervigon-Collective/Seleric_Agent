@@ -27,6 +27,7 @@ COPY config ./config
 COPY prompts ./prompts
 COPY contracts ./contracts
 COPY schemas ./schemas
+COPY migrations ./migrations
 COPY pyproject.toml README.md ./
 
 ENV PATH="/app/.venv/bin:$PATH" \

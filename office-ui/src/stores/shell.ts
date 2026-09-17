@@ -24,8 +24,14 @@ export const useShellStore = create<ShellState>((set) => ({
   selectedArtifact: null,
   setDetailTab: (detailTab) => set({ detailTab }),
   setWorkspace: (workspace) => set({ workspace }),
-  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
-  toggleDetails: () => set((state) => ({ detailsOpen: !state.detailsOpen })),
+  toggleSidebar: () => set((state) => ({
+    sidebarOpen: !state.sidebarOpen,
+    detailsOpen: state.sidebarOpen ? state.detailsOpen : false,
+  })),
+  toggleDetails: () => set((state) => ({
+    detailsOpen: !state.detailsOpen,
+    sidebarOpen: state.detailsOpen ? state.sidebarOpen : false,
+  })),
   showArtifact: (selectedArtifact) => set({
     selectedArtifact,
     detailTab: "Artifacts",

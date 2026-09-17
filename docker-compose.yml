@@ -27,6 +27,7 @@ services:
 
   api:
     build: .
+    command: ["/bin/sh", "-c", "seleric-migrate && exec seleric-api"]
     ports:
       - "${API_PUBLISH_PORT:-8090}:8000"
     environment:
@@ -35,8 +36,12 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 8000
       LLM_PROVIDER: ${LLM_PROVIDER:-fake}
-      PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-memory}
-      DATABASE_URL: ${DATABASE_URL:-}
+      PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
+      CHECKPOINT_BACKEND: ${CHECKPOINT_BACKEND:-postgres}
+      CANCELLATION_BACKEND: ${CANCELLATION_BACKEND:-redis}
+      EVENT_NOTIFIER_BACKEND: ${EVENT_NOTIFIER_BACKEND:-redis}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       ALLOW_WRITE_ACTIONS: "false"
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
@@ -57,6 +62,39 @@ services:
       timeout: 5s
       retries: 5
       start_period: 25s
+
+  recovery:
+    build: .
+    command:
+      - seleric-recover
+      - --executor
+      - seleric_swarm.api.conversations:build_submission_executor
+      - --interval
+      - "${RUN_RECOVERY_INTERVAL_S:-5}"
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
+      CHECKPOINT_BACKEND: ${CHECKPOINT_BACKEND:-postgres}
+      CANCELLATION_BACKEND: ${CANCELLATION_BACKEND:-redis}
+      EVENT_NOTIFIER_BACKEND: ${EVENT_NOTIFIER_BACKEND:-redis}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      RUN_WORKER_ID: ${RUN_WORKER_ID:-recovery-worker}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      ALLOW_WRITE_ACTIONS: "false"
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
+      AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
+      SELERIC_MCP_URL: ${SELERIC_MCP_URL:-}
+      SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
+      API_KEY: ${API_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   seleric_postgres:

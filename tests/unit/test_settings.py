@@ -1,4 +1,7 @@
+import pytest
+
 from seleric_swarm.config.settings import Settings, configured_chat_model
+from seleric_swarm.conversations.events import InMemoryEventNotifier, build_event_notifier
 from seleric_swarm.observability.tracing import (
     REQUIRED_SPAN_METADATA,
     mission_metadata,
@@ -41,6 +44,59 @@ def test_settings_do_not_hardcode_endpoints():
     assert settings.a2a_public_base_url == ""
     assert settings.api_host == ""
     assert settings.api_port == 0
+
+
+def test_event_notifier_selection_defaults_safely_and_selects_durable_redis():
+    local = Settings(_env_file=None)
+    assert local.resolved_event_notifier_backend() == "memory"
+    assert isinstance(build_event_notifier("memory"), InMemoryEventNotifier)
+
+    durable = Settings(
+        _env_file=None,
+        app_env="production",
+        persistence_backend="postgres",
+        database_url="postgresql://database",
+        redis_url="redis://redis:6379/0",
+    )
+    assert durable.resolved_event_notifier_backend() == "redis"
+    assert (
+        durable.model_copy(update={"event_notifier_backend": "memory"})
+        .resolved_event_notifier_backend()
+        == "memory"
+    )
+
+
+def test_explicit_redis_notifier_requires_url():
+    with pytest.raises(ValueError, match="requires redis_url"):
+        build_event_notifier("redis")
+
+
+def test_bootstrap_wires_resolved_event_notifier(settings, monkeypatch):
+    from seleric_swarm import bootstrap
+
+    selected: list[tuple[str, str]] = []
+    notifier = InMemoryEventNotifier()
+
+    def build(backend: str, *, redis_url: str):
+        selected.append((backend, redis_url))
+        return notifier
+
+    monkeypatch.setattr(bootstrap, "build_event_notifier", build)
+    runtime = bootstrap.build_runtime(settings)
+    assert selected == [("memory", settings.redis_url)]
+    assert runtime.activity_events is not None
+    assert runtime.activity_events.notifier is notifier
+
+    redis_settings = settings.model_copy(
+        update={
+            "event_notifier_backend": "redis",
+            "redis_url": "redis://redis:6379/0",
+        }
+    )
+    redis_runtime = bootstrap.build_runtime(redis_settings)
+    assert selected[-1] == ("redis", redis_settings.redis_url)
+    assert redis_runtime.activity_events is not None
+    assert redis_runtime.activity_events.notifier is notifier
 
 
 def test_placeholder_secrets_are_stripped():

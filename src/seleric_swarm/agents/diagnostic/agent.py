@@ -42,9 +42,16 @@ class DiagnosticAgent:
         *,
         deps: DiagnosticDeps | None = None,
         policies: DiagnosticPolicies | None = None,
+        checkpointer: Any = None,
     ) -> None:
         self.deps = deps or DiagnosticDeps()
         self.policies = policies or DiagnosticPolicies.load()
+        self.checkpointer = checkpointer
+
+    def _graph(self) -> Any:
+        if self.checkpointer is not None:
+            return build_diagnostic_graph(checkpointer=self.checkpointer)
+        return _graph()
 
     async def diagnose(self, request: DiagnosticRequest) -> DiagnosticResult:
         started = time.perf_counter()
@@ -53,13 +60,19 @@ class DiagnosticAgent:
         timeout_s = self.policies.budget("max_runtime_seconds") or 90
         try:
             final_state = await asyncio.wait_for(
-                _graph().ainvoke(
+                self._graph().ainvoke(
                     {
                         "mission_id": request.mission_id,
                         "diagnostic_run_id": run_id,
                         "request": request.model_dump(exclude={"observations"}),
                         "_context": ctx,
-                    }
+                    },
+                    config={
+                        "configurable": {
+                            "thread_id": request.mission_id,
+                            "checkpoint_ns": run_id,
+                        }
+                    },
                 ),
                 timeout=timeout_s,
             )

@@ -64,6 +64,9 @@ const DEMO_MEMORY: MemoryItem = {
 
 const subscriptions = new Map<string, () => void>();
 let demoSubmission = 0;
+let selectionGeneration = 0;
+let submissionGeneration = 0;
+const cancelledSubmissions = new Set<number>();
 const textMessage = (threadId: string, role: "USER" | "ASSISTANT", text: string, id: string): Message => ({
   id, thread_id: threadId, workspace_id: "local", user_id: role === "USER" ? "me" : null,
   role, parts: [{ type: "TEXT", content: text }], run_id: null,
@@ -145,7 +148,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   selectThread: async (id) => {
-    set({ selectedThreadId: id, error: null });
+    const generation = ++selectionGeneration;
+    subscriptions.forEach((stop) => stop());
+    subscriptions.clear();
+    set({
+      selectedThreadId: id,
+      currentRunId: null,
+      submitting: false,
+      error: null,
+    });
+    useOffice.getState().reset();
     if (get().demoMode) return;
     set({ loading: true });
     try {
@@ -156,14 +168,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const latestRunId = [...messages]
         .reverse()
         .find((message) => message.run_id)?.run_id;
+      if (generation !== selectionGeneration || get().selectedThreadId !== id) return;
       const office = useOffice.getState();
-      office.reset();
       events
         .filter((event) => !latestRunId || event.run_id === latestRunId)
         .forEach((event) => office.ingestEvent(toOfficeEvent(event)));
       set((s) => ({ messages: { ...s.messages, [id]: messages }, loading: false }));
     } catch (error) {
-      set({ loading: false, error: error instanceof Error ? error.message : "Unable to load messages" });
+      if (generation === selectionGeneration && get().selectedThreadId === id) {
+        set({ loading: false, error: error instanceof Error ? error.message : "Unable to load messages" });
+      }
     }
   },
 
@@ -213,8 +227,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     : { demoMode, threads: [], selectedThreadId: null, messages: {}, memories: [], usedMemories: [], memoryOptedOut: false, error: null }),
 
   submit: async (text, attachmentIds = [], parentMessageId = null) => {
-    const value = text.trim();
+    const value = text.trim() || (attachmentIds.length ? "Attached files" : "");
     if (!value || get().submitting) return;
+    const generation = ++submissionGeneration;
     let threadId = get().selectedThreadId;
     if (!threadId) {
       set({ submitting: true, error: null });
@@ -234,6 +249,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return;
       }
     }
+    if (cancelledSubmissions.delete(generation)) {
+      set({ submitting: false, currentRunId: null });
+      return;
+    }
     const optimistic = {
       ...textMessage(threadId, "USER", value, `optimistic_${Date.now()}`),
       parent_message_id: parentMessageId,
@@ -251,7 +270,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (get().demoMode) {
       const submission = ++demoSubmission;
       await new Promise((resolve) => setTimeout(resolve, 350));
-      if (submission !== demoSubmission) return;
+      if (submission !== demoSubmission || cancelledSubmissions.delete(generation)) return;
       const reply = textMessage(
         threadId, "ASSISTANT",
         "Demo mode is active. The office is replaying a representative swarm run; switch to Live to submit this request to Seleric.",
@@ -271,13 +290,38 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         scope: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
         execution_mode: "production",
       });
+      if (cancelledSubmissions.delete(generation)) {
+        await conversationsApi.cancelRun(result.run_id).catch(() => undefined);
+        if (generation === submissionGeneration) {
+          set({ submitting: false, currentRunId: null });
+        }
+        return;
+      }
+      if (
+        generation !== submissionGeneration
+        || get().selectedThreadId !== threadId
+      ) return;
       set({ currentRunId: result.run_id });
       subscriptions.get(threadId)?.();
       subscriptions.set(threadId, subscribeToRunEvents(result.run_id, {
-        onEvent: get().applyRunEvent,
-        onError: () => set({ error: "Event stream interrupted; reconnecting…" }),
+        onEvent: (event) => {
+          const state = get();
+          if (state.selectedThreadId === threadId && state.currentRunId === result.run_id) {
+            state.applyRunEvent(event);
+          }
+        },
+        onError: () => {
+          if (get().selectedThreadId === threadId && get().currentRunId === result.run_id) {
+            set({ error: "Event stream interrupted; reconnecting…" });
+          }
+        },
         onState: (state) => {
-          if (state === "closed" && get().submitting) {
+          if (
+            state === "closed"
+            && get().submitting
+            && get().selectedThreadId === threadId
+            && get().currentRunId === result.run_id
+          ) {
             set({
               submitting: false,
               currentRunId: null,
@@ -287,13 +331,19 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         },
       }));
     } catch (error) {
-      set({ submitting: false, error: error instanceof Error ? error.message : "Unable to submit message" });
+      cancelledSubmissions.delete(generation);
+      if (generation === submissionGeneration) {
+        set({ submitting: false, error: error instanceof Error ? error.message : "Unable to submit message" });
+      }
     }
   },
 
   cancelRun: async () => {
     const { currentRunId, demoMode, selectedThreadId } = get();
     if (!get().submitting) return;
+    const generation = submissionGeneration;
+    if (!currentRunId) cancelledSubmissions.add(generation);
+    set({ submitting: false, currentRunId: null });
     try {
       if (!demoMode && currentRunId) await conversationsApi.cancelRun(currentRunId);
       demoSubmission += 1;
@@ -301,7 +351,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         subscriptions.get(selectedThreadId)?.();
         subscriptions.delete(selectedThreadId);
       }
-      set({ submitting: false, currentRunId: null });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : "Unable to cancel run" });
     }
@@ -331,7 +380,11 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   uploadAttachment: async (file) => {
-    const threadId = get().selectedThreadId;
+    let threadId = get().selectedThreadId;
+    if (!threadId) {
+      await get().createThread();
+      threadId = get().selectedThreadId;
+    }
     if (!threadId) return null;
     set((state) => ({ uploads: { ...state.uploads, [file.name]: "uploading" }, error: null }));
     try {
@@ -429,22 +482,37 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   applyRunEvent: (event) => {
+    const state = get();
+    if (
+      event.thread_id !== state.selectedThreadId
+      || (state.currentRunId && event.run_id !== state.currentRunId)
+    ) return;
     useOffice.getState().ingestEvent(toOfficeEvent(event));
     const terminal = ["run.completed", "run.failed", "run.cancelled"].includes(event.event_type);
     if (event.event_type === "answer.completed" || terminal) {
       void conversationsApi.listMessages(event.thread_id).then((messages) => {
+        const current = get();
+        if (
+          current.selectedThreadId !== event.thread_id
+          || (current.currentRunId && event.run_id !== current.currentRunId)
+        ) return;
         set((s) => ({ messages: { ...s.messages, [event.thread_id]: messages }, submitting: !terminal && s.submitting, error: null }));
       });
     }
     if (terminal) {
       subscriptions.get(event.thread_id)?.();
       subscriptions.delete(event.thread_id);
-      set({ submitting: false });
+      if (get().selectedThreadId === event.thread_id) {
+        set({ submitting: false, currentRunId: null });
+      }
     }
   },
 
   reset: () => {
     demoSubmission += 1;
+    selectionGeneration += 1;
+    submissionGeneration += 1;
+    cancelledSubmissions.clear();
     subscriptions.forEach((stop) => stop());
     subscriptions.clear();
     set({ threads: [], selectedThreadId: null, messages: {}, loading: false, submitting: false, uploads: {}, error: null, search: "", demoMode: false, memories: [], usedMemories: [], memoryOptedOut: false, currentRunId: null });

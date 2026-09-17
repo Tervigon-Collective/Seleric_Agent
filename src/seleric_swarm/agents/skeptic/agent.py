@@ -11,6 +11,7 @@ supplied.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -57,11 +58,18 @@ class SkepticAgent:
         artifact_repo: ArtifactRepository | None = None,
         deps: SkepticDeps | None = None,
         policies: SkepticPolicies | None = None,
+        checkpointer: Any = None,
     ) -> None:
         self.evidence_repo = evidence_repo or InMemoryEvidenceRepository()
         self.artifact_repo = artifact_repo or InMemoryArtifactRepository()
         self.deps = deps or SkepticDeps()
         self.policies = policies or SkepticPolicies.load()
+        self.checkpointer = checkpointer
+
+    def _graph(self) -> Any:
+        if self.checkpointer is not None:
+            return build_skeptic_graph(checkpointer=self.checkpointer)
+        return _graph()
 
     # -- primary entrypoint ------------------------------------------------
     async def validate_claim(self, request: SkepticValidationRequest) -> SkepticVerdict:
@@ -82,14 +90,24 @@ class SkepticAgent:
         if request.blind_review:
             ctx.risk_context["blind_review"] = True
 
-        final_state = await _graph().ainvoke(
-            {
-                "mission_id": request.mission_id,
-                "skeptic_run_id": f"SK-{int(started * 1000) % 10_000_000}",
-                "request": request.model_dump(),
-                "_context": ctx,
-                "_outcomes": [],
-            }
+        run_id = f"SK-{int(started * 1000) % 10_000_000}"
+        final_state = await asyncio.wait_for(
+            self._graph().ainvoke(
+                {
+                    "mission_id": request.mission_id,
+                    "skeptic_run_id": run_id,
+                    "request": request.model_dump(),
+                    "_context": ctx,
+                    "_outcomes": [],
+                },
+                config={
+                    "configurable": {
+                        "thread_id": request.mission_id,
+                        "checkpoint_ns": run_id,
+                    }
+                },
+            ),
+            timeout=self.policies.budget("max_runtime_seconds") or 60,
         )
         verdict: SkepticVerdict = final_state["_verdict_model"]
 

@@ -137,6 +137,12 @@ async def run_mission_job(
     execution_mode: str,
 ) -> None:
     """Background worker: execute mission and overwrite the running placeholder."""
+    seeded = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
+    ownership = {
+        key: seeded.get(key)
+        for key in ("workspace_id", "owner_user_id", "thread_id", "run_id")
+        if isinstance(seeded, dict) and seeded.get(key) is not None
+    }
     if is_cancel_requested(mission_id, runtime):
         _log.info("async_mission_skipped_cancelled", extra={"mission_id": mission_id})
         return
@@ -167,7 +173,12 @@ async def run_mission_job(
         # run_* already persists; ensure async marker survives on raw
         raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
         if isinstance(raw, dict) and raw.get("status") != "cancelled":
-            raw = {**raw, "async": True, "route": dispatched.get("route") or raw.get("route")}
+            raw = {
+                **raw,
+                **ownership,
+                "async": True,
+                "route": dispatched.get("route") or raw.get("route"),
+            }
             got = runtime.store.get(mission_id)
             if got is not None and got.status != "cancelled":
                 runtime.store.put(got, raw)
@@ -200,6 +211,7 @@ async def run_mission_job(
                 "status": "failed",
                 "query": query,
                 "async": True,
+                **ownership,
                 "error_code": error_code,
                 "error_message": str(exc),
                 "events": [

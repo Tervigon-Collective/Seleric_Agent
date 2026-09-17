@@ -21,6 +21,17 @@ from seleric_swarm.conversations.memory import build_in_memory_repositories
 from seleric_swarm.persistence.memory import InMemoryMissionStore
 
 
+class _RecordingQueue:
+    def __init__(self) -> None:
+        self.run_ids: list[str] = []
+
+    async def enqueue(self, run_id: str) -> None:
+        self.run_ids.append(run_id)
+
+    async def close(self) -> None:
+        return None
+
+
 def test_in_memory_repositories_preserve_normalized_contracts():
     repositories = build_in_memory_repositories()
     thread = repositories.threads.create(
@@ -69,6 +80,9 @@ def test_in_memory_repositories_preserve_normalized_contracts():
             run_id=run.id,
             artifact_type="anomaly",
             payload={"artifact_id": "artifact_1", "score": 0.91, "evidence_refs": ["EV-1"]},
+            classification="derived",
+            evidence_ids=["EV-1"],
+            provenance={"evidence_ids": ["EV-1"], "calculation_version": "test-v1"},
         )
     )
 
@@ -78,11 +92,13 @@ def test_in_memory_repositories_preserve_normalized_contracts():
     assert repositories.artifacts.list_for_mission("mission_1") == [artifact]
 
 
-def _client(monkeypatch) -> tuple[TestClient, object]:
+def _client(monkeypatch) -> tuple[TestClient, object, object]:
     repositories = build_in_memory_repositories()
+    queue = _RecordingQueue()
     runtime = SimpleNamespace(
         conversations=repositories,
         store=InMemoryMissionStore(),
+        run_queue=queue,
     )
 
     async def no_execution(*args, **kwargs):
@@ -98,11 +114,11 @@ def _client(monkeypatch) -> tuple[TestClient, object]:
         default_workspace_id="workspace_1",
         default_user_id="user_1",
     )
-    return TestClient(app), repositories
+    return TestClient(app), repositories, runtime
 
 
 def test_thread_crud_and_message_submission_are_owner_scoped(monkeypatch):
-    client, repositories = _client(monkeypatch)
+    client, repositories, runtime = _client(monkeypatch)
     created = client.post("/v1/threads", json={"title": "Retention"}).json()
     thread_id = created["id"]
 
@@ -112,7 +128,14 @@ def test_thread_crud_and_message_submission_are_owner_scoped(monkeypatch):
     )
     assert response.status_code == 202
     assert set(response.json()) == {"message_id", "run_id", "mission_id"}
-    assert len(client.get(f"/v1/threads/{thread_id}/messages").json()) == 1
+    assert runtime.run_queue.run_ids == [response.json()["run_id"]]
+    persisted_run = repositories.runs.get(response.json()["run_id"])
+    assert persisted_run.metadata["submission"]["query"] == "Why did churn increase?"
+    assert persisted_run.metadata["submission"]["assistant_message_id"]
+    messages = client.get(f"/v1/threads/{thread_id}/messages").json()
+    assert len(messages) == 2
+    assert messages[-1]["role"] == "ASSISTANT"
+    assert messages[-1]["parts"][0]["type"] == "AGENT_STATUS"
     renamed = client.patch(
         f"/v1/threads/{thread_id}", json={"title": "Retention diagnosis"}
     )
@@ -128,7 +151,7 @@ def test_thread_crud_and_message_submission_are_owner_scoped(monkeypatch):
 
 
 def test_first_message_names_an_untitled_thread(monkeypatch):
-    client, _ = _client(monkeypatch)
+    client, _, _ = _client(monkeypatch)
     thread_id = client.post("/v1/threads", json={}).json()["id"]
     response = client.post(
         f"/v1/threads/{thread_id}/messages",
@@ -142,7 +165,7 @@ def test_first_message_names_an_untitled_thread(monkeypatch):
 
 
 def test_archived_thread_rejects_new_messages(monkeypatch):
-    client, _ = _client(monkeypatch)
+    client, _, _ = _client(monkeypatch)
     thread_id = client.post("/v1/threads", json={}).json()["id"]
     client.post(f"/v1/threads/{thread_id}/archive")
     response = client.post(
@@ -150,3 +173,73 @@ def test_archived_thread_rejects_new_messages(monkeypatch):
         json={"parts": [{"type": "TEXT", "content": "Too late"}]},
     )
     assert response.status_code == 409
+
+
+def test_soft_delete_restore_and_cursor_pages(monkeypatch):
+    client, _, _ = _client(monkeypatch)
+    ids = [
+        client.post("/v1/threads", json={"title": f"Thread {index}"}).json()["id"]
+        for index in range(3)
+    ]
+    first = client.get("/v1/threads/paginated", params={"limit": 2})
+    assert first.status_code == 200
+    assert len(first.json()["items"]) == 2
+    assert first.json()["has_more"] is True
+    assert first.headers["X-Next-Cursor"] == first.json()["next_cursor"]
+    second = client.get(
+        "/v1/threads/paginated",
+        params={"limit": 2, "cursor": first.json()["next_cursor"]},
+    )
+    assert len(second.json()["items"]) == 1
+
+    deleted = client.delete(f"/v1/threads/{ids[0]}")
+    assert deleted.json()["status"] == "DELETED"
+    assert client.get(f"/v1/threads/{ids[0]}").status_code == 404
+    restored = client.post(f"/v1/threads/{ids[0]}/restore")
+    assert restored.json()["status"] == "ACTIVE"
+
+
+def test_submission_validates_and_associates_ready_attachments(monkeypatch):
+    from seleric_swarm.conversations import (
+        Attachment,
+        AttachmentScanStatus,
+        AttachmentStatus,
+    )
+
+    client, repositories, _ = _client(monkeypatch)
+    thread_id = client.post("/v1/threads", json={}).json()["id"]
+    ready = repositories.attachments.create(
+        Attachment(
+            thread_id=thread_id,
+            workspace_id="workspace_1",
+            owner_user_id="user_1",
+            filename="data.csv",
+            content_type="text/csv",
+            size_bytes=4,
+            storage_uri="file:///data.csv",
+            checksum_sha256="a" * 64,
+            status=AttachmentStatus.READY,
+            scan_status=AttachmentScanStatus.CLEAN,
+        )
+    )
+    pending = repositories.attachments.create(
+        ready.model_copy(update={"id": "attachment_pending", "status": AttachmentStatus.PENDING})
+    )
+    rejected = client.post(
+        f"/v1/threads/{thread_id}/messages",
+        json={
+            "parts": [{"type": "TEXT", "content": "Analyze this"}],
+            "attachment_ids": [pending.id],
+        },
+    )
+    assert rejected.status_code == 409
+
+    accepted = client.post(
+        f"/v1/threads/{thread_id}/messages",
+        json={
+            "parts": [{"type": "TEXT", "content": "Analyze this"}],
+            "attachment_ids": [ready.id],
+        },
+    )
+    assert accepted.status_code == 202
+    assert repositories.attachments.get(ready.id).message_id == accepted.json()["message_id"]

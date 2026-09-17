@@ -133,7 +133,7 @@ class MissionEventEmitter:
             "family": family_of(canon),
             **payload,
         }
-        self.blackboard.events.append(event)
+        self.blackboard.append_event(event)
         try:
             from seleric_swarm.observability.flow import log_mission_event
 

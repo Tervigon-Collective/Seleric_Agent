@@ -23,7 +23,14 @@ async def run_parallel(
         async with semaphore:
             return await coro
 
-    return list(await asyncio.gather(*[_wrap(c) for c in coros]))
+    tasks = [asyncio.create_task(_wrap(coro)) for coro in coros]
+    try:
+        return list(await asyncio.gather(*tasks))
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 async def map_parallel(

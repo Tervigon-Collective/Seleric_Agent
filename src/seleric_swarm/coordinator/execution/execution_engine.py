@@ -33,11 +33,14 @@ class ExecutionEngine:
         invoker: AgentInvoker,
         *,
         budgets: MissionBudget | dict[str, Any] | None = None,
+        cancellation: Any = None,
     ) -> None:
         self.budget_manager = BudgetManager(budgets)
         self.dispatcher = Dispatcher(
             invoker,
             max_parallel=self.budget_manager.budgets.max_parallel_tasks,
+            task_timeout_s=self.budget_manager.budgets.task_timeout_s,
+            cancellation=cancellation,
         )
 
     async def run_wave(

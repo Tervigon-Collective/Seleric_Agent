@@ -16,6 +16,7 @@ from seleric_swarm.api.async_missions import (
     seed_running_mission,
 )
 from seleric_swarm.api.conversations import router as conversations_router
+from seleric_swarm.api.mission_access import request_principal, require_mission_access
 from seleric_swarm.api.phase7 import router as phase7_router
 from seleric_swarm.api.ready import check_readiness
 from seleric_swarm.api.request_id import RequestIdMiddleware
@@ -50,15 +51,30 @@ async def lifespan(_app: FastAPI):
     global _runtime
     if _runtime is None:
         _runtime = build_runtime()
+    checkpoint_provider = getattr(_runtime, "checkpoint_provider", None)
+    checkpoint_setup = getattr(checkpoint_provider, "setup", None)
+    if checkpoint_setup is not None:
+        await checkpoint_setup()
     try:
         yield
     finally:
         rt = _runtime
         if rt is not None:
+            run_queue = getattr(rt, "run_queue", None)
+            queue_closer = getattr(run_queue, "close", None)
+            if queue_closer is not None:
+                await queue_closer()
             checkpoint_provider = getattr(rt, "checkpoint_provider", None)
             checkpoint_closer = getattr(checkpoint_provider, "close", None)
             if checkpoint_closer is not None:
-                checkpoint_closer()
+                await checkpoint_closer()
+            activity_events = getattr(rt, "activity_events", None)
+            notifier = getattr(activity_events, "notifier", None)
+            notifier_closer = getattr(notifier, "close", None)
+            if notifier_closer is not None:
+                maybe = notifier_closer()
+                if hasattr(maybe, "__await__"):
+                    await maybe
             closer = getattr(rt.mcp, "aclose", None)
             if closer is not None:
                 maybe = closer()
@@ -293,6 +309,7 @@ async def create_mission(
     request: Request,
 ) -> dict[str, Any]:
     runtime = get_runtime()
+    principal = request_principal(request)
     if req.mode != "read_only":
         raise HTTPException(status_code=400, detail="Only read_only mode is allowed in V1")
     if req.execution_mode not in {"staging", "production"}:
@@ -402,6 +419,8 @@ async def create_mission(
             query=query,
             request_id=request_id,
             session_id=session_id,
+            workspace_id=principal.workspace_id,
+            owner_user_id=principal.user_id,
         )
         background_tasks.add_task(
             run_mission_job,
@@ -439,14 +458,27 @@ async def create_mission(
     _register_mission(out.get("mission_id"))
     if not isinstance(out.get("trace"), dict):
         out["trace"] = {"request_id": request_id, "session_id": session_id}
+    persisted = runtime.store.get(str(out.get("mission_id") or ""))
+    raw = getattr(runtime.store, "get_raw", lambda _mid: None)(out.get("mission_id"))
+    if persisted is not None:
+        runtime.store.put(
+            persisted,
+            {
+                **(raw if isinstance(raw, dict) else out),
+                "workspace_id": principal.workspace_id,
+                "owner_user_id": principal.user_id,
+            },
+        )
     return out
 
 
 @app.get("/v1/missions/{mission_id}")
-def get_mission(mission_id: str) -> dict[str, Any]:
+def get_mission(mission_id: str, request: Request) -> dict[str, Any]:
     runtime = get_runtime()
     # Prefer raw payload (swarm + async running placeholders).
     raw = getattr(runtime.store, "get_raw", lambda _mid: None)(mission_id)
+    if isinstance(raw, dict):
+        require_mission_access(request, raw, runtime)
     if isinstance(raw, dict) and (
         raw.get("route") in {"swarm", "pending", "failed", "lookup"} or raw.get("async")
     ):
@@ -454,13 +486,19 @@ def get_mission(mission_id: str) -> dict[str, Any]:
     result = runtime.store.get(mission_id)
     if result is None:
         raise HTTPException(status_code=404, detail="mission not found")
+    if not isinstance(raw, dict):
+        require_mission_access(request, {}, runtime)
     return result.model_dump()
 
 
 @app.post("/v1/missions/{mission_id}/cancel")
-def cancel_mission(mission_id: str) -> dict[str, Any]:
+def cancel_mission(mission_id: str, request: Request) -> dict[str, Any]:
     """Cancel a running async mission (cooperative / best-effort)."""
     runtime = get_runtime()
+    raw = getattr(runtime.store, "get_raw", lambda _mid: None)(mission_id)
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=404, detail="mission not found")
+    require_mission_access(request, raw, runtime)
     try:
         return cancel_running_mission(runtime, mission_id=mission_id)
     except KeyError:
@@ -472,6 +510,7 @@ def cancel_mission(mission_id: str) -> dict[str, Any]:
 @app.get("/v1/missions/{mission_id}/events")
 def get_mission_events(
     mission_id: str,
+    request: Request,
     family: str | None = Query(None, description="one of: " + ", ".join(sorted(_EVENT_FAMILIES))),
     after_seq: int = Query(0, ge=0, description="return events with seq > this"),
     limit: int = Query(200, ge=1, le=1000),
@@ -487,6 +526,8 @@ def get_mission_events(
     exists = store.get(mission_id) is not None or getattr(store, "get_raw", lambda _m: None)(mission_id)
     if not exists:
         raise HTTPException(status_code=404, detail="mission not found")
+    raw = getattr(store, "get_raw", lambda _m: None)(mission_id)
+    require_mission_access(request, raw if isinstance(raw, dict) else {}, runtime)
     # Fetch one extra row so clients can paginate without a separate count query.
     fetch_limit = limit + 1
     list_events = getattr(store, "list_events", None)

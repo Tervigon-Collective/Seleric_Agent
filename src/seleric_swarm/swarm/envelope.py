@@ -68,6 +68,19 @@ class SwarmMessage(BaseModel):
         )
 
 
+def a2a_json_schema() -> dict[str, Any]:
+    """Generate the transport schema from the canonical Python contract."""
+    schema = SwarmMessage.model_json_schema(mode="validation")
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    schema["title"] = "SelericA2AEnvelope"
+    return schema
+
+
+def validate_a2a_payload(payload: dict[str, Any]) -> SwarmMessage:
+    """Validate an inbound A2A data part against the canonical contract."""
+    return SwarmMessage.model_validate(payload)
+
+
 class HandoffProposal(BaseModel):
     """A domain agent's evidence-backed request to move mission leadership."""
 

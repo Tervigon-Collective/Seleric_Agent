@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import builtins
+import json
 from datetime import UTC, datetime, timedelta
 from threading import RLock
 
@@ -10,6 +12,8 @@ from seleric_swarm.conversations.contracts import (
     ActivityEvent,
     Artifact,
     Attachment,
+    AttachmentScanStatus,
+    AttachmentStatus,
     MemoryItem,
     MemoryPreference,
     MemoryStatus,
@@ -24,8 +28,25 @@ from seleric_swarm.conversations.contracts import (
 from seleric_swarm.conversations.phase7 import (
     InMemoryApprovalRepository,
     InMemorySearchRepository,
+    QueryEmbeddingHook,
 )
 from seleric_swarm.conversations.repositories import ConversationRepositories
+
+
+def _cursor(moment: datetime, item_id: str) -> str:
+    raw = json.dumps([moment.isoformat(), item_id], separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _decode_cursor(value: str | None) -> tuple[datetime, str] | None:
+    if not value:
+        return None
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        moment, item_id = json.loads(base64.urlsafe_b64decode(padded).decode())
+        return datetime.fromisoformat(moment), str(item_id)
+    except (ValueError, TypeError, json.JSONDecodeError):
+        raise ValueError("invalid cursor") from None
 
 
 class InMemoryThreadRepository:
@@ -53,6 +74,35 @@ class InMemoryThreadRepository:
             ]
         return sorted(items, key=lambda item: item.updated_at, reverse=True)[: max(1, limit)]
 
+    def list_page(
+        self,
+        workspace_id: str,
+        user_id: str,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+        include_deleted: bool = False,
+    ) -> tuple[list[Thread], str | None]:
+        boundary = _decode_cursor(cursor)
+        with self._lock:
+            items = [
+                item
+                for item in self._items.values()
+                if item.workspace_id == workspace_id
+                and item.owner_user_id == user_id
+                and (include_deleted or item.status.value != "DELETED")
+                and (
+                    boundary is None
+                    or (item.updated_at, item.id) < boundary
+                )
+            ]
+        ordered = sorted(items, key=lambda item: (item.updated_at, item.id), reverse=True)
+        page = ordered[: max(1, limit) + 1]
+        has_more = len(page) > max(1, limit)
+        page = page[: max(1, limit)]
+        next_cursor = _cursor(page[-1].updated_at, page[-1].id) if has_more and page else None
+        return page, next_cursor
+
     def update(self, thread: Thread) -> Thread:
         with self._lock:
             if thread.id not in self._items:
@@ -78,7 +128,35 @@ class InMemoryMessageRepository:
     def list_for_thread(self, thread_id: str, *, limit: int = 100) -> list[Message]:
         with self._lock:
             items = [item for item in self._items.values() if item.thread_id == thread_id]
-        return sorted(items, key=lambda item: item.created_at)[: max(1, limit)]
+        newest = sorted(items, key=lambda item: (item.created_at, item.id), reverse=True)[
+            : max(1, limit)
+        ]
+        return list(reversed(newest))
+
+    def list_page(
+        self, thread_id: str, *, limit: int = 100, cursor: str | None = None
+    ) -> tuple[list[Message], str | None]:
+        boundary = _decode_cursor(cursor)
+        with self._lock:
+            items = [
+                item
+                for item in self._items.values()
+                if item.thread_id == thread_id
+                and (boundary is None or (item.created_at, item.id) < boundary)
+            ]
+        ordered = sorted(items, key=lambda item: (item.created_at, item.id), reverse=True)
+        page = ordered[: max(1, limit) + 1]
+        has_more = len(page) > max(1, limit)
+        page = page[: max(1, limit)]
+        next_cursor = _cursor(page[-1].created_at, page[-1].id) if has_more and page else None
+        return page, next_cursor
+
+    def update(self, message: Message) -> Message:
+        with self._lock:
+            if message.id not in self._items:
+                raise KeyError(message.id)
+            self._items[message.id] = message
+            return message
 
 
 class InMemoryRunRepository:
@@ -103,6 +181,39 @@ class InMemoryRunRepository:
                 raise KeyError(run.id)
             self._items[run.id] = run
             return run
+
+    def compare_and_set_status(
+        self,
+        run_id: str,
+        expected_statuses: set[RunStatus],
+        new_status: RunStatus,
+        *,
+        now: datetime | None = None,
+    ) -> Run | None:
+        moment = now or datetime.now(UTC)
+        with self._lock:
+            run = self._items.get(run_id)
+            if run is None or run.status not in expected_statuses:
+                return None
+            terminal = new_status in {
+                RunStatus.COMPLETED,
+                RunStatus.FAILED,
+                RunStatus.CANCELLED,
+            }
+            updated = run.model_copy(
+                update={
+                    "status": new_status,
+                    "started_at": (
+                        run.started_at or moment
+                        if new_status is RunStatus.RUNNING
+                        else run.started_at
+                    ),
+                    "completed_at": moment if terminal else None,
+                    "next_retry_at": None if terminal else run.next_retry_at,
+                }
+            )
+            self._items[run_id] = updated
+            return updated
 
     def list_for_owner(
         self, workspace_id: str, user_id: str, *, limit: int = 100
@@ -158,7 +269,13 @@ class InMemoryRunRepository:
             return claimed
 
     def heartbeat(
-        self, attempt_id: str, worker_id: str, lease_seconds: float, *, now: datetime | None = None
+        self,
+        attempt_id: str,
+        worker_id: str,
+        lease_seconds: float,
+        *,
+        expected_version: int | None = None,
+        now: datetime | None = None,
     ) -> bool:
         moment = now or datetime.now(UTC)
         with self._lock:
@@ -167,13 +284,14 @@ class InMemoryRunRepository:
                 attempt is None
                 or attempt.status is not RunAttemptStatus.RUNNING
                 or attempt.worker_id != worker_id
+                or (expected_version is not None and attempt.version != expected_version)
+                or (attempt.lease_expires_at is not None and attempt.lease_expires_at <= moment)
             ):
                 return False
             self._attempts[attempt_id] = attempt.model_copy(
                 update={
                     "heartbeat_at": moment,
                     "lease_expires_at": moment + timedelta(seconds=lease_seconds),
-                    "version": attempt.version + 1,
                 }
             )
             return True
@@ -185,6 +303,8 @@ class InMemoryRunRepository:
         new_status: RunAttemptStatus,
         *,
         worker_id: str | None = None,
+        expected_version: int | None = None,
+        lease_expired_before: datetime | None = None,
         now: datetime | None = None,
         error_code: str | None = None,
         error_message: str | None = None,
@@ -195,6 +315,16 @@ class InMemoryRunRepository:
             if attempt is None or attempt.status is not expected_status:
                 return None
             if worker_id is not None and attempt.worker_id != worker_id:
+                return None
+            if expected_version is not None and attempt.version != expected_version:
+                return None
+            if (
+                lease_expired_before is not None
+                and (
+                    attempt.lease_expires_at is None
+                    or attempt.lease_expires_at > lease_expired_before
+                )
+            ):
                 return None
             terminal = new_status in {
                 RunAttemptStatus.COMPLETED,
@@ -269,6 +399,16 @@ class InMemoryRunRepository:
                 event = event.model_copy(update={"sequence": last_sequence + 1})
             elif event.sequence <= last_sequence:
                 raise ValueError("event sequence must be strictly monotonic")
+            thread_sequence = max(
+                (
+                    existing.thread_sequence
+                    for run_events in self._events.values()
+                    for existing in run_events
+                    if existing.thread_id == event.thread_id
+                ),
+                default=0,
+            )
+            event = event.model_copy(update={"thread_sequence": thread_sequence + 1})
             events.append(event)
             return event
 
@@ -288,9 +428,9 @@ class InMemoryRunRepository:
                 event
                 for run_events in self._events.values()
                 for event in run_events
-                if event.thread_id == thread_id and event.sequence > after_sequence
+                if event.thread_id == thread_id and event.thread_sequence > after_sequence
             ]
-        return sorted(events, key=lambda event: (event.created_at, event.run_id or "", event.sequence))
+        return sorted(events, key=lambda event: event.thread_sequence)
 
 
 class InMemoryArtifactRepository:
@@ -331,6 +471,7 @@ class InMemoryAttachmentRepository:
         self._lock = RLock()
 
     def create(self, attachment: Attachment) -> Attachment:
+        attachment = Attachment.model_validate(attachment.model_dump())
         with self._lock:
             self._items.setdefault(attachment.id, attachment)
             return self._items[attachment.id]
@@ -340,11 +481,40 @@ class InMemoryAttachmentRepository:
             return self._items.get(attachment_id)
 
     def update(self, attachment: Attachment) -> Attachment:
+        attachment = Attachment.model_validate(attachment.model_dump())
         with self._lock:
             if attachment.id not in self._items:
                 raise KeyError(attachment.id)
             self._items[attachment.id] = attachment
             return attachment
+
+    def associate_many(
+        self,
+        attachment_ids: list[str],
+        message_id: str,
+        *,
+        thread_id: str,
+        workspace_id: str,
+        owner_user_id: str,
+    ) -> bool:
+        unique_ids = list(dict.fromkeys(attachment_ids))
+        with self._lock:
+            attachments = [self._items.get(item_id) for item_id in unique_ids]
+            if any(
+                item is None
+                or item.thread_id != thread_id
+                or item.workspace_id != workspace_id
+                or item.owner_user_id != owner_user_id
+                or item.status is not AttachmentStatus.READY
+                or item.scan_status is not AttachmentScanStatus.CLEAN
+                or item.message_id is not None
+                for item in attachments
+            ):
+                return False
+            for item in attachments:
+                assert item is not None
+                self._items[item.id] = item.model_copy(update={"message_id": message_id})
+            return True
 
     def delete(self, attachment_id: str) -> bool:
         with self._lock:
@@ -499,10 +669,12 @@ class InMemoryThreadSummaryRepository:
                 and item.workspace_id == workspace_id
                 and item.owner_user_id == owner_user_id
             ]
-        return max(matches, key=lambda item: item.created_at, default=None)
+        return max(matches, key=lambda item: item.created_at) if matches else None
 
 
-def build_in_memory_repositories() -> ConversationRepositories:
+def build_in_memory_repositories(
+    *, query_embedder: QueryEmbeddingHook | None = None
+) -> ConversationRepositories:
     threads = InMemoryThreadRepository()
     messages = InMemoryMessageRepository()
     runs = InMemoryRunRepository()
@@ -516,6 +688,13 @@ def build_in_memory_repositories() -> ConversationRepositories:
         attachments=InMemoryAttachmentRepository(),
         memories=memories,
         thread_summaries=InMemoryThreadSummaryRepository(),
-        search=InMemorySearchRepository(threads, messages, runs, artifacts, memories),
+        search=InMemorySearchRepository(
+            threads,
+            messages,
+            runs,
+            artifacts,
+            memories,
+            query_embedder=query_embedder,
+        ),
         approvals=InMemoryApprovalRepository(),
     )

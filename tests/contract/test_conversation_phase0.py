@@ -261,3 +261,56 @@ def test_forwarded_address_is_ignored_unless_explicitly_trusted():
     )
     assert _client_key(request) == "ip:127.0.0.1"
     assert _client_key(request, trust_x_forwarded_for=True) == "ip:203.0.113.10"
+
+
+def test_injected_principal_provider_is_authoritative():
+    app = FastAPI()
+
+    @app.get("/principal")
+    def principal(request: Request):
+        return request.state.principal.model_dump(mode="json")
+
+    app.add_middleware(
+        ApiSecurityMiddleware,
+        api_key="legacy-key",
+        rate_limit_enabled=False,
+        principal_provider=lambda _request: Principal(
+            principal_id="oidc:42",
+            workspace_id="workspace_oidc",
+            user_id="user_oidc",
+            authenticated=True,
+            auth_method=PrincipalAuthMethod.SERVICE,
+        ),
+    )
+    response = TestClient(app).get("/principal")
+    assert response.status_code == 200
+    assert response.json()["principal_id"] == "oidc:42"
+
+
+def test_identity_headers_require_trusted_proxy_predicate_when_supplied():
+    app = FastAPI()
+
+    @app.get("/principal")
+    def principal(request: Request):
+        return request.state.principal.model_dump(mode="json")
+
+    app.add_middleware(
+        ApiSecurityMiddleware,
+        api_key="shared-secret",
+        rate_limit_enabled=False,
+        default_workspace_id="workspace_default",
+        default_user_id="user_default",
+        trust_identity_headers=True,
+        trusted_proxy=lambda request: request.headers.get("x-proxy-proof") == "trusted",
+    )
+    headers = {
+        "X-API-Key": "shared-secret",
+        "X-Workspace-ID": "workspace_header",
+        "X-User-ID": "user_header",
+    }
+    denied = TestClient(app).get("/principal", headers=headers)
+    assert denied.json()["user_id"] == "user_default"
+    allowed = TestClient(app).get(
+        "/principal", headers={**headers, "X-Proxy-Proof": "trusted"}
+    )
+    assert allowed.json()["user_id"] == "user_header"

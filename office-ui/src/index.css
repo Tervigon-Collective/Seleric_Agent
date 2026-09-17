@@ -63,6 +63,7 @@ button { color: inherit; }
 .shell-header nav { display: flex; gap: 4px; height: 100%; }
 .shell-header nav button { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 0 10px; color: var(--text-dim); cursor: pointer; }
 .shell-header nav button.active { color: var(--text); border-bottom-color: var(--st-working); font-weight: 650; }
+.mobile-panel-toggle, .mobile-panel-close, .mobile-panel-backdrop { display: none; }
 .header-spacer { flex: 1; }
 .mode-switch { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-dim); }
 .icon-btn { border: 1px solid transparent; background: transparent; border-radius: 7px; cursor: pointer; padding: 5px 8px; }
@@ -135,7 +136,8 @@ button { color: inherit; }
 .cancel-btn { background: var(--st-failed); color: white; font-size: 11px; }
 .scroll-latest { position: sticky; left: calc(100% - 32px); bottom: 8px; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--text); cursor: pointer; }
 
-.detail-panel { border-left: 1px solid var(--line); display: grid; grid-template-rows: auto 1fr; }
+.detail-panel { border-left: 1px solid var(--line); display: grid; grid-template-rows: auto 1fr; position: relative; }
+.detail-close { position: absolute; top: 5px; right: 5px; z-index: 2; }
 .detail-tabs { display: flex; overflow-x: auto; border-bottom: 1px solid var(--line); background: var(--panel); }
 .detail-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 12px 8px 9px; font-size: 10px; color: var(--text-dim); cursor: pointer; }
 .detail-tabs button.active { border-bottom-color: var(--st-working); color: var(--text); }
@@ -148,6 +150,11 @@ button { color: inherit; }
 .activity-dot { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: var(--st-working); }
 .activity-row strong { display: block; font-size: 11px; font-weight: 600; }
 .activity-row small { color: var(--text-dim); font-size: 9px; }
+.source-row { padding: 9px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.source-row strong, .source-row small { display: block; font-size: 11px; }
+.source-row p { margin: 5px 0; color: var(--text-dim); font-size: 11px; }
+.source-row small { color: var(--text-dim); font-size: 9px; }
+.approval-error { color: var(--st-failed); font-size: 9px; }
 .artifact-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 .memory-heading { display: flex; align-items: center; justify-content: space-between; }
 .memory-heading h2 { margin-bottom: 0; }
@@ -340,16 +347,35 @@ button.btn:hover { border-color: var(--st-working); }
 @media (max-width: 900px) {
   .mission-board { display: none; }
   .inspector { width: 100%; }
-  .conversation-layout { grid-template-columns: 220px minmax(0, 1fr); }
-  .detail-panel { display: none; }
+  .conversation-layout { grid-template-columns: minmax(0, 1fr); position: relative; }
+  .thread-sidebar, .detail-panel {
+    display: grid;
+    position: fixed;
+    top: 56px;
+    bottom: 0;
+    z-index: 42;
+    width: min(340px, 88vw);
+    box-shadow: 0 14px 45px rgba(0, 0, 0, .35);
+  }
+  .thread-sidebar { display: block; left: 0; }
+  .detail-panel { right: 0; }
+  .mobile-panel-toggle, .mobile-panel-close { display: inline-flex; }
+  .mobile-panel-backdrop {
+    display: block;
+    position: fixed;
+    inset: 56px 0 0;
+    z-index: 41;
+    border: 0;
+    background: rgba(5, 8, 12, .45);
+  }
   .shell-header { padding: 0 10px; gap: 8px; }
   .shell-header nav button { padding: 0 6px; font-size: 12px; }
 }
 
 @media (max-width: 640px) {
   .conversation-layout { grid-template-columns: 1fr; }
-  .thread-sidebar { display: none; }
   .mode-switch { display: none; }
+  .shell-header nav, .search-trigger kbd { display: none; }
   .transcript { padding: 20px 14px; }
   .composer { margin: 0 12px 12px; }
 }

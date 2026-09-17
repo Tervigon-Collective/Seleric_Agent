@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import builtins
 import json
 from datetime import UTC, datetime, timedelta
@@ -19,6 +20,7 @@ from seleric_swarm.conversations.contracts import (
     Run,
     RunAttempt,
     RunAttemptStatus,
+    RunStatus,
     Thread,
     ThreadSummary,
 )
@@ -26,6 +28,7 @@ from seleric_swarm.conversations.memory import build_in_memory_repositories
 from seleric_swarm.conversations.phase7 import (
     PostgresApprovalRepository,
     PostgresSearchRepository,
+    QueryEmbeddingHook,
 )
 from seleric_swarm.conversations.repositories import ConversationRepositories
 
@@ -37,6 +40,22 @@ def _json(value: Any) -> str:
 def _dict(row: Any, key: str) -> dict[str, Any]:
     value = row.get(key) or {}
     return json.loads(value) if isinstance(value, str) else dict(value)
+
+
+def _cursor(moment: datetime, item_id: str) -> str:
+    raw = json.dumps([moment.isoformat(), item_id], separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _decode_cursor(value: str | None) -> tuple[datetime, str] | None:
+    if not value:
+        return None
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        moment, item_id = json.loads(base64.urlsafe_b64decode(padded).decode())
+        return datetime.fromisoformat(moment), str(item_id)
+    except (ValueError, TypeError, json.JSONDecodeError):
+        raise ValueError("invalid cursor") from None
 
 
 class _PostgresRepository:
@@ -51,9 +70,9 @@ class PostgresThreadRepository(_PostgresRepository):
                 text(
                     """INSERT INTO threads
                     (id, workspace_id, owner_user_id, project_id, title, status, metadata,
-                     created_at, updated_at)
+                     created_at, updated_at, deleted_at)
                     VALUES (:id, :workspace_id, :owner_user_id, :project_id, :title, :status,
-                            CAST(:metadata AS JSONB), :created_at, :updated_at)
+                            CAST(:metadata AS JSONB), :created_at, :updated_at, :deleted_at)
                     ON CONFLICT (id) DO NOTHING"""
                 ),
                 {**thread.model_dump(), "status": thread.status.value, "metadata": _json(thread.metadata)},
@@ -83,12 +102,47 @@ class PostgresThreadRepository(_PostgresRepository):
             ).mappings().all()
         return [Thread.model_validate({**row, "metadata": _dict(row, "metadata")}) for row in rows]
 
+    def list_page(
+        self,
+        workspace_id: str,
+        user_id: str,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+        include_deleted: bool = False,
+    ) -> tuple[list[Thread], str | None]:
+        boundary = _decode_cursor(cursor)
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """SELECT * FROM threads
+                    WHERE workspace_id=:workspace_id AND owner_user_id=:user_id
+                    AND (:include_deleted OR status <> 'DELETED')
+                    AND (:cursor_time IS NULL OR (updated_at, id) < (:cursor_time, :cursor_id))
+                    ORDER BY updated_at DESC, id DESC LIMIT :fetch_limit"""
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "user_id": user_id,
+                    "include_deleted": include_deleted,
+                    "cursor_time": boundary[0] if boundary else None,
+                    "cursor_id": boundary[1] if boundary else None,
+                    "fetch_limit": max(1, limit) + 1,
+                },
+            ).mappings().all()
+        items = [Thread.model_validate({**row, "metadata": _dict(row, "metadata")}) for row in rows]
+        has_more = len(items) > max(1, limit)
+        items = items[: max(1, limit)]
+        next_cursor = _cursor(items[-1].updated_at, items[-1].id) if has_more and items else None
+        return items, next_cursor
+
     def update(self, thread: Thread) -> Thread:
         with self.engine.begin() as conn:
             result = conn.execute(
                 text(
                     """UPDATE threads SET project_id=:project_id, title=:title, status=:status,
-                    metadata=CAST(:metadata AS JSONB), updated_at=:updated_at WHERE id=:id"""
+                    metadata=CAST(:metadata AS JSONB), updated_at=:updated_at,
+                    deleted_at=:deleted_at WHERE id=:id"""
                 ),
                 {**thread.model_dump(), "status": thread.status.value, "metadata": _json(thread.metadata)},
             )
@@ -103,9 +157,10 @@ class PostgresMessageRepository(_PostgresRepository):
             result = conn.execute(
                 text(
                     """INSERT INTO messages
-                    (id, thread_id, workspace_id, user_id, role, run_id, parent_message_id, created_at)
+                    (id, thread_id, workspace_id, user_id, role, run_id, parent_message_id,
+                     created_at, updated_at)
                     VALUES (:id, :thread_id, :workspace_id, :user_id, :role, :run_id,
-                            :parent_message_id, :created_at)
+                            :parent_message_id, :created_at, :updated_at)
                     ON CONFLICT (id) DO NOTHING"""
                 ),
                 {**message.model_dump(exclude={"parts"}), "role": message.role.value},
@@ -150,12 +205,69 @@ class PostgresMessageRepository(_PostgresRepository):
         with self.engine.begin() as conn:
             ids = conn.execute(
                 text(
-                    """SELECT id FROM messages WHERE thread_id=:thread_id
-                    ORDER BY created_at ASC LIMIT :limit"""
+                    """SELECT id FROM (
+                        SELECT id, created_at FROM messages WHERE thread_id=:thread_id
+                        ORDER BY created_at DESC, id DESC LIMIT :limit
+                    ) recent ORDER BY created_at ASC, id ASC"""
                 ),
                 {"thread_id": thread_id, "limit": max(1, limit)},
             ).scalars().all()
         return [message for item_id in ids if (message := self.get(item_id)) is not None]
+
+    def list_page(
+        self, thread_id: str, *, limit: int = 100, cursor: str | None = None
+    ) -> tuple[list[Message], str | None]:
+        boundary = _decode_cursor(cursor)
+        with self.engine.begin() as conn:
+            ids = conn.execute(
+                text(
+                    """SELECT id FROM messages WHERE thread_id=:thread_id
+                    AND (:cursor_time IS NULL OR (created_at, id) < (:cursor_time, :cursor_id))
+                    ORDER BY created_at DESC, id DESC LIMIT :fetch_limit"""
+                ),
+                {
+                    "thread_id": thread_id,
+                    "cursor_time": boundary[0] if boundary else None,
+                    "cursor_id": boundary[1] if boundary else None,
+                    "fetch_limit": max(1, limit) + 1,
+                },
+            ).scalars().all()
+        has_more = len(ids) > max(1, limit)
+        ids = ids[: max(1, limit)]
+        items = [message for item_id in ids if (message := self.get(item_id)) is not None]
+        next_cursor = _cursor(items[-1].created_at, items[-1].id) if has_more and items else None
+        return items, next_cursor
+
+    def update(self, message: Message) -> Message:
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    """UPDATE messages SET user_id=:user_id, role=:role, run_id=:run_id,
+                    parent_message_id=:parent_message_id, updated_at=:updated_at WHERE id=:id"""
+                ),
+                {**message.model_dump(exclude={"parts"}), "role": message.role.value},
+            )
+            if result.rowcount:
+                conn.execute(text("DELETE FROM message_parts WHERE message_id=:id"), {"id": message.id})
+                for position, part in enumerate(message.parts):
+                    conn.execute(
+                        text(
+                            """INSERT INTO message_parts
+                            (message_id, position, part_type, content, metadata)
+                            VALUES (:message_id, :position, :part_type, CAST(:content AS JSONB),
+                                    CAST(:metadata AS JSONB))"""
+                        ),
+                        {
+                            "message_id": message.id,
+                            "position": position,
+                            "part_type": part.type.value,
+                            "content": _json(part.content),
+                            "metadata": _json(part.metadata),
+                        },
+                    )
+        if not result.rowcount:
+            raise KeyError(message.id)
+        return message
 
 
 class PostgresRunRepository(_PostgresRepository):
@@ -199,6 +311,51 @@ class PostgresRunRepository(_PostgresRepository):
         if not result.rowcount:
             raise KeyError(run.id)
         return run
+
+    def compare_and_set_status(
+        self,
+        run_id: str,
+        expected_statuses: set[RunStatus],
+        new_status: RunStatus,
+        *,
+        now: datetime | None = None,
+    ) -> Run | None:
+        if not expected_statuses:
+            return None
+        moment = now or datetime.now(UTC)
+        terminal = new_status in {
+            RunStatus.COMPLETED,
+            RunStatus.FAILED,
+            RunStatus.CANCELLED,
+        }
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """UPDATE runs SET status=:new_status,
+                    started_at=CASE
+                        WHEN :new_status='RUNNING' THEN COALESCE(started_at, :now)
+                        ELSE started_at
+                    END,
+                    completed_at=CASE WHEN :terminal THEN :now ELSE completed_at END,
+                    next_retry_at=CASE WHEN :terminal THEN NULL ELSE next_retry_at END
+                    WHERE id=:id AND status = ANY(:expected_statuses)
+                    RETURNING *"""
+                ),
+                {
+                    "id": run_id,
+                    "expected_statuses": [
+                        status.value for status in expected_statuses
+                    ],
+                    "new_status": new_status.value,
+                    "terminal": terminal,
+                    "now": moment,
+                },
+            ).mappings().first()
+        return (
+            Run.model_validate({**row, "metadata": _dict(row, "metadata")})
+            if row
+            else None
+        )
 
     def list_for_owner(
         self, workspace_id: str, user_id: str, *, limit: int = 100
@@ -279,21 +436,30 @@ class PostgresRunRepository(_PostgresRepository):
         return RunAttempt.model_validate(row) if row else None
 
     def heartbeat(
-        self, attempt_id: str, worker_id: str, lease_seconds: float, *, now: datetime | None = None
+        self,
+        attempt_id: str,
+        worker_id: str,
+        lease_seconds: float,
+        *,
+        expected_version: int | None = None,
+        now: datetime | None = None,
     ) -> bool:
         moment = now or datetime.now(UTC)
         with self.engine.begin() as conn:
             result = conn.execute(
                 text(
                     """UPDATE run_attempts SET heartbeat_at=:now,
-                    lease_expires_at=:lease_expires_at, version=version + 1
-                    WHERE id=:id AND worker_id=:worker_id AND status='RUNNING'"""
+                    lease_expires_at=:lease_expires_at
+                    WHERE id=:id AND worker_id=:worker_id AND status='RUNNING'
+                    AND lease_expires_at > :now
+                    AND (:expected_version IS NULL OR version=:expected_version)"""
                 ),
                 {
                     "id": attempt_id,
                     "worker_id": worker_id,
                     "now": moment,
                     "lease_expires_at": moment + timedelta(seconds=lease_seconds),
+                    "expected_version": expected_version,
                 },
             )
         return bool(result.rowcount)
@@ -305,6 +471,8 @@ class PostgresRunRepository(_PostgresRepository):
         new_status: RunAttemptStatus,
         *,
         worker_id: str | None = None,
+        expected_version: int | None = None,
+        lease_expired_before: datetime | None = None,
         now: datetime | None = None,
         error_code: str | None = None,
         error_message: str | None = None,
@@ -323,6 +491,11 @@ class PostgresRunRepository(_PostgresRepository):
                     lease_expires_at=NULL, version=version + 1
                     WHERE id=:id AND status=:expected_status
                     AND (:worker_id IS NULL OR worker_id=:worker_id)
+                    AND (:expected_version IS NULL OR version=:expected_version)
+                    AND (:lease_expired_before IS NULL OR (
+                        lease_expires_at IS NOT NULL
+                        AND lease_expires_at <= :lease_expired_before
+                    ))
                     RETURNING *"""
                 ),
                 {
@@ -330,6 +503,8 @@ class PostgresRunRepository(_PostgresRepository):
                     "expected_status": expected_status.value,
                     "new_status": new_status.value,
                     "worker_id": worker_id,
+                    "expected_version": expected_version,
+                    "lease_expired_before": lease_expired_before,
                     "error_code": error_code,
                     "error_message": error_message,
                     "completed_at": moment if terminal else None,
@@ -383,32 +558,60 @@ class PostgresRunRepository(_PostgresRepository):
                     text("SELECT pg_advisory_xact_lock(hashtext(:run_id))"),
                     {"run_id": event.run_id},
                 )
+            conn.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:thread_id))"),
+                {"thread_id": event.thread_id},
+            )
             row = conn.execute(
                 text(
                     """INSERT INTO run_events
                     (id, thread_id, workspace_id, run_id, owner_user_id, actor_user_id, sequence,
-                     event_type, visibility, payload, event_json, created_at)
+                     thread_sequence, event_type, actor_type, actor_id, title, summary,
+                     parent_event_id, visibility, evidence_ids, payload, metadata,
+                     started_at, completed_at, duration_ms, event_json, created_at)
                     VALUES (:id, :thread_id, :workspace_id, :run_id, :owner_user_id, :actor_user_id,
                             (SELECT COALESCE(MAX(sequence), 0) + 1 FROM run_events
                              WHERE run_id=:run_id),
-                            :event_type, :visibility, CAST(:payload AS JSONB),
+                            (SELECT COALESCE(MAX(thread_sequence), 0) + 1 FROM run_events
+                             WHERE thread_id=:thread_id),
+                            :event_type, :actor_type, :actor_id, :title, :summary,
+                            :parent_event_id, :visibility, CAST(:evidence_ids AS JSONB),
+                            CAST(:payload AS JSONB), CAST(:metadata AS JSONB),
+                            :started_at, :completed_at, :duration_ms,
                             CAST(:event_json AS JSONB), :created_at)
-                    ON CONFLICT (id) DO UPDATE SET id=run_events.id RETURNING sequence"""
+                    ON CONFLICT (id) DO NOTHING
+                    RETURNING sequence, thread_sequence"""
                 ),
                 {
                     **event.model_dump(),
                     "visibility": event.visibility.value,
+                    "evidence_ids": _json(event.evidence_ids),
                     "payload": _json(event.payload),
+                    "metadata": _json(event.metadata),
                     "event_json": _json(event.model_dump(mode="json")),
                 },
             ).first()
-        return event.model_copy(update={"sequence": int(row[0])}) if row else event
+            if row is None:
+                row = conn.execute(
+                    text(
+                        """SELECT sequence, thread_sequence FROM run_events
+                        WHERE id=:id"""
+                    ),
+                    {"id": event.id},
+                ).first()
+        return (
+            event.model_copy(update={"sequence": int(row[0]), "thread_sequence": int(row[1])})
+            if row
+            else event
+        )
 
     def list_events(self, run_id: str, *, after_sequence: int = 0) -> list[ActivityEvent]:
         with self.engine.begin() as conn:
             rows = conn.execute(
                 text(
-                    """SELECT event_json || jsonb_build_object('sequence', sequence) FROM run_events
+                    """SELECT event_json || jsonb_build_object(
+                        'sequence', sequence, 'thread_sequence', thread_sequence
+                    ) FROM run_events
                     WHERE run_id=:run_id AND sequence>:after ORDER BY sequence"""
                 ),
                 {"run_id": run_id, "after": after_sequence},
@@ -421,10 +624,12 @@ class PostgresRunRepository(_PostgresRepository):
         with self.engine.begin() as conn:
             rows = conn.execute(
                 text(
-                    """SELECT event_json || jsonb_build_object('sequence', sequence)
+                    """SELECT event_json || jsonb_build_object(
+                        'sequence', sequence, 'thread_sequence', thread_sequence
+                    )
                     FROM run_events
-                    WHERE thread_id=:thread_id AND sequence>:after
-                    ORDER BY created_at, run_id, sequence"""
+                    WHERE thread_id=:thread_id AND thread_sequence>:after
+                    ORDER BY thread_sequence"""
                 ),
                 {"thread_id": thread_id, "after": after_sequence},
             ).scalars().all()
@@ -489,18 +694,24 @@ class PostgresArtifactRepository(_PostgresRepository):
 
 class PostgresAttachmentRepository(_PostgresRepository):
     def create(self, attachment: Attachment) -> Attachment:
+        attachment = Attachment.model_validate(attachment.model_dump())
         with self.engine.begin() as conn:
             conn.execute(
                 text(
                     """INSERT INTO attachments
                     (id, thread_id, workspace_id, owner_user_id, message_id, filename,
-                     content_type, size_bytes, storage_uri, checksum_sha256, status, created_at)
+                     content_type, size_bytes, storage_uri, checksum_sha256, status,
+                     scan_status, scan_detail, created_at)
                     VALUES (:id, :thread_id, :workspace_id, :owner_user_id, :message_id,
                             :filename, :content_type, :size_bytes, :storage_uri,
-                            :checksum_sha256, :status, :created_at)
+                            :checksum_sha256, :status, :scan_status, :scan_detail, :created_at)
                     ON CONFLICT (id) DO NOTHING"""
                 ),
-                {**attachment.model_dump(), "status": attachment.status.value},
+                {
+                    **attachment.model_dump(),
+                    "status": attachment.status.value,
+                    "scan_status": attachment.scan_status.value,
+                },
             )
         return self.get(attachment.id) or attachment
 
@@ -512,18 +723,61 @@ class PostgresAttachmentRepository(_PostgresRepository):
         return Attachment.model_validate(row) if row else None
 
     def update(self, attachment: Attachment) -> Attachment:
+        attachment = Attachment.model_validate(attachment.model_dump())
         with self.engine.begin() as conn:
             result = conn.execute(
                 text(
                     """UPDATE attachments SET message_id=:message_id, size_bytes=:size_bytes,
-                    storage_uri=:storage_uri, checksum_sha256=:checksum_sha256, status=:status
+                    storage_uri=:storage_uri, checksum_sha256=:checksum_sha256, status=:status,
+                    scan_status=:scan_status, scan_detail=:scan_detail
                     WHERE id=:id"""
                 ),
-                {**attachment.model_dump(), "status": attachment.status.value},
+                {
+                    **attachment.model_dump(),
+                    "status": attachment.status.value,
+                    "scan_status": attachment.scan_status.value,
+                },
             )
         if not result.rowcount:
             raise KeyError(attachment.id)
         return attachment
+
+    def associate_many(
+        self,
+        attachment_ids: list[str],
+        message_id: str,
+        *,
+        thread_id: str,
+        workspace_id: str,
+        owner_user_id: str,
+    ) -> bool:
+        unique_ids = list(dict.fromkeys(attachment_ids))
+        with self.engine.begin() as conn:
+            locked = []
+            for attachment_id in unique_ids:
+                row = conn.execute(
+                    text("SELECT * FROM attachments WHERE id=:id FOR UPDATE"),
+                    {"id": attachment_id},
+                ).mappings().first()
+                if row is None:
+                    return False
+                locked.append(row)
+            if any(
+                row["thread_id"] != thread_id
+                or row["workspace_id"] != workspace_id
+                or row["owner_user_id"] != owner_user_id
+                or row["status"] != "READY"
+                or row["scan_status"] != "CLEAN"
+                or row["message_id"] is not None
+                for row in locked
+            ):
+                return False
+            for attachment_id in unique_ids:
+                conn.execute(
+                    text("UPDATE attachments SET message_id=:message_id WHERE id=:id"),
+                    {"message_id": message_id, "id": attachment_id},
+                )
+        return True
 
     def delete(self, attachment_id: str) -> bool:
         with self.engine.begin() as conn:
@@ -810,10 +1064,13 @@ class PostgresThreadSummaryRepository(_PostgresRepository):
 
 
 def build_conversation_repositories(
-    backend: str, database_url: str
+    backend: str,
+    database_url: str,
+    *,
+    query_embedder: QueryEmbeddingHook | None = None,
 ) -> ConversationRepositories:
     if backend != "postgres":
-        return build_in_memory_repositories()
+        return build_in_memory_repositories(query_embedder=query_embedder)
     if not database_url.strip():
         raise ValueError("persistence_backend=postgres requires a non-empty database_url")
     return ConversationRepositories(
@@ -824,6 +1081,6 @@ def build_conversation_repositories(
         attachments=PostgresAttachmentRepository(database_url),
         memories=PostgresMemoryRepository(database_url),
         thread_summaries=PostgresThreadSummaryRepository(database_url),
-        search=PostgresSearchRepository(database_url),
+        search=PostgresSearchRepository(database_url, query_embedder=query_embedder),
         approvals=PostgresApprovalRepository(database_url),
     )

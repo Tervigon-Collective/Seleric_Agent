@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 import re
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
@@ -23,6 +25,7 @@ from seleric_swarm.conversations.repositories import ConversationRepositories
 
 _SPACE = re.compile(r"\s+")
 _WORD = re.compile(r"[a-z0-9]+")
+_TOKEN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 _CANDIDATES: tuple[tuple[re.Pattern[str], MemoryType], ...] = (
     (
@@ -52,6 +55,26 @@ _CANDIDATES: tuple[tuple[re.Pattern[str], MemoryType], ...] = (
 def normalize_memory_content(value: str | dict[str, Any]) -> str:
     text = value if isinstance(value, str) else " ".join(f"{k}:{value[k]}" for k in sorted(value))
     return " ".join(_WORD.findall(_SPACE.sub(" ", text).casefold()))
+
+
+def approximate_token_count(value: str) -> int:
+    """Conservative, dependency-free token approximation.
+
+    Words longer than four characters consume multiple units and punctuation
+    consumes one. This intentionally overestimates typical BPE tokenizers.
+    """
+    return sum(
+        max(1, math.ceil(len(token) / 4))
+        if token.isalnum() or token.isidentifier()
+        else 1
+        for token in _TOKEN.findall(value)
+    )
+
+
+def _json(value: Any) -> str:
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="json")
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
 
 
 def _text(message: Message) -> str:
@@ -199,6 +222,42 @@ class MemoryService:
                 None,
             )
             if duplicate:
+                merged_message_ids = list(
+                    dict.fromkeys(
+                        [
+                            *duplicate.source_message_ids,
+                            *candidate.source_message_ids,
+                            *(
+                                [candidate.source_message_id]
+                                if candidate.source_message_id
+                                else []
+                            ),
+                        ]
+                    )
+                )
+                merged_evidence_ids = list(
+                    dict.fromkeys(
+                        [*duplicate.source_evidence_ids, *candidate.source_evidence_ids]
+                    )
+                )
+                duplicate_provenance = {
+                    **duplicate.provenance,
+                    "duplicate_observations": int(
+                        duplicate.provenance.get("duplicate_observations", 0)
+                    )
+                    + 1,
+                    "latest_duplicate_provenance": candidate.provenance,
+                }
+                self.repositories.memories.update(
+                    duplicate.model_copy(
+                        update={
+                            "source_message_ids": merged_message_ids,
+                            "source_evidence_ids": merged_evidence_ids,
+                            "provenance": duplicate_provenance,
+                            "updated_at": datetime.now(UTC),
+                        }
+                    )
+                )
                 continue
             conflict = next((item for item in existing if memories_contradict(item, candidate)), None)
             if conflict:
@@ -240,20 +299,60 @@ class MemoryService:
                 )
         return confirmed
 
-    def expire(self, workspace_id: str, owner_user_id: str) -> int:
-        now = datetime.now(UTC)
+    def expire(
+        self,
+        workspace_id: str,
+        owner_user_id: str,
+        *,
+        now: datetime | None = None,
+        on_expired: Callable[[MemoryItem], None] | None = None,
+    ) -> int:
+        now = now or datetime.now(UTC)
         changed = 0
         for item in self.repositories.memories.list(
             workspace_id, owner_user_id, include_inactive=True, limit=1000
         ):
             if item.status is MemoryStatus.ACTIVE and item.expires_at and item.expires_at <= now:
-                self.repositories.memories.update(
+                expired = self.repositories.memories.update(
                     item.model_copy(
                         update={"status": MemoryStatus.ARCHIVED, "archived_at": now, "updated_at": now}
                     )
                 )
+                if on_expired:
+                    on_expired(expired)
                 changed += 1
         return changed
+
+    def revoke(
+        self,
+        memory_id: str,
+        workspace_id: str,
+        owner_user_id: str,
+        *,
+        reason: str | None = None,
+        on_revoked: Callable[[MemoryItem], None] | None = None,
+    ) -> MemoryItem | None:
+        item = self.repositories.memories.get(memory_id, workspace_id, owner_user_id)
+        if item is None:
+            return None
+        now = datetime.now(UTC)
+        revoked = self.repositories.memories.update(
+            item.model_copy(
+                update={
+                    "status": MemoryStatus.ARCHIVED,
+                    "valid_to": now,
+                    "archived_at": now,
+                    "updated_at": now,
+                    "provenance": {
+                        **item.provenance,
+                        "revocation": {"reason": reason, "revoked_at": now.isoformat()},
+                    },
+                }
+            )
+        )
+        if on_revoked:
+            on_revoked(revoked)
+        return revoked
 
 
 class ContextBuilder:
@@ -267,10 +366,12 @@ class ContextBuilder:
         summary_characters: int = 2500,
         memory_characters: int = 3000,
         artifact_characters: int = 1500,
+        total_tokens: int | None = None,
     ) -> None:
         self.repositories = repositories
         self.vector_scorer = vector_scorer
         self.total_characters = total_characters
+        self.total_tokens = total_tokens or max(1, total_characters // 3)
         self.source_budgets = {
             "messages": message_characters,
             "summary": summary_characters,
@@ -285,8 +386,20 @@ class ContextBuilder:
         lexical = len(query_words & memory_words) / max(1, len(query_words | memory_words))
         age_days = max(0.0, (now - memory.updated_at).total_seconds() / 86400)
         recency = 1 / (1 + age_days / 30)
-        return lexical * 0.5 + recency * 0.15 + memory.confidence * 0.2 + memory.salience * 0.15 + (
-            0.25 if memory.pinned else 0
+        phrase = 0.2 if normalize_memory_content(query) in memory.normalized_content else 0.0
+        provenance = 0.05 if (
+            memory.source_message_id
+            or memory.source_message_ids
+            or memory.source_evidence_ids
+        ) else 0.0
+        return (
+            lexical * 0.55
+            + phrase
+            + recency * 0.1
+            + memory.confidence * 0.15
+            + memory.salience * 0.1
+            + provenance
+            + (0.25 if memory.pinned else 0)
         )
 
     def build(
@@ -295,6 +408,7 @@ class ContextBuilder:
         *,
         query: str,
         workspace_config: dict[str, Any] | None = None,
+        permissions: dict[str, bool] | None = None,
     ) -> ContextBundle:
         preference = self.repositories.memories.get_preference(
             thread.workspace_id, thread.owner_user_id
@@ -303,13 +417,36 @@ class ContextBuilder:
         summary = self.repositories.thread_summaries.latest(
             thread.id, thread.workspace_id, thread.owner_user_id
         )
-        memories = [] if preference.opted_out else self.repositories.memories.list(
+        candidates = [] if preference.opted_out else self.repositories.memories.list(
             thread.workspace_id,
             thread.owner_user_id,
             project_id=thread.project_id,
             thread_id=thread.id,
             limit=500,
         )
+        memories = [
+            item
+            for item in candidates
+            if (
+                item.scope is MemoryScope.USER
+                or (
+                    item.scope in {MemoryScope.PROJECT, MemoryScope.EPISODIC}
+                    and thread.project_id is not None
+                    and item.project_id == thread.project_id
+                )
+                or (item.scope is MemoryScope.THREAD and item.thread_id == thread.id)
+            )
+        ]
+        deduplicated: dict[tuple[MemoryType, str], MemoryItem] = {}
+        for item in memories:
+            key = (item.type, item.normalized_content or normalize_memory_content(item.content))
+            current = deduplicated.get(key)
+            if current is None or (item.pinned, item.updated_at) > (
+                current.pinned,
+                current.updated_at,
+            ):
+                deduplicated[key] = item
+        memories = list(deduplicated.values())
         now = datetime.now(UTC)
         vector_scores = self.vector_scorer(query, memories) if self.vector_scorer else {}
         memories.sort(
@@ -318,31 +455,62 @@ class ContextBuilder:
         )
 
         remaining = self.total_characters
+        remaining_tokens = self.total_tokens
 
         def take(values: Iterable[Any], budget: int, render: Callable[[Any], str]) -> list[Any]:
-            nonlocal remaining
+            nonlocal remaining, remaining_tokens
             selected: list[Any] = []
             used = 0
             for value in values:
-                size = len(render(value))
-                if size > budget - used or size > remaining:
+                rendered = render(value)
+                size = len(rendered)
+                tokens = approximate_token_count(rendered)
+                if size > budget - used or size > remaining or tokens > remaining_tokens:
                     continue
                 selected.append(value)
                 used += size
                 remaining -= size
+                remaining_tokens -= tokens
             return selected
+
+        requested_permissions = dict(
+            permissions
+            or {
+                "read_messages": True,
+                "read_memory": not preference.opted_out,
+                "read_artifacts": True,
+                "read_workspace_config": True,
+            }
+        )
+        rendered_permissions = _json(requested_permissions)
+        permission_tokens = approximate_token_count(rendered_permissions)
+        if (
+            len(rendered_permissions) <= remaining
+            and permission_tokens <= remaining_tokens
+        ):
+            explicit_permissions = requested_permissions
+            remaining -= len(rendered_permissions)
+            remaining_tokens -= permission_tokens
+        else:
+            explicit_permissions = {}
 
         recent = take(
             reversed(messages),
             self.source_budgets["messages"],
-            lambda item: _text(item),
+            _text,
         )
         recent.reverse()
         chosen_summary = summary
-        if summary and len(summary.summary) > min(self.source_budgets["summary"], remaining):
+        summary_rendered = summary.summary if summary else ""
+        summary_tokens = approximate_token_count(summary_rendered)
+        if summary and (
+            len(summary_rendered) > min(self.source_budgets["summary"], remaining)
+            or summary_tokens > remaining_tokens
+        ):
             chosen_summary = None
         elif summary:
-            remaining -= len(summary.summary)
+            remaining -= len(summary_rendered)
+            remaining_tokens -= summary_tokens
         chosen_memories = take(
             memories,
             self.source_budgets["memories"],
@@ -354,16 +522,41 @@ class ContextBuilder:
             artifacts = take(
                 list_context(thread.workspace_id, thread.id),
                 self.source_budgets["artifacts"],
-                lambda item: str(item.payload),
+                lambda item: _json(item.payload),
             )
-        config = dict(workspace_config or {})
-        config_size = len(str(config))
-        if config_size > remaining:
-            config = {}
-        else:
-            remaining -= config_size
+        config_items = take(
+            [dict(workspace_config or {})],
+            remaining,
+            _json,
+        )
+        config = config_items[0] if config_items else {}
+        provenance = {
+            item.id: {
+                "scope": item.scope.value,
+                "project_id": item.project_id,
+                "thread_id": item.thread_id,
+                "source_message_ids": list(
+                    dict.fromkeys(
+                        [*item.source_message_ids, *([item.source_message_id] if item.source_message_id else [])]
+                    )
+                ),
+                "source_run_id": item.source_run_id,
+                "source_evidence_ids": item.source_evidence_ids,
+                "provenance": item.provenance,
+            }
+            for item in chosen_memories
+        }
+        allowed_provenance: dict[str, dict[str, Any]] = {}
+        for memory_id, details in provenance.items():
+            rendered = _json(details)
+            tokens = approximate_token_count(rendered)
+            if len(rendered) <= remaining and tokens <= remaining_tokens:
+                allowed_provenance[memory_id] = details
+                remaining -= len(rendered)
+                remaining_tokens -= tokens
         character_count = self.total_characters - remaining
         return ContextBundle(
+            permissions=explicit_permissions,
             workspace_config=config,
             recent_messages=[message.model_dump(mode="json") for message in recent],
             latest_summary=chosen_summary,
@@ -371,6 +564,8 @@ class ContextBuilder:
             artifacts=artifacts,
             memory_ids=[item.id for item in chosen_memories],
             artifact_ids=[item.id for item in artifacts],
+            provenance=allowed_provenance,
             character_count=character_count,
-            token_estimate=(character_count + 3) // 4,
+            token_estimate=self.total_tokens - remaining_tokens,
+            token_budget=self.total_tokens,
         )

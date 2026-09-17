@@ -8,6 +8,7 @@ import {
 } from "@assistant-ui/react";
 import type { PropsWithChildren } from "react";
 import type { Message, MessagePart } from "../api/contracts";
+import { ALLOWED_ATTACHMENT_TYPES, validateAttachment } from "../api/conversations";
 import { useConversationStore } from "../stores/conversation";
 
 const messageRole = (role: Message["role"]): ThreadMessageLike["role"] => {
@@ -55,8 +56,9 @@ const attachmentIds = (message: AppendMessage) =>
   );
 
 const selericAttachmentAdapter: AttachmentAdapter = {
-  accept: "*",
+  accept: [...ALLOWED_ATTACHMENT_TYPES].join(","),
   async add({ file }): Promise<PendingAttachment> {
+    validateAttachment(file);
     return {
       id: `${file.name}-${file.lastModified}-${file.size}`,
       type: "file",

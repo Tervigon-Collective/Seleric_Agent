@@ -12,11 +12,14 @@ from seleric_swarm.conversations.contracts import (
     ApprovalRequest,
     ApprovalStatus,
     Principal,
-    RollbackRecord,
     SearchResult,
 )
-from seleric_swarm.conversations.phase7 import transition_approval
+from seleric_swarm.conversations.phase7 import (
+    ApprovalExpiryService,
+    transition_approval,
+)
 from seleric_swarm.conversations.repositories import ConversationRepositories
+from seleric_swarm.observability.tracing import langfuse_trace_url, operation_span
 from seleric_swarm.runtime import SwarmRuntime
 
 router = APIRouter(prefix="/v1", tags=["phase7"])
@@ -51,6 +54,23 @@ def _admin(request: Request) -> Principal:
     return principal
 
 
+def _approval_for_principal(
+    repository: Any,
+    approval_id: str,
+    principal: Principal,
+) -> ApprovalRequest | None:
+    approval = repository.get(approval_id, principal.workspace_id, principal.user_id)
+    if approval is not None:
+        return approval
+    approval = repository.get_for_workspace(approval_id, principal.workspace_id)
+    if approval is None:
+        return None
+    roles = {role.lower() for role in principal.roles}
+    if approval.required_role.lower() not in roles and not principal.is_admin:
+        return None
+    return approval
+
+
 @router.get("/search", response_model=list[SearchResult])
 def search(
     request: Request,
@@ -60,13 +80,18 @@ def search(
 ) -> list[SearchResult]:
     principal = _principal(request)
     selected = {item.strip() for item in kinds.split(",") if item.strip()} if kinds else None
-    valid = {"thread", "message", "memory", "artifact", "run"}
+    valid = {"thread", "message", "memory", "artifact", "report", "run"}
     if selected and not selected <= valid:
         raise HTTPException(status_code=400, detail="invalid search kind")
     repositories = _repositories(request)
-    return repositories.search.search(
-        q, principal.workspace_id, principal.user_id, kinds=selected, limit=limit
-    )
+    with operation_span(
+        "http",
+        "search",
+        {"workspace_id": principal.workspace_id, "kinds": sorted(selected or valid)},
+    ):
+        return repositories.search.search(
+            q, principal.workspace_id, principal.user_id, kinds=selected, limit=limit
+        )
 
 
 class CreateApprovalBody(BaseModel):
@@ -103,7 +128,12 @@ def create_approval(body: CreateApprovalBody, request: Request) -> ApprovalReque
         checkpoint_resume_token=body.checkpoint_resume_token,
         expires_at=now + timedelta(seconds=body.expires_in_seconds),
     )
-    return repositories.approvals.create(approval)
+    with operation_span(
+        "persistence",
+        "approval_request",
+        {"action_type": body.action_type, "workspace_id": principal.workspace_id},
+    ):
+        return repositories.approvals.create(approval)
 
 
 class ApprovalDecisionBody(BaseModel):
@@ -117,7 +147,8 @@ class ApprovalDecisionBody(BaseModel):
 def get_approval(approval_id: str, request: Request) -> dict[str, Any]:
     principal = _principal(request)
     repository = _repositories(request).approvals
-    approval = repository.get(approval_id, principal.workspace_id, principal.user_id)
+    ApprovalExpiryService(repository).sweep()
+    approval = _approval_for_principal(repository, approval_id, principal)
     if approval is None:
         raise HTTPException(status_code=404, detail="approval not found")
     return {
@@ -133,25 +164,36 @@ def decide_approval(
     principal = _principal(request)
     runtime = _runtime(request)
     repository = _repositories(request).approvals
-    approval = repository.get(approval_id, principal.workspace_id, principal.user_id)
+    ApprovalExpiryService(repository).sweep()
+    approval = _approval_for_principal(repository, approval_id, principal)
     if approval is None:
         raise HTTPException(status_code=404, detail="approval not found")
     target = ApprovalStatus(body.decision)
     try:
+        if target is ApprovalStatus.EXECUTED:
+            if runtime.action_execution is None:
+                raise LookupError("action execution service unavailable")
+            updated, _outcome = runtime.action_execution.execute(
+                approval,
+                principal,
+                allow_write_actions=runtime.settings.allow_write_actions,
+            )
+            return updated
+        if target is ApprovalStatus.ROLLED_BACK:
+            if runtime.action_execution is None:
+                raise LookupError("action execution service unavailable")
+            updated, _record = runtime.action_execution.rollback(approval, principal)
+            return updated
         updated = transition_approval(
             repository, approval, target, principal, reason=body.reason,
             allow_write_actions=runtime.settings.allow_write_actions,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if target is ApprovalStatus.ROLLED_BACK:
-        repository.add_rollback(RollbackRecord(
-            approval_id=approval.id, actor_principal_id=principal.principal_id,
-            action={"action_type": approval.action_type},
-            outcome={"recorded": True, "dry_run": approval.dry_run},
-        ))
     return updated
 
 
@@ -164,6 +206,12 @@ def run_diagnostics(run_id: str, request: Request) -> dict[str, Any]:
     if run is None or not principal.can_access_workspace(run.workspace_id):
         raise HTTPException(status_code=404, detail="run not found")
     trace = run.metadata.get("trace", {}) if isinstance(run.metadata, dict) else {}
+    trace_id = trace.get("trace_id")
+    trace_url = trace.get("url") or langfuse_trace_url(
+        runtime.settings.langfuse_base_url,
+        runtime.settings.langfuse_project_id,
+        trace_id,
+    )
     memory_items: Any = repositories.memories.list_used_by_run(
         run.id, run.workspace_id, run.requested_by_user_id
     )
@@ -182,9 +230,21 @@ def run_diagnostics(run_id: str, request: Request) -> dict[str, Any]:
             "tool": run.metadata.get("tool_version"),
         },
         "telemetry": {
-            "trace_id": trace.get("trace_id"),
+            "trace_id": trace_id,
             "lost_spans": run.metadata.get("telemetry_lost", 0),
-            "trace_url": trace.get("url"),
+            "trace_url": trace_url,
+            "langfuse_configured": bool(
+                runtime.settings.langfuse_project_id
+                and runtime.settings.langfuse_otel_endpoint
+            ),
+        },
+        "capabilities": {
+            "hybrid_search": True,
+            "vector_search": bool(runtime.settings.search_embedding_model),
+            "action_execution": runtime.action_execution is not None,
+            "write_actions": runtime.settings.allow_write_actions,
+            "immutable_audit": True,
+            "replay_execution": False,
         },
         "memory_provenance": [
             item.model_dump(mode="json")
@@ -195,6 +255,29 @@ def run_diagnostics(run_id: str, request: Request) -> dict[str, Any]:
             "deletion_status": run.metadata.get("deletion_status", "not_requested"),
         },
     }
+
+
+@router.get("/admin/capabilities")
+def backend_capabilities(request: Request) -> dict[str, bool]:
+    _admin(request)
+    runtime = _runtime(request)
+    return {
+        "hybrid_search": True,
+        "vector_search": bool(runtime.settings.search_embedding_model),
+        "approval_audit": True,
+        "scheduled_expiry": True,
+        "action_execution": runtime.action_execution is not None,
+        "write_actions": runtime.settings.allow_write_actions,
+        "immutable_audit": True,
+        "replay_execution": False,
+    }
+
+
+@router.post("/admin/approvals/expire")
+def expire_approvals(request: Request) -> dict[str, int]:
+    _admin(request)
+    repository = _repositories(request).approvals
+    return {"expired": ApprovalExpiryService(repository).sweep()}
 
 
 @router.post("/admin/runs/{run_id}/replay")

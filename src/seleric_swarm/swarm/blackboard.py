@@ -8,9 +8,40 @@ swapped for Redis / Postgres without touching agent code.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Protocol
 
 from seleric_swarm.swarm.artifacts import SwarmArtifact
+
+MissionEventObserver = Callable[[dict[str, Any]], None]
+_event_observer: ContextVar[MissionEventObserver | None] = ContextVar(
+    "seleric_mission_event_observer", default=None
+)
+
+
+@contextmanager
+def observe_mission_events(observer: MissionEventObserver) -> Iterator[None]:
+    """Observe mission events emitted in this async context."""
+    token = _event_observer.set(observer)
+    try:
+        yield
+    finally:
+        _event_observer.reset(token)
+
+
+observe_blackboard_events = observe_mission_events
+
+
+def notify_mission_event(event: dict[str, Any]) -> None:
+    """Notify the active observer without changing execution semantics."""
+    observer = _event_observer.get()
+    if observer is not None:
+        try:
+            observer(dict(event))
+        except Exception:
+            return
 
 
 class ArtifactStore(Protocol):
@@ -38,7 +69,12 @@ class InMemoryArtifactStore:
 
 
 class Blackboard:
-    def __init__(self, mission_id: str, store: ArtifactStore | None = None) -> None:
+    def __init__(
+        self,
+        mission_id: str,
+        store: ArtifactStore | None = None,
+        event_observer: MissionEventObserver | None = None,
+    ) -> None:
         self.mission_id = mission_id
         self._store: ArtifactStore = store or InMemoryArtifactStore()
         self.evidence_ledger: list[str] = []
@@ -47,6 +83,18 @@ class Blackboard:
         self.leadership_epoch: int = 0
         self.handoff_history: list[dict[str, Any]] = []
         self.events: list[dict[str, Any]] = []
+        self._event_observer = event_observer or _event_observer.get()
+
+    def append_event(self, event: dict[str, Any]) -> None:
+        self.events.append(event)
+        observer = self._event_observer
+        if observer is not None:
+            try:
+                observer(dict(event))
+            except Exception:
+                # Persistence/notification observers are best-effort and must not
+                # change mission execution semantics.
+                return
 
     # -- artifacts -----------------------------------------------------------
     def post(self, artifact: SwarmArtifact) -> str:
@@ -137,7 +185,7 @@ class Blackboard:
             "family": family_of(kind),
             **data,
         }
-        self.events.append(event)
+        self.append_event(event)
 
     # -- state view for the LeadershipManager -----------------------------
     def leadership_state(self) -> dict[str, Any]:

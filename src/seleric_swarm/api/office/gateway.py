@@ -20,6 +20,11 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from seleric_swarm.api.mission_access import (
+    can_access_mission,
+    request_principal,
+    require_mission_access,
+)
 from seleric_swarm.api.office.normalize import build_office_snapshot, normalize_events
 from seleric_swarm.api.office.registry import known_mission_ids
 
@@ -46,10 +51,24 @@ def _raw(mission_id: str) -> dict[str, Any] | None:
 
 
 @router.get("/missions")
-def list_office_missions(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
+def list_office_missions(
+    request: Request, limit: int = Query(50, ge=1, le=200)
+) -> dict[str, Any]:
     """Recent missions. Prefers the store's own listing (durable, multi-worker);
     falls back to the in-process registry when the store cannot enumerate."""
     store = _runtime().store
+    principal = request_principal(request)
+    settings = getattr(_runtime(), "settings", None)
+
+    def visible(raw: dict[str, Any]) -> bool:
+        return can_access_mission(
+            principal,
+            raw,
+            default_workspace_id=str(
+                getattr(settings, "default_workspace_id", "default")
+            ),
+            default_user_id=str(getattr(settings, "default_user_id", "default")),
+        )
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
 
@@ -57,6 +76,8 @@ def list_office_missions(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]
     if callable(lister):
         try:
             for m in lister(limit=limit):
+                if not visible(m):
+                    continue
                 mid = m.get("mission_id") or m.get("missionId")
                 if not mid or mid in seen:
                     continue
@@ -80,6 +101,8 @@ def list_office_missions(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]
         raw = _raw(mid)
         if not raw:
             continue
+        if not visible(raw):
+            continue
         seen.add(mid)
         out.append(
             {
@@ -98,10 +121,11 @@ def list_office_missions(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]
 
 
 @router.get("/missions/{mission_id}/snapshot")
-def office_snapshot(mission_id: str) -> dict[str, Any]:
+def office_snapshot(mission_id: str, request: Request) -> dict[str, Any]:
     raw = _raw(mission_id)
     if raw is None:
         raise HTTPException(status_code=404, detail="mission not found")
+    require_mission_access(request, raw, _runtime())
     return build_office_snapshot(raw, mission_id=mission_id)
 
 
@@ -114,6 +138,7 @@ async def office_stream(mission_id: str, request: Request) -> StreamingResponse:
     raw = _raw(mission_id)
     if raw is None:
         raise HTTPException(status_code=404, detail="mission not found")
+    require_mission_access(request, raw, _runtime())
 
     async def gen() -> Any:
         snap = build_office_snapshot(raw, mission_id=mission_id)

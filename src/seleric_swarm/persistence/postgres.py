@@ -121,20 +121,21 @@ class PostgresMissionStore:
             if raw_state is not None:
                 self._raw[result.mission_id] = raw_state
 
-            # Replace event log for this mission (idempotent re-put).
-            conn.execute(
-                self._text("DELETE FROM mission_events WHERE mission_id = :mission_id"),
-                {"mission_id": result.mission_id},
-            )
-            for event in events:
+            # Append/upsert by source sequence so repeated persistence cannot erase
+            # events observed by a concurrent reader.
+            for event_position, event in enumerate(events, start=1):
                 conn.execute(
                     self._text(
                         """
                         INSERT INTO mission_events (
-                            mission_id, task_id, agent_id, event_type, payload
+                            mission_id, task_id, agent_id, event_type, payload, source_seq
                         ) VALUES (
-                            :mission_id, :task_id, :agent_id, :event_type, CAST(:payload AS JSONB)
+                            :mission_id, :task_id, :agent_id, :event_type,
+                            CAST(:payload AS JSONB), :source_seq
                         )
+                        ON CONFLICT (mission_id, source_seq) WHERE source_seq IS NOT NULL
+                        DO UPDATE SET task_id=EXCLUDED.task_id, agent_id=EXCLUDED.agent_id,
+                            event_type=EXCLUDED.event_type, payload=EXCLUDED.payload
                         """
                     ),
                     {
@@ -143,6 +144,7 @@ class PostgresMissionStore:
                         "agent_id": event.get("agent_id") or event.get("by"),
                         "event_type": str(event.get("kind") or "event"),
                         "payload": _json(event),
+                        "source_seq": int(event.get("seq") or 0) or -event_position,
                     },
                 )
 
@@ -255,7 +257,10 @@ class PostgresMissionStore:
             return self._raw[mission_id]
         with self._engine.begin() as conn:
             row = conn.execute(
-                self._text("SELECT raw_json, route, result_json FROM missions WHERE mission_id = :id"),
+                self._text(
+                    """SELECT raw_json, route, result_json, workspace_id, owner_user_id
+                    FROM missions WHERE mission_id = :id"""
+                ),
                 {"id": mission_id},
             ).mappings().first()
         if not row:
@@ -266,6 +271,10 @@ class PostgresMissionStore:
 
             raw = json.loads(raw)
         if isinstance(raw, dict) and raw:
+            if row.get("workspace_id") is not None:
+                raw["workspace_id"] = row.get("workspace_id")
+            if row.get("owner_user_id") is not None:
+                raw["owner_user_id"] = row.get("owner_user_id")
             self._raw[mission_id] = raw
             return raw
         # Fall back to result_json wrapped for lookup missions
@@ -275,7 +284,12 @@ class PostgresMissionStore:
 
             result_json = json.loads(result_json)
         if isinstance(result_json, dict):
-            wrapped = {"route": row.get("route") or "lookup", **result_json}
+            wrapped = {
+                "route": row.get("route") or "lookup",
+                **result_json,
+                "workspace_id": row.get("workspace_id"),
+                "owner_user_id": row.get("owner_user_id"),
+            }
             self._raw[mission_id] = wrapped
             return wrapped
         return None
@@ -320,7 +334,8 @@ class PostgresMissionStore:
             rows = conn.execute(
                 self._text(
                     """
-                    SELECT mission_id, user_query, status, route, mission_lead
+                    SELECT mission_id, user_query, status, route, mission_lead,
+                           workspace_id, owner_user_id
                     FROM missions
                     ORDER BY updated_at DESC
                     LIMIT :limit
@@ -335,6 +350,8 @@ class PostgresMissionStore:
                 "status": r.get("status") or "unknown",
                 "route": r.get("route"),
                 "mission_lead": r.get("mission_lead"),
+                "workspace_id": r.get("workspace_id"),
+                "owner_user_id": r.get("owner_user_id"),
                 "last_seq": 0,
             }
             for r in rows

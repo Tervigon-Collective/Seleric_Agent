@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import App from "../App";
 import { SafeContent } from "../components/SafeContent";
+import { DetailPanel } from "../components/DetailPanel";
 import { useOffice } from "../store";
 import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
@@ -15,6 +16,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   useShellStore.getState().setWorkspace("conversation");
+  useShellStore.setState({ sidebarOpen: true, detailsOpen: true, detailTab: "Activity" });
   useConversationStore.setState({ demoMode: true, error: null });
 });
 afterEach(() => {
@@ -53,5 +55,44 @@ describe("conversation shell rendering and accessibility", () => {
     act(() => root.render(<App />));
     expect(container.textContent).toContain("Select or start a conversation");
     expect(container.textContent).not.toContain("Stale activity");
+  });
+
+  it("renders thread sources and supports arrow-key tab navigation", () => {
+    useConversationStore.setState({
+      selectedThreadId: "t1",
+      threads: [{
+        id: "t1", workspace_id: "w", owner_user_id: "u", project_id: null,
+        title: "Research", status: "ACTIVE", metadata: {}, created_at: "now", updated_at: "now",
+      }],
+      messages: {
+        t1: [{
+          id: "m1", thread_id: "t1", workspace_id: "w", user_id: null,
+          role: "ASSISTANT", run_id: "r1", parent_message_id: null, created_at: "now",
+          parts: [{ type: "SOURCE", content: {
+            evidence_id: "EV-1", title: "Quarterly report",
+            url: "https://example.com/report", excerpt: "Revenue increased.",
+          } }],
+        }],
+      },
+    });
+    act(() => root.render(<DetailPanel />));
+    const activity = container.querySelector('[role="tab"][aria-selected="true"]') as HTMLButtonElement;
+    act(() => activity.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Context");
+    act(() => (container.querySelector("#detail-tab-sources") as HTMLButtonElement).click());
+    expect(container.textContent).toContain("Quarterly report");
+    expect(container.textContent).toContain("Revenue increased.");
+  });
+
+  it("provides functional conversation and detail panel controls", () => {
+    act(() => root.render(<App />));
+    const sidebarToggle = container.querySelector('[aria-label="Toggle conversations"]') as HTMLButtonElement;
+    const detailsToggle = container.querySelector('[aria-label="Toggle conversation details"]') as HTMLButtonElement;
+    expect(sidebarToggle.getAttribute("aria-expanded")).toBe("true");
+    expect(detailsToggle.getAttribute("aria-expanded")).toBe("true");
+    act(() => sidebarToggle.click());
+    expect(container.querySelector('[aria-label="Conversations"]')).toBeNull();
+    act(() => detailsToggle.click());
+    expect(container.querySelector('[aria-label="Conversation details"]')).toBeNull();
   });
 });

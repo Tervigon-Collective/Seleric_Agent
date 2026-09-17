@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
-from datetime import UTC, datetime
-from typing import Any, Literal, cast
+import tempfile
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any, Literal, NoReturn, cast
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from starlette.responses import RedirectResponse, StreamingResponse
 
@@ -23,6 +26,9 @@ from seleric_swarm.conversations.blobs import (
     BlobValidationError,
     LocalBlobStore,
     MalwareScanStatus,
+    MinioBlobStore,
+    normalize_content_type,
+    validate_blob_metadata,
 )
 from seleric_swarm.conversations.context import (
     ContextBuilder,
@@ -36,6 +42,7 @@ from seleric_swarm.conversations.contracts import (
     Artifact,
     ArtifactProvenance,
     Attachment,
+    AttachmentScanStatus,
     AttachmentStatus,
     MemoryItem,
     MemoryPreference,
@@ -43,6 +50,7 @@ from seleric_swarm.conversations.contracts import (
     MemoryStatus,
     MemoryType,
     Message,
+    MessagePage,
     MessagePart,
     MessagePartType,
     MessageRole,
@@ -52,14 +60,23 @@ from seleric_swarm.conversations.contracts import (
     RunAttemptStatus,
     RunStatus,
     Thread,
+    ThreadPage,
     ThreadStatus,
 )
 from seleric_swarm.conversations.events import ActivityEventSink, InMemoryEventNotifier
 from seleric_swarm.conversations.privacy import event_for_principal
 from seleric_swarm.conversations.repositories import ConversationRepositories
+from seleric_swarm.recovery import (
+    InProcessRunQueue,
+    RunExecutionResult,
+    RunRecoveryWorker,
+    RunWorkQueue,
+)
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.swarm.blackboard import observe_mission_events
 
 router = APIRouter(prefix="/v1", tags=["conversations"])
+ArtifactClassification = Literal["ui", "factual", "derived"]
 
 
 class CreateThreadRequest(BaseModel):
@@ -77,6 +94,7 @@ class SubmitMessageRequest(BaseModel):
     parent_message_id: str | None = None
     scope: dict[str, Any] = Field(default_factory=dict)
     execution_mode: str = "production"
+    attachment_ids: list[str] = Field(default_factory=list)
 
 
 class InitiateAttachmentRequest(BaseModel):
@@ -157,10 +175,18 @@ def _principal(request: Request) -> Principal:
 
 
 def _owned_thread(
-    repositories: ConversationRepositories, principal: Principal, thread_id: str
+    repositories: ConversationRepositories,
+    principal: Principal,
+    thread_id: str,
+    *,
+    allow_deleted: bool = False,
 ) -> Thread:
     thread = repositories.threads.get(thread_id)
-    if thread is None or not thread.is_owned_by(principal):
+    if (
+        thread is None
+        or not thread.is_owned_by(principal)
+        or (thread.status is ThreadStatus.DELETED and not allow_deleted)
+    ):
         raise HTTPException(status_code=404, detail="thread not found")
     return thread
 
@@ -206,14 +232,16 @@ def _event_cursor(request: Request, after_sequence: int) -> int:
         return after_sequence
 
 
-def _sse_event(event: ActivityEvent, principal: Principal) -> str | None:
+def _sse_event(
+    event: ActivityEvent, principal: Principal, *, cursor: int | None = None
+) -> str | None:
     public = event_for_principal(event, principal)
     if public is None:
         return None
     data = public.model_dump(mode="json")
     data["type"] = public.event_type
     return (
-        f"id: {public.sequence}\n"
+        f"id: {cursor if cursor is not None else public.sequence}\n"
         f"event: {public.event_type}\n"
         f"data: {json.dumps(data, separators=(',', ':'))}\n\n"
     )
@@ -256,6 +284,31 @@ def list_threads(
     return [thread for thread in threads if thread.status is ThreadStatus.ACTIVE]
 
 
+@router.get("/threads/paginated")
+def list_threads_paginated(
+    request: Request,
+    response: Response,
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = None,
+    include_deleted: bool = False,
+) -> ThreadPage:
+    principal = _principal(request)
+    repositories = _repositories(_runtime(request))
+    try:
+        items, next_cursor = repositories.threads.list_page(
+            principal.workspace_id,
+            principal.user_id,
+            limit=limit,
+            cursor=cursor,
+            include_deleted=include_deleted,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if next_cursor:
+        response.headers["X-Next-Cursor"] = next_cursor
+    return ThreadPage(items=items, next_cursor=next_cursor, has_more=next_cursor is not None)
+
+
 @router.get("/threads/{thread_id}")
 def get_thread(thread_id: str, request: Request) -> Thread:
     runtime = _runtime(request)
@@ -289,6 +342,37 @@ def archive_thread(thread_id: str, request: Request) -> Thread:
     return repositories.threads.update(archived)
 
 
+@router.delete("/threads/{thread_id}")
+def delete_thread(thread_id: str, request: Request) -> Thread:
+    repositories = _repositories(_runtime(request))
+    thread = _owned_thread(repositories, _principal(request), thread_id)
+    now = datetime.now(UTC)
+    return repositories.threads.update(
+        thread.model_copy(
+            update={"status": ThreadStatus.DELETED, "deleted_at": now, "updated_at": now}
+        )
+    )
+
+
+@router.post("/threads/{thread_id}/restore")
+def restore_thread(thread_id: str, request: Request) -> Thread:
+    repositories = _repositories(_runtime(request))
+    thread = _owned_thread(
+        repositories, _principal(request), thread_id, allow_deleted=True
+    )
+    if thread.status is not ThreadStatus.DELETED:
+        raise HTTPException(status_code=409, detail="thread is not deleted")
+    return repositories.threads.update(
+        thread.model_copy(
+            update={
+                "status": ThreadStatus.ACTIVE,
+                "deleted_at": None,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+    )
+
+
 @router.get("/threads/{thread_id}/messages")
 def list_messages(
     thread_id: str,
@@ -299,6 +383,27 @@ def list_messages(
     repositories = _repositories(runtime)
     _owned_thread(repositories, _principal(request), thread_id)
     return repositories.messages.list_for_thread(thread_id, limit=limit)
+
+
+@router.get("/threads/{thread_id}/messages/paginated")
+def list_messages_paginated(
+    thread_id: str,
+    request: Request,
+    response: Response,
+    limit: int = Query(default=100, ge=1, le=500),
+    cursor: str | None = None,
+) -> MessagePage:
+    repositories = _repositories(_runtime(request))
+    _owned_thread(repositories, _principal(request), thread_id)
+    try:
+        items, next_cursor = repositories.messages.list_page(
+            thread_id, limit=limit, cursor=cursor
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if next_cursor:
+        response.headers["X-Next-Cursor"] = next_cursor
+    return MessagePage(items=items, next_cursor=next_cursor, has_more=next_cursor is not None)
 
 
 @router.get("/memories")
@@ -502,21 +607,24 @@ def initiate_attachment(
     blob_store = getattr(runtime, "blob_store", None)
     if blob_store is None:
         raise HTTPException(status_code=503, detail="blob storage is not configured")
-    max_size = int(getattr(blob_store, "max_size_bytes", 0))
-    if max_size and body.size_bytes > max_size:
-        raise HTTPException(status_code=413, detail="attachment exceeds configured maximum size")
-    if isinstance(blob_store, LocalBlobStore):
-        try:
-            blob_store.validate_metadata(body.filename, body.content_type, body.size_bytes)
-        except BlobValidationError as exc:
-            raise HTTPException(status_code=415, detail=str(exc)) from exc
+    try:
+        content_type = validate_blob_metadata(
+            body.filename,
+            body.content_type,
+            body.size_bytes,
+            max_size_bytes=int(blob_store.max_size_bytes),
+            allowed_mime_types=blob_store.allowed_mime_types,
+        )
+    except BlobValidationError as exc:
+        status_code = 413 if "size" in str(exc).lower() else 415
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     attachment = repositories.attachments.create(
         Attachment(
             thread_id=thread.id,
             workspace_id=thread.workspace_id,
             owner_user_id=principal.user_id,
             filename=body.filename,
-            content_type=body.content_type.split(";", 1)[0].lower(),
+            content_type=content_type,
             size_bytes=body.size_bytes,
         )
     )
@@ -574,6 +682,8 @@ async def upload_attachment_content(attachment_id: str, request: Request) -> Att
                 "storage_uri": result.uri,
                 "checksum_sha256": result.checksum_sha256,
                 "status": final_status,
+                "scan_status": AttachmentScanStatus(result.scan.status.value),
+                "scan_detail": result.scan.detail,
             }
         )
     )
@@ -588,24 +698,101 @@ def complete_presigned_upload(
     attachment = _owned_attachment(
         repositories, _authenticated_principal(request), attachment_id
     )
+    if attachment.status is not AttachmentStatus.PENDING:
+        raise HTTPException(status_code=409, detail="attachment is not pending")
     blob_store = getattr(runtime, "blob_store", None)
     if isinstance(blob_store, LocalBlobStore):
         raise HTTPException(status_code=409, detail="local uploads complete with the PUT request")
-    if blob_store is None or not hasattr(blob_store, "client"):
+    if not isinstance(blob_store, MinioBlobStore):
         raise HTTPException(status_code=503, detail="object storage is not configured")
+
+    def reject_completion(detail: str, checksum: str | None = None) -> NoReturn:
+        blob_store.delete(attachment.id)
+        repositories.attachments.update(
+            attachment.model_copy(
+                update={
+                    "storage_uri": None,
+                    "checksum_sha256": checksum,
+                    "status": AttachmentStatus.FAILED,
+                    "scan_status": AttachmentScanStatus.FAILED,
+                    "scan_detail": detail,
+                }
+            )
+        )
+        raise HTTPException(status_code=409, detail=detail)
+
     stat = blob_store.client.stat_object(blob_store.bucket, attachment.id)
     if int(stat.size) != attachment.size_bytes:
-        raise HTTPException(status_code=409, detail="object size does not match declaration")
+        reject_completion("object size does not match declaration")
+    try:
+        stored_type = normalize_content_type(str(stat.content_type or ""))
+    except BlobValidationError:
+        reject_completion("stored object MIME type is invalid")
+    if stored_type != attachment.content_type:
+        reject_completion("stored object MIME type does not match declaration")
     metadata = {str(k).lower(): str(v) for k, v in (stat.metadata or {}).items()}
     stored_checksum = metadata.get("x-amz-meta-sha256") or metadata.get("sha256")
-    if stored_checksum and stored_checksum != body.checksum_sha256:
-        raise HTTPException(status_code=409, detail="object checksum metadata does not match")
+    response = blob_store.client.get_object(blob_store.bucket, attachment.id)
+    digest = hashlib.sha256()
+    streamed_size = 0
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False) as temporary:
+            temporary_path = Path(temporary.name)
+            while chunk := response.read(1024 * 1024):
+                streamed_size += len(chunk)
+                digest.update(chunk)
+                temporary.write(chunk)
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
+        release = getattr(response, "release_conn", None)
+        if callable(release):
+            release()
+    server_checksum = digest.hexdigest()
+    if streamed_size != attachment.size_bytes:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        reject_completion("streamed object size does not match declaration", server_checksum)
+    if stored_checksum and stored_checksum != server_checksum:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        reject_completion("object checksum metadata does not match content", server_checksum)
+    if body.checksum_sha256 != server_checksum:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        reject_completion("declared checksum does not match object content", server_checksum)
+    try:
+        if temporary_path is None:
+            reject_completion("object could not be staged for scanning", server_checksum)
+        scan = blob_store.scanner.scan(temporary_path)
+    except Exception as exc:
+        reject_completion(f"malware scan failed: {exc}", server_checksum)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    if scan.status is not MalwareScanStatus.CLEAN:
+        blob_store.delete(attachment.id)
+        return repositories.attachments.update(
+            attachment.model_copy(
+                update={
+                    "storage_uri": None,
+                    "checksum_sha256": server_checksum,
+                    "status": AttachmentStatus.FAILED,
+                    "scan_status": AttachmentScanStatus(scan.status.value),
+                    "scan_detail": scan.detail,
+                }
+            )
+        )
     return repositories.attachments.update(
         attachment.model_copy(
             update={
                 "storage_uri": f"s3://{blob_store.bucket}/{attachment.id}",
-                "checksum_sha256": body.checksum_sha256,
+                "checksum_sha256": server_checksum,
                 "status": AttachmentStatus.READY,
+                "scan_status": AttachmentScanStatus.CLEAN,
+                "scan_detail": scan.detail,
             }
         )
     )
@@ -704,6 +891,15 @@ def cancel_run(run_id: str, request: Request) -> dict[str, str]:
             cancel_running_mission(runtime, mission_id=run.mission_id)
         except (KeyError, ValueError):
             pass
+    _event_sink(runtime, repositories).emit(
+        run,
+        "run.cancelled",
+        payload={
+            "mission_id": run.mission_id,
+            "status": RunStatus.CANCELLED.value.lower(),
+        },
+        completed_at=datetime.now(UTC),
+    )
     return {"run_id": run_id, "status": RunStatus.CANCELLED.value}
 
 
@@ -784,8 +980,8 @@ async def stream_thread_events(
                 thread_id, after_sequence=cursor
             )
             for event in events:
-                cursor = max(cursor, event.sequence)
-                encoded = _sse_event(event, principal)
+                cursor = max(cursor, event.thread_sequence)
+                encoded = _sse_event(event, principal, cursor=event.thread_sequence)
                 if encoded is not None:
                     yield encoded
             if await request.is_disconnected():
@@ -794,6 +990,21 @@ async def stream_thread_events(
             await asyncio.sleep(heartbeat_seconds)
 
     return _stream_response(generate())
+
+
+def _artifact_classification(
+    artifact_type: object,
+    payload: dict[str, Any],
+    evidence_ids: list[str],
+) -> ArtifactClassification:
+    if str(artifact_type).lower() == "evidence":
+        return "factual"
+    declared = str(payload.get("classification") or "").lower()
+    if declared in {"ui", "factual", "derived"}:
+        return cast(ArtifactClassification, declared)
+    if evidence_ids:
+        return "derived"
+    raise ValueError("missing explicit classification and evidence provenance")
 
 
 async def _execute_submission(
@@ -807,42 +1018,83 @@ async def _execute_submission(
     as_of: str | None,
     request_id: str,
     execution_mode: str,
-) -> None:
+    assistant_message_id: str,
+) -> RunExecutionResult:
     sink = _event_sink(runtime, repositories)
-    worker_id = _execution_setting(runtime, "run_worker_id", "") or f"worker-{uuid4().hex[:12]}"
-    claimed = repositories.runs.claim(
-        run.id, worker_id, _execution_setting(runtime, "run_lease_s", 60.0)
+    if not attempt.worker_id:
+        raise RuntimeError("submission executor requires a claimed run attempt")
+    persisted_before_start = repositories.runs.get(run.id)
+    cancellation = getattr(runtime, "cancellation", None)
+    cancelled_before_start = (
+        persisted_before_start is not None
+        and persisted_before_start.status is RunStatus.CANCELLED
+    ) or (
+        bool(run.mission_id)
+        and cancellation is not None
+        and cancellation.is_requested(run.mission_id)
     )
-    if claimed is None:
-        return
-    attempt = claimed
-    running = run.model_copy(update={"status": RunStatus.RUNNING, "started_at": datetime.now(UTC)})
-    repositories.runs.update(running)
+    if cancelled_before_start:
+        completed_at = datetime.now(UTC)
+
+        def emit_cancelled(committed_status: RunStatus) -> None:
+            sink.emit(
+                run,
+                {
+                    RunStatus.COMPLETED: "run.completed",
+                    RunStatus.CANCELLED: "run.cancelled",
+                }.get(committed_status, "run.failed"),
+                payload={
+                    "mission_id": run.mission_id,
+                    "status": committed_status.value.lower(),
+                    "attempt_id": attempt.id,
+                    "attempt_number": attempt.attempt_number,
+                },
+                completed_at=completed_at,
+            )
+
+        return RunExecutionResult(
+            status=RunStatus.CANCELLED,
+            error_code="CANCELLED",
+            on_committed=emit_cancelled,
+        )
+    running = repositories.runs.compare_and_set_status(
+        run.id,
+        {RunStatus.QUEUED},
+        RunStatus.RUNNING,
+    )
+    if running is None:
+        persisted = repositories.runs.get(run.id)
+        if persisted is not None and persisted.status is RunStatus.CANCELLED:
+            return RunExecutionResult(
+                status=RunStatus.CANCELLED,
+                error_code="CANCELLED",
+                on_committed=emit_cancelled,
+            )
+        raise RuntimeError(f"run {run.id} could not enter RUNNING state")
     sink.emit(
         running,
         "run.started",
-        payload={"mission_id": run.mission_id},
+        payload={
+            "mission_id": run.mission_id,
+            "attempt_id": attempt.id,
+            "attempt_number": attempt.attempt_number,
+        },
         started_at=running.started_at,
     )
-    stop_heartbeat = asyncio.Event()
 
-    async def _heartbeat() -> None:
-        while not stop_heartbeat.is_set():
-            try:
-                await asyncio.wait_for(
-                    stop_heartbeat.wait(),
-                    timeout=_execution_setting(runtime, "run_heartbeat_s", 15.0),
-                )
-            except TimeoutError:
-                if not repositories.runs.heartbeat(
-                    attempt.id,
-                    worker_id,
-                    _execution_setting(runtime, "run_lease_s", 60.0),
-                ):
-                    return
+    def persist_incremental_event(event: dict[str, Any]) -> None:
+        sink.ingest_mission_events(
+            running,
+            [event],
+            exclude_event_types={
+                "run.started",
+                "run.completed",
+                "run.failed",
+                "run.cancelled",
+            },
+        )
 
-    heartbeat_task = asyncio.create_task(_heartbeat())
-    try:
+    with observe_mission_events(persist_incremental_event):
         await run_mission_job(
             runtime,
             mission_id=run.mission_id or "",
@@ -857,9 +1109,6 @@ async def _execute_submission(
             full_strategy=True,
             execution_mode=execution_mode,
         )
-    finally:
-        stop_heartbeat.set()
-        await heartbeat_task
     raw = getattr(runtime.store, "get_raw", lambda _mission_id: None)(run.mission_id)
     raw = raw if isinstance(raw, dict) else {}
     context_bundle = run.metadata.get("context_bundle")
@@ -877,7 +1126,12 @@ async def _execute_submission(
         sink.ingest_mission_events(
             running,
             [event for event in mission_events if isinstance(event, dict)],
-            exclude_event_types={"run.started", "run.completed", "run.failed"},
+            exclude_event_types={
+                "run.started",
+                "run.completed",
+                "run.failed",
+                "run.cancelled",
+            },
         )
     mission_status = raw.get("status")
     final_status = {
@@ -887,20 +1141,20 @@ async def _execute_submission(
     persisted_run = repositories.runs.get(run.id)
     if persisted_run is not None and persisted_run.status is RunStatus.CANCELLED:
         final_status = RunStatus.CANCELLED
-    attempt_status = {
-        RunStatus.FAILED: RunAttemptStatus.FAILED,
-        RunStatus.CANCELLED: RunAttemptStatus.CANCELLED,
-    }.get(final_status, RunAttemptStatus.COMPLETED)
     completed_at = datetime.now(UTC)
     final_response = raw.get("final_response")
     if isinstance(final_response, str) and final_response.strip():
-        final_message = repositories.messages.create(
-            Message(
-                thread_id=run.thread_id,
-                workspace_id=run.workspace_id,
-                role=MessageRole.ASSISTANT,
-                run_id=run.id,
-                parts=[MessagePart(type=MessagePartType.TEXT, content=final_response)],
+        placeholder = repositories.messages.get(assistant_message_id)
+        if placeholder is None:
+            raise RuntimeError("assistant placeholder is missing")
+        final_message = repositories.messages.update(
+            placeholder.model_copy(
+                update={
+                    "parts": [
+                        MessagePart(type=MessagePartType.TEXT, content=final_response)
+                    ],
+                    "updated_at": datetime.now(UTC),
+                }
             )
         )
         sink.emit(
@@ -914,6 +1168,27 @@ async def _execute_submission(
                 summary_thread,
                 repositories.messages.list_for_thread(run.thread_id, limit=500),
                 mode="deterministic",
+            )
+    else:
+        placeholder = repositories.messages.get(assistant_message_id)
+        if placeholder is not None:
+            repositories.messages.update(
+                placeholder.model_copy(
+                    update={
+                        "parts": [
+                            MessagePart(
+                                type=MessagePartType.WARNING,
+                                content=(
+                                    "Run cancelled."
+                                    if final_status is RunStatus.CANCELLED
+                                    else "Run failed without a response."
+                                ),
+                                metadata={"status": final_status.value.lower()},
+                            )
+                        ],
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
             )
     artifact_groups = raw.get("artifacts")
     if isinstance(artifact_groups, dict):
@@ -942,58 +1217,82 @@ async def _execute_submission(
                         for key in ("source", "source_tool", "query", "dataset", "time_range")
                         if key in payload
                     }
-                classification: Literal["ui", "factual", "derived"] = (
-                    "factual"
-                    if str(artifact_type).lower() == "evidence"
-                    else "derived"
-                    if evidence_ids
-                    else "ui"
-                )
-                artifact = repositories.artifacts.put(
-                    Artifact(
-                        id=str(
-                            payload.get("artifact_id")
-                            or payload.get("id")
-                            or f"artifact_{uuid4().hex}"
-                        ),
-                        workspace_id=run.workspace_id,
-                        artifact_type=str(artifact_type),
-                        payload=payload,
-                        classification=classification,
-                        evidence_ids=list(dict.fromkeys(evidence_ids)),
-                        provenance=ArtifactProvenance(
-                            evidence_ids=list(dict.fromkeys(evidence_ids)),
-                            calculation_version=str(
-                                payload.get("calculation_version")
-                                or _execution_setting(runtime, "workflow_version", "unknown")
-                            ) if classification == "derived" else None,
-                            query_version=(
-                                str(payload["query_version"])
-                                if payload.get("query_version") is not None
-                                else None
-                            ),
-                            prompt_version=(
-                                str(payload["prompt_version"])
-                                if payload.get("prompt_version") is not None
-                                else None
-                            ),
-                            tool_version=(
-                                str(payload["tool_version"])
-                                if payload.get("tool_version") is not None
-                                else None
-                            ),
-                            model_version=(
-                                str(payload["model_version"])
-                                if payload.get("model_version") is not None
-                                else None
-                            ),
-                            source_metadata=source_metadata,
-                        ),
-                        mission_id=run.mission_id,
-                        thread_id=run.thread_id,
-                        run_id=run.id,
+                try:
+                    classification = _artifact_classification(
+                        artifact_type, payload, evidence_ids
                     )
-                )
+                except ValueError as exc:
+                    sink.emit(
+                        running,
+                        "artifact.rejected",
+                        payload={
+                            "artifact_type": str(artifact_type),
+                            "reason": str(exc),
+                        },
+                    )
+                    continue
+                try:
+                    artifact = repositories.artifacts.put(
+                        Artifact(
+                            id=str(
+                                payload.get("artifact_id")
+                                or payload.get("id")
+                                or f"artifact_{uuid4().hex}"
+                            ),
+                            workspace_id=run.workspace_id,
+                            artifact_type=str(artifact_type),
+                            payload=payload,
+                            classification=classification,
+                            evidence_ids=list(dict.fromkeys(evidence_ids)),
+                            provenance=ArtifactProvenance(
+                                evidence_ids=list(dict.fromkeys(evidence_ids)),
+                                calculation_version=(
+                                    str(
+                                        payload.get("calculation_version")
+                                        or _execution_setting(
+                                            runtime, "workflow_version", "unknown"
+                                        )
+                                    )
+                                    if classification == "derived"
+                                    else None
+                                ),
+                                query_version=(
+                                    str(payload["query_version"])
+                                    if payload.get("query_version") is not None
+                                    else None
+                                ),
+                                prompt_version=(
+                                    str(payload["prompt_version"])
+                                    if payload.get("prompt_version") is not None
+                                    else None
+                                ),
+                                tool_version=(
+                                    str(payload["tool_version"])
+                                    if payload.get("tool_version") is not None
+                                    else None
+                                ),
+                                model_version=(
+                                    str(payload["model_version"])
+                                    if payload.get("model_version") is not None
+                                    else None
+                                ),
+                                source_metadata=source_metadata,
+                            ),
+                            mission_id=run.mission_id,
+                            thread_id=run.thread_id,
+                            run_id=run.id,
+                        )
+                    )
+                except ValueError as exc:
+                    sink.emit(
+                        running,
+                        "artifact.rejected",
+                        payload={
+                            "artifact_type": str(artifact_type),
+                            "reason": str(exc),
+                        },
+                    )
+                    continue
                 sink.emit(
                     running,
                     "artifact.created",
@@ -1002,32 +1301,125 @@ async def _execute_submission(
                         "artifact_type": artifact.artifact_type,
                     },
                 )
-    sink.emit(
-        running,
-        "run.completed" if final_status is RunStatus.COMPLETED else "run.failed",
-        payload={"mission_id": run.mission_id, "status": final_status.value.lower()},
-        completed_at=completed_at,
+    def emit_terminal(committed_status: RunStatus) -> None:
+        sink.emit(
+            running,
+            {
+                RunStatus.COMPLETED: "run.completed",
+                RunStatus.CANCELLED: "run.cancelled",
+            }.get(committed_status, "run.failed"),
+            payload={
+                "mission_id": run.mission_id,
+                "status": committed_status.value.lower(),
+                "attempt_id": attempt.id,
+                "attempt_number": attempt.attempt_number,
+            },
+            completed_at=completed_at,
+        )
+
+    return RunExecutionResult(
+        status=final_status,
+        error_code=str(raw.get("error_code") or "") or None,
+        error_message=str(raw.get("error_message") or "") or None,
+        on_committed=emit_terminal,
     )
-    repositories.runs.update(
-        running.model_copy(update={"status": final_status, "completed_at": completed_at})
+
+
+class SubmissionRunExecutor:
+    """Rehydrate persisted submission inputs and resume one claimed attempt."""
+
+    def __init__(
+        self,
+        runtime: SwarmRuntime,
+        repositories: ConversationRepositories,
+    ) -> None:
+        self.runtime = runtime
+        self.repositories = repositories
+
+    async def __call__(
+        self, run: Run, attempt: RunAttempt
+    ) -> RunExecutionResult:
+        submission = run.metadata.get("submission")
+        if not isinstance(submission, dict):
+            submission = {}
+        raw = getattr(self.runtime.store, "get_raw", lambda _mission_id: None)(
+            run.mission_id
+        )
+        raw_input = raw.get("input") if isinstance(raw, dict) else {}
+        raw_input = raw_input if isinstance(raw_input, dict) else {}
+        query = str(submission.get("query") or raw_input.get("query") or "").strip()
+        if not query:
+            raise RuntimeError(f"run {run.id} has no persisted submission query")
+        assistant_message_id = str(submission.get("assistant_message_id") or "")
+        if not assistant_message_id:
+            assistant_message_id = next(
+                (
+                    message.id
+                    for message in self.repositories.messages.list_for_thread(
+                        run.thread_id, limit=500
+                    )
+                    if message.run_id == run.id and message.role is MessageRole.ASSISTANT
+                ),
+                "",
+            )
+        if not assistant_message_id:
+            raise RuntimeError(f"run {run.id} has no assistant placeholder")
+        return await _execute_submission(
+            self.runtime,
+            self.repositories,
+            run=run,
+            attempt=attempt,
+            query=query,
+            timezone=str(submission.get("timezone") or "Asia/Kolkata"),
+            as_of=(
+                str(submission["as_of"])
+                if submission.get("as_of") is not None
+                else None
+            ),
+            request_id=str(submission.get("request_id") or run.id),
+            execution_mode=str(submission.get("execution_mode") or "production"),
+            assistant_message_id=assistant_message_id,
+        )
+
+
+def build_submission_executor(runtime: SwarmRuntime) -> SubmissionRunExecutor:
+    repositories = _repositories(runtime)
+    return SubmissionRunExecutor(runtime, repositories)
+
+
+def _submission_queue(
+    runtime: SwarmRuntime, repositories: ConversationRepositories
+) -> RunWorkQueue:
+    queue = getattr(runtime, "run_queue", None)
+    if queue is not None:
+        return queue
+    worker_id = _execution_setting(runtime, "run_worker_id", "") or (
+        f"inprocess-{uuid4().hex[:12]}"
     )
-    repositories.runs.compare_and_set_attempt(
-        attempt.id,
-        RunAttemptStatus.RUNNING,
-        attempt_status,
-        worker_id=worker_id,
-        now=completed_at,
+    queue = InProcessRunQueue(
+        RunRecoveryWorker(
+            repositories.runs,
+            SubmissionRunExecutor(runtime, repositories),
+            worker_id=worker_id,
+            lease_s=_execution_setting(runtime, "run_lease_s", 60.0),
+            heartbeat_s=_execution_setting(runtime, "run_heartbeat_s", 15.0),
+            retry_delay_s=_execution_setting(runtime, "run_retry_delay_s", 5.0),
+        )
     )
+    try:
+        runtime.run_queue = queue
+    except (AttributeError, TypeError):
+        pass
+    return queue
 
 
 @router.post(
     "/threads/{thread_id}/messages",
     status_code=status.HTTP_202_ACCEPTED,
 )
-def submit_message(
+async def submit_message(
     thread_id: str,
     body: SubmitMessageRequest,
-    background_tasks: BackgroundTasks,
     request: Request,
 ) -> dict[str, str]:
     runtime = _runtime(request)
@@ -1045,6 +1437,19 @@ def submit_message(
     )
     if not query:
         raise HTTPException(status_code=400, detail="at least one non-empty TEXT part is required")
+    attachments: list[Attachment] = []
+    for attachment_id in dict.fromkeys(body.attachment_ids):
+        attachment = _owned_attachment(repositories, principal, attachment_id)
+        if attachment.thread_id != thread.id:
+            raise HTTPException(status_code=422, detail="attachment belongs to another thread")
+        if (
+            attachment.status is not AttachmentStatus.READY
+            or attachment.scan_status is not AttachmentScanStatus.CLEAN
+        ):
+            raise HTTPException(status_code=409, detail="attachment is not ready")
+        if attachment.message_id is not None:
+            raise HTTPException(status_code=409, detail="attachment is already associated")
+        attachments.append(attachment)
 
     mission_id = new_mission_id()
     run = Run(
@@ -1068,7 +1473,13 @@ def submit_message(
         run_id=run.id,
     )
     run = repositories.runs.create(run)
-    attempt = repositories.runs.add_attempt(RunAttempt(run_id=run.id, attempt_number=1))
+    attempt = repositories.runs.add_attempt(
+        RunAttempt(
+            run_id=run.id,
+            attempt_number=1,
+            status=RunAttemptStatus.RETRYABLE,
+        )
+    )
     message = repositories.messages.create(
         Message(
             thread_id=thread.id,
@@ -1078,6 +1489,55 @@ def submit_message(
             parts=body.parts,
             run_id=run.id,
             parent_message_id=body.parent_message_id,
+        )
+    )
+    if not repositories.attachments.associate_many(
+        [attachment.id for attachment in attachments],
+        message.id,
+        thread_id=thread.id,
+        workspace_id=thread.workspace_id,
+        owner_user_id=principal.user_id,
+    ):
+        completed_at = datetime.now(UTC)
+        repositories.runs.update_attempt(
+            attempt.model_copy(
+                update={
+                    "status": RunAttemptStatus.FAILED,
+                    "retryable": False,
+                    "error_code": "attachment_association_conflict",
+                    "error_message": "attachment association lost a concurrent race",
+                    "completed_at": completed_at,
+                }
+            )
+        )
+        repositories.runs.update(
+            run.model_copy(
+                update={
+                    "status": RunStatus.FAILED,
+                    "completed_at": completed_at,
+                }
+            )
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="one or more attachments were concurrently associated",
+        )
+    assistant_message = repositories.messages.create(
+        Message(
+            thread_id=thread.id,
+            workspace_id=thread.workspace_id,
+            role=MessageRole.ASSISTANT,
+            run_id=run.id,
+            parent_message_id=message.id,
+            created_at=message.created_at + timedelta(microseconds=1),
+            updated_at=message.created_at + timedelta(microseconds=1),
+            parts=[
+                MessagePart(
+                    type=MessagePartType.AGENT_STATUS,
+                    content="Working…",
+                    metadata={"status": "pending"},
+                )
+            ],
         )
     )
     context_bundle = ContextBuilder(repositories).build(
@@ -1091,7 +1551,24 @@ def submit_message(
     )
     bundle_data = context_bundle.model_dump(mode="json")
     run = repositories.runs.update(
-        run.model_copy(update={"metadata": {**run.metadata, "context_bundle": bundle_data}})
+        run.model_copy(
+            update={
+                "metadata": {
+                    **run.metadata,
+                    "context_bundle": bundle_data,
+                    "submission": {
+                        "query": query,
+                        "timezone": str(
+                            body.scope.get("timezone") or "Asia/Kolkata"
+                        ),
+                        "as_of": body.scope.get("as_of") or body.scope.get("asOf"),
+                        "request_id": request_id,
+                        "execution_mode": body.execution_mode,
+                        "assistant_message_id": assistant_message.id,
+                    },
+                }
+            }
+        )
     )
     repositories.memories.record_usage(
         run.id,
@@ -1123,16 +1600,5 @@ def submit_message(
         payload={"message_id": message.id, "mission_id": mission_id},
         actor_user_id=principal.user_id,
     )
-    background_tasks.add_task(
-        _execute_submission,
-        runtime,
-        repositories,
-        run=run,
-        attempt=attempt,
-        query=query,
-        timezone=str(body.scope.get("timezone") or "Asia/Kolkata"),
-        as_of=body.scope.get("as_of") or body.scope.get("asOf"),
-        request_id=request_id,
-        execution_mode=body.execution_mode,
-    )
+    await _submission_queue(runtime, repositories).enqueue(run.id)
     return {"message_id": message.id, "run_id": run.id, "mission_id": mission_id}

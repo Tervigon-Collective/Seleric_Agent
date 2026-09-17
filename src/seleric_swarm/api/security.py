@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict, deque
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from hmac import compare_digest
+from inspect import isawaitable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from seleric_swarm.conversations.contracts import Principal, PrincipalAuthMethod
+
+PrincipalProvider = Callable[[Request], Principal | Awaitable[Principal]]
+Authenticator = Callable[[Request], Principal | None | Awaitable[Principal | None]]
+TrustedProxyPredicate = Callable[[Request], bool]
 
 
 def _client_key(request: Request, *, trust_x_forwarded_for: bool = False) -> str:
@@ -74,6 +79,9 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
         default_user_id: str = "default",
         trust_x_forwarded_for: bool = False,
         trust_identity_headers: bool = False,
+        principal_provider: PrincipalProvider | None = None,
+        authenticator: Authenticator | None = None,
+        trusted_proxy: TrustedProxyPredicate | None = None,
     ) -> None:
         super().__init__(app)
         self.api_key = (api_key or "").strip()
@@ -83,14 +91,32 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
         self.default_user_id = default_user_id
         self.trust_x_forwarded_for = trust_x_forwarded_for
         self.trust_identity_headers = trust_identity_headers
+        self.principal_provider = principal_provider
+        self.authenticator = authenticator
+        self.trusted_proxy = trusted_proxy
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         path = request.url.path
+        if _is_exempt(path) or request.method == "OPTIONS":
+            return await call_next(request)
+
+        if self.principal_provider is not None:
+            provided_principal = self.principal_provider(request)
+            if isawaitable(provided_principal):
+                provided_principal = await provided_principal
+            request.state.principal = provided_principal
+            return await self._rate_limited(request, call_next, path=path)
+
+        authenticated_principal: Principal | None = None
+        if self.authenticator is not None:
+            candidate = self.authenticator(request)
+            if isawaitable(candidate):
+                candidate = await candidate
+            authenticated_principal = candidate
         # Prefer live settings so .env loaded after import still applies.
         api_key = self.api_key
         workspace_id = self.default_workspace_id
         user_id = self.default_user_id
-        trust_x_forwarded_for = self.trust_x_forwarded_for
         trust_identity_headers = self.trust_identity_headers
         try:
             from seleric_swarm.config.settings import get_settings
@@ -103,14 +129,17 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
         provided = (request.headers.get("x-api-key") or "").strip()
         auth = (request.headers.get("authorization") or "").strip()
         bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-        authenticated = not api_key or bool(
+        authenticated = authenticated_principal is not None or not api_key or bool(
             (provided and compare_digest(provided, api_key))
             or (bearer and compare_digest(bearer, api_key))
         )
 
         # Identity headers are trusted-proxy inputs, not authentication. Require both
         # the shared key and an explicit trusted-proxy deployment policy.
-        if authenticated and trust_identity_headers:
+        trusted_identity_source = trust_identity_headers and (
+            self.trusted_proxy is None or self.trusted_proxy(request)
+        )
+        if authenticated and trusted_identity_source:
             workspace_id = _identity_header(
                 request,
                 "x-workspace-id",
@@ -127,19 +156,19 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
         user_id = user_id.strip() or "default"
         principal_id = (
             _identity_header(request, "x-principal-id", default=user_id)
-            if authenticated and trust_identity_headers
+            if authenticated and trusted_identity_source
             else user_id
         )
         roles = {
             role.strip().lower()
             for role in (
                 _identity_header(request, "x-roles", "x-seleric-roles", default="")
-                if authenticated and trust_identity_headers
+                if authenticated and trusted_identity_source
                 else ""
             ).split(",")
             if role.strip()
         }
-        request.state.principal = Principal(
+        request.state.principal = authenticated_principal or Principal(
             principal_id=principal_id,
             workspace_id=workspace_id,
             user_id=user_id,
@@ -154,9 +183,6 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
             roles=roles,
         )
 
-        if _is_exempt(path) or request.method == "OPTIONS":
-            return await call_next(request)
-
         # Optional shared API key (enabled when SELERIC_API_KEY / settings.api_key set).
         if api_key and not authenticated:
             return JSONResponse(
@@ -165,8 +191,17 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        return await self._rate_limited(request, call_next, path=path)
+
+    async def _rate_limited(
+        self, request: Request, call_next: Callable, *, path: str
+    ) -> Response:
+        if _is_exempt(path) or request.method == "OPTIONS":
+            return await call_next(request)
         if self.rate_limit_enabled:
-            key = _client_key(request, trust_x_forwarded_for=trust_x_forwarded_for)
+            key = _client_key(
+                request, trust_x_forwarded_for=self.trust_x_forwarded_for
+            )
             ok, remaining, retry_after = self.limiter.allow(key)
             if not ok:
                 return JSONResponse(

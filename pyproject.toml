@@ -16,8 +16,9 @@ dependencies = [
   "pandas>=2.2",
   "pydantic>=2.10",
   "pydantic-settings>=2.7",
-  "psycopg[binary]>=3.2",
+  "psycopg[binary,pool]>=3.2",
   "pyyaml>=6.0",
+  "redis>=5.0",
   "scikit-learn>=1.6",
   "sqlalchemy>=2.0",
   "statsmodels>=0.14",
@@ -71,6 +72,9 @@ ignore_missing_imports = true
 pythonpath = ["src", "."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+  "integration: requires an optional external service",
+]
 filterwarnings = [
   # langsmith still imports pydantic.v1 on Python 3.13
   "ignore:Failing to pass a value to the 'type_params' parameter:DeprecationWarning",

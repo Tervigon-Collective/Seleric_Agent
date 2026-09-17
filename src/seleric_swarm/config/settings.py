@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     database_url: str = ""
     checkpoint_backend: Literal["none", "memory", "postgres"] = "none"
     cancellation_backend: Literal["memory", "redis"] = "memory"
+    event_notifier_backend: Literal["auto", "memory", "redis"] = "auto"
     redis_url: str = ""
     run_worker_id: str = ""
     run_lease_s: float = 60.0
@@ -86,6 +87,9 @@ class Settings(BaseSettings):
     otel_trace_sample_ratio: float = 1.0
     langfuse_otel_endpoint: str = ""
     langfuse_otel_headers: str = ""
+    langfuse_base_url: str = "https://cloud.langfuse.com"
+    langfuse_project_id: str = ""
+    search_embedding_model: str = ""
 
     mcp_config_path: str = "config/mcp_servers.yaml"
     seleric_mcp_url: str = ""
@@ -150,6 +154,9 @@ class Settings(BaseSettings):
         "langsmith_endpoint",
         "otel_exporter_otlp_endpoint",
         "langfuse_otel_endpoint",
+        "langfuse_base_url",
+        "langfuse_project_id",
+        "search_embedding_model",
         "azure_openai_endpoint",
         "azure_openai_model",
         "azure_openai_models",
@@ -180,8 +187,34 @@ class Settings(BaseSettings):
             return ""
         return value
 
+    @field_validator("attachment_max_size_bytes")
+    @classmethod
+    def positive_attachment_limit(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("attachment_max_size_bytes must be positive")
+        return value
+
+    @field_validator("minio_bucket")
+    @classmethod
+    def valid_minio_bucket(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("minio_bucket must not be blank")
+        return value
+
     def is_dev_surface(self) -> bool:
         return self.app_env.lower() in {"local", "development", "dev", "test"}
+
+    def resolved_event_notifier_backend(self) -> Literal["memory", "redis"]:
+        if self.event_notifier_backend != "auto":
+            return self.event_notifier_backend
+        if (
+            not self.is_dev_surface()
+            and self.persistence_backend == "postgres"
+            and self.redis_url
+        ):
+            return "redis"
+        return "memory"
 
     def resolved_models(self) -> list[str]:
         """Ordered model ids for the LLM gateway: primary first, then

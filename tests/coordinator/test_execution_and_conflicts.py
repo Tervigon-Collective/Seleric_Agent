@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from seleric_swarm.coordinator.agent import COORDINATOR_SYSTEM_PROMPT
@@ -71,6 +73,37 @@ async def test_execution_engine_wave():
     assert results[0].status == "success"
     assert updated[0].status == "done"
     assert patch["agent_calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_execution_engine_enforces_task_timeout_and_cancels_invocation():
+    cancelled = asyncio.Event()
+
+    class SlowInvoker:
+        async def invoke(
+            self, agent_id: str, task: TaskSpec, context: AgentContext
+        ) -> AgentExecutionResult:
+            try:
+                await asyncio.sleep(10)
+            finally:
+                cancelled.set()
+            return AgentExecutionResult(
+                agent_id=agent_id, task_id=task.task_id, status="success"
+            )
+
+    task = TaskSpec(
+        task_id="T-timeout",
+        mission_id="M",
+        task_type="observe",
+        objective="slow",
+        idempotency_key="timeout-once",
+        status="ready",
+        assigned_agent="observer_agent",
+    )
+    engine = ExecutionEngine(SlowInvoker(), budgets={"task_timeout_s": 0.01})
+    _, results, _ = await engine.run_wave([task], {"mission_id": "M", "usage": {}})
+    assert results[0].error_code == "TIMEOUT"
+    assert cancelled.is_set()
 
 
 def test_retry_classification():

@@ -29,6 +29,7 @@ CANONICAL_EVENT_TYPES = frozenset(
         "answer.completed",
         "run.completed",
         "run.failed",
+        "run.cancelled",
     }
 )
 
@@ -65,6 +66,7 @@ _EXACT_KIND_MAP = {
     "mission_completed": "run.completed",
     "mission_partial": "run.completed",
     "mission_failed": "run.failed",
+    "mission_cancelled": "run.cancelled",
     "mission_budget_exhausted": "warning.created",
 }
 
