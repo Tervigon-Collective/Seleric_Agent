@@ -20,6 +20,7 @@ from seleric_swarm.conversations.contracts import (
     Run,
     RunAttempt,
     RunAttemptStatus,
+    RunStatus,
     SearchResult,
     Thread,
     ThreadSummary,
@@ -30,6 +31,15 @@ class ThreadRepository(Protocol):
     def create(self, thread: Thread) -> Thread: ...
     def get(self, thread_id: str) -> Thread | None: ...
     def list_for_owner(self, workspace_id: str, user_id: str, *, limit: int = 50) -> list[Thread]: ...
+    def list_page(
+        self,
+        workspace_id: str,
+        user_id: str,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+        include_deleted: bool = False,
+    ) -> tuple[list[Thread], str | None]: ...
     def update(self, thread: Thread) -> Thread: ...
 
 
@@ -37,12 +47,24 @@ class MessageRepository(Protocol):
     def create(self, message: Message) -> Message: ...
     def get(self, message_id: str) -> Message | None: ...
     def list_for_thread(self, thread_id: str, *, limit: int = 100) -> list[Message]: ...
+    def list_page(
+        self, thread_id: str, *, limit: int = 100, cursor: str | None = None
+    ) -> tuple[list[Message], str | None]: ...
+    def update(self, message: Message) -> Message: ...
 
 
 class RunRepository(Protocol):
     def create(self, run: Run) -> Run: ...
     def get(self, run_id: str) -> Run | None: ...
     def update(self, run: Run) -> Run: ...
+    def compare_and_set_status(
+        self,
+        run_id: str,
+        expected_statuses: set[RunStatus],
+        new_status: RunStatus,
+        *,
+        now: datetime | None = None,
+    ) -> Run | None: ...
     def list_for_owner(
         self, workspace_id: str, user_id: str, *, limit: int = 100
     ) -> list[Run]: ...
@@ -52,7 +74,13 @@ class RunRepository(Protocol):
         self, run_id: str, worker_id: str, lease_seconds: float, *, now: datetime | None = None
     ) -> RunAttempt | None: ...
     def heartbeat(
-        self, attempt_id: str, worker_id: str, lease_seconds: float, *, now: datetime | None = None
+        self,
+        attempt_id: str,
+        worker_id: str,
+        lease_seconds: float,
+        *,
+        expected_version: int | None = None,
+        now: datetime | None = None,
     ) -> bool: ...
     def compare_and_set_attempt(
         self,
@@ -61,6 +89,8 @@ class RunRepository(Protocol):
         new_status: RunAttemptStatus,
         *,
         worker_id: str | None = None,
+        expected_version: int | None = None,
+        lease_expired_before: datetime | None = None,
         now: datetime | None = None,
         error_code: str | None = None,
         error_message: str | None = None,
@@ -87,6 +117,15 @@ class AttachmentRepository(Protocol):
     def create(self, attachment: Attachment) -> Attachment: ...
     def get(self, attachment_id: str) -> Attachment | None: ...
     def update(self, attachment: Attachment) -> Attachment: ...
+    def associate_many(
+        self,
+        attachment_ids: list[str],
+        message_id: str,
+        *,
+        thread_id: str,
+        workspace_id: str,
+        owner_user_id: str,
+    ) -> bool: ...
     def delete(self, attachment_id: str) -> bool: ...
     def list_for_thread(self, thread_id: str) -> list[Attachment]: ...
 
@@ -143,6 +182,9 @@ class ApprovalRepository(Protocol):
     def get(
         self, approval_id: str, workspace_id: str, owner_user_id: str
     ) -> ApprovalRequest | None: ...
+    def get_for_workspace(
+        self, approval_id: str, workspace_id: str
+    ) -> ApprovalRequest | None: ...
     def get_by_idempotency(
         self, workspace_id: str, owner_user_id: str, idempotency_key: str
     ) -> ApprovalRequest | None: ...
@@ -155,6 +197,8 @@ class ApprovalRepository(Protocol):
     ) -> ApprovalRequest | None: ...
     def list_events(self, approval_id: str) -> list[ApprovalDecisionEvent]: ...
     def add_rollback(self, record: RollbackRecord) -> RollbackRecord: ...
+    def get_rollback(self, approval_id: str) -> RollbackRecord | None: ...
+    def list_due(self, now: datetime) -> list[ApprovalRequest]: ...
 
 
 @dataclass(frozen=True)

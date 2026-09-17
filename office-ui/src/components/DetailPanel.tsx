@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import type { MessagePart } from "../api/contracts";
 import { useConversationStore } from "../stores/conversation";
 import { useMissionRuntimeStore } from "../stores/missionRuntime";
 import { type DetailTab, useShellStore } from "../stores/shell";
@@ -8,6 +9,7 @@ const TABS: DetailTab[] = ["Activity", "Context", "Memory", "Sources", "Artifact
 export function DetailPanel() {
   const tab = useShellStore((s) => s.detailTab);
   const setTab = useShellStore((s) => s.setDetailTab);
+  const toggleDetails = useShellStore((s) => s.toggleDetails);
   const selectedArtifact = useShellStore((s) => s.selectedArtifact);
   const timeline = useMissionRuntimeStore((s) => s.timeline);
   const artifacts = useMissionRuntimeStore((s) => s.artifacts);
@@ -16,6 +18,7 @@ export function DetailPanel() {
   const stage = useMissionRuntimeStore((s) => s.stage);
   const threadId = useConversationStore((s) => s.selectedThreadId);
   const thread = useConversationStore((s) => s.threads.find((item) => item.id === threadId));
+  const messages = useConversationStore((s) => threadId ? s.messages[threadId] ?? [] : []);
   const memories = useConversationStore((s) => s.memories);
   const usedMemories = useConversationStore((s) => s.usedMemories);
   const memoryOptedOut = useConversationStore((s) => s.memoryOptedOut);
@@ -28,6 +31,10 @@ export function DetailPanel() {
   const deleteMemory = useConversationStore((s) => s.deleteMemory);
   const setMemoryOptOut = useConversationStore((s) => s.setMemoryOptOut);
   const visibleTimeline = threadId ? timeline : [];
+  const sources = messages.flatMap((message) =>
+    message.parts.filter((part) => part.type === "SOURCE").map(sourceView),
+  );
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     if (tab === "Memory") void loadMemories();
@@ -35,12 +42,40 @@ export function DetailPanel() {
 
   return (
     <aside className="detail-panel" aria-label="Conversation details">
+      <button className="icon-btn mobile-panel-close detail-close" aria-label="Close conversation details" onClick={toggleDetails}>×</button>
       <div className="detail-tabs" role="tablist" aria-label="Details">
         {TABS.map((item) => (
-          <button key={item} role="tab" aria-selected={tab === item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>
+          <button
+            key={item}
+            id={`detail-tab-${item.toLowerCase()}`}
+            ref={(node) => { tabRefs.current[TABS.indexOf(item)] = node; }}
+            role="tab"
+            aria-controls={`detail-panel-${item.toLowerCase()}`}
+            aria-selected={tab === item}
+            tabIndex={tab === item ? 0 : -1}
+            className={tab === item ? "active" : ""}
+            onClick={() => setTab(item)}
+            onKeyDown={(event) => {
+              const current = TABS.indexOf(item);
+              const next = event.key === "ArrowRight"
+                ? (current + 1) % TABS.length
+                : event.key === "ArrowLeft"
+                  ? (current - 1 + TABS.length) % TABS.length
+                  : event.key === "Home" ? 0 : event.key === "End" ? TABS.length - 1 : -1;
+              if (next < 0) return;
+              event.preventDefault();
+              setTab(TABS[next]);
+              tabRefs.current[next]?.focus();
+            }}
+          >{item}</button>
         ))}
       </div>
-      <div className="detail-content" role="tabpanel">
+      <div
+        className="detail-content"
+        id={`detail-panel-${tab.toLowerCase()}`}
+        role="tabpanel"
+        aria-labelledby={`detail-tab-${tab.toLowerCase()}`}
+      >
         {tab === "Activity" && (
           <section><h2>Run activity</h2>{visibleTimeline.slice(-30).reverse().map((event) => (
             <div className="activity-row" key={event.eventId}><span className="activity-dot" /><div><strong>{event.summary || event.eventType.replaceAll("_", " ")}</strong><small>{event.agentId || "Swarm"} · #{event.seq}</small></div></div>
@@ -74,7 +109,16 @@ export function DetailPanel() {
           />)}
           {!memories.length && <Empty text="No saved memories for this thread." />}
         </section>}
-        {tab === "Sources" && <section><h2>Sources</h2><Empty text="Evidence and citations will appear as the swarm validates its answer." /></section>}
+        {tab === "Sources" && <section><h2>Sources</h2>
+          {sources.map((source, index) => <article className="source-row" key={`${source.id}-${index}`}>
+            <strong>{source.url
+              ? <a href={source.url} target="_blank" rel="noreferrer">{source.title}</a>
+              : source.title}</strong>
+            {source.excerpt && <p>{source.excerpt}</p>}
+            <small>{source.id}</small>
+          </article>)}
+          {!sources.length && <Empty text="No sources have been attached to this thread yet." />}
+        </section>}
         {tab === "Artifacts" && <section><h2>Artifacts</h2>
           {selectedArtifact && <div className="artifact-detail">
             <h3>{String(selectedArtifact.title ?? selectedArtifact.artifact_id ?? "Artifact")}</h3>
@@ -94,6 +138,21 @@ export function DetailPanel() {
     </aside>
   );
 }
+
+const sourceView = (part: MessagePart) => {
+  const content = part.content && typeof part.content === "object" && !Array.isArray(part.content)
+    ? part.content as Record<string, unknown>
+    : {};
+  const rawUrl = typeof content.url === "string" ? content.url : "";
+  return {
+    id: String(content.evidence_id ?? content.id ?? part.metadata?.evidence_id ?? "Source"),
+    title: String(content.title ?? content.name ?? (rawUrl || "Source")),
+    url: /^https?:\/\//.test(rawUrl) ? rawUrl : null,
+    excerpt: typeof content.excerpt === "string"
+      ? content.excerpt
+      : typeof content.snippet === "string" ? content.snippet : null,
+  };
+};
 
 const safeValue = (value: unknown) =>
   typeof value === "string" || typeof value === "number" ? String(value) : "Not recorded";

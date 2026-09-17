@@ -72,6 +72,7 @@ class SwarmSkepticSpecialist:
                 catalogue=runtime.metrics if runtime is not None else None,
             )
         self._policies = policies or SkepticPolicies.load()
+        self._runtime = runtime
 
     # -- same policy gate as the lightweight specialist --------------------
     def policy(self, blackboard: Blackboard, mission: SwarmMission) -> bool:
@@ -88,6 +89,12 @@ class SwarmSkepticSpecialist:
             artifact_repo=artifact_repo,
             deps=self._deps,
             policies=self._policies,
+            checkpointer=(
+                checkpoint_provider.get_checkpointer()
+                if (checkpoint_provider := getattr(self._runtime, "checkpoint_provider", None))
+                is not None
+                else None
+            ),
         )
         verdict: SkepticVerdict = await agent.validate_claim(
             SkepticValidationRequest(

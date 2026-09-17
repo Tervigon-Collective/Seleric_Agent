@@ -13,6 +13,7 @@ from seleric_swarm.conversations.context import (
     MemoryCandidateExtractor,
     MemoryService,
     ThreadSummaryService,
+    approximate_token_count,
 )
 from seleric_swarm.conversations.contracts import (
     Artifact,
@@ -126,7 +127,12 @@ def test_context_budgets_consent_permissions_and_usage_provenance():
     )
     repositories.artifacts.put(
         Artifact(
-            id="a1", workspace_id="w", thread_id=thread.id, artifact_type="ui", payload={"x": 1}
+            id="a1",
+            workspace_id="w",
+            thread_id=thread.id,
+            artifact_type="ui",
+            payload={"x": 1},
+            classification="ui",
         )
     )
     bundle = ContextBuilder(
@@ -168,6 +174,39 @@ def test_opt_out_and_soft_delete():
     )
     assert repositories.memories.delete(item.id, "w", "u")
     assert repositories.memories.get(item.id, "w", "u") is None
+
+
+def test_project_and_episodic_isolation_hard_token_limit_and_revocation_hook():
+    repositories = build_in_memory_repositories()
+    thread = repositories.threads.create(
+        Thread(workspace_id="w", owner_user_id="u", project_id="project-a")
+    )
+    consented_at = datetime.now(UTC)
+    for memory_id, scope, project_id, content in (
+        ("project-a", MemoryScope.PROJECT, "project-a", "matching project"),
+        ("project-b", MemoryScope.PROJECT, "project-b", "other project secret"),
+        ("episode-b", MemoryScope.EPISODIC, "project-b", "other episode secret"),
+    ):
+        repositories.memories.create(MemoryItem(
+            id=memory_id, workspace_id="w", owner_user_id="u", project_id=project_id,
+            scope=scope, type=MemoryType.FACT, status=MemoryStatus.ACTIVE,
+            content=content, normalized_content=content, consented_at=consented_at,
+        ))
+    bundle = ContextBuilder(
+        repositories, total_characters=200, total_tokens=20, memory_characters=100
+    ).build(thread, query="project", permissions={"read_memory": True})
+    assert bundle.memory_ids == ["project-a"]
+    assert bundle.permissions == {"read_memory": True}
+    assert bundle.token_estimate <= bundle.token_budget == 20
+    assert approximate_token_count("dependency-free tokenizer!") >= 6
+
+    revoked: list[str] = []
+    item = MemoryService(repositories).revoke(
+        "project-a", "w", "u", reason="user request",
+        on_revoked=lambda memory: revoked.append(memory.id),
+    )
+    assert item and item.status is MemoryStatus.ARCHIVED
+    assert revoked == ["project-a"]
 
 
 def test_memory_api_denies_cross_tenant_and_supports_controls():

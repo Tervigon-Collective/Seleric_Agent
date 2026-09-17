@@ -12,9 +12,7 @@ import { MissionTimeline } from "./MissionTimeline";
 import { AgentHoverCard } from "./AgentHoverCard";
 import { AgentInspector } from "./AgentInspector";
 import { DebugPanel } from "./DebugPanel";
-
-const params = new URLSearchParams(location.search);
-const URL_MISSION = params.get("mission");
+import { readRoute, writeRoute } from "../routing";
 
 export function OfficeWorkspace({
   dark,
@@ -40,13 +38,14 @@ export function OfficeWorkspace({
     const load = () => provider.listMissions().then((items) => {
       if (!alive) return;
       setMissions(items);
-      setMissionId((current) => current ?? URL_MISSION ?? items[0]?.missionId ?? null);
+      setMissionId((current) => current ?? readRoute().missionId ?? items[0]?.missionId ?? null);
     }).catch(() => alive && setMissions([]));
     void load();
     const timer = setInterval(load, 10_000);
     return () => { alive = false; clearInterval(timer); };
   }, [provider]);
   useEffect(() => {
+    let active = true;
     unsubRef.current?.();
     reset();
     if (!missionId) return;
@@ -56,11 +55,19 @@ export function OfficeWorkspace({
       onDone: () => setConn("closed"),
     };
     setConn("connecting");
-    void provider.getSnapshot(missionId).then(hydrate).catch(() => undefined).finally(() => {
-      unsubRef.current = provider.subscribe(missionId, handlers);
+    writeRoute({ workspace: "office", missionId });
+    void provider.getSnapshot(missionId).then((snapshot) => {
+      if (active) hydrate(snapshot);
+    }).catch(() => undefined).finally(() => {
+      if (active) unsubRef.current = provider.subscribe(missionId, handlers);
     });
-    return () => { unsubRef.current?.(); unsubRef.current = null; };
+    return () => { active = false; unsubRef.current?.(); unsubRef.current = null; };
   }, [provider, missionId, hydrate, ingestEvent, setConn, reset]);
+  useEffect(() => {
+    const popstate = () => setMissionId(readRoute().missionId);
+    window.addEventListener("popstate", popstate);
+    return () => window.removeEventListener("popstate", popstate);
+  }, []);
 
   return (
     <div className="office-workspace">

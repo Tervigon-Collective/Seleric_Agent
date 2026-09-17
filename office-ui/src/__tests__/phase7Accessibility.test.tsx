@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { ApprovalCard } from "../components/ApprovalCard";
+import { decideApproval } from "../api/phase7";
 
 vi.mock("../api/phase7", () => ({
   searchAll: vi.fn().mockResolvedValue([]),
@@ -53,5 +54,18 @@ describe("Phase 7 accessibility", () => {
     expect(buttons).toHaveLength(2);
     await act(async () => { (buttons?.[0] as HTMLButtonElement).click(); await Promise.resolve(); });
     expect(group?.querySelector('[role="status"]')?.textContent).toBe("APPROVED");
+  });
+
+  it("keeps approvals actionable and reports decision failures", async () => {
+    vi.mocked(decideApproval).mockRejectedValueOnce(new Error("Approval expired"));
+    await act(async () => {
+      root.render(<ApprovalCard value={{
+        approval_id: "approval-2", status: "REQUESTED", summary: "Update campaign",
+      }} />);
+    });
+    const approve = container.querySelector("button") as HTMLButtonElement;
+    await act(async () => { approve.click(); await Promise.resolve(); });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Approval expired");
+    expect(approve.disabled).toBe(false);
   });
 });

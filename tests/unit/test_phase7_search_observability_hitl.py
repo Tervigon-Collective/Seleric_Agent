@@ -28,6 +28,8 @@ from seleric_swarm.conversations.contracts import (
 )
 from seleric_swarm.conversations.memory import build_in_memory_repositories
 from seleric_swarm.conversations.phase7 import (
+    ActionExecutionService,
+    ApprovalExpiryService,
     reciprocal_rank_fusion,
     transition_approval,
 )
@@ -66,7 +68,7 @@ def test_search_is_strictly_scoped_across_all_document_kinds():
         ))
         repositories.artifacts.put(Artifact(
             workspace_id=workspace, artifact_type="report", payload={"title": "Revenue report"},
-            thread_id=thread.id, run_id=run.id, message_id=message.id,
+            thread_id=thread.id, run_id=run.id, message_id=message.id, classification="ui",
         ))
         repositories.memories.create(MemoryItem(
             workspace_id=workspace, owner_user_id=user, scope=MemoryScope.USER,
@@ -116,7 +118,7 @@ def test_approval_idempotency_transitions_expiry_and_write_gate():
     )
     assert executed.status is ApprovalStatus.EXECUTED
     assert [event.to_status for event in repository.list_events(request.id)] == [
-        ApprovalStatus.APPROVED, ApprovalStatus.EXECUTED
+        ApprovalStatus.REQUESTED, ApprovalStatus.APPROVED, ApprovalStatus.EXECUTED
     ]
 
     expired = repository.create(request.model_copy(update={
@@ -145,6 +147,55 @@ def test_unapproved_and_dry_run_actions_never_execute():
             repository, approved, ApprovalStatus.EXECUTED, actor,
             allow_write_actions=True,
         )
+
+
+def test_workspace_approver_expiry_executor_resume_and_compensation():
+    repository = build_in_memory_repositories().approvals
+    request = repository.create(ApprovalRequest(
+        workspace_id="workspace-1", owner_user_id="requester", action_type="update_bid",
+        action_preview={"bid": 2.5}, required_role="approver", idempotency_key="execute-once",
+        dry_run=False, checkpoint_resume_token="checkpoint-1",
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    ))
+    approver = principal(user="different-user", roles={"approver"})
+    approved = transition_approval(repository, request, ApprovalStatus.APPROVED, approver)
+
+    class Executor:
+        calls = 0
+
+        def preview(self, action):
+            return {"preview": dict(action)}
+
+        def execute(self, action, *, idempotency_key):
+            self.calls += 1
+            return {"idempotency_key": idempotency_key, **action}
+
+        def rollback(self, action, outcome):
+            return {"restored": action["bid"], "execution": outcome["idempotency_key"]}
+
+    executor = Executor()
+    resumed: list[tuple[str, dict]] = []
+    service = ActionExecutionService(
+        repository,
+        {"update_bid": executor},
+        checkpoint_resume=lambda token, outcome: resumed.append((token, dict(outcome))),
+    )
+    executed, first = service.execute(approved, approver, allow_write_actions=True)
+    repeated, second = service.execute(approved, approver, allow_write_actions=True)
+    assert executed.status is repeated.status is ApprovalStatus.EXECUTED
+    assert first == second
+    assert executor.calls == 1
+    assert resumed[0][0] == "checkpoint-1"
+    rolled_back, record = service.rollback(executed, approver)
+    assert rolled_back.status is ApprovalStatus.ROLLED_BACK
+    assert record.outcome["compensated"] is True
+
+    due = repository.create(request.model_copy(update={
+        "id": "approval-due", "idempotency_key": "due",
+        "expires_at": datetime.now(UTC) - timedelta(seconds=1),
+    }))
+    assert ApprovalExpiryService(repository).sweep() == 1
+    assert repository.get_for_workspace(due.id, "workspace-1").status is ApprovalStatus.EXPIRED
 
 
 def test_span_attributes_are_redacted_and_context_propagates():

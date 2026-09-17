@@ -138,6 +138,8 @@ class InMemoryMissionStore:
                     "route": (raw or {}).get("route"),
                     "mission_lead": (raw or {}).get("mission_lead")
                     or (result.mission_lead if result else None),
+                    "workspace_id": (raw or {}).get("workspace_id"),
+                    "owner_user_id": (raw or {}).get("owner_user_id"),
                     "last_seq": max((int(e.get("seq") or 0) for e in events), default=0),
                 }
             )

@@ -56,6 +56,7 @@ budgets:
   max_remediation_rounds: 3
   max_leadership_transfers: 6
   max_runtime_s: 120.0
+  task_timeout_s: 45.0
   max_parallel_tasks: 4
   # PRD-002: token_budget was already enforced by check_swarm_budget /
   # MeteredLLMPort but left unset (None = unlimited). 6 llm_calls x ~20k

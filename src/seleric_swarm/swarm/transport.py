@@ -8,6 +8,7 @@ Agent logic must not know whether a peer is local or remote.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Protocol
 
@@ -18,14 +19,52 @@ from seleric_swarm.swarm.envelope import SwarmMessage
 Handler = Callable[[SwarmMessage], Awaitable[dict[str, Any]]]
 
 
+class _Dedupe:
+    def __init__(self) -> None:
+        self._dedupe_lock = asyncio.Lock()
+        self._dedupe_results: dict[str, dict[str, Any]] = {}
+        self._dedupe_tasks: dict[str, asyncio.Task[dict[str, Any]]] = {}
+
+    async def _once(
+        self,
+        key: str | None,
+        operation: Callable[[], Awaitable[dict[str, Any]]],
+    ) -> dict[str, Any]:
+        if not key:
+            return await operation()
+        async with self._dedupe_lock:
+            cached = self._dedupe_results.get(key)
+            if cached is not None:
+                return dict(cached)
+            task = self._dedupe_tasks.get(key)
+            if task is None:
+                async def _run() -> dict[str, Any]:
+                    return await operation()
+
+                task = asyncio.create_task(_run())
+                self._dedupe_tasks[key] = task
+        try:
+            result = await asyncio.shield(task)
+        except BaseException:
+            if task.done():
+                async with self._dedupe_lock:
+                    self._dedupe_tasks.pop(key, None)
+            raise
+        async with self._dedupe_lock:
+            self._dedupe_results[key] = dict(result)
+            self._dedupe_tasks.pop(key, None)
+        return dict(result)
+
+
 class AgentTransport(Protocol):
     async def send(self, message: SwarmMessage) -> dict[str, Any]:
         """Deliver a message to ``message.to_agent`` and return its artifact response."""
         ...
 
 
-class InProcessTransport:
+class InProcessTransport(_Dedupe):
     def __init__(self) -> None:
+        super().__init__()
         self._handlers: dict[str, Handler] = {}
         self.log: list[dict[str, Any]] = []
 
@@ -36,6 +75,9 @@ class InProcessTransport:
         return sorted(self._handlers)
 
     async def send(self, message: SwarmMessage) -> dict[str, Any]:
+        return await self._once(message.idempotency_key, lambda: self._send_once(message))
+
+    async def _send_once(self, message: SwarmMessage) -> dict[str, Any]:
         self.log.append(
             {
                 "from": message.from_agent,
@@ -55,7 +97,7 @@ class InProcessTransport:
         return await handler(message)
 
 
-class A2AHttpTransport:
+class A2AHttpTransport(_Dedupe):
     """HTTP A2A transport — POST SwarmMessage JSON to remote agent endpoints.
 
     Endpoint resolution order:
@@ -72,6 +114,7 @@ class A2AHttpTransport:
         client: httpx.AsyncClient | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> None:
+        super().__init__()
         self.base_url = base_url.rstrip("/")
         self.endpoints = dict(endpoints or {})
         self.timeout_s = timeout_s
@@ -96,6 +139,9 @@ class A2AHttpTransport:
             self._client = None
 
     async def send(self, message: SwarmMessage) -> dict[str, Any]:
+        return await self._once(message.idempotency_key, lambda: self._send_once(message))
+
+    async def _send_once(self, message: SwarmMessage) -> dict[str, Any]:
         agent_id = message.to_agent or ""
         url = self._url_for(agent_id)
         payload = message.model_dump(mode="json")

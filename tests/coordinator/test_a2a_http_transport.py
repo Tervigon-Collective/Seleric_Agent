@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
 import pytest
 
+from seleric_swarm.coordinator.contracts import AgentContext, TaskSpec
+from seleric_swarm.coordinator.routing.invocation import A2AAgentInvoker
 from seleric_swarm.swarm.envelope import Intent, SwarmMessage
 from seleric_swarm.swarm.transport import (
     A2AHttpTransport,
@@ -98,3 +101,67 @@ def test_build_transport_modes():
     assert isinstance(build_transport(mode="inprocess"), InProcessTransport)
     assert isinstance(build_transport(mode="http"), A2AHttpTransport)
     assert isinstance(build_transport(mode="hybrid"), HybridTransport)
+
+
+@pytest.mark.asyncio
+async def test_inprocess_transport_deduplicates_concurrent_requests():
+    transport = InProcessTransport()
+    calls = 0
+
+    async def handler(_message: SwarmMessage) -> dict:
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.01)
+        return {"ok": True, "artifact_refs": ["EV-once"]}
+
+    transport.register("diagnostic_agent", handler)
+    first, second = await asyncio.gather(
+        transport.send(_message()),
+        transport.send(_message()),
+    )
+    assert first == second
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_http_transport_deduplicates_repeated_requests():
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"ok": True, "artifact_refs": ["EV-once"]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    transport = A2AHttpTransport(base_url="http://test", client=client)
+    assert await transport.send(_message()) == await transport.send(_message())
+    assert calls == 1
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_invoker_places_idempotency_key_on_envelope():
+    sent: list[SwarmMessage] = []
+
+    class CaptureTransport:
+        async def send(self, message: SwarmMessage) -> dict:
+            sent.append(message)
+            return {"ok": True, "artifact_refs": []}
+
+    task = TaskSpec(
+        task_id="T-1",
+        mission_id="MS-1",
+        task_type="diagnostic",
+        objective="diagnose",
+        idempotency_key="task-once",
+    )
+    context = AgentContext(
+        mission_id="MS-1",
+        task_id="T-1",
+        question="diagnose",
+    )
+    await A2AAgentInvoker(CaptureTransport()).invoke(
+        "diagnostic_agent", task, context
+    )
+    assert sent[0].idempotency_key == "task-once"
+    assert "idempotency_key" not in sent[0].payload

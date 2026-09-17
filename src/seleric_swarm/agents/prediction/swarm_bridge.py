@@ -40,11 +40,13 @@ class SwarmPredictionSpecialist:
         scenario: dict[str, Any] | None = None,
         deps: PredictionDeps | None = None,
         policies: PredictionPolicies | None = None,
+        runtime: Any = None,
     ) -> None:
         self.providers = providers
         self._scenario = scenario or {}
         self._deps = deps
         self._policies = policies or PredictionPolicies.load()
+        self._runtime = runtime
 
     def policy(self, blackboard: Blackboard, mission: SwarmMission) -> bool:
         return mission.wants("predictive")
@@ -80,7 +82,16 @@ class SwarmPredictionSpecialist:
         blackboard.discard_by(created_by="prediction_agent", artifact_types=("prediction",))
         base = self._deps or self._fixture_deps()
         deps = prediction_deps_from_blackboard(blackboard, base=base)
-        agent = PredictionAgent(deps=deps, policies=self._policies)
+        checkpoint_provider = getattr(self._runtime, "checkpoint_provider", None)
+        agent = PredictionAgent(
+            deps=deps,
+            policies=self._policies,
+            checkpointer=(
+                checkpoint_provider.get_checkpointer()
+                if checkpoint_provider is not None
+                else None
+            ),
+        )
 
         request = PredictionRequest(
             mission_id=blackboard.mission_id,

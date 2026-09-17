@@ -5,6 +5,7 @@ from seleric_swarm.conversations.contracts import (
     Artifact,
     ArtifactProvenance,
     Attachment,
+    AttachmentScanStatus,
     AttachmentStatus,
     EventVisibility,
     MemoryItem,
@@ -38,6 +39,7 @@ from seleric_swarm.conversations.events import (
     InMemoryEventNotifier,
     PollingEventNotifier,
     RedisEventNotifier,
+    build_event_notifier,
 )
 from seleric_swarm.conversations.privacy import (
     can_view_event,
@@ -54,6 +56,7 @@ __all__ = [
     "Artifact",
     "ArtifactProvenance",
     "Attachment",
+    "AttachmentScanStatus",
     "AttachmentStatus",
     "EventNotifier",
     "EventVisibility",
@@ -78,6 +81,7 @@ __all__ = [
     "ThreadParticipant",
     "ThreadStatus",
     "ThreadSummary",
+    "build_event_notifier",
     "can_view_event",
     "event_for_principal",
     "event_type_for_mission_kind",

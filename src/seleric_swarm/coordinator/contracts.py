@@ -107,6 +107,7 @@ class MissionBudget(BaseModel):
     max_remediation_rounds: int = 3
     max_leadership_transfers: int = 6
     max_runtime_s: float = 120.0
+    task_timeout_s: float = 45.0
     max_parallel_tasks: int = 4
     token_budget: int | None = None
 

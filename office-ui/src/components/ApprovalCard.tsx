@@ -1,13 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { decideApproval, type ApprovalStatus } from "../api/phase7";
 
 export function ApprovalCard({ value }: { value: Record<string, unknown> }) {
   const id = String(value.approval_id ?? "");
   const [state, setState] = useState(String(value.status ?? "REQUESTED") as ApprovalStatus);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setState(String(value.status ?? "REQUESTED") as ApprovalStatus);
+    setError(null);
+  }, [value.status, id]);
   const decide = (decision: "APPROVED" | "REJECTED") => {
     setBusy(true);
-    void decideApproval(id, decision).then((approval) => setState(approval.status)).finally(() => setBusy(false));
+    setError(null);
+    void decideApproval(id, decision)
+      .then((approval) => setState(approval.status))
+      .catch((reason: unknown) => {
+        setError(reason instanceof Error ? reason.message : "Approval decision failed");
+      })
+      .finally(() => setBusy(false));
   };
   return <aside className="part-card approval" aria-labelledby={`approval-${id}`}>
     <strong id={`approval-${id}`}>Approval required</strong>
@@ -18,5 +29,6 @@ export function ApprovalCard({ value }: { value: Record<string, unknown> }) {
       <button disabled={busy || state !== "REQUESTED"} onClick={() => decide("REJECTED")}>Reject</button>
       <span role="status" aria-live="polite">{state}</span>
     </div>
+    {error && <small className="approval-error" role="alert">{error}</small>}
   </aside>;
 }

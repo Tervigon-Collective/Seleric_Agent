@@ -18,7 +18,9 @@ if TYPE_CHECKING:
     from seleric_swarm.checkpointing import CheckpointProvider
     from seleric_swarm.conversations.blobs import BlobStore
     from seleric_swarm.conversations.events import ActivityEventSink
+    from seleric_swarm.conversations.phase7 import ActionExecutionService
     from seleric_swarm.conversations.repositories import ConversationRepositories
+    from seleric_swarm.recovery import RunWorkQueue
     from seleric_swarm.services.business_state import BusinessStateService
 
 
@@ -45,3 +47,5 @@ class SwarmRuntime:
     checkpoint_provider: CheckpointProvider | None = None
     cancellation: CancellationBackend | None = None
     blob_store: BlobStore | None = None
+    run_queue: RunWorkQueue | None = None
+    action_execution: ActionExecutionService | None = None

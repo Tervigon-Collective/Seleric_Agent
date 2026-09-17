@@ -123,12 +123,12 @@ class A2AAgentInvoker:
             from_agent=self.from_agent,
             to_agent=agent_id,
             intent=Intent.TASK_REQUEST if "skeptic" not in agent_id else Intent.CHALLENGE,
+            idempotency_key=task.idempotency_key,
             payload={
                 "task_id": task.task_id,
                 "objective": task.objective,
                 "capabilities": task.requested_capabilities,
                 "input_refs": context.input_refs,
-                "idempotency_key": task.idempotency_key,
                 "context": context.model_dump(),
             },
         )

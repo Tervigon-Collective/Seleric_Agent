@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from seleric_swarm.api.office import registry
+from seleric_swarm.api.security import ApiSecurityMiddleware
 from seleric_swarm.contracts.lookup import MissionResult, TraceInfo
 from seleric_swarm.persistence.memory import InMemoryMissionStore
 
@@ -114,3 +116,41 @@ def test_stream_emits_snapshot_then_done(client: TestClient, monkeypatch: pytest
     snap = json.loads(frames[0].split("data: ", 1)[1])
     assert snap["missionId"] == "MS-gw-1"
     assert snap["leadAgentId"] == "funnel_agent"
+
+
+def test_office_routes_hide_foreign_missions(monkeypatch: pytest.MonkeyPatch) -> None:
+    from seleric_swarm.api.office import gateway
+
+    rt = _Runtime()
+    rt.store.put(
+        MissionResult(
+            mission_id="MS-gw-1",
+            status="completed",
+            trace=TraceInfo(request_id="r", session_id="s"),
+        ),
+        {**RAW, "status": "completed", "workspace_id": "workspace_1", "owner_user_id": "user_1"},
+    )
+    monkeypatch.setattr(gateway, "_runtime", lambda: rt)
+    mini = FastAPI()
+    mini.include_router(gateway.router)
+    mini.add_middleware(
+        ApiSecurityMiddleware,
+        api_key="secret",
+        rate_limit_enabled=False,
+        trust_identity_headers=True,
+        default_workspace_id="workspace_1",
+        default_user_id="user_1",
+    )
+    foreign_headers = {
+        "X-API-Key": "secret",
+        "X-Workspace-ID": "workspace_1",
+        "X-User-ID": "user_2",
+    }
+    foreign = TestClient(mini)
+    assert foreign.get("/v1/office/missions", headers=foreign_headers).json()["missions"] == []
+    assert (
+        foreign.get(
+            "/v1/office/missions/MS-gw-1/snapshot", headers=foreign_headers
+        ).status_code
+        == 404
+    )

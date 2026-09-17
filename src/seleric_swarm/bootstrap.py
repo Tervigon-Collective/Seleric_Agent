@@ -8,7 +8,8 @@ from seleric_swarm.cancellation import build_cancellation_backend
 from seleric_swarm.checkpointing import build_checkpoint_provider
 from seleric_swarm.config.settings import Settings, get_settings
 from seleric_swarm.conversations.blobs import BlobStore, LocalBlobStore, MinioBlobStore
-from seleric_swarm.conversations.events import ActivityEventSink, InMemoryEventNotifier
+from seleric_swarm.conversations.events import ActivityEventSink, build_event_notifier
+from seleric_swarm.conversations.phase7 import ActionExecutionService, build_query_embedder
 from seleric_swarm.conversations.postgres import build_conversation_repositories
 from seleric_swarm.llm.factory import build_llm
 from seleric_swarm.llm.metering import MeteredLLMPort
@@ -63,8 +64,11 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     cat_bootstrap = CatalogueBootstrap(mcp)
     metrics = MetricRegistry(settings.metric_registry_path)
     metrics.bind_catalogue(cat_bootstrap)
+    query_embedder = build_query_embedder(settings)
     conversations = build_conversation_repositories(
-        settings.persistence_backend, settings.database_url
+        settings.persistence_backend,
+        settings.database_url,
+        query_embedder=query_embedder,
     )
     allowed_mime_types = {
         item.strip().lower()
@@ -82,7 +86,10 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
             secure=settings.minio_secure,
         )
         blob_store = MinioBlobStore(
-            client, settings.minio_bucket, max_size_bytes=settings.attachment_max_size_bytes
+            client,
+            settings.minio_bucket,
+            max_size_bytes=settings.attachment_max_size_bytes,
+            allowed_mime_types=allowed_mime_types,
         )
     else:
         blob_store = LocalBlobStore(
@@ -101,7 +108,13 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         ontology=OntologyService(mcp),
         bootstrap=cat_bootstrap,
         conversations=conversations,
-        activity_events=ActivityEventSink(conversations.runs, InMemoryEventNotifier()),
+        activity_events=ActivityEventSink(
+            conversations.runs,
+            build_event_notifier(
+                settings.resolved_event_notifier_backend(),
+                redis_url=settings.redis_url,
+            ),
+        ),
         checkpoint_provider=build_checkpoint_provider(
             settings.checkpoint_backend, settings.database_url
         ),
@@ -109,8 +122,13 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
             settings.cancellation_backend, settings.redis_url
         ),
         blob_store=blob_store,
+        action_execution=ActionExecutionService(conversations.approvals, {}),
     )
     # BusinessStateService holds a runtime reference (needs mcp/metrics at call
     # time, not construction time) -- built after so the two aren't circular.
     runtime.business_state = BusinessStateService(runtime)
+    from seleric_swarm.api.conversations import build_submission_executor
+    from seleric_swarm.recovery import build_run_queue
+
+    runtime.run_queue = build_run_queue(runtime, build_submission_executor(runtime))
     return runtime

@@ -62,3 +62,20 @@ seleric-swarm-init/
 ## Current reference baseline
 
 The scaffold assumes Python 3.11+ and is designed around current A2A, MCP, LangGraph and DoWhy concepts. Dependency versions should be locked after a compatibility test in your environment.
+
+## Durable conversation recovery
+
+Production conversation submissions are persisted as queued run attempts; API
+processes do not execute them with FastAPI background tasks. Run the recovery
+worker with the persisted submission executor:
+
+```console
+seleric-recover --executor seleric_swarm.api.conversations:build_submission_executor
+```
+
+The executor factory receives the worker runtime and rehydrates the query,
+scope, request ID, execution mode, and assistant placeholder from `Run.metadata`.
+Workers claim attempts using a lease version, heartbeat with that fencing token,
+and emit a terminal conversation event only after the terminal compare-and-set
+succeeds. `docker compose up` starts this worker automatically. Local in-memory
+runtimes use the same worker path through an in-process queue.

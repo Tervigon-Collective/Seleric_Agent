@@ -17,6 +17,7 @@ from seleric_swarm.conversations.contracts import (
     MemoryItem,
     MemoryPreference,
     Message,
+    MessagePage,
     MessagePart,
     Principal,
     RollbackRecord,
@@ -24,6 +25,7 @@ from seleric_swarm.conversations.contracts import (
     RunAttempt,
     SearchResult,
     Thread,
+    ThreadPage,
     ThreadParticipant,
     ThreadSummary,
 )
@@ -31,9 +33,11 @@ from seleric_swarm.conversations.contracts import (
 CONVERSATION_CONTRACTS: tuple[type[BaseModel], ...] = (
     Principal,
     Thread,
+    ThreadPage,
     ThreadParticipant,
     Message,
     MessagePart,
+    MessagePage,
     Run,
     RunAttempt,
     ActivityEvent,

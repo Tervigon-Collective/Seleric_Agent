@@ -172,7 +172,18 @@ class SwarmDiagnosticSpecialist:
                 metrics=metrics,
             )
         deps = diagnostic_deps_from_blackboard(blackboard, base=base)
-        agent = DiagnosticAgent(deps=deps, policies=self._policies)
+        checkpoint_provider = (
+            getattr(self._runtime, "checkpoint_provider", None) if self._runtime else None
+        )
+        agent = DiagnosticAgent(
+            deps=deps,
+            policies=self._policies,
+            checkpointer=(
+                checkpoint_provider.get_checkpointer()
+                if checkpoint_provider is not None
+                else None
+            ),
+        )
 
         context: dict[str, Any] = {
             # Only fixture/replay mode (a declared causal_truth) gets the

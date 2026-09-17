@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+import time
 from datetime import datetime
 from typing import Any, Protocol, TypedDict, Unpack
 
@@ -67,23 +67,108 @@ class InMemoryEventNotifier:
 
 
 class RedisEventNotifier:
-    """Adapter for an optional Redis publish/wait implementation."""
+    """Cross-worker notifier using Redis pub/sub plus a durable high-water mark."""
+
+    _PUBLISH_SCRIPT = """
+    local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+    local incoming = tonumber(ARGV[1])
+    if incoming > current then
+        redis.call('SET', KEYS[1], incoming)
+    end
+    redis.call('PUBLISH', KEYS[2], ARGV[1])
+    return math.max(current, incoming)
+    """
 
     def __init__(
         self,
-        publish_callback: Callable[[str, int], None],
-        wait_callback: Callable[[str, int, float], object],
+        client: Any,
+        *,
+        prefix: str = "seleric:activity-events:",
     ) -> None:
-        self._publish_callback = publish_callback
-        self._wait_callback = wait_callback
+        self.client = client
+        self.prefix = prefix
 
     def publish(self, run_id: str, sequence: int) -> None:
-        self._publish_callback(run_id, sequence)
+        self.client.eval(
+            self._PUBLISH_SCRIPT,
+            2,
+            self._version_key(run_id),
+            self._channel(run_id),
+            sequence,
+        )
 
     async def wait(self, run_id: str, after_sequence: int, timeout: float) -> None:
-        result = self._wait_callback(run_id, after_sequence, timeout)
-        if hasattr(result, "__await__"):
-            await result
+        if self._version(run_id) > after_sequence:
+            return
+        pubsub = self.client.pubsub()
+        channel = self._channel(run_id)
+        pubsub.subscribe(channel)
+        try:
+            # Close the subscribe race using the persisted high-water mark.
+            if self._version(run_id) > after_sequence:
+                return
+            deadline = time.monotonic() + max(0.0, timeout)
+            while (remaining := deadline - time.monotonic()) > 0:
+                message = await asyncio.to_thread(
+                    pubsub.get_message,
+                    ignore_subscribe_messages=True,
+                    timeout=min(remaining, 0.25),
+                )
+                if message is not None:
+                    data = message.get("data", 0)
+                    if int(data) > after_sequence:
+                        return
+                if self._version(run_id) > after_sequence:
+                    return
+                await asyncio.sleep(0)
+        finally:
+            pubsub.unsubscribe(channel)
+            close = getattr(pubsub, "close", None)
+            if callable(close):
+                close()
+
+    def _version(self, run_id: str) -> int:
+        return int(self.client.get(self._version_key(run_id)) or 0)
+
+    def _version_key(self, run_id: str) -> str:
+        return f"{self.prefix}version:{run_id}"
+
+    def _channel(self, run_id: str) -> str:
+        return f"{self.prefix}channel:{run_id}"
+
+    def close(self) -> object:
+        return self.client.close()
+
+
+def build_event_notifier(
+    backend: str = "memory",
+    *,
+    redis_url: str = "",
+    client: Any | None = None,
+    prefix: str = "seleric:activity-events:",
+) -> EventNotifier:
+    """Build the configured low-latency event delivery adapter."""
+    if backend == "memory":
+        return InMemoryEventNotifier()
+    if backend != "redis":
+        raise ValueError(f"unknown event notifier backend: {backend}")
+    if client is not None:
+        return RedisEventNotifier(client, prefix=prefix)
+    if not redis_url.strip():
+        raise ValueError("event_notifier_backend=redis requires redis_url")
+    try:
+        import redis
+    except ImportError as exc:
+        raise RuntimeError("redis package is required for Redis event notification") from exc
+    return RedisEventNotifier(
+        redis.Redis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        ),
+        prefix=prefix,
+    )
 
 
 class ActivityEventFields(TypedDict, total=False):

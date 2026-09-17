@@ -1,4 +1,6 @@
 import type { MissionRef, OfficeSnapshot, SwarmUIEvent } from "../types";
+import { api, HttpClient } from "../api/http";
+import { parseSseFrame } from "../api/runEvents";
 import type { ProviderHandlers, SwarmEventProvider } from "./types";
 
 /**
@@ -9,74 +11,87 @@ import type { ProviderHandlers, SwarmEventProvider } from "./types";
  */
 export class SelericEventProvider implements SwarmEventProvider {
   readonly mode = "seleric" as const;
-  private base: string;
+  private readonly client: HttpClient;
 
-  constructor(opts: { baseUrl?: string } = {}) {
-    // "" -> same origin (Vite dev-proxies /v1 to the API).
-    this.base = opts.baseUrl ?? "";
+  constructor(opts: { baseUrl?: string; client?: HttpClient } = {}) {
+    this.client = opts.client ?? (opts.baseUrl === undefined
+      ? api
+      : new HttpClient({ baseUrl: opts.baseUrl }));
   }
 
   async listMissions(): Promise<MissionRef[]> {
-    const r = await fetch(`${this.base}/v1/office/missions`);
-    if (!r.ok) throw new Error(`listMissions ${r.status}`);
-    const j = await r.json();
+    const j = await this.client.request<{ missions?: MissionRef[] }>("/v1/office/missions");
     return (j.missions ?? []) as MissionRef[];
   }
 
   async getSnapshot(missionId: string): Promise<OfficeSnapshot> {
-    const r = await fetch(`${this.base}/v1/office/missions/${encodeURIComponent(missionId)}/snapshot`);
-    if (!r.ok) throw new Error(`getSnapshot ${r.status}`);
-    return (await r.json()) as OfficeSnapshot;
+    return this.client.request(
+      `/v1/office/missions/${encodeURIComponent(missionId)}/snapshot`,
+    );
   }
 
   subscribe(missionId: string, h: ProviderHandlers): () => void {
-    let closed = false;
-    let es: EventSource | null = null;
+    const controller = new AbortController();
     let backoff = 1000;
 
-    const open = () => {
-      if (closed) return;
-      h.onState(backoff === 1000 ? "connecting" : "reconnecting");
-      es = new EventSource(
-        `${this.base}/v1/office/missions/${encodeURIComponent(missionId)}/stream`,
-      );
-
-      es.addEventListener("open", () => {
-        backoff = 1000;
-        h.onState("live");
-      });
-      es.addEventListener("snapshot", (e) => {
+    void (async () => {
+      while (!controller.signal.aborted) {
+        h.onState(backoff === 1000 ? "connecting" : "reconnecting");
         try {
-          h.onSnapshot(JSON.parse((e as MessageEvent).data) as OfficeSnapshot);
-        } catch { /* ignore malformed frame */ }
-      });
-      es.addEventListener("event", (e) => {
-        try {
-          h.onEvent(JSON.parse((e as MessageEvent).data) as SwarmUIEvent);
-        } catch { /* ignore malformed frame */ }
-      });
-      es.addEventListener("done", (e) => {
-        try {
-          h.onDone?.(JSON.parse((e as MessageEvent).data).status ?? "done");
-        } catch { h.onDone?.("done"); }
-        closed = true;
-        es?.close();
-        h.onState("closed");
-      });
-      es.addEventListener("error", () => {
-        es?.close();
-        if (closed) return;
-        h.onState("reconnecting");
-        setTimeout(open, backoff);
-        backoff = Math.min(backoff * 2, 15000);
-      });
-    };
-
-    open();
-    return () => {
-      closed = true;
-      es?.close();
+          const response = await this.client.fetchImpl(
+            `${this.client.baseUrl}/v1/office/missions/${encodeURIComponent(missionId)}/stream`,
+            {
+              headers: this.client.headers({ Accept: "text/event-stream" }),
+              signal: controller.signal,
+            },
+          );
+          if (!response.ok || !response.body) throw new Error(`office stream ${response.status}`);
+          h.onState("live");
+          backoff = 1000;
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let doneEvent = false;
+          while (!controller.signal.aborted) {
+            const chunk = await reader.read();
+            buffer += decoder.decode(chunk.value, { stream: !chunk.done });
+            const frames = buffer.split(/\r?\n\r?\n/);
+            buffer = frames.pop() ?? "";
+            for (const raw of frames) {
+              const frame = parseSseFrame(raw);
+              if (!frame?.data) continue;
+              try {
+                const data = JSON.parse(frame.data) as Record<string, unknown>;
+                if (frame.event === "snapshot") h.onSnapshot(data as unknown as OfficeSnapshot);
+                else if (frame.event === "event") h.onEvent(data as unknown as SwarmUIEvent);
+                else if (frame.event === "done") {
+                  h.onDone?.(typeof data.status === "string" ? data.status : "done");
+                  doneEvent = true;
+                  controller.abort();
+                }
+              } catch { /* ignore malformed frame */ }
+            }
+            if (chunk.done || doneEvent) break;
+          }
+        } catch {
+          if (controller.signal.aborted) break;
+          h.onState("reconnecting");
+        }
+        if (!controller.signal.aborted) {
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, backoff);
+            controller.signal.addEventListener("abort", () => {
+              clearTimeout(timer);
+              resolve();
+            }, { once: true });
+          });
+          backoff = Math.min(backoff * 2, 15_000);
+        }
+      }
       h.onState("closed");
+    })();
+    return () => {
+      controller.abort();
     };
   }
 }

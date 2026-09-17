@@ -9,7 +9,11 @@ import yaml
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import StateNeed, StateRequest
 from seleric_swarm.paths import repo_root
-from seleric_swarm.services.domain_health.models import DomainStateSnapshot, DomainStatus, ResolvedMetric
+from seleric_swarm.services.domain_health.models import (
+    DomainStateSnapshot,
+    DomainStatus,
+    ResolvedMetric,
+)
 from seleric_swarm.services.time_range import resolve_time_range
 
 if TYPE_CHECKING:
