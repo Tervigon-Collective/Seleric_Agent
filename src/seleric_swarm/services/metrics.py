@@ -25,6 +25,24 @@ _CATEGORY_DOMAIN: dict[str, str] = {
     "operations": "operations",
 }
 
+# Catalogue sibling ids share a stem (`meta_ctr` / `meta_ctr_hourly`). Grain
+# itself comes from catalogue grain/view; this is only for grouping stems.
+_CADENCE_SUFFIXES = ("_hourly", "_intraday", "_daily")
+_INTRADAY_SUFFIXES = ("_hourly", "_intraday")
+
+
+def cadence_stem(metric_id: str) -> str:
+    low = metric_id.lower()
+    for suffix in _CADENCE_SUFFIXES:
+        if low.endswith(suffix):
+            return metric_id[: -len(suffix)]
+    return metric_id
+
+
+def is_intraday_id(metric_id: str) -> bool:
+    low = metric_id.lower()
+    return any(low.endswith(suffix) for suffix in _INTRADAY_SUFFIXES)
+
 
 class MetricDefinition:
     def __init__(self, payload: dict[str, Any]) -> None:
@@ -79,7 +97,16 @@ class MetricRegistry:
 
     def _from_live(self, meta: CatalogueMetricMeta) -> MetricDefinition:
         overlay = self._overlay_for(meta.id)
+        if overlay is None:
+            # Live cadence sibling (`{catalogue_id}_…`) inherits the YAML overlay
+            # for the longest matching catalogue stem — not a hardcoded suffix.
+            for cat, yaml_id in sorted(self._by_catalogue.items(), key=lambda kv: -len(kv[0] or "")):
+                if cat and meta.id.startswith(f"{cat}_"):
+                    overlay = self._metrics.get(yaml_id)
+                    break
         raw = dict(meta.raw or {})
+        if meta.supported_dimensions and "supported_dimensions" not in raw:
+            raw["supported_dimensions"] = list(meta.supported_dimensions)
         category = str(raw.get("category") or "").lower()
         domain = _CATEGORY_DOMAIN.get(category) or (overlay.domain if overlay else "")
         payload: dict[str, Any] = {

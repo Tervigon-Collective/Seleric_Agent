@@ -8,14 +8,22 @@ A domain either has live Seleric catalogue data or it has none (reported as
 from __future__ import annotations
 
 import asyncio
-import logging
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
 from seleric_swarm.registry.agent_registry import AgentRegistry
+from seleric_swarm.registry.provider_registry import ProviderRegistry
+from seleric_swarm.services.business_state.detectors import RobustZScoreDetector
 from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
+from seleric_swarm.services.mcp_query import (
+    build_metrics_query_args,
+    call_metrics_query,
+    dimension_value,
+    row_date,
+    split_dimension_dict,
+)
+from seleric_swarm.services.measure import module_args, resolve_measure
 from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
 from seleric_swarm.swarm.domain.configs import build_domain_configs
 from seleric_swarm.swarm.providers.base import (
@@ -24,6 +32,7 @@ from seleric_swarm.swarm.providers.base import (
     MetricReading,
     ProviderBundle,
 )
+from seleric_swarm.swarm.providers.provider_selection import ConfiguredAnomalyDetector
 from seleric_swarm.swarm.providers.template import (
     TemplateAnomalyDetector,
     TemplateCausalEngine,
@@ -32,11 +41,6 @@ from seleric_swarm.swarm.providers.template import (
     TemplateStatsEngine,
 )
 
-log = logging.getLogger(__name__)
-
-# ``metrics_query`` is one HTTP call per (metric, day) for ``fetch_series``.
-# Keep this modest so we do not stampede the catalogue; 8 is enough to turn a
-# 33-day × 5-metric sequential wait (~minutes) into a few seconds.
 _MCP_QUERY_CONCURRENCY = 8
 
 
@@ -76,34 +80,6 @@ class McpFetchStats:
         return lines
 
 
-def _measure_keywords_overlap(definition: MetricDefinition, candidate_id: str) -> bool:
-    """Guard: the semantic-fallback candidate must share at least one meaningful
-    token with the registry metric's own ID tokens.
-
-    This prevents the worst class of substitution errors — where the catalogue's
-    NLP finds a distantly-related metric because the registry description is
-    vague or the metric name is common in unrelated contexts.
-
-    Examples (verified against the live catalogue):
-      metric.return_rate {"return","rate"} ∩ total_orders {"total","orders"} = {} → REJECT ✓
-      metric.cac         {"cac"} — handled by Step 1 (catalogue_get_metric); Step 2 never reached ✓
-      metric.sessions    {"sessions"} ∩ web_sessions {"web","sessions"} = {"sessions"} → ACCEPT ✓
-      metric.spend       {"spend"} ∩ amazon_ads_spend {"amazon","ads","spend"} = {"spend"} → ACCEPT ✓
-
-    Only uses ID tokens (not description tokens) for precision — descriptions
-    intentionally contain words like "orders", "cost", "rate" that appear in
-    many unrelated catalogue metric IDs.
-    """
-    skip = {"metric"}
-    id_tokens = {
-        t.lower()
-        for t in re.split(r"[._]", definition.id)
-        if len(t) > 2 and t.lower() not in skip
-    }
-    candidate_tokens = {t.lower() for t in candidate_id.split("_") if len(t) > 2}
-    return bool(id_tokens & candidate_tokens)
-
-
 class EmptyDataProvider:
     """No live MCP coverage for this domain — returns nothing (never fixtures)."""
 
@@ -116,8 +92,10 @@ class EmptyDataProvider:
         metric_ids: list[str],
         time_range: dict[str, Any],
         dimensions: dict[str, Any] | None = None,
+        limit: int | None = None,
+        sort: list[dict[str, Any]] | None = None,
     ) -> DataResult:
-        del time_range, dimensions
+        del time_range, dimensions, limit, sort
         return DataResult(readings=[], events=[], missing=list(metric_ids), data_origin="MCP", synthetic=False)
 
     async def events(self, *, time_range: dict[str, Any]) -> list[DomainEvent]:
@@ -158,113 +136,15 @@ class HybridMcpDataProvider:
         return DataResult(readings=[], events=[], missing=list(metric_ids), data_origin="MCP", synthetic=False)
 
     async def _resolve_measure(self, definition: MetricDefinition) -> str | None:
-        """Resolve the live catalogue measure ID for a registry metric (cached).
-
-        Two-step resolution — prevents stale registry entries from silently
-        producing wrong or empty MCP results:
-
-        Step 1 — Direct ID lookup via ``seleric.catalogue_get_metric``.
-            Unlike catalogue_search_metrics, this is a deterministic exact-ID
-            lookup: it either confirms the measure exists or returns an error.
-            This fixes a critical bug in the previous approach where semantic
-            search (catalogue_search_metrics(query=id)) missed short/acronym
-            IDs like "cac", "orders", "total_ad_spend" because fuzzy search
-            has no guarantee of returning an exact-ID match for the query.
-
-        Step 2 — Semantic fallback with keyword-overlap guard.
-            When the exact ID is absent, search by the metric's *description*
-            to find a current equivalent.  A keyword-overlap guard filters
-            out semantically-adjacent-but-wrong candidates
-            (e.g. "return_rate" must not resolve to "total_orders").
-            The substitution is recorded in McpFetchStats so the operator can
-            update metric_registry.yaml to silence the warning.
-
-        Returns None when truly unresolvable — never returns the stale preferred
-        ID, which would send a phantom measure to metrics_query and produce a
-        misleading "no data for period" error that hides the real problem.
-        """
-        if definition.id in self._measure_cache:
-            return self._measure_cache[definition.id]
-
-        preferred = definition.catalogue_metric
-
-        # Step 0: Bootstrap cache — O(1) dict lookup, zero MCP calls.
-        # refresh_if_stale() is a monotonic check and no-ops when the cache
-        # is fresh; it warms lazily on the very first call per server process.
-        # On first warm, registry_hints enables startup staleness logging so
-        # stale entries are visible in server logs rather than per-mission.
-        if self._bootstrap is not None:
-            if self._bootstrap.should_refresh():
-                hints = [m.catalogue_metric for m in self._metrics.yaml_all() if m.catalogue_metric]
-                await self._bootstrap.warm(registry_hints=hints)
-            self._metrics.bind_catalogue(self._bootstrap)
-            if preferred and self._bootstrap.has(preferred):
-                self._measure_cache[definition.id] = preferred
-                return preferred
-
-        # Preserve the original module-scoping contract:
-        # - "seleric_module": null in YAML  → pass module=None explicitly so the
-        #   gateway respects the metric's intentional unscoped access rather than
-        #   inheriting the domain agent's module pin (which would restrict to the
-        #   wrong catalogue subset, e.g. "paidmedia" for metric.cac).
-        # - "seleric_module" key absent in YAML → let the gateway apply the
-        #   agent's module pin (safest default).
-        module_args: dict[str, Any] = (
-            {"module": definition.seleric_module}
-            if "seleric_module" in definition.raw
-            else {}
+        return await resolve_measure(
+            definition,
+            mcp=self._mcp,
+            agent_id=self._agent_id,
+            bootstrap=self._bootstrap,
+            metrics=self._metrics,
+            cache=self._measure_cache,
+            on_stale_sub=self._stats.record_stale_sub,
         )
-
-        # Step 1: Exact ID lookup — deterministic, not semantic.
-        # Only attempted when a preferred catalogue_metric ID is known.
-        # Skipped when catalogue_metric is None (no hint in registry) — go
-        # straight to Step 2 semantic search.
-        # catalogue_get_metric returns the full metric dict on success or
-        # {"error": "Unknown metric '...'", "suggestions": [...]} on failure.
-        if preferred:
-            try:
-                exact_result = await self._mcp.call(
-                    agent_id=self._agent_id,
-                    capability="seleric.catalogue_get_metric",
-                    arguments={"metric_id": preferred, **module_args},
-                )
-            except Exception:
-                self._measure_cache[definition.id] = None
-                return None
-
-            if not exact_result.get("error"):
-                # Metric confirmed in catalogue — registry is current.
-                self._measure_cache[definition.id] = preferred
-                return preferred
-            # else: preferred ID absent — fall through to Step 2
-
-        # Step 2: No preferred ID OR preferred ID absent from catalogue (stale).
-        # Search by description (business meaning, not the stale ID string) and
-        # apply the keyword-overlap guard to reject wrong-domain substitutions.
-        try:
-            desc_result = await self._mcp.call(
-                agent_id=self._agent_id,
-                capability="seleric.catalogue_search_metrics",
-                arguments={"query": definition.description, **module_args},
-            )
-        except Exception:
-            self._measure_cache[definition.id] = None
-            return None
-
-        desc_matches = desc_result.get("matches") or []
-        for match in desc_matches:
-            candidate = match.get("id") or ""
-            if candidate and _measure_keywords_overlap(definition, candidate):
-                if preferred:
-                    # Safe substitution — record so the operator can update the registry.
-                    self._stats.record_stale_sub(definition.id, preferred, candidate)
-                self._measure_cache[definition.id] = candidate
-                return candidate
-
-        # Step 3: Truly unresolvable — return None so the caller emits a clear
-        # "measure not found" limitation rather than a phantom metrics_query.
-        self._measure_cache[definition.id] = None
-        return None
 
     async def fetch(
         self,
@@ -272,17 +152,15 @@ class HybridMcpDataProvider:
         metric_ids: list[str],
         time_range: dict[str, Any],
         dimensions: dict[str, Any] | None = None,
+        limit: int | None = None,
+        sort: list[dict[str, Any]] | None = None,
     ) -> DataResult:
-        del dimensions  # ponytail: MCP dimensions later
         want = list(metric_ids or [])
         if "seleric.metrics_query" not in self._mcp.capabilities:
             self._stats.mcp_fallbacks += 1
             self._stats.fallback_reasons.append("seleric.metrics_query not registered")
             return self._empty(want)
 
-        # Prefer the mission's scripted observation end (single-day MCP fetch
-        # anchored to the investigated window) over a client as_of that only
-        # widened the reported range — see resolve_mission_time_range.
         start = str(time_range.get("start") or time_range.get("end") or "")[:10]
         end = str(
             time_range.get("observation_end") or time_range.get("end") or time_range.get("start") or ""
@@ -292,11 +170,7 @@ class HybridMcpDataProvider:
             self._stats.fallback_reasons.append("seleric.metrics_query: missing date in time_range")
             return self._empty(want)
 
-        values: dict[str, float] = {}
-        baselines: dict[str, float] = {}
-        units: dict[str, str | None] = {}
-        directions: dict[str, str] = {}
-        source_label = "seleric.metrics_query"
+        breakdown, extra_filters = split_dimension_dict(dimensions)
         missing: list[str] = []
         resolved: list[tuple[str, MetricDefinition, str]] = []
         for metric_id in want:
@@ -306,11 +180,6 @@ class HybridMcpDataProvider:
                 continue
             measure = await self._resolve_measure(definition)
             if measure is None:
-                # _resolve_measure already recorded the stale-sub or searched
-                # semantically and found nothing. The limitation text was set
-                # there; here we just count it as a gap and skip the MCP call.
-                # This distinguishes "measure not in catalogue" from "measure
-                # in catalogue but no rows for this period" (below).
                 self._stats.mcp_fallbacks += 1
                 cat_hint = definition.catalogue_metric or "(no catalogue_metric hint)"
                 self._stats.fallback_reasons.append(
@@ -325,77 +194,81 @@ class HybridMcpDataProvider:
 
         async def _query_metric(
             metric_id: str, definition: MetricDefinition, measure: str
-        ) -> tuple[str, MetricDefinition, str, dict[str, Any] | None, str | None]:
-            args: dict[str, Any] = {
-                "measures": [measure],
-                "time_range": {"start": start, "end": end},
-                "compare_period": "previous_period",
-            }
-            if "seleric_module" in definition.raw:
-                args["module"] = definition.seleric_module
+        ) -> tuple[str, MetricDefinition, str, dict[str, Any]]:
+            extra = module_args(definition)
+            args = build_metrics_query_args(
+                measure=measure,
+                start=start,
+                end=end,
+                dimensions=breakdown or None,
+                filters=extra_filters or None,
+                limit=limit,
+                sort=sort or ([{"field": measure, "direction": "desc"}] if breakdown else None),
+                compare_period=None if breakdown else "previous_period",
+                module=extra["module"] if extra else ...,
+            )
             async with sem:
                 self._stats.mcp_attempts += 1
-                try:
-                    result = await self._mcp.call(
-                        agent_id=self._agent_id, capability="seleric.metrics_query", arguments=args
-                    )
-                except Exception as exc:
-                    return metric_id, definition, measure, None, f"{metric_id}: {type(exc).__name__}"
-                return metric_id, definition, measure, result, None
+                return metric_id, definition, measure, await call_metrics_query(
+                    self._mcp, agent_id=self._agent_id, arguments=args
+                )
 
         gathered = await asyncio.gather(*[_query_metric(*item) for item in resolved]) if resolved else []
-        for metric_id, definition, measure, result, err in gathered:
-            if result is None:
-                self._stats.mcp_fallbacks += 1
-                self._stats.fallback_reasons.append(err or f"{metric_id}: query failed")
-                missing.append(metric_id)
-                continue
+        readings: list[MetricReading] = []
+        for metric_id, definition, measure, result in gathered:
             rows = result.get("rows") or []
             if result.get("error") or not rows:
-                # Measure exists in catalogue but has no data for this window.
-                # "no data for" is intentionally different from "not found"
-                # above so operators can distinguish the two failure types.
                 self._stats.mcp_fallbacks += 1
                 self._stats.fallback_reasons.append(
-                    f"{metric_id}: no data for {start}..{end}"
+                    f"{metric_id}: {result['error']}" if result.get("error") else f"{metric_id}: no data for {start}..{end}"
                 )
                 missing.append(metric_id)
                 continue
-            raw_value = rows[0].get(measure)
-            if raw_value is None:
+            source_label = f"seleric_mcp.{(result.get('provenance') or {}).get('cube_view', measure)}"
+            baseline = None
+            compare_rows = result.get("compare_rows") or []
+            if compare_rows and compare_rows[0].get(measure) is not None:
+                baseline = float(compare_rows[0][measure])
+            emitted = False
+            seen: set[tuple[tuple[str, Any], ...]] = set()
+            for row in rows:
+                raw_value = row.get(measure)
+                if raw_value is None:
+                    continue
+                dims: dict[str, Any] = {}
+                if breakdown:
+                    dims = {d: dimension_value(row, d) for d in breakdown}
+                    dims = {k: v for k, v in dims.items() if v is not None}
+                    key = tuple(sorted(dims.items()))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                readings.append(
+                    MetricReading(
+                        metric_id=metric_id,
+                        value=float(raw_value),
+                        baseline=None if breakdown else baseline,
+                        unit=getattr(definition, "unit", None),
+                        direction_bad=getattr(definition, "direction_bad", "up"),
+                        dimensions=dims,
+                        data_origin="MCP",
+                        synthetic=False,
+                        source=source_label,
+                    )
+                )
+                emitted = True
+                if not breakdown:
+                    break
+            if not emitted:
                 self._stats.mcp_fallbacks += 1
                 self._stats.fallback_reasons.append(f"{metric_id}: measure key absent from row")
                 missing.append(metric_id)
-                continue
-            values[metric_id] = float(raw_value)
-            units[metric_id] = definition.unit
-            directions[metric_id] = definition.direction_bad
-            compare_rows = result.get("compare_rows") or []
-            if compare_rows:
-                raw_baseline = compare_rows[0].get(measure)
-                if raw_baseline is not None:
-                    baselines[metric_id] = float(raw_baseline)
-            source_label = f"seleric_mcp.{(result.get('provenance') or {}).get('cube_view', measure)}"
 
-        if not values:
+        if not readings:
             return self._empty(want)
 
         self._stats.mcp_hits += 1
         self._stats.capabilities_used.append("seleric.metrics_query")
-        readings = [
-            MetricReading(
-                metric_id=mid,
-                value=value,
-                baseline=baselines.get(mid),
-                unit=units.get(mid),
-                direction_bad=directions.get(mid, "up"),
-                dimensions={},
-                data_origin="MCP",
-                synthetic=False,
-                source=source_label,
-            )
-            for mid, value in values.items()
-        ]
         return DataResult(readings=readings, events=[], missing=missing, data_origin="MCP", synthetic=False)
 
     async def fetch_series(
@@ -406,31 +279,12 @@ class HybridMcpDataProvider:
         max_days: int = 60,
         min_rows: int = 8,
     ) -> Any:
-        """Daily observation series for real causal estimation (docs/44 ROB-002).
+        """Daily series for DoWhy: one ``metrics_query`` per metric with ``granularity=day``.
 
-        One ``seleric.metrics_query`` call per metric per day — the same
-        catalogue/measure resolution ``fetch`` already uses, just windowed to
-        single days instead of one aggregated range. Returns a pandas
-        DataFrame indexed by date with one column per metric that returned
-        real data, or ``None`` if the window is too wide to fetch cheaply or
-        too little data came back to be useful.
-
-        ``min_rows`` defaults to 8 — the same floor statsmodels itself warns
-        below (``omni_normtest is not valid with less than 8 observations``).
-        A 2-3 day anomaly window produces a rank-deficient OLS fit that DoWhy
-        will still "answer" with, which is worse than the honest metadata-only
-        fallback: a confident-looking number from an underdetermined model is
-        exactly the fabrication the project's evidence rules exist to prevent.
-        Below this floor, callers should get ``None`` and fall back.
-
-        One HTTP call per (metric, day). Those calls run concurrently
-        (``_MCP_QUERY_CONCURRENCY``) so a 33-day diagnostic window does not
-        serialize into minutes of Swagger ``LOADING``. If missions start
-        asking for multi-month windows, switch to ``seleric.metrics_drilldown``
-        (a registered-but-unused MCP capability that can return a series in
-        one call) instead of raising max_days further.
+        Returns a pandas DataFrame indexed by date, or ``None`` if the window is
+        shorter than ``min_rows``, longer than ``max_days``, or too sparse.
         """
-        from datetime import date, timedelta
+        from datetime import date
 
         import pandas as pd
 
@@ -449,7 +303,7 @@ class HybridMcpDataProvider:
         if n_days < min_rows or n_days > max_days:
             return None
 
-        jobs: list[tuple[str, str, dict[str, Any], str]] = []
+        jobs: list[tuple[str, str, dict[str, Any]]] = []
         for metric_id in metric_ids:
             definition = self._metrics.get(metric_id)
             if definition is None:
@@ -457,61 +311,41 @@ class HybridMcpDataProvider:
             measure = await self._resolve_measure(definition)
             if measure is None:
                 continue
-            args: dict[str, Any] = {}
-            if "seleric_module" in definition.raw:
-                args["module"] = definition.seleric_module
-            day = start
-            while day <= end:
-                jobs.append((metric_id, measure, args, day.isoformat()))
-                day = day + timedelta(days=1)
-
-        log.info(
-            "fetch_series: %d metrics × %d days = %d MCP calls (concurrency=%d)",
-            len({job[0] for job in jobs}),
-            n_days,
-            len(jobs),
-            _MCP_QUERY_CONCURRENCY,
-        )
+            extra = module_args(definition)
+            jobs.append((metric_id, measure, extra))
 
         sem = asyncio.Semaphore(_MCP_QUERY_CONCURRENCY)
 
-        async def _query_day(
-            metric_id: str, measure: str, args: dict[str, Any], day_s: str
-        ) -> tuple[str, str, float | None]:
+        async def _query_metric(
+            metric_id: str, measure: str, extra: dict[str, Any]
+        ) -> tuple[str, dict[str, float]]:
+            args = build_metrics_query_args(
+                measure=measure,
+                start=start.isoformat(),
+                end=end.isoformat(),
+                grain="day",
+                module=extra["module"] if extra else ...,
+            )
             async with sem:
                 self._stats.mcp_attempts += 1
-                try:
-                    result = await self._mcp.call(
-                        agent_id=self._agent_id,
-                        capability="seleric.metrics_query",
-                        arguments={
-                            **args,
-                            "measures": [measure],
-                            "time_range": {"start": day_s, "end": day_s},
-                        },
-                    )
-                except Exception:
-                    return metric_id, day_s, None
-                rows = result.get("rows") or []
-                if not result.get("error") and rows and rows[0].get(measure) is not None:
-                    return metric_id, day_s, float(rows[0][measure])
-                return metric_id, day_s, None
+                result = await call_metrics_query(self._mcp, agent_id=self._agent_id, arguments=args)
+            day_values: dict[str, float] = {}
+            if result.get("error"):
+                return metric_id, day_values
+            for row in result.get("rows") or []:
+                ts = row_date(row)
+                raw = row.get(measure)
+                if ts is None or raw is None:
+                    continue
+                day_values[ts] = float(raw)
+            return metric_id, day_values
 
-        gathered = await asyncio.gather(*[_query_day(*job) for job in jobs]) if jobs else []
-        day_values_by_metric: dict[str, dict[str, float]] = {}
-        for metric_id, day_s, value in gathered:
-            if value is None:
-                continue
-            day_values_by_metric.setdefault(metric_id, {})[day_s] = value
-
+        gathered = await asyncio.gather(*[_query_metric(*job) for job in jobs]) if jobs else []
         columns: dict[str, dict[str, float]] = {
             metric_id: day_values
-            for metric_id, day_values in day_values_by_metric.items()
+            for metric_id, day_values in gathered
             if len(day_values) >= min_rows
         }
-        # One column is enough here: DoWhy merges per-owner frames in
-        # ``_fetch_observations``. Requiring two columns per provider dropped
-        # outcome-only owners (e.g. performance gross ROAS) as None.
         if not columns:
             return None
         frame = pd.DataFrame(columns)
@@ -525,26 +359,17 @@ class HybridMcpDataProvider:
         return []
 
 
-def build_hybrid_bundle(
+def _data_providers(
     *,
-    mcp: MCPGateway | None = None,
-    execution_mode: str = "production",
+    mcp: MCPGateway | None,
+    execution_mode: str,
     metrics: MetricRegistry,
-    agents: AgentRegistry | None = None,
-    bootstrap: CatalogueBootstrap | None = None,
-) -> tuple[ProviderBundle, McpFetchStats]:
-    """Build providers for a live mission: live MCP for domains with a
-    seleric_module, no data otherwise.
-
-    ``bootstrap`` is the shared ``CatalogueBootstrap`` instance from
-    ``SwarmRuntime``.  When provided, ``_resolve_measure`` can check the
-    live catalogue cache (Step 0) before making any MCP calls, eliminating
-    the per-metric ``catalogue_get_metric`` round-trip on the hot path.
-    """
+    agents: AgentRegistry | None,
+    bootstrap: CatalogueBootstrap | None,
+) -> tuple[dict[str, Any], McpFetchStats]:
     stats = McpFetchStats()
-    domain_cfgs = build_domain_configs(metrics, agents)
     data: dict[str, Any] = {}
-    for cfg in domain_cfgs.values():
+    for cfg in build_domain_configs(metrics, agents).values():
         d = cfg.domain
         if mcp is not None and cfg.seleric_module:
             data[d] = HybridMcpDataProvider(
@@ -558,11 +383,86 @@ def build_hybrid_bundle(
             )
         else:
             data[d] = EmptyDataProvider(d)
-    # Data is MCP/empty; intelligence seams stay Template* so specialists
-    # (anomaly / lightweight diagnostic / prediction / skeptic) never see None.
+    return data, stats
+
+
+def data_only_bundle(
+    *,
+    mcp: MCPGateway | None = None,
+    execution_mode: str = "production",
+    metrics: MetricRegistry,
+    agents: AgentRegistry | None = None,
+    bootstrap: CatalogueBootstrap | None = None,
+) -> tuple[ProviderBundle, McpFetchStats]:
+    """MCP/empty data providers plus cheap Template* seams. Lookup observe uses this."""
+    data, stats = _data_providers(
+        mcp=mcp,
+        execution_mode=execution_mode,
+        metrics=metrics,
+        agents=agents,
+        bootstrap=bootstrap,
+    )
+    return (
+        ProviderBundle(
+            data=data,
+            anomaly=TemplateAnomalyDetector(),
+            causal=TemplateCausalEngine(),
+            forecaster=TemplateForecaster(),
+            optimizer=TemplateOptimizer(),
+            stats=TemplateStatsEngine(),
+        ),
+        stats,
+    )
+
+
+def build_hybrid_bundle(
+    *,
+    mcp: MCPGateway | None = None,
+    execution_mode: str = "production",
+    metrics: MetricRegistry,
+    agents: AgentRegistry | None = None,
+    bootstrap: CatalogueBootstrap | None = None,
+    business_state: Any | None = None,
+    provider_registry: ProviderRegistry | None = None,
+) -> tuple[ProviderBundle, McpFetchStats]:
+    """Build providers for a live mission: live MCP for domains with a
+    seleric_module, no data otherwise.
+
+    ``bootstrap`` is the shared ``CatalogueBootstrap`` instance from
+    ``SwarmRuntime``.  When provided, ``_resolve_measure`` can check the
+    live catalogue cache (Step 0) before making any MCP calls, eliminating
+    the per-metric ``catalogue_get_metric`` round-trip on the hot path.
+
+    ``business_state`` (``runtime.business_state``, typed loosely here to
+    avoid a hard import-time dependency on ``SwarmRuntime``) and
+    ``provider_registry`` are optional so every existing caller/test that
+    doesn't pass them keeps getting pure ``TemplateAnomalyDetector`` behavior
+    -- config-driven selection (Sprint 2.5) only activates once both a
+    registry override and a live ``business_state`` are present.
+    """
+    data, stats = _data_providers(
+        mcp=mcp,
+        execution_mode=execution_mode,
+        metrics=metrics,
+        agents=agents,
+        bootstrap=bootstrap,
+    )
+    # Data is MCP/empty; intelligence seams stay Template* by default so
+    # specialists (anomaly / lightweight diagnostic / prediction / skeptic)
+    # never see None. Anomaly is the one seam config can redirect per
+    # metric/domain (docs/features/business-state-service/05_SPRINT_PLAN.md
+    # Sprint 2.5) -- causal/forecast/optimizer/stats stay Template until
+    # their own BusinessStateService strategies exist.
+    registry = provider_registry or ProviderRegistry()
+    anomaly_detector = ConfiguredAnomalyDetector(
+        registry=registry,
+        metrics=metrics,
+        template=TemplateAnomalyDetector(),
+        robust_zscore=RobustZScoreDetector(business_state) if business_state is not None else None,
+    )
     bundle = ProviderBundle(
         data=data,
-        anomaly=TemplateAnomalyDetector(),
+        anomaly=anomaly_detector,
         causal=TemplateCausalEngine(),
         forecaster=TemplateForecaster(),
         optimizer=TemplateOptimizer(),

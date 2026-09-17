@@ -77,15 +77,17 @@ class ModelValidator(Validator):
         drift_status = fc.drift_status
         drift_source = "artifact"
         if (not drift_status or drift_status.lower() in {"unknown", ""}) and fc.model_id:
-            try:
-                report = await ctx.deps.drift_monitor.status_for(
-                    fc.model_id, features={**ctx.risk_context, **ctx.claim.metadata}
-                )
-                drift_status = report.status
-                drift_source = "monitor"
-                out.detail["drift_signals"] = report.signals
-            except Exception as exc:  # a monitor outage is a warning, not a crash
-                out.methodological_issues.append(f"drift monitor unavailable: {exc}")
+            monitor = ctx.deps.drift_monitor
+            if monitor is not None:
+                try:
+                    report = await monitor.status_for(
+                        fc.model_id, features={**ctx.risk_context, **ctx.claim.metadata}
+                    )
+                    drift_status = report.status
+                    drift_source = "monitor"
+                    out.detail["drift_signals"] = report.signals
+                except Exception as exc:  # a monitor outage is a warning, not a crash
+                    out.methodological_issues.append(f"drift monitor unavailable: {exc}")
         drift = (drift_status or "").lower()
         if drift in ctx.policies.drift_reject_statuses():
             verdict = "MODEL_DRIFTED"

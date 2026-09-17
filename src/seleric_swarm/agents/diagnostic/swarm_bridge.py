@@ -228,9 +228,8 @@ The user's visible answer is still anchored to their original query window; only
 causal evidence layer uses the extended history.
 """
 
-# ``fetch_series`` is one MCP call per metric per day. Asking every peer KPI
-# on every domain provider turns a 3-day question into thousands of sequential
-# HTTP calls (the ~20 minute spinner). Cap treatments; route by owner.
+# ``fetch_series`` is one MCP call per metric (granularity=day). Cap treatments;
+# route by owner so a short question does not fan out across every peer KPI.
 _MAX_CAUSAL_TREATMENTS = 3
 
 

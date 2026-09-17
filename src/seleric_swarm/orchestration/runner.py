@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from uuid import uuid4
 
 from seleric_swarm.contracts.lookup import (
@@ -139,20 +138,7 @@ async def run_mission(
                     initial["langsmith_run_id"] = str(tree.id)
             except Exception:
                 pass
-            try:
-                final_state = await asyncio.wait_for(
-                    graph.ainvoke(initial),
-                    timeout=runtime.settings.mission_timeout_s,
-                )
-            except TimeoutError:
-                final_state = {
-                    **initial,
-                    "status": "failed",
-                    "error_code": "TIMEOUT",
-                    "error_message": "Mission exceeded the configured timeout",
-                    "final_response": "Mission exceeded the configured timeout",
-                    "limitations": ["Mission exceeded the configured timeout"],
-                }
+            final_state = await graph.ainvoke(initial)
             mission_span.set_outputs(
                 {
                     "status": final_state.get("status"),

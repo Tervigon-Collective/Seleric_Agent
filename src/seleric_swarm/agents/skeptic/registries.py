@@ -308,14 +308,6 @@ class DriftMonitor(Protocol):
     async def status_for(self, model_id: str, *, features: dict[str, Any]) -> DriftReport: ...
 
 
-class NullDriftMonitor:
-    """No monitor wired -> 'unknown'. The Skeptic treats 'unknown' as a warning,
-    never a pass, so this stays honest."""
-
-    async def status_for(self, model_id: str, *, features: dict[str, Any]) -> DriftReport:
-        return DriftReport(model_id=model_id, status="unknown", detail="no drift monitor configured")
-
-
 # --------------------------------------------------------------------------- #
 # Incident / historical pattern registry
 # --------------------------------------------------------------------------- #

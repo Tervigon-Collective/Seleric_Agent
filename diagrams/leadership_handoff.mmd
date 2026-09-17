@@ -2,12 +2,15 @@ sequenceDiagram
     participant C as Coordinator
     participant P as Performance Lead
     participant O as Observer/Anomaly
+    participant BS as Business State Service
     participant E as Commerce Lead
     participant F as Funnel Lead
     participant T as Technical Lead
 
     C->>P: Mission: investigate CAC increase
     P->>O: Analyze paid-media + downstream metrics
+    O->>BS: get_metric_state(need=[actual, features, anomaly])
+    BS-->>O: MetricState (features + freshness + anomaly, per-metric)
     O-->>P: CPM/CTR/CPC stable; ATC sharply down
     P->>C: Transfer request -> Commerce + evidence refs
     C-->>E: Leadership epoch 2

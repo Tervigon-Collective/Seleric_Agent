@@ -4,7 +4,7 @@ Status: **COMPLETE for V1 DoD** (phases 0–13). Post-V1 hardenings v1.1–v1.8 
 
 ## A — Architecture
 
-`swarm_v2` LangGraph control plane in `coordinator/graph.py` owns DECIDE→EXECUTE. L0/L1 stay on `lookup_v1`. `swarm_v1` preserved behind `settings.swarm_workflow`.
+`swarm_v2` LangGraph control plane in `coordinator/graph.py` owns DECIDE→EXECUTE. L0/L1 stay on `lookup_v1`.
 
 ## B — Intake
 

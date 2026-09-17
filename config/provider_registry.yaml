@@ -1,0 +1,30 @@
+# Anomaly/forecast strategy selection (docs/features/business-state-service
+# 03_DEFINITIONS_TO_MAKE_FUNCTIONAL.md #10, 05_SPRINT_PLAN.md Sprint 2.5).
+#
+# build_hybrid_bundle() reads this to decide, per metric/domain, whether an
+# anomaly finding comes from the naive TemplateAnomalyDetector (relative
+# value-vs-baseline effect, no history) or BusinessStateService's
+# robust_zscore detector (median + MAD over real history). Resolution order:
+# metric override > domain override > default. No change to
+# swarm/specialists/anomaly.py -- it still just calls self.providers.anomaly.
+#
+# forecast_strategy is part of the config shape for forward-compatibility
+# but only "template" is implemented today -- BusinessStateService has no
+# forecasts.py yet (still Sprint 2.5+/6). Selecting anything else for
+# forecast is a no-op until that strategy exists.
+
+default:
+  anomaly_strategy: template
+  forecast_strategy: template
+
+overrides:
+  domain:
+    # Sprint 2's most-validated pilot domain -- real anomaly runs verified
+    # live against metric.net_sales/metric.spend/metric.net_profit.
+    commerce:
+      anomaly_strategy: robust_zscore
+  metric:
+    metric.spend:
+      anomaly_strategy: robust_zscore
+    metric.net_profit:
+      anomaly_strategy: robust_zscore

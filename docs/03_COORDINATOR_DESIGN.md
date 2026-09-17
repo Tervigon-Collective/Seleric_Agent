@@ -43,7 +43,6 @@ Do not invoke the whole swarm for simple retrieval.
 | --- | --- |
 | Control plane package | `src/seleric_swarm/coordinator/` |
 | Lookup fast path | `orchestration/graph.py` (`lookup_v1`) |
-| Swarm V1 (legacy) | `swarm/orchestrator.py` |
 | Swarm V2 (default) | `coordinator/graph.py` |
 | Policies | `config/coordinator_policies.yaml` |
 

@@ -173,6 +173,7 @@ Every result should carry: `as_of`, finality/freshness, confidence, profile ids,
 | ClickHouse history | feature/forecast/anomaly history | Skip |
 | Object storage artifacts | model binaries | Skip — baselines in-process |
 | Evidence ledger | via Insight | Existing EvidenceArtifact + Claim Gate |
+| Domain Health Snapshots (resolved state, [04](04_DOMAIN_HEALTH_SNAPSHOTS.md)) | `state.metric_state_current`-style JSONB row | **[2026-09-14 decision]** One JSON file per `(domain, as_of)` on local/mounted disk for now — no new table, no migration. Move to a Postgres JSONB table (originally-planned shape, `persistence/postgres.py` pattern) once there's a real reason to query across snapshots (multi-brand rollout, cross-domain overview reads at scale) rather than reading the latest file per domain. |
 
 ## 8. Security & ops (service-scoped)
 

@@ -262,27 +262,46 @@ Control Plane bundles, ClickHouse marts, outbox events, separate BSS deployable,
 
 ## Definition checklist (order)
 
-1. `MetricState` + `StateRequest` schemas
-2. Series fetch + null/gap + min_points rules
-3. One `business_state_profiles.yaml` (`default_v1`)
-4. Quality flag enum + UNAVAILABLE rules
-5. Evidence / Anomaly / Forecast mapping
-6. Caller matrix (Observer / Anomaly / Prediction)
-7. Pilot metrics + golden fixtures
-8. `runtime.business_state` boot
-9. Provider-selection config for `AnomalyDetector` / `Forecaster` (§10)
+1. [x] `MetricState` + `StateRequest` schemas — `domain/models.py` +
+   `schemas/metric_state.schema.json` / `state_request.schema.json`
+   (Sprint 0). No package-local `services/business_state/models.py` was
+   added — these live beside `EvidenceArtifact` instead, see 05's Sprint 1 note.
+2. [x] Series fetch + null/gap + min_points rules — `series.py` (Sprint 1),
+   `max_lookback_days`/`gap_policy` in `business_state_profiles.yaml`
+3. [x] One `business_state_profiles.yaml` (`default_v1`) — Sprint 0
+4. [x] Quality flag enum + UNAVAILABLE rules — `domain.models.QualityFlag`
+   (Sprint 0); capability-scoped gating implemented in `facade.py` (Sprint 2,
+   see 05's Sprint 2 note on the one deliberate deviation from "→ UNAVAILABLE")
+5. [x] Evidence / Anomaly / Forecast mapping — Evidence mapping implemented
+   in `Observer.business_state_evidence` (Sprint 1); Anomaly mapping
+   implemented in `detectors.RobustZScoreDetector` (Sprint 2); Forecast
+   mapping still pending (Sprint 2.5/6)
+6. [~] Caller matrix (Observer / Anomaly / Prediction) — Observer done
+   (Sprint 1); Anomaly detector is Protocol-conformant but not registered in
+   `build_hybrid_bundle()` yet (Sprint 2.5); Prediction untouched
+7. [x] Pilot metrics + golden fixtures — 3 metrics now:
+   `metric.net_sales` (commerce, Sprint 0), `metric.spend` (performance,
+   Sprint 0), `metric.net_profit` (finance, Sprint 2) —
+   `tests/fixtures/business_state/`
+8. [x] `runtime.business_state` boot — `bootstrap.py` (Sprint 1)
+9. [ ] Provider-selection config for `AnomalyDetector` / `Forecaster` (§10) —
+   still Sprint 2.5, not started
 
-After these nine exist in schemas/config (and this doc), implementation is: facade → MCP series → strategies → evidence.
+Facade → MCP series → strategies → evidence is implemented through Sprint 2
+(actual, features, anomaly). Forecast is the remaining strategy.
 
 ---
 
-## Suggested first implementation slice
+## Implementation slice status
 
-1. Add schemas + `default_v1` profile YAML (no agent change).
-2. Implement `series.py` + `get_metric_state(need=[actual, features])` for `metric.net_sales`.
-3. Unit test with fixture series.
-4. Optional: Observer path behind a flag to use Business State for features instead of `_comparison_deltas`.
-5. Then anomaly strategy + register it as a selectable provider (§10) behind
-   the existing `AnomalyDetector` Protocol — the live `swarm/specialists/anomaly.py`
-   already works, it just needs a config choice instead of the hardcoded
-   `TemplateAnomalyDetector`.
+1. [x] Schemas + `default_v1` profile YAML (Sprint 0).
+2. [x] `series.py` + `get_metric_state(need=[actual, features])` for
+   `metric.net_sales` — live-verified against real `seleric-mcp`, not just
+   fixture-tested (Sprint 1).
+3. [x] Unit tests with fixture series (Sprint 1, extended in Sprint 2).
+4. [x] Observer path proven via `Observer.business_state_evidence` — additive,
+   not yet swapped in to replace `_comparison_deltas` in `observe()`'s
+   production path (Sprint 1).
+5. [x] Anomaly strategy (`detectors.robust_zscore` + `RobustZScoreDetector`,
+   Protocol-conformant) — **not yet** registered as a selectable provider in
+   `build_hybrid_bundle()`; that config seam is still Sprint 2.5 (05 SS2.5).

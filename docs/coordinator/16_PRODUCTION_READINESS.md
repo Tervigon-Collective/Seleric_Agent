@@ -2,9 +2,8 @@
 
 ## Migration
 
-1. `swarm_workflow=swarm_v1` — legacy (preserved).
-2. `swarm_workflow=swarm_v2` — Coordinator V1 (default after regression green).
-3. `lookup_v1` remains L0/L1 fast path.
+1. `lookup_v1` — L0/L1 fast path.
+2. `swarm_workflow=swarm_v2` — Coordinator control plane (L2+).
 
 ## Remaining gaps
 

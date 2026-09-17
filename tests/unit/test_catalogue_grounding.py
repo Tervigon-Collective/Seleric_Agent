@@ -119,7 +119,7 @@ def test_cold_bootstrap_is_noop():
     assert dims == []
 
 
-def test_grain_replaces_unsupported_commerce_pack():
+def test_grain_keeps_assigned_metrics_that_cannot_slice():
     hints = ["metric.net_sales", "metric.orders"]
     out, dims = constrain_hints_to_grain(
         hints,
@@ -127,9 +127,9 @@ def test_grain_replaces_unsupported_commerce_pack():
         metrics=_Registry(_DEFS),
         bootstrap=_bootstrap(_CACHE),
     )
-    assert out == ["metric.attributed_net_revenue"]
+    assert out == hints
     assert dims == ["lt_channel"]
-    assert lead_agent_for_hints(out, _Registry(_DEFS)) == "attribution_agent"
+    assert lead_agent_for_hints(out, _Registry(_DEFS)) == "commerce_agent"
 
 
 def test_grain_keeps_supporting_hint():
@@ -156,7 +156,7 @@ def test_product_grain_prefers_product_title_metrics():
     assert dims == ["product_title"]
 
 
-def test_unsupported_grain_clears_hints():
+def test_unsupported_grain_keeps_assigned_identity():
     hints = ["metric.net_sales"]
     cache = [
         {"id": "commerce_net_revenue_daily", "supported_dimensions": ["order_date"]},
@@ -169,7 +169,7 @@ def test_unsupported_grain_clears_hints():
         metrics=_Registry(defs),
         bootstrap=_bootstrap(cache),
     )
-    assert out == []
+    assert out == ["metric.net_sales"]
     assert dims == ["channel"]
 
 
@@ -279,9 +279,8 @@ async def test_apply_catalogue_grain_rejects_uncorroborated_live_suggestion():
 
 @pytest.mark.asyncio
 async def test_ambiguous_product_question_uses_live_dim_supported_by_units_sold():
-    """'How are products doing' is not a keyword hit. Catalogue returns
-    product_id (ambiguous); units_sold can slice it so we keep that grain
-    and drop P&L net_profit which cannot.
+    """'How are products doing' has no breakdown language. Entity lists are
+    not grain — do not slice, and do not drop the P&L metric.
     """
 
     class _Mcp:
@@ -317,6 +316,45 @@ async def test_ambiguous_product_question_uses_live_dim_supported_by_units_sold(
         runtime=runtime,
         entities=["product"],
     )
+    assert dims == []
+    assert out == ["metric.units_sold", "metric.net_profit"]
+
+
+@pytest.mark.asyncio
+async def test_product_wise_question_filters_to_slicable_metric():
+    class _Mcp:
+        capabilities = {"seleric.catalogue_resolve_dimension"}
+
+        async def call(self, **kwargs):
+            return {
+                "kind": "ambiguous",
+                "candidates": [
+                    {"dimension_id": "product_id", "confidence": 0.6},
+                    {"dimension_id": "item_count", "confidence": 0.4},
+                ],
+            }
+
+    defs = [
+        *_DEFS,
+        _def("metric.net_profit", "net_profit_all_channels", "finance"),
+    ]
+    cache = [
+        *_CACHE,
+        {"id": "units_sold", "supported_dimensions": ["product_title", "sku", "product_id"]},
+        {"id": "net_profit_all_channels", "supported_dimensions": ["brand_id", "report_date"]},
+        {"id": "item_count_measure", "supported_dimensions": ["item_count"]},
+    ]
+    runtime = SimpleNamespace(
+        bootstrap=_bootstrap(cache),
+        metrics=_Registry(defs),
+        mcp=_Mcp(),
+    )
+    out, dims = await apply_catalogue_grain(
+        "How are products doing product-wise?",
+        ["metric.units_sold", "metric.net_profit"],
+        runtime=runtime,
+        entities=["product"],
+    )
     assert dims == ["product_id"]
     assert out == ["metric.units_sold"]
 
@@ -345,7 +383,7 @@ async def test_ambiguous_sku_vs_seller_sku_keeps_hinted_metric_dim():
         mcp=_Mcp(),
     )
     out, dims = await apply_catalogue_grain(
-        "What moved?",
+        "What moved by SKU?",
         ["metric.units_sold"],
         runtime=runtime,
         entities=["sku"],
@@ -362,6 +400,9 @@ def test_evidence_covers_grain():
     assert evidence_covers_grain(
         [{"dimensions": {"lt_channel": "meta"}}], ["lt_channel"]
     ) is True
+    # Claim gate must use Observer-requested dims. Leftover state grain on an
+    # aggregate retrieve is not a coverage failure.
+    assert evidence_covers_grain([{"dimensions": {}}], []) is True
 
 
 def test_alias_index_matches_marketplace_to_channel():
@@ -374,7 +415,7 @@ def test_alias_index_matches_marketplace_to_channel():
         bootstrap=bs,
     )
     assert dims == ["channel"]
-    assert out == ["metric.sessions"]
+    assert out == ["metric.net_sales"]
 
 
 def test_grain_defaults_metric_in_registry_wins():
@@ -389,7 +430,7 @@ def test_grain_defaults_metric_in_registry_wins():
         bootstrap=bs,
     )
     assert dims == ["channel"]
-    assert out == ["metric.channel_orders"]
+    assert out == ["metric.net_sales"]
 
 
 @pytest.mark.asyncio
@@ -509,6 +550,50 @@ async def test_hints_from_catalogue_ignores_unresolved_term():
     assert hints == []
 
 
+@pytest.mark.asyncio
+async def test_hints_from_catalogue_collapses_cadence_siblings():
+    from seleric_swarm.coordinator.catalogue_grounding import hints_from_catalogue
+
+    class _Mcp:
+        capabilities = {"seleric.catalogue_search_metrics", "seleric.catalogue_resolve_term"}
+
+        async def call(self, *, agent_id, capability, arguments):
+            del agent_id, arguments
+            if capability == "seleric.catalogue_resolve_term":
+                return {"kind": "unknown", "suggestions": []}
+            return {
+                "matches": [
+                    {"id": "meta_ctr", "display_name": "Meta CTR"},
+                    {"id": "meta_ctr_hourly", "display_name": "Meta CTR hourly"},
+                ]
+            }
+
+    defs = [
+        _def("meta_ctr", "meta_ctr", "performance"),
+        _def("meta_ctr_hourly", "meta_ctr_hourly", "performance"),
+    ]
+    runtime = SimpleNamespace(
+        mcp=_Mcp(),
+        metrics=_Registry(defs),
+        bootstrap=_bootstrap(
+            [
+                {
+                    "id": "meta_ctr",
+                    "view": "meta_ad_performance",
+                    "raw": {"grain": "daily"},
+                },
+                {
+                    "id": "meta_ctr_hourly",
+                    "view": "meta_ad_performance_hourly",
+                    "raw": {"grain": "hourly"},
+                },
+            ]
+        ),
+    )
+    hints = await hints_from_catalogue("What is the meta CTR last 7 days?", runtime=runtime)
+    assert hints == ["meta_ctr"]
+
+
 def test_live_catalogue_is_the_metric_repository():
     from seleric_swarm.services.metrics import MetricRegistry, lead_agent_for_hints
 
@@ -550,5 +635,162 @@ def test_live_catalogue_is_the_metric_repository():
         resolved_grain=["channel"],
     )
     assert dims == ["channel"]
-    assert out == ["channel_orders"]
-    assert lead_agent_for_hints(out, registry) == "attribution_agent"
+    assert out == ["metric.net_sales"]
+    assert lead_agent_for_hints(out, registry) == "commerce_agent"
+
+
+def test_collapse_assigned_metrics_drops_hourly_sibling():
+    from seleric_swarm.coordinator.catalogue_grounding import collapse_assigned_metrics
+
+    class _Metrics:
+        def canonical_id(self, metric_id: str) -> str:
+            return {"metric.ctr": "meta_ctr"}.get(metric_id, metric_id)
+
+    bs = _bootstrap(
+        [
+            {
+                "id": "meta_ctr",
+                "view": "meta_ad_performance",
+                "raw": {"grain": "daily ad grain"},
+            },
+            {
+                "id": "meta_ctr_hourly",
+                "view": "meta_ad_performance_hourly",
+                "raw": {"grain": "hourly ad grain"},
+            },
+        ]
+    )
+    collapsed = collapse_assigned_metrics(
+        ["metric.ctr", "meta_ctr", "meta_ctr_hourly"],
+        _Metrics(),
+        "What is the meta CTR last 7 days?",
+        bootstrap=bs,
+    )
+    assert collapsed == ["meta_ctr"]
+
+
+def test_collapse_assigned_metrics_picks_intraday_when_asked():
+    from seleric_swarm.coordinator.catalogue_grounding import collapse_assigned_metrics
+
+    class _Metrics:
+        def canonical_id(self, metric_id: str) -> str:
+            return metric_id
+
+    bs = _bootstrap(
+        [
+            {
+                "id": "meta_ctr",
+                "view": "meta_ad_performance",
+                "raw": {"grain": "daily"},
+            },
+            {
+                "id": "meta_ctr_hourly",
+                "view": "meta_ad_performance_hourly",
+                "raw": {"grain": "hourly"},
+            },
+        ]
+    )
+    assert collapse_assigned_metrics(
+        ["meta_ctr", "meta_ctr_hourly"],
+        _Metrics(),
+        "hourly meta CTR",
+        bootstrap=bs,
+    ) == ["meta_ctr_hourly"]
+
+
+def test_collapse_assigned_metrics_keeps_conjunction_across_concepts():
+    from seleric_swarm.coordinator.catalogue_grounding import collapse_assigned_metrics
+
+    class _Metrics:
+        def canonical_id(self, metric_id: str) -> str:
+            return metric_id
+
+        def get(self, metric_id: str):
+            return SimpleNamespace(catalogue_metric=metric_id, id=metric_id)
+
+    bs = _bootstrap(
+        [
+            {"id": "gross_sales", "view": "commerce_daily", "raw": {"grain": "daily"}},
+            {
+                "id": "gross_sales_hourly",
+                "view": "commerce_hourly",
+                "raw": {"grain": "hourly"},
+            },
+            {
+                "id": "commerce_net_revenue_daily",
+                "view": "commerce_daily",
+                "raw": {"grain": "daily"},
+            },
+            {
+                "id": "commerce_net_revenue_hourly",
+                "view": "commerce_hourly",
+                "raw": {"grain": "hourly"},
+            },
+        ]
+    )
+    assert collapse_assigned_metrics(
+        [
+            "gross_sales",
+            "gross_sales_hourly",
+            "commerce_net_revenue_daily",
+            "commerce_net_revenue_hourly",
+        ],
+        _Metrics(),
+        "What is gross sale and net sale for today",
+        bootstrap=bs,
+    ) == ["gross_sales", "commerce_net_revenue_daily"]
+
+
+@pytest.mark.asyncio
+async def test_apply_catalogue_grain_skips_campaign_objective_on_aggregate_ctr():
+    class _Mcp:
+        capabilities = {"seleric.catalogue_resolve_dimension"}
+
+        async def call(self, **kwargs):
+            return {"kind": "resolved", "dimension_id": "campaign_objective"}
+
+    defs = [
+        *_DEFS,
+        _def("meta_ctr", "meta_ctr", "performance"),
+        _def("meta_ctr_hourly", "meta_ctr_hourly", "performance"),
+    ]
+    cache = [
+        *_CACHE,
+        {"id": "meta_ctr", "supported_dimensions": ["date"]},
+        {
+            "id": "meta_ctr_hourly",
+            "supported_dimensions": ["date", "campaign_objective"],
+        },
+    ]
+    runtime = SimpleNamespace(
+        bootstrap=_bootstrap(cache),
+        metrics=_Registry(defs),
+        mcp=_Mcp(),
+    )
+    out, dims = await apply_catalogue_grain(
+        "What is the meta CTR last 7 days?",
+        ["metric.ctr", "meta_ctr", "meta_ctr_hourly"],
+        runtime=runtime,
+        entities=["campaign_objective"],
+    )
+    assert dims == []
+    assert out == ["metric.ctr", "meta_ctr", "meta_ctr_hourly"]
+
+
+def test_hourly_live_metric_inherits_yaml_ctr_unit():
+    from seleric_swarm.services.metrics import MetricRegistry
+
+    bs = _bootstrap(
+        [
+            {
+                "id": "meta_ctr_hourly",
+                "supported_dimensions": ["campaign_objective"],
+                "category": "paid_media",
+            }
+        ]
+    )
+    registry = MetricRegistry("config/metric_registry.yaml")
+    registry.bind_catalogue(bs)
+    hourly = registry.get("meta_ctr_hourly")
+    assert hourly is not None
+    assert hourly.unit == "ratio"

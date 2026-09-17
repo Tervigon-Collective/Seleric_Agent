@@ -104,6 +104,27 @@ def candidate_domains(
     return ordered
 
 
+def _supported_dimensions_for(metric_id: str, metrics: MetricRegistry) -> set[str]:
+    """Catalogue dims this id can slice. Empty means unknown — grain is dropped."""
+    out: set[str] = set()
+    seen: set[str] = set()
+    pending = [metric_id]
+    while pending:
+        mid = pending.pop()
+        if not mid or mid in seen:
+            continue
+        seen.add(mid)
+        defn = metrics.get(mid)
+        if defn is None:
+            continue
+        raw = getattr(defn, "raw", None) or {}
+        out.update(str(d) for d in (raw.get("supported_dimensions") or []) if d)
+        cat = getattr(defn, "catalogue_metric", None)
+        if cat and cat not in seen:
+            pending.append(str(cat))
+    return out
+
+
 def partition_domain_questions(
     *,
     original_query: str,
@@ -141,10 +162,8 @@ def partition_domain_questions(
         mids = grouped[domain]
         supported: set[str] = set()
         for mid in mids:
-            defn = metrics.get(mid)
-            raw = getattr(defn, "raw", None) or {} if defn is not None else {}
-            supported.update(str(d) for d in (raw.get("supported_dimensions") or []) if d)
-        domain_grain = [g for g in grain_list if not supported or g in supported]
+            supported.update(_supported_dimensions_for(mid, metrics))
+        domain_grain = [g for g in grain_list if g in supported]
         metric_bit = ", ".join(mids)
         if domain_grain:
             question = (

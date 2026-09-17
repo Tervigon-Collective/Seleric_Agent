@@ -160,6 +160,8 @@ class DataProvider(Protocol):
         metric_ids: list[str],
         time_range: dict[str, Any],
         dimensions: dict[str, Any] | None = None,
+        limit: int | None = None,
+        sort: list[dict[str, Any]] | None = None,
     ) -> DataResult: ...
 
     async def events(self, *, time_range: dict[str, Any]) -> list[DomainEvent]: ...

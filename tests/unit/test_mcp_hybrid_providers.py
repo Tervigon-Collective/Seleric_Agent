@@ -55,6 +55,24 @@ async def test_fetch_series_below_min_rows_returns_none(runtime):
     assert frame is None
 
 
+def _series_rows(measure: str, start: str, end: str) -> list[dict]:
+    from datetime import date, timedelta
+
+    s = date.fromisoformat(start[:10])
+    e = date.fromisoformat(end[:10])
+    rows = []
+    day = s
+    while day <= e:
+        rows.append(
+            {
+                "view.report_date.day": f"{day.isoformat()}T00:00:00.000",
+                measure: float(day.isoformat()[-2:]),
+            }
+        )
+        day += timedelta(days=1)
+    return rows
+
+
 @pytest.mark.asyncio
 async def test_fetch_series_returns_dataframe_when_enough_days(runtime):
     bundle, _stats = build_hybrid_bundle(
@@ -66,8 +84,10 @@ async def test_fetch_series_returns_dataframe_when_enough_days(runtime):
         if capability == "seleric.catalogue_get_metric":
             return {"id": arguments.get("metric_id", ""), "display_name": "test"}
         measure = arguments["measures"][0]
-        day = arguments["time_range"]["start"]
-        return {"rows": [{measure: float(day[-2:])}]}  # deterministic per-day value
+        assert arguments.get("granularity") == "day"
+        start = arguments["time_range"]["start"]
+        end = arguments["time_range"]["end"]
+        return {"rows": _series_rows(measure, start, end)}
 
     provider._mcp.call = fake_call
     frame = await provider.fetch_series(
@@ -90,7 +110,9 @@ async def test_fetch_series_returns_single_metric_frame(runtime):
         if capability == "seleric.catalogue_get_metric":
             return {"id": arguments.get("metric_id", ""), "display_name": "test"}
         measure = arguments["measures"][0]
-        return {"rows": [{measure: 1.0}]}
+        start = arguments["time_range"]["start"]
+        end = arguments["time_range"]["end"]
+        return {"rows": _series_rows(measure, start, end)}
 
     provider._mcp.call = fake_call
     frame = await provider.fetch_series(
@@ -103,24 +125,28 @@ async def test_fetch_series_returns_single_metric_frame(runtime):
 
 
 @pytest.mark.asyncio
-async def test_fetch_series_runs_day_queries_concurrently(runtime):
+async def test_fetch_series_one_query_per_metric(runtime):
     bundle, _stats = build_hybrid_bundle(
         mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
     )
     provider = bundle.data_for("performance")
     in_flight = 0
     max_in_flight = 0
+    query_count = 0
 
     async def fake_call(*, agent_id, capability, arguments):
-        nonlocal in_flight, max_in_flight
+        nonlocal in_flight, max_in_flight, query_count
         if capability == "seleric.catalogue_get_metric":
             return {"id": arguments.get("metric_id", ""), "display_name": "test"}
+        query_count += 1
         in_flight += 1
         max_in_flight = max(max_in_flight, in_flight)
         await asyncio.sleep(0.02)
         in_flight -= 1
         measure = arguments["measures"][0]
-        return {"rows": [{measure: 1.0}]}
+        start = arguments["time_range"]["start"]
+        end = arguments["time_range"]["end"]
+        return {"rows": _series_rows(measure, start, end)}
 
     provider._mcp.call = fake_call
     frame = await provider.fetch_series(
@@ -128,7 +154,42 @@ async def test_fetch_series_runs_day_queries_concurrently(runtime):
         time_range={"start": "2026-09-01", "end": "2026-09-08"},
     )
     assert frame is not None
+    assert query_count == 2
     assert max_in_flight > 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_passes_dimensions_to_mcp(runtime):
+    bundle, _stats = build_hybrid_bundle(
+        mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
+    )
+    provider = bundle.data_for("performance")
+    seen: list[dict] = []
+
+    async def fake_call(*, agent_id, capability, arguments):
+        if capability == "seleric.catalogue_get_metric":
+            return {"id": arguments.get("metric_id", ""), "display_name": "test"}
+        seen.append(arguments)
+        measure = arguments["measures"][0]
+        return {
+            "rows": [
+                {measure: 10.0, "campaign": "A"},
+                {measure: 7.0, "campaign": "B"},
+            ]
+        }
+
+    provider._mcp.call = fake_call
+    result = await provider.fetch(
+        metric_ids=["metric.cac"],
+        time_range={"start": "2026-09-01", "end": "2026-09-01"},
+        dimensions={"campaign": ""},
+        limit=2,
+    )
+    assert seen
+    assert seen[0]["dimensions"] == ["campaign"]
+    assert seen[0]["limit"] == 2
+    assert [r.value for r in result.readings] == [10.0, 7.0]
+    assert result.readings[0].dimensions == {"campaign": "A"}
 
 
 @pytest.mark.asyncio

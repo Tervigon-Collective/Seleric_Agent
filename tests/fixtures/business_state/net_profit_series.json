@@ -1,0 +1,22 @@
+{
+  "metric_id": "metric.net_profit",
+  "catalogue_metric_id": "net_profit_all_channels",
+  "profile_id": "default_v1",
+  "as_of": "2026-09-07",
+  "notes": "Sprint 2 pilot-set broadening (finance domain, per 05_SPRINT_PLAN.md Sprint 2). Real values pulled live from seleric-mcp for brand_id=20, 2026-09-01..07 -- not hand-constructed like the other two fixtures, so expected_features were computed by script (statistics.mean/pstdev), not by hand. Deeply negative here (test/demo tenant data), which is itself a useful case: features must work on negative series without special-casing sign.",
+  "series": [
+    { "ts": "2026-09-01", "value": -197771.07217667793 },
+    { "ts": "2026-09-02", "value": -48801.80057716948 },
+    { "ts": "2026-09-03", "value": -36002.88769099994 },
+    { "ts": "2026-09-04", "value": -27028.934078999962 },
+    { "ts": "2026-09-05", "value": -157189.93342622035 },
+    { "ts": "2026-09-06", "value": -13226.508154999967 },
+    { "ts": "2026-09-07", "value": -24913.712280000007 }
+  ],
+  "expected_features": {
+    "current_value": -24913.712280000007,
+    "period_delta_pct": 88.3619772357073,
+    "rolling_mean_7d": -72133.54976929538,
+    "rolling_std_7d": 68246.76827604874
+  }
+}

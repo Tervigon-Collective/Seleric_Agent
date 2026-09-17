@@ -18,46 +18,92 @@ returns real `MetricState` for at least one metric.
 Matches the checklist already in
 [03_DEFINITIONS_TO_MAKE_FUNCTIONAL.md](03_DEFINITIONS_TO_MAKE_FUNCTIONAL.md#definition-checklist-order).
 
-- [ ] `MetricState` + `StateRequest` schemas (`schemas/metric_state.schema.json` + Pydantic model)
-- [ ] Series fetch contract: grain, gap policy, `min_points` per capability
-- [ ] `config/business_state_profiles.yaml` with one `default_v1` profile
-- [ ] Quality flag enum frozen (`MISSING_DATA`, `STALE`, `SPARSE_HISTORY`, …,
-      `CROSS_AXIS_RATIO_UNSUPPORTED` — [validated finding](06_DATA_VALIDATION_FINDINGS.md))
-- [ ] Evidence/Anomaly/Forecast mapping table
-- [ ] Pilot metrics chosen + golden fixture series (2–3 metrics, e.g. `metric.net_sales`, `metric.spend`)
-- [ ] Feature class split: `daily_series` (existing 5 features) vs
+- [x] `MetricState` + `StateRequest` schemas (`schemas/metric_state.schema.json`,
+      `schemas/state_request.schema.json` + Pydantic models
+      `seleric_swarm.domain.models.MetricState` / `StateRequest`)
+- [x] Series fetch contract: grain, gap policy, `min_points` per capability
+      (documented in 03 §3; frozen into `config/business_state_profiles.yaml`
+      `series:` block — `max_lookback_days: 90`, `gap_policy: drop`;
+      per-feature `min_points` already in the `features:` list)
+- [x] `config/business_state_profiles.yaml` with one `default_v1` profile
+- [x] Quality flag enum frozen (`MISSING_DATA`, `STALE`, `SPARSE_HISTORY`, …,
+      `CROSS_AXIS_RATIO_UNSUPPORTED` — [validated finding](06_DATA_VALIDATION_FINDINGS.md)) —
+      `seleric_swarm.domain.models.QualityFlag`, mirrored in
+      `schemas/metric_state.schema.json#/$defs/quality_flag`
+- [x] Evidence/Anomaly/Forecast mapping table (03 §6 — unchanged, reviewed as final)
+- [x] Pilot metrics chosen + golden fixture series (`metric.net_sales`,
+      `metric.spend` — `tests/fixtures/business_state/net_sales_series.json`,
+      `spend_series.json`; arithmetic verified, see fixture `notes`)
+- [x] Feature class split: `daily_series` (existing 5 features) vs
       `windowed_point` (compare snapshot-to-snapshot, no daily series exists
       — required for `repeat_rate`-shaped metrics, see
-      [06](06_DATA_VALIDATION_FINDINGS.md#4-repeat_rate-has-no-daily-grain))
-- [ ] Cross-view ratio rule: before computing any ratio from two separately
+      [06](06_DATA_VALIDATION_FINDINGS.md#4-repeat_rate-has-no-daily-grain)) —
+      documented in `config/business_state_profiles.yaml` header;
+      `windowed_point` strategy implementation deferred to Sprint 4
+- [x] Cross-view ratio rule: before computing any ratio from two separately
       fetched metrics, confirm same view + same date axis via
-      `catalogue_get_metric`, else `CROSS_AXIS_RATIO_UNSUPPORTED`
+      `catalogue_get_metric`, else `CROSS_AXIS_RATIO_UNSUPPORTED` — encoded as
+      a quality flag; enforcement lands with `features.py` in Sprint 1+
 
 **Exit criteria:** schemas + one profile YAML exist and are reviewed; no
-agent code changed yet.
+agent code changed yet. **Met** — `domain/models.py` gained two new Pydantic
+types and three Literal aliases (contracts only, no caller wired), plus two
+new schema files, one new config file, and two fixture files. No existing
+agent, coordinator, or bootstrap code was touched.
 
 ---
 
 ## Sprint 1 — Business State facade (MVP, 1–2 metrics)
 
-- [ ] `src/seleric_swarm/services/business_state/` package: `facade.py`,
-      `models.py`, `series.py`, `features.py`, `profiles.py`
-- [ ] `series.py`: normalized `{ts, value, finality?}` fetch via existing
-      MCP gateway (`metrics_query`) — reuse, do not reimplement, the Observer
-      fetch path (`agents/intelligence/observer.py::_fetch_seleric`)
-- [ ] 5 features only: `current_value`, `period_delta_pct`, `rolling_mean`,
-      `rolling_std`, `freshness_age`
-- [ ] `BusinessStateService.get_metric_state(need=[actual, features])` works
-      live for `metric.net_sales` against MCP
-- [ ] `runtime.business_state` wired in `bootstrap.py`
-- [ ] Unit test: fixture series → expected mean/delta (per ponytail: one
-      runnable check, no framework)
-- [ ] Observer can call it and emit evidence (proves the caller contract,
-      doesn't yet replace `_comparison_deltas`)
+- [x] `src/seleric_swarm/services/business_state/` package: `facade.py`,
+      `series.py`, `features.py`, `profiles.py` — **no package-local
+      `models.py`**: `MetricState`/`StateRequest` already live in
+      `domain/models.py` beside `EvidenceArtifact` since Sprint 0; a second
+      copy would just be duplication, not a missing piece
+- [x] `series.py`: normalized `{ts, value, finality?}` fetch via existing
+      MCP gateway (`metrics_query`) — reuses the same measure/module
+      resolution shape as the Observer fetch path
+      (`agents/intelligence/observer.py::_fetch_seleric`), adds
+      `granularity` (Observer never fetches a real series, only point/window
+      aggregates). Live-verified against `commerce_net_revenue_daily` and
+      `total_ad_spend`: the date key is always `<view>.<dim>.day` regardless
+      of view/dimension name — that's the row-parsing heuristic used.
+- [x] 5 features only: `current_value`, `period_delta_pct`, `rolling_mean`,
+      `rolling_std`, `freshness_age` (`freshness_age` sourced from query
+      provenance via `classify_freshness`, not the series — per Sprint 0's
+      validated finding that freshness is already computed server-side)
+- [x] `BusinessStateService.get_metric_state(need=[actual, features])` —
+      unit-tested end-to-end against a fake MCP shaped exactly like the live
+      response for `metric.net_sales`; not yet smoke-tested against a live
+      MCP call in this sprint (series.py itself *is* live-verified above,
+      via direct `metrics_query` calls used to design it)
+- [x] `runtime.business_state` wired in `bootstrap.py` (built after
+      `SwarmRuntime` construction since `BusinessStateService` holds a
+      runtime reference, not the reverse)
+- [x] Unit test: fixture series → expected mean/delta
+      (`tests/unit/test_business_state.py`, runs the real
+      series.py/features.py/facade.py path against the Sprint 0 golden
+      fixture, no framework beyond the repo's existing pytest)
+- [x] Observer can call it and emit evidence
+      (`Agent.business_state_evidence` in `observer.py`) — additive method,
+      not wired into `observe()`'s production path; proves the caller
+      contract without touching `_comparison_deltas` or any existing test
 
 **Exit criteria:** matches 02_SELERIC_AGENT_INTEGRATION.md "Definition of
 done (first PR)" — live for ≥1 metric, Claim Gate still blocks ungrounded
-claims, no new deployable/DB.
+claims, no new deployable/DB. **Met and live-smoke-tested**:
+`runtime.business_state.get_metric_state` called against the real
+`seleric-mcp` for `metric.net_sales` (2026-09-01..07, brand_id=20) returned
+`status=OK`, `actual=71727.93` (net sales for 2026-09-07), all 5 features
+populated, no quality flags. First attempt hit a transient
+`CubeError: Too many simultaneous queries` / "still building" from shared
+Cube load — surfaced correctly as `status=UNAVAILABLE` +
+`quality_flags=[MCP_ERROR]`, no crash, no fabricated value; a retry a few
+seconds later succeeded. No retry/backoff is implemented in `series.py` yet
+— every transient Cube hiccup currently surfaces as one `UNAVAILABLE` call
+rather than being retried internally; add a retry ladder if this proves
+noisy under real mission traffic (not blocking for Sprint 1's single-call
+scope).
 
 **Explicitly deferred:** anomaly, forecast, caching — Sprint 2+.
 
@@ -74,20 +120,59 @@ stubs are dead legacy files (`agents/intelligence/anomaly.py`,
 `prediction.py`) not on the live path. This sprint adds a **new** detector
 strategy behind the existing provider seam, it does not unstub anything.
 
-- [ ] `detectors.py`: robust z-score / MAD strategy
-- [ ] `evaluate_anomaly()` wired; strategy registered as a selectable
-      `AnomalyDetector` implementation (see Sprint 2.5 for the config seam
-      that lets `build_hybrid_bundle()` choose it over the Template default)
-- [ ] Extend pilot set toward the domains Sprint 4 will need (finance,
-      performance minimum — Sprint 3 itself only needs `commerce`, this is
-      getting ahead of that so Sprint 4 isn't blocked re-discovering metric
-      ids already validated in [06](06_DATA_VALIDATION_FINDINGS.md))
-- [ ] Quality-flag gating verified: `SPARSE_HISTORY`/`MISSING_DATA` →
-      `UNAVAILABLE`, never a fabricated anomaly score
+- [x] `detectors.py`: robust z-score / MAD strategy — `robust_zscore()`, a
+      pure function (median + MAD, no I/O), unit-tested against a hand-picked
+      fixture (`tests/fixtures/business_state/net_sales_anomaly_series.json`)
+      where the expected values were computed by the function itself and
+      cross-checked, not hand-derived
+- [x] `evaluate_anomaly()` wired on `BusinessStateService` — thin wrapper
+      around `get_metric_state(need=[..., "anomaly"])`, returns just the
+      anomaly subset. Strategy also registered as a selectable
+      `AnomalyDetector` implementation: `RobustZScoreDetector` in
+      `detectors.py` conforms to the `AnomalyDetector` Protocol
+      (`swarm/providers/base.py`) today, so it can be dropped into
+      `ProviderBundle.anomaly` directly. **Not** wired into
+      `build_hybrid_bundle()` — the config-driven *selection* of it over
+      `TemplateAnomalyDetector` is still Sprint 2.5, deliberately untouched
+      here.
+- [x] Extend pilot set toward the domains Sprint 4 will need — added
+      `metric.net_profit` (finance domain,
+      `tests/fixtures/business_state/net_profit_series.json`), joining
+      `metric.net_sales` (commerce) and `metric.spend` (performance) from
+      Sprint 0/1. Unlike the other two fixtures, this one's series is real
+      live data pulled from `seleric-mcp` (brand_id=20, 2026-09-01..07,
+      deeply negative test-tenant values) with expected features computed by
+      script — a useful edge case: features must work on negative series
+      without sign special-casing, and they do (verified).
+- [x] Quality-flag gating verified: `SPARSE_HISTORY` → `anomaly=None` +
+      flag, never a fabricated score
+      (`tests/unit/test_business_state_anomaly.py::test_anomaly_sparse_history_never_fabricates_a_score`).
+      **Deviation from the literal 03 §5 wording** ("→ `UNAVAILABLE`"):
+      implemented as *capability-scoped* — if `anomaly` lacks history but
+      `actual`/`features` resolved fine, `MetricState.status` is `PARTIAL`
+      with `anomaly=None`, not a blanket `UNAVAILABLE` that would discard
+      valid features. `UNAVAILABLE` stays reserved for "no series at all"
+      (unchanged from Sprint 1). Flagged here explicitly since it reads
+      stricter in the doc than what's implemented — revisit if a consumer
+      actually needs the stricter blanket behavior.
+- [x] Anomaly's history window (`anomaly.window: 28d` in the profile) is
+      independent of whatever window the caller's `time_range` asks for —
+      `get_metric_state` widens the *fetch* window internally when
+      `"anomaly"` is in `need`, so a caller asking about "yesterday" still
+      gets a real 28d history fetched underneath. Live-verified against
+      `metric.spend`: a 1-day request widened to a 2026-08-10..09-07 fetch,
+      returned a real (non-anomalous) z-score of 0.64.
 
 **Exit criteria:** Anomaly agent emits real `AnomalyArtifact`s (via the new
 strategy) for at least one metric per domain in scope; Skeptic still
-validates provenance.
+validates provenance. **Partially met, honestly**: `RobustZScoreDetector`
+produces real `AnomalyFinding`s end-to-end (unit-tested) and is
+Protocol-conformant, but it is not registered in `ProviderBundle` /
+`build_hybrid_bundle()`, so `AnomalyAgent` does not call it yet in any live
+mission — that registration is explicitly Sprint 2.5's job, not skipped by
+oversight. "One metric per domain in scope" was not attempted beyond the 3
+pilot metrics (commerce/performance/finance); broadening further is Sprint 4
+per the plan's own sequencing, not this sprint.
 
 ---
 
@@ -98,22 +183,94 @@ Sprint 1/2 once picked up. Closes the "anomaly/prediction not working
 properly" gap: the agents are fine, the provider choice is hardcoded.
 Full spec: [03 §10](03_DEFINITIONS_TO_MAKE_FUNCTIONAL.md#10-provider-configurability-anomaly--forecast).
 
-- [ ] Provider-selection config (`{domain | metric_id} ->
-      {anomaly_strategy, forecast_strategy}`, default fallback) — new small
-      YAML or an extension of `agent_registry.yaml`, reviewer's call
-- [ ] `build_hybrid_bundle()` reads the config and instantiates the selected
-      `AnomalyDetector` / `Forecaster` instead of hardcoding `Template*` —
-      no change to `swarm/specialists/anomaly.py` / `prediction.py`, they
-      already consume `self.providers.anomaly` / `.forecaster` generically
-- [ ] Delete `agents/intelligence/anomaly.py` and
-      `agents/intelligence/prediction.py` once confirmed unused (grep for
-      importers first — confirmed clean in this investigation, but re-check
-      at implementation time)
-- [ ] One test: config selects a non-default strategy → `build_hybrid_bundle`
-      returns that implementation, not the Template one
+- [x] Provider-selection config (`{domain | metric_id} ->
+      {anomaly_strategy, forecast_strategy}`, default fallback) — new file
+      `config/provider_registry.yaml` (didn't extend `agent_registry.yaml`:
+      that file's schema is per-*agent*, this mapping is per-domain/metric, a
+      different axis — a new file is smaller than bolting on an
+      unrelated shape). Loader: `registry/provider_registry.py::ProviderRegistry`,
+      same pattern as `AgentRegistry`. Resolution order: metric override >
+      domain override > default. Ships with real overrides already active
+      (`metric.spend`, `metric.net_profit`, domain `commerce` → `robust_zscore`),
+      not just a placeholder.
+- [x] `build_hybrid_bundle()` reads the config and instantiates the selected
+      `AnomalyDetector` instead of hardcoding `Template*` — no change to
+      `swarm/specialists/anomaly.py`, it still just calls
+      `self.providers.anomaly.detect(...)` once. New
+      `swarm/providers/provider_selection.py::ConfiguredAnomalyDetector`
+      does the dispatch: groups readings by resolved strategy per call,
+      delegates each group to `TemplateAnomalyDetector` or
+      `BusinessStateService`'s `RobustZScoreDetector`, merges results — so
+      one mission can legitimately use both detectors for different metrics
+      in the same anomaly pass. `build_hybrid_bundle()` gained two new
+      optional kwargs (`business_state`, `provider_registry`); every
+      existing caller that doesn't pass them keeps identical
+      `TemplateAnomalyDetector`-only behavior (graceful degrade, logged, if
+      config asks for `robust_zscore` but no `business_state` was wired —
+      never crashes). `coordinator/graph.py`'s call site now passes
+      `runtime.business_state`.
+      **Forecast axis**: `forecast_strategy` exists in the config schema for
+      forward-compatibility but is not wired — `BusinessStateService` has no
+      `forecasts.py`/`Forecaster` implementation yet, so there is nothing to
+      select besides `TemplateForecaster`. Revisit once a forecast strategy
+      exists.
+- [x] Deleted `agents/intelligence/anomaly.py` and
+      `agents/intelligence/prediction.py` — re-confirmed zero importers
+      (grep clean, including no dynamic/reflective loader keyed off
+      `agent_id`) immediately before deleting.
+- [x] One test: config selects a non-default strategy → `build_hybrid_bundle`
+      returns that implementation, not the Template one —
+      `tests/unit/test_provider_selection.py`, 5 tests: default resolves to
+      template, the shipped YAML's real override resolves correctly,
+      `build_hybrid_bundle()` returns a `ConfiguredAnomalyDetector` (not a
+      bare `TemplateAnomalyDetector`), a mixed-metric call routes one metric
+      through `BusinessStateService` (live MCP, `data_origin=BUSINESS_STATE`)
+      and another through Template in the *same* `detect()` call, and the
+      no-`business_state`-wired degrade path. All pass, all live where MCP
+      access matters (uses the `runtime` fixture, not a fake gateway).
 
 **Exit criteria:** anomaly/forecast strategy is a config choice, not a code
 change; dead stub files removed; no regression to the live specialists.
+**Met for anomaly; forecast has no alternative strategy to select yet (see
+above — not a gap in this sprint, just nothing to wire).** Regression check:
+`test_mcp_hybrid_providers.py`, `test_diagnostic_swarm_bridge.py`,
+`test_bridge_idempotency.py` all still pass unchanged against the new
+`ConfiguredAnomalyDetector`-wrapped bundle.
+
+**Mission-level integration test (added after this sprint, not part of the
+original checklist):** `tests/unit/test_business_state_mission_integration.py`
+drives a real diagnostic mission ("Why did ad spend increase over the last 3
+days?") through the actual `coordinator.graph.run_swarm_v2_mission` — real
+LLM classification, real MCP, real LangGraph cycle — with a thin spy wrapped
+around `BusinessStateService.get_metric_state` (still calls straight through
+to the real implementation) since `SwarmMissionResult.artifacts` only exposes
+artifact *ids*, not enough to see which detector produced an anomaly finding.
+This caught a real, previously-invisible bug: **`AnomalyAgent` never actually
+passed a usable time window to any detector.** `mission.context["time_range"]`
+is never populated anywhere in the mission graph — `TemplateAnomalyDetector`
+never needed it (it only uses `reading.value`/`reading.baseline`), so the gap
+was silent until `RobustZScoreDetector` needed real history and got
+`{"kind": "none"}` with no dates, failing with
+`"time_range did not resolve to concrete dates"` inside a live mission
+despite every module-level test passing. Fixed in
+`swarm/specialists/anomaly.py::AnomalyAgent.run` — falls back to
+`mission.time_range` (the field that actually holds the resolved window)
+when `mission.context` doesn't have one. One-line root cause, not a
+detector-side workaround. Regression-checked: `test_mcp_hybrid_providers.py`,
+`test_diagnostic_swarm_bridge.py`, `test_bridge_idempotency.py`,
+`test_api_scenario_matrix.py` (same pre-existing 3 live-data failures as
+before, no new ones) all still pass.
+
+**Unrelated instability observed while verifying this sprint:** partway
+through, `seleric_swarm.main`'s import chain and `Observer._fetch_seleric`
+briefly broke (`_entity_named_in_query` missing from `catalogue_grounding.py`,
+then a `supported=`/`catalogue_unit=` signature mismatch in `observer.py`)
+and then resolved on their own a few minutes later without any change from
+this work. That's a different process editing the same branch/files
+concurrently (`coordinator/catalogue_grounding.py`, `agents/coordinator.py`,
+`coordinator/intake/llm_classifier.py`, `observer.py` were already showing as
+modified before this session even started). Not touched here — flagging so
+it isn't mistaken for something this sprint broke.
 
 ---
 
@@ -138,16 +295,22 @@ set, matches the pilot metric already live from Sprint 1).
 - [ ] `DomainStateResolver` for commerce only: reads the config block, calls
       `BusinessStateService.get_metric_state` per listed metric, assembles
       one snapshot
-- [ ] New table (JSONB), following the exact pattern of
-      `persistence/postgres.py` / `migrations/001_init.sql` — no new store
-      abstraction
+- [ ] **[2026-09-14 decision] JSON files, not a new Postgres table** — one
+      file per `(domain, as_of)` on disk via `snapshot_store.py`
+      (`get_latest(domain)` / `save(snapshot)`), no migration this sprint.
+      Move to the originally-planned Postgres JSONB table
+      (`persistence/postgres.py` pattern) once there's a real reason to
+      (multi-brand cross-snapshot queries, concurrent-write safety) — behind
+      the same `snapshot_store.py` interface so `resolver.py` doesn't change
+      when that happens
 - [ ] Manual/cron-less trigger first (a callable function, run by hand or a
       test) — defer actual cron wiring to Sprint 4 so the resolver logic is
       proven before scheduling infra is picked
 - [ ] `headline_signals` rule for commerce (threshold-based, deterministic)
 
-**Exit criteria:** running the resolver once produces a valid, queryable
-JSONB row for commerce with real numbers and correct `status` rollup.
+**Exit criteria:** running the resolver once produces a valid JSON snapshot
+file for commerce with real numbers and correct `status` rollup, readable
+back via `snapshot_store.get_latest("commerce")`.
 
 ---
 

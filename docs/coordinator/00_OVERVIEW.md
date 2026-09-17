@@ -11,10 +11,9 @@ It does **not** own business truth. Evidence owns truth. Domain and specialist a
 | Workflow | Role |
 | --- | --- |
 | `lookup_v1` | L0/L1 fast path (LangGraph) |
-| `swarm_v1` | Legacy imperative investigation loop |
-| `swarm_v2` | Coordinator V1 control plane (default) |
+| `swarm_v2` | Coordinator control plane (L2+) |
 
-Set `SWARM_WORKFLOW=swarm_v1|swarm_v2` (settings: `swarm_workflow`).
+Set `SWARM_WORKFLOW=lookup_v1|swarm_v2` (settings: `swarm_workflow`). Dispatch sends L0/L1 to lookup and L2+ to swarm.
 
 ## Package
 

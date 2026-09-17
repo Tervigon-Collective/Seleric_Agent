@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StateRequest",
+  "description": "Input contract for BusinessStateService.get_metric_state. Frozen at Sprint 0 (docs/features/business-state-service/03_DEFINITIONS_TO_MAKE_FUNCTIONAL.md#2-staterequest--input-contract). Mirrors seleric_swarm.domain.models.StateRequest.",
+  "type": "object",
+  "required": ["metric_id", "time_range", "agent_id"],
+  "properties": {
+    "metric_id": { "type": "string" },
+    "catalogue_metric_id": { "type": ["string", "null"] },
+    "time_range": {
+      "type": "object",
+      "description": "TimeRangeV1 (seleric_swarm.contracts.lookup)."
+    },
+    "dimensions": {
+      "type": "object",
+      "description": "brand_id must be passed explicitly (pinned to \"20\" for V0), never relying on the MCP's silent default."
+    },
+    "agent_id": { "type": "string", "description": "MCP allowlist / module pin." },
+    "as_of": { "type": ["string", "null"] },
+    "profile_id": { "type": "string", "default": "default_v1" },
+    "need": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["actual", "features", "anomaly", "forecast"] }
+    }
+  }
+}
