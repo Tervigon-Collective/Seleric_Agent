@@ -78,24 +78,31 @@ class DoWhyCausalEstimationService:
         errored = sum(1 for r in refutations if "error" in r)
         contradicted = sum(1 for r in refutations if not r.get("passed") and "error" not in r)
         passed = len(refutations) >= 2 and contradicted == 0 and (len(refutations) - errored) >= 2
+        limitations = ["Unmeasured confounding cannot be completely excluded."]
+        if est.dropped_collinear_common_causes:
+            limitations.append(
+                "Dropped near-collinear common cause(s) "
+                f"{est.dropped_collinear_common_causes} (>= {'0.98'} correlation with the treatment) "
+                "to keep the regression estimable; residual confounding from these is not adjusted for."
+            )
         return CausalAnalysisArtifact(
             causal_id=_stable_id("CAUS", query.mission_id, query.treatment, query.outcome, str(est.n_rows)),
             mission_id=query.mission_id,
             treatment=query.treatment,
             outcome=query.outcome,
             graph_id=query.graph_id,
-            common_causes=list(query.common_causes),
+            common_causes=list(est.common_causes),
             estimator=est.estimator,
             estimator_parameters={"n_rows": est.n_rows},
             estimated_effect=est.effect,
-            confidence_interval=[],
+            confidence_interval=list(est.confidence_interval),
             sample_size=est.n_rows,
             refutation_results=refutations,
             assumptions=[
                 "backdoor adjustment for the listed common causes",
                 "no unmeasured confounding beyond the adjustment set",
             ],
-            limitations=["Unmeasured confounding cannot be completely excluded."],
+            limitations=limitations,
             treatment_started_at=query.treatment_started_at,
             outcome_started_at=query.outcome_started_at,
             passed=bool(passed),

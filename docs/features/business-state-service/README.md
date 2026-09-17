@@ -1,9 +1,10 @@
 # Business State Service (thin layer for Seleric_Agent)
 
-**Status:** in progress — Sprints 0–4 done and live-verified (contracts,
+**Status:** in progress — Sprints 0–5 done and live-verified (contracts,
 facade MVP, anomaly detector, pluggable provider config, Domain Health
-Snapshots for all 8 buildable domains + a cron-less scheduler entry point).
-Sprint 5 (Coordinator overview answer path) not started. See
+Snapshots for all 8 buildable domains + a cron-less scheduler entry point,
+and the Coordinator overview answer path). Sprint 6 (hardening: caching,
+per-domain profile overrides, multi-brand) is optional and not started. See
 [05_SPRINT_PLAN.md](05_SPRINT_PLAN.md) for what's actually built vs. still
 planned.
 Code lives at `src/seleric_swarm/services/business_state/`.  

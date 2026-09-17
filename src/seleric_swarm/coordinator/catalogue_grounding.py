@@ -136,17 +136,33 @@ def breakdown_from_query(query: str, supported: list[str]) -> list[str]:
 
 
 def _attributed_revenue_hints(query: str, ids: list[str]) -> list[str]:
-    """Drop Shopify net-sales ids from an attributed-revenue ask."""
+    """Keep the revenue concept the query actually named -- Shopify net sales
+    or attribution-model revenue -- not both families at once.
+
+    A hint list carrying both ("net sales" alias-matched plus "attributed_*"
+    catalogue-search noise, or vice versa) later hits ``constrain_hints_to_grain``,
+    which keeps whichever family happens to support the resolved grain -- silently
+    substituting the *other* concept for the one the user actually asked about
+    (e.g. "net sales by channel" resolving to attributed_net_revenue purely
+    because attributed_net_revenue declares more catalogue dimensions).
+    """
     q = (query or "").lower()
-    if "attributed" not in q or "net sale" in q:
-        return list(ids)
-    kept: list[str] = []
-    for item in ids:
-        key = item.replace("-", "_").lower()
-        if "net_sales" in key or "commerce_net_revenue" in key:
-            continue
-        kept.append(item)
-    return kept
+    wants_attributed = "attributed" in q
+    wants_net_sale = "net sale" in q
+    if wants_attributed and not wants_net_sale:
+        return [item for item in ids if not _is_net_sales_id(item)]
+    if wants_net_sale and not wants_attributed:
+        return [item for item in ids if not _is_attributed_revenue_id(item)]
+    return list(ids)
+
+
+def _is_net_sales_id(item: str) -> bool:
+    key = item.replace("-", "_").lower()
+    return "net_sales" in key or "commerce_net_revenue" in key
+
+
+def _is_attributed_revenue_id(item: str) -> bool:
+    return "attributed" in item.replace("-", "_").lower()
 
 
 def _alias_hits(query_tokens: set[str], runtime: SwarmRuntime) -> list[tuple[int, str]]:
@@ -533,14 +549,16 @@ def constrain_hints_to_grain(
     if not grain:
         return list(hints), []
 
+    # Scoped to the metrics this query actually hinted, not every metric in
+    # the registry. Scanning metrics.all() let an unrelated metric's grain
+    # (e.g. channel_orders' plain "channel") outrank the *asked* metric's own
+    # dimension (e.g. attributed_net_revenue's "lt_channel") purely because it
+    # existed somewhere else in the registry -- ambiguous grain then resolved
+    # to a dimension the asked metric can't actually slice by, and the fetch
+    # silently returned "no data available" instead of the real breakdown.
     registry_supported: set[str] = set()
-    for definition in metrics.all():
-        cat_id = getattr(definition, "catalogue_metric", None)
-        if not cat_id:
-            continue
-        meta = bootstrap.get(cat_id)
-        if meta:
-            registry_supported.update(meta.supported_dimensions or [])
+    for hint in hints:
+        registry_supported.update(_supported_for_hint(hint, metrics, bootstrap))
 
     preferred = pick_grain(
         grain,

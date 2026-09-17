@@ -80,6 +80,12 @@ async def run_mission(
     mid = mission_id or f"M-{uuid4().hex[:10]}"
     rid = request_id or uuid4().hex
     sid = session_id or uuid4().hex
+    try:
+        from seleric_swarm.observability.flow import log_mission_step
+
+        log_mission_step(mid, "mission_started", route="lookup", query=query[:160], request_id=rid)
+    except Exception:
+        pass
     if mode != "read_only":
         result = MissionResult(
             mission_id=mid,
@@ -166,4 +172,17 @@ async def run_mission(
 
     result = _result_from_state(runtime, final_state)
     runtime.store.put(result, dict(final_state))
+    try:
+        from seleric_swarm.observability.flow import log_mission_step
+
+        log_mission_step(
+            mid,
+            "mission_finished",
+            route="lookup",
+            status=result.status,
+            query_class=result.query_class,
+            mission_lead=result.mission_lead,
+        )
+    except Exception:
+        pass
     return result

@@ -69,8 +69,13 @@ def test_mission_diagnostic_query_routes_to_full_swarm(runtime, monkeypatch):
     arts = m["artifacts"]
     assert set(arts) >= {"hypothesis", "causal", "prediction", "skeptic"}
 
-    # re-run must not duplicate a subsystem's artifacts (idempotent bridges)
-    assert len(arts["causal"]) <= 1
+    # Idempotent bridges must not duplicate the *same* artifact -- not a cap
+    # of one. A CAC diagnosis with real co-movers (spend, new_customers) can
+    # legitimately retain multiple hypotheses, each with its own Causal
+    # artifact (swarm_bridge.py: "one Blackboard Causal per accepted
+    # finding"); a hard <=1 cap doesn't hold once more than one hypothesis is
+    # actually retained.
+    assert len(arts["causal"]) == len(set(arts["causal"]))
     assert len(arts["skeptic"]) <= 1
     assert len(arts["prediction"]) <= 1
 

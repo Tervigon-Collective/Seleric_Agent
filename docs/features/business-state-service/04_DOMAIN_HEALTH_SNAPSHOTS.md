@@ -377,15 +377,17 @@ dispatch), just with a snapshot read replacing most of the fan-out.
   schema keeps a `brand_id` field so adding brands 26/25/27/24 later is a
   config/loop change, not a schema migration — but building snapshots for
   them is explicitly not in scope until this decision is revisited.
-- **New, from validation:** cross-view ratio metrics (e.g. refund rate =
-  refund count ÷ orders) span different date axes and the MCP explicitly
-  refuses to let a query join them — resolve the axis-alignment question
-  (04 Operations section) before Sprint 3's resolver touches any ratio that
-  isn't a single pre-built catalogue metric.
-- **New, from validation:** not every domain maps 1:1 to one MCP module —
-  Performance's outcome metrics (spend/ROAS/CAC) live in `finance`'s
-  `canonical_pnl`, not `paidmedia`. `DomainStateResolver` needs a metric list
-  per domain (already true, from `metric_registry.yaml`'s `domain:` field),
-  not a module allowlist per domain — don't let the resolver hard-pin one
-  MCP module the way `agent_registry.yaml`'s `seleric_module` field might
-  suggest.
+- **[resolved, implemented]** cross-view ratio metrics (refund rate,
+  customer retention ratio) — resolved by exclusion, not computation:
+  `config/domain_health_profiles.yaml` leaves them out of V0 snapshots
+  (see its Sprint 4 scope-cut comments) rather than dividing misaligned
+  series. `QualityFlag.CROSS_AXIS_RATIO_UNSUPPORTED` exists in
+  `domain/models.py` for when this is revisited.
+- **[resolved, implemented]** module pinning — `metric_registry.yaml` sets
+  `seleric_module: null` on `metric.spend`/`metric.cac`/`metric.net_roas`
+  (with inline comments explaining why), and `services/measure.py`'s
+  `module_args()` passes that explicit `None` through
+  `protocols/mcp/gateway.py`'s "explicit module in arguments wins" rule,
+  overriding `performance_agent`'s `paidmedia` pin. `DomainStateResolver`
+  already resolves per metric_id from `metric_registry.yaml`, not a
+  per-domain module allowlist.

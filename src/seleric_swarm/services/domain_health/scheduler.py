@@ -36,7 +36,7 @@ async def run_once(
     snapshots = []
     for domain in domains:
         snapshot = await resolver.resolve(domain, time_range=time_range, brand_id=brand_id, store=store)
-        store.save(snapshot)
+        await store.asave(snapshot)
         snapshots.append(snapshot)
     return snapshots
 

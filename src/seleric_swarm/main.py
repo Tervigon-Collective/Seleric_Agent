@@ -334,11 +334,39 @@ async def create_mission(
         session_id=session_id,
     )
     if classification is None or classification.unresolved:
+        # Classification is occasionally non-deterministic even at
+        # temperature=0 (confirmed directly: the same query, re-classified
+        # repeatedly, sometimes comes back unresolved and sometimes doesn't).
+        # This is the first, hardest gate in the request — a false "unresolved"
+        # here 400s the whole request before routing/retry logic downstream
+        # ever gets a chance to run. One retry before rejecting.
+        classification = await classify_query_via_llm(
+            query,
+            runtime=runtime,
+            timezone=timezone,
+            as_of=as_of,
+            request_id=request_id,
+            session_id=session_id,
+        )
+    if classification is None or classification.unresolved:
         reason = (classification.unsupported_reason if classification else None) or (
             "Query does not name a resolvable metric or a supported analysis intent."
         )
         raise HTTPException(status_code=400, detail=reason)
     route_hint = "swarm" if set(classification.intents) & _SWARM_INTENTS else "lookup"
+    try:
+        from seleric_swarm.observability.flow import log_mission_step
+
+        log_mission_step(
+            None,
+            "mission_classified",
+            route=route_hint,
+            intents=list(classification.intents),
+            query=query[:160],
+            request_id=request_id,
+        )
+    except Exception:
+        pass
 
     # Async accept path.
     if not req.wait:

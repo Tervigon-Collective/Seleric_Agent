@@ -91,22 +91,34 @@ def _comparison_deltas(evidence: list[dict[str, Any]], fallback_def: Any) -> lis
     for (metric_id, _dims), rows in by_metric.items():
         if len(rows) != 2:
             continue
-        left, right = rows[0], rows[1]
+        # rows[0]/rows[1] are period A / period B in query order (the window
+        # fetch loop always walks [(start,end), (start_b,end_b)] first) — NOT
+        # necessarily chronological order. "this week vs last week" fetches
+        # the current week first, the prior week second, so a plain
+        # "second minus first" delta would silently read backwards (a
+        # decline reported as a positive number) for every period-over-period
+        # phrasing. period_a - period_b matches how the question was asked:
+        # positive means A is higher, which for "this vs last" is growth.
+        period_a, period_b = rows[0], rows[1]
+        a_range = period_a.get("time_range") or {}
+        b_range = period_b.get("time_range") or {}
+        starts = [d for d in (a_range.get("start"), b_range.get("start")) if d]
+        ends = [d for d in (a_range.get("end"), b_range.get("end")) if d]
         extras.append(
             make_evidence(
                 source="deterministic.metrics",
                 metric_or_fact=f"{metric_id}.delta",
-                value=float(right["value"]) - float(left["value"]),
-                unit=right.get("unit") or (getattr(fallback_def, "unit", None) if fallback_def else None),
+                value=float(period_a["value"]) - float(period_b["value"]),
+                unit=period_a.get("unit") or (getattr(fallback_def, "unit", None) if fallback_def else None),
                 time_range={
-                    "start": (left.get("time_range") or {}).get("start"),
-                    "end": (right.get("time_range") or {}).get("start"),
+                    "start": min(starts) if starts else None,
+                    "end": max(ends) if ends else None,
                 },
                 provenance={
-                    "calculation": "right - left",
-                    "left_evidence_id": left["evidence_id"],
-                    "right_evidence_id": right["evidence_id"],
-                    "metric_version": (right.get("provenance") or {}).get("metric_version"),
+                    "calculation": "period_a - period_b",
+                    "period_a_evidence_id": period_a["evidence_id"],
+                    "period_b_evidence_id": period_b["evidence_id"],
+                    "metric_version": (period_a.get("provenance") or {}).get("metric_version"),
                 },
             )
         )
@@ -114,11 +126,20 @@ def _comparison_deltas(evidence: list[dict[str, Any]], fallback_def: Any) -> lis
 
 
 def _query_windows(time_range: dict[str, Any]) -> list[tuple[str, str]]:
-    """Comparison = two point days. Otherwise one Cube window (start, end)."""
+    """Comparison = two full periods (period A, period B) — each may be a
+    single day or a real range (a week, a month, ...). Otherwise one Cube
+    window (start, end).
+    """
     kind = time_range.get("kind")
     start = time_range.get("start")
     end = time_range.get("end") or start
     if kind == "comparison" and start and end:
+        start_b = time_range.get("start_b")
+        end_b = time_range.get("end_b") or start_b
+        if start_b and end_b:
+            return [(start, end), (start_b, end_b)]
+        # Legacy shape from a classifier that hasn't been updated to fill
+        # start_b/end_b: start/end were two single-day points, not a range.
         return [(start, start), (end, end)]
     if start:
         return [(start, end or start)]

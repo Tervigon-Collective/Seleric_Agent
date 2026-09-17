@@ -15,7 +15,7 @@ Every control-plane event carries an envelope:
 | `seq` | Monotonic per-mission sequence |
 | `mission_id` | Owning mission |
 | `workflow_name` / `workflow_version` | e.g. `swarm_v2` / `1.4.0` |
-| `family` | One of mission, decomposition, task, artifact, leadership, claim, skeptic, remediation |
+| `family` | One of mission, decomposition, task, artifact, leadership, claim, skeptic, remediation, specialist |
 
 ### Families
 
@@ -27,5 +27,6 @@ Every control-plane event carries an envelope:
 - `claim_*` — proposed, validated, challenged, rejected
 - `skeptic_*` — pass / revise / reject / gate
 - `remediation_*` — planned, activated, round_done
+- `specialist` — non-prefixed lifecycle events per specialist run: `observed`, `observe_skipped`, `anomaly_done`, `diagnostic_done`, `prediction_done`, `strategy_done` (plus prefixed `specialist_error`, `specialist_skipped_policy`)
 
 `MissionEventEmitter` aliases legacy kinds (`decide_execute_wave` → `task_wave_executed`, etc.) and records `legacy_kind` when remapped.

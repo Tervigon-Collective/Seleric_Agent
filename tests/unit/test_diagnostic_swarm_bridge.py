@@ -23,6 +23,7 @@ from seleric_swarm.agents.diagnostic.swarm_bridge import (
     _CAUSAL_EXTRA_HISTORY_DAYS,
     _MAX_CAUSAL_TREATMENTS,
     _fetch_observations,
+    _fetch_observations_bss,
     _mission_outcome_metric,
     _providers_for_metrics,
     _ranked_treatment_ids,
@@ -449,39 +450,210 @@ def test_confounders_from_graph_are_common_ancestors_not_yaml_template():
     assert "metric.sessions" not in fetched
 
 
+# ---------------------------------------------------------------------------
+# BusinessStateService as the primary observation source (not MCP fetch_series)
+# ---------------------------------------------------------------------------
+
+
+class _FakeMetricDef:
+    domain = "performance"
+
+
+class _FakeMetricsRegistry:
+    def get(self, metric_id: str) -> Any:
+        return _FakeMetricDef()
+
+
+class _FakeSeriesPoint:
+    def __init__(self, ts: str, value: float | None) -> None:
+        self.ts = ts
+        self.value = value
+
+
+class _FakeMetricState:
+    def __init__(self, series: list[_FakeSeriesPoint], status: str = "OK") -> None:
+        self.series = series
+        self.status = status
+
+
+class _FakeBusinessState:
+    """Stands in for BusinessStateService: one get_metric_state call per metric."""
+
+    def __init__(self, series_by_metric: dict[str, list[_FakeSeriesPoint]], *, unavailable: set[str] = frozenset()):
+        self.runtime = type("R", (), {"metrics": _FakeMetricsRegistry()})()
+        self._series_by_metric = series_by_metric
+        self._unavailable = unavailable
+        self.requested_metric_ids: list[str] = []
+
+    async def get_metric_state(self, request: Any) -> _FakeMetricState:
+        self.requested_metric_ids.append(request.metric_id)
+        if request.metric_id in self._unavailable:
+            return _FakeMetricState(series=[], status="UNAVAILABLE")
+        return _FakeMetricState(self._series_by_metric.get(request.metric_id, []))
+
+
+def _daily_series(start: str, days: int, base: float) -> list[_FakeSeriesPoint]:
+    d = date.fromisoformat(start)
+    return [_FakeSeriesPoint((d + timedelta(days=i)).isoformat(), base + i) for i in range(days)]
+
+
 @pytest.mark.asyncio
-async def test_trust_metadata_causal_toggle_in_production_vs_fixture():
-    """trust_metadata_causal must be False in production mode and True only when causal_truth is passed."""
+async def test_fetch_observations_bss_builds_frame_from_metric_state_series():
+    business_state = _FakeBusinessState(
+        {
+            "metric.purchase_cvr": _daily_series("2026-08-01", 10, 100.0),
+            "metric.mobile_lcp_seconds": _daily_series("2026-08-01", 10, 2.0),
+        }
+    )
+    frame = await _fetch_observations_bss(
+        business_state,
+        {"metric.purchase_cvr", "metric.mobile_lcp_seconds"},
+        "metric.purchase_cvr",
+        {"start": "2026-08-01", "end": "2026-08-10"},
+    )
+    assert frame is not None
+    assert len(frame) >= 8
+    assert "metric.purchase_cvr" in frame.columns
+    assert "metric.mobile_lcp_seconds" in frame.columns
+
+
+@pytest.mark.asyncio
+async def test_fetch_observations_bss_returns_none_when_outcome_unavailable():
+    business_state = _FakeBusinessState(
+        {"metric.mobile_lcp_seconds": _daily_series("2026-08-01", 10, 2.0)},
+        unavailable={"metric.purchase_cvr"},
+    )
+    frame = await _fetch_observations_bss(
+        business_state,
+        {"metric.purchase_cvr", "metric.mobile_lcp_seconds"},
+        "metric.purchase_cvr",
+        {"start": "2026-08-01", "end": "2026-08-10"},
+    )
+    assert frame is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_observations_prefers_bss_over_mcp_fetch_series():
+    """When BusinessStateService yields a usable frame, MCP fetch_series must
+    never be called — BSS is the primary source, MCP is fallback-only."""
+    business_state = _FakeBusinessState(
+        {
+            "metric.purchase_cvr": _daily_series("2026-08-01", 10, 100.0),
+            "metric.mobile_lcp_seconds": _daily_series("2026-08-01", 10, 2.0),
+        }
+    )
+    providers = _FakeProviders(return_frame=None)
+
+    frame = await _fetch_observations(
+        providers,
+        "metric.purchase_cvr",
+        {"start": "2026-09-01", "end": "2026-09-07"},
+        extra_metrics={"metric.mobile_lcp_seconds"},
+        business_state=business_state,
+    )
+    assert frame is not None
+    assert len(frame) >= 8
+    assert providers.captured_ids == []  # fetch_series never called
+
+
+@pytest.mark.asyncio
+async def test_fetch_observations_falls_back_to_mcp_when_bss_unavailable():
+    business_state = _FakeBusinessState({}, unavailable={"metric.purchase_cvr", "metric.mobile_lcp_seconds"})
+    providers = _FakeProviders(return_frame=None)
+
+    await _fetch_observations(
+        providers,
+        "metric.purchase_cvr",
+        {"start": "2026-09-01", "end": "2026-09-07"},
+        extra_metrics={"metric.mobile_lcp_seconds"},
+        business_state=business_state,
+    )
+    assert "metric.purchase_cvr" in providers.captured_ids  # MCP fallback was used
+
+
+@pytest.mark.asyncio
+async def test_fetch_observations_bss_works_without_providers():
+    """BSS is primary — providers=None must not short-circuit a usable frame."""
+    business_state = _FakeBusinessState(
+        {
+            "metric.purchase_cvr": _daily_series("2026-08-01", 10, 100.0),
+            "metric.mobile_lcp_seconds": _daily_series("2026-08-01", 10, 2.0),
+        }
+    )
+    frame = await _fetch_observations(
+        None,
+        "metric.purchase_cvr",
+        {"start": "2026-09-01", "end": "2026-09-07"},
+        extra_metrics={"metric.mobile_lcp_seconds"},
+        business_state=business_state,
+    )
+    assert frame is not None
+    assert len(frame) >= 8
+
+
+# ---------------------------------------------------------------------------
+# trust_metadata_causal — only fixture/causal_truth runs get the confidence
+# ceiling lifted; a live run with no observations stays honestly capped.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_live_run_does_not_trust_metadata_causal():
+    from seleric_swarm.agents.diagnostic.contracts import DiagnosticResult
     from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
     from seleric_swarm.swarm.mission import SwarmMission
 
     mission = SwarmMission(
-        mission_id="MS-trust-toggle",
-        query="Why did CAC change?",
+        mission_id="MS-trust-live",
+        query="Why did conversion drop?",
         time_range={"start": "2026-09-01", "end": "2026-09-07"},
         intents={"diagnostic"},
+        context={"primary_metric": "session_conversion_rate"},
     )
-    blackboard = Blackboard("MS-trust-toggle")
+    blackboard = Blackboard("MS-trust-live")
+    captured: dict[str, Any] = {}
 
-    captured_requests = []
-
-    async def fake_diagnose(*args, **kwargs):
-        req = args[-1]
-        captured_requests.append(req)
-        from seleric_swarm.agents.diagnostic.contracts import DiagnosticResult
+    async def _fake_diagnose(self, request):
+        captured["context"] = dict(request.context)
         return DiagnosticResult(
-            mission_id=req.mission_id,
-            question=req.question,
-            outcome_metric="metric.cac",
+            mission_id=request.mission_id, question=request.question, outcome_metric=request.primary_metric or ""
         )
 
-    spec_prod = SwarmDiagnosticSpecialist()
-    with patch("seleric_swarm.agents.diagnostic.swarm_bridge.DiagnosticAgent.diagnose", new=fake_diagnose):
-        await spec_prod.run(blackboard, mission)
-    assert captured_requests[-1].context.get("trust_metadata_causal") is False
+    specialist = SwarmDiagnosticSpecialist(scenario={})  # no causal_truth -> live mode
+    with (
+        patch("seleric_swarm.agents.diagnostic.swarm_bridge.DiagnosticAgent.diagnose", new=_fake_diagnose),
+        patch("seleric_swarm.agents.diagnostic.swarm_bridge._fetch_observations", new=AsyncMock(return_value=None)),
+    ):
+        await specialist.run(blackboard, mission)
 
-    spec_fixture = SwarmDiagnosticSpecialist(scenario={"causal_truth": {"treatment": "metric.spend", "outcome": "metric.cac"}})
-    with patch("seleric_swarm.agents.diagnostic.swarm_bridge.DiagnosticAgent.diagnose", new=fake_diagnose):
-        await spec_fixture.run(blackboard, mission)
-    assert captured_requests[-1].context.get("trust_metadata_causal") is True
+    assert captured["context"]["trust_metadata_causal"] is False
+
+
+@pytest.mark.asyncio
+async def test_fixture_causal_truth_run_trusts_metadata_causal():
+    from seleric_swarm.agents.diagnostic.contracts import DiagnosticResult
+    from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
+    from seleric_swarm.swarm.mission import SwarmMission
+
+    mission = SwarmMission(
+        mission_id="MS-trust-fixture",
+        query="Why did conversion drop?",
+        time_range={"start": "2026-09-01", "end": "2026-09-07"},
+        intents={"diagnostic"},
+        context={"primary_metric": "session_conversion_rate"},
+    )
+    blackboard = Blackboard("MS-trust-fixture")
+    captured: dict[str, Any] = {}
+
+    async def _fake_diagnose(self, request):
+        captured["context"] = dict(request.context)
+        return DiagnosticResult(
+            mission_id=request.mission_id, question=request.question, outcome_metric=request.primary_metric or ""
+        )
+
+    specialist = SwarmDiagnosticSpecialist(scenario={"causal_truth": {"metric.foo": {}}})
+    with patch("seleric_swarm.agents.diagnostic.swarm_bridge.DiagnosticAgent.diagnose", new=_fake_diagnose):
+        await specialist.run(blackboard, mission)
+
+    assert captured["context"]["trust_metadata_causal"] is True
 

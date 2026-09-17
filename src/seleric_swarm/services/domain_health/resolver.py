@@ -10,6 +10,7 @@ from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import StateRequest
 from seleric_swarm.paths import repo_root
 from seleric_swarm.services.domain_health.models import DomainStateSnapshot, ResolvedMetric
+from seleric_swarm.services.time_range import resolve_time_range
 
 if TYPE_CHECKING:
     from seleric_swarm.services.business_state.facade import BusinessStateService
@@ -115,7 +116,15 @@ class DomainStateResolver:
     ) -> DomainStateSnapshot:
         block = self._profiles.get(domain)
         agent_id = block.get("agent_id", f"{domain}_agent")
-        previous = store.get_latest(domain) if store else None
+        # `time_range` is typically still unresolved (kind="relative",
+        # e.g. "last_7d") at this point — get_metric_state resolves it
+        # internally per metric but doesn't hand the concrete dates back, so
+        # every snapshot's window/as_of used to be written as None/None.
+        # Resolved here once, display-only; per-metric fetching below still
+        # goes through facade.get_metric_state's own (per-metric-timezone)
+        # resolution unchanged.
+        resolved_range = resolve_time_range(time_range, "UTC", None)
+        previous = await store.aget_latest(domain) if store else None
         previous_by_metric = {m.metric_id: m for m in previous.metrics} if previous else {}
 
         resolved: list[ResolvedMetric] = []
@@ -167,9 +176,9 @@ class DomainStateResolver:
         return DomainStateSnapshot(
             domain=domain,
             brand_id=brand_id,
-            as_of=time_range.end or datetime.now(UTC).date().isoformat(),
+            as_of=resolved_range.end or datetime.now(UTC).date().isoformat(),
             computed_at=datetime.now(UTC).isoformat(),
-            window={"start": time_range.start, "end": time_range.end},
+            window={"start": resolved_range.start, "end": resolved_range.end},
             status=status,
             metrics=resolved,
             headline_signals=_headline_signals(block.get("health_signals") or [], resolved),

@@ -36,8 +36,9 @@ async def estimate_for_hypothesis(
     treatment_at = _first_treatment_time(ctx, h)
     outcome_at = ctx.degradation_started_at
 
+    treatment = h.treatment_metric or _fallback_treatment(h)
     query = CausalEstimationQuery(
-        treatment=h.treatment_metric or _fallback_treatment(h),
+        treatment=treatment,
         outcome=ctx.outcome_metric,
         common_causes=common_causes,
         graph_id=graph_id,
@@ -48,15 +49,28 @@ async def estimate_for_hypothesis(
         mission_id=ctx.request.mission_id,
         hypothesis_id=h.hypothesis_id,
     )
-    artifact = await ctx.deps.causal_service.estimate(query, observations=ctx.request.observations)
+    # Hypothesis generation (any co-moving metric) and observation-fetching
+    # (top _MAX_CAUSAL_TREATMENTS ranked treatments only, see swarm_bridge.py)
+    # rank independently -- a lower-ranked hypothesis's treatment can be
+    # absent from the fetched observation frame's columns. Passing that frame
+    # to DoWhy anyway raises DoWhyUnavailable("dataset missing columns") on
+    # every such hypothesis: wasted CPU, a misleading warning log, and the
+    # same metadata-only result estimate() would have given directly. Treat a
+    # column-incomplete frame as "no observations" for this hypothesis only.
+    observations = ctx.request.observations
+    columns = getattr(observations, "columns", None)
+    if columns is not None and not {treatment, ctx.outcome_metric} <= set(columns):
+        observations = None
+    artifact = await ctx.deps.causal_service.estimate(query, observations=observations)
 
     confidence = _confidence(ctx, artifact, graph, treatment_at, outcome_at)
     # Metadata-only estimates, or estimates for treatment metrics with no observed
     # movement in this period, are capped unless the caller explicitly trusts the
-    # declared causal truth (fixture / replay mode). A real call stays capped ->
-    # finding is 'inconclusive', which is the honest outcome.
+    # declared causal truth (fixture / replay mode). A real Coordinator call with
+    # no observation frame stays capped -> the finding is 'inconclusive', which is
+    # the honest outcome.
     unobserved = not _has_observed_movement(ctx, h.treatment_metric)
-    if (ctx.request.observations is None or unobserved) and not ctx.request.context.get("trust_metadata_causal"):
+    if (observations is None or unobserved) and not ctx.request.context.get("trust_metadata_causal"):
         confidence = ctx.policies.cap_metadata_confidence(confidence)  # type: ignore[assignment]
     return artifact, confidence  # type: ignore[return-value]
 

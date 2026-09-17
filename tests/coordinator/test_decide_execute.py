@@ -34,6 +34,28 @@ async def test_decide_execute_graph_compiles(runtime):
 
 
 @pytest.mark.asyncio
+async def test_diagnostic_specialist_policy_gate_is_honored(runtime, monkeypatch):
+    """SwarmDiagnosticSpecialist.policy() (run only if diagnostic is wanted AND
+    an anomaly is confirmed) previously existed but the coordinator never
+    called it -- diagnostic_agent always ran once activated. Force policy()
+    to reject and assert the mission-wide effect: the specialist is skipped
+    (event recorded), and no hypothesis/causal artifacts get invented."""
+    from seleric_swarm.agents.diagnostic.swarm_bridge import SwarmDiagnosticSpecialist
+
+    monkeypatch.setattr(SwarmDiagnosticSpecialist, "policy", lambda self, blackboard, mission: False)
+
+    result = await run_swarm_v2_mission(
+        runtime,
+        query="Why has CAC increased over the last three days?",
+        full_diagnostic=True,
+    )
+    kinds = [e.get("kind") for e in result.events]
+    assert "specialist_skipped_policy" in kinds
+    assert not result.artifacts.get("hypothesis")
+    assert not result.artifacts.get("causal")
+
+
+@pytest.mark.asyncio
 async def test_dispatch_uses_langgraph_v2(runtime):
     runtime.settings.swarm_workflow = "swarm_v2"
     out = await run_any_mission(
