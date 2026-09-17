@@ -81,6 +81,8 @@ class ConfiguredAnomalyDetector:
         template_group = groups.get("template", [])
         if "robust_zscore" in groups:
             detector = self._robust_zscore
+            if detector is None:
+                raise RuntimeError("robust_zscore group created without a configured detector")
             robust_findings = await detector.detect(groups["robust_zscore"], context=context)
             findings.extend(robust_findings)
             if force_robust:

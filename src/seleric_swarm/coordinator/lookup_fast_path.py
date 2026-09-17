@@ -277,6 +277,9 @@ async def run_lookup_fast_path(
     if normalized.unsupported_reason or not normalized.domain_questions:
         return None
     intents = set(normalized.intents)
+    business_state = runtime.business_state
+    if business_state is None:
+        return None
 
     def _canon(metric_id: str) -> str:
         # Evidence is always keyed by the registry-canonical "metric.xxx" id
@@ -293,7 +296,7 @@ async def run_lookup_fast_path(
             agent_id=f"{domain}_agent",
             need=["actual", "features"],
         )
-        return _canon(metric_id), await runtime.business_state.get_metric_state(request)
+        return _canon(metric_id), await business_state.get_metric_state(request)
 
     evidence: list[EvidenceView] = []
     limitations: list[str] = []
@@ -312,7 +315,7 @@ async def run_lookup_fast_path(
         grained_dqs = [dq for dq in normalized.domain_questions if dq.grain]
         comparison_lines = []
 
-        pairs = [
+        comparison_pairs = [
             (
                 _canon(metric_id),
                 *await asyncio.gather(
@@ -323,7 +326,7 @@ async def run_lookup_fast_path(
             for dq in ungrained_dqs
             for metric_id in dq.metrics
         ]
-        for canonical_id, reading_a, reading_b in pairs:
+        for canonical_id, reading_a, reading_b in comparison_pairs:
             rows, limitation = await _comparison_rows(canonical_id, reading_a, time_range_a, reading_b, time_range_b)
             evidence.extend(rows)
             if limitation:
@@ -399,7 +402,7 @@ async def run_lookup_fast_path(
         grained = [dq for dq in normalized.domain_questions if dq.grain]
 
         if ungrained:
-            pairs = [(dq.domain, metric_id) for dq in ungrained for metric_id in dq.metrics]
+            lookup_pairs = [(dq.domain, metric_id) for dq in ungrained for metric_id in dq.metrics]
             if time_range.start != time_range.end:
                 # Multi-day range ("last 7 days", "this month", ...):
                 # BusinessStateService.get_metric_state's `actual` is the
@@ -411,16 +414,19 @@ async def run_lookup_fast_path(
                 # already rely on.
                 providers = _build_providers(runtime)
                 readings = await asyncio.gather(
-                    *[_fetch_period_reading(providers, domain, metric_id, time_range) for domain, metric_id in pairs]
+                    *[
+                        _fetch_period_reading(providers, domain, metric_id, time_range)
+                        for domain, metric_id in lookup_pairs
+                    ]
                 )
-                for (domain, metric_id), reading in zip(pairs, readings):
+                for (domain, metric_id), reading in zip(lookup_pairs, readings):
                     canonical_id = _canon(metric_id)
                     if reading is None:
                         limitations.append(f"No data available for {_humanize_metric(canonical_id)}.")
                         continue
                     evidence.append(_reading_evidence_row(canonical_id, reading, time_range))
             else:
-                tasks = [_fetch(domain, metric_id, time_range) for domain, metric_id in pairs]
+                tasks = [_fetch(domain, metric_id, time_range) for domain, metric_id in lookup_pairs]
                 for metric_id, state in await asyncio.gather(*tasks):
                     if state.status == "UNAVAILABLE":
                         limitations.append(f"No data available for {_humanize_metric(metric_id)}.")

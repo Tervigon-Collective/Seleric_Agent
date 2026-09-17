@@ -27,6 +27,7 @@ export function DetailPanel() {
   const archiveMemory = useConversationStore((s) => s.archiveMemory);
   const deleteMemory = useConversationStore((s) => s.deleteMemory);
   const setMemoryOptOut = useConversationStore((s) => s.setMemoryOptOut);
+  const visibleTimeline = threadId ? timeline : [];
 
   useEffect(() => {
     if (tab === "Memory") void loadMemories();
@@ -41,9 +42,9 @@ export function DetailPanel() {
       </div>
       <div className="detail-content" role="tabpanel">
         {tab === "Activity" && (
-          <section><h2>Run activity</h2>{timeline.slice(-30).reverse().map((event) => (
+          <section><h2>Run activity</h2>{visibleTimeline.slice(-30).reverse().map((event) => (
             <div className="activity-row" key={event.eventId}><span className="activity-dot" /><div><strong>{event.summary || event.eventType.replaceAll("_", " ")}</strong><small>{event.agentId || "Swarm"} · #{event.seq}</small></div></div>
-          ))}{!timeline.length && <Empty text="Activity appears here while a mission runs." />}</section>
+          ))}{!visibleTimeline.length && <Empty text={threadId ? "Activity appears here while this conversation runs." : "Select or start a conversation to see its activity."} />}</section>
         )}
         {tab === "Context" && <section><h2>Thread context</h2><dl><dt>Title</dt><dd>{thread?.title || "Untitled"}</dd><dt>Question</dt><dd>{query || "No active mission"}</dd><dt>Route</dt><dd>{route || "Pending"}</dd><dt>Stage</dt><dd>{stage}</dd></dl></section>}
         {tab === "Memory" && <section className="memory-panel">

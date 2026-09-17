@@ -99,7 +99,7 @@ export function SelericAssistantRuntimeProvider({ children }: PropsWithChildren)
     convertMessage: convertSelericMessage,
     isLoading: loading,
     isRunning: submitting,
-    isDisabled: !threadId,
+    isDisabled: false,
     onNew: async (message) => {
       await submit(messageText(message), attachmentIds(message), message.parentId);
     },

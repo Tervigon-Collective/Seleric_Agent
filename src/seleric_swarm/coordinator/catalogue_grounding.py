@@ -524,7 +524,7 @@ async def resolve_catalogue_dimension(query: str, *, runtime: SwarmRuntime) -> l
     if mcp is None:
         return []
     attempts: list[tuple[str, dict[str, Any]]] = []
-    caps = getattr(mcp, "capabilities", set()) or set()
+    caps: set[str] = set(getattr(mcp, "capabilities", set()) or ())
     if _RESOLVE_DIM_CAP in caps:
         attempts.append((_RESOLVE_DIM_CAP, {"text": query}))
     if _RESOLVE_TERM_CAP in caps:

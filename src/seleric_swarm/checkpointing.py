@@ -53,11 +53,13 @@ class PostgresCheckpointProvider:
             raise ValueError("checkpoint_backend=postgres requires database_url")
         from langgraph.checkpoint.postgres import PostgresSaver
         from psycopg import Connection
+        from psycopg.rows import dict_row
 
         self._connection = Connection.connect(
             database_url,
             autocommit=True,
             prepare_threshold=0,
+            row_factory=dict_row,
         )
         self._checkpointer = PostgresSaver(self._connection)
         if setup:

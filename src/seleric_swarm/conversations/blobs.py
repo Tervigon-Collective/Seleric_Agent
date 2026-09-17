@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO, Protocol
+from typing import Any, BinaryIO, Protocol
 
 
 class BlobValidationError(ValueError):
@@ -64,7 +64,7 @@ class BlobStore(Protocol):
 
 
 class MinioClient(Protocol):
-    def get_object(self, bucket_name: str, object_name: str) -> BinaryIO: ...
+    def get_object(self, bucket_name: str, object_name: str) -> Any: ...
     def remove_object(self, bucket_name: str, object_name: str) -> None: ...
     def presigned_put_object(
         self, bucket_name: str, object_name: str, expires: timedelta

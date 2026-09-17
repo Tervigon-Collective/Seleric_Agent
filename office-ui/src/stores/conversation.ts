@@ -115,14 +115,21 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const threads = await conversationsApi.listThreads();
-      set({ threads, loading: false });
-      if (!get().selectedThreadId && threads[0]) await get().selectThread(threads[0].id);
+      const selectedThreadId = get().selectedThreadId;
+      const selectedExists = threads.some((thread) => thread.id === selectedThreadId);
+      set({ threads, loading: false, selectedThreadId: selectedExists ? selectedThreadId : null });
+      if (!selectedExists && threads[0]) {
+        await get().selectThread(threads[0].id);
+      } else if (!threads.length) {
+        useOffice.getState().reset();
+      }
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : "Unable to load threads" });
     }
   },
 
   createThread: async () => {
+    useOffice.getState().reset();
     if (get().demoMode) {
       const id = `thread_demo_${Date.now()}`;
       const thread = { ...DEMO_THREAD, id, title: "New conversation", created_at: now(), updated_at: now() };
@@ -179,11 +186,22 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
   archiveThread: async (id) => {
     try {
+      const wasSelected = get().selectedThreadId === id;
       if (!get().demoMode) await conversationsApi.archiveThread(id);
-      set((s) => {
-        const threads = s.threads.filter((thread) => thread.id !== id);
-        return { threads, selectedThreadId: s.selectedThreadId === id ? threads[0]?.id ?? null : s.selectedThreadId };
+      const threads = get().threads.filter((thread) => thread.id !== id);
+      const nextThreadId = wasSelected ? threads[0]?.id ?? null : get().selectedThreadId;
+      if (wasSelected) {
+        subscriptions.get(id)?.();
+        subscriptions.delete(id);
+        useOffice.getState().reset();
+      }
+      set({
+        threads,
+        selectedThreadId: nextThreadId,
+        submitting: wasSelected ? false : get().submitting,
+        currentRunId: wasSelected ? null : get().currentRunId,
       });
+      if (wasSelected && nextThreadId) await get().selectThread(nextThreadId);
     } catch (error) {
       set({ error: error instanceof Error ? error.message : "Unable to archive thread" });
     }
@@ -196,8 +214,26 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
   submit: async (text, attachmentIds = [], parentMessageId = null) => {
     const value = text.trim();
-    const threadId = get().selectedThreadId;
-    if (!value || !threadId || get().submitting) return;
+    if (!value || get().submitting) return;
+    let threadId = get().selectedThreadId;
+    if (!threadId) {
+      set({ submitting: true, error: null });
+      try {
+        const thread = await conversationsApi.createThread();
+        threadId = thread.id;
+        set((state) => ({
+          threads: [thread, ...state.threads],
+          selectedThreadId: thread.id,
+          messages: { ...state.messages, [thread.id]: [] },
+        }));
+      } catch (error) {
+        set({
+          submitting: false,
+          error: error instanceof Error ? error.message : "Unable to start conversation",
+        });
+        return;
+      }
+    }
     const optimistic = {
       ...textMessage(threadId, "USER", value, `optimistic_${Date.now()}`),
       parent_message_id: parentMessageId,

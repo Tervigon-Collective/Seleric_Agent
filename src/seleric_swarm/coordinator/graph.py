@@ -1213,7 +1213,7 @@ async def run_swarm_v2_mission(
     # controls whether the diagnostic intent is force-added (see apply_full_flags);
     # the implementation is unconditional so no mission ever gets the old
     # scenario-hardcoded template diagnoser.
-    trace_base = {
+    trace_base: dict[str, str | None] = {
         "request_id": rid,
         "session_id": sid,
         "workflow_name": "swarm_v2",

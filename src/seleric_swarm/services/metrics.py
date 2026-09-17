@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
@@ -58,7 +58,10 @@ class MetricDefinition:
         self.aliases: list[str] = [str(a).lower() for a in (payload.get("aliases") or [])]
         self.catalogue_metric: str | None = payload.get("catalogue_metric") or None
         self.seleric_module: str | None = payload.get("seleric_module")
-        self.direction_bad: str = payload.get("direction_bad", "up")
+        direction_bad = payload.get("direction_bad", "up")
+        self.direction_bad: Literal["up", "down"] = (
+            direction_bad if direction_bad in {"up", "down"} else "up"
+        )
         self.raw = payload
 
 

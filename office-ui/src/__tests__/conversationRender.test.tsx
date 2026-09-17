@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import App from "../App";
 import { SafeContent } from "../components/SafeContent";
+import { useOffice } from "../store";
 import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
 
@@ -37,5 +38,20 @@ describe("conversation shell rendering and accessibility", () => {
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("<img");
     expect(container.querySelector("a")?.getAttribute("rel")).toBe("noreferrer");
+  });
+
+  it("does not show activity when no conversation is selected", () => {
+    useConversationStore.setState({ selectedThreadId: null, threads: [] });
+    useOffice.getState().ingestEvent({
+      eventId: "stale-event",
+      seq: 1,
+      timestamp: "2026-09-17T10:00:00Z",
+      missionId: "old-mission",
+      eventType: "run_completed",
+      summary: "Stale activity",
+    });
+    act(() => root.render(<App />));
+    expect(container.textContent).toContain("Select or start a conversation");
+    expect(container.textContent).not.toContain("Stale activity");
   });
 });

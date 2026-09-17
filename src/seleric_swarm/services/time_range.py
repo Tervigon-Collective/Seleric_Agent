@@ -179,8 +179,8 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
         return TimeRangeV1(kind="comparison", start=a_start, end=a_end, start_b=b_start, end_b=b_end)
     if len(months) == 1:
         name, year = months[0]
-        start, end = _month_range(int(year), _MONTH_NAMES[name.lower()])
-        return TimeRangeV1(kind="absolute", start=start, end=end)
+        month_start, month_end = _month_range(int(year), _MONTH_NAMES[name.lower()])
+        return TimeRangeV1(kind="absolute", start=month_start, end=month_end)
 
     dates = _ISO_DAY.findall(text)
     if len(dates) >= 2:

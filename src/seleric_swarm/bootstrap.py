@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from seleric_swarm.cancellation import build_cancellation_backend
 from seleric_swarm.checkpointing import build_checkpoint_provider
 from seleric_swarm.config.settings import Settings, get_settings
-from seleric_swarm.conversations.blobs import LocalBlobStore, MinioBlobStore
+from seleric_swarm.conversations.blobs import BlobStore, LocalBlobStore, MinioBlobStore
 from seleric_swarm.conversations.events import ActivityEventSink, InMemoryEventNotifier
 from seleric_swarm.conversations.postgres import build_conversation_repositories
 from seleric_swarm.llm.factory import build_llm
@@ -71,6 +71,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         for item in settings.attachment_allowed_mime_types.split(",")
         if item.strip()
     }
+    blob_store: BlobStore
     if settings.blob_backend == "minio":
         from minio import Minio
 

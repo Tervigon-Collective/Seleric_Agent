@@ -27,7 +27,10 @@ from seleric_swarm.agents.diagnostic.ontology import (
 )
 from seleric_swarm.agents.diagnostic.policies import DiagnosticPolicies
 from seleric_swarm.agents.diagnostic.reasoning import LLMPortReasoningModel, NullReasoningModel
-from seleric_swarm.agents.diagnostic.registries import TemplateCausalEstimationService
+from seleric_swarm.agents.diagnostic.registries import (
+    CausalEstimationService,
+    TemplateCausalEstimationService,
+)
 from seleric_swarm.agents.diagnostic.services.dowhy_estimation import DoWhyCausalEstimationService
 from seleric_swarm.config.settings import configured_chat_model
 from seleric_swarm.coordinator.leadership.frontier import LeadershipController
@@ -113,6 +116,7 @@ class SwarmDiagnosticSpecialist:
             if self._deps is not None
             else build_diagnostic_causal_graphs(metrics or MetricRegistry("config/metric_registry.yaml"))
         )
+        causal_service: CausalEstimationService
         if causal_truth:
             causal_service = TemplateCausalEstimationService(causal_truth)
         else:
@@ -288,7 +292,7 @@ def _mission_outcome_metric(mission: SwarmMission, blackboard: Blackboard) -> st
         except (TypeError, ValueError):
             scored.setdefault(mid, 0.0)
     if scored:
-        return max(scored, key=scored.get)
+        return max(scored, key=lambda metric_id: scored[metric_id])
     for row in blackboard.by_type("evidence"):
         mid = str(row.get("metric_id") or row.get("metric_or_fact") or "").strip()
         if mid and not mid.startswith("event."):

@@ -106,6 +106,8 @@ class RobustZScoreDetector:
         time_range_payload = context.get("time_range") or {"kind": "none"}
         findings: list[AnomalyFinding] = []
         for reading in readings:
+            if reading.value is None:
+                continue
             definition = self._business_state.runtime.metrics.get(reading.metric_id)
             if definition is None:
                 continue

@@ -47,12 +47,12 @@ def clean_anomalies(
     # graph if that undercatches in practice.
     """
     gapped = gapped_metric_ids(limitations, metrics)
-    best: dict[str, dict[str, Any]] = {}
+    best: dict[tuple[str, tuple[tuple[Any, Any], ...]], dict[str, Any]] = {}
     for a in anomalies:
         mid = a.get("metric_id")
         if not mid:
             continue
-        canon = metrics.canonical_id(mid) if metrics is not None else mid
+        canon = metrics.canonical_id(mid) if metrics is not None else str(mid)
         if canon in gapped:
             continue
         dims_key = tuple(sorted((a.get("dimensions") or {}).items()))
@@ -316,7 +316,7 @@ def build_claim_aware_response(
             "PASS": "Independent verification passed.",
             "REVISE": "Independent verification found issues that need revision.",
             "REJECT": "Independent verification rejected this finding.",
-        }.get(k.get("verdict"), "Independent verification status is unclear.")
+        }.get(str(k.get("verdict") or ""), "Independent verification status is unclear.")
         lines.append(verdict_text)
         if k.get("required_followups"):
             lines.append("  Open questions before this can be trusted:")

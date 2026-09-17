@@ -119,6 +119,7 @@ def test_thread_crud_and_message_submission_are_owner_scoped(monkeypatch):
     assert renamed.status_code == 200
     assert renamed.json()["title"] == "Retention diagnosis"
     assert client.post(f"/v1/threads/{thread_id}/archive").json()["status"] == "ARCHIVED"
+    assert thread_id not in {thread["id"] for thread in client.get("/v1/threads").json()}
 
     foreign = repositories.threads.create(
         Thread(workspace_id="workspace_2", owner_user_id="user_2")

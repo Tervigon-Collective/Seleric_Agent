@@ -354,7 +354,8 @@ def build_office_snapshot(raw: dict[str, Any] | None, *, mission_id: str) -> dic
     last_ev = events[-1] if events else None
     stage = _derive_stage(kinds, status)
 
-    trace = raw.get("trace") if isinstance(raw.get("trace"), dict) else {}
+    raw_trace = raw.get("trace")
+    trace: dict[str, Any] = raw_trace if isinstance(raw_trace, dict) else {}
     request_id = trace.get("request_id") or trace.get("requestId")
 
     return {

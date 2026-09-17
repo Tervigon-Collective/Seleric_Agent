@@ -28,6 +28,10 @@ QualityFlag = Literal[
 ]
 
 
+def _default_state_need() -> list[StateNeed]:
+    return ["actual"]
+
+
 class SeriesPoint(BaseModel):
     ts: str
     value: float | None
@@ -50,7 +54,7 @@ class StateRequest(BaseModel):
     agent_id: str
     as_of: str | None = None
     profile_id: str = "default_v1"
-    need: list[StateNeed] = Field(default_factory=lambda: ["actual"])
+    need: list[StateNeed] = Field(default_factory=_default_state_need)
 
 
 class MetricState(BaseModel):

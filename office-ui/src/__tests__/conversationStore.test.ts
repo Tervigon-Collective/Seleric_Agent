@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { conversationsApi } from "../api/conversations";
 import { useOffice } from "../store";
 import { useConversationStore } from "../stores/conversation";
 
@@ -57,5 +58,38 @@ describe("conversation store submit", () => {
       agentId: "performance_agent",
       missionId: "mission-1",
     });
+  });
+
+  it("creates a conversation when the first message is sent", async () => {
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: null,
+      threads: [],
+      messages: {},
+    });
+    vi.spyOn(conversationsApi, "createThread").mockResolvedValue({
+      id: "new-thread",
+      workspace_id: "default",
+      owner_user_id: "default",
+      project_id: null,
+      title: null,
+      status: "ACTIVE",
+      metadata: {},
+      created_at: "2026-09-17T10:00:00Z",
+      updated_at: "2026-09-17T10:00:00Z",
+    });
+    vi.spyOn(conversationsApi, "submitMessage").mockResolvedValue({
+      message_id: "message-1",
+      run_id: "run-1",
+      mission_id: "mission-1",
+    });
+
+    await useConversationStore.getState().submit("Investigate checkout conversion");
+
+    const state = useConversationStore.getState();
+    expect(state.selectedThreadId).toBe("new-thread");
+    expect(state.threads[0]?.title).toBe("Investigate checkout conversion");
+    expect(state.messages["new-thread"][0]?.role).toBe("USER");
+    useConversationStore.getState().reset();
   });
 });

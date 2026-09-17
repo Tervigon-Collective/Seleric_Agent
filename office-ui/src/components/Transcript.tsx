@@ -1,5 +1,6 @@
 import {
   ActionBarPrimitive,
+  AuiIf,
   MessagePrimitive,
   ThreadPrimitive,
   type DataMessagePartProps,
@@ -33,9 +34,16 @@ function AssistantMessage() {
       <div className="message-body">
         <header>Seleric</header>
         <MessagePrimitive.Parts components={parts} />
-        <ActionBarPrimitive.Root className="message-actions">
-          <ActionBarPrimitive.Reload aria-label="Retry response">Retry</ActionBarPrimitive.Reload>
-        </ActionBarPrimitive.Root>
+        <AuiIf condition={(state) => state.thread.isRunning}>
+          <MessagePrimitive.If hasContent={false}>
+            <p className="running" aria-live="polite"><span className="pulse-dot" /> Coordinating specialists…</p>
+          </MessagePrimitive.If>
+        </AuiIf>
+        <AuiIf condition={(state) => !state.thread.isRunning}>
+          <ActionBarPrimitive.Root className="message-actions">
+            <ActionBarPrimitive.Reload aria-label="Retry response">Retry</ActionBarPrimitive.Reload>
+          </ActionBarPrimitive.Root>
+        </AuiIf>
       </div>
     </MessagePrimitive.Root>
   );
@@ -53,15 +61,9 @@ export function Transcript() {
   return (
     <ThreadPrimitive.Root className="thread-root">
       <ThreadPrimitive.Viewport className="transcript" aria-label="Conversation transcript" aria-busy={loading}>
-        {!threadId && <div className="empty-state"><h1>Start a conversation</h1><p>Create a thread to begin a Seleric mission.</p></div>}
+        {!threadId && <div className="empty-state"><h1>What can Seleric help with?</h1><p>Type a message below to start a conversation.</p></div>}
         {threadId && <ThreadPrimitive.Empty><div className="empty-state"><h1>What should we investigate?</h1><p>Ask a question and the specialist swarm will coordinate a response.</p></div></ThreadPrimitive.Empty>}
         <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage, SystemMessage }} />
-        <ThreadPrimitive.If running>
-        <article className="message assistant running" aria-label="Assistant is working" aria-live="polite">
-          <div className="message-avatar" aria-hidden="true">S</div>
-          <div className="message-body"><header>Seleric</header><p><span className="pulse-dot" /> Coordinating specialists…</p></div>
-        </article>
-        </ThreadPrimitive.If>
         <ThreadPrimitive.ScrollToBottom aria-label="Scroll to latest message" className="scroll-latest">↓</ThreadPrimitive.ScrollToBottom>
       </ThreadPrimitive.Viewport>
     </ThreadPrimitive.Root>

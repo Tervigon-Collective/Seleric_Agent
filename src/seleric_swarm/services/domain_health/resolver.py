@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
-from seleric_swarm.domain.models import StateRequest
+from seleric_swarm.domain.models import StateNeed, StateRequest
 from seleric_swarm.paths import repo_root
-from seleric_swarm.services.domain_health.models import DomainStateSnapshot, ResolvedMetric
+from seleric_swarm.services.domain_health.models import DomainStateSnapshot, DomainStatus, ResolvedMetric
 from seleric_swarm.services.time_range import resolve_time_range
 
 if TYPE_CHECKING:
@@ -63,7 +63,10 @@ def _headline_signals(rules: list[dict[str, Any]], resolved: list[ResolvedMetric
     by_metric = {m.metric_id: m for m in resolved}
     signals: list[str] = []
     for rule in rules:
-        comparator = _RULE_COMPARATORS.get(rule.get("rule"))
+        rule_name = rule.get("rule")
+        if not isinstance(rule_name, str):
+            continue
+        comparator = _RULE_COMPARATORS.get(rule_name)
         if comparator is None:
             continue
         breached, direction = comparator
@@ -129,12 +132,14 @@ class DomainStateResolver:
 
         resolved: list[ResolvedMetric] = []
         query_ids: list[str] = []
-        status = "OK"
+        status: DomainStatus = "OK"
         for entry in block.get("metrics", []):
             metric_id = entry["metric_id"]
             windowed_point = entry.get("feature_class") == "windowed_point"
             feature_ids = entry.get("features") or []
-            need = ["actual", *(["features"] if feature_ids and not windowed_point else [])]
+            need: list[StateNeed] = ["actual"]
+            if feature_ids and not windowed_point:
+                need.append("features")
             request = StateRequest(
                 metric_id=metric_id,
                 time_range=time_range,
@@ -171,7 +176,7 @@ class DomainStateResolver:
             )
             query_id = state.provenance.get("query_id")
             if query_id:
-                query_ids.append(query_id)
+                query_ids.append(str(query_id))
 
         return DomainStateSnapshot(
             domain=domain,

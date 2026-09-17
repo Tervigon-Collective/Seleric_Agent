@@ -250,9 +250,10 @@ def list_threads(
     request: Request, limit: int = Query(default=50, ge=1, le=200)
 ) -> list[Thread]:
     principal = _principal(request)
-    return _repositories(_runtime(request)).threads.list_for_owner(
+    threads = _repositories(_runtime(request)).threads.list_for_owner(
         principal.workspace_id, principal.user_id, limit=limit
     )
+    return [thread for thread in threads if thread.status is ThreadStatus.ACTIVE]
 
 
 @router.get("/threads/{thread_id}")

@@ -87,4 +87,28 @@ describe("assistant-ui Seleric adapter", () => {
       parent_message_id: "message-1",
     }));
   });
+
+  it("renders a single coordinating assistant bubble while a run is in progress", () => {
+    useConversationStore.setState({
+      submitting: true,
+      messages: {
+        "thread-1": [{
+          id: "message-user",
+          thread_id: "thread-1",
+          workspace_id: "workspace-1",
+          user_id: "user-1",
+          role: "USER",
+          parts: [{ type: "TEXT", content: "hi" }],
+          run_id: null,
+          parent_message_id: null,
+          created_at: "2026-09-17T00:00:00.000Z",
+        }],
+      },
+    });
+    renderConversation();
+
+    expect(container.querySelectorAll(".message.assistant")).toHaveLength(1);
+    expect(container.textContent).toContain("Coordinating specialists");
+    expect(container.querySelector('[aria-label="Retry response"]')).toBeNull();
+  });
 });
