@@ -108,7 +108,15 @@ class MetricRegistry:
         if meta.supported_dimensions and "supported_dimensions" not in raw:
             raw["supported_dimensions"] = list(meta.supported_dimensions)
         category = str(raw.get("category") or "").lower()
-        domain = _CATEGORY_DOMAIN.get(category) or (overlay.domain if overlay else "")
+        # The YAML overlay is authoritative when it exists (same precedence as
+        # direction_bad/seleric_module/aliases/unit below) -- it exists
+        # specifically to override cases like CAC/spend/gross_roas, which
+        # live unscoped on canonical_pnl and so carry the live catalogue's
+        # "finance" category despite being performance-owned metrics. Falling
+        # back to the raw category here silently reassigned their domain
+        # (and therefore mission lead) to finance_agent once the live
+        # catalogue entry got bound.
+        domain = (overlay.domain if overlay else None) or _CATEGORY_DOMAIN.get(category) or ""
         payload: dict[str, Any] = {
             "id": meta.id,
             "catalogue_metric": meta.id,

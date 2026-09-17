@@ -310,3 +310,50 @@ def test_failed_cancel_clears_process_flag(runtime):
         cancel_running_mission(runtime, mission_id=mid)
     assert is_cancel_requested(mid) is False
     clear_cancel(mid)
+
+
+def test_business_state_data_origin_validates_in_anomaly_artifact():
+    from seleric_swarm.swarm.artifacts import Anomaly
+    anomaly = Anomaly(
+        artifact_id="AN-test-123",
+        artifact_type="anomaly",
+        mission_id="MS-test",
+        created_by="anomaly_agent",
+        metric_id="commerce_net_revenue_daily",
+        observed=32121.87,
+        expected_range=[100000.0, 150000.0],
+        deviation_pct=-89.25,
+        score=0.89,
+        direction="down",
+        direction_bad="down",
+        adverse=True,
+        magnitude_score=0.89,
+        adversity_score=0.89,
+        data_origin="BUSINESS_STATE",
+    )
+    assert anomaly.data_origin == "BUSINESS_STATE"
+
+
+@pytest.mark.asyncio
+async def test_synthesize_swarm_response_unaudited_numbers_signature(runtime):
+    from seleric_swarm.coordinator.synthesis.llm_response import synthesize_swarm_response
+    from seleric_swarm.swarm.blackboard import Blackboard
+    from seleric_swarm.swarm.mission import SwarmMission
+
+    bb = Blackboard(mission_id="MS-test-synthesis")
+    mission = SwarmMission(
+        mission_id="MS-test-synthesis",
+        query="Why has sales decreased over the last 3 days?",
+        initial_lead="commerce_agent",
+        time_range={"start": "2026-09-01", "end": "2026-09-03"},
+    )
+    # Mock LLM response to complete without error or AttributeError
+    res = await synthesize_swarm_response(
+        runtime=runtime,
+        blackboard=bb,
+        mission=mission,
+        completion_status="completed",
+    )
+    assert isinstance(res, str)
+    assert len(res) > 0
+

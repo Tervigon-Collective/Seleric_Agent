@@ -1,31 +1,34 @@
 """LangGraph workflow for the Diagnostic Agent.
 
     START
-      -> load_inputs           (evidence + anomalies + outcome metric + degradation start)
-      -> generate_hypotheses   (observed co-movers + constrained LLM, capped)
-      -> rank_hypotheses       (deterministic prior)
-      -> test_hypotheses       (per-hypothesis plan + deterministic runners)
-      -> classify              (hard gates -> reject; score -> testing/reject)
-      -> causal_estimate       (top surviving hypothesis -> service -> confidence tier)
-      -> finalize              (retain/reject, DiagnosticArtifact + CausalArtifact + Claim[])
+      -> load_inputs               (evidence + anomalies + outcome metric + degradation start)
+      -> identify_candidate_nodes  (causal-graph ancestors of the outcome -> ranked candidates)
+      -> causal_estimate           (DoWhy run for every candidate, concurrently)
+      -> generate_scenarios        (LLM narrates ONLY the causally-confirmed candidates)
+      -> finalize                  (retain/reject by confidence tier; DiagnosticArtifact +
+                                     CausalArtifact(s) + Claim[])
       -> END
+
+DoWhy decides WHICH nodes are responsible; the LLM only narrates confirmed
+results afterward -- it never proposes a mechanism or picks a root cause.
 """
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
 from seleric_swarm.agents.diagnostic.causal import estimate_for_hypothesis
+from seleric_swarm.agents.diagnostic.causal_discovery import identify_candidate_nodes
 from seleric_swarm.agents.diagnostic.context import DiagnosticContext
 from seleric_swarm.agents.diagnostic.contracts import DiagnosticResult
-from seleric_swarm.agents.diagnostic.hypotheses import generate_hypotheses, rank_hypotheses
 from seleric_swarm.agents.diagnostic.intake import resolve_intake
+from seleric_swarm.agents.diagnostic.scenarios import generate_scenarios
 from seleric_swarm.agents.diagnostic.state import DiagnosticState
-from seleric_swarm.agents.diagnostic.synthesis import classify_hypothesis, finalize
-from seleric_swarm.agents.diagnostic.testing import plan_tests, run_tests
+from seleric_swarm.agents.diagnostic.synthesis import finalize
 
 
 def _ctx(state: DiagnosticState) -> DiagnosticContext:
@@ -47,7 +50,7 @@ async def load_inputs(state: DiagnosticState) -> dict[str, Any]:
 
 def _route_after_load(state: DiagnosticState) -> str:
     ctx = _ctx(state)
-    return "no_anomaly" if ctx.no_confirmed_anomaly else "generate_hypotheses"
+    return "no_anomaly" if ctx.no_confirmed_anomaly else "identify_candidate_nodes"
 
 
 async def no_anomaly_node(state: DiagnosticState) -> dict[str, Any]:
@@ -80,63 +83,49 @@ async def no_anomaly_node(state: DiagnosticState) -> dict[str, Any]:
     }
 
 
-async def generate_node(state: DiagnosticState) -> dict[str, Any]:
+async def identify_node(state: DiagnosticState) -> dict[str, Any]:
     ctx = _ctx(state)
-    ctx.hypotheses = await generate_hypotheses(ctx)
-    return {"hypotheses": [h.model_dump() for h in ctx.hypotheses]}
-
-
-async def rank_node(state: DiagnosticState) -> dict[str, Any]:
-    ctx = _ctx(state)
-    ctx.hypotheses = rank_hypotheses(ctx, ctx.hypotheses)
-    primary = next((h for h in ctx.hypotheses if h.is_primary), None)
-    return {
-        "hypotheses": [h.model_dump() for h in ctx.hypotheses],
-        "primary_hypothesis_id": primary.hypothesis_id if primary else "",
-    }
-
-
-async def test_node(state: DiagnosticState) -> dict[str, Any]:
-    ctx = _ctx(state)
-    for h in ctx.hypotheses:
-        plan = plan_tests(ctx, h)
-        h.test_results = await run_tests(ctx, h, plan)
-    return {"hypotheses": [h.model_dump() for h in ctx.hypotheses]}
-
-
-async def classify_node(state: DiagnosticState) -> dict[str, Any]:
-    ctx = _ctx(state)
-    for h in ctx.hypotheses:
-        classify_hypothesis(ctx, h)
-    ctx.hypotheses.sort(key=lambda h: (-h.posterior_score, -h.prior_score, h.statement))
+    ctx.hypotheses = await identify_candidate_nodes(ctx)
     return {"hypotheses": [h.model_dump() for h in ctx.hypotheses]}
 
 
 async def causal_node(state: DiagnosticState) -> dict[str, Any]:
-    """Estimate causal effect for every eligible surviving hypothesis, not just
-    one — a real contributor can co-exist with a stronger one (spec §54-55).
-    ``max_primary_candidates`` still bounds how many DoWhy runs this costs.
+    """Run DoWhy for every candidate node the causal graph surfaced -- not a
+    single LLM-picked guess. This is the step that finds "all responsible
+    nodes" the diagnosis is built from.
     """
     ctx = _ctx(state)
-    eligible = [
-        h for h in ctx.hypotheses
-        if h.status in {"testing", "retained"} and h.treatment_metric and h.posterior_score >= 0.5
-    ]
-    if not eligible:
-        eligible = [h for h in ctx.hypotheses if h.is_primary and h.treatment_metric]
-    cap = ctx.policies.budget("max_primary_candidates")
-    picked = eligible[:cap]
-
     results: list[tuple[Any, str, Any]] = []
-    for h in picked:
-        artifact, confidence = await estimate_for_hypothesis(ctx, h)
-        results.append((h, str(confidence), artifact))
-
+    if ctx.hypotheses:
+        estimates = await asyncio.gather(*[estimate_for_hypothesis(ctx, h) for h in ctx.hypotheses])
+        for h, (artifact, confidence) in zip(ctx.hypotheses, estimates, strict=True):
+            results.append((h, str(confidence), artifact))
     ctx.scratch["causal_results"] = results
     if not results:
         return {"causal_confidence": "", "causal_ref": ""}
     best = max(results, key=lambda r: ctx.policies.confidence_rank(r[1]))
     return {"causal_confidence": best[1], "causal_ref": best[2].causal_id}
+
+
+def _causally_confirmed(ctx: DiagnosticContext, causal_results: list[tuple[Any, str, Any]]) -> list[Any]:
+    """Candidates worth narrating: retained, or inconclusive-but-reported.
+    Never rejected, never a candidate DoWhy didn't touch."""
+    out = []
+    for h, confidence, artifact in causal_results:
+        if confidence == "REJECTED":
+            continue
+        if ctx.policies.meets_retain(confidence) or ctx.policies.emit_inconclusive_finding():
+            out.append((h, confidence, artifact))
+    return out
+
+
+async def scenarios_node(state: DiagnosticState) -> dict[str, Any]:
+    ctx = _ctx(state)
+    causal_results = ctx.scratch.get("causal_results") or []
+    ctx.scratch["scenario_narratives"] = await generate_scenarios(
+        ctx, _causally_confirmed(ctx, causal_results)
+    )
+    return {}
 
 
 async def finalize_node(state: DiagnosticState) -> dict[str, Any]:
@@ -149,9 +138,10 @@ async def finalize_node(state: DiagnosticState) -> dict[str, Any]:
         hypotheses=ctx.hypotheses,
     )
     causal_results = ctx.scratch.get("causal_results") or []
-    result = finalize(ctx, result, causal_results=causal_results)
+    narratives = ctx.scratch.get("scenario_narratives") or {}
+    result = finalize(ctx, result, causal_results=causal_results, narratives=narratives)
     result.audit = {
-        "hypotheses_generated": len(ctx.hypotheses),
+        "candidates_identified": len(ctx.hypotheses),
         "retained": [h.hypothesis_id for h in result.retained()],
         "rejected": [h.hypothesis_id for h in result.rejected()],
         "causal_candidates_estimated": len(causal_results),
@@ -172,24 +162,20 @@ def build_diagnostic_graph():
     g = StateGraph(DiagnosticState)
     g.add_node("load_inputs", load_inputs)
     g.add_node("no_anomaly", no_anomaly_node)
-    g.add_node("generate_hypotheses", generate_node)
-    g.add_node("rank_hypotheses", rank_node)
-    g.add_node("test_hypotheses", test_node)
-    g.add_node("classify", classify_node)
+    g.add_node("identify_candidate_nodes", identify_node)
     g.add_node("causal_estimate", causal_node)
+    g.add_node("generate_scenarios", scenarios_node)
     g.add_node("finalize", finalize_node)
 
     g.add_edge(START, "load_inputs")
     g.add_conditional_edges(
         "load_inputs",
         _route_after_load,
-        {"no_anomaly": "no_anomaly", "generate_hypotheses": "generate_hypotheses"},
+        {"no_anomaly": "no_anomaly", "identify_candidate_nodes": "identify_candidate_nodes"},
     )
     g.add_edge("no_anomaly", END)
-    g.add_edge("generate_hypotheses", "rank_hypotheses")
-    g.add_edge("rank_hypotheses", "test_hypotheses")
-    g.add_edge("test_hypotheses", "classify")
-    g.add_edge("classify", "causal_estimate")
-    g.add_edge("causal_estimate", "finalize")
+    g.add_edge("identify_candidate_nodes", "causal_estimate")
+    g.add_edge("causal_estimate", "generate_scenarios")
+    g.add_edge("generate_scenarios", "finalize")
     g.add_edge("finalize", END)
     return g.compile()

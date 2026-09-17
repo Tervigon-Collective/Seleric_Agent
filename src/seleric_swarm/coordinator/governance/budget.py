@@ -10,6 +10,7 @@ cycle.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from seleric_swarm.coordinator.contracts import MissionBudget
@@ -61,6 +62,20 @@ def check_budget(
     return _OK
 
 
+def _elapsed_seconds(state: dict[str, Any]) -> float | None:
+    started = state.get("started_at")
+    if not started or not isinstance(started, str):
+        return None
+    try:
+        ts = started.replace("Z", "+00:00")
+        started_dt = datetime.fromisoformat(ts)
+        if started_dt.tzinfo is None:
+            started_dt = started_dt.replace(tzinfo=UTC)
+        return (datetime.now(UTC) - started_dt).total_seconds()
+    except ValueError:
+        return None
+
+
 def check_hard_stops(state: dict[str, Any], limits: MissionLimits) -> BudgetVerdict:
     if int(state.get("coordinator_iterations") or 0) > limits.max_iterations:
         return BudgetVerdict(False, "BUDGET_EXCEEDED", "Coordinator iteration ceiling reached", "iterations")
@@ -70,6 +85,9 @@ def check_hard_stops(state: dict[str, Any], limits: MissionLimits) -> BudgetVerd
         )
     if int(state.get("agent_calls") or 0) > limits.max_agent_calls:
         return BudgetVerdict(False, "BUDGET_EXCEEDED", "Agent call ceiling reached", "agent_calls")
+    elapsed = _elapsed_seconds(state)
+    if elapsed is not None and elapsed >= limits.max_runtime_seconds:
+        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Mission wall-clock deadline reached", "max_runtime")
     return _OK
 
 
@@ -121,5 +139,9 @@ def check_swarm_budget(
 
     if budgets.token_budget is not None and token_usage >= budgets.token_budget:
         return BudgetVerdict(False, "BUDGET_EXCEEDED", "LLM token budget exhausted", "token_budget")
+
+    elapsed = _elapsed_seconds(state)
+    if elapsed is not None and elapsed >= budgets.max_runtime_s:
+        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Mission wall-clock deadline reached", "max_runtime")
 
     return _OK

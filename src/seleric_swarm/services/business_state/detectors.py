@@ -60,6 +60,34 @@ def robust_zscore(history: list[float], observed: float, *, z_threshold: float =
     )
 
 
+def _rescore_against_expected(
+    observed: float, *, expected: float, expected_range: list[float], z_threshold: float
+) -> RobustZScoreResult:
+    """Score an arbitrary ``observed`` against an already-computed median +
+    MAD band, instead of the band's own last-history-point observation.
+
+    ``expected_range`` is symmetric around ``expected`` by construction
+    (``[median - z*sigma, median + z*sigma]``, see ``robust_zscore``), so
+    sigma is recoverable without needing the raw history back from the
+    caller.
+    """
+    sigma = (expected_range[1] - expected) / z_threshold if z_threshold else 0.0
+    if sigma <= 0:
+        sigma = 1e-9  # same flat-history guard as robust_zscore
+    z = (observed - expected) / sigma
+    deviation_pct = ((observed - expected) / expected * 100) if expected else None
+    direction = "up" if observed > expected else ("down" if observed < expected else "flat")
+    return RobustZScoreResult(
+        observed=observed,
+        expected=expected,
+        expected_range=expected_range,
+        deviation_pct=deviation_pct,
+        score=abs(z),
+        direction=direction,
+        is_anomaly=abs(z) >= z_threshold,
+    )
+
+
 class RobustZScoreDetector:
     """``AnomalyDetector`` Protocol implementation backed by
     ``BusinessStateService`` history (median + MAD), instead of the
@@ -92,19 +120,32 @@ class RobustZScoreDetector:
             if state.anomaly is None:
                 continue
             anomaly = state.anomaly
-            adverse = anomaly["direction"] == reading.direction_bad
+            # ``anomaly["observed"]`` is BusinessStateService's own last
+            # history point (e.g. a daily-series lookup anchored on the
+            # request window's end date) — NOT necessarily what this
+            # reading's evidence pipeline actually fetched (a monthly total,
+            # a comparison period, a breakdown slice, ...). Rescore
+            # reading.value against the same expected band instead of
+            # silently substituting a different number for it.
+            rescored = _rescore_against_expected(
+                reading.value,
+                expected=anomaly["expected"],
+                expected_range=anomaly["expected_range"],
+                z_threshold=anomaly["detector"]["z_threshold"],
+            )
+            adverse = rescored.direction == reading.direction_bad
             findings.append(
                 AnomalyFinding(
                     metric_id=reading.metric_id,
-                    observed=anomaly["observed"],
-                    expected_range=anomaly["expected_range"],
-                    deviation_pct=anomaly["deviation_pct"],
-                    score=anomaly["score"],
-                    direction=anomaly["direction"],
+                    observed=rescored.observed,
+                    expected_range=rescored.expected_range,
+                    deviation_pct=rescored.deviation_pct,
+                    score=rescored.score,
+                    direction=rescored.direction,
                     direction_bad=reading.direction_bad,
                     adverse=adverse,
-                    magnitude_score=anomaly["score"],
-                    adversity_score=anomaly["score"] if adverse else 0.0,
+                    magnitude_score=rescored.score,
+                    adversity_score=rescored.score if adverse else 0.0,
                     detector=anomaly["detector"],
                     dimensions=reading.dimensions,
                     data_origin="BUSINESS_STATE",

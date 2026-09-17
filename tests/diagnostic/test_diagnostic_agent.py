@@ -1,4 +1,14 @@
-"""Diagnostic Agent behaviour suite."""
+"""Diagnostic Agent behaviour suite.
+
+Candidate discovery is causal-graph-driven (``causal_discovery.py``): every
+node with a path to the outcome on the registered graph is a candidate DoWhy
+tests, ranked by observed deviation only when the candidate set exceeds
+budget. There is no more LLM hypothesis proposal or deterministic
+test-battery gate in between -- ``causal/estimator.py``'s confidence tiering
+(temporal/graph/refutation checks) is the only gate before a candidate is
+retained, and the LLM (``scenarios.py``) only narrates already-confirmed
+results afterward.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +16,8 @@ from seleric_swarm.agents.diagnostic import DiagnosticRequest
 from tests.diagnostic.conftest import MISSION, anomaly, ev, matching_truth
 
 _OUTCOME = "metric.purchase_cvr"
-_TREATMENT = "metric.spend"  # registered, performance-owned
-_ALT = "metric.ctr"  # registered, also observed — competing co-mover
+_TREATMENT = "metric.spend"  # registered, performance-owned; graph ancestor of "purchase"
+_ALT = "metric.ctr"  # registered, also a graph ancestor of "purchase"
 _START = "2026-09-01T11:47:00+05:30"
 _DEG = "2026-09-01T12:05:00+05:30"
 
@@ -58,7 +68,6 @@ async def test_matching_observed_treatment_is_retained(make_agent):
     treatments = {h.treatment_metric for h in r.hypotheses}
     assert _ALT in treatments
     assert r.claims and r.claims[0].claim_type == "causal"
-    assert all(c.severity in {"info", "warning", "blocking"} for c in r.contradictions)
     assert any("confounding" in lim.lower() for lim in r.limitations)
 
 
@@ -116,31 +125,10 @@ async def test_no_leadership_transfer_when_lead_owns_asked_metric(make_agent):
 
 
 # --------------------------------------------------------------------------- #
-# 1b. a reported (not merely absent) small sample size downgrades support via
-#     the shared deterministic statistics service - never treated as zero
+# 2. impossible temporal ordering -> the causal check rejects the candidate
+#    (enforced in causal/estimator.py::_confidence, independent of the LLM)
 # --------------------------------------------------------------------------- #
-async def test_reported_small_sample_size_downgrades_evidence_sufficiency(make_agent):
-    agent = make_agent(
-        _cvr_evidence(sample_size=5),
-        _cvr_anoms(),
-        causal_truth=_retain_truth(),
-    )
-    r = await agent.diagnose(_req(
-        outcome_metric=_OUTCOME,
-        degradation_started_at=_DEG,
-        context={"trust_metadata_causal": True},
-    ))
-    treat_h = next(h for h in r.hypotheses if h.treatment_metric == _TREATMENT)
-    ev_check = next(t for t in treat_h.test_results if t.kind == "evidence_sufficiency")
-    assert ev_check.passed is False
-    assert "sample_size_check" in ev_check.detail
-    assert ev_check.detail["sample_size_check"]["sample_size"] == 5
-
-
-# --------------------------------------------------------------------------- #
-# 2. impossible temporal ordering -> hypothesis rejected on the hard gate
-# --------------------------------------------------------------------------- #
-async def test_temporal_reversal_rejects_hypothesis(make_agent):
+async def test_temporal_reversal_rejects_candidate(make_agent):
     late = "2026-09-01T15:05:00+05:30"
     agent = make_agent(
         _cvr_evidence(treatment_start=late),
@@ -154,9 +142,7 @@ async def test_temporal_reversal_rejects_hypothesis(make_agent):
     ))
     treat_h = next(h for h in r.hypotheses if h.treatment_metric == _TREATMENT)
     assert treat_h.status == "rejected"
-    assert "hard gate" in (treat_h.rejection_reason or "")
-    blocking = [c for c in r.contradictions if c.hypothesis_id == treat_h.hypothesis_id]
-    assert blocking and blocking[0].category == "temporal" and blocking[0].severity == "blocking"
+    assert "causal check rejected" in (treat_h.rejection_reason or "")
 
 
 # --------------------------------------------------------------------------- #
@@ -186,7 +172,7 @@ async def test_unknown_metric_reports_insufficient_evidence(make_agent):
 # --------------------------------------------------------------------------- #
 # 2c. runtime budget exhaustion returns a partial result instead of hanging
 # --------------------------------------------------------------------------- #
-async def test_runtime_budget_exhaustion_returns_partial_result(make_agent):
+async def test_runtime_budget_exhaustion_returns_partial_result(make_agent, graphs):
     import asyncio
 
     from seleric_swarm.agents.diagnostic import DiagnosticDeps
@@ -206,10 +192,11 @@ async def test_runtime_budget_exhaustion_returns_partial_result(make_agent):
     deps = DiagnosticDeps(
         evidence_repo=InMemoryEvidenceRepository(_cvr_evidence()),
         anomaly_repo=InMemoryAnomalyRepository(_cvr_anoms()),
+        causal_graphs=graphs,
         causal_service=TemplateCausalEstimationService(_retain_truth()),
         reasoning=_SlowReasoningModel(),
     )
-    policies = DiagnosticPolicies(raw={"budgets": {"max_runtime_seconds": 1, "max_hypotheses": 20}})
+    policies = DiagnosticPolicies(raw={"budgets": {"max_runtime_seconds": 1}})
     r = await DiagnosticAgent(deps=deps, policies=policies).diagnose(_req(
         outcome_metric=_OUTCOME,
         degradation_started_at=_DEG,
@@ -255,10 +242,7 @@ async def test_asked_metric_stays_even_when_lead_is_technical(make_agent):
 
 
 async def test_commerce_keeps_asked_gross_sales_not_net_sales_sibling(make_agent):
-    """Asked metric stays even when a louder sibling KPI (net_sales) is also anomalous.
-
-    Candidates come from observed co-movers, not a per-metric YAML story list.
-    """
+    """Asked metric stays even when a louder sibling KPI (net_sales) is also anomalous."""
     agent = make_agent(
         [ev("EV-gs", "metric.gross_sales", 120.0, change_pct=20.0),
          ev("EV-ns", "metric.net_sales", 40.0, change_pct=-60.0),
@@ -274,36 +258,11 @@ async def test_commerce_keeps_asked_gross_sales_not_net_sales_sibling(make_agent
     ))
     assert r.outcome_metric == "metric.gross_sales"
     treatments = {h.treatment_metric for h in r.hypotheses}
-    assert "metric.net_sales" in treatments
-    assert _OUTCOME in treatments
-    assert r.hypotheses, "observed co-movers must seed hypotheses without a YAML outcome entry"
+    assert treatments == {"metric.net_sales"}, "candidates come from the causal graph, not every anomaly"
 
 
 # --------------------------------------------------------------------------- #
-# 5. control divergence: a common shock (control moved too) weakens the hypothesis
-# --------------------------------------------------------------------------- #
-async def test_control_divergence_flags_common_shock(make_agent):
-    bundle = _cvr_evidence()
-    for row in bundle:
-        if row.get("dimensions", {}).get("device") == "desktop":
-            row["change_pct"] = -22.0
-    agent = make_agent(
-        bundle,
-        [anomaly("AN-cvr", _OUTCOME, -24.0, start_time=_DEG)],
-        causal_truth=_retain_truth(),
-    )
-    r = await agent.diagnose(_req(
-        outcome_metric=_OUTCOME,
-        degradation_started_at=_DEG,
-        context={"trust_metadata_causal": True},
-    ))
-    treat_h = next(h for h in r.hypotheses if h.treatment_metric == _TREATMENT)
-    cd = next(t for t in treat_h.test_results if t.kind == "control_divergence")
-    assert cd.passed is False
-
-
-# --------------------------------------------------------------------------- #
-# 6. diagnostic artifact + claim shapes are what the Skeptic consumes
+# 5. diagnostic artifact + claim shapes are what the Skeptic consumes
 # --------------------------------------------------------------------------- #
 async def test_emits_skeptic_ready_contracts(make_agent):
     agent = make_agent(
@@ -331,7 +290,7 @@ async def test_emits_skeptic_ready_contracts(make_agent):
 
 
 # --------------------------------------------------------------------------- #
-# 7. determinism (no reasoning model)
+# 6. determinism (no reasoning model)
 # --------------------------------------------------------------------------- #
 async def test_deterministic(make_agent):
     reqk = {
@@ -350,25 +309,25 @@ async def test_deterministic(make_agent):
 
 
 # --------------------------------------------------------------------------- #
-# 8. constrained LLM enrichment stays bounded to known metrics
+# 7. scenario narration is bounded to DoWhy-confirmed candidates: a
+#    hallucinated node the LLM names is dropped, not surfaced as a finding
 # --------------------------------------------------------------------------- #
-async def test_llm_enrichment_is_bounded(make_agent, graphs):
+async def test_scenario_narration_is_bounded_to_confirmed_candidates(make_agent, graphs):
     from seleric_swarm.agents.diagnostic import DiagnosticDeps
     from seleric_swarm.agents.diagnostic.agent import DiagnosticAgent
-    from seleric_swarm.agents.diagnostic.hypotheses.generator import _LLMHypo, _LLMHypoList
     from seleric_swarm.agents.diagnostic.reasoning import ScriptedReasoningModel
     from seleric_swarm.agents.diagnostic.registries import (
         InMemoryAnomalyRepository,
         InMemoryEvidenceRepository,
         TemplateCausalEstimationService,
     )
+    from seleric_swarm.agents.diagnostic.scenarios import _Scenario, _ScenarioList
 
     scripted = ScriptedReasoningModel(
         structured=[
-            _LLMHypoList(hypotheses=[
-                _LLMHypo(statement="Aliens changed the weather", treatment_metric="metric.cosmic_rays"),
-                _LLMHypo(statement="Orders moved on their own", treatment_metric="metric.orders"),
-                _LLMHypo(statement="CTR declined alongside conversion", treatment_metric=_ALT),
+            _ScenarioList(scenarios=[
+                _Scenario(node="metric.cosmic_rays", narrative="Aliens changed the weather."),
+                _Scenario(node=_TREATMENT, narrative="Ad spend surged, driving down conversion efficiency."),
             ])
         ]
     )
@@ -384,63 +343,13 @@ async def test_llm_enrichment_is_bounded(make_agent, graphs):
         degradation_started_at=_DEG,
         context={"trust_metadata_causal": True},
     ))
-    llm_hyps = [h for h in r.hypotheses if h.llm_generated]
-    assert all(h.treatment_metric in {_ALT} for h in llm_hyps)
-    assert not any("aliens" in h.statement.lower() for h in r.hypotheses)
-    alt_hyps = [h for h in r.hypotheses if h.treatment_metric == _ALT]
-    assert len(alt_hyps) == 1
-    user = scripted.calls[0]["user"]
-    assert "change_pct=" in user
-    assert "Allowed catalogue metric ids:" in user
-    assert _ALT in user
-    assert "metric.cosmic_rays" not in user
+    assert r.finding is not None
+    assert "ad spend" in r.finding.statement.lower()
+    assert not any("aliens" in f.statement.lower() for f in r.findings)
 
 
 # --------------------------------------------------------------------------- #
-# 8b. semantically-equivalent hypotheses (same mechanism, different wording)
-#     dedupe to one hypothesis regardless of phrasing
-# --------------------------------------------------------------------------- #
-async def test_semantically_equivalent_hypotheses_are_deduplicated(make_agent, graphs):
-    from seleric_swarm.agents.diagnostic import DiagnosticDeps
-    from seleric_swarm.agents.diagnostic.agent import DiagnosticAgent
-    from seleric_swarm.agents.diagnostic.hypotheses.generator import _LLMHypo, _LLMHypoList
-    from seleric_swarm.agents.diagnostic.reasoning import ScriptedReasoningModel
-    from seleric_swarm.agents.diagnostic.registries import (
-        InMemoryAnomalyRepository,
-        InMemoryEvidenceRepository,
-        TemplateCausalEstimationService,
-    )
-
-    scripted = ScriptedReasoningModel(
-        structured=[
-            _LLMHypoList(hypotheses=[
-                _LLMHypo(
-                    statement="Rising media spend inflated acquisition cost and cut conversion",
-                    treatment_metric=_TREATMENT,
-                ),
-            ])
-        ]
-    )
-    deps = DiagnosticDeps(
-        evidence_repo=InMemoryEvidenceRepository(_cvr_evidence()),
-        anomaly_repo=InMemoryAnomalyRepository(
-            [anomaly("AN-cvr", _OUTCOME, -24.0, start_time=_DEG)]
-        ),
-        causal_graphs=graphs,
-        causal_service=TemplateCausalEstimationService(_retain_truth()),
-        reasoning=scripted,
-    )
-    r = await DiagnosticAgent(deps=deps).diagnose(_req(
-        outcome_metric=_OUTCOME,
-        degradation_started_at=_DEG,
-        context={"trust_metadata_causal": True},
-    ))
-    treat_hyps = [h for h in r.hypotheses if h.treatment_metric == _TREATMENT]
-    assert len(treat_hyps) == 1
-
-
-# --------------------------------------------------------------------------- #
-# 9. multiple contributors: a real-but-weaker mechanism is reported alongside
+# 8. multiple contributors: a real-but-weaker mechanism is reported alongside
 #    the primary, ranked below it, and never fabricated into a validated claim
 # --------------------------------------------------------------------------- #
 async def test_multiple_contributors_ranked_not_forced_to_one(make_agent):
@@ -454,7 +363,7 @@ async def test_multiple_contributors_ranked_not_forced_to_one(make_agent):
         [anomaly("AN-cvr", _OUTCOME, -24.0, start_time=_DEG)],
         causal_truth=_retain_truth(),
     )
-    agent.policies = DiagnosticPolicies(raw={"budgets": {"max_primary_candidates": 4}})
+    agent.policies = DiagnosticPolicies(raw={"budgets": {"max_causal_candidates": 4}})
     r = await agent.diagnose(_req(
         outcome_metric=_OUTCOME,
         degradation_started_at=_DEG,
@@ -472,3 +381,15 @@ async def test_multiple_contributors_ranked_not_forced_to_one(make_agent):
     assert len(r.claims) == 1
     assert r.residual_unexplained is True
     assert r.finding is r.findings[0]
+
+
+async def test_net_sales_has_causal_ancestors_and_candidates():
+    from seleric_swarm.agents.diagnostic.causal_discovery import graph_candidate_metric_ids
+    from seleric_swarm.agents.diagnostic.causal_graph_builder import build_business_graph
+    from seleric_swarm.services.metrics import MetricRegistry
+
+    metrics = MetricRegistry("config/metric_registry.yaml")
+    graph = build_business_graph(metrics)
+    candidates = graph_candidate_metric_ids(graph, "metric.net_sales", metrics)
+    assert len(candidates) > 0
+    assert any("purchase" in c or "gross_sales" in c or "discount" in c for c in candidates)

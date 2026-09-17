@@ -1,4 +1,13 @@
-"""Seleric Diagnostic Agent - explicit-hypothesis, test-driven root-cause analysis.
+"""Seleric Diagnostic Agent - causal-graph-first root-cause analysis.
+
+Candidate discovery walks the registered causal graph backward from the
+outcome metric to find every node with a path to it (``causal_discovery.py``);
+DoWhy (``causal/estimator.py``) estimates and refutes an effect for each one
+(``causal_graph_builder.py`` derives the graph from ``config/metric_registry
+.yaml``'s ``depends_on`` fields, merged with the hand-authored dimension-level
+graph in ``config/causal_graphs.example.yaml``). The LLM
+(``scenarios.py``) only narrates already-confirmed candidates afterward -- it
+never proposes a mechanism or decides retain/reject.
 
 Public surface:
 
@@ -11,7 +20,7 @@ Public surface:
     )
 
 Emits ``DiagnosticArtifact`` + ``CausalAnalysisArtifact`` + causal ``Claim[]`` -
-the contracts the Skeptic validates. See ``docs/diagnostic/``.
+the contracts the Skeptic validates.
 """
 
 from __future__ import annotations

@@ -279,86 +279,225 @@ it isn't mistaken for something this sprint broke.
 Pick **one** domain (recommend `commerce` — smallest, clearest core metric
 set, matches the pilot metric already live from Sprint 1).
 
-- [ ] `DomainStateSnapshot` contract frozen (per
-      [04_DOMAIN_HEALTH_SNAPSHOTS.md](04_DOMAIN_HEALTH_SNAPSHOTS.md#domainstatesnapshot-shape-contract-sketch-not-final)) —
-      schema carries `brand_id`, **pinned to `"20"`** for this sprint (5
-      active brands exist per `catalogue_list_brands`, but only Tilting
-      Heads is in scope until that decision is revisited); resolver passes
-      `brand_id` explicitly, never relies on the MCP's silent default
-- [ ] `src/seleric_swarm/services/domain_health/` package scaffolded
-      (`resolver.py`, `models.py`, `snapshot_store.py` — per
-      [04's Repo placement](04_DOMAIN_HEALTH_SNAPSHOTS.md#repo-placement-service--config))
-- [ ] `config/domain_health_profiles.yaml` with a `commerce` block only —
-      metric list + feature class + health-signal thresholds live in YAML,
-      **not** hardcoded in `resolver.py`; `resolver.py` is generic over the
-      config from day one so adding domains in Sprint 4 is a YAML edit
-- [ ] `DomainStateResolver` for commerce only: reads the config block, calls
-      `BusinessStateService.get_metric_state` per listed metric, assembles
-      one snapshot
-- [ ] **[2026-09-14 decision] JSON files, not a new Postgres table** — one
+- [x] `DomainStateSnapshot` contract frozen — `services/domain_health/models.py`
+      (`DomainStateSnapshot`, `ResolvedMetric`); carries `brand_id`, defaults
+      to `"20"` per resolver call (never relies on the MCP's silent
+      default). Simplified from the doc's sketch: no `unit`/`is_anomaly`/
+      `anomaly_score`/`finality` fields yet — Sprint 3's commerce config
+      doesn't request anomaly, add when a domain does.
+- [x] `src/seleric_swarm/services/domain_health/` package scaffolded
+      (`resolver.py`, `models.py`, `snapshot_store.py`, `__init__.py`) —
+      `scheduler.py` deliberately not added yet, that's Sprint 4
+- [x] `config/domain_health_profiles.yaml` with a `commerce` block only —
+      metric list (`metric.net_sales`, `metric.gross_sales`, `metric.orders`,
+      `metric.returns_cancels` — real `metric_registry.yaml` ids, not the
+      doc sketch's catalogue ids) + per-metric feature list +
+      `health_signals` thresholds live in YAML; `resolver.py` is generic
+      over the config, adding a domain in Sprint 4 is a YAML block, no code
+      change
+- [x] `DomainStateResolver.resolve(domain, time_range, brand_id="20")` —
+      reads the config block, calls `BusinessStateService.get_metric_state`
+      per listed metric, assembles one `DomainStateSnapshot`
+      (`tests/unit/test_domain_health.py`, fake `BusinessStateService` since
+      the MCP round-trip itself is already covered by Sprint 1/2's tests)
+- [x] **[2026-09-14 decision] JSON files, not a new Postgres table** — one
       file per `(domain, as_of)` on disk via `snapshot_store.py`
-      (`get_latest(domain)` / `save(snapshot)`), no migration this sprint.
-      Move to the originally-planned Postgres JSONB table
-      (`persistence/postgres.py` pattern) once there's a real reason to
-      (multi-brand cross-snapshot queries, concurrent-write safety) — behind
-      the same `snapshot_store.py` interface so `resolver.py` doesn't change
-      when that happens
-- [ ] Manual/cron-less trigger first (a callable function, run by hand or a
-      test) — defer actual cron wiring to Sprint 4 so the resolver logic is
-      proven before scheduling infra is picked
-- [ ] `headline_signals` rule for commerce (threshold-based, deterministic)
+      (`get_latest(domain)` / `save(snapshot)`), no migration this sprint
+- [x] Manual/cron-less trigger — `DomainStateResolver.resolve()` is a plain
+      async method, called by hand or a test; no scheduler wired
+- [x] `headline_signals` rule for commerce (threshold-based, deterministic)
+      — only `period_delta_pct_below` implemented (the one rule kind the
+      commerce config uses); other rule kinds (anomaly-based, etc.) land
+      when a domain's config actually needs one
 
-**Exit criteria:** running the resolver once produces a valid JSON snapshot
-file for commerce with real numbers and correct `status` rollup, readable
-back via `snapshot_store.get_latest("commerce")`.
+**Exit criteria:** running the resolver once produces a valid snapshot for
+commerce with correct `status` rollup (`OK`/`DEGRADED`/`UNAVAILABLE` from the
+underlying `MetricState.status`es), readable back via
+`SnapshotStore.get_latest("commerce")`. **Met, unit-tested**
+(`test_resolve_commerce_snapshot_flags_net_sales_drop`,
+`test_resolve_degrades_status_on_partial_metric`,
+`test_snapshot_round_trips_through_store`) — not yet live-smoke-tested
+against real `seleric-mcp` data the way Sprint 1/2 were; do that before
+Sprint 4 extends the pattern to 7 more domains.
 
 ---
 
 ## Sprint 4 — Cron wiring + remaining domains
 
-- [ ] Decide cron mechanism (reuse existing ops scheduling vs. lightweight
-      in-process — this is the one open infra decision from 04, resolve it
-      here, not earlier)
-- [ ] `config/domain_health_profiles.yaml` gets 7 more domain blocks
+- [x] **Cron mechanism decision:** no new scheduler dependency, no
+      long-running in-process loop. `services/domain_health/scheduler.py`
+      exposes a plain async `run_once()` + a `python -m
+      seleric_swarm.services.domain_health.scheduler` entry point; an
+      OS-level cron / Windows Task Scheduler invokes it once per run. This
+      repo has no existing ops-scheduling infra to reuse (no `mage-ai`,
+      `celery`, `apscheduler`, etc. found), so "lightweight, stdlib-only" was
+      the only real option, not a close call.
+- [x] `config/domain_health_profiles.yaml` gets 7 more domain blocks
       (finance, performance, attribution, funnel, product, customer,
-      operations) — `resolver.py` itself shouldn't need to change, since it
-      was already written generic-over-config in Sprint 3; if it does need
-      a code change here, that's a sign Sprint 3's config schema wasn't
-      general enough and should be revisited, not patched per-domain
-- [ ] Resolver extended to finance, performance, attribution, funnel,
-      product, customer, operations (7 more domains — mechanical repetition
-      of the Sprint 3 pattern, not new architecture, **except**:
-      - performance needs metrics from **two** modules (`finance`'s
-        `canonical_pnl` for spend/ROAS/CAC, `paidmedia` for CPM) — resolver
-        can't be pinned to one MCP module allowlist, per 04's validated finding
-      - customer's `repeat_rate` is a `windowed_point` feature, not
-        `daily_series` — needs the feature-class split from Sprint 0, not
-        the same code path as the other 6 domains
-- [ ] Snapshot cadence per domain (daily vs hourly) per
-      04_DOMAIN_HEALTH_SNAPSHOTS.md open question
-- [ ] Inventory/procurement/technical stay excluded (no MCP module) —
-      explicitly not attempted this phase
+      operations) — `resolver.py` did **not** need to change for 6 of them,
+      confirming Sprint 3's config schema was general enough
+- [x] Resolver extended to all 7 — mechanical for finance/performance/
+      attribution/funnel/product/operations. Two real deviations from the
+      04 doc's exact metric list, both because they need a capability that
+      doesn't exist yet, not because they were skipped by oversight:
+      - **performance's cross-module concern was already a non-issue**:
+        `metric.spend`/`metric.net_roas`/`metric.cac` already carry
+        `seleric_module: null` (unscoped) in `metric_registry.yaml`, and
+        `metric.cpm` is genuinely `paidmedia` — the resolver never needed a
+        module allowlist per domain, only the metric list it already had.
+      - **attribution/product/customer's dimensioned metrics are dropped
+        for now**: `channel_orders`-by-channel (attribution),
+        SKU-level concentration/negative-margin views (product), and the
+        `new_customer_orders`-vs-`orders` retention ratio (customer) are all
+        "query pattern" metrics per the 04 doc (dimension breakdown + top-N,
+        or a cross-view ratio), not plain catalogue scalars —
+        `BusinessStateService.get_metric_state` fetches one undimensioned
+        series per call today. Attribution/product snapshots use the plain
+        aggregate metrics instead (`attributed_net_revenue`,
+        `product_net_revenue`, `product_gross_margin_pct`); customer is
+        `repeat_rate` only. Revisit once a dimensioned/top-N or cross-view-
+        ratio capability exists — flagged, not silently dropped
+        (`config/domain_health_profiles.yaml`'s header comment).
+      - customer's `repeat_rate` **is** the `windowed_point` case: no
+        `report_date` axis, so `resolver.py` computes `period_delta_pct`
+        itself as this-run-vs-previous-snapshot (`_windowed_point_delta_pct`
+        in `resolver.py`, reading the prior value via
+        `resolve(..., store=...)`) instead of asking
+        `BusinessStateService` for daily-series features. Live-verified:
+        first run against a fresh store → `period_delta_pct=None` (no
+        prior); second run → a real (0.0%, same-value) delta, not
+        fabricated.
+      - `_headline_signals` gained a `period_delta_pct_above` rule
+        direction (operations' `refund_spike`) alongside the existing
+        `_below` — same threshold shape, opposite comparator.
+- [x] Snapshot cadence: **daily for every domain, for now** — the simplest
+      thing that works; 04 doc's per-domain hourly question (performance/
+      funnel) is deferred until a domain actually needs it (re-running
+      `scheduler.run_once` more often is a cron-line change, not code).
+- [x] Inventory/procurement/technical stay excluded (no MCP module) — not
+      in `ALL_DOMAINS`.
 
-**Exit criteria:** all 8 buildable domains produce a snapshot on schedule;
-staleness is visible (snapshot `computed_at` age), not silently stale.
+**Exit criteria:** all 8 buildable domains produce a snapshot; staleness is
+visible via `computed_at`, not silently stale. **Met, live-verified**: `python
+-m seleric_swarm.services.domain_health.scheduler`-equivalent
+(`scheduler.run_once`) run against real `seleric-mcp` resolved all 8
+domains to `status=OK` with real numbers (commerce/finance/funnel each
+correctly flagged a real health signal off live data). Not yet wired to an
+actual OS cron entry (that's an ops/deploy step outside this repo, not
+blocking the code). 16 `domain_health` tests total
+(`tests/unit/test_domain_health.py`, 15 — all 8 domains parametrized,
+`_above`/`_below` rules, windowed_point delta, `scheduler.run_once`;
+`tests/unit/test_domain_health_live.py`, 1 — live commerce smoke test from
+Sprint 3, unchanged).
 
 ---
 
 ## Sprint 5 — Overview answer path (Coordinator integration)
 
-- [ ] Coordinator overview-intent classification (status/health-shaped
-      query → snapshot read branch, not full mission decomposition)
-- [ ] Snapshot read + LLM synthesis for "how are we doing today" /
-      "what needs attention" style queries
-- [ ] Parallel live-fetch fallback for the part of a question a snapshot
-      doesn't cover (drill-down dispatch to the normal domain-agent path,
-      run alongside the snapshot read, not after it)
-- [ ] `UNAVAILABLE` handling: missing/stale snapshot surfaces as a gap in
-      the answer, never silently dropped
+- [x] **Coordinator overview-intent classification: already existed.** The
+      LLM classifier (`coordinator/intake/llm_classifier.py`) already
+      produces an `executive_health` intent for "how are we doing today?"
+      -style queries, and `decomposition/templates.py`'s `executive_health`
+      template already scopes it to 5 branches (commerce, performance,
+      funnel, finance, operations) — that scope is reused as-is
+      (`coordinator/overview.py::OVERVIEW_DOMAINS`), no new classification
+      work needed. What was missing was the branch that reads snapshots
+      instead of running the full live fan-out; `coordinator/overview.py`
+      + a ~25-line early-return in `graph.py::run_swarm_v2_mission` (right
+      after the existing `unsupported_reason` early-return, same pattern)
+      is that branch. `is_overview_query()` gates on `set(normalized.intents)
+      == {"executive_health"}` (a *pure* overview ask, nothing else
+      requested).
+- [x] Snapshot read + synthesis — **[Sprint 5 simplification]** deterministic
+      template narration straight from `DomainStateSnapshot.headline_signals`
+      /`.status` (`overview.py::narrate_overview`), not an LLM call. Doc
+      says "LLM synthesis reads the snapshot(s)"; both are equally
+      Claim-Gate-safe since the numbers are real either way, this just
+      skips a round trip a template already answers. Swap in an LLM
+      narration pass later if stakeholders want more natural phrasing.
+- [x] **Parallel live-fetch fallback — built differently, same outcome.**
+      No new parallel-dispatch/merge system. Instead, `is_overview_query`
+      only takes the shortcut for a *pure* overview ask; any query with a
+      specific metric/domain/diagnostic intent (a drill-down) never
+      qualifies and falls straight through to the existing full live
+      pipeline, unchanged. Live-verified: "why did net sales drop this
+      week?" classifies to `intents=['diagnostic']`,
+      `is_overview_query(...) == False`. Satisfies "a drill-down follow-up
+      still gets a live, accurate answer" without a merge system to build
+      or test.
+- [x] `UNAVAILABLE` handling: `read_overview_snapshots()` returns
+      `(fresh_snapshots, unavailable)` — every domain that's missing or
+      stale beyond `MAX_SNAPSHOT_AGE_HOURS` (36h — daily cron cadence +
+      buffer) lands in `unavailable` with a reason, never silently dropped;
+      `build_overview_result` turns that into a `limitations` line per gap
+      and downgrades `status` to `partial` whenever any domain is missing.
+      **One scope decision, documented in `overview.py`'s module docstring:**
+      if *zero* snapshots exist for *any* branch domain (nothing to answer
+      from at all — e.g. the scheduler has never run), the fast path is
+      skipped entirely and the query falls through to the normal live
+      pipeline, rather than returning an all-`UNAVAILABLE` non-answer.
 
 **Exit criteria:** an overview query is answered primarily from stored
 snapshots with correct latency improvement vs. full live fan-out, and a
-drill-down follow-up still gets a live, accurate answer.
+drill-down follow-up still gets a live, accurate answer. **Met,
+live-verified end-to-end**: populated real snapshots for all 5 branch
+domains via `scheduler.run_once` against live `seleric-mcp`, then ran
+`run_swarm_v2_mission(runtime, query="How are we doing today?")` for real —
+returned `status=completed`, `team=[]`, all `artifacts` empty (proof the
+full LangGraph fan-out never ran), and a `final_response` built entirely
+from the live snapshot data (real headline signals for commerce/funnel/
+finance that day). A drill-down query ("why did net sales drop this
+week?") classified to `diagnostic` only and correctly did not take the
+shortcut. 8 new unit tests (`tests/unit/test_overview.py`) cover
+`is_overview_query`'s gating, missing/stale detection, narration, and
+status rollup. No regressions: 78 passed / 1 pre-existing-flaky deselected
+across `tests/coordinator/` + the `business_state`/`domain_health` suites
+(confirmed the 2 flaky failures — a CAC diagnostic live-data issue —
+reproduce identically on the base branch, unrelated to this sprint).
+
+**[Bug found + fixed, 2026-09-15, #1] The shortcut never fired in production.**
+Traced the exact `/v1/missions` request the Swagger UI's own example body
+sends for "How are we doing today??" (`full_diagnostic`/`full_prediction`/
+`full_skeptic`/`full_strategy` all `true`, `execution_mode=production`) and
+found `is_overview_query`'s original `and not forced` clause always
+evaluated `forced=True` — `main.py`'s `MissionRequest` defaults all four
+flags to `True` for *every* request, not just ones that intend an
+escalation, so the "explicit override" theory behind that clause was wrong
+for real traffic. Confirmed live, pre-fix: the same query ran the full
+174-second pipeline, got misrouted to `commerce_agent` chasing a
+`google_clicks` causal hypothesis (nothing to do with the question asked),
+produced 308 artifacts, and ended `status=partial` with a REJECTED claim
+— a slow, wrong, low-confidence answer to what should be a cheap snapshot
+read. Fix: `is_overview_query()` no longer takes a `forced` argument at
+all — it now looks only at `normalized.intents` (the classifier's raw,
+query-specific output, computed before `apply_full_flags` folds the
+API-wide-default booleans in), which is the correct signal a pure
+"how are we doing" ask actually took place. Re-verified live post-fix:
+same request, `7.4s`, `status=completed`, `team=[]`, correct per-domain
+snapshot narration. Regression test added:
+`test_is_overview_query_ignores_full_flag_defaults`
+(`tests/unit/test_overview.py`).
+
+**[Bug found + fixed, 2026-09-15, #2] The shortcut ignored which domain was
+asked about.** Live trace via the actual `/v1/missions` endpoint: "how is
+attribution doing" hit the overview shortcut (classifier still returns
+`intents=["executive_health"]` for a single-domain health question, same
+as a fully generic ask) and answered with the fixed `OVERVIEW_DOMAINS`
+5-domain dump (commerce/performance/funnel/finance/operations) —
+attribution was never mentioned, because it isn't even in that list, and
+the classifier's own `candidate_domains` for that query didn't include it
+either. Fix: `overview_domains_for_query()` deterministically checks
+whether the query names one of `services.domain_health.scheduler
+.ALL_DOMAINS` (all 8, not just the 5-branch template) via word-boundary
+match and scopes the snapshot read to just that domain when it does,
+falling back to `OVERVIEW_DOMAINS` only for a truly generic ask. No LLM
+involved — same deterministic style as `narrate_overview`. Re-verified
+live: "how is attribution doing" → `attribution: attributed_revenue_drop:
+metric.attributed_net_revenue period_delta_pct -97.6% below threshold
+-15.0%` (correct domain, correct real number). 6 new regression tests
+(`test_overview_domains_for_query_*` in `tests/unit/test_overview.py`),
+including one that checks every `ALL_DOMAINS` entry resolves correctly,
+not just the 5 in the executive_health template.
 
 ---
 

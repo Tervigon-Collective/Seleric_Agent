@@ -1,9 +1,12 @@
 # Business State Service (thin layer for Seleric_Agent)
 
-**Status:** in progress — Sprint 0 (contracts) and Sprint 1 (facade MVP) done
-and live-verified; Sprint 2 (anomaly detector) done, not yet wired into
-`build_hybrid_bundle()` (Sprint 2.5). See [05_SPRINT_PLAN.md](05_SPRINT_PLAN.md)
-for what's actually built vs. still planned.
+**Status:** in progress — Sprints 0–5 done and live-verified (contracts,
+facade MVP, anomaly detector, pluggable provider config, Domain Health
+Snapshots for all 8 buildable domains + a cron-less scheduler entry point,
+and the Coordinator overview answer path). Sprint 6 (hardening: caching,
+per-domain profile overrides, multi-brand) is optional and not started. See
+[05_SPRINT_PLAN.md](05_SPRINT_PLAN.md) for what's actually built vs. still
+planned.
 Code lives at `src/seleric_swarm/services/business_state/`.  
 **Project:** `Seleric_Agent` (mission swarm) at `C:\SpacePeppers\SpacePeppers\Seleric_Agent`  
 **Related blueprint:** Seleric Voice Node V1 (`business-state-service` microservice)  

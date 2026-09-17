@@ -40,11 +40,15 @@ class SkepticAgent(SpecialistAgent):
 
         problems: list[dict[str, str]] = []
         followups: list[dict[str, str]] = []
+        attacks_run: list[str] = []
+        attacks_skipped: list[str] = []
 
         for attack in _ATTACKS:
             if attack in {"alternative_explanation", "uncontrolled_confounder", "seasonality", "sample_size"}:
                 if self.providers.stats is None:
+                    attacks_skipped.append(attack)
                     continue
+                attacks_run.append(attack)
                 res = await self.providers.stats.check(
                     name=attack,
                     data={"outcome": causal.get("outcome"), "treatment": causal.get("treatment")},
@@ -53,16 +57,24 @@ class SkepticAgent(SpecialistAgent):
                     problems.append({"type": attack, "description": f"{attack} check failed: {res.detail}"})
                     followups.append({"capability": "causal_diagnosis", "instruction": f"Control for {attack}."})
             elif attack == "temporal_precedence":
+                attacks_run.append(attack)
                 has_event = any(str(e.get("metric_or_fact", "")).startswith("event.") for e in blackboard.by_type("evidence"))
                 if not has_event:
                     problems.append({"type": attack, "description": "No event establishes treatment before outcome."})
-            elif attack == "model_reliability" and causal and not causal.get("passed"):
-                problems.append({"type": attack, "description": "Causal estimate did not pass refutation."})
-            elif attack == "recommendation_addresses_cause" and strategy:
-                rec = strategy.get("recommended") or []
-                fits = [o for o in strategy.get("options", []) if o.get("action") in rec and o.get("mechanism_fit") in {"high", "very_high"}]
-                if not fits:
-                    problems.append({"type": attack, "description": "Top recommendation does not attack the diagnosed mechanism."})
+            elif attack == "model_reliability":
+                attacks_run.append(attack)
+                if causal and not causal.get("passed"):
+                    problems.append({"type": attack, "description": "Causal estimate did not pass refutation."})
+            elif attack == "recommendation_addresses_cause":
+                attacks_run.append(attack)
+                if strategy:
+                    rec = strategy.get("recommended") or []
+                    fits = [o for o in strategy.get("options", []) if o.get("action") in rec and o.get("mechanism_fit") in {"high", "very_high"}]
+                    if not fits:
+                        problems.append({"type": attack, "description": "Top recommendation does not attack the diagnosed mechanism."})
+            elif attack in {"baseline_fairness", "attribution_change"}:
+                # Always evaluated (deterministic / presence checks live above).
+                attacks_run.append(attack)
 
         verdict = "PASS" if not problems else ("REVISE" if followups or len(problems) < 3 else "REJECT")
         art = Skeptic.new(
@@ -70,12 +82,15 @@ class SkepticAgent(SpecialistAgent):
             created_by=self.agent_id,
             target_ref=target_ref,
             verdict=verdict,  # type: ignore[arg-type]
-            attacks_run=list(_ATTACKS),
+            attacks_run=attacks_run,
+            attacks_skipped=attacks_skipped,
             problems=problems,
             required_followups=followups,
             evidence_refs=[r for r in (target_ref,) if r],
         )
         if blackboard.has_synthetic_inputs([r for r in (target_ref,) if r]):
             art.mark_synthetic()
-        blackboard.record_event("skeptic_done", verdict=verdict, problems=len(problems))
+        blackboard.record_event(
+            "skeptic_done", verdict=verdict, problems=len(problems), attacks_skipped=attacks_skipped
+        )
         return [blackboard.post(art)]

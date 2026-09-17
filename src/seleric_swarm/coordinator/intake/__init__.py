@@ -161,9 +161,26 @@ def partition_domain_questions(
     for domain in order:
         mids = grouped[domain]
         supported: set[str] = set()
+        declared = False
         for mid in mids:
-            supported.update(_supported_dimensions_for(mid, metrics))
-        domain_grain = [g for g in grain_list if g in supported]
+            dims = _supported_dimensions_for(mid, metrics)
+            if dims:
+                declared = True
+            supported.update(dims)
+        if declared:
+            # At least one metric here declares an explicit allowlist —
+            # honor it (a metric that lists dims A/B but not C genuinely
+            # can't slice by C).
+            domain_grain = [g for g in grain_list if g in supported]
+        else:
+            # No metric in this domain/registry declares supported_dimensions
+            # (true for every entry in metric_registry.yaml today, since the
+            # field has never been populated) -- `grain` already passed live
+            # catalogue validation upstream (apply_catalogue_grain resolves
+            # entities against the real catalogue before this function ever
+            # runs), so trust it instead of silently discarding every
+            # breakdown request because of an unfilled registry field.
+            domain_grain = grain_list
         metric_bit = ", ".join(mids)
         if domain_grain:
             question = (
@@ -185,6 +202,18 @@ def metric_hints_for_mission(normalized: NormalizedQuery) -> list[str]:
         dict.fromkeys(
             m for m in [normalized.primary_metric, *normalized.secondary_metrics] if m
         )
+    )
+
+
+def _metric_needed(intents: Sequence[str]) -> bool:
+    """True when the intent set requires a resolved primary metric to
+    proceed at all — executive_health legitimately scans every domain with
+    no single metric, so it's exempt.
+    """
+    intents = list(intents)
+    return bool(intents) and "executive_health" not in intents and (
+        "lookup" in intents
+        or any(i in intents for i in ("diagnostic", "predictive", "prescriptive", "comparison"))
     )
 
 
@@ -275,6 +304,28 @@ async def normalize_query(
     if llm_result is None:
         return _unsupported(query, requested_outputs, reason=UNSUPPORTED_NO_LLM)
 
+    if llm_result.primary_metric is None and _metric_needed(llm_result.intents):
+        # Classification is occasionally non-deterministic even at
+        # temperature=0 — the same query can resolve a primary metric on one
+        # call and not on the next (confirmed directly: repeated calls on an
+        # identical query flip between PRIMARY_METRIC_UNRESOLVED and a clean
+        # result). This is the swarm-internal classify call, downstream of
+        # dispatch.py's own routing retry — a flaky miss here surfaces as
+        # PRIMARY_METRIC_UNRESOLVED even after routing correctly picked
+        # "swarm". One retry before failing the whole mission.
+        retry_result = await classify_query_via_llm(
+            query,
+            runtime=runtime,
+            timezone=timezone,
+            as_of=as_of,
+            agent_id=agent_id,
+            mission_id=mission_id,
+            request_id=request_id,
+            session_id=session_id,
+        )
+        if retry_result is not None:
+            llm_result = retry_result
+
     intents = list(llm_result.intents)
     primary = llm_result.primary_metric
     secondary = list(llm_result.secondary_metrics)
@@ -300,6 +351,11 @@ async def normalize_query(
             label=tr.relative_token,
         )
         if tr.start
+        else None
+    )
+    comparison_range = (
+        TimeRange(start=tr.start_b, end=tr.end_b or tr.start_b, timezone=timezone, label=tr.relative_token)
+        if tr.kind == "comparison" and tr.start_b
         else None
     )
 
@@ -329,11 +385,7 @@ async def normalize_query(
     # against a query whose primary metric is unresolvable is unsupported — the
     # downstream pipeline can't investigate a metric it can't identify. Executive
     # health is exempt: it legitimately scans every domain, no single metric.
-    metric_needed = bool(intents) and "executive_health" not in intents and (
-        "lookup" in intents
-        or any(i in intents for i in ("diagnostic", "predictive", "prescriptive", "comparison"))
-    )
-    if primary is None and metric_needed:
+    if primary is None and _metric_needed(intents):
         return _unsupported(
             query,
             requested_outputs,
@@ -350,7 +402,7 @@ async def normalize_query(
         secondary_metrics=secondary,
         entities=entities,
         time_range=time_range,
-        comparison_range=None,
+        comparison_range=comparison_range,
         requested_outputs=list(requested_outputs or []),
         candidate_domains=domains,
         domain_questions=domain_qs,
@@ -396,6 +448,11 @@ def resolve_mission_time_range(
     # Preserve the scenario/fixture arc end for single-day MCP fetches even
     # if client ``as_of`` extends the reported observation window.
     observation_end = end
+    # Period B, comparison queries only ("June vs August") — carried through
+    # so ObserverAgent can fetch both periods instead of collapsing to one.
+    start_b: str | None = None
+    end_b: str | None = None
+    comparison = False
 
     if (start is None or end is None) and normalized is not None and normalized.time_range is not None:
         tr = normalized.time_range
@@ -405,8 +462,20 @@ def resolve_mission_time_range(
             start = start or str(n_start)[:10]
             end = end or str(n_end)[:10]
             observation_end = observation_end or end
+        # Period B lives on comparison_range, not time_range — NormalizedQuery.
+        # time_range is the plain TimeRange model (start/end/timezone/label
+        # only); TimeRangeV1's start_b/end_b never survive onto it.
+        cr = normalized.comparison_range
+        if cr is not None and cr.start:
+            start_b = str(cr.start)[:10]
+            end_b = str(cr.end or cr.start)[:10]
+            comparison = True
 
-    if as_of_day:
+    # A comparison's periods are already two fully-resolved explicit ranges —
+    # stretching period A's end out to `as_of` (meant for "include today in
+    # an open-ended window") would silently turn "June vs July" into
+    # "June-through-today vs July".
+    if as_of_day and not comparison:
         end = max(end or as_of_day, as_of_day)
         if not start or start > end:
             start = as_of_day if not start else min(start, as_of_day)
@@ -418,6 +487,10 @@ def resolve_mission_time_range(
     out: dict[str, str | None] = {"start": start, "end": end, "timezone": timezone}
     if observation_end:
         out["observation_end"] = observation_end
+    if comparison:
+        out["kind"] = "comparison"
+        out["start_b"] = start_b
+        out["end_b"] = end_b
     return out
 
 

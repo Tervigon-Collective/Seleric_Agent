@@ -257,7 +257,8 @@ async def test_domain_mission_update_exposes_only_assigned_owned_metrics():
             ids_for_domain=lambda d: {
                 "product": ["metric.units_sold", "metric.product_net_revenue"],
                 "finance": ["metric.net_profit", "metric.product_cost"],
-            }[d]
+            }[d],
+            canonical_id=lambda mid: mid,
         ),
         ontology=None,
     )
@@ -291,7 +292,10 @@ async def test_domain_mission_update_exposes_only_assigned_owned_metrics():
 @pytest.mark.asyncio
 async def test_domain_mission_update_rejects_unowned_assigned_metric():
     runtime = SimpleNamespace(
-        metrics=SimpleNamespace(ids_for_domain=lambda d: ["metric.units_sold"]),
+        metrics=SimpleNamespace(
+            ids_for_domain=lambda d: ["metric.units_sold"],
+            canonical_id=lambda mid: mid,
+        ),
         ontology=None,
     )
     ctx = AgentContext(

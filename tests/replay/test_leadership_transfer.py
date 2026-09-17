@@ -101,8 +101,8 @@ async def test_performance_only_cac_is_now_a_supported_lookup(runtime):
         ),
         (
             "What were attributed net revenue and CAC on 2026-08-01?",
-            "performance_agent",
             "attribution_agent",
+            "performance_agent",
             ("metric.attributed_net_revenue", "metric.cac"),
         ),
     ],

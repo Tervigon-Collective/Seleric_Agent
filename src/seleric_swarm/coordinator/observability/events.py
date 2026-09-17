@@ -30,6 +30,7 @@ EVENT_FAMILIES = (
 MISSION_CREATED = "mission_created"
 MISSION_COMPLETED = "mission_completed"
 MISSION_PARTIAL = "mission_partial"
+MISSION_FAILED = "mission_failed"
 MISSION_BUDGET_EXHAUSTED = "mission_budget_exhausted"
 MISSION_CONTROL_PLANE = "mission_control_plane"
 
@@ -58,6 +59,21 @@ REMEDIATION_ACTIVATED = "remediation_activated"
 REMEDIATION_ROUND_DONE = "remediation_round_done"
 
 SPECIALIST_ERROR = "specialist_error"
+SPECIALIST_SKIPPED_POLICY = "specialist_skipped_policy"
+
+# Specialist lifecycle events don't follow the ``specialist_`` prefix
+# convention (they predate it: ``observed``, ``anomaly_done``, etc.) — without
+# this, event_families rollups undercount every specialist run to zero.
+_SPECIALIST_LIFECYCLE_KINDS = frozenset(
+    {
+        "observed",
+        "observe_skipped",
+        "anomaly_done",
+        "diagnostic_done",
+        "prediction_done",
+        "strategy_done",
+    }
+)
 
 # Backward-compatible aliases → canonical kind
 _ALIASES: dict[str, str] = {
@@ -76,6 +92,8 @@ def canonical_kind(kind: str) -> str:
 
 
 def family_of(kind: str) -> str | None:
+    if kind in _SPECIALIST_LIFECYCLE_KINDS:
+        return "specialist"
     for prefix in EVENT_FAMILIES:
         if kind.startswith(prefix):
             return prefix.rstrip("_")
@@ -116,6 +134,12 @@ class MissionEventEmitter:
             **payload,
         }
         self.blackboard.events.append(event)
+        try:
+            from seleric_swarm.observability.flow import log_mission_event
+
+            log_mission_event(event)
+        except Exception:
+            pass
         return event
 
     def kinds(self) -> list[str]:

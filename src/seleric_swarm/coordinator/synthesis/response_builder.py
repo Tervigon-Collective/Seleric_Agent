@@ -63,6 +63,39 @@ def clean_anomalies(
     return list(best.values())
 
 
+def comparisons_for_answer(blackboard: Blackboard) -> list[dict[str, Any]]:
+    """Period A / period B / delta for a comparison-intent question.
+
+    Shared by both the deterministic template below and the LLM synthesizer
+    (coordinator/synthesis/llm_response.py) — neither used to have any
+    channel for this: comparison evidence is posted as plain Evidence
+    artifacts (swarm/specialists/observer.py's comparison branch), never as
+    anomalies, so a "compare June to July" question had nothing to answer
+    from and both paths fell back to "no separate figures for those periods."
+    """
+    evidence = blackboard.by_type("evidence")
+    by_id = {e["artifact_id"]: e for e in evidence}
+    out: list[dict[str, Any]] = []
+    for e in evidence:
+        metric = str(e.get("metric_or_fact") or "")
+        if not metric.endswith(".delta"):
+            continue
+        prov = e.get("provenance") or {}
+        row_a = by_id.get(prov.get("period_a_evidence_id"))
+        row_b = by_id.get(prov.get("period_b_evidence_id"))
+        if row_a is None or row_b is None:
+            continue
+        out.append(
+            {
+                "metric_id": metric.removesuffix(".delta"),
+                "period_a": {"value": row_a.get("value"), "time_range": row_a.get("time_range")},
+                "period_b": {"value": row_b.get("value"), "time_range": row_b.get("time_range")},
+                "delta": e.get("value"),
+            }
+        )
+    return out
+
+
 _CAUSAL_LANGUAGE = {
     "ASSOCIATION_ONLY": "associated with",
     "PLAUSIBLE_CAUSAL": "may be contributing",
@@ -134,6 +167,25 @@ def build_claim_aware_response(
 
     lines += [f"Question: {mission.query}", ""]
 
+    # Directional premise verification (e.g. asking why CAC increased when data shows CAC dropped)
+    q_lower = mission.query.lower()
+    up = any(w in q_lower for w in ("increase", "increas", "rise", "risen", "rising", "grew", "growing", "growth", "higher", "up", "spike", "surge"))
+    down = any(w in q_lower for w in ("decrease", "decreas", "drop", "dropped", "fell", "fallen", "falling", "declin", "lower", "down", "dip", "plunge"))
+    implied_dir = "up" if (up and not down) else ("down" if (down and not up) else None)
+    if implied_dir:
+        for a in blackboard.by_type("anomaly"):
+            actual_dir = a.get("direction")
+            mid = a.get("metric_id") or ""
+            if actual_dir in {"up", "down"} and actual_dir != implied_dir:
+                dev = a.get("deviation_pct")
+                pct_str = f" ({float(dev):+.1f}%)" if isinstance(dev, (int, float)) else ""
+                lines += [
+                    f"[Premise Notice]: The question asks why {mid or 'the metric'} went {implied_dir}, but observed "
+                    f"data for this period shows it actually went {actual_dir}{pct_str}.",
+                    "",
+                ]
+                break
+
     lines.append("Leadership path:")
     path = [mission.initial_lead] + [h.get("to_agent") for h in blackboard.handoff_history]
     lines.append("  " + " -> ".join(str(p) for p in path))
@@ -177,6 +229,22 @@ def build_claim_aware_response(
             lines.append(f"  CHALLENGED: {retained[0]['statement']}")
             if verdict == "REVISE":
                 lines.append("  Skeptic verdict: REVISE — conclusion is not validated.")
+        if len(retained) > 1:
+            lines.append("Contributing causal drivers (drill-down):")
+            for h in retained[1:]:
+                lines.append(f"  - {h.get('statement')}")
+        lines.append("")
+
+    comparisons = comparisons_for_answer(blackboard)
+    if comparisons:
+        lines.append("Comparison:")
+        for c in comparisons:
+            a, b = c["period_a"], c["period_b"]
+            lines.append(
+                f"  {c['metric_id']}: period A ({a['time_range'].get('start')} to {a['time_range'].get('end')}) "
+                f"= {a['value']}; period B ({b['time_range'].get('start')} to {b['time_range'].get('end')}) "
+                f"= {b['value']}; delta (A-B) = {c['delta']}"
+            )
         lines.append("")
 
     anomalies = clean_anomalies(
@@ -189,16 +257,21 @@ def build_claim_aware_response(
             tag = f" [{','.join(f'{k}={v}' for k, v in dims.items())}]" if dims else ""
             _dev = a.get("deviation_pct")
             pct = f"{float(_dev):+.1f}%" if isinstance(_dev, (int, float)) else str(_dev)
-            lines.append(f"  {a.get('metric_id')}{tag}: {pct} ({a.get('direction')})")
+            mid_name = str(a.get('metric_id') or '').removeprefix("metric.").replace("_", " ").title()
+            lines.append(f"  {mid_name}{tag}: {pct} ({a.get('direction')})")
         lines.append("")
 
     predictions = blackboard.by_type("prediction")
     if predictions:
         p = predictions[0]
+        model_info = p.get("model")
+        model_name = model_info.get("id") if isinstance(model_info, dict) else str(model_info or "")
+        target_name = str(p.get("target") or "").removeprefix("metric.").replace("_", " ").title()
+        _pred_val = p.get("prediction")
+        pred_val = f"{float(_pred_val):,.2f}" if isinstance(_pred_val, (int, float)) else str(_pred_val)
         lines.append("Projection if unchanged:")
         lines.append(
-            f"  {p.get('target')} ~ {p.get('prediction')} over {p.get('horizon')} "
-            f"(interval {p.get('interval')}; model {p.get('model')})"
+            f"  {target_name}: projected {pred_val} over {p.get('horizon')} (model: {model_name})"
         )
         lines.append("")
 

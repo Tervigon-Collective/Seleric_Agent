@@ -36,13 +36,20 @@ class AnomalyAgent(SpecialistAgent):
             metric = e.get("metric_or_fact")
             if not metric or str(metric).startswith("event."):
                 continue
-            if e.get("value") is None or e.get("baseline") is None:
+            if e.get("value") is None:
                 continue
+            # No baseline requirement here: the template detector needs one
+            # and skips readings without it (see TemplateAnomalyDetector's
+            # own no_baseline handling); robust_zscore pulls its expected
+            # band from BusinessStateService history and never reads
+            # reading.baseline, so a missing baseline must not drop the row
+            # before it reaches the detector.
+            baseline = e.get("baseline")
             readings.append(
                 MetricReading(
                     metric_id=metric,
                     value=float(e["value"]),
-                    baseline=float(e["baseline"]),
+                    baseline=float(baseline) if baseline is not None else None,
                     unit=e.get("unit"),
                     dimensions=dict(e.get("dimensions") or {}),
                     direction_bad=(e.get("provenance") or {}).get("direction_bad", "up"),
@@ -66,6 +73,13 @@ class AnomalyAgent(SpecialistAgent):
         window = (mission.context or {}).get("time_range") or mission.time_range
         if window:
             detect_ctx["time_range"] = window
+        # A "why" mission wants real BusinessStateService history for
+        # whatever Observer fetched (the asked metric + its co-movers, not
+        # the full catalogue) -- not just the commerce/spend/net_profit
+        # subset config/provider_registry.yaml defaults to. Lookup/overview
+        # missions never set this intent, so they keep the current default.
+        if mission.wants("diagnostic") or mission.wants("executive_health"):
+            detect_ctx["force_robust_zscore"] = True
 
         findings = await detector.detect(readings, context=detect_ctx)
 
@@ -74,29 +88,34 @@ class AnomalyAgent(SpecialistAgent):
             key = (f.metric_id, tuple(sorted((f.dimensions or {}).items())))
             if key in already:
                 continue
-            art = Anomaly.new(
-                mission_id=blackboard.mission_id,
-                created_by=self.agent_id,
-                metric_id=f.metric_id,
-                observed=f.observed,
-                expected_range=f.expected_range,
-                deviation_pct=f.deviation_pct,
-                score=f.score,
-                magnitude_score=f.magnitude_score,
-                adversity_score=f.adversity_score,
-                direction_bad=f.direction_bad,  # type: ignore[arg-type]
-                adverse=f.adverse,
-                detector=f.detector,
-                dimensions=f.dimensions,
-                start_time=f.start_time,
-                direction=f.direction,  # type: ignore[arg-type]
-                data_origin=f.data_origin,  # type: ignore[arg-type]
-                evidence_refs=[
-                    e["artifact_id"]
-                    for e in evidence
-                    if e.get("metric_or_fact") == f.metric_id
-                ],
-            )
+            try:
+                art = Anomaly.new(
+                    mission_id=blackboard.mission_id,
+                    created_by=self.agent_id,
+                    metric_id=f.metric_id,
+                    observed=f.observed,
+                    expected_range=f.expected_range,
+                    deviation_pct=f.deviation_pct,
+                    score=f.score,
+                    magnitude_score=f.magnitude_score,
+                    adversity_score=f.adversity_score,
+                    direction_bad=f.direction_bad,  # type: ignore[arg-type]
+                    adverse=f.adverse,
+                    detector=f.detector,
+                    dimensions=f.dimensions,
+                    start_time=f.start_time,
+                    direction=f.direction,  # type: ignore[arg-type]
+                    data_origin=f.data_origin,  # type: ignore[arg-type]
+                    evidence_refs=[
+                        e["artifact_id"]
+                        for e in evidence
+                        if e.get("metric_or_fact") == f.metric_id
+                    ],
+                )
+            except Exception as exc:
+                blackboard.record_event("anomaly_creation_failed", metric_id=f.metric_id, error=str(exc))
+                continue
+
             if f.synthetic:
                 art.mark_synthetic()
             ok, problems = self.validate(art.model_dump())

@@ -1,14 +1,21 @@
-"""Synthesis: retain/reject hypotheses, pick the root cause, build outputs.
+"""Synthesis: retain/reject causal candidates, build outputs.
 
-Retain/reject is deterministic:
-  * any failed HARD-GATE test  -> rejected
-  * else score = fraction of non-skipped tests passed
-  * a hypothesis is *eligible* for the causal step if score >= 0.5 and it has a
-    treatment metric
-  * the causal-estimated hypothesis is RETAINED iff its confidence tier meets
-    ``policies.retain_threshold()``; otherwise it is 'inconclusive'
-  * every other eligible hypothesis whose causal frontier is not tested is left
-    'testing'; hypotheses with score < 0.5 become 'rejected'
+Retain/reject is deterministic and driven entirely by the DoWhy confidence
+tier (no LLM/test-battery gate in between):
+
+  * a candidate is RETAINED iff its causal confidence tier meets
+    ``policies.retain_threshold()``
+  * a candidate whose causal check is temporally/structurally impossible is
+    REJECTED (``_confidence`` in ``causal/estimator.py`` already enforces this)
+  * everything else surviving is 'inconclusive' and still reported (never
+    silently dropped) when ``emit_inconclusive_finding`` is set
+  * every candidate the causal graph proposed but that never got a causal
+    estimate (e.g. no observation column) is rejected, superseded by the
+    accepted set
+
+``narratives`` (one per accepted candidate, from ``scenarios.py``'s LLM step)
+become the finding's statement/mechanism -- the LLM's only contribution here
+is narration of an already-decided result, never the decision itself.
 """
 
 from __future__ import annotations
@@ -20,7 +27,6 @@ from seleric_swarm.agents.diagnostic.contracts import (
     CausalAnalysisArtifact,
     Claim,
     DiagnosticArtifact,
-    DiagnosticContradiction,
     DiagnosticFinding,
     DiagnosticHypothesis,
     DiagnosticResult,
@@ -38,40 +44,39 @@ def _metrics() -> MetricRegistry:
     return _METRICS
 
 
-def _contradictions_for(h: DiagnosticHypothesis) -> list[DiagnosticContradiction]:
-    """Failed (non-skipped) tests ARE the contradiction evidence — this makes
-    that reasoning inspectable instead of only affecting the posterior score.
+_UP_WORDS = ("increase", "increas", "rise", "risen", "rising", "grew", "growing", "growth", "higher", "up", "spike", "surge")
+_DOWN_WORDS = ("decrease", "decreas", "drop", "dropped", "fell", "fallen", "falling", "declin", "lower", "down", "dip", "plunge")
+
+
+def _question_implies_direction(question: str) -> str | None:
+    q = question.lower()
+    up = any(w in q for w in _UP_WORDS)
+    down = any(w in q for w in _DOWN_WORDS)
+    if up and not down:
+        return "up"
+    if down and not up:
+        return "down"
+    return None
+
+
+def _direction_mismatch_note(ctx: DiagnosticContext) -> str | None:
+    """The question can assert a direction ("why has X increased") that the
+    data doesn't actually show. Silently diagnosing against that premise
+    without saying so produces a confusing, self-contradicting answer (a
+    narrative about a "rise" next to an anomaly reporting a drop) -- flag the
+    mismatch instead of assuming the question's premise is correct.
     """
-    out = []
-    for r in h.test_results:
-        if r.passed or r.detail.get("skipped"):
-            continue
-        out.append(DiagnosticContradiction.from_test_result(r, evidence_refs=list(h.supporting_evidence)))
-    return out
-
-
-def classify_hypothesis(ctx: DiagnosticContext, h: DiagnosticHypothesis) -> None:
-    contradictions = _contradictions_for(h)
-    if contradictions:
-        ctx.scratch.setdefault("contradictions", []).extend(contradictions)
-        h.contradictory_evidence = sorted({ref for c in contradictions for ref in c.evidence_refs})
-
-    hard_fail = next((r for r in h.test_results if r.hard_gate and not r.passed), None)
-    if hard_fail:
-        h.status = "rejected"
-        h.rejection_reason = f"hard gate failed: {hard_fail.kind} - {hard_fail.note}"
-        h.posterior_score = 0.0
-        return
-    scored = [r for r in h.test_results if not r.detail.get("skipped")]
-    if not scored:
-        h.posterior_score = round(0.4 + 0.3 * min(1.0, len(h.supporting_evidence) / 2), 4)
-    else:
-        h.posterior_score = round(sum(1 for r in scored if r.passed) / len(scored), 4)
-    if h.posterior_score < 0.5 and not h.is_primary:
-        h.status = "rejected"
-        h.rejection_reason = f"only {h.posterior_score:.0%} of tests passed"
-    else:
-        h.status = "testing"
+    implied = _question_implies_direction(ctx.request.question)
+    if implied is None:
+        return None
+    actual = next((a.direction for a in ctx.anomalies if a.metric_id == ctx.outcome_metric), None)
+    if actual not in {"up", "down"} or actual == implied:
+        return None
+    return (
+        f"The question assumes {ctx.outcome_metric} went {implied}, but the observed data for this "
+        f"window shows it actually went {actual}. Treat the diagnosis below as explaining the "
+        f"observed ({actual}) movement, not the premise in the question."
+    )
 
 
 def finalize(
@@ -79,9 +84,14 @@ def finalize(
     result: DiagnosticResult,
     *,
     causal_results: list[tuple[DiagnosticHypothesis, str, CausalAnalysisArtifact]] | None = None,
+    narratives: dict[str, str] | None = None,
 ) -> DiagnosticResult:
     causal_results = causal_results or []
+    narratives = narratives or {}
     limitations: list[str] = []
+    mismatch = _direction_mismatch_note(ctx)
+    if mismatch:
+        limitations.append(mismatch)
     if ctx.policies.always_note_confounding():
         limitations.append("Unmeasured confounding cannot be completely excluded.")
     if ctx.synthetic_inputs():
@@ -92,8 +102,8 @@ def finalize(
     if ctx.request.observations is None:
         limitations.append("Causal estimate is metadata-only (no observation frame was fitted).")
 
-    # Classify every causally-estimated candidate independently — a hypothesis
-    # can be a real, reportable contributor without being THE explanation
+    # Classify every causally-estimated candidate independently -- a node can
+    # be a real, reportable contributor without being THE explanation
     # (spec §54-55: primary/secondary/co-contributors, never forced to one).
     accepted: list[tuple[DiagnosticHypothesis, str, CausalAnalysisArtifact]] = []
     for h, confidence, artifact in causal_results:
@@ -109,13 +119,18 @@ def finalize(
             if ctx.policies.emit_inconclusive_finding():
                 accepted.append((h, confidence, artifact))
 
-    # Every other still-'testing' hypothesis (never causally estimated, or
-    # estimated but not accepted above) is superseded by the accepted set.
+    # Every candidate not accepted above -- rejected by the causal check, or
+    # never causally estimated at all (e.g. no observation column) -- is
+    # superseded by the accepted set.
     accepted_ids = {h.hypothesis_id for h, _, _ in accepted}
+    estimated_ids = {h.hypothesis_id for h, _, _ in causal_results}
     for h in result.hypotheses:
-        if h.hypothesis_id not in accepted_ids and h.status == "testing":
-            h.status = "rejected"
-            h.rejection_reason = h.rejection_reason or "not among the retained mechanisms; superseded"
+        if h.hypothesis_id in accepted_ids:
+            continue
+        if h.hypothesis_id in estimated_ids:
+            continue  # already marked rejected/inconclusive above
+        h.status = "rejected"
+        h.rejection_reason = h.rejection_reason or "no causal estimate produced (missing observation data)"
 
     # Rank: retained beats inconclusive; within a tier, larger |estimated effect|
     # ranks first (a real-but-tiny contributor is a contributor, not the primary).
@@ -126,21 +141,29 @@ def finalize(
 
     accepted.sort(key=lambda item: (0 if item[0].status == "retained" else 1, -_effect_magnitude(item[2])))
 
-    ruled_out = [h.hypothesis_id for h in result.rejected()]
+    ruled_out = [h.hypothesis_id for h in result.hypotheses if h.status == "rejected"]
     findings: list[DiagnosticFinding] = []
     for idx, (h, confidence, artifact) in enumerate(accepted):
         role: FindingRole = "primary" if idx == 0 else ("secondary" if idx == 1 else "contributor")
+        narrative = narratives.get(h.hypothesis_id) or h.statement
+        # The Blackboard Hypothesis artifact (posted from result.hypotheses,
+        # not from DiagnosticFinding) is what the Coordinator's claim-gate and
+        # the mission's "leading hypothesis" display text read directly — if
+        # the narrative isn't written back onto the hypothesis itself, every
+        # caller outside this module keeps seeing the bland discovery-time
+        # template ("X is upstream on the causal graph of Y") instead of the
+        # scenario narrative, even though a real one was generated.
+        h.statement = narrative
         findings.append(
             DiagnosticFinding(
-                statement=h.statement,
-                mechanism=h.mechanism,
+                statement=narrative,
+                mechanism=narrative,
                 causal_confidence=confidence,  # type: ignore[arg-type]
                 causal_ref=artifact.causal_id if artifact else None,
                 retained_hypothesis_id=h.hypothesis_id if h.status == "retained" else None,
                 role=role,
                 estimated_effect=artifact.estimated_effect if artifact else None,
                 supporting_evidence=list(h.supporting_evidence),
-                contradictory_evidence=list(h.contradictory_evidence),
                 ruled_out=ruled_out,
                 limitations=list(limitations),
             )
@@ -149,12 +172,12 @@ def finalize(
     if not findings:
         if not result.hypotheses:
             limitations.append(
-                "INSUFFICIENT_EVIDENCE: no candidate mechanism could be generated for "
-                f"{ctx.outcome_metric or 'this metric'} from the available ontology/evidence."
+                "INSUFFICIENT_EVIDENCE: no candidate node was found on the causal graph for "
+                f"{ctx.outcome_metric or 'this metric'}."
             )
         else:
             limitations.append(
-                "INSUFFICIENT_EVIDENCE: no hypothesis reached a causally-supported confidence tier."
+                "INSUFFICIENT_EVIDENCE: no candidate reached a causally-supported confidence tier."
             )
 
     # Residual uncertainty is real whenever the retained findings don't add up
@@ -171,12 +194,11 @@ def finalize(
     result.causal_artifacts = [art for _, _, art in accepted if art is not None]
     result.causal_artifact = result.causal_artifacts[0] if result.causal_artifacts else None
     result.limitations = limitations
-    result.contradictions = list(ctx.scratch.get("contradictions") or [])
+    result.contradictions = []
     result.methodology = (
-        "explicit hypotheses -> deterministic tests (evidence, temporal precedence, "
-        "segment specificity, control divergence, dose-response) -> causal estimation + "
-        "refutation on every surviving hypothesis -> retain/reject by confidence tier "
-        "-> rank by effect magnitude into primary/secondary/contributor findings"
+        "causal-graph ancestor discovery -> DoWhy estimation + refutation on every candidate node "
+        "-> retain/reject by confidence tier -> rank by effect magnitude into "
+        "primary/secondary/contributor findings -> LLM scenario narration of confirmed nodes only"
     )
     result.diagnostic_artifact = _to_diagnostic_artifact(ctx, result, result.causal_artifact)
     result.claims = _to_claims(ctx, result)
@@ -194,7 +216,7 @@ def _to_diagnostic_artifact(
         retained_hypotheses=[h.hypothesis_id for h in result.retained()],
         rejected_hypotheses=[h.hypothesis_id for h in result.rejected()],
         supporting_evidence=sorted({e for h in result.retained() for e in h.supporting_evidence}),
-        contradictory_evidence=sorted({e for h in result.hypotheses for e in h.contradictory_evidence}),
+        contradictory_evidence=[],
         methodology=result.methodology,
         limitations=result.limitations,
         causal_ref=causal_artifact.causal_id if causal_artifact else None,
@@ -242,20 +264,13 @@ def _hypo_row(h: DiagnosticHypothesis) -> dict[str, Any]:
         "mechanism": h.mechanism,
         "treatment_metric": h.treatment_metric,
         "status": h.status,
-        "prior_score": h.prior_score,
-        "posterior_score": h.posterior_score,
         "is_primary": h.is_primary,
-        "llm_generated": h.llm_generated,
         "rejection_reason": h.rejection_reason,
-        "tests": [
-            {"kind": r.kind, "passed": r.passed, "hard_gate": r.hard_gate, "note": r.note}
-            for r in h.test_results
-        ],
     }
 
 
 def _to_claims(ctx: DiagnosticContext, result: DiagnosticResult) -> list[Claim]:
-    """One claim per *retained* finding — never for a merely inconclusive
+    """One claim per *retained* finding -- never for a merely inconclusive
     secondary/contributor (spec §67: Diagnostic proposes SUPPORTED claims only
     from validated mechanisms; Skeptic/Coordinator govern from there).
     """

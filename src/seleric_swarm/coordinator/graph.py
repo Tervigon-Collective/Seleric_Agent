@@ -72,11 +72,19 @@ from seleric_swarm.coordinator.observability.events import (
     SKEPTIC_REJECT,
     SKEPTIC_REVISE,
     SPECIALIST_ERROR,
+    SPECIALIST_SKIPPED_POLICY,
     TASK_PLAN_CREATED,
     TASK_SPECIALISTS_ACTIVATED,
     TASK_WAVE_EXECUTED,
     MissionEventEmitter,
+    now_iso,
     summarize_event_families,
+)
+from seleric_swarm.coordinator.overview import (
+    build_overview_result,
+    is_overview_query,
+    overview_domains_for_query,
+    read_overview_snapshots,
 )
 from seleric_swarm.coordinator.planning.mission_planner import (
     build_mission_plan,
@@ -92,6 +100,7 @@ from seleric_swarm.leadership.manager import LeadershipManager
 from seleric_swarm.observability.tracing import coordinator_task_metadata, traced_span
 from seleric_swarm.orchestration.state import MissionState
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.domain.base import DomainAgent
 from seleric_swarm.swarm.domain.configs import build_domain_configs
@@ -225,15 +234,20 @@ def build_swarm_v2_graph(ctx: SwarmV2Context) -> Any:
     return g.compile()
 
 
+def _mission_token_usage(ctx: SwarmV2Context) -> int:
+    """Tokens recorded for this mission via MeteredLLMPort (0 if unmetered)."""
+    usage = getattr(ctx.runtime.llm, "usage_for", lambda _mid: None)(ctx.mission.mission_id)
+    return int(usage.total_tokens) if usage else 0
+
+
 def _route_after_refine(ctx: SwarmV2Context):
     def _route(state: MissionState) -> str:
         max_iter = ctx.policies.leadership.max_transfers + 1
-        token_usage = getattr(ctx.runtime.llm, "usage_for", lambda _mid: None)(ctx.mission.mission_id)
         budget = check_swarm_budget(
             dict(state),
             ctx.policies.budgets,
             agent_calls_needed=2,
-            token_usage=(token_usage.total_tokens if token_usage else 0),
+            token_usage=_mission_token_usage(ctx),
         )
         if not budget.ok:
             ctx.budget_exhausted = True
@@ -344,6 +358,7 @@ def _make_execute(ctx: SwarmV2Context):
             {**dict(state), "usage": usage, "handoff_history": list(ctx.blackboard.handoff_history)},
             ctx.policies.budgets,
             agent_calls_needed=2,
+            token_usage=_mission_token_usage(ctx),
         )
         if not precheck.ok:
             ctx.budget_exhausted = True
@@ -391,6 +406,7 @@ def _make_execute(ctx: SwarmV2Context):
         post = check_swarm_budget(
             {**dict(state), "usage": usage, "handoff_history": list(ctx.blackboard.handoff_history)},
             ctx.policies.budgets,
+            token_usage=_mission_token_usage(ctx),
         )
         if not post.ok:
             ctx.budget_exhausted = True
@@ -548,6 +564,7 @@ def _make_specialists(ctx: SwarmV2Context):
                 },
                 ctx.policies.budgets,
                 agent_calls_needed=1,
+                token_usage=_mission_token_usage(ctx),
             )
             if not budget.ok:
                 ctx.budget_exhausted = True
@@ -1011,6 +1028,22 @@ async def run_swarm_v2_mission(
     mission_id = mid
     rid = request_id or uuid4().hex
     sid = session_id or uuid4().hex
+    try:
+        from seleric_swarm.observability.flow import log_mission_step
+
+        log_mission_step(
+            mid,
+            "mission_started",
+            route="swarm",
+            query=query[:160],
+            request_id=rid,
+            full_diagnostic=full_diagnostic,
+            full_prediction=full_prediction,
+            full_skeptic=full_skeptic,
+            full_strategy=full_strategy,
+        )
+    except Exception:
+        pass
     policies = load_coordinator_policies(
         getattr(runtime.settings, "coordinator_policies_path", None)
     )
@@ -1057,6 +1090,39 @@ async def run_swarm_v2_mission(
             runtime=runtime,
             reason=normalized.unsupported_reason,
         )
+    # Sprint 5: a pure "how are we doing" ask is answered from stored
+    # DomainStateSnapshots instead of the full live DECIDE->EXECUTE fan-out
+    # below (see coordinator/overview.py). Falls through to the normal
+    # pipeline if no snapshot exists yet for any branch domain (nothing to
+    # answer from). Deliberately ignores full_diagnostic/full_prediction/
+    # full_skeptic/full_strategy -- those default to True for every request
+    # at the API layer (main.py's MissionRequest), so they can't signal a
+    # genuine per-query escalation; the classified intent is authoritative.
+    if is_overview_query(normalized):
+        overview_snapshots, overview_unavailable = await read_overview_snapshots(
+            SnapshotStore(), overview_domains_for_query(query)
+        )
+        if overview_snapshots:
+            result = build_overview_result(
+                mission_id=mission_id,
+                query=query,
+                snapshots=overview_snapshots,
+                unavailable=overview_unavailable,
+            )
+            try:
+                runtime.store.put(
+                    _swarm_mission_view(result, rid, sid),
+                    {
+                        "route": "swarm",
+                        "workflow": "swarm_v2",
+                        "workflow_version": "1.4.0",
+                        "trace": {"request_id": rid, "session_id": sid},
+                        **result.as_dict(),
+                    },
+                )
+            except Exception:  # noqa: S110 - persistence must never fail a completed mission
+                pass
+            return result
     # normalized.candidate_domains is LLM+catalogue grounded (or empty when
     # the classifier could not pin a domain). A mission requires some initial
     # lead to route to; ``commerce_agent`` is the one terminal default for
@@ -1176,7 +1242,19 @@ async def run_swarm_v2_mission(
             rather than aborting the entire LangGraph node. The error is logged
             via SPECIALIST_ERROR event and the handler returns ok=False so callers
             know the activation didn't produce artifacts.
+
+            Before running, honor the specialist's own ``policy(blackboard,
+            mission)`` gate if it defines one (e.g. AnomalyAgent requires
+            evidence on the blackboard; SwarmDiagnosticSpecialist requires a
+            confirmed anomaly). Activation is unconditional upstream (execute/
+            specialists nodes always call coordinator.activate for the
+            intent-selected agents) -- this is the one place all specialists
+            funnel through, so it is the only place that needs the check.
             """
+            spec_policy = getattr(_spec, "policy", None)
+            if callable(spec_policy) and not spec_policy(blackboard, mission):
+                blackboard.record_event(SPECIALIST_SKIPPED_POLICY, agent_id=_spec.agent_id)
+                return {"ok": True, "artifact_refs": [], "produced": _spec.produces, "skipped": True}
             try:
                 ids = await _spec.run(blackboard, mission)
                 return {"ok": True, "artifact_refs": ids, "produced": _spec.produces}
@@ -1267,6 +1345,13 @@ async def run_swarm_v2_mission(
                     "remediation_round": rem_round,
                 }
             )
+            if not (reply or {}).get("ok", True) and live_ctx is not None:
+                # Surfaced to both the top-level `limitations` list and the
+                # synthesis prompt — otherwise a crashed specialist and one
+                # that legitimately found nothing look identical downstream.
+                line = f"{agent_id} failed: {(reply or {}).get('error') or 'unknown error'}"
+                if line not in live_ctx.limitations:
+                    live_ctx.limitations.append(line)
             return reply or {"ok": True}
 
     team_rows = assemble_team(
@@ -1335,6 +1420,7 @@ async def run_swarm_v2_mission(
         "timezone": timezone,
         "as_of": as_of,
         "status": "received",
+        "started_at": now_iso(),
         "workflow_name": "swarm_v2",
         "workflow_version": "1.4.0",
         "normalized_query": normalized.model_dump(),
@@ -1423,7 +1509,13 @@ async def run_swarm_v2_mission(
             status = "prototype_completed"
             if "prototype_completed: synthetic evidence only" not in ctx.limitations:
                 ctx.limitations.append("prototype_completed: synthetic evidence only")
-        elif "diagnostic" in intents and retained and skeptic_ok and not challenged:
+        elif (
+            "diagnostic" in intents
+            and retained
+            and skeptic_ok
+            and not challenged
+            and ctx.completion_detail.get("complete")
+        ):
             status = "prototype_completed" if all_synthetic and not metric_unresolved else (
                 "partial" if metric_unresolved else "completed"
             )
@@ -1489,5 +1581,18 @@ async def run_swarm_v2_mission(
             },
         )
     except Exception:  # noqa: S110 - persistence must never fail a completed mission
+        pass
+    try:
+        from seleric_swarm.observability.flow import log_mission_step
+
+        log_mission_step(
+            mission_id,
+            "mission_finished",
+            route="swarm",
+            status=status,
+            mission_lead=blackboard.mission_lead or initial_lead,
+            iterations=ctx.investigate_iterations,
+        )
+    except Exception:
         pass
     return result
