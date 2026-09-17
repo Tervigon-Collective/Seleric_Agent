@@ -657,3 +657,72 @@ async def test_fixture_causal_truth_run_trusts_metadata_causal():
 
     assert captured["context"]["trust_metadata_causal"] is True
 
+
+# ---------------------------------------------------------------------------
+# Remediation retries must widen the search, not repeat it (docs/BUG_SHEET.md #6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_remediation_round_widens_history_and_candidate_cap():
+    """A remediation retry with mission.context["remediation_round"] set must
+    ask _fetch_observations for more history and consider more ancestor
+    candidates than the first attempt -- otherwise it reproduces the exact
+    same hypotheses/rejection and wastes the round."""
+    from seleric_swarm.agents.diagnostic.contracts import DiagnosticResult
+    from seleric_swarm.agents.diagnostic.swarm_bridge import (
+        _CAUSAL_EXTRA_HISTORY_DAYS,
+        SwarmDiagnosticSpecialist,
+    )
+    from seleric_swarm.swarm.mission import SwarmMission
+
+    fake_result = DiagnosticResult(
+        mission_id="MS-rem-unit",
+        question="Why did sales drop?",
+        outcome_metric="metric.net_sales",
+        hypotheses=[],
+    )
+    captured: dict[str, Any] = {}
+
+    async def _fake_fetch_observations(*args, **kwargs):
+        captured["extra_history_days"] = kwargs.get("extra_history_days")
+        captured["max_treatments"] = kwargs.get("max_treatments")
+        return None
+
+    specialist = SwarmDiagnosticSpecialist()
+    blackboard = Blackboard("MS-rem-unit")
+
+    with (
+        patch(
+            "seleric_swarm.agents.diagnostic.swarm_bridge.DiagnosticAgent.diagnose",
+            new=AsyncMock(return_value=fake_result),
+        ),
+        patch(
+            "seleric_swarm.agents.diagnostic.swarm_bridge._fetch_observations",
+            new=_fake_fetch_observations,
+        ),
+    ):
+        first_run_mission = SwarmMission(
+            mission_id="MS-rem-unit",
+            query="Why did sales drop?",
+            time_range={"start": "2026-09-10", "end": "2026-09-16"},
+            intents={"diagnostic"},
+            context={"primary_metric": "metric.net_sales"},
+        )
+        await specialist.run(blackboard, first_run_mission)
+        first_history, first_cap = captured["extra_history_days"], captured["max_treatments"]
+
+        retry_mission = SwarmMission(
+            mission_id="MS-rem-unit",
+            query="Why did sales drop?",
+            time_range={"start": "2026-09-10", "end": "2026-09-16"},
+            intents={"diagnostic"},
+            context={"primary_metric": "metric.net_sales", "remediation_round": 1},
+        )
+        await specialist.run(blackboard, retry_mission)
+        retry_history, retry_cap = captured["extra_history_days"], captured["max_treatments"]
+
+    assert first_history == _CAUSAL_EXTRA_HISTORY_DAYS
+    assert retry_history > first_history
+    assert retry_cap > first_cap
+

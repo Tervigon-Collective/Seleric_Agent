@@ -1,6 +1,6 @@
 # Retiring lookup_v1
 
-**Status:** Phase 1 + 2a + 2b done and live-verified. Both structural blockers to deleting lookup_v1 are now closed; deletion itself (Phase 2) has not been done yet — see "Readiness for actual deletion" below for what's still unverified.
+**Status:** Phase 1 + 2a + 2b + 2c done. All named structural blockers to deleting lookup_v1 are now closed; deletion itself (Phase 2) has not been done yet — see "Readiness for actual deletion" below for what's still unverified (budget-enforcement parity and initial-lead-selection parity are real, separate gaps — not covered by any of 2a/2b/2c).
 
 ## Background
 
@@ -34,7 +34,11 @@ The comparison-intent blocker closed itself: a concurrent process finished the `
 - Live-verified: `"Compare net sales on 2026-08-01 and 2026-08-02"` → `status=completed`, `query_class=comparison`, real period A/B values and a real delta, in ~5.6s via the real dispatcher.
 - Spot-checked reliability of `comparison_range` detection across 4 phrasings ("compare X on date1 and date2", "X this week vs last week", "compare X in month1 vs month2") — all 4 correctly populated `comparison_range`. Notably more reliable than the grain-detection gap in Phase 2a.
 
-Comparison + grain together (a dimensioned breakdown across two periods) is still explicitly out of scope — `run_lookup_fast_path` falls back to `run_mission` if a comparison query's `DomainQuestion` also carries `grain`.
+## Phase 2c (done)
+
+Comparison + grain together (a dimensioned breakdown across two periods) is now covered: each period is fetched via the same MCP breakdown path Phase 2a already proved (`_fetch_breakdown`), then rows are delta-matched by `(metric, dimensions)`. `run_lookup_fast_path` no longer falls back to `run_mission` on this shape. See `tests/unit/test_lookup_fast_path.py::test_comparison_with_grain_computes_per_dimension_delta`.
+
+The only remaining reason `run_lookup_fast_path` falls back is `comparison_range` staying unresolved (the classifier didn't detect a genuine two-period comparison) — a classification-confidence gap, not a missing capability.
 
 ## Readiness for actual deletion (Phase 2) — not done yet
 

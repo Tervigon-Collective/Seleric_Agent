@@ -107,6 +107,21 @@ async def test_normalize_query_without_runtime_fails_closed(runtime):
 
 
 @pytest.mark.asyncio
+async def test_classify_query_via_llm_sets_day_granularity_for_multiday_diagnostic(runtime):
+    """docs/BUG_SHEET.md #14: a "why did X change over N days" question must
+    carry granularity="day" so evidence is fetched as a real per-day series,
+    not one summed total compared against a single-day anomaly baseline."""
+    result = await classify_query_via_llm(
+        "Why did net sales drop over the last 5 days?",
+        runtime=runtime,
+        timezone="Asia/Kolkata",
+        as_of="2026-09-16",
+    )
+    assert result is not None
+    assert result.granularity == "day"
+
+
+@pytest.mark.asyncio
 async def test_classify_query_via_llm_resolves_gs_and_roas_abbreviations(runtime):
     gs = await classify_query_via_llm(
         "Why has gs increased over the last three days?",

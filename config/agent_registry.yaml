@@ -25,7 +25,7 @@ agents:
     type: domain
     version: "0.1.0"
     enabled: true
-    domains: [meta_ads, google_ads, amazon, organic]
+    domains: [meta_ads, google_ads, organic]
     seleric_module: attribution
     capabilities: [attribution_analysis, channel_attribution]
     mcp_capabilities: []
@@ -35,7 +35,7 @@ agents:
     type: domain
     version: "0.1.0"
     enabled: true
-    domains: [shopify, amazon, blinkit]
+    domains: [shopify, blinkit]
     seleric_module: commerce
     capabilities: [orders, products, pricing, returns, ecommerce_analysis]
     mcp_capabilities: []
@@ -65,7 +65,7 @@ agents:
     type: domain
     version: "0.1.0"
     enabled: true
-    domains: [shopify, amazon]
+    domains: [shopify]
     seleric_module: product
     capabilities: [product_performance, sku_analysis, margin_analysis]
     mcp_capabilities: []

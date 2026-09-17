@@ -42,9 +42,11 @@ pipeline for anything outside this scope:
 
 * a query whose classification didn't resolve to any DomainQuestion at all
 * comparison intent where the classifier didn't detect a second period
-  (``comparison_range`` still ``None``), or where a DomainQuestion also
-  carries a dimension ("grain") -- comparing a per-dimension breakdown
-  across two periods isn't built.
+  (``comparison_range`` still ``None``)
+
+Comparison + grain (a dimensioned breakdown across two periods) IS covered:
+each period's rows are fetched via the same MCP breakdown path as the plain
+grained lookup, then delta-matched by (metric, dimensions).
 
 (Known gap, not fixed here: the classifier doesn't always attach grain for
 phrasing like "per channel" -- see docs/features/lookup-v1-retirement.md.
@@ -293,13 +295,17 @@ async def run_lookup_fast_path(
     narration: str | None = None
 
     if "comparison" in intents:
-        if not normalized.comparison_range or any(dq.grain for dq in normalized.domain_questions):
+        if not normalized.comparison_range:
             return None
         query_class = "comparison"
         time_range_a = _time_range(normalized)
         cr = normalized.comparison_range
         time_range_b = TimeRangeV1(kind="absolute", start=cr.start, end=cr.end or cr.start)
         providers = _build_providers(runtime)
+        ungrained_dqs = [dq for dq in normalized.domain_questions if not dq.grain]
+        grained_dqs = [dq for dq in normalized.domain_questions if dq.grain]
+        comparison_lines = []
+
         pairs = [
             (
                 _canon(metric_id),
@@ -308,10 +314,9 @@ async def run_lookup_fast_path(
                     _fetch_period_reading(providers, dq.domain, metric_id, time_range_b),
                 ),
             )
-            for dq in normalized.domain_questions
+            for dq in ungrained_dqs
             for metric_id in dq.metrics
         ]
-        comparison_lines = []
         for canonical_id, reading_a, reading_b in pairs:
             rows, limitation = await _comparison_rows(canonical_id, reading_a, time_range_a, reading_b, time_range_b)
             evidence.extend(rows)
@@ -322,6 +327,58 @@ async def run_lookup_fast_path(
             comparison_lines.append(
                 f"{_humanize_metric(canonical_id)}: period A={rows[0].value}, period B={rows[1].value}, delta={delta_row.value}"
             )
+
+        if grained_dqs:
+            # A dimensioned breakdown across two periods: fetch each period's
+            # per-dimension rows via the same MCP breakdown path the plain
+            # grained lookup uses, then delta-match rows sharing (metric, dims).
+            breakdown_pairs = await asyncio.gather(
+                *[
+                    asyncio.gather(
+                        _fetch_breakdown(runtime, providers, dq, time_range_a),
+                        _fetch_breakdown(runtime, providers, dq, time_range_b),
+                    )
+                    for dq in grained_dqs
+                ]
+            )
+            for (rows_a, missing_a), (rows_b, missing_b) in breakdown_pairs:
+                limitations.extend(missing_a)
+                limitations.extend(missing_b)
+                by_key_b = {
+                    (row.metric_or_fact, tuple(sorted(row.dimensions.items()))): row for row in rows_b
+                }
+                for row_a in rows_a:
+                    evidence.append(row_a)
+                    key = (row_a.metric_or_fact, tuple(sorted(row_a.dimensions.items())))
+                    row_b = by_key_b.pop(key, None)
+                    if row_b is None:
+                        continue
+                    evidence.append(row_b)
+                    delta_value = (
+                        row_a.value - row_b.value if row_a.value is not None and row_b.value is not None else None
+                    )
+                    evidence.append(
+                        EvidenceView(
+                            evidence_id=f"EV-{uuid4().hex[:12]}",
+                            metric_or_fact=f"{row_a.metric_or_fact}.delta",
+                            value=delta_value,
+                            time_range={"start": row_a.time_range.get("start"), "end": row_b.time_range.get("end")},
+                            source="deterministic.metrics",
+                            dimensions=row_a.dimensions,
+                            provenance={
+                                "calculation": "period_a - period_b",
+                                "period_a_evidence_id": row_a.evidence_id,
+                                "period_b_evidence_id": row_b.evidence_id,
+                            },
+                        )
+                    )
+                    dims_label = "/".join(str(v) for v in row_a.dimensions.values()) or "total"
+                    comparison_lines.append(
+                        f"{_humanize_metric(row_a.metric_or_fact)} ({dims_label}): period A={row_a.value}, period B={row_b.value}, delta={delta_value}"
+                    )
+                for row_b in by_key_b.values():
+                    evidence.append(row_b)
+
         narration = "\n".join(comparison_lines) if comparison_lines else None
     else:
         if "lookup" not in intents:
