@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from seleric_swarm.orchestration import dispatch
 from seleric_swarm.orchestration.dispatch import route_for
 
 
@@ -30,3 +31,24 @@ from seleric_swarm.orchestration.dispatch import route_for
 )
 async def test_route_for_lookup_vs_swarm(runtime, query, expected):
     assert await route_for(runtime, query=query) == expected
+
+
+@pytest.mark.asyncio
+async def test_greeting_completes_without_classifier_or_swarm(runtime, monkeypatch):
+    async def fail_route(*args, **kwargs):
+        raise AssertionError("a greeting must not invoke business routing")
+
+    monkeypatch.setattr(dispatch, "route_for", fail_route)
+
+    response = await dispatch.run_any_mission(
+        runtime,
+        query="Hi!",
+        mission_id="MS-greeting",
+        request_id="request-greeting",
+        session_id="thread-greeting",
+    )
+
+    assert response["route"] == "conversation"
+    assert response["result"]["status"] == "completed"
+    assert "What would you like to investigate?" in response["result"]["final_response"]
+    assert runtime.store.get("MS-greeting").status == "completed"

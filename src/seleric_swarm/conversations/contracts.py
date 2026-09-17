@@ -48,11 +48,13 @@ class Principal(ContractModel):
 
     @property
     def is_admin(self) -> bool:
-        return bool({"admin", "internal"} & {role.lower() for role in self.roles})
+        return self.authenticated and bool(
+            {"admin", "internal"} & {role.lower() for role in self.roles}
+        )
 
     @property
     def is_internal(self) -> bool:
-        return "internal" in {role.lower() for role in self.roles}
+        return self.authenticated and "internal" in {role.lower() for role in self.roles}
 
     def can_access_workspace(self, workspace_id: str) -> bool:
         return self.workspace_id == workspace_id or self.is_internal

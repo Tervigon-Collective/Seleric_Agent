@@ -36,8 +36,13 @@ ENV PATH="/app/.venv/bin:$PATH" \
     APP_ENV=production \
     API_HOST=0.0.0.0 \
     API_PORT=8000 \
-    LLM_PROVIDER=fake \
-    PERSISTENCE_BACKEND=memory \
+    LLM_PROVIDER=azure_openai_compatible \
+    PERSISTENCE_BACKEND=postgres \
+    CHECKPOINT_BACKEND=postgres \
+    CANCELLATION_BACKEND=redis \
+    EVENT_NOTIFIER_BACKEND=redis \
+    BLOB_BACKEND=minio \
+    MALWARE_SCANNER_BACKEND=clamav \
     LANGSMITH_TRACING=false \
     ALLOW_WRITE_ACTIONS=false \
     MCP_CONFIG_PATH=config/mcp_servers.yaml \
@@ -50,6 +55,6 @@ USER seleric
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+    CMD curl -fsS http://127.0.0.1:8000/readyz || exit 1
 
 CMD ["seleric-api"]

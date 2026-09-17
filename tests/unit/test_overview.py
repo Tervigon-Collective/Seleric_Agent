@@ -119,6 +119,22 @@ def test_narrate_overview_includes_headline_signals_and_gaps():
     assert limitations == ["finance: data isn't ready yet."]
 
 
+def test_narrate_overview_returns_useful_response_when_all_snapshots_are_missing():
+    text, limitations = narrate_overview(
+        [],
+        [
+            ("commerce", "no snapshot available"),
+            ("finance", "no snapshot available"),
+        ],
+    )
+
+    assert "couldn’t load a current business overview" in text
+    assert limitations == [
+        "commerce: data isn't ready yet.",
+        "finance: data isn't ready yet.",
+    ]
+
+
 def test_build_overview_result_partial_when_any_domain_unavailable():
     snapshots = [_snapshot("commerce", computed_at="2026-09-15T00:00:00+00:00")]
     result = build_overview_result(

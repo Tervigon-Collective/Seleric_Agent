@@ -100,19 +100,20 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
         if _is_exempt(path) or request.method == "OPTIONS":
             return await call_next(request)
 
+        candidate_principal: Principal | None = None
         if self.principal_provider is not None:
             provided_principal = self.principal_provider(request)
             if isawaitable(provided_principal):
                 provided_principal = await provided_principal
-            request.state.principal = provided_principal
-            return await self._rate_limited(request, call_next, path=path)
+            if isinstance(provided_principal, Principal):
+                candidate_principal = provided_principal
 
-        authenticated_principal: Principal | None = None
         if self.authenticator is not None:
             candidate = self.authenticator(request)
             if isawaitable(candidate):
                 candidate = await candidate
-            authenticated_principal = candidate
+            if isinstance(candidate, Principal):
+                candidate_principal = candidate
         # Prefer live settings so .env loaded after import still applies.
         api_key = self.api_key
         workspace_id = self.default_workspace_id
@@ -129,9 +130,19 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
         provided = (request.headers.get("x-api-key") or "").strip()
         auth = (request.headers.get("authorization") or "").strip()
         bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-        authenticated = authenticated_principal is not None or not api_key or bool(
-            (provided and compare_digest(provided, api_key))
-            or (bearer and compare_digest(bearer, api_key))
+        external_authenticated = bool(
+            candidate_principal is not None and candidate_principal.authenticated
+        )
+        configured_authenticator = (
+            self.principal_provider is not None or self.authenticator is not None
+        )
+        authenticated = (
+            external_authenticated
+            or (not api_key and not configured_authenticator)
+            or bool(
+                (provided and compare_digest(provided, api_key))
+                or (bearer and compare_digest(bearer, api_key))
+            )
         )
 
         # Identity headers are trusted-proxy inputs, not authentication. Require both
@@ -168,40 +179,45 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
             ).split(",")
             if role.strip()
         }
-        request.state.principal = authenticated_principal or Principal(
-            principal_id=principal_id,
-            workspace_id=workspace_id,
-            user_id=user_id,
-            authenticated=authenticated,
-            auth_method=(
-                PrincipalAuthMethod.SHARED_API_KEY
-                if api_key and authenticated
-                else PrincipalAuthMethod.SERVICE
-                if authenticated
-                else PrincipalAuthMethod.ANONYMOUS
-            ),
-            roles=roles,
+        request.state.principal = (
+            candidate_principal
+            if external_authenticated
+            else Principal(
+                principal_id=principal_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                authenticated=authenticated,
+                auth_method=(
+                    PrincipalAuthMethod.SHARED_API_KEY
+                    if api_key and authenticated
+                    else PrincipalAuthMethod.SERVICE
+                    if authenticated
+                    else PrincipalAuthMethod.ANONYMOUS
+                ),
+                roles=roles,
+            )
         )
 
-        # Optional shared API key (enabled when SELERIC_API_KEY / settings.api_key set).
-        if api_key and not authenticated:
+        # A configured external authenticator is also fail-closed: merely returning
+        # a Principal object is not proof of authentication.
+        if not authenticated:
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Missing or invalid API key"},
+                content={
+                    "detail": (
+                        "Missing or invalid API key" if api_key else "Authentication required"
+                    )
+                },
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
         return await self._rate_limited(request, call_next, path=path)
 
-    async def _rate_limited(
-        self, request: Request, call_next: Callable, *, path: str
-    ) -> Response:
+    async def _rate_limited(self, request: Request, call_next: Callable, *, path: str) -> Response:
         if _is_exempt(path) or request.method == "OPTIONS":
             return await call_next(request)
         if self.rate_limit_enabled:
-            key = _client_key(
-                request, trust_x_forwarded_for=self.trust_x_forwarded_for
-            )
+            key = _client_key(request, trust_x_forwarded_for=self.trust_x_forwarded_for)
             ok, remaining, retry_after = self.limiter.allow(key)
             if not ok:
                 return JSONResponse(

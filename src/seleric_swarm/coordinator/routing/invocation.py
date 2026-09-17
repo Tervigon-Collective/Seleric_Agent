@@ -134,6 +134,15 @@ class A2AAgentInvoker:
         )
         try:
             reply = await self.transport.send(msg)
+            if reply.get("ok") is False:
+                return AgentExecutionResult(
+                    agent_id=agent_id,
+                    task_id=task.task_id,
+                    status="retryable_failure",
+                    error_code=str(reply.get("error_code") or "A2A_ERROR"),
+                    error_message=str(reply.get("error") or "remote agent rejected the request"),
+                    metadata=dict(reply),
+                )
             refs = list((reply or {}).get("artifact_refs") or [])
             return AgentExecutionResult(
                 agent_id=agent_id,

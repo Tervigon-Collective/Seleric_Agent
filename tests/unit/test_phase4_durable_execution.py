@@ -91,7 +91,7 @@ def test_recovery_marks_expired_attempt_retryable_or_failed():
     repositories, run, _ = _run_records(max_attempts=2)
     claimed = repositories.runs.claim(run.id, "dead-worker", 1, now=now - timedelta(seconds=2))
     assert claimed is not None
-    result = RunRecoveryService(repositories.runs).recover_expired(now=now)
+    result = RunRecoveryService(repositories.runs, retry_delay_s=0).recover_expired(now=now)
     assert result.retryable == 1
     assert repositories.runs.get(run.id).status.value == "QUEUED"
     next_attempt = repositories.runs.list_recoverable(now=now)[0]

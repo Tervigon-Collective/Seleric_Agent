@@ -3,11 +3,17 @@ from __future__ import annotations
 import os
 
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
 
 from seleric_swarm.cancellation import build_cancellation_backend
 from seleric_swarm.checkpointing import build_checkpoint_provider
 from seleric_swarm.config.settings import Settings, get_settings
-from seleric_swarm.conversations.blobs import BlobStore, LocalBlobStore, MinioBlobStore
+from seleric_swarm.conversations.blobs import (
+    BlobStore,
+    ClamAVMalwareScanner,
+    LocalBlobStore,
+    MinioBlobStore,
+)
 from seleric_swarm.conversations.events import ActivityEventSink, build_event_notifier
 from seleric_swarm.conversations.phase7 import ActionExecutionService, build_query_embedder
 from seleric_swarm.conversations.postgres import build_conversation_repositories
@@ -52,6 +58,7 @@ def _sync_settings_to_environ(settings: Settings) -> None:
 def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     load_dotenv(repo_root() / ".env")
     settings = settings or get_settings()
+    settings.validate_for_startup()
     _sync_settings_to_environ(settings)
     configure_logging(settings)
     configure_langsmith_env(settings)
@@ -65,10 +72,16 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     metrics = MetricRegistry(settings.metric_registry_path)
     metrics.bind_catalogue(cat_bootstrap)
     query_embedder = build_query_embedder(settings)
+    database_engine = (
+        create_engine(settings.database_url, pool_pre_ping=True)
+        if settings.persistence_backend == "postgres"
+        else None
+    )
     conversations = build_conversation_repositories(
         settings.persistence_backend,
         settings.database_url,
         query_embedder=query_embedder,
+        engine=database_engine,
     )
     allowed_mime_types = {
         item.strip().lower()
@@ -76,6 +89,15 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         if item.strip()
     }
     blob_store: BlobStore
+    scanner = (
+        ClamAVMalwareScanner(
+            settings.clamav_host,
+            settings.clamav_port,
+            settings.clamav_timeout_s,
+        )
+        if settings.malware_scanner_backend == "clamav"
+        else None
+    )
     if settings.blob_backend == "minio":
         from minio import Minio
 
@@ -85,17 +107,21 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
             secret_key=settings.minio_secret_key,
             secure=settings.minio_secure,
         )
+        if not client.bucket_exists(settings.minio_bucket):
+            client.make_bucket(settings.minio_bucket)
         blob_store = MinioBlobStore(
             client,
             settings.minio_bucket,
             max_size_bytes=settings.attachment_max_size_bytes,
             allowed_mime_types=allowed_mime_types,
+            scanner=scanner,
         )
     else:
         blob_store = LocalBlobStore(
             repo_root() / settings.blob_local_path,
             max_size_bytes=settings.attachment_max_size_bytes,
             allowed_mime_types=allowed_mime_types,
+            scanner=scanner,
         )
     runtime = SwarmRuntime(
         settings=settings,
@@ -104,7 +130,11 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         mcp=mcp,
         metrics=metrics,
         agents=agents,
-        store=build_store(settings.persistence_backend, settings.database_url),
+        store=build_store(
+            settings.persistence_backend,
+            settings.database_url,
+            engine=database_engine,
+        ),
         ontology=OntologyService(mcp),
         bootstrap=cat_bootstrap,
         conversations=conversations,
@@ -118,9 +148,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         checkpoint_provider=build_checkpoint_provider(
             settings.checkpoint_backend, settings.database_url
         ),
-        cancellation=build_cancellation_backend(
-            settings.cancellation_backend, settings.redis_url
-        ),
+        cancellation=build_cancellation_backend(settings.cancellation_backend, settings.redis_url),
         blob_store=blob_store,
         action_execution=ActionExecutionService(conversations.approvals, {}),
     )

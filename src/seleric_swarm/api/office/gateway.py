@@ -75,7 +75,11 @@ def list_office_missions(
     lister = getattr(store, "list_missions", None)
     if callable(lister):
         try:
-            for m in lister(limit=limit):
+            for m in lister(
+                limit=limit,
+                workspace_id=principal.workspace_id,
+                owner_user_id=principal.user_id,
+            ):
                 if not visible(m):
                     continue
                 mid = m.get("mission_id") or m.get("missionId")

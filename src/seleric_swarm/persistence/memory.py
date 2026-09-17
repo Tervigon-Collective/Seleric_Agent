@@ -21,7 +21,14 @@ class MissionStore(Protocol):
         limit: int = 500,
     ) -> list[dict[str, Any]]: ...
 
-    def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]: ...
+    def list_missions(
+        self,
+        *,
+        limit: int = 50,
+        workspace_id: str | None = None,
+        owner_user_id: str | None = None,
+        statuses: set[str] | None = None,
+    ) -> list[dict[str, Any]]: ...
 
 
 def extract_events(raw_state: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -42,10 +49,15 @@ def filter_events(
     limit: int = 500,
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    for event in events:
-        seq = int(event.get("seq") or 0)
-        # Missing/zero seq: include only on the first page (after_seq == 0).
-        if after_seq > 0 and seq <= after_seq:
+    cursor = 0
+    for source in events:
+        try:
+            source_seq = int(source.get("seq") or 0)
+        except (TypeError, ValueError):
+            source_seq = 0
+        cursor = max(cursor + 1, source_seq)
+        event = {**source, "seq": cursor}
+        if cursor <= after_seq:
             continue
         if family:
             fam = event.get("family") or ""
@@ -120,21 +132,42 @@ class InMemoryMissionStore:
             limit=limit,
         )
 
-    def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
+    def list_missions(
+        self,
+        *,
+        limit: int = 50,
+        workspace_id: str | None = None,
+        owner_user_id: str | None = None,
+        statuses: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Recent missions, newest first — light headers for the office switcher."""
         out: list[dict[str, Any]] = []
         for mid in reversed(list(self._results.keys())):
             raw = self._raw.get(mid)
             result = self._results.get(mid)
             events = extract_events(raw)
+            status = (raw or {}).get("status") or (
+                result.status if result else "unknown"
+            )
+            if (
+                workspace_id is not None
+                and (raw or {}).get("workspace_id") not in {None, workspace_id}
+            ):
+                continue
+            if (
+                owner_user_id is not None
+                and (raw or {}).get("owner_user_id") not in {None, owner_user_id}
+            ):
+                continue
+            if statuses is not None and status not in statuses:
+                continue
             out.append(
                 {
                     "mission_id": mid,
                     "query": (raw or {}).get("query")
                     or getattr(result, "final_response", None)
                     or "",
-                    "status": (raw or {}).get("status")
-                    or (result.status if result else "unknown"),
+                    "status": status,
                     "route": (raw or {}).get("route"),
                     "mission_lead": (raw or {}).get("mission_lead")
                     or (result.mission_lead if result else None),

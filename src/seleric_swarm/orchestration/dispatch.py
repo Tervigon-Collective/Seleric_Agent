@@ -24,13 +24,100 @@ blocked on comparison-intent coverage -- see the doc above for why.
 
 from __future__ import annotations
 
+import re
+from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
+from seleric_swarm.contracts.lookup import MissionResult, TraceInfo
 from seleric_swarm.coordinator.lookup_fast_path import run_lookup_fast_path
 from seleric_swarm.orchestration.runner import run_mission
 from seleric_swarm.runtime import SwarmRuntime
 
 _SWARM_INTENTS = {"diagnostic", "predictive", "prescriptive", "executive_health"}
+_CONVERSATIONAL_PROMPTS = {
+    "hi",
+    "hello",
+    "hey",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "how are you",
+    "who are you",
+    "what can you do",
+    "thanks",
+    "thank you",
+}
+
+
+def _is_conversational_prompt(query: str) -> bool:
+    normalized = re.sub(r"[^\w\s']", "", query.casefold())
+    return " ".join(normalized.split()) in _CONVERSATIONAL_PROMPTS
+
+
+def _conversation_response(query: str) -> str:
+    normalized = " ".join(re.sub(r"[^\w\s']", "", query.casefold()).split())
+    if normalized in {"thanks", "thank you"}:
+        return "You’re welcome. What would you like to investigate next?"
+    if normalized in {"who are you", "what can you do"}:
+        return (
+            "I’m Seleric. I can investigate business performance, explain anomalies, "
+            "compare channels or periods, forecast outcomes, and recommend actions."
+        )
+    return (
+        "Hi! What would you like to investigate? You can ask about sales, conversion, "
+        "CAC, ROAS, inventory, customers, forecasts, or business anomalies."
+    )
+
+
+def _complete_conversational_mission(
+    runtime: SwarmRuntime,
+    *,
+    query: str,
+    session_id: str | None,
+    request_id: str | None,
+    mission_id: str | None,
+) -> dict[str, Any]:
+    resolved_mission_id = mission_id or f"MS-{uuid4().hex[:10]}"
+    resolved_request_id = request_id or uuid4().hex
+    resolved_session_id = session_id or resolved_request_id
+    response = _conversation_response(query)
+    result = MissionResult(
+        mission_id=resolved_mission_id,
+        status="completed",
+        query_class="conversation",
+        final_response=response,
+        trace=TraceInfo(
+            request_id=resolved_request_id,
+            session_id=resolved_session_id,
+        ),
+    )
+    existing = runtime.store.get_raw(resolved_mission_id) or {}
+    events = list(existing.get("events") or [])
+    events.append(
+        {
+            "kind": "mission_completed",
+            "family": "mission",
+            "mission_id": resolved_mission_id,
+            "seq": len(events) + 1,
+            "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "route": "conversation",
+        }
+    )
+    runtime.store.put(
+        result,
+        {
+            **existing,
+            "route": "conversation",
+            "mission_id": resolved_mission_id,
+            "status": "completed",
+            "query": query,
+            "events": events,
+            "final_response": response,
+            "error_code": None,
+        },
+    )
+    return {"route": "conversation", "result": result.model_dump()}
 
 
 async def route_for(
@@ -112,6 +199,14 @@ async def run_any_mission(
         from seleric_swarm.cancellation import MissionCancelledError
 
         raise MissionCancelledError(f"mission {mission_id} was cancelled")
+    if _is_conversational_prompt(query):
+        return _complete_conversational_mission(
+            runtime,
+            query=query,
+            session_id=session_id,
+            request_id=request_id,
+            mission_id=mission_id,
+        )
     route = await route_for(runtime, query=query, timezone=timezone, as_of=as_of)
     if mission_id and cancellation is not None and cancellation.is_requested(mission_id):
         from seleric_swarm.cancellation import MissionCancelledError

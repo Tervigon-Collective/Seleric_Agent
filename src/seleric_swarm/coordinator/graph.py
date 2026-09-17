@@ -1115,27 +1115,26 @@ async def run_swarm_v2_mission(
         overview_snapshots, overview_unavailable = await read_overview_snapshots(
             SnapshotStore(), overview_domains_for_query(query)
         )
-        if overview_snapshots:
-            result = build_overview_result(
-                mission_id=mission_id,
-                query=query,
-                snapshots=overview_snapshots,
-                unavailable=overview_unavailable,
+        result = build_overview_result(
+            mission_id=mission_id,
+            query=query,
+            snapshots=overview_snapshots,
+            unavailable=overview_unavailable,
+        )
+        try:
+            runtime.store.put(
+                _swarm_mission_view(result, rid, sid),
+                {
+                    "route": "swarm",
+                    "workflow": "swarm_v2",
+                    "workflow_version": "1.4.0",
+                    "trace": {"request_id": rid, "session_id": sid},
+                    **result.as_dict(),
+                },
             )
-            try:
-                runtime.store.put(
-                    _swarm_mission_view(result, rid, sid),
-                    {
-                        "route": "swarm",
-                        "workflow": "swarm_v2",
-                        "workflow_version": "1.4.0",
-                        "trace": {"request_id": rid, "session_id": sid},
-                        **result.as_dict(),
-                    },
-                )
-            except Exception:  # noqa: S110 - persistence must never fail a completed mission
-                pass
-            return result
+        except Exception:  # noqa: S110 - persistence must never fail a completed mission
+            pass
+        return result
     # normalized.candidate_domains is LLM+catalogue grounded (or empty when
     # the classifier could not pin a domain). A mission requires some initial
     # lead to route to; ``commerce_agent`` is the one terminal default for
