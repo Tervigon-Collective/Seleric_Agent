@@ -1,9 +1,10 @@
 # Seleric V3 — Refactor Overview
 
-Status: execution underway. Sprint 0 (contracts) and Sprint 1/Profile B
-(Semantic toolset v0) done — see `SPRINT_PLAN.md` and `TASK_SHEET.md` for
-current status, don't assume this line reflects it going forward. Last
-verified against source: 2026-09-18.
+Status: execution underway. Sprint 0 (contracts) Done; Sprint 1 A/B/C Done;
+Sprint 2 A Done and B largely Done; **Amendment A1 ACCEPTED 2026-09-18**
+(unblocks C Causal). Next: Profile C Causal toolset v0. See
+`SPRINT_PLAN.md` / `TASK_SHEET.md` for live status. Last verified against
+source: 2026-09-18.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube
 migration. Everything produced during the refactor (profile briefs, sprint
@@ -161,7 +162,7 @@ Rules for the whole program:
     boundary that can't be represented as a tool (bar: same as `new.mmd`'s
     rule 16).
 
-**Corollary to rules 4 + 5 (added 2026-09-18, pending sign-off as
+**Corollary to rules 4 + 5 (added 2026-09-18, **ACCEPTED** as
 `CONTRACTS.md` amendment A1):** because a tool may neither fetch evidence
 nor call the tool that does, the **caller** chooses the grain, the window
 and the retry. Today that caller is deterministic code (e.g. the

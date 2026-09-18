@@ -26,9 +26,9 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Joint — Amendment A1 sign-off
 | Task | Status | Evidence |
 |---|---|---|
-| A/B/C sign-off on `CONTRACTS.md` Amendment A1 (A1.1 blocks C Sprint 2) | Not started | |
-| Spike: add `pydantic-ai`, validate frozen §4 signatures against real `RunContext` API (A1.6) | Partial | `pydantic-ai-slim>=2.45` installed and stub agent runs against it (Profile A Sprint 1 evidence). Formal A/B/C sign-off that frozen §4 matches the real API still open. |
-| Owner assigned for `CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` → `CAUSALLY_SUPPORTED` migration incl. `config/diagnostic_policies.yaml:24` (A1.4) | Not started | |
+| A/B/C sign-off on `CONTRACTS.md` Amendment A1 (A1.1 unblocks C Sprint 2) | Done | ACCEPTED 2026-09-18. Applied into frozen §2 (named error codes) and §4 (`search_breadth` on `estimate_effect`; Analytics grain rule). Change log + joint decisions in `CONTRACTS.md`. |
+| Spike: add `pydantic-ai`, validate frozen §4 signatures against real `RunContext` API (A1.6) | Done | `pydantic-ai-slim>=2.45` in `pyproject.toml`; stub agent + `RunContext[SelericDeps]` validated (Profile A Sprint 1). Closed with A1 acceptance. |
+| Owner assigned for `CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` → `CAUSALLY_SUPPORTED` migration incl. `config/diagnostic_policies.yaml:24` (A1.4) | Done | Owner = Profile C. Migration executes during Causal Sprint 2 (not part of A1 landing). Mapping table accepted in `CONTRACTS.md` A1.4. |
 
 ### Profile A — Runtime scaffolding
 | Task | Status | Evidence |
@@ -71,22 +71,22 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 | Characterization suite passes 3 separate days | Partially done — broadened, not yet 3 calendar days | Extended `tests/replay/test_semantic_toolset_characterization.py` from 1 metric to all 3 of `test_data_access_characterization.py`'s `_CASES` (`metric.cac`→`cac` unscoped, `metric.net_profit`→`net_profit_all_channels` unscoped, `metric.units_sold`→`units_sold` module-scoped) — the module-scoped case matters because `SemanticToolset` currently calls MCP unscoped (no `module` arg) under the `observer_agent` identity; confirmed live that Cube measure ids are globally unique so this isn't currently a problem, but it's a real theoretical gap for a future metric name that collides across modules, noted in the test itself. Run twice in this session, both clean: 3/3 then 3/3, plus the pre-existing 7/7 legacy suite both times (10/10 total each run). Cannot honestly claim "3 separate calendar days" within one session — recorded as a real limitation, not silently rounded up to "done." |
 | Delete `HybridMcpDataProvider`, `business_state/series.py::fetch_series`, `_query_windows` | Partial — the heuristic is deleted, the classes/functions themselves are not | `services/measure.py::resolve_measure()`/`measure_keywords_overlap()` (the actual heuristic layer, bug #8's root cause) are deleted, zero remaining callers. `HybridMcpDataProvider`, `business_state/series.py::fetch_series()`, and `agents/intelligence/observer.py::_query_windows` still exist as classes/functions — they're now thin (heuristic-free) wrappers over `toolsets/semantic.py::raw_query_metric()` rather than dead code, so deleting them outright would mean deleting the only live call path, which nothing has replaced yet at the call-site level. That deletion is still correctly gated on `SemanticToolset` fully replacing these call sites end-to-end (not just internally), consistent with the strangler-fig rule — this is the right next increment for Sprint 3, not a stall. |
 
-### Profile C — Causal toolset v0 + evidence classes *(blocked on A1.1)*
+### Profile C — Causal toolset v0 + evidence classes *(unblocked — A1 ACCEPTED)*
 | Task | Status | Evidence |
 |---|---|---|
-| `toolsets/causal.py` + `causal/service.py` (DoWhy only — no EconML in this repo) | Not started | |
-| Evidence classification vocabulary handed to A + A1.4 migration applied across `src/` and `config/diagnostic_policies.yaml` | Not started | |
+| `toolsets/causal.py` + `causal/service.py` (DoWhy only — no EconML in this repo; `search_breadth` per frozen §4) | Not started | |
+| Evidence classification vocabulary handed to A + A1.4 migration applied across `src/` and `config/diagnostic_policies.yaml` (owner = C) | Not started | |
 | Bug #6 regression against `search_breadth` escalation (A1.1) | Not started | |
-| Bug #7 status (still intermittent) + confirm its #6-widening mitigation survives the revisions cap | Not started | |
+| Bug #7 status (still intermittent) + confirm its #6-widening mitigation survives via `search_breadth` under revisions cap = 1 | Not started | |
 | Bug #13 explicit disposition | Not started | |
 | Policy-gate port: 8 `policy()` conditions → tool preconditions returning `INSUFFICIENT_EVIDENCE` (A1.3) | Not started | |
-| Disposition of the five `config/*_policies.yaml` files | Not started | |
+| Disposition of the five `config/*_policies.yaml` files (migrate into toolset config; keep YAML until port) | Not started | |
 
 ### Joint (A + C) — bounded-loop decisions
 | Task | Status | Evidence |
 |---|---|---|
-| `max_validation_revisions = 1` confirmed or changed, incl. STRONG-trust + REVISE behavior | Not started | |
-| Skeptic → validator recorded as a decision (cross-agent challenge → in-context self-review) | Not started | |
+| `max_validation_revisions = 1` confirmed or changed, incl. STRONG-trust + REVISE behavior | Done | Confirmed = 1 (A1 acceptance 2026-09-18). Causal escalation is `search_breadth`, not validation revisions. STRONG+REVISE with revisions exhausted → fail closed `INSUFFICIENT_EVIDENCE` (`agent/validation.py`). |
+| Skeptic → validator recorded as a decision (cross-agent challenge → in-context self-review) | Done | Recorded in `CONTRACTS.md` A1 joint decisions + this Log; change in kind per `03_PROFILE_CAPABILITIES.md` §4. |
 
 ## Sprint 3
 
@@ -100,9 +100,9 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Profile B — Heuristic retirement
 | Task | Status | Evidence |
 |---|---|---|
-| Delete `catalogue_grounding.py` heuristics | Not started | |
-| Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone | Not started | |
-| `ActionToolset` wired to propose/confirm/commit | Not started | |
+| Delete `catalogue_grounding.py` heuristics | Blocked by gate | Sprint 2 characterization ran clean multiple times on 2026-09-18, but Sprint 3 explicitly requires clean runs on 3 separate calendar days before deletion. No deletion performed. |
+| Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone | Blocked by gate | Same deletion gate; graph index currently reports 73 inbound dependencies on `MetricRegistry`, so this is not a safe cosmetic delete. |
+| `ActionToolset` wired to propose/confirm/commit | Partial — local wiring done, upstream Google action unavailable | `src/seleric_swarm/toolsets/actions.py` implements the frozen `propose_action`/`validate`/`preview`/`commit_action` surface over `actions_propose/status/commit`; confirmation is the user turn before commit. Added the four remote MCP tools and a dedicated `v3_agent` allowlist so legacy observer/domain agents do not acquire writes. Confirmation tokens are process-local, stripped from `ToolResult` provenance, and fail closed after restart/expiry; caller idempotency keys prevent duplicate commits. `tests/unit/test_action_toolset.py`: 6 passed. Full focused Profile B transport/toolset set: 28 passed. Upstream `seleric-mcp` currently has no approved Google Ads action contract (its own catalogue audit says only the Meta `pause_meta_ad` pattern exists, while the live Sprint 0 spike returned an empty available-action list), so Google end-to-end execution cannot honestly be marked Done in this repo. |
 
 ### Profile C — Model/Skeptic port
 | Task | Status | Evidence |
@@ -193,7 +193,8 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
     is exactly `estimate_effect` + `refute_estimate` — no widening
     parameter, nothing stateful — while #6's fix is escalating widening via
     `remediation_round`, which #7's entry names as its own only mitigation.
-    Filed as amendment A1.1; blocks C's Sprint 2.
+    Filed as amendment A1.1; blocked C's Sprint 2 until A1 acceptance
+    (accepted 2026-09-18 — see Log entry below).
   - **C's exit criterion 1 was not satisfiable.** It demanded a passing test
     for #2/#6/#7/#8/#12/#14, but #7 is documented as non-deterministic
     LLM variance, #12 is filed as "not a bug", and #2/#8 root-cause in
@@ -290,4 +291,14 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   parallel Profile B + Profile C work. Sprint plan checkboxes brought in
   line with this sheet: Sprint 1 A/B/C Done; Sprint 2 A Done; Sprint 2 B
   Done except class deletion + true 3-calendar-day characterization;
-  Sprint 2 C still blocked on A1.1.
+  Sprint 2 C was still blocked on A1.1 at that point.
+- 2026-09-18: **Amendment A1 ACCEPTED** (three-profile sign-off). Applied into
+  frozen `CONTRACTS.md` §2/§4: `search_breadth` on `estimate_effect`;
+  Analytics grain precondition; named error codes
+  (`EVIDENCE_GRAIN_MISMATCH`, `INSUFFICIENT_EVIDENCE`,
+  `EXECUTION_LIMIT_EXCEEDED`); A1.4 owner = Profile C; A1.6 closed on
+  `pydantic-ai-slim`. Joint decisions: keep `max_validation_revisions = 1`
+  (causal ladder is `search_breadth`); skeptic→validator recorded as a
+  change in kind. Profile C Sprint 2 Causal toolset is **unblocked**. Next
+  executable task: Causal toolset v0 extract-wrap-delete from
+  `agents/diagnostic/*`.

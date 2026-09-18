@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 
@@ -24,6 +24,8 @@ class SelericMcpClient(Protocol):
     ``SelericDeps.mcp_client`` is typed against this Protocol so Profile A's
     skeleton can be built and tested (with a fake) before Profile B lands.
     """
+
+    async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any: ...
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,8 @@ class ExecutionLimits:
     max_cube_queries: int = 6
     max_causal_queries: int = 3
     max_prediction_calls: int = 3
+    # Confirmed = 1 with A1 acceptance (2026-09-18). Causal widening uses
+    # estimate_effect(search_breadth=...), not this counter.
     max_validation_revisions: int = 1
     max_runtime_seconds: float = 120.0
 

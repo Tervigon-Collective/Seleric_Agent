@@ -10,12 +10,10 @@ Profile briefs: `01_PROFILE_RUNTIME.md` (A), `02_PROFILE_SEMANTIC_MCP.md`
 
 > **Revised 2026-09-18** after a design review of Profile C against source.
 > Sprint 0 is closed and its contracts are frozen, so the review's findings
-> land as **proposed amendment A1** in `CONTRACTS.md` rather than as Sprint 0
-> edits. A1 sign-off is now a joint task at the head of Sprint 1 and
-> **blocks C's Sprint 2 causal work** (bug #6's escalating-widening fix has
-> no home in the frozen two-function causal surface). Profile C's Sprint 1/2
-> tasks below are also re-scoped: only two of its six frozen analytics
-> functions are ports, the rest are greenfield.
+> landed as **Amendment A1** in `CONTRACTS.md`. **A1 ACCEPTED 2026-09-18**
+> (applied into frozen §2/§4). Profile C's Sprint 1/2 tasks below are also
+> re-scoped: only two of its six frozen analytics functions are ports, the
+> rest are greenfield. Causal Sprint 2 is unblocked.
 
 ## Sprint 0 — Contracts (all three profiles, joint)
 
@@ -58,17 +56,18 @@ Sprint 1 task starts.
 ## Sprint 1
 
 **Joint — amendment A1 sign-off (new, head of sprint)**
-- [ ] Review `CONTRACTS.md` "Proposed Amendment A1"; A, B and C each sign off
-      or counter-propose. A1.1 (causal escalation surface) blocks C's Sprint
-      2 — resolve it first, the rest can follow within the sprint.
-- [ ] Spike: add `pydantic-ai` to `pyproject.toml` and confirm the real
+- [x] Review `CONTRACTS.md` "Amendment A1"; A, B and C each sign off.
+      **ACCEPTED 2026-09-18** — applied into frozen §2/§4 (`search_breadth`
+      on `estimate_effect`; Analytics grain rule; named error codes). See
+      `CONTRACTS.md` change log.
+- [x] Spike: add `pydantic-ai` to `pyproject.toml` and confirm the real
       toolset/`RunContext` API matches the signatures frozen in `CONTRACTS.md`
-      §4 (A1.6). **Partial:** `pydantic-ai-slim>=2.45` is installed and the
-      stub agent builds against it (Profile A Sprint 1); formal three-profile
-      sign-off that frozen §4 matches the real API is still open.
-- [ ] Decide owner for the `CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` →
+      §4 (A1.6). Done — `pydantic-ai-slim>=2.45`; stub agent validates
+      `RunContext[SelericDeps]`.
+- [x] Decide owner for the `CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` →
       `CAUSALLY_SUPPORTED` migration, including
-      `config/diagnostic_policies.yaml:24` (A1.4).
+      `config/diagnostic_policies.yaml:24` (A1.4). Done — owner = Profile C;
+      migration executes during Causal Sprint 2 (not as part of A1 landing).
 
 **A — Runtime scaffolding**
 - [x] `agent/agent.py`, `agent/dependencies.py`, `agent/output.py` skeletons.
@@ -127,22 +126,18 @@ Step 1 of the extract-wrap-delete approach (`03_PROFILE_CAPABILITIES.md`
       not this sprint.
 
 **Status (implementation work):** Profile A/B/C Sprint 1 execution Done
-2026-09-18 — see `TASK_SHEET.md`. Joint A1 sign-off (A1.1 / A1.4 owner /
-formal A1.6 review) still open and still gates C's Sprint 2 causal work.
+2026-09-18 — see `TASK_SHEET.md`. **Amendment A1 ACCEPTED 2026-09-18** —
+C's Sprint 2 Causal work is unblocked.
 
-**Gate:** two blocking dependencies, otherwise open.
-1. **Amendment A1.1 must be signed off before C's Sprint 2 starts** — the
-   frozen Causal surface has no home for bug #6's escalating-widening fix,
-   so C's causal port cannot begin until the escalation parameter is agreed.
-   This remains the program's hardest current blocker.
+**Gate:** cleared for Causal start.
+1. ~~Amendment A1.1 must be signed off before C's Sprint 2 starts~~ —
+   **ACCEPTED** — `search_breadth` is in frozen §4.
 2. ~~B's consolidation (Sprint 2) needs its own Sprint 1 spike result.~~
    Cleared — B Sprint 1 characterization done; B Sprint 2 consolidation
    largely executed (see below).
 
-Everything else in Sprint 2 is startable without another profile's Sprint 1
-output. The rest of A1 (A1.2–A1.6) should also land this sprint but only
-A1.1 gates a downstream sprint. A1.2 is already implemented in C's analytics
-toolset ahead of formal A1 sign-off.
+Everything else in Sprint 2 is startable. A1.2 was implemented in C's
+analytics toolset ahead of formal A1 sign-off and is now contract-authoritative.
 
 ## Sprint 2
 
@@ -193,45 +188,45 @@ toolset ahead of formal A1 sign-off.
       dead code — deleting them outright still needs something to replace
       them at the call-site level, which is Sprint 3 work.
 
-**C — Causal toolset v0 + evidence classification** *(blocked on A1.1)*
+**C — Causal toolset v0 + evidence classification** *(unblocked — A1 ACCEPTED)*
 - [ ] `toolsets/causal.py` + `causal/service.py` — DoWhy wiring extracted in
       place from `agents/diagnostic/*` then wrapped (same three-step pattern
       as Sprint 1). **EconML is not a dependency of this repo** — there is no
       EconML wiring to port; adding it is a separate scope decision.
+      `estimate_effect(..., search_breadth: Literal[0,1,2]=0)` per frozen §4.
 - [ ] Evidence-classification vocabulary finalized and handed to A, applying
       A1.4's migration mapping across `src/` **and**
-      `config/diagnostic_policies.yaml:24`.
+      `config/diagnostic_policies.yaml:24` (owner = Profile C).
 - [ ] Bug #6 regression against the new `search_breadth` escalation (A1.1):
       a wider retry genuinely searches a larger space, not a byte-identical
       re-run.
 - [ ] Bug #7: confirm still intermittent, not newly deterministic, **and**
-      that the #6 widening — its only documented mitigation — survives the
-      `max_validation_revisions = 1` decision below.
+      that the #6 widening — its only documented mitigation — survives via
+      `search_breadth` under the confirmed `max_validation_revisions = 1`.
 - [ ] Bug #13: explicit disposition (fix or tracked ticket). Note the
       self-reference: #13 *is* the fixture path and the real path silently
       diverging, and C's own port is fixture-validated.
-- [ ] **Policy-gate disposition (new)**: port the conditions in the eight
+- [ ] **Policy-gate disposition**: port the conditions in the eight
       `policy()` implementations into tool preconditions returning
-      `INSUFFICIENT_EVIDENCE` (A1.3), and decide what happens to the five
-      `config/*_policies.yaml` files. Nothing currently owns them.
+      `INSUFFICIENT_EVIDENCE` (A1.3), and migrate the five
+      `config/*_policies.yaml` thresholds into toolset config (YAML stay
+      until that port lands).
 
 **Joint decision (A + C), end of sprint**
-- [ ] `max_validation_revisions = 1`: confirm or change. One revision means
-      one widening step and no escalation ladder, and the old system's
-      stall-detector (the part bug #6 credits as working) never gets to
-      fire. Record the answer either way — including what the loop does with
-      a STRONG-trust + REVISE verdict when it has exactly one revision.
-- [ ] Record the skeptic→validator change as a decision: cross-agent
-      adversarial challenge becomes in-context self-review. That is a change
-      in kind, not a consolidation (`03_PROFILE_CAPABILITIES.md` §4).
+- [x] `max_validation_revisions = 1`: **confirmed**. Causal escalation is
+      `search_breadth` (caller-chosen), not validation revisions. STRONG-
+      trust + REVISE with revisions exhausted → fail closed with
+      `INSUFFICIENT_EVIDENCE` (`agent/validation.py`).
+- [x] Skeptic → validator recorded as a **change in kind**: cross-agent
+      adversarial challenge becomes in-context self-review
+      (`03_PROFILE_CAPABILITIES.md` §4; `CONTRACTS.md` A1 joint decisions).
 
 **Gate (end of sprint):** A integrates C's evidence-classification
 vocabulary into the validator's content checks (applying A1.4's migration
 mapping, including the `config/diagnostic_policies.yaml` value). B's
 deletion only proceeds if its 3-day-repeated characterization suite passes
-clean. C's causal work does not start at all until A1.1 is signed off, per
-Sprint 1's gate. The `max_validation_revisions` decision is recorded before
-the sprint closes — either answer is fine, silence is not.
+clean. C's Causal work may start — A1.1 is accepted. The
+`max_validation_revisions` decision is recorded (confirmed = 1).
 
 ## Sprint 3
 
@@ -246,12 +241,27 @@ the sprint closes — either answer is fine, silence is not.
 - [ ] Delete `coordinator/catalogue_grounding.py`'s heuristic functions
       (`dimensions_in_query`, `apply_catalogue_grain`, etc.) once
       `SemanticToolset` is the only fetch path and validated against bug #8's
-      repro case.
+      repro case. **Blocked by this sprint's explicit three-separate-calendar-
+      day characterization gate**: Sprint 2 has multiple clean runs, but all
+      are dated 2026-09-18; no deletion is justified yet.
 - [ ] Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone
       registries — replace `catalog_prompt()`'s data source with a live
-      `seleric-mcp` catalogue call.
-- [ ] `ActionToolset` — propose/validate/preview/confirm/commit wired to
-      `actions_propose/commit/status` + Meta/Google Ads write tools.
+      `seleric-mcp` catalogue call. **Deletion remains under the same gate**;
+      `MetricRegistry` still has 73 graph-indexed inbound dependencies.
+- [x] `ActionToolset` — propose/validate/preview/confirm/commit wired to
+      `actions_propose/commit/status`. Done 2026-09-18:
+      `toolsets/actions.py`, remote transport registration, dedicated
+      `v3_agent` action allowlist (legacy observer/domain agents remain
+      read-only), and `tests/unit/test_action_toolset.py`. Confirmation is the
+      user turn between preview and commit; the server's short-lived bearer
+      token stays process-local and never enters model-visible provenance.
+      The server broker owns executor dispatch, kill switch, audit, and
+      payload idempotency. Current upstream catalogue readiness is narrower
+      than this plan assumed: its own audit says only the Meta
+      `pause_meta_ad` pattern exists (and the live spike returned an empty
+      available-action list); no approved Google Ads action contract exists
+      to validate end-to-end yet. That upstream action-catalogue gap is
+      recorded, not papered over as completed Google coverage.
 
 **C — Model/Skeptic-logic port**
 - [ ] `toolsets/models.py` + `models/service.py`. **The registry question is

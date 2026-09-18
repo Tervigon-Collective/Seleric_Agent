@@ -10,10 +10,10 @@ Grounding: read before drafting, not assumed —
 `ArtifactProvenance`, `Principal`, `ContextBundle`),
 `src/seleric_swarm/conversations/context.py::ContextBuilder.build()`,
 `src/seleric_swarm/coordinator/governance/budget.py::MissionLimits`.
-No `SelericDeps`/`ToolResult`/PydanticAI usage exists anywhere in this repo
-today (confirmed by grep) — these four contracts are genuinely new, the
-rest of the runtime around them (artifact envelope, provenance, context
-assembly) already exists and is reused as-is, not rebuilt.
+Sprint 0 freeze introduced `SelericDeps`/`ToolResult`; by 2026-09-18 they
+are materialized in `agent/dependencies.py` / `agent/output.py` with
+`pydantic-ai-slim` installed (A1.6). Artifact envelope, provenance, and
+context assembly are reused as-is, not rebuilt.
 
 ## 1. `SelericDeps`
 
@@ -73,7 +73,7 @@ class ToolResult(BaseModel):
     summary: str                     # short, agent-readable — not the full payload
     provenance: ArtifactProvenance   # reuse conversations/contracts.py::ArtifactProvenance verbatim
     warnings: list[str] = Field(default_factory=list)
-    error_code: str | None = None    # e.g. INSUFFICIENT_EVIDENCE (rule 16) — set only when success=False
+    error_code: str | None = None    # set only when success=False — see allowed codes below
     retryable: bool = False          # only meaningful when success=False
 ```
 
@@ -83,6 +83,15 @@ for any toolset that produces evidence/findings (Semantic, Analytics,
 Causal, Models); Action/Knowledge/Experiment toolsets may return
 `success=True` with zero artifacts for non-evidence-producing calls
 (e.g. `actions_status` polling, a knowledge-search miss).
+
+Allowed `error_code` values (Amendment A1 accepted 2026-09-18; shape stays
+`str | None` so new codes can be added without a schema break):
+
+| Code | When |
+|---|---|
+| `INSUFFICIENT_EVIDENCE` | Rule 16 / policy-gate precondition decline (A1.3); also validator fail-closed when revisions exhausted |
+| `EVIDENCE_GRAIN_MISMATCH` | Analytics grain/span precondition failed (A1.2) |
+| `EXECUTION_LIMIT_EXCEEDED` | `ExecutionBudgetTracker` refused a consume / runtime check |
 
 ## 3. Artifact payload schemas
 
@@ -193,6 +202,15 @@ def commit_action(ctx: RunContext[SelericDeps], approval_id: str, idempotency_ke
 ```
 
 **Analytics** (`toolsets/analytics.py`, Profile C — pure functions over evidence, no fetch)
+
+Grain precondition (A1.2), binding on `compare_periods()` and
+`detect_anomalies()`: every `EvidenceArtifact` in a single call must share
+one `grain`, and the observation's period span must match the baseline's
+period span. Violation → `success=False`, `error_code="EVIDENCE_GRAIN_MISMATCH"`,
+empty `artifact_ids`. Never normalize a multi-period aggregate to make it
+comparable; never compare across grains silently. Implemented in
+`analytics/grain.py::validate_grain_set()`.
+
 ```python
 def compare_periods(ctx: RunContext[SelericDeps], evidence_ids: list[str]) -> ToolResult: ...
 def detect_anomalies(ctx: RunContext[SelericDeps], evidence_ids: list[str], method: Literal["robust_zscore", "mad", "seasonal"] = "robust_zscore") -> ToolResult: ...
@@ -203,8 +221,23 @@ def cohort_analysis(ctx: RunContext[SelericDeps], evidence_ids: list[str]) -> To
 ```
 
 **Causal** (`toolsets/causal.py`, Profile C)
+
+`search_breadth` (A1.1) is the typed escalation ladder replacing hidden
+`remediation_round` state. Maps to today's widening arithmetic:
+`history_days = 30 * (1 + search_breadth)`,
+`candidate_cap = base_cap + search_breadth`. Bounded at 2 so rule 11 holds
+without a counter living in the tool. Hypothesis discovery stays inside
+`estimate_effect` — no separate `discover_hypotheses()`.
+
 ```python
-def estimate_effect(ctx: RunContext[SelericDeps], evidence_ids: list[str], treatment: str, outcome: str, method: str = "backdoor.linear_regression") -> ToolResult: ...
+def estimate_effect(
+    ctx: RunContext[SelericDeps],
+    evidence_ids: list[str],
+    treatment: str,
+    outcome: str,
+    method: str = "backdoor.linear_regression",
+    search_breadth: Literal[0, 1, 2] = 0,
+) -> ToolResult: ...
 def refute_estimate(ctx: RunContext[SelericDeps], causal_artifact_id: str) -> ToolResult: ...
 ```
 
@@ -228,108 +261,37 @@ def estimate_sample_size(ctx: RunContext[SelericDeps], baseline_rate: float, mde
 def evaluate_experiment(ctx: RunContext[SelericDeps], experiment_id: str, evidence_ids: list[str]) -> ToolResult: ...
 ```
 
-## Proposed Amendment A1 — preconditions and escalation
+## Amendment A1 — preconditions and escalation
 
-Status: **PROPOSED — pending sign-off** (filed 2026-09-18 by Profile C after
-a design review against source). The freeze text above is unchanged and
-remains authoritative until all three profiles sign off. Rationale in
-`03_PROFILE_CAPABILITIES.md` §3 and §6.
+Status: **ACCEPTED 2026-09-18** (three-profile sign-off). Applied into
+frozen §2 (error codes) and §4 (Analytics grain rule + Causal
+`search_breadth`) above. Rationale in `03_PROFILE_CAPABILITIES.md` §3 and
+§6. Standing rule: **if the caller picks the inputs, the tool must validate
+them.**
 
-### Why this is needed at all
+### A1.1 — Causal escalation surface — ACCEPTED
 
-Non-negotiable rules 4 (tools never call tools) and 5 (analytics don't
-fetch) together mean an analytics or causal tool can neither obtain evidence
-nor ask for it. The **caller** therefore chooses the grain, the window and
-the retry. Today that caller is deterministic code; after the refactor it is
-the LLM. The contract froze the tool signatures without the input
-constraints that made the current behavior correct, so three documented
-fixes (`docs/BUG_SHEET.md` #6, #8-adjacent, #14) currently port forward as
-conventions rather than guarantees.
+`search_breadth: Literal[0, 1, 2] = 0` on `estimate_effect` (see §4).
+Hypothesis discovery stays inside `estimate_effect` — no
+`discover_hypotheses()`. Unblocks Profile C Sprint 2 Causal work.
 
-The corollary, proposed as a standing rule: **if the caller picks the
-inputs, the tool must validate them.** Control state becomes typed
-preconditions the tool enforces, not prose in a tool description.
+### A1.2 — Analytics grain precondition — ACCEPTED
 
-### A1.1 — Causal escalation surface (blocks Profile C Sprint 2)
+Binding rule live in §4 Analytics and in
+`analytics/grain.py::validate_grain_set()` (Sprint 1 Profile C).
 
-The frozen Causal toolset is exactly `estimate_effect` + `refute_estimate`:
-no hypothesis discovery, no candidate/history widening parameter, nothing
-stateful. Bug #6's shipped fix is stateful escalation — `remediation_round`
-on the long-lived mission object, widening history
-(`_CAUSAL_EXTRA_HISTORY_DAYS * (1 + round)`) and ancestor candidates
-(`cap + round`) on each retry. Per bug #7's entry that widening is also the
-**only documented mitigation** for #7's intermittent zero-observation-rows.
+### A1.3 — Precondition refusal semantics — ACCEPTED
 
-As frozen, that fix has nowhere to live. Proposed: make the escalation an
-explicit typed input rather than hidden state, so "search wider" is a schema
-position the agent selects, not a counter the tool secretly keeps.
+Policy-gate declines → `success=False`, `error_code="INSUFFICIENT_EVIDENCE"`,
+named unmet condition in `warnings`, `retryable=False`. The five
+`config/*_policies.yaml` files stay until Profile C's Sprint 2 policy-port
+migrates thresholds into toolset config; do not delete them as part of this
+acceptance.
 
-```python
-def estimate_effect(
-    ctx: RunContext[SelericDeps],
-    evidence_ids: list[str],
-    treatment: str,
-    outcome: str,
-    method: str = "backdoor.linear_regression",
-    search_breadth: Literal[0, 1, 2] = 0,   # NEW — bounded escalation ladder
-) -> ToolResult: ...
-```
+### A1.4 — Evidence-classification migration — ACCEPTED (owner = Profile C)
 
-`search_breadth` maps to the existing widening arithmetic (0 = today's base
-history/candidate cap, each step widens as the current `remediation_round`
-does). Bounded at 2 so rule 11 still holds without a counter living in the
-tool. Open for sign-off: whether a `discover_hypotheses()` function is also
-needed, or whether hypothesis discovery stays inside `estimate_effect`.
-
-### A1.2 — Analytics grain precondition
-
-`EvidenceArtifact.grain` is already a typed `Literal` in §3, so the tool can
-read grain off every `evidence_id` it is handed. Proposed contract rule,
-binding on `compare_periods()` and `detect_anomalies()`:
-
-> Every `EvidenceArtifact` in a single call must share one `grain`, and the
-> observation's period span must match the baseline's period span. On
-> violation the tool returns `success=False` with
-> `error_code="EVIDENCE_GRAIN_MISMATCH"` and empty `artifact_ids`. It never
-> normalizes a multi-period aggregate to make it comparable, and never
-> compares across grains silently.
-
-Boundary arithmetic is an implementation detail; the guarantee is not. This
-is what makes bug #14's fix survive the loss of the
-`classifier → mission.context → observer` thread. The old sum/normalize
-fallback in `swarm/specialists/anomaly.py` is explicitly not carried
-forward — it was the band-aid the real fix replaced.
-
-### A1.3 — Precondition refusal semantics (policy gates)
-
-Eight `policy(blackboard, mission) -> bool` gates and five
-`config/*_policies.yaml` files currently encode when an analysis is
-appropriate (minimum history, evidence sufficiency, intent match, retention
-thresholds). No profile owns them and nothing in the frozen contract
-replaces them. Bug #8's entry records them working correctly in the trace
-where everything else failed.
-
-Proposed: gate conditions become tool preconditions, and a tool that
-declines on policy grounds returns `success=False` with
-`error_code="INSUFFICIENT_EVIDENCE"` (rule 16's existing code) plus a
-`warnings` entry naming the unmet condition. A declined call is a normal,
-non-retryable outcome, not an error the agent should work around by calling
-a different tool. Disposition of the five YAML files (migrate values into
-toolset config, or fold into `ExecutionLimits`) to be decided in Sprint 2.
-
-### A1.4 — Evidence-classification migration mapping
-
-§3's `CausalArtifact.evidence_classification` froze `CAUSALLY_SUPPORTED`.
-The code in `src/` uses `CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` as a bare
-string literal, and `config/diagnostic_policies.yaml:24` uses it as a config
-**value** (`retain_at_or_above`). This is a cross-file plus cross-YAML
-migration with no owner today.
-
-The rename is defensible rather than a loss of precision: the frozen
-`causally_supported_requires_refutation` validator turns the "under
-assumptions" caveat into an *enforced refutation requirement*, which is
-strictly stronger than a string suffix. Proposed mapping, to be applied as
-one reviewed change:
+Mapping to apply as one reviewed change during Causal Sprint 2 (not part of
+A1 landing itself):
 
 | Current value / site | New value |
 |---|---|
@@ -338,15 +300,11 @@ one reviewed change:
 | `agents/diagnostic/policies.py:85` (default for `retain_at_or_above`) | `CAUSALLY_SUPPORTED` |
 | `agents/skeptic/contracts.py:74`, `registries.py:519` | `CAUSALLY_SUPPORTED` |
 | `services/dowhy_causal.py:37,100` | `CAUSALLY_SUPPORTED` |
-| `config/diagnostic_policies.yaml:24` (`retain_at_or_above`) | `CAUSALLY_SUPPORTED` — **config migration, owner needed** |
+| `config/diagnostic_policies.yaml:24` (`retain_at_or_above`) | `CAUSALLY_SUPPORTED` |
 
 `ASSOCIATION_ONLY` (seen in bug #6's trace) maps to `ASSOCIATION`.
 
-### A1.5 — Signature reconciliation (documentation-only, no shape change)
-
-The profile briefs listed function names that §4 never froze. Recorded here
-so the disagreement doesn't persist across two documents; §4 stands as-is
-and the extra names are struck unless separately re-proposed:
+### A1.5 — Signature reconciliation — ACCEPTED (documentation-only)
 
 | Toolset | Frozen in §4 | Struck from the brief |
 |---|---|---|
@@ -354,13 +312,24 @@ and the extra names are struck unless separately re-proposed:
 | Model | 3 functions | `simulate`, `predict_reverse_risk`, `predict_demand` |
 | Experiment | 3 functions | `design_experiment`, `compare_variants`, `recommend_next_test` |
 
-### A1.6 — Unblocked dependency
+### A1.6 — `pydantic-ai` dependency — ACCEPTED / CLOSED
 
-`pydantic-ai` is not in `pyproject.toml` and has no usage in `src/`. §4's
-signatures are typed against `RunContext[SelericDeps]`. Sprint 0 validated
-these shapes against the spec, not against an installed framework — a
-Sprint 1 spike must install it and confirm the toolset/`RunContext` API
-matches before any of §4 is treated as implementable-as-written.
+`pydantic-ai-slim>=2.45` is the declared dependency in `pyproject.toml`
+(slim variant chosen deliberately — full `pydantic-ai` pulls unrelated SDKs).
+Stub agent builds and runs against `RunContext[SelericDeps]` (Profile A
+Sprint 1). §4 signatures are implementable-as-written against the installed
+framework.
+
+### Joint decisions recorded with A1 acceptance (A + C, Sprint 2)
+
+1. **`max_validation_revisions = 1` confirmed.** Causal escalation is
+   `search_breadth` (caller-chosen on `estimate_effect`), not the
+   validation-revision counter. On STRONG-trust + REVISE when revisions are
+   exhausted → fail closed with `INSUFFICIENT_EVIDENCE` (matches
+   `agent/validation.py::run_validated_mission`).
+2. **Skeptic → EvidenceValidator is a change in kind**, not a consolidation:
+   cross-agent adversarial challenge becomes in-context self-review. Accepted
+   trade-off; see `03_PROFILE_CAPABILITIES.md` §4.
 
 ## Change log
 
@@ -369,4 +338,10 @@ matches before any of §4 is treated as implementable-as-written.
   escalation semantics for Analytics/Causal, policy-gate refusal codes,
   evidence-classification migration mapping, brief/contract signature
   reconciliation, `pydantic-ai` dependency spike. Filed by Profile C,
-  pending A and B sign-off. Frozen text above unchanged.
+  pending A and B sign-off.
+- 2026-09-18: **Amendment A1 ACCEPTED** — applied into frozen §2/§4:
+  `search_breadth` on `estimate_effect`; Analytics grain precondition;
+  named `error_code` values; A1.4 owner = Profile C; A1.6 closed on
+  `pydantic-ai-slim`. Joint decisions: keep `max_validation_revisions = 1`
+  (causal ladder is `search_breadth`); skeptic→validator recorded as a
+  change in kind. Unblocks Profile C Sprint 2 Causal toolset.

@@ -16,7 +16,16 @@ from seleric_swarm.registry.agent_registry import AgentRegistry
 # Every domain agent with catalogue access gets the same read-only tool set
 # (a catalogue-level constant, not a per-domain one); what differs per agent is
 # which module (data-access scope) the gateway pins, read from the registry.
-SELERIC_CAPABILITIES = {f"seleric.{tool}" for tool in SELERIC_TOOLS}
+SELERIC_ACTION_TOOLS = {
+    "actions_list_available",
+    "actions_propose",
+    "actions_commit",
+    "actions_status",
+}
+SELERIC_CAPABILITIES = {
+    f"seleric.{tool}" for tool in SELERIC_TOOLS if tool not in SELERIC_ACTION_TOOLS
+}
+SELERIC_ACTION_CAPABILITIES = {f"seleric.{tool}" for tool in SELERIC_ACTION_TOOLS}
 
 # Tools whose server signature accepts ``module``. The gateway pins the agent's
 # seleric_module onto these only — listing/resolve tools reject the extra argument.
@@ -58,6 +67,11 @@ def _build_allowlist(agents: AgentRegistry) -> tuple[dict[str, set[str]], dict[s
         "seleric.catalogue_resolve_term",
         "seleric.catalogue_resolve_dimension",
     }
+    # The new single-agent runtime gets the action surface without granting
+    # write capabilities to the legacy observer/domain agents. The remote MCP
+    # server still enforces caller scopes, proposal eligibility, explicit
+    # confirmation tokens, its write kill switch, and executor-level policy.
+    allowlist["v3_agent"] = SELERIC_ACTION_CAPABILITIES
     return allowlist, module_map
 
 

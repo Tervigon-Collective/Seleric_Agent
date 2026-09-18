@@ -2,11 +2,19 @@
 
 Per ``docs/refactor/SPRINT_PLAN.md`` Sprint 2: this ships the bounded
 1-revision retry loop (non-negotiable rule 11,
-``ExecutionLimits.max_validation_revisions``). Content checks — the real
-"does this causal claim carry a valid evidence classification" logic —
-land once Profile C hands off its evidence-classification vocabulary (end
-of Sprint 2, per the sprint gate); until then ``EvidenceValidator.validate``
-only checks what's mechanically verifiable without that vocabulary:
+``ExecutionLimits.max_validation_revisions``). Joint decision with A1
+acceptance (2026-09-18): keep ``max_validation_revisions = 1``; Causal
+escalation is ``search_breadth`` on ``estimate_effect`` (A1.1), not this
+counter. On STRONG-trust + REVISE when revisions are exhausted, fail closed
+with ``INSUFFICIENT_EVIDENCE``. Skeptic → validator is a change in kind
+(in-context self-review), not a consolidation — see ``CONTRACTS.md`` A1
+joint decisions.
+
+Content checks — the real "does this causal claim carry a valid evidence
+classification" logic — land once Profile C hands off its
+evidence-classification vocabulary (Sprint 2 C, A1.4 migration); until then
+``EvidenceValidator.validate`` only checks what's mechanically verifiable
+without that vocabulary:
 
 - every ``evidence_id``/``finding_id`` the ``MissionResult`` references
   actually resolves in the ``ArtifactStore`` (the structural half of rule 6

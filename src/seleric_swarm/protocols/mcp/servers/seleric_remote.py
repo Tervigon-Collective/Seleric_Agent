@@ -47,6 +47,10 @@ TOOLS = (
     "metrics_query",
     "metrics_drilldown",
     "insights_explain",
+    "actions_list_available",
+    "actions_propose",
+    "actions_commit",
+    "actions_status",
 )
 
 
