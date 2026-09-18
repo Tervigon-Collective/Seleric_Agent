@@ -1,13 +1,13 @@
-"""Sprint 1 (Profile B) characterization: does SemanticToolset.query_metrics()
-match one of the three legacy fetch paths, before Sprint 2 consolidation?
+"""Sprint 1/2 (Profile B) characterization: does SemanticToolset.query_metrics()
+match the legacy fetch path, across every metric already covered by
+tests/replay/test_data_access_characterization.py's ``_CASES``?
 
 Per docs/refactor/SPRINT_PLAN.md Sprint 1: "Re-run
 tests/replay/test_data_access_characterization.py against the new toolset
-... to establish it matches at least one of the three legacy paths." This
-compares the new toolset against ``HybridMcpDataProvider.fetch()`` (the path
-``tests/replay/test_data_access_characterization.py`` already exercises) for
-the same metric/day already used there (``metric.units_sold`` ->
-catalogue id ``units_sold``, from ``config/metric_registry.yaml``).
+... to establish it matches at least one of the three legacy paths." Sprint 2
+broadens this to all three ``_CASES`` metrics (not just one) before any call
+site gets routed through the new toolset — one matching metric is not enough
+evidence to reroute live production traffic.
 
 Requires live Seleric MCP credentials (skips otherwise, same as every other
 ``runtime``-fixture test in this repo).
@@ -19,16 +19,27 @@ from datetime import UTC, datetime
 
 import pytest
 
-from seleric_swarm.agent.contracts import ExecutionLimits, SelericDeps
+from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.swarm.providers.mcp_data import HybridMcpDataProvider, McpFetchStats
 from seleric_swarm.toolsets import semantic
 
 _DAY = "2026-08-01"
-_METRIC_ID_LEGACY = "metric.units_sold"
-_METRIC_ID_CATALOGUE = "units_sold"  # config/metric_registry.yaml catalogue_metric for the above
-_AGENT_ID = "product_agent"
+
+# (agent_id, legacy metric_id, catalogue metric_id) — catalogue ids are each
+# metric's config/metric_registry.yaml `catalogue_metric`. Mirrors
+# tests/replay/test_data_access_characterization.py::_CASES so both suites
+# characterize the same live data.
+_CASES = [
+    ("performance_agent", "metric.cac", "cac"),  # seleric_module: null (unscoped) in the registry
+    ("finance_agent", "metric.net_profit", "net_profit_all_channels"),  # unscoped (canonical_pnl)
+    ("product_agent", "metric.units_sold", "units_sold"),  # commerce module (module-scoped in the registry)
+]
+
+
+def _domain_for(agent_id: str) -> str:
+    return agent_id.removesuffix("_agent")
 
 
 class _RunContext:
@@ -37,21 +48,24 @@ class _RunContext:
 
 
 @pytest.mark.asyncio
-async def test_semantic_toolset_query_metrics_matches_hybrid_provider_fetch(runtime):
+@pytest.mark.parametrize("agent_id,metric_id_legacy,metric_id_catalogue", _CASES)
+async def test_semantic_toolset_query_metrics_matches_hybrid_provider_fetch(
+    runtime, agent_id, metric_id_legacy, metric_id_catalogue
+):
     provider = HybridMcpDataProvider(
-        "product",
+        _domain_for(agent_id),
         mcp=runtime.mcp,
         stats=McpFetchStats(),
         metrics=runtime.metrics,
-        agent_id=_AGENT_ID,
+        agent_id=agent_id,
     )
     legacy = await provider.fetch(
-        metric_ids=[_METRIC_ID_LEGACY],
+        metric_ids=[metric_id_legacy],
         time_range={"start": _DAY, "end": _DAY},
     )
     legacy_value = legacy.readings[0].value if legacy.readings else None
     assert legacy_value is not None, (
-        f"HybridMcpDataProvider.fetch() returned no reading for {_METRIC_ID_LEGACY} on {_DAY} "
+        f"HybridMcpDataProvider.fetch() returned no reading for {metric_id_legacy} on {_DAY} "
         f"(missing={legacy.missing}) -- cannot characterize, MCP data unavailable"
     )
 
@@ -71,18 +85,23 @@ async def test_semantic_toolset_query_metrics_matches_hybrid_provider_fetch(runt
     period = datetime.fromisoformat(_DAY).replace(tzinfo=UTC)
     result = await semantic.query_metrics(
         ctx,
-        metric_id=_METRIC_ID_CATALOGUE,
+        metric_id=metric_id_catalogue,
         dimensions={},
         grain="none",
         period_start=period,
         period_end=period,
     )
-    assert result.success, f"SemanticToolset.query_metrics() failed: {result.summary}"
+    assert result.success, (
+        f"SemanticToolset.query_metrics({metric_id_catalogue}) failed: {result.summary}. "
+        "SemanticToolset currently calls MCP unscoped (no `module` argument) under the "
+        "`observer_agent` identity -- if this metric requires module scoping to resolve "
+        "unambiguously, this failure is that gap surfacing, not a transient error."
+    )
     artifact = deps.artifact_store.get(result.artifact_ids[0])
     new_value = artifact.payload["value"]
 
     assert new_value == pytest.approx(legacy_value, rel=1e-6), (
-        f"DIVERGENCE for {_METRIC_ID_CATALOGUE} on {_DAY}: "
+        f"DIVERGENCE for {metric_id_catalogue} on {_DAY}: "
         f"SemanticToolset.query_metrics()={new_value} vs "
         f"HybridMcpDataProvider.fetch()={legacy_value}. The new toolset calls "
         "metrics_query directly with the catalogue id and no MetricRegistry/"

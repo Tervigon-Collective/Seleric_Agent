@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING, Any
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import SeriesPoint
-from seleric_swarm.services.mcp_query import build_metrics_query_args, call_metrics_query, row_date
-from seleric_swarm.services.measure import module_args, resolve_measure
+from seleric_swarm.services.mcp_query import row_date
+from seleric_swarm.services.measure import module_args
 from seleric_swarm.services.time_range import resolve_time_range
+from seleric_swarm.toolsets.semantic import raw_query_metric
 
 if TYPE_CHECKING:
     from seleric_swarm.runtime import SwarmRuntime
@@ -39,26 +40,25 @@ async def fetch_series(
         start_date = end_date - timedelta(days=max_lookback_days)
         start = start_date.isoformat()
 
-    measure = await resolve_measure(
-        definition,
-        mcp=runtime.mcp,
-        agent_id=agent_id,
-        bootstrap=getattr(runtime, "bootstrap", None),
-        metrics=getattr(runtime, "metrics", None),
-    )
+    # Sprint 2 consolidation (docs/refactor/SPRINT_PLAN.md): use the static
+    # catalogue_metric field directly, no resolve_measure() keyword-search
+    # fallback. A stale/missing id now surfaces as a live Cube error below,
+    # not a silent substitution.
+    measure = definition.catalogue_metric or None
     if measure is None:
         return [], {"error": "catalogue measure not found"}
 
     extra = module_args(definition)
-    arguments = build_metrics_query_args(
-        measure=measure,
+    result = await raw_query_metric(
+        runtime.mcp,
+        agent_id=agent_id,
+        metric_id=measure,
         start=start,
         end=end,
         grain=grain,
         filters=[{"dimension": "brand_id", "operator": "equals", "values": [brand_id]}],
         module=extra["module"] if extra else ...,
     )
-    result = await call_metrics_query(runtime.mcp, agent_id=agent_id, arguments=arguments)
     provenance = dict(result.get("provenance") or {})
     if result.get("error"):
         provenance["error"] = result["error"]

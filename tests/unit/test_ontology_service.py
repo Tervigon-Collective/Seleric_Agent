@@ -219,11 +219,11 @@ async def test_observer_stamps_data_product_on_seleric_evidence():
         formula="gross_profit - operating_cost",
         description="Canonical net profit",
         domain="finance",
+        catalogue_metric="net_profit",
         raw={},
     )
     gateway = _FakeGateway(
         {
-            "seleric.catalogue_search_metrics": [{"matches": [{"id": "net_profit"}]}],
             "seleric.metrics_query": [
                 {
                     "rows": [{"net_profit": "-51190.98"}],

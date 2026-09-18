@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from seleric_swarm.agent.contracts import SelericDeps, ToolResult
-from seleric_swarm.agent.contracts import ExecutionLimits
+from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
+from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import semantic
@@ -103,6 +103,41 @@ async def test_query_metrics_writes_evidence_artifact_on_success():
     assert artifact.payload["value"] == pytest.approx(13638.0)
     assert artifact.classification == "factual"
     assert mcp.calls[0][0] == "seleric.metrics_query"
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_day_grain_writes_one_artifact_per_row():
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "q1",
+                "rows": [
+                    {"total_sales.day": "2026-09-15", "total_sales": "100"},
+                    {"total_sales.day": "2026-09-16", "total_sales": "150"},
+                    {"total_sales.day": "2026-09-17", "total_sales": "120"},
+                ],
+                "provenance": {"query_id": "q1"},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="total_sales",
+        dimensions={},
+        grain="day",
+        period_start=datetime(2026, 9, 15, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert result.success is True
+    assert len(result.artifact_ids) == 3
+    values = sorted(
+        ctx.deps.artifact_store.get(aid).payload["value"] for aid in result.artifact_ids
+    )
+    assert values == [100.0, 120.0, 150.0]
+    first = ctx.deps.artifact_store.get(result.artifact_ids[0])
+    assert first.payload["grain"] == "day"
+    assert first.payload["period_start"] == first.payload["period_end"]
 
 
 @pytest.mark.asyncio
