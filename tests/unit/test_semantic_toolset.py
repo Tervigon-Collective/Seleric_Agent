@@ -17,7 +17,7 @@ import pytest
 from seleric_swarm.agent.contracts import SelericDeps, ToolResult
 from seleric_swarm.agent.contracts import ExecutionLimits
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
-from seleric_swarm.state.artifacts import ArtifactStore
+from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import semantic
 
 
@@ -49,7 +49,7 @@ def _deps(mcp_client: FakeMcpClient) -> SelericDeps:
         trace_id="trace-1",
         context=ContextBundle(),
         mcp_client=mcp_client,
-        artifact_store=ArtifactStore(),
+        artifact_store=InMemoryArtifactStore(),
         limits=ExecutionLimits(),
     )
 

@@ -11,6 +11,16 @@ from uuid import uuid4
 from seleric_swarm.api.status import TERMINAL_STATUSES
 from seleric_swarm.cancellation import InMemoryCancellationBackend
 from seleric_swarm.contracts.lookup import MissionResult, TraceInfo
+from seleric_swarm.conversations.contracts import (
+    Message,
+    MessagePart,
+    MessagePartType,
+    MessageRole,
+    Run,
+    RunAttempt,
+    RunAttemptStatus,
+    Thread,
+)
 from seleric_swarm.orchestration.dispatch import run_any_mission
 from seleric_swarm.runtime import SwarmRuntime
 
@@ -121,6 +131,133 @@ def seed_running_mission(
     return raw
 
 
+async def enqueue_durable_mission(
+    runtime: SwarmRuntime,
+    *,
+    mission_id: str,
+    query: str,
+    timezone: str,
+    as_of: str | None,
+    session_id: str,
+    request_id: str,
+    workspace_id: str,
+    owner_user_id: str,
+    full_diagnostic: bool,
+    full_prediction: bool,
+    full_skeptic: bool,
+    full_strategy: bool,
+    execution_mode: str,
+    schedule: bool = True,
+) -> dict[str, Any]:
+    """Persist a standalone API mission on the same durable run queue as conversations."""
+    repositories = runtime.conversations
+    queue = runtime.run_queue
+    if repositories is None or queue is None:
+        raise RuntimeError("durable mission queue is not configured")
+    thread = Thread(
+        id=f"thread_mission_{mission_id}",
+        workspace_id=workspace_id,
+        owner_user_id=owner_user_id,
+        title=query[:80],
+        metadata={"system_hidden": True, "session_id": session_id},
+    )
+    run = Run(
+        thread_id=thread.id,
+        workspace_id=workspace_id,
+        requested_by_user_id=owner_user_id,
+        mission_id=mission_id,
+        current_attempt=1,
+        max_attempts=runtime.settings.run_max_attempts,
+    )
+    user_message = Message(
+        id=f"message_mission_{mission_id}_user",
+        thread_id=thread.id,
+        workspace_id=workspace_id,
+        user_id=owner_user_id,
+        role=MessageRole.USER,
+        run_id=run.id,
+        parts=[MessagePart(type=MessagePartType.TEXT, content=query)],
+    )
+    assistant_message = Message(
+        id=f"message_mission_{mission_id}_assistant",
+        thread_id=thread.id,
+        workspace_id=workspace_id,
+        role=MessageRole.ASSISTANT,
+        run_id=run.id,
+        parent_message_id=user_message.id,
+        parts=[
+            MessagePart(
+                type=MessagePartType.AGENT_STATUS,
+                content="Working…",
+                metadata={"status": "pending"},
+            )
+        ],
+    )
+    run = run.model_copy(
+        update={
+            "metadata": {
+                "standalone_api": True,
+                "submission": {
+                    "query": query,
+                    "timezone": timezone,
+                    "as_of": as_of,
+                    "request_id": request_id,
+                    "execution_mode": execution_mode,
+                    "assistant_message_id": assistant_message.id,
+                    "full_diagnostic": full_diagnostic,
+                    "full_prediction": full_prediction,
+                    "full_skeptic": full_skeptic,
+                    "full_strategy": full_strategy,
+                },
+            }
+        }
+    )
+    with repositories.transaction() as writes:
+        writes.threads.create(thread)
+        writes.runs.create(run)
+        writes.runs.add_attempt(
+            RunAttempt(
+                run_id=run.id,
+                attempt_number=1,
+                status=RunAttemptStatus.RETRYABLE,
+            )
+        )
+        writes.messages.create(user_message)
+        writes.messages.create(assistant_message)
+        writes.runs.add_outbox(run.id)
+    accepted = seed_running_mission(
+        runtime,
+        mission_id=mission_id,
+        query=query,
+        request_id=request_id,
+        session_id=session_id,
+        workspace_id=workspace_id,
+        owner_user_id=owner_user_id,
+        thread_id=thread.id,
+        run_id=run.id,
+    )
+    if schedule:
+        await publish_durable_mission(runtime, run.id)
+    return accepted
+
+
+async def publish_durable_mission(runtime: SwarmRuntime, run_id: str) -> None:
+    """Best-effort queue notification; the committed outbox remains authoritative."""
+    repositories = runtime.conversations
+    queue = runtime.run_queue
+    if repositories is None or queue is None:
+        return
+    try:
+        await queue.enqueue(run_id)
+        flush = getattr(queue, "flush", None)
+        if callable(flush):
+            await flush()
+    except Exception:
+        _log.warning("durable_mission_queue_notify_failed", exc_info=True)
+    else:
+        repositories.runs.mark_outbox_published(run_id)
+
+
 async def run_mission_job(
     runtime: SwarmRuntime,
     *,
@@ -135,6 +272,7 @@ async def run_mission_job(
     full_skeptic: bool,
     full_strategy: bool,
     execution_mode: str,
+    context_bundle: dict | None = None,
 ) -> None:
     """Background worker: execute mission and overwrite the running placeholder."""
     seeded = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
@@ -161,6 +299,7 @@ async def run_mission_job(
                 full_skeptic=full_skeptic,
                 full_strategy=full_strategy,
                 execution_mode=execution_mode,
+                context_bundle=context_bundle,
             )
         if is_cancel_requested(mission_id, runtime):
             # Cancel won — store.put refuses overwrite of cancelled; restore if needed.

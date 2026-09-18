@@ -140,6 +140,63 @@ async def test_http_transport_deduplicates_repeated_requests():
 
 
 @pytest.mark.asyncio
+async def test_failed_a2a_response_is_not_permanently_deduplicated():
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(
+                503,
+                headers={"Retry-After": "1"},
+                json={"ok": False},
+            )
+        return httpx.Response(200, json={"ok": True, "artifact_refs": ["EV-recovered"]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    transport = A2AHttpTransport(base_url="http://test", client=client)
+    first = await transport.send(_message())
+    second = await transport.send(_message())
+    assert first["ok"] is False
+    assert first["retry_after"] == "1"
+    assert second["ok"] is True
+    assert calls == 2
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_invoker_treats_ok_false_as_failure():
+    class RejectingTransport:
+        async def send(self, _message: SwarmMessage) -> dict:
+            return {
+                "ok": False,
+                "error_code": "SERVICE_UNAVAILABLE",
+                "error": "try later",
+                "retry_after": "2",
+            }
+
+    task = TaskSpec(
+        task_id="T-reject",
+        mission_id="MS-1",
+        task_type="diagnostic",
+        objective="diagnose",
+        idempotency_key="reject-retry",
+    )
+    context = AgentContext(
+        mission_id="MS-1",
+        task_id=task.task_id,
+        question=task.objective,
+    )
+    result = await A2AAgentInvoker(RejectingTransport()).invoke(
+        "diagnostic_agent", task, context
+    )
+    assert result.status == "retryable_failure"
+    assert result.error_code == "SERVICE_UNAVAILABLE"
+    assert result.metadata["retry_after"] == "2"
+
+
+@pytest.mark.asyncio
 async def test_invoker_places_idempotency_key_on_envelope():
     sent: list[SwarmMessage] = []
 

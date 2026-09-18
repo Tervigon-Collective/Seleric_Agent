@@ -16,6 +16,11 @@ from seleric_swarm.domain.models import MetricState
 from seleric_swarm.swarm.providers.base import DataResult, MetricReading
 
 
+@pytest.fixture(autouse=True)
+def _clear_lookup_cache():
+    lookup_fast_path._LOOKUP_CACHE.clear()
+
+
 def _normalized(**overrides) -> NormalizedQuery:
     defaults = {
         "original_query": "how is attribution doing",
@@ -344,6 +349,75 @@ async def test_mixed_grained_and_ungrained_domain_questions(monkeypatch):
     assert result.status == "completed"
     metric_ids = {row.metric_or_fact for row in result.evidence}
     assert metric_ids == {"metric.attributed_net_revenue", "metric.net_sales"}
+
+
+@pytest.mark.asyncio
+async def test_lookup_reuses_cached_metric_state_for_same_window(monkeypatch):
+    normalized = _normalized(
+        domain_questions=[DomainQuestion(domain="commerce", metrics=["gross_sales"], question="q")],
+        candidate_domains=["commerce"],
+        time_range=TimeRange(start="2026-09-18", end="2026-09-18", timezone="Asia/Kolkata", label="today"),
+    )
+    monkeypatch.setattr(lookup_fast_path, "normalize_query", lambda *a, **k: _async(normalized))
+    runtime = _runtime({"gross_sales": _state("gross_sales", 4789.73)})
+
+    first = await lookup_fast_path.run_lookup_fast_path(runtime, query="gross sales today")
+    second = await lookup_fast_path.run_lookup_fast_path(runtime, query="gross sale today")
+
+    assert first is not None and second is not None
+    assert first.final_response == second.final_response == "gross sales: 4789.73"
+    assert len(runtime.business_state.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_unavailable_metric_is_not_cached(monkeypatch):
+    normalized = _normalized(
+        domain_questions=[DomainQuestion(domain="commerce", metrics=["net_sales"], question="q")],
+        candidate_domains=["commerce"],
+        time_range=TimeRange(start="2026-09-18", end="2026-09-18", timezone="Asia/Kolkata", label="today"),
+    )
+    monkeypatch.setattr(lookup_fast_path, "normalize_query", lambda *a, **k: _async(normalized))
+    runtime = _runtime(
+        {
+            "net_sales": [
+                _state("net_sales", 0.0, status="UNAVAILABLE", quality_flags=["MISSING_DATA"]),
+                _state("net_sales", 71727.93),
+            ]
+        }
+    )
+
+    first = await lookup_fast_path.run_lookup_fast_path(runtime, query="net sales today")
+    second = await lookup_fast_path.run_lookup_fast_path(runtime, query="net sales today")
+
+    assert first is not None and first.status == "failed"
+    assert second is not None and second.status == "completed"
+    assert second.evidence[0].value == 71727.93
+    assert len(runtime.business_state.requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_lookup_forwards_context_bundle_to_normalize(monkeypatch):
+    seen: dict = {}
+    normalized = _normalized(
+        domain_questions=[DomainQuestion(domain="commerce", metrics=["gross_sales"], question="q")],
+        candidate_domains=["commerce"],
+        time_range=TimeRange(start="2026-09-18", end="2026-09-18", timezone="Asia/Kolkata", label="today"),
+    )
+
+    def capture(*args, **kwargs):
+        seen["context_bundle"] = kwargs.get("context_bundle")
+        return _async(normalized)
+
+    monkeypatch.setattr(lookup_fast_path, "normalize_query", capture)
+    runtime = _runtime({"gross_sales": _state("gross_sales", 4789.73)})
+    bundle = {"recent_messages": [{"role": "USER", "parts": [{"type": "TEXT", "content": "gross sales today"}]}]}
+
+    result = await lookup_fast_path.run_lookup_fast_path(
+        runtime, query="gross sale", context_bundle=bundle
+    )
+
+    assert result is not None
+    assert seen["context_bundle"] is bundle
 
 
 async def _async(value):

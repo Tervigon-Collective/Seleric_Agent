@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import suppress
 from datetime import datetime
 from typing import Any, Protocol, TypedDict, Unpack
 
@@ -203,7 +204,8 @@ class ActivityEventSink:
     def append(self, event: ActivityEvent) -> ActivityEvent:
         appended = self.runs.append_event(event)
         if appended.run_id:
-            self.notifier.publish(appended.run_id, appended.sequence)
+            with suppress(Exception):
+                self.notifier.publish(appended.run_id, appended.sequence)
         return appended
 
     def emit(
@@ -233,12 +235,13 @@ class ActivityEventSink:
         run: Run,
         events: list[dict[str, object]],
         *,
+        attempt_id: str = "legacy",
         exclude_event_types: set[str] | None = None,
     ) -> list[ActivityEvent]:
         appended: list[ActivityEvent] = []
         excluded = exclude_event_types or set()
         for source in events:
-            mapped = map_mission_event(source, run)
+            mapped = map_mission_event(source, run, attempt_id=attempt_id)
             if mapped is not None and mapped.event_type not in excluded:
                 appended.append(self.append(mapped))
         return appended

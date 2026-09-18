@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import inspect
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Any
@@ -11,9 +13,9 @@ from pydantic import BaseModel, Field
 
 from seleric_swarm.api.async_missions import (
     cancel_running_mission,
+    enqueue_durable_mission,
     new_mission_id,
-    run_mission_job,
-    seed_running_mission,
+    publish_durable_mission,
 )
 from seleric_swarm.api.conversations import router as conversations_router
 from seleric_swarm.api.mission_access import request_principal, require_mission_access
@@ -46,6 +48,18 @@ def get_runtime() -> SwarmRuntime:
     return _runtime
 
 
+async def _close_component(component: object | None, method: str = "close") -> None:
+    closer = getattr(component, method, None)
+    if closer is None:
+        return
+    if inspect.iscoroutinefunction(closer):
+        await closer()
+        return
+    result = await asyncio.to_thread(closer)
+    if inspect.isawaitable(result):
+        await result
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global _runtime
@@ -60,26 +74,22 @@ async def lifespan(_app: FastAPI):
     finally:
         rt = _runtime
         if rt is not None:
-            run_queue = getattr(rt, "run_queue", None)
-            queue_closer = getattr(run_queue, "close", None)
-            if queue_closer is not None:
-                await queue_closer()
-            checkpoint_provider = getattr(rt, "checkpoint_provider", None)
-            checkpoint_closer = getattr(checkpoint_provider, "close", None)
-            if checkpoint_closer is not None:
-                await checkpoint_closer()
             activity_events = getattr(rt, "activity_events", None)
             notifier = getattr(activity_events, "notifier", None)
-            notifier_closer = getattr(notifier, "close", None)
-            if notifier_closer is not None:
-                maybe = notifier_closer()
-                if hasattr(maybe, "__await__"):
-                    await maybe
-            closer = getattr(rt.mcp, "aclose", None)
-            if closer is not None:
-                maybe = closer()
-                if hasattr(maybe, "__await__"):
-                    await maybe
+            shutdown = asyncio.gather(
+                _close_component(getattr(rt, "run_queue", None)),
+                _close_component(getattr(rt, "checkpoint_provider", None)),
+                _close_component(notifier),
+                _close_component(rt.mcp, "aclose"),
+                return_exceptions=True,
+            )
+            try:
+                await asyncio.wait_for(
+                    shutdown,
+                    timeout=max(0.1, rt.settings.shutdown_timeout_s),
+                )
+            except TimeoutError:
+                shutdown.cancel()
 
 
 app = FastAPI(
@@ -413,29 +423,27 @@ async def create_mission(
     if not req.wait:
         mission_id = new_mission_id(swarm_likely=route_hint == "swarm")
         _register_mission(mission_id)
-        accepted = seed_running_mission(
-            runtime,
-            mission_id=mission_id,
-            query=query,
-            request_id=request_id,
-            session_id=session_id,
-            workspace_id=principal.workspace_id,
-            owner_user_id=principal.user_id,
-        )
-        background_tasks.add_task(
-            run_mission_job,
+        accepted = await enqueue_durable_mission(
             runtime,
             mission_id=mission_id,
             query=query,
             timezone=timezone,
             as_of=as_of,
-            session_id=session_id,
             request_id=request_id,
+            session_id=session_id,
+            workspace_id=principal.workspace_id,
+            owner_user_id=principal.user_id,
             full_diagnostic=req.full_diagnostic,
             full_prediction=req.full_prediction,
             full_skeptic=req.full_skeptic,
             full_strategy=req.full_strategy,
             execution_mode=req.execution_mode,
+            schedule=False,
+        )
+        background_tasks.add_task(
+            publish_durable_mission,
+            runtime,
+            str(accepted["run_id"]),
         )
         return accepted
 
@@ -568,6 +576,7 @@ def serve() -> None:
     from seleric_swarm.config.settings import get_settings
 
     settings = get_settings()
+    settings.validate_for_startup()
     host = settings.api_host or os.environ.get("API_HOST") or ""
     port = settings.api_port or int(os.environ.get("API_PORT") or "0")
     if not host or not port:

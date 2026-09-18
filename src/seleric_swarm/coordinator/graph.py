@@ -1035,6 +1035,7 @@ async def run_swarm_v2_mission(
     execution_mode: str = "production",
     budget_overrides: dict[str, Any] | None = None,
     mission_id: str | None = None,
+    context_bundle: dict[str, Any] | None = None,
 ) -> SwarmMissionResult:
     """Execute Coordinator V1 via LangGraph DECIDE→EXECUTE cycle."""
     mid = mission_id or f"MS-{uuid4().hex[:10]}"
@@ -1093,6 +1094,7 @@ async def run_swarm_v2_mission(
         mission_id=mid,
         request_id=rid,
         session_id=sid,
+        context_bundle=context_bundle,
     )
     if normalized.unsupported_reason:
         return _unsupported_swarm_result(
@@ -1115,27 +1117,26 @@ async def run_swarm_v2_mission(
         overview_snapshots, overview_unavailable = await read_overview_snapshots(
             SnapshotStore(), overview_domains_for_query(query)
         )
-        if overview_snapshots:
-            result = build_overview_result(
-                mission_id=mission_id,
-                query=query,
-                snapshots=overview_snapshots,
-                unavailable=overview_unavailable,
+        result = build_overview_result(
+            mission_id=mission_id,
+            query=query,
+            snapshots=overview_snapshots,
+            unavailable=overview_unavailable,
+        )
+        try:
+            runtime.store.put(
+                _swarm_mission_view(result, rid, sid),
+                {
+                    "route": "swarm",
+                    "workflow": "swarm_v2",
+                    "workflow_version": "1.4.0",
+                    "trace": {"request_id": rid, "session_id": sid},
+                    **result.as_dict(),
+                },
             )
-            try:
-                runtime.store.put(
-                    _swarm_mission_view(result, rid, sid),
-                    {
-                        "route": "swarm",
-                        "workflow": "swarm_v2",
-                        "workflow_version": "1.4.0",
-                        "trace": {"request_id": rid, "session_id": sid},
-                        **result.as_dict(),
-                    },
-                )
-            except Exception:  # noqa: S110 - persistence must never fail a completed mission
-                pass
-            return result
+        except Exception:  # noqa: S110 - persistence must never fail a completed mission
+            pass
+        return result
     # normalized.candidate_domains is LLM+catalogue grounded (or empty when
     # the classifier could not pin a domain). A mission requires some initial
     # lead to route to; ``commerce_agent`` is the one terminal default for
@@ -1373,6 +1374,10 @@ async def run_swarm_v2_mission(
                 line = f"{agent_id} failed: {(reply or {}).get('error') or 'unknown error'}"
                 if line not in live_ctx.limitations:
                     live_ctx.limitations.append(line)
+            if not (reply or {}).get("ok", True):
+                code = str((reply or {}).get("error_code") or "A2A_ERROR")
+                detail = str((reply or {}).get("error") or "remote specialist failed")
+                raise RuntimeError(f"{code}: {detail}")
             return reply or {"ok": True}
 
     team_rows = assemble_team(

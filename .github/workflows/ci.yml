@@ -13,15 +13,18 @@ jobs:
       APP_ENV: test
       LANGSMITH_TRACING: "false"
       PERSISTENCE_BACKEND: memory
+      PYTHONHASHSEED: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
       - name: Install
-        run: uv sync --extra dev
+        run: uv sync --frozen --extra dev
       - name: Lint
         run: uv run ruff check .
+      - name: Backend typecheck
+        run: uv run mypy src
       - name: Unit, contract, replay, adversarial
-        run: uv run pytest -q
+        run: uv run pytest -q -ra
       - name: Validate repo contracts
         run: uv run python scripts/validate_repo.py
       - name: Deterministic eval
@@ -36,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: office-ui/package-lock.json
       - name: Install
@@ -45,21 +48,29 @@ jobs:
         run: npm run typecheck
       - name: Test
         run: npm test
+      - name: Production build
+        run: npm run build
 
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
       - name: Build API image
         run: docker build -t seleric-swarm-api:ci .
       - name: Smoke healthcheck
         run: |
           docker run -d --name seleric-api \
-            -e APP_ENV=production \
+            -e APP_ENV=test \
             -e API_HOST=0.0.0.0 \
             -e API_PORT=8000 \
             -e LLM_PROVIDER=fake \
             -e PERSISTENCE_BACKEND=memory \
+            -e CHECKPOINT_BACKEND=none \
+            -e CANCELLATION_BACKEND=memory \
+            -e EVENT_NOTIFIER_BACKEND=memory \
+            -e BLOB_BACKEND=local \
             -e LANGSMITH_TRACING=false \
             -p 8000:8000 \
             seleric-swarm-api:ci

@@ -306,6 +306,39 @@ def classify_lookup_query(query: str, timezone: str, as_of: str | None) -> dict[
     }
 
 
+_GREETING_RE = re.compile(r"^(hi|hello|hey|good (morning|afternoon|evening))\b")
+_THANKS_RE = re.compile(r"\b(thanks|thank you)\b")
+_IDENTITY_RE = re.compile(r"\b(who are you|what can you do|what are you)\b")
+_HOW_ARE_YOU_RE = re.compile(r"^how are you\b")
+
+
+def conversational_reply_query(query: str) -> dict[str, Any]:
+    """Deterministic stand-in for coordinator.conversational_reply's structured
+    output -- a fake LLM's approximation of small-talk detection, not a
+    production keyword table (see conversational_reply.py's module docstring
+    for why the real path isn't one)."""
+    lower = query.strip().lower()
+    if _THANKS_RE.search(lower):
+        return {"is_conversational": True, "reply": "You're welcome. What would you like to investigate next?"}
+    if _IDENTITY_RE.search(lower):
+        return {
+            "is_conversational": True,
+            "reply": (
+                "I'm Seleric. I can investigate business performance, explain anomalies, "
+                "compare channels or periods, forecast outcomes, and recommend actions."
+            ),
+        }
+    if _GREETING_RE.search(lower) or _HOW_ARE_YOU_RE.search(lower):
+        return {
+            "is_conversational": True,
+            "reply": (
+                "Hi! What would you like to investigate? You can ask about sales, conversion, "
+                "CAC, ROAS, inventory, customers, forecasts, or business anomalies."
+            ),
+        }
+    return {"is_conversational": False, "reply": ""}
+
+
 def classify_swarm_query(query: str, timezone: str, as_of: str | None) -> dict[str, Any]:
     """Deterministic stand-in for coordinator.classify_swarm's structured output."""
     del timezone, as_of
@@ -543,6 +576,9 @@ class FakeLLMAdapter:
 
         if prompt_id == "coordinator.classify_swarm":
             return json.dumps(classify_swarm_query(query, timezone, as_of))
+        if prompt_id == "coordinator.conversational_reply":
+            message_field = _extract_field(user, "Message") or query
+            return json.dumps(conversational_reply_query(message_field))
         if prompt_id == "coordinator.decompose_mission":
             intents_csv = _extract_field(user, "Intents") or "none"
             primary_metric = _extract_field(user, "Primary metric") or "none"

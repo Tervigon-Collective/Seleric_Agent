@@ -21,7 +21,7 @@ import pytest
 
 from seleric_swarm.agent.contracts import ExecutionLimits, SelericDeps
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
-from seleric_swarm.state.artifacts import ArtifactStore
+from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.swarm.providers.mcp_data import HybridMcpDataProvider, McpFetchStats
 from seleric_swarm.toolsets import semantic
 
@@ -64,7 +64,7 @@ async def test_semantic_toolset_query_metrics_matches_hybrid_provider_fetch(runt
         trace_id="tr1",
         context=ContextBundle(),
         mcp_client=runtime.mcp,
-        artifact_store=ArtifactStore(),
+        artifact_store=InMemoryArtifactStore(),
         limits=ExecutionLimits(),
     )
     ctx = _RunContext(deps)

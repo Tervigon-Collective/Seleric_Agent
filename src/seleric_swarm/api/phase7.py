@@ -8,6 +8,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
+from seleric_swarm.api.ready import effective_capabilities
 from seleric_swarm.conversations.contracts import (
     ApprovalRequest,
     ApprovalStatus,
@@ -42,8 +43,8 @@ def _repositories(request: Request) -> ConversationRepositories:
 
 def _principal(request: Request) -> Principal:
     principal = getattr(request.state, "principal", None)
-    if not isinstance(principal, Principal):
-        raise HTTPException(status_code=401, detail="principal unavailable")
+    if not isinstance(principal, Principal) or not principal.authenticated:
+        raise HTTPException(status_code=401, detail="authentication required")
     return principal
 
 
@@ -137,9 +138,7 @@ def create_approval(body: CreateApprovalBody, request: Request) -> ApprovalReque
 
 
 class ApprovalDecisionBody(BaseModel):
-    decision: Literal[
-        "APPROVED", "REJECTED", "CANCELLED", "EXECUTED", "ROLLED_BACK"
-    ]
+    decision: Literal["APPROVED", "REJECTED", "CANCELLED", "EXECUTED", "ROLLED_BACK"]
     reason: str | None = Field(default=None, max_length=1000)
 
 
@@ -185,7 +184,11 @@ def decide_approval(
             updated, _record = runtime.action_execution.rollback(approval, principal)
             return updated
         updated = transition_approval(
-            repository, approval, target, principal, reason=body.reason,
+            repository,
+            approval,
+            target,
+            principal,
+            reason=body.reason,
             allow_write_actions=runtime.settings.allow_write_actions,
         )
     except PermissionError as exc:
@@ -234,22 +237,11 @@ def run_diagnostics(run_id: str, request: Request) -> dict[str, Any]:
             "lost_spans": run.metadata.get("telemetry_lost", 0),
             "trace_url": trace_url,
             "langfuse_configured": bool(
-                runtime.settings.langfuse_project_id
-                and runtime.settings.langfuse_otel_endpoint
+                runtime.settings.langfuse_project_id and runtime.settings.langfuse_otel_endpoint
             ),
         },
-        "capabilities": {
-            "hybrid_search": True,
-            "vector_search": bool(runtime.settings.search_embedding_model),
-            "action_execution": runtime.action_execution is not None,
-            "write_actions": runtime.settings.allow_write_actions,
-            "immutable_audit": True,
-            "replay_execution": False,
-        },
-        "memory_provenance": [
-            item.model_dump(mode="json")
-            for item in memory_items
-        ],
+        "capabilities": effective_capabilities(runtime),
+        "memory_provenance": [item.model_dump(mode="json") for item in memory_items],
         "retention": {
             "status": run.metadata.get("retention_status", "active"),
             "deletion_status": run.metadata.get("deletion_status", "not_requested"),
@@ -261,16 +253,7 @@ def run_diagnostics(run_id: str, request: Request) -> dict[str, Any]:
 def backend_capabilities(request: Request) -> dict[str, bool]:
     _admin(request)
     runtime = _runtime(request)
-    return {
-        "hybrid_search": True,
-        "vector_search": bool(runtime.settings.search_embedding_model),
-        "approval_audit": True,
-        "scheduled_expiry": True,
-        "action_execution": runtime.action_execution is not None,
-        "write_actions": runtime.settings.allow_write_actions,
-        "immutable_audit": True,
-        "replay_execution": False,
-    }
+    return effective_capabilities(runtime)
 
 
 @router.post("/admin/approvals/expire")

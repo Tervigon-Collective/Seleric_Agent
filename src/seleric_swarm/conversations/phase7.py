@@ -9,6 +9,7 @@ from threading import RLock
 from typing import Any, Literal, Protocol
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 from seleric_swarm.conversations.contracts import (
     ApprovalDecisionEvent,
@@ -232,12 +233,14 @@ class InMemorySearchRepository:
 class PostgresSearchRepository:
     def __init__(
         self,
-        database_url: str,
+        database_url: str | Engine,
         *,
         vector_hook: VectorSearchHook | None = None,
         query_embedder: QueryEmbeddingHook | None = None,
     ) -> None:
-        self.engine = create_engine(database_url)
+        self.engine = (
+            create_engine(database_url) if isinstance(database_url, str) else database_url
+        )
         self.vector_hook = vector_hook
         self.query_embedder = query_embedder
 
@@ -444,8 +447,10 @@ class InMemoryApprovalRepository:
 
 
 class PostgresApprovalRepository:
-    def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url)
+    def __init__(self, database_url: str | Engine) -> None:
+        self.engine = (
+            create_engine(database_url) if isinstance(database_url, str) else database_url
+        )
 
     @staticmethod
     def _params(item: ApprovalRequest) -> dict[str, Any]:
@@ -526,7 +531,9 @@ class PostgresApprovalRepository:
             row = conn.execute(text(
                 """UPDATE approval_requests SET status=:status, dry_run=:dry_run,
                    checkpoint_resume_token=:checkpoint_resume_token, updated_at=:updated_at
-                   WHERE id=:id AND status=:expected RETURNING *"""
+                   WHERE id=:id AND status=:expected
+                   AND workspace_id=:workspace_id AND owner_user_id=:owner_user_id
+                   RETURNING *"""
             ), {**self._params(approval), "expected": expected_status}).mappings().first()
             if row:
                 conn.execute(text(
@@ -552,7 +559,8 @@ class PostgresApprovalRepository:
                 """INSERT INTO approval_rollbacks
                 (id,approval_id,actor_principal_id,action,outcome,created_at)
                 VALUES (:id,:approval_id,:actor_principal_id,CAST(:action AS JSONB),
-                 CAST(:outcome AS JSONB),:created_at) ON CONFLICT (id) DO NOTHING"""
+                 CAST(:outcome AS JSONB),:created_at)
+                 ON CONFLICT (approval_id) DO NOTHING"""
             ), {**record.model_dump(), "action": json.dumps(record.action),
                 "outcome": json.dumps(record.outcome)})
         return record

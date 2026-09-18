@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import tempfile
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, NoReturn, cast
@@ -181,7 +182,9 @@ def _owned_thread(
     *,
     allow_deleted: bool = False,
 ) -> Thread:
-    thread = repositories.threads.get(thread_id)
+    thread = repositories.threads.get(
+        thread_id, principal.workspace_id, principal.user_id
+    )
     if (
         thread is None
         or not thread.is_owned_by(principal)
@@ -194,7 +197,9 @@ def _owned_thread(
 def _owned_run(
     repositories: ConversationRepositories, principal: Principal, run_id: str
 ) -> Run:
-    run = repositories.runs.get(run_id)
+    run = repositories.runs.get(
+        run_id, principal.workspace_id, principal.user_id
+    )
     if run is None or not principal.owns(
         workspace_id=run.workspace_id, user_id=run.requested_by_user_id
     ):
@@ -205,7 +210,9 @@ def _owned_run(
 def _owned_attachment(
     repositories: ConversationRepositories, principal: Principal, attachment_id: str
 ) -> Attachment:
-    attachment = repositories.attachments.get(attachment_id)
+    attachment = repositories.attachments.get(
+        attachment_id, principal.workspace_id, principal.user_id
+    )
     if attachment is None or not principal.owns(
         workspace_id=attachment.workspace_id, user_id=attachment.owner_user_id
     ):
@@ -279,9 +286,12 @@ def list_threads(
 ) -> list[Thread]:
     principal = _principal(request)
     threads = _repositories(_runtime(request)).threads.list_for_owner(
-        principal.workspace_id, principal.user_id, limit=limit
+        principal.workspace_id,
+        principal.user_id,
+        limit=limit,
+        status=ThreadStatus.ACTIVE.value,
     )
-    return [thread for thread in threads if thread.status is ThreadStatus.ACTIVE]
+    return threads
 
 
 @router.get("/threads/paginated")
@@ -881,25 +891,38 @@ def cancel_run(run_id: str, request: Request) -> dict[str, str]:
     repositories = _repositories(runtime)
     principal = _authenticated_principal(request)
     run = _owned_run(repositories, principal, run_id)
-    if not repositories.runs.cancel(run_id):
+    cancelled_at = datetime.now(UTC)
+    terminal_event = ActivityEvent(
+        id=f"event_{run.id}_cancelled",
+        thread_id=run.thread_id,
+        workspace_id=run.workspace_id,
+        run_id=run.id,
+        owner_user_id=run.requested_by_user_id,
+        actor_user_id=principal.user_id,
+        event_type="run.cancelled",
+        payload={
+            "mission_id": run.mission_id,
+            "status": RunStatus.CANCELLED.value.lower(),
+        },
+        completed_at=cancelled_at,
+    )
+    if not repositories.runs.cancel(
+        run_id, now=cancelled_at, terminal_event=terminal_event
+    ):
         raise HTTPException(status_code=409, detail="run is not cancellable")
     cancellation = getattr(runtime, "cancellation", None)
     if cancellation is not None and run.mission_id:
-        cancellation.request(run.mission_id)
+        with suppress(Exception):
+            cancellation.request(run.mission_id)
     if run.mission_id:
         try:
             cancel_running_mission(runtime, mission_id=run.mission_id)
         except (KeyError, ValueError):
             pass
-    _event_sink(runtime, repositories).emit(
-        run,
-        "run.cancelled",
-        payload={
-            "mission_id": run.mission_id,
-            "status": RunStatus.CANCELLED.value.lower(),
-        },
-        completed_at=datetime.now(UTC),
-    )
+    with suppress(Exception):
+        _event_sink(runtime, repositories).notifier.publish(
+            run.id, terminal_event.sequence
+        )
     return {"run_id": run_id, "status": RunStatus.CANCELLED.value}
 
 
@@ -939,13 +962,15 @@ async def stream_run_events(
     async def generate():
         nonlocal cursor
         while True:
-            events = repositories.runs.list_events(run_id, after_sequence=cursor)
+            events = await asyncio.to_thread(
+                repositories.runs.list_events, run_id, after_sequence=cursor
+            )
             for event in events:
                 cursor = max(cursor, event.sequence)
                 encoded = _sse_event(event, principal)
                 if encoded is not None:
                     yield encoded
-            run = repositories.runs.get(run_id)
+            run = await asyncio.to_thread(repositories.runs.get, run_id)
             if run is None or run.status in {
                 RunStatus.COMPLETED,
                 RunStatus.FAILED,
@@ -955,7 +980,12 @@ async def stream_run_events(
             if await request.is_disconnected():
                 return
             yield ": heartbeat\n\n"
-            await sink.notifier.wait(run_id, cursor, heartbeat_seconds)
+            try:
+                await sink.notifier.wait(run_id, cursor, heartbeat_seconds)
+            except Exception:
+                # Notification is only a latency optimization; durable polling is
+                # authoritative and must survive Redis/pubsub outages.
+                await asyncio.sleep(heartbeat_seconds)
 
     return _stream_response(generate())
 
@@ -1007,6 +1037,32 @@ def _artifact_classification(
     raise ValueError("missing explicit classification and evidence provenance")
 
 
+def _attempt_event(
+    run: Run,
+    attempt: RunAttempt,
+    event_type: str,
+    *,
+    suffix: str,
+    payload: dict[str, Any] | None = None,
+    completed_at: datetime | None = None,
+) -> ActivityEvent:
+    return ActivityEvent(
+        id=f"event_{run.id}_{attempt.id}_{suffix}",
+        thread_id=run.thread_id,
+        workspace_id=run.workspace_id,
+        run_id=run.id,
+        owner_user_id=run.requested_by_user_id,
+        event_type=event_type,
+        payload={
+            "mission_id": run.mission_id,
+            "attempt_id": attempt.id,
+            "attempt_number": attempt.attempt_number,
+            **(payload or {}),
+        },
+        completed_at=completed_at,
+    )
+
+
 async def _execute_submission(
     runtime: SwarmRuntime,
     repositories: ConversationRepositories,
@@ -1019,6 +1075,10 @@ async def _execute_submission(
     request_id: str,
     execution_mode: str,
     assistant_message_id: str,
+    full_diagnostic: bool = True,
+    full_prediction: bool = True,
+    full_skeptic: bool = True,
+    full_strategy: bool = True,
 ) -> RunExecutionResult:
     sink = _event_sink(runtime, repositories)
     if not attempt.worker_id:
@@ -1036,26 +1096,16 @@ async def _execute_submission(
     if cancelled_before_start:
         completed_at = datetime.now(UTC)
 
-        def emit_cancelled(committed_status: RunStatus) -> None:
-            sink.emit(
-                run,
-                {
-                    RunStatus.COMPLETED: "run.completed",
-                    RunStatus.CANCELLED: "run.cancelled",
-                }.get(committed_status, "run.failed"),
-                payload={
-                    "mission_id": run.mission_id,
-                    "status": committed_status.value.lower(),
-                    "attempt_id": attempt.id,
-                    "attempt_number": attempt.attempt_number,
-                },
-                completed_at=completed_at,
-            )
-
         return RunExecutionResult(
             status=RunStatus.CANCELLED,
             error_code="CANCELLED",
-            on_committed=emit_cancelled,
+            terminal_event=_attempt_event(
+                run,
+                attempt,
+                "run.cancelled",
+                suffix="terminal",
+                completed_at=completed_at,
+            ),
         )
     running = repositories.runs.compare_and_set_status(
         run.id,
@@ -1068,12 +1118,19 @@ async def _execute_submission(
             return RunExecutionResult(
                 status=RunStatus.CANCELLED,
                 error_code="CANCELLED",
-                on_committed=emit_cancelled,
+                terminal_event=_attempt_event(
+                    run,
+                    attempt,
+                    "run.cancelled",
+                    suffix="terminal",
+                    completed_at=datetime.now(UTC),
+                ),
             )
         raise RuntimeError(f"run {run.id} could not enter RUNNING state")
     sink.emit(
         running,
         "run.started",
+        id=f"event_{run.id}_{attempt.id}_started",
         payload={
             "mission_id": run.mission_id,
             "attempt_id": attempt.id,
@@ -1086,6 +1143,7 @@ async def _execute_submission(
         sink.ingest_mission_events(
             running,
             [event],
+            attempt_id=attempt.id,
             exclude_event_types={
                 "run.started",
                 "run.completed",
@@ -1103,11 +1161,14 @@ async def _execute_submission(
             as_of=as_of,
             session_id=run.thread_id,
             request_id=request_id,
-            full_diagnostic=True,
-            full_prediction=True,
-            full_skeptic=True,
-            full_strategy=True,
+            full_diagnostic=full_diagnostic,
+            full_prediction=full_prediction,
+            full_skeptic=full_skeptic,
+            full_strategy=full_strategy,
             execution_mode=execution_mode,
+            context_bundle=run.metadata.get("context_bundle")
+            if isinstance(run.metadata.get("context_bundle"), dict)
+            else None,
         )
     raw = getattr(runtime.store, "get_raw", lambda _mission_id: None)(run.mission_id)
     raw = raw if isinstance(raw, dict) else {}
@@ -1126,6 +1187,7 @@ async def _execute_submission(
         sink.ingest_mission_events(
             running,
             [event for event in mission_events if isinstance(event, dict)],
+            attempt_id=attempt.id,
             exclude_event_types={
                 "run.started",
                 "run.completed",
@@ -1160,6 +1222,7 @@ async def _execute_submission(
         sink.emit(
             running,
             "answer.completed",
+            id=f"event_{run.id}_{attempt.id}_answer_completed",
             payload={"message_id": final_message.id, "mission_id": run.mission_id},
         )
         summary_thread = repositories.threads.get(run.thread_id)
@@ -1193,7 +1256,9 @@ async def _execute_submission(
     artifact_groups = raw.get("artifacts")
     if isinstance(artifact_groups, dict):
         for artifact_type, items in artifact_groups.items():
-            for payload in items if isinstance(items, list) else []:
+            for artifact_position, payload in enumerate(
+                items if isinstance(items, list) else []
+            ):
                 if not isinstance(payload, dict):
                     continue
                 evidence_ids = [
@@ -1237,7 +1302,21 @@ async def _execute_submission(
                             id=str(
                                 payload.get("artifact_id")
                                 or payload.get("id")
-                                or f"artifact_{uuid4().hex}"
+                                or (
+                                    "artifact_"
+                                    + hashlib.sha256(
+                                        (
+                                            f"{run.id}:{attempt.id}:{artifact_type}:"
+                                            f"{artifact_position}:"
+                                            + json.dumps(
+                                                payload,
+                                                sort_keys=True,
+                                                separators=(",", ":"),
+                                                default=str,
+                                            )
+                                        ).encode()
+                                    ).hexdigest()[:32]
+                                )
                             ),
                             workspace_id=run.workspace_id,
                             artifact_type=str(artifact_type),
@@ -1296,32 +1375,40 @@ async def _execute_submission(
                 sink.emit(
                     running,
                     "artifact.created",
+                    id=f"event_{run.id}_{attempt.id}_artifact_{artifact.id}",
                     payload={
                         "artifact_id": artifact.id,
                         "artifact_type": artifact.artifact_type,
                     },
                 )
-    def emit_terminal(committed_status: RunStatus) -> None:
-        sink.emit(
-            running,
-            {
-                RunStatus.COMPLETED: "run.completed",
-                RunStatus.CANCELLED: "run.cancelled",
-            }.get(committed_status, "run.failed"),
-            payload={
-                "mission_id": run.mission_id,
-                "status": committed_status.value.lower(),
-                "attempt_id": attempt.id,
-                "attempt_number": attempt.attempt_number,
-            },
-            completed_at=completed_at,
-        )
-
     return RunExecutionResult(
         status=final_status,
         error_code=str(raw.get("error_code") or "") or None,
         error_message=str(raw.get("error_message") or "") or None,
-        on_committed=emit_terminal,
+        retryable=(
+            final_status is RunStatus.FAILED
+            and str(raw.get("error_code") or "").upper()
+            in {
+                "ASYNC_EXECUTION_FAILED",
+                "LLM_UNAVAILABLE",
+                "LLM_CLASSIFICATION_UNAVAILABLE",
+                "MCP_ERROR",
+                "MCP_UNAVAILABLE",
+                "MISSION_TIMEOUT",
+                "SERVICE_UNAVAILABLE",
+                "TIMEOUT",
+            }
+        ),
+        terminal_event=_attempt_event(
+            running,
+            attempt,
+            {
+                RunStatus.COMPLETED: "run.completed",
+                RunStatus.CANCELLED: "run.cancelled",
+            }.get(final_status, "run.failed"),
+            suffix="terminal",
+            completed_at=completed_at,
+        ),
     )
 
 
@@ -1379,6 +1466,10 @@ class SubmissionRunExecutor:
             request_id=str(submission.get("request_id") or run.id),
             execution_mode=str(submission.get("execution_mode") or "production"),
             assistant_message_id=assistant_message_id,
+            full_diagnostic=bool(submission.get("full_diagnostic", True)),
+            full_prediction=bool(submission.get("full_prediction", True)),
+            full_skeptic=bool(submission.get("full_skeptic", True)),
+            full_strategy=bool(submission.get("full_strategy", True)),
         )
 
 
@@ -1404,6 +1495,7 @@ def _submission_queue(
             lease_s=_execution_setting(runtime, "run_lease_s", 60.0),
             heartbeat_s=_execution_setting(runtime, "run_heartbeat_s", 15.0),
             retry_delay_s=_execution_setting(runtime, "run_retry_delay_s", 5.0),
+            retry_jitter_s=_execution_setting(runtime, "run_retry_jitter_s", 1.0),
         )
     )
     try:
@@ -1430,6 +1522,15 @@ async def submit_message(
         raise HTTPException(status_code=409, detail="thread is not active")
     if body.execution_mode not in {"staging", "production"}:
         raise HTTPException(status_code=400, detail="invalid execution_mode")
+    if body.parent_message_id is not None:
+        parent = repositories.messages.get(
+            body.parent_message_id, principal.workspace_id
+        )
+        if parent is None or parent.thread_id != thread.id:
+            raise HTTPException(
+                status_code=422,
+                detail="parent message must belong to this thread and workspace",
+            )
     query = "\n".join(
         str(part.content).strip()
         for part in body.parts
@@ -1451,95 +1552,6 @@ async def submit_message(
             raise HTTPException(status_code=409, detail="attachment is already associated")
         attachments.append(attachment)
 
-    mission_id = new_mission_id()
-    run = Run(
-        thread_id=thread.id,
-        workspace_id=thread.workspace_id,
-        requested_by_user_id=principal.user_id,
-        mission_id=mission_id,
-        current_attempt=1,
-        max_attempts=_execution_setting(runtime, "run_max_attempts", 3),
-    )
-    request_id = str(getattr(request.state, "request_id", "") or run.id)
-    seeded = seed_running_mission(
-        runtime,
-        mission_id=mission_id,
-        query=query,
-        request_id=request_id,
-        session_id=thread.id,
-        workspace_id=thread.workspace_id,
-        owner_user_id=thread.owner_user_id,
-        thread_id=thread.id,
-        run_id=run.id,
-    )
-    run = repositories.runs.create(run)
-    attempt = repositories.runs.add_attempt(
-        RunAttempt(
-            run_id=run.id,
-            attempt_number=1,
-            status=RunAttemptStatus.RETRYABLE,
-        )
-    )
-    message = repositories.messages.create(
-        Message(
-            thread_id=thread.id,
-            workspace_id=thread.workspace_id,
-            user_id=principal.user_id,
-            role=MessageRole.USER,
-            parts=body.parts,
-            run_id=run.id,
-            parent_message_id=body.parent_message_id,
-        )
-    )
-    if not repositories.attachments.associate_many(
-        [attachment.id for attachment in attachments],
-        message.id,
-        thread_id=thread.id,
-        workspace_id=thread.workspace_id,
-        owner_user_id=principal.user_id,
-    ):
-        completed_at = datetime.now(UTC)
-        repositories.runs.update_attempt(
-            attempt.model_copy(
-                update={
-                    "status": RunAttemptStatus.FAILED,
-                    "retryable": False,
-                    "error_code": "attachment_association_conflict",
-                    "error_message": "attachment association lost a concurrent race",
-                    "completed_at": completed_at,
-                }
-            )
-        )
-        repositories.runs.update(
-            run.model_copy(
-                update={
-                    "status": RunStatus.FAILED,
-                    "completed_at": completed_at,
-                }
-            )
-        )
-        raise HTTPException(
-            status_code=409,
-            detail="one or more attachments were concurrently associated",
-        )
-    assistant_message = repositories.messages.create(
-        Message(
-            thread_id=thread.id,
-            workspace_id=thread.workspace_id,
-            role=MessageRole.ASSISTANT,
-            run_id=run.id,
-            parent_message_id=message.id,
-            created_at=message.created_at + timedelta(microseconds=1),
-            updated_at=message.created_at + timedelta(microseconds=1),
-            parts=[
-                MessagePart(
-                    type=MessagePartType.AGENT_STATUS,
-                    content="Working…",
-                    metadata={"status": "pending"},
-                )
-            ],
-        )
-    )
     context_bundle = ContextBuilder(repositories).build(
         thread,
         query=query,
@@ -1550,31 +1562,124 @@ async def submit_message(
         ),
     )
     bundle_data = context_bundle.model_dump(mode="json")
-    run = repositories.runs.update(
-        run.model_copy(
-            update={
-                "metadata": {
-                    **run.metadata,
-                    "context_bundle": bundle_data,
-                    "submission": {
-                        "query": query,
-                        "timezone": str(
-                            body.scope.get("timezone") or "Asia/Kolkata"
-                        ),
-                        "as_of": body.scope.get("as_of") or body.scope.get("asOf"),
-                        "request_id": request_id,
-                        "execution_mode": body.execution_mode,
-                        "assistant_message_id": assistant_message.id,
-                    },
-                }
-            }
+    mission_id = new_mission_id()
+    run = Run(
+        thread_id=thread.id,
+        workspace_id=thread.workspace_id,
+        requested_by_user_id=principal.user_id,
+        mission_id=mission_id,
+        current_attempt=1,
+        max_attempts=_execution_setting(runtime, "run_max_attempts", 3),
+    )
+    request_id = str(getattr(request.state, "request_id", "") or run.id)
+    try:
+        seeded = seed_running_mission(
+            runtime,
+            mission_id=mission_id,
+            query=query,
+            request_id=request_id,
+            session_id=thread.id,
+            workspace_id=thread.workspace_id,
+            owner_user_id=thread.owner_user_id,
+            thread_id=thread.id,
+            run_id=run.id,
         )
-    )
-    repositories.memories.record_usage(
-        run.id,
-        context_bundle.memories,
-        {"thread_id": thread.id, "mission_id": mission_id, "builder": "phase6-v1"},
-    )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to persist the mission before submission",
+        ) from exc
+    try:
+        with repositories.transaction() as writes:
+            run = writes.runs.create(run)
+            writes.runs.add_attempt(
+                RunAttempt(
+                    run_id=run.id,
+                    attempt_number=1,
+                    status=RunAttemptStatus.RETRYABLE,
+                )
+            )
+            message = writes.messages.create(
+                Message(
+                    thread_id=thread.id,
+                    workspace_id=thread.workspace_id,
+                    user_id=principal.user_id,
+                    role=MessageRole.USER,
+                    parts=body.parts,
+                    run_id=run.id,
+                    parent_message_id=body.parent_message_id,
+                )
+            )
+            if not writes.attachments.associate_many(
+                [attachment.id for attachment in attachments],
+                message.id,
+                thread_id=thread.id,
+                workspace_id=thread.workspace_id,
+                owner_user_id=principal.user_id,
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="one or more attachments were concurrently associated",
+                )
+            assistant_message = writes.messages.create(
+                Message(
+                    thread_id=thread.id,
+                    workspace_id=thread.workspace_id,
+                    role=MessageRole.ASSISTANT,
+                    run_id=run.id,
+                    parent_message_id=message.id,
+                    created_at=message.created_at + timedelta(microseconds=1),
+                    updated_at=message.created_at + timedelta(microseconds=1),
+                    parts=[
+                        MessagePart(
+                            type=MessagePartType.AGENT_STATUS,
+                            content="Working…",
+                            metadata={"status": "pending"},
+                        )
+                    ],
+                )
+            )
+            run = writes.runs.update(
+                run.model_copy(
+                    update={
+                        "metadata": {
+                            **run.metadata,
+                            "context_bundle": bundle_data,
+                            "submission": {
+                                "query": query,
+                                "timezone": str(
+                                    body.scope.get("timezone") or "Asia/Kolkata"
+                                ),
+                                "as_of": body.scope.get("as_of")
+                                or body.scope.get("asOf"),
+                                "request_id": request_id,
+                                "execution_mode": body.execution_mode,
+                                "assistant_message_id": assistant_message.id,
+                            },
+                        }
+                    }
+                )
+            )
+            writes.memories.record_usage(
+                run.id,
+                context_bundle.memories,
+                {
+                    "thread_id": thread.id,
+                    "mission_id": mission_id,
+                    "builder": "phase6-v1",
+                },
+            )
+            title = thread.title
+            if not title or title.strip().lower() == "untitled conversation":
+                title = " ".join(query.split())[:80]
+            writes.threads.update(
+                thread.model_copy(
+                    update={"title": title, "updated_at": datetime.now(UTC)}
+                )
+            )
+            writes.runs.add_outbox(run.id)
+    except HTTPException:  # noqa: TRY203 - transaction context must observe the error
+        raise
     mission_result = runtime.store.get(mission_id)
     if mission_result is not None:
         runtime.store.put(
@@ -1588,17 +1693,18 @@ async def submit_message(
     MemoryService(repositories).ingest_candidates(
         MemoryCandidateExtractor().extract(message, thread)
     )
-    title = thread.title
-    if not title or title.strip().lower() == "untitled conversation":
-        title = " ".join(query.split())[:80]
-    repositories.threads.update(
-        thread.model_copy(update={"title": title, "updated_at": datetime.now(UTC)})
-    )
     _event_sink(runtime, repositories).emit(
         run,
         "run.queued",
         payload={"message_id": message.id, "mission_id": mission_id},
         actor_user_id=principal.user_id,
     )
-    await _submission_queue(runtime, repositories).enqueue(run.id)
+    try:
+        await _submission_queue(runtime, repositories).enqueue(run.id)
+    except Exception:  # noqa: S110 - durable outbox is the recovery record
+        # The committed outbox row is intentionally left pending. Recovery
+        # dispatchers can deterministically retry this idempotent run enqueue.
+        pass
+    else:
+        repositories.runs.mark_outbox_published(run.id)
     return {"message_id": message.id, "run_id": run.id, "mission_id": mission_id}

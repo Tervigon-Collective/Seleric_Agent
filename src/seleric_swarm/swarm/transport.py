@@ -51,8 +51,11 @@ class _Dedupe:
                     self._dedupe_tasks.pop(key, None)
             raise
         async with self._dedupe_lock:
-            self._dedupe_results[key] = dict(result)
             self._dedupe_tasks.pop(key, None)
+            # Only successful deliveries are safe to deduplicate permanently.
+            # A transient remote failure must remain retryable with the same key.
+            if result.get("ok") is not False:
+                self._dedupe_results[key] = dict(result)
         return dict(result)
 
 
@@ -190,6 +193,7 @@ class A2AHttpTransport(_Dedupe):
                 "error": f"A2A server error {resp.status_code} from {agent_id}",
                 "error_code": "SERVICE_UNAVAILABLE",
                 "artifact_refs": [],
+                "retry_after": resp.headers.get("Retry-After"),
             }
         if resp.status_code == 404:
             return {

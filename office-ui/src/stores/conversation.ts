@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { conversationsApi } from "../api/conversations";
 import type { ActivityEvent, MemoryItem, Message, Thread } from "../api/contracts";
+import { ApiError } from "../api/http";
 import { subscribeToRunEvents } from "../api/runEvents";
 import { useOffice } from "../store";
 import type { SwarmUIEvent } from "../types";
@@ -22,6 +23,7 @@ interface ConversationState {
   loadThreads: () => Promise<void>;
   createThread: () => Promise<void>;
   selectThread: (id: string) => Promise<void>;
+  clearSelection: () => void;
   renameThread: (id: string, title: string) => Promise<void>;
   archiveThread: (id: string) => Promise<void>;
   setSearch: (value: string) => void;
@@ -74,6 +76,12 @@ const textMessage = (threadId: string, role: "USER" | "ASSISTANT", text: string,
 });
 const optionalString = (value: unknown): string | undefined =>
   typeof value === "string" && value ? value : undefined;
+const messageText = (message: Message | undefined): string =>
+  message?.parts
+    .filter((part) => part.type === "TEXT" && typeof part.content === "string")
+    .map((part) => String(part.content))
+    .join("\n")
+    .trim() ?? "";
 const toOfficeEvent = (event: ActivityEvent): SwarmUIEvent => {
   const sourceKind = optionalString(event.payload.source_kind);
   const eventType = (sourceKind ?? event.event_type).replaceAll(".", "_");
@@ -124,6 +132,20 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (!selectedExists && threads[0]) {
         await get().selectThread(threads[0].id);
       } else if (!threads.length) {
+        selectionGeneration += 1;
+        submissionGeneration += 1;
+        subscriptions.forEach((stop) => stop());
+        subscriptions.clear();
+        set({
+          selectedThreadId: null,
+          messages: {},
+          submitting: false,
+          currentRunId: null,
+          memories: [],
+          usedMemories: [],
+          uploads: {},
+          error: null,
+        });
         useOffice.getState().reset();
       }
     } catch (error) {
@@ -170,15 +192,95 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         .find((message) => message.run_id)?.run_id;
       if (generation !== selectionGeneration || get().selectedThreadId !== id) return;
       const office = useOffice.getState();
-      events
-        .filter((event) => !latestRunId || event.run_id === latestRunId)
-        .forEach((event) => office.ingestEvent(toOfficeEvent(event)));
+      const runEvents = events.filter((event) => !latestRunId || event.run_id === latestRunId);
+      const timeline = runEvents.map(toOfficeEvent);
+      const latestUserMessage = [...messages]
+        .reverse()
+        .find((message) => message.role === "USER" && (!latestRunId || message.run_id === latestRunId));
+      const terminal = [...runEvents].reverse().find((event) =>
+        ["run.completed", "run.failed", "run.cancelled"].includes(event.event_type),
+      );
+      const artifactIds = new Map<string, Set<string>>();
+      runEvents.forEach((event) => {
+        const artifactType = optionalString(event.payload.artifact_type);
+        if (!artifactType || !event.event_type.startsWith("artifact.")) return;
+        const ids = artifactIds.get(artifactType) ?? new Set<string>();
+        ids.add(optionalString(event.payload.artifact_id) ?? event.id);
+        artifactIds.set(artifactType, ids);
+      });
+      const route = [...runEvents]
+        .reverse()
+        .map((event) => optionalString(event.payload.route))
+        .find(Boolean) ?? null;
+      const missionId = [...runEvents]
+        .reverse()
+        .map((event) => optionalString(event.payload.mission_id))
+        .find(Boolean) ?? latestRunId ?? "conversation";
+      office.hydrate({
+        missionId,
+        query: messageText(latestUserMessage),
+        status: terminal?.event_type.replace("run.", "") ?? (latestRunId ? "running" : "idle"),
+        route,
+        stage: terminal?.event_type.replace("run.", "") ?? (
+          runEvents[runEvents.length - 1]?.event_type.replaceAll(".", " ") ?? "intake"
+        ),
+        leadershipEpoch: 0,
+        lastSeq: timeline[timeline.length - 1]?.seq ?? 0,
+        agents: [],
+        board: { steps: [] },
+        handoffs: [],
+        artifacts: Object.fromEntries(
+          [...artifactIds.entries()].map(([type, ids]) => [type, ids.size]),
+        ),
+        unresolvedQuestions: [],
+        limitations: [],
+        timeline,
+      });
       set((s) => ({ messages: { ...s.messages, [id]: messages }, loading: false }));
     } catch (error) {
       if (generation === selectionGeneration && get().selectedThreadId === id) {
+        if (error instanceof ApiError && error.status === 404) {
+          subscriptions.get(id)?.();
+          subscriptions.delete(id);
+          set((state) => {
+            const messages = { ...state.messages };
+            delete messages[id];
+            return {
+              threads: state.threads.filter((thread) => thread.id !== id),
+              selectedThreadId: null,
+              messages,
+              loading: false,
+              submitting: false,
+              currentRunId: null,
+              memories: [],
+              usedMemories: [],
+              error: null,
+            };
+          });
+          useOffice.getState().reset();
+          return;
+        }
         set({ loading: false, error: error instanceof Error ? error.message : "Unable to load messages" });
       }
     }
+  },
+
+  clearSelection: () => {
+    selectionGeneration += 1;
+    submissionGeneration += 1;
+    subscriptions.forEach((stop) => stop());
+    subscriptions.clear();
+    set({
+      selectedThreadId: null,
+      loading: false,
+      submitting: false,
+      currentRunId: null,
+      memories: [],
+      usedMemories: [],
+      uploads: {},
+      error: null,
+    });
+    useOffice.getState().reset();
   },
 
   renameThread: async (id, value) => {

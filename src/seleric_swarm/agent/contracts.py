@@ -15,7 +15,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from seleric_swarm.conversations.contracts import ArtifactProvenance, ContextBundle, Principal
+from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance, ContextBundle, Principal
 
 
 @dataclass(frozen=True)
@@ -37,17 +37,11 @@ class SelericMcpClient(Protocol):
 
 
 class ArtifactStoreProtocol(Protocol):
-    def put(
-        self,
-        *,
-        artifact_type: str,
-        payload: dict[str, Any],
-        classification: Literal["ui", "factual", "derived"],
-        workspace_id: str,
-        mission_id: str | None = None,
-        evidence_ids: list[str] | None = None,
-        provenance: ArtifactProvenance | None = None,
-    ) -> Any: ...
+    """Matches ``state/artifacts.py::ArtifactStore`` (Profile A owns the store)."""
+
+    def put(self, artifact: Artifact) -> Artifact: ...
+
+    def get(self, artifact_id: str) -> Artifact | None: ...
 
 
 @dataclass(frozen=True)
