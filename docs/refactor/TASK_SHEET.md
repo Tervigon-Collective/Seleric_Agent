@@ -95,9 +95,9 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Profile A — Mission Service
 | Task | Status | Evidence |
 |---|---|---|
-| Temporal necessity decision (data-backed) | Not started | |
-| `MissionQueryCache` wired in | Not started | |
-| One trace per mission (OTel/Logfire) | Not started | |
+| Temporal necessity decision (data-backed) | Done — deferred | Timed two real missions against **live** `seleric-mcp`/Cube with the fake LLM adapter (zero LLM cost, real MCP latency): a lookup mission completed in 1.45s; a full diagnostic mission (real DoWhy causal estimation, skeptic REVISE + remediation round) completed in 7.25s. Both comfortably inside `mission_timeout_s`/`ExecutionLimits.max_runtime_seconds` (120s) even after adding realistic LLM latency back in. No current mission shape needs durability beyond a synchronous request — Temporal deferred, synchronous-only for now, per the decision rule in `01_PROFILE_RUNTIME.md`. |
+| `MissionQueryCache` wired in | Done (mechanism only — no real toolset call site to wire into yet) | `src/seleric_swarm/state/cache.py::MissionQueryCache` — plain per-mission memoization (`get_or_fetch`), no TTL/eviction (a mission run is bounded and short-lived, unlike `utils/ttl_cache.py`). Verified: `tests/unit/test_v3_mission_query_cache.py` (3 passed — roundtrip/hit-miss counters, dedup on repeated key, distinct keys both fetch). Not yet called from `toolsets/semantic.py::query_metrics()` — that wiring is real Sprint-2/3 Profile B work landing in parallel; this ships the cache Profile A owns, ready for that call site. |
+| One trace per mission (OTel/Logfire) | Done | `src/seleric_swarm/observability/traces.py::mission_trace()` — one OTel span per mission run, reusing the existing `configure_opentelemetry()`/`TracerProvider` wiring in `observability/tracing.py` (no duplicate setup). Safe as a no-op when `otel_enabled=False` (default). Verified: `tests/unit/test_v3_mission_trace.py` (4 passed — attributes recorded, non-primitive values stringified, exception recorded + re-raised + span status set to ERROR, safe regardless of provider). |
 
 ### Profile B — Heuristic retirement
 | Task | Status | Evidence |
@@ -373,6 +373,22 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   line with this sheet: Sprint 1 A/B/C Done; Sprint 2 A Done; Sprint 2 B
   Done except class deletion + true 3-calendar-day characterization;
   Sprint 2 C was still blocked on A1.1 at that point.
+- 2026-09-18: **Doc-drift fix, no code changes.** That merge above dropped
+  Sprint 3 Profile A's three completed tasks back to "Not started" — the
+  code (`agent/limits.py`, `agent/validation.py`'s bounded retry,
+  `state/cache.py`, `observability/traces.py`, `api/v3_state.py`,
+  `api/office/v3_adapter.py`) was never touched or lost, only this sheet's
+  record of it. Restored the Sprint 3 Profile A table above with full
+  evidence. Re-ran the full suite after restoring the docs (no code changed)
+  to reconfirm nothing regressed across the parallel B/C work + this
+  session's earlier A work landing together. Repo-wide `ruff check src` and
+  `mypy src` both clean (330 source files). Full suite via `.venv`:
+  **847 passed, 1 failed, 5 skipped** — the 1 failure is still the same
+  pre-existing live-data issue (`test_health_combo_never_returns_running`),
+  unrelated to any of this. Also refreshed `00_OVERVIEW.md`'s status line
+  (was still Sprint-1-only) to summarize actual progress through Sprint 3
+  A / Sprint 2 B / Sprint 1 C — same "don't assume this line" caveat kept,
+  it's a pointer, not a status of record.
 - 2026-09-18: **Amendment A1 ACCEPTED** (three-profile sign-off). Applied into
   frozen `CONTRACTS.md` §2/§4: `search_breadth` on `estimate_effect`;
   Analytics grain precondition; named error codes

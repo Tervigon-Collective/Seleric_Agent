@@ -236,11 +236,17 @@ clean — **not met; carry-forward to Sprint 3**. C's Causal work Done. The
 ## Sprint 3
 
 **A — Mission Service + durable execution decision**
-- [ ] Confirm (data, not assumption) whether any current mission needs
+- [x] Confirm (data, not assumption) whether any current mission needs
       Temporal's durability — if no, defer Temporal, ship synchronous-only.
-- [ ] `MissionQueryCache` wired in, dedupes repeated evidence fetches
-      within one mission.
-- [ ] `observability/traces.py` — one trace per mission, OTel/Logfire.
+      Done — timed real missions against live seleric-mcp/Cube (fake LLM,
+      zero LLM cost): lookup 1.45s, full diagnostic (real DoWhy) 7.25s, both
+      well inside the 120s runtime budget. Deferred Temporal. See `TASK_SHEET.md`.
+- [x] `MissionQueryCache` wired in, dedupes repeated evidence fetches
+      within one mission. Done (mechanism) — `state/cache.py::MissionQueryCache`;
+      not yet called from a real toolset (Profile B's `query_metrics()` is the
+      pending call site).
+- [x] `observability/traces.py` — one trace per mission, OTel/Logfire. Done —
+      `mission_trace()`, reuses the existing `configure_opentelemetry()` wiring.
 
 **B — Catalogue heuristic retirement**
 - [ ] Delete `coordinator/catalogue_grounding.py`'s heuristic functions
