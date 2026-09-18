@@ -266,11 +266,7 @@ async def detect_anomalies(
             continue
 
         *history, (_observed_id, observed) = usable
-        observed_value = observed.value
-        history_values = [item.value for _, item in history if item.value is not None]
-        if observed_value is None or not history_values:
-            continue
-        result = robust_zscore(history_values, observed_value)
+        result = robust_zscore([float(item.value) for _, item in history], float(observed.value))
         if not result.is_anomaly:
             continue
 

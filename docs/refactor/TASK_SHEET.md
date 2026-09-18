@@ -49,10 +49,12 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Profile C — Analytics toolset v0 (re-scoped 2026-09-18)
 | Task | Status | Evidence |
 |---|---|---|
-| Extract comparison/detection math in place (pure functions, existing suite green = proof of no drift) | Done | `src/seleric_swarm/analytics/comparison.py::period_deltas` (extracted period-over-period pairing math from `observer.py::_post_comparison_deltas`) + `services/business_state/detectors.py::robust_zscore` (median/MAD math retained). |
-| Wrap as `compare_periods`, `detect_anomalies` (delegate to existing `detectors.py::robust_zscore`) | Done | `src/seleric_swarm/toolsets/analytics.py` — `compare_periods` and `detect_anomalies` async tool adapters complying with non-negotiable rules 4 (no inter-tool calls) and 5 (no fetching evidence). |
-| A1.2 grain precondition + `EVIDENCE_GRAIN_MISMATCH`; do not port `anomaly.py`'s sum/normalize fallback | Done | `src/seleric_swarm/analytics/grain.py::validate_grain_set()` — validates grain, span, and count preconditions; returns structured `EVIDENCE_GRAIN_MISMATCH` refusal without sum/normalize fallbacks. |
-| Bug #14 regression, both halves (un-normalized per-day reaches detector; mismatched set rejected) | Done | Verified via `tests/unit/test_analytics_toolset.py` (16 passed in 0.08s: un-normalized daily values verified in `test_per_day_evidence_reaches_detector_unnormalized`, grain mismatches/spans rejected in `test_multi_day_aggregate_labelled_day_grain_is_rejected` and `test_mixed_grain_set_is_rejected`). |
+| Extract comparison/detection math in place (pure functions, existing suite green = proof of no drift) | Done | `src/seleric_swarm/analytics/comparison.py::period_deltas` — the pairing/subtraction lifted out of `observer.py::_post_comparison_deltas`, which keeps its signature and Blackboard writes and now delegates. **Drift proof**: the 27 offline tests covering the touched modules were not edited and stay green — `./.venv/Scripts/python.exe -m pytest tests/unit/test_domain_questions.py tests/unit/test_anomaly_specialist.py tests/unit/test_business_state_anomaly.py -q` → 27 passed. Two behaviors deliberately preserved and commented at the call site: deltas are `a - b` (a decline reads negative), and *both* periods are deduped by (metric, dimensions) before pairing — iterating period A directly would have turned a repeated key into N deltas instead of 1. Scope correction to the sprint plan: extraction was much smaller than assumed, because `detectors.py::robust_zscore`/`_rescore_against_expected` and `observer.py::_daily_windows` are **already pure functions** — nothing to extract, so they are reused as-is rather than moved. |
+| Wrap as `compare_periods`, `detect_anomalies` (delegate to existing `detectors.py::robust_zscore`) | Done | `src/seleric_swarm/toolsets/analytics.py`. Design consequence worth recording: `detect_anomalies` **cannot** wrap `RobustZScoreDetector` — that class fetches its own history via `BusinessStateService.get_metric_state()` mid-detection, which rule 5 forbids. History arrives as evidence instead (the set is the series: sorted by `period_start`, last point = observation, rest = baseline), and only the pure `robust_zscore` is reused. `method="seasonal"` is in the frozen signature but has no implementation in `src/`, so it returns `error_code="METHOD_NOT_AVAILABLE"` rather than silently running a different detector; `"mad"` maps to `robust_zscore` because that function *is* the median/MAD estimator. Needs a small A1 addendum for the new error code. |
+| A1.2 grain precondition + `EVIDENCE_GRAIN_MISMATCH`; do not port `anomaly.py`'s sum/normalize fallback | Done | `src/seleric_swarm/analytics/grain.py::validate_grain_set()` — three rules: one grain per call, each artifact's span matches its declared grain (day=1, week=7, month=28-31), all spans equal. Returns a reason string rather than raising, so a tool never raises across the agent boundary. `anomaly.py`'s sum/normalize branch is **not** ported. 11 passing: `tests/unit/test_analytics_grain.py`. |
+| Bug #14 regression, both halves (un-normalized per-day reaches detector; mismatched set rejected) | Done | `tests/unit/test_analytics_toolset.py` — 16 passed. Half 1: `test_per_day_evidence_reaches_detector_unnormalized` (5 daily rows, observed stays the raw 900.0, baseline is the median 4090.0 of the 4 prior days). Half 2: `test_multi_day_aggregate_labelled_day_grain_is_rejected`, `test_aggregate_mixed_into_a_daily_series_is_rejected`, `test_mixed_grain_set_is_rejected` — all `success=False` / `EVIDENCE_GRAIN_MISMATCH`, never normalized. |
+| Cross-profile seam test (B's evidence → C's analytics) | Done | `tests/unit/test_analytics_semantic_handoff.py` — 4 passed. Pins the B→C handoff end to end rather than assuming it: B emits one artifact per Cube bucket (each `period_start == period_end` for day grain), C scores the real drop against its own daily history, and a hand-built window-aggregate-labelled-day artifact is refused. Also pins the upstream hazard below. |
+| Full suite vs. Sprint 0 baseline (no new failures) | Done | `./.venv/Scripts/python.exe -m pytest -q --ignore=tests/integration/test_minio_blob_store_integration.py` (2026-09-18) → **842 passed, 1 failed, 4 skipped** in 607s. Sole failure is the same pre-existing `tests/unit/test_api_scenario_matrix.py::test_health_combo_never_returns_running` recorded in the Sprint 0 baseline — no new failures. Ruff clean on all new/modified files. |
 
 ## Sprint 2
 
@@ -93,9 +95,9 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Profile A — Mission Service
 | Task | Status | Evidence |
 |---|---|---|
-| Temporal necessity decision (data-backed) | Not started | |
-| `MissionQueryCache` wired in | Not started | |
-| One trace per mission (OTel/Logfire) | Not started | |
+| Temporal necessity decision (data-backed) | Done — deferred | Timed two real missions against **live** `seleric-mcp`/Cube with the fake LLM adapter (zero LLM cost, real MCP latency): a lookup mission completed in 1.45s; a full diagnostic mission (real DoWhy causal estimation, skeptic REVISE + remediation round) completed in 7.25s. Both comfortably inside `mission_timeout_s`/`ExecutionLimits.max_runtime_seconds` (120s) even after adding realistic LLM latency back in. No current mission shape needs durability beyond a synchronous request — Temporal deferred, synchronous-only for now, per the decision rule in `01_PROFILE_RUNTIME.md`. |
+| `MissionQueryCache` wired in | Done (mechanism only — no real toolset call site to wire into yet) | `src/seleric_swarm/state/cache.py::MissionQueryCache` — plain per-mission memoization (`get_or_fetch`), no TTL/eviction (a mission run is bounded and short-lived, unlike `utils/ttl_cache.py`). Verified: `tests/unit/test_v3_mission_query_cache.py` (3 passed — roundtrip/hit-miss counters, dedup on repeated key, distinct keys both fetch). Not yet called from `toolsets/semantic.py::query_metrics()` — that wiring is real Sprint-2/3 Profile B work landing in parallel; this ships the cache Profile A owns, ready for that call site. |
+| One trace per mission (OTel/Logfire) | Done | `src/seleric_swarm/observability/traces.py::mission_trace()` — one OTel span per mission run, reusing the existing `configure_opentelemetry()`/`TracerProvider` wiring in `observability/tracing.py` (no duplicate setup). Safe as a no-op when `otel_enabled=False` (default). Verified: `tests/unit/test_v3_mission_trace.py` (4 passed — attributes recorded, non-primitive values stringified, exception recorded + re-raised + span status set to ERROR, safe regardless of provider). |
 
 ### Profile B — Heuristic retirement
 | Task | Status | Evidence |
@@ -323,18 +325,70 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   780/1/5 Sprint 2 Profile A baseline, no new unresolved failures. Live
   characterization suite (`tests/replay/`) re-run clean against production
   data after all changes: 45/45 passed.
-- 2026-09-18: **Sprint 1 Profile C executed** (all 4 tasks — see table above
-  for evidence). Implemented `src/seleric_swarm/toolsets/analytics.py`
-  (`compare_periods` and `detect_anomalies`), extracted pure pairing math
-  into `src/seleric_swarm/analytics/comparison.py`, and added grain
-  validation rules (A1.2) in `src/seleric_swarm/analytics/grain.py`. Fixed
-  median assertion in `tests/unit/test_analytics_toolset.py`. All 16 unit
-  tests for Profile C passing cleanly (`16 passed in 0.08s`).
+
+- 2026-09-18: **Sprint 1 / Profile C executed** — Analytics toolset v0.
+  New: `analytics/{__init__,comparison,grain}.py`,
+  `toolsets/analytics.py`, `tests/unit/test_analytics_{grain,toolset,semantic_handoff}.py`
+  (31 tests, all passing). Modified, behavior-preserving:
+  `swarm/specialists/observer.py::_post_comparison_deltas` now delegates its
+  pairing/subtraction to `analytics.comparison.period_deltas`. Full suite
+  **842 passed / 1 failed / 4 skipped**, the failure being the same
+  pre-existing `test_health_combo_never_returns_running`. Nothing wired into
+  `orchestration/dispatch.py` — swarm_v2 keeps 100% of traffic.
+
+  **Correction to two defects this profile reported during its 2026-09-18
+  design review.** Both were real when written and both are now fixed; the
+  review's text predates the fixes, not the other way round:
+  - *"Profile B's `query_metrics` collapses a multi-row series to
+    `rows[0]`"* — **fixed by B**. It now emits one `EvidenceArtifact` per
+    Cube bucket with `period_start == period_end` for a real grain.
+    Verified by `test_day_grain_query_emits_one_artifact_per_day_not_one_per_window`.
+  - *"Profile A ships duplicate, divergent frozen contracts"* — **fixed by
+    A**, which deleted the orphaned `agent/contracts.py` during Sprint 2.
+    `agent/{dependencies,output,artifacts}.py` are canonical; Profile C
+    imports those.
+
+  **New finding, routed to Profile B (latent, not currently firing).**
+  `services/mcp_query.py::row_date` identifies a Cube bucket by matching a
+  `.day`-suffixed column name. When it returns `None` for a day-grain
+  result — a renamed view, a different granularity suffix, an aggregate row
+  mixed into the series — `toolsets/semantic.py::query_metrics` falls back
+  to `period_start`/`period_end` for *every* row, emitting N artifacts that
+  each declare `grain="day"` while spanning the whole window. That is
+  `docs/BUG_SHEET.md` #14's shape multiplied by N, and B's own path reports
+  `success=True`. Not hypothetical: it is what the first draft of C's
+  fixture hit. C's A1.2 precondition catches it before it can reach a
+  Finding (`test_unparseable_date_column_degrades_to_window_labels_and_is_caught`),
+  so this is a defence-in-depth note rather than a live bug — but the
+  heuristic is a single string match standing between a renamed Cube view
+  and silently wrong evidence labels.
+
+  **Needs an A1 addendum:** `detect_anomalies` returns a new error code,
+  `METHOD_NOT_AVAILABLE`, for the frozen-but-unimplemented
+  `method="seasonal"`. Refusing is the honest option — running
+  `robust_zscore` instead would answer a different question than the agent
+  asked — but the code is not in `CONTRACTS.md` yet.
 - 2026-09-18: Merged conflicted `SPRINT_PLAN.md` / `TASK_SHEET.md` after
   parallel Profile B + Profile C work. Sprint plan checkboxes brought in
   line with this sheet: Sprint 1 A/B/C Done; Sprint 2 A Done; Sprint 2 B
   Done except class deletion + true 3-calendar-day characterization;
   Sprint 2 C was still blocked on A1.1 at that point.
+- 2026-09-18: **Doc-drift fix, no code changes.** That merge above dropped
+  Sprint 3 Profile A's three completed tasks back to "Not started" — the
+  code (`agent/limits.py`, `agent/validation.py`'s bounded retry,
+  `state/cache.py`, `observability/traces.py`, `api/v3_state.py`,
+  `api/office/v3_adapter.py`) was never touched or lost, only this sheet's
+  record of it. Restored the Sprint 3 Profile A table above with full
+  evidence. Re-ran the full suite after restoring the docs (no code changed)
+  to reconfirm nothing regressed across the parallel B/C work + this
+  session's earlier A work landing together. Repo-wide `ruff check src` and
+  `mypy src` both clean (330 source files). Full suite via `.venv`:
+  **847 passed, 1 failed, 5 skipped** — the 1 failure is still the same
+  pre-existing live-data issue (`test_health_combo_never_returns_running`),
+  unrelated to any of this. Also refreshed `00_OVERVIEW.md`'s status line
+  (was still Sprint-1-only) to summarize actual progress through Sprint 3
+  A / Sprint 2 B / Sprint 1 C — same "don't assume this line" caveat kept,
+  it's a pointer, not a status of record.
 - 2026-09-18: **Amendment A1 ACCEPTED** (three-profile sign-off). Applied into
   frozen `CONTRACTS.md` §2/§4: `search_breadth` on `estimate_effect`;
   Analytics grain precondition; named error codes
