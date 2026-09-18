@@ -1,6 +1,6 @@
 %% Current architecture — built by reading source code directly, last
-%% verified 2026-09-16. Long-form rationale lives in the referenced docs,
-%% not in these node labels (see NOTE1-4) — keep labels short here.
+%% verified 2026-09-17. Long-form rationale lives in the referenced docs,
+%% not in these node labels (see NOTE1-5) — keep labels short here.
 
 flowchart TB
 
@@ -182,6 +182,7 @@ flowchart TB
     NOTE2["lookup_v1 retired + deleted 2026-09-16.<br/>docs/features/lookup-v1-retirement.md"]
     NOTE3["3 independent MCP-query-shaping paths<br/>still exist (HybridMcpDataProvider.fetch,<br/>.fetch_series, business_state fetch_series).<br/>Characterized, not yet merged.<br/>docs/46_..._PLAN.md Item 2 (open)"]
     NOTE4["diagnostic now derives a causal graph<br/>from MetricRegistry automatically, and is<br/>remediation-round-aware (widens candidates<br/>+ history per retry). catalogue_grounding's<br/>generic-dim-token guard now also covers<br/>calendar words, not just 'status'.<br/>See docs/BUG_SHEET.md"]
+    NOTE5["Budget/hard-stop enforcement removed system-wide<br/>2026-09-17 (explicit request). governance/budget.py's<br/>check_budget / check_hard_stops / check_swarm_budget<br/>are all no-ops now (always ok) -- no mission is ever<br/>rejected or truncated for LLM/tool/agent-call/runtime<br/>spend. Call sites (plane.py, orchestration/graph.py,<br/>coordinator/graph.py) unchanged, just never see a<br/>non-ok verdict. Re-enabling is a low-priority backlog<br/>item -- docs/TASK_SHEET.md."]
 
     AGREG -.- NOTE1
     RAM -.- NOTE2
@@ -189,3 +190,4 @@ flowchart TB
     BSSBOX -.- NOTE3
     DA -.- NOTE4
     CATGROUND -.- NOTE4
+    RAM -.- NOTE5

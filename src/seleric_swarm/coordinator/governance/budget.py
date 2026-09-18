@@ -1,16 +1,17 @@
 """Budget and hard-stop controller (pasted spec sec. 33-34).
 
-Deterministic ceilings the coordinator enforces before dispatching any step, so
-intelligence cannot run forever. The LLM/tool ceilings reproduce the exact
-semantics of the previous ``graph._budget_ok`` helper; the rest are new hard
-limits (iterations, leadership transfers, agent calls) for the DECIDE -> EXECUTE
-cycle.
+Disabled per explicit request: ``check_budget``/``check_hard_stops``/
+``check_swarm_budget`` are no-ops that always report ok, so nothing in the
+system rejects or truncates a mission for LLM/tool/agent-call/runtime spend
+any more. Call sites (``coordinator.plane.ControlPlane``, ``orchestration
+.graph``, ``coordinator.graph``) are unchanged and still call these functions,
+they just never see a non-ok verdict now. Re-enabling is a low-priority
+backlog item -- see docs/TASK_SHEET.md.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from seleric_swarm.coordinator.contracts import MissionBudget
@@ -55,46 +56,11 @@ def check_budget(
     llm_needed: int = 0,
     tool_needed: int = 0,
 ) -> BudgetVerdict:
-    if int(state.get("llm_calls") or 0) + llm_needed > limits.max_llm_calls:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "LLM call budget exceeded", "llm_calls")
-    if int(state.get("tool_calls") or 0) + tool_needed > limits.max_tool_calls:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Tool call budget exceeded", "tool_calls")
     return _OK
-
-
-def _elapsed_seconds(state: dict[str, Any]) -> float | None:
-    started = state.get("started_at")
-    if not started or not isinstance(started, str):
-        return None
-    try:
-        ts = started.replace("Z", "+00:00")
-        started_dt = datetime.fromisoformat(ts)
-        if started_dt.tzinfo is None:
-            started_dt = started_dt.replace(tzinfo=UTC)
-        return (datetime.now(UTC) - started_dt).total_seconds()
-    except ValueError:
-        return None
 
 
 def check_hard_stops(state: dict[str, Any], limits: MissionLimits) -> BudgetVerdict:
-    if int(state.get("coordinator_iterations") or 0) > limits.max_iterations:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Coordinator iteration ceiling reached", "iterations")
-    if len(state.get("handoff_history") or []) > limits.max_leadership_transfers:
-        return BudgetVerdict(
-            False, "BUDGET_EXCEEDED", "Leadership transfer ceiling reached", "leadership_transfers"
-        )
-    if int(state.get("agent_calls") or 0) > limits.max_agent_calls:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Agent call ceiling reached", "agent_calls")
-    elapsed = _elapsed_seconds(state)
-    if elapsed is not None and elapsed >= limits.max_runtime_seconds:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Mission wall-clock deadline reached", "max_runtime")
     return _OK
-
-
-def _as_mission_budget(budgets: MissionBudget | dict[str, Any]) -> MissionBudget:
-    if isinstance(budgets, MissionBudget):
-        return budgets
-    return MissionBudget(**{k: v for k, v in budgets.items() if k in MissionBudget.model_fields})
 
 
 def check_swarm_budget(
@@ -112,36 +78,4 @@ def check_swarm_budget(
 
     Investigate-wave ceilings stay in the refine router (leadership.max_transfers).
     """
-    budgets = _as_mission_budget(budgets)
-    usage = dict(state.get("usage") or {})
-    agent_calls = int(usage.get("agent_calls") or state.get("agent_calls") or 0)
-
-    if agent_calls_needed > 0 and agent_calls + agent_calls_needed > budgets.max_agent_calls:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Agent call budget exhausted", "agent_calls")
-    if agent_calls >= budgets.max_agent_calls:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Agent call budget exhausted", "agent_calls")
-
-    transfers = len(state.get("handoff_history") or [])
-    if transfers >= budgets.max_leadership_transfers:
-        return BudgetVerdict(
-            False, "BUDGET_EXCEEDED", "Leadership transfer ceiling reached", "leadership_transfers"
-        )
-
-    rem_round = int(usage.get("remediation_rounds") or state.get("remediation_round") or 0)
-    if rem_round >= budgets.max_remediation_rounds:
-        return BudgetVerdict(
-            False, "BUDGET_EXCEEDED", "Remediation round budget exhausted", "remediation_rounds"
-        )
-
-    llm_calls = int(usage.get("llm_calls") or state.get("llm_calls") or 0)
-    if llm_calls >= budgets.max_llm_calls:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "LLM call budget exhausted", "llm_calls")
-
-    if budgets.token_budget is not None and token_usage >= budgets.token_budget:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "LLM token budget exhausted", "token_budget")
-
-    elapsed = _elapsed_seconds(state)
-    if elapsed is not None and elapsed >= budgets.max_runtime_s:
-        return BudgetVerdict(False, "BUDGET_EXCEEDED", "Mission wall-clock deadline reached", "max_runtime")
-
     return _OK

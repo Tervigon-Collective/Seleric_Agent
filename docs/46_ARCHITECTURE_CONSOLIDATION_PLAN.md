@@ -1,5 +1,14 @@
 # 46. Architecture Consolidation Plan
 
+**Superseded 2026-09-17** by `docs/refactor/` (the Seleric V3 PydanticAI+Cube
+migration plan). Item 2 (below) is absorbed into `docs/refactor/02_PROFILE_SEMANTIC_MCP.md`
+Sprint 2 — reuse its characterization suite, don't redo it. Item 5 is
+absorbed into `docs/refactor/01_PROFILE_RUNTIME.md` Sprint 4, re-scoped from
+"validate the five specialists" to "validate the new toolset-based agent
+loop" since the specialists themselves are being retired. Items 1/1a, 3, 4
+stay as-is (already done/retracted) and are not reopened. This document is
+kept for historical record; new work should track in `docs/refactor/TASK_SHEET.md`.
+
 Status: 1 of 5 original items already done (by concurrent work, not this plan); 1a (small follow-up under Item 1) executed and verified; 2 retracted as false positives; Item 2 step 1 (characterization suite) done — 7/7 passing, real findings recorded including one transient live-data divergence worth re-testing; Item 2 steps 2-5 (diff, extract, refactor, delete) not started; Item 5 still fully open. Last verified against source: 2026-09-16.
 Source: code-verified architecture scan (see `diagrams/current_architecture.mmd`), cross-checked against 2026 multi-agent orchestration and legacy-pipeline-retirement practice (see References). Every item below has since been individually re-verified by direct file read — see each item's own note on what changed between the original scan and this pass.
 
@@ -33,7 +42,7 @@ The retirement doc records real value delivered along the way (not just a mechan
 
 **Residual follow-up this plan did not originally anticipate** (see the retirement doc's "Dead / parallel stacks" table — written while Phase 2 was still pending, not yet updated now that it's done): `coordinator/plane.py`, `coordinator/planning/dag_builder.py`, and `coordinator/leadership/lead_selector.py` are confirmed deleted from disk. `coordinator/planning/complexity.py` and `coordinator/governance/budget.py` are still present — but a direct grep for every caller (not an assumption from the retirement doc's table, which was written before this was checked) showed the picture was **mixed, not uniformly dead**:
 
-- `coordinator/governance/budget.py::MissionLimits` and `check_budget` are **actively used**, not dead — `orchestration/dispatch.py::_budget_rejected_result` imports and calls both directly as the fast-path's own LLM-budget preflight check. Not touched.
+- `coordinator/governance/budget.py::MissionLimits` and `check_budget` are **actively used** (still imported by `coordinator/plane.py`), not dead. **2026-09-17 update:** `orchestration/dispatch.py::_budget_rejected_result` (the fast-path LLM-budget preflight check this line originally described) was itself removed — budget/hard-stop enforcement was disabled system-wide per explicit request; `check_budget`/`check_hard_stops`/`check_swarm_budget` are now no-ops. See `docs/TASK_SHEET.md` (low-priority re-enable item) and `docs/BUG_SHEET.md`.
 - `coordinator/governance/budget.py::check_hard_stops` **was** unreferenced anywhere outside its own file — deleted (see 1a below).
 - `coordinator/planning/complexity.py::looks_like_diagnostic` is **actively used** by `agents/coordinator.py` (two call sites) — the file stays.
 - `coordinator/planning/complexity.py::classify_complexity` and the L0-L5 band-threshold fields of the `ComplexityPolicy` class (in `coordinator/policies.py`) were genuinely unreferenced by anything except each other and their own tests — deleted (see 1a below).

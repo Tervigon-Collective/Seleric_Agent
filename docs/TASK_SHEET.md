@@ -102,17 +102,62 @@ passes in isolation, hits real MCP data, not on any changed code path).
   the swarm_v2 path now but still live (legacy path dependency, see Phase 2
   note above). Plan called for replacing these tests 1:1 against the new
   resolver; not started.
-- Live-query verification: re-run the exact production queries that exposed
-  bugs #8/#14 against a live server, confirm real per-day breakdown +
-  anomaly reading cross-checked independently via MCP. Not done this pass —
-  all verification so far has been via the test suite (FakeLLM + live MCP
-  catalogue in CI-style runs), not a live end-to-end UAT server session.
+- ~~Live-query verification~~ **Done 2026-09-17**: started the local dev
+  server (`scripts/run_dev.py`, real `azure_openai_compatible` LLM, not
+  FakeLLM) and re-ran both exact production queries via `POST /v1/missions`:
+  - Bug #8's query, `"why did sales drop from 5 days, get per day data"`
+    (`MS-83c8033ee8`) — routed to `swarm`, produced 5 Evidence + 5 Anomaly
+    artifacts for `metric.net_sales`, no `session_day_of_week` dimension
+    misclassification.
+  - Bug #14's phrasing, `"why did net sales drop over the last 5 days"`
+    (mission id in `mission2.json` scratch output) — 10 Evidence + 10 Anomaly
+    artifacts (2 metrics × 5 days), confirming one real per-day row per
+    metric rather than a window-aggregate sum.
+  - Both missions completed with `skeptic verdict: PASS`, and both correctly
+    flagged a premise mismatch (query says "dropped", data says net sales
+    rose +57.6% over the window) — the Skeptic's own independent check
+    caught it, exactly the intended behavior.
+  - **Not fully independently cross-checked via MCP**: `seleric-mcp`'s
+    `metrics_query` (the numeric Cube-backed data path) returned
+    `ConnectError: All connection attempts failed` on every attempt during
+    this session — an external backend-connectivity gap in this environment,
+    unrelated to any code in this repo (`catalogue_list_brands`, a metadata-only
+    call on the same MCP server, succeeded fine). Numeric cross-check against
+    the live cube is still open if that connectivity is available in a future
+    session.
 
 ### Full lookup_v1 deletion (separate from this plan's goal)
 - `orchestration/graph.py`/`runner.py` and `agents/coordinator.py` still
-  exist. Per `docs/features/lookup-v1-retirement.md`, actual deletion is
-  gated on budget-enforcement parity and initial-lead-selection parity —
-  unrelated to heuristic removal, out of scope for this plan.
+  exist. Per `docs/features/lookup-v1-retirement.md`, actual deletion was
+  gated on budget-enforcement parity and initial-lead-selection parity.
+- **Budget-enforcement parity: moot as of 2026-09-17** — `governance/budget.py`'s
+  `check_budget`/`check_hard_stops`/`check_swarm_budget` were deliberately
+  disabled system-wide (all now unconditionally return ok; see that module's
+  docstring). Both `lookup_fast_path.py` and legacy `run_mission` now agree
+  in not enforcing any LLM/tool/agent-call/runtime ceiling, so there is no
+  remaining parity gap between them on this axis — not because parity was
+  built, but because the thing being compared no longer exists on either
+  side. (A brief preflight-guard fix was drafted for the fast path during
+  this session, then abandoned once budget enforcement was disabled
+  entirely — it would have called into permanently no-op checks.)
+- **Initial-lead-selection parity: verified 2026-09-17**. The doc's "3 failing
+  tests" note was stale — `tests/replay/test_leadership_transfer.py`/
+  `test_domain_lookups.py` all pass (23/23, stable across repeated runs).
+  Ran the same 8 multi-domain queries directly through
+  `run_lookup_fast_path`: `initial_mission_lead` matched legacy's exactly in
+  every case, and both requested metrics came back with correct values in
+  every case. `mission_lead` stays equal to `initial_mission_lead` on the
+  fast path (no handoff, by design, per BUG_SHEET.md design tradeoff #9) —
+  an already-documented, intentional difference from legacy's post-handoff
+  final lead, not a selection mismatch.
+- **Both readiness gaps are now closed.** What's left before actual deletion
+  is a judgment call, not a blocker: the classifier's `grain`-detection gap
+  (Phase 2a of the retirement doc) means some "per channel"-style queries
+  answer with an aggregate instead of a breakdown, and lookup_v1 currently
+  masks that by being a fallback. Deleting lookup_v1 removes that mask.
+  Whether that's acceptable, and whether to actually delete
+  `orchestration/graph.py`/`runner.py`/`agents/coordinator.py`, is a decision
+  for the user — not attempted this session.
 
 ### docs/BUG_SHEET.md bug #14 entry
 - Bug #14 (multi-day evidence sum vs single-day anomaly baseline) was fixed

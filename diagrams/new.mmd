@@ -1,0 +1,190 @@
+flowchart TB
+
+    USER["User / Dashboard / API"]
+    API["FastAPI<br/>POST /v1/missions"]
+
+    USER --> API
+
+    %% =====================================
+    %% MISSION CONTROL
+    %% =====================================
+
+    subgraph CONTROL["Mission Runtime"]
+        MS["Mission Service"]
+        TEMP["Temporal<br/>Durable Execution"]
+        MSTORE["Mission Store"]
+        EVENTS["Mission Events<br/>SSE / WebSocket"]
+
+        MS --> MSTORE
+        MS -. durable missions .-> TEMP
+    end
+
+    API --> MS
+
+    %% =====================================
+    %% PYDANTICAI  (MCP host — Phase 4 of the Cube MCP proposal)
+    %% =====================================
+
+    subgraph AGENTRUNTIME["PydanticAI Runtime"]
+        AGENT["Seleric Agent<br/>Agent[SelericDeps, MissionResult]"]
+        DEPS["SelericDeps<br/>Typed Runtime Context"]
+        TOOLSETS["PydanticAI Toolsets<br/>MCP tool wrappers"]
+        VALIDATE["Evidence Validator"]
+        OUTPUT["MissionResult<br/>Typed Output"]
+
+        DEPS --> AGENT
+        AGENT <--> TOOLSETS
+        AGENT --> VALIDATE
+        VALIDATE --> OUTPUT
+    end
+
+    MS --> AGENT
+    TEMP -. durable execution .-> AGENT
+
+    %% =====================================
+    %% CAPABILITIES
+    %% =====================================
+
+    subgraph CAPABILITIES["Seleric Capabilities"]
+        SEM["Semantic Data"]
+        ANALYTICS["Analytics"]
+        CAUSAL["Causal Diagnosis"]
+        MODELS["Prediction / Simulation"]
+        KNOWLEDGE["Business Knowledge"]
+        EXP["Experimentation"]
+        ACTIONS["Controlled Actions"]
+    end
+
+    TOOLSETS --> SEM
+    TOOLSETS --> ANALYTICS
+    TOOLSETS --> CAUSAL
+    TOOLSETS --> MODELS
+    TOOLSETS --> KNOWLEDGE
+    TOOLSETS --> EXP
+    TOOLSETS --> ACTIONS
+
+    %% =====================================
+    %% SELERIC MCP — proposed Cube MCP architecture
+    %% Base_Agent/MCP_Agent_Architecture_MVP.md
+    %% LLM never calls Cube or ClickHouse.
+    %% =====================================
+
+    subgraph MCP["Seleric MCP — proposed Cube MCP architecture"]
+        GW["MCP Gateway<br/>tools / resources / prompts"]
+        AUTH["OAuth / token + rate limit"]
+
+        subgraph APP["Application layer — LLM-free"]
+            CATRES["Catalogue Resolver"]
+            QP["Query Planner"]
+            INS["Deterministic Insight Engine<br/>insights.explain"]
+            AB["Action Broker<br/>propose → confirm → commit"]
+            PROV["Provenance Composer"]
+        end
+
+        subgraph CATALOGUE["Knowledge Catalogue"]
+            CATYAML["Metrics / dimensions / glossary<br/>versioned YAML"]
+            CATVEC["Vector index<br/>supplementary only"]
+        end
+
+        CC["CubeClient<br/>typed read-only REST<br/>only path to data"]
+
+        GW --> AUTH --> CATRES
+        CATRES --> CATYAML
+        CATYAML -. optional lookup .-> CATVEC
+        CATRES --> QP
+        QP --> CC
+        QP --> INS --> PROV
+        CATRES --> AB
+    end
+
+    SEM --> GW
+    ACTIONS --> GW
+    ANALYTICS -. metric series only .-> GW
+
+    MCPCLIENT["External AI / MCP Client<br/>Claude / ChatGPT / IDE"]
+    MCPCLIENT --> GW
+
+    %% =====================================
+    %% CUBE  (semantic layer behind MCP — not an agent client)
+    %% =====================================
+
+    subgraph CUBE["Cube Semantic Layer"]
+        VIEWS["Focused Semantic Views"]
+        METRICS["Measures + Dimensions"]
+        JOINS["Governed Joins"]
+        AICTX["Descriptions + AI Context"]
+        ACCESS["Access Policies"]
+        PREAGG["Pre-Aggregations"]
+
+        VIEWS --> METRICS
+        VIEWS --> JOINS
+        VIEWS --> AICTX
+        VIEWS --> ACCESS
+        VIEWS --> PREAGG
+    end
+
+    CC --> VIEWS
+
+    CH[("ClickHouse Gold / Serve")]
+
+    VIEWS --> CH
+
+    %% =====================================
+    %% SELERIC EXTENSIONS  (consume MCP evidence — never Cube/CH)
+    %% =====================================
+
+    AE["Analytics Engine<br/>anomaly / change-point / funnel"]
+    CE["Causal Engine<br/>DoWhy / EconML"]
+    MLS["Model Service"]
+    MR["Model Registry"]
+    PE["Prediction Evaluator"]
+    KR["Doc retrieval — not metric truth"]
+    VECTOR[("Vector Store")]
+    DOCS[("Document Store")]
+    EXPSVC["Experiment Service"]
+    PIPE["Pipeboard — Meta Ads"]
+    OPSAPI["Backend APIs — Orders / Ops"]
+
+    ANALYTICS --> AE
+    CAUSAL --> CE
+    MODELS --> MLS
+    MLS --> MR
+    PE --> MR
+    KNOWLEDGE --> KR
+    KR --> VECTOR
+    KR --> DOCS
+    EXP --> EXPSVC
+    AB --> PIPE
+    AB --> OPSAPI
+
+    %% =====================================
+    %% STATE / EVIDENCE
+    %% =====================================
+
+    subgraph STATE["Seleric State"]
+        ARTIFACTS["Artifact Store"]
+        MEMORY["Conversation Memory"]
+        CACHE["Mission Query Cache"]
+        TRACE["Execution Trace"]
+        AUDIT["Audit Log"]
+    end
+
+    AGENT <--> MEMORY
+    SEM --> ARTIFACTS
+    ANALYTICS --> ARTIFACTS
+    CAUSAL --> ARTIFACTS
+    MODELS --> ARTIFACTS
+    KNOWLEDGE --> ARTIFACTS
+    EXP --> ARTIFACTS
+    PROV --> ARTIFACTS
+    AB -.-> AUDIT
+    TOOLSETS --> TRACE
+    TOOLSETS --> AUDIT
+
+    %% =====================================
+    %% RETURN
+    %% =====================================
+
+    OUTPUT --> MSTORE
+    OUTPUT --> EVENTS
+    EVENTS --> USER

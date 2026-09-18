@@ -1,6 +1,6 @@
 # Retiring lookup_v1
 
-**Status:** Phase 1 + 2a + 2b + 2c done. All named structural blockers to deleting lookup_v1 are now closed; deletion itself (Phase 2) has not been done yet — see "Readiness for actual deletion" below for what's still unverified (budget-enforcement parity and initial-lead-selection parity are real, separate gaps — not covered by any of 2a/2b/2c).
+**Status:** Phase 1 + 2a + 2b + 2c done. Both named readiness gaps (budget-enforcement parity, initial-lead-selection parity) are now closed as of 2026-09-17 — see "Readiness for actual deletion" below. Deletion itself (Phase 2) has not been attempted; the only open item is the grain-detection quality gap noted there, which is a judgment call, not a blocker.
 
 ## Background
 
@@ -44,8 +44,8 @@ The only remaining reason `run_lookup_fast_path` falls back is `comparison_range
 
 Both structural blockers (comparison, dimensioned breakdowns) are closed, but deleting `orchestration/graph.py`/`runner.py` outright hasn't been attempted and shouldn't be without checking these first:
 
-- **Budget/LLM-call-limit enforcement**: `tests/replay/test_comparison_and_budget.py::test_llm_budget_is_enforced` exercises a real feature of `run_mission` (`runtime.settings.max_llm_calls` → `BUDGET_EXCEEDED`) that `lookup_fast_path.py` has no equivalent of at all.
-- **Initial-lead-selection parity**: the 3 still-failing tests in `tests/replay/test_leadership_transfer.py`/`test_domain_lookups.py` are about lookup_v1's own `initial_mission_lead` selection for certain multi-domain queries (confirmed pre-existing/live-classification-nondeterminism, unrelated to this retirement work) — they test lookup_v1 behavior directly, not whether the fast path handles those same scenarios equivalently. Not verified either way.
+- ~~**Budget/LLM-call-limit enforcement**~~ **Moot (2026-09-17)**: `governance/budget.py`'s `check_budget`/`check_hard_stops`/`check_swarm_budget` were deliberately disabled system-wide (unconditional `return _OK`). `run_mission`'s old `BUDGET_EXCEEDED` short-circuit (`tests/replay/test_comparison_and_budget.py`, now `test_llm_budget_is_not_enforced`) and `lookup_fast_path.py`'s total absence of a budget guard now describe the same behavior — neither enforces anything. Not a gap to close anymore.
+- ~~**Initial-lead-selection parity**~~ **Verified 2026-09-17**: `tests/replay/test_leadership_transfer.py`/`test_domain_lookups.py` all pass against current HEAD (23/23, stable across repeated runs — the "3 still-failing" note above was stale). Ran the same 8 multi-domain queries those tests use directly through `run_lookup_fast_path` and compared: `initial_mission_lead` matches legacy's `initial_mission_lead` exactly in every case (performance_agent, finance_agent, product_agent, funnel_agent, customer_agent, operations_agent, attribution_agent), and both requested metrics come back with correct values in every case. `mission_lead` stays equal to `initial_mission_lead` on the fast path (no handoff, by design — see design tradeoff #9 in `docs/BUG_SHEET.md`), unlike legacy's post-handoff final lead (e.g. `commerce_agent`) — that divergence is the intentional, already-documented "no handoff" design difference, not a lead-*selection* mismatch. This blocker is closed.
 - The classifier's `grain`-detection gap (Phase 2a) means some "per channel"-style queries will keep answering with an aggregate via the fast path once lookup_v1 no longer exists as a fallback — that's a quality gap, not a crash, but worth deciding if it's acceptable before deleting the fallback that currently masks it.
 
 `leadership/manager.py` and `orchestration/state.py::MissionState` are shared with swarm_v2 and are never deleted regardless.
