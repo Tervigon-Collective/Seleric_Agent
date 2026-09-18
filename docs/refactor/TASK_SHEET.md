@@ -34,8 +34,8 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Profile B — Semantic toolset v0
 | Task | Status | Evidence |
 |---|---|---|
-| `toolsets/semantic.py::query_metrics/drilldown` | Not started | |
-| Characterization suite vs. new toolset (pre-consolidation baseline) | Not started | |
+| `toolsets/semantic.py::query_metrics/drilldown` | Done | `src/seleric_swarm/toolsets/semantic.py` (`search_semantics`, `get_metric_definition`, `query_metrics`, `drilldown`), plus `src/seleric_swarm/agent/contracts.py` (SelericDeps/ToolResult/artifact schemas materialized from `docs/refactor/CONTRACTS.md`) and `src/seleric_swarm/state/artifacts.py` (minimal ArtifactStore, both needed for the toolset to be callable/testable). Thin wrappers over the already-live `MCPGateway`/`services/mcp_query.py` — no `MetricRegistry`/`resolve_measure` heuristic anywhere in the call path (rule 1). 10/10 passing: `tests/unit/test_semantic_toolset.py` (contract test on `ToolResult` envelope invariants + unit tests with a fake MCP client, `./.venv/Scripts/python.exe -m pytest -q tests/unit/test_semantic_toolset.py`). |
+| Characterization suite vs. new toolset (pre-consolidation baseline) | Done | `tests/replay/test_semantic_toolset_characterization.py::test_semantic_toolset_query_metrics_matches_hybrid_provider_fetch` — live run against production seleric-mcp, 2026-09-18: `SemanticToolset.query_metrics("units_sold", ...)` matches `HybridMcpDataProvider.fetch("metric.units_sold", ...)` exactly for 2026-08-01 (`pytest -q tests/replay/test_semantic_toolset_characterization.py`, 1 passed). Note: had to point the toolset's MCPGateway `agent_id` at the existing `observer_agent` identity (already unions every domain agent's seleric capabilities) rather than adding a new entry to `config/agent_registry.yaml` — that registry is itself retired by this migration (Profile A's "Retires" list), so it isn't the right place to grow permissions for the new single-agent loop; revisit once Profile A's real toolset-registration replacement lands. |
 
 ### Profile C — Analytics toolset v0
 | Task | Status | Evidence |

@@ -1,6 +1,9 @@
 # Seleric V3 — Refactor Overview
 
-Status: planning complete, execution not started. Last verified against source: 2026-09-17.
+Status: execution underway. Sprint 0 (contracts) and Sprint 1/Profile B
+(Semantic toolset v0) done — see `SPRINT_PLAN.md` and `TASK_SHEET.md` for
+current status, don't assume this line reflects it going forward. Last
+verified against source: 2026-09-18.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube
 migration. Everything produced during the refactor (profile briefs, sprint
