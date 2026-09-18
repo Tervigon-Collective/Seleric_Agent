@@ -84,6 +84,46 @@ describe("conversation shell rendering and accessibility", () => {
     expect(container.textContent).toContain("Revenue increased.");
   });
 
+  it("shows prior user asks in the Context tab for follow-ups", () => {
+    useConversationStore.setState({
+      selectedThreadId: "t1",
+      threads: [{
+        id: "t1", workspace_id: "w", owner_user_id: "u", project_id: null,
+        title: "Sales", status: "ACTIVE", metadata: {},
+        created_at: "now", updated_at: "now",
+      }],
+      messages: {
+        t1: [
+          {
+            id: "m1", thread_id: "t1", workspace_id: "w", user_id: "u",
+            role: "USER", run_id: "r1", parent_message_id: null, created_at: "now",
+            parts: [{ type: "TEXT", content: "gross sales today" }],
+          },
+          {
+            id: "m2", thread_id: "t1", workspace_id: "w", user_id: null,
+            role: "ASSISTANT", run_id: "r1", parent_message_id: "m1", created_at: "now",
+            parts: [
+              { type: "TEXT", content: "gross sales: 4789.73 (2026-09-18)" },
+              { type: "SOURCE", content: { evidence_id: "EV-1", title: "gross sales", excerpt: "4789.73 for 2026-09-18" } },
+            ],
+          },
+          {
+            id: "m3", thread_id: "t1", workspace_id: "w", user_id: "u",
+            role: "USER", run_id: "r2", parent_message_id: "m2", created_at: "now",
+            parts: [{ type: "TEXT", content: "gross sale" }],
+          },
+        ],
+      },
+    });
+    act(() => root.render(<DetailPanel />));
+    act(() => (container.querySelector("#detail-tab-context") as HTMLButtonElement).click());
+    expect(container.textContent).toContain("gross sale");
+    expect(container.textContent).toContain("Prior asks");
+    expect(container.textContent).toContain("gross sales today");
+    act(() => (container.querySelector("#detail-tab-sources") as HTMLButtonElement).click());
+    expect(container.textContent).toContain("4789.73 for 2026-09-18");
+  });
+
   it("provides functional conversation and detail panel controls", () => {
     act(() => root.render(<App />));
     const sidebarToggle = container.querySelector('[aria-label="Toggle conversations"]') as HTMLButtonElement;

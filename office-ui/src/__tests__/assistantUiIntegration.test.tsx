@@ -85,6 +85,10 @@ describe("assistant-ui Seleric adapter", () => {
     expect(submitMessage).toHaveBeenCalledWith("thread-1", expect.objectContaining({
       parts: [expect.objectContaining({ type: "TEXT", content: "Investigate CAC" })],
       parent_message_id: "message-1",
+      scope: expect.objectContaining({
+        timezone: expect.any(String),
+        as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
     }));
   });
 
