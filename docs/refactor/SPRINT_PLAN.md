@@ -22,19 +22,28 @@ Profile briefs: `01_PROFILE_RUNTIME.md` (A), `02_PROFILE_SEMANTIC_MCP.md`
 Nothing else starts until this is frozen — B and C both build against A's
 contract, and A's validator needs C's evidence-classification vocabulary.
 
-- [x] Freeze `SelericDeps` dataclass shape (A drafts, B/C review).
-- [x] Freeze `ToolResult` envelope (A drafts, B/C review).
+- [x] Freeze `SelericDeps` dataclass shape (A drafts, B/C review). Done —
+      `docs/refactor/CONTRACTS.md` §1, materialized as code in
+      `src/seleric_swarm/agent/contracts.py`.
+- [x] Freeze `ToolResult` envelope (A drafts, B/C review). Done —
+      `docs/refactor/CONTRACTS.md` §2, same module.
 - [x] Freeze `EvidenceArtifact`/`Finding`/`CausalArtifact`/`PredictionArtifact`
-      schemas (A owns the store, C owns causal/prediction field needs).
+      schemas (A owns the store, C owns causal/prediction field needs). Done —
+      `docs/refactor/CONTRACTS.md` §3, same module.
 - [x] Freeze the seven toolset names + tool signatures (function names,
-      params, return types — not implementations).
+      params, return types — not implementations). Done —
+      `docs/refactor/CONTRACTS.md` §4.
 - [x] Spike: confirm `seleric-mcp`'s `catalogue_search_metrics`,
       `metrics_query`, `metrics_drilldown`, `actions_propose/commit/status`
-      are production-ready (Profile B, blocks its Sprint 1).
+      are production-ready (Profile B, blocks its Sprint 1). Done — all
+      confirmed live and production-ready 2026-09-18 (see `TASK_SHEET.md`);
+      one unrelated Cube schema bug found on `net_sales_all_channels`,
+      flagged separately, not blocking.
 - [x] Capture pre-migration baseline: run the full existing test suite +
       the two live-trace repros from `docs/TASK_SHEET.md` against current
       swarm_v2, record pass/fail counts as the parity bar every profile's
-      exit criteria compares against.
+      exit criteria compares against. Done — 731 passed/1 failed/4 skipped,
+      2026-09-18 (see `TASK_SHEET.md`).
 - [x] Add superseded-pointer note to
       `docs/46_ARCHITECTURE_CONSOLIDATION_PLAN.md` (done as part of this
       planning pass, see that file's top).
@@ -69,12 +78,17 @@ Sprint 1 task starts.
       `eval/datasets/lookup_commerce.jsonl` and `tests/replay/` fixtures.
 
 **B — Semantic toolset v0**
-- [ ] `toolsets/semantic.py` — `query_metrics()`/`drilldown()` wrapping
-      live `seleric-mcp` tools, no local heuristics.
-- [ ] Re-run `tests/replay/test_data_access_characterization.py` against
+- [x] `toolsets/semantic.py` — `query_metrics()`/`drilldown()` wrapping
+      live `seleric-mcp` tools, no local heuristics. Done —
+      `src/seleric_swarm/toolsets/semantic.py` (+ `agent/contracts.py`,
+      `state/artifacts.py` v0 needed to make it callable/testable),
+      10 passing unit/contract tests.
+- [x] Re-run `tests/replay/test_data_access_characterization.py` against
       the new toolset (not yet wired into the agent) to establish it
       matches at least one of the three legacy paths before consolidation
-      begins in Sprint 2.
+      begins in Sprint 2. Done — `tests/replay/test_semantic_toolset_characterization.py`,
+      live parity confirmed against `HybridMcpDataProvider.fetch()` for
+      `metric.units_sold`/`units_sold`, 2026-09-18.
 
 **C — Analytics toolset v0 (re-scoped)**
 

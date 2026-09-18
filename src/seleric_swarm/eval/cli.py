@@ -81,10 +81,15 @@ async def _run_lookup(live_llm: bool, judge: bool = False) -> dict:
     return report
 
 
-async def _run_classify() -> dict:
+async def _run_classify(live_llm: bool) -> dict:
     from seleric_swarm.agents.coordinator import Agent as CoordinatorAgent
 
-    settings = Settings(llm_provider="fake", langsmith_tracing=False, persistence_backend="memory", app_env="test")
+    settings = Settings(
+        llm_provider="azure_openai_compatible" if live_llm else "fake",
+        langsmith_tracing=False,
+        persistence_backend="memory",
+        app_env="test",
+    )
     runtime = build_runtime(settings)
     agent = CoordinatorAgent(runtime)
     rows = load_jsonl("eval/datasets/coordinator_classify.jsonl")
@@ -133,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
     payload: dict[str, Any]
     if args.suite in {"lookup_v1", "lookup"}:
         report = asyncio.run(_run_lookup(live_llm=args.live_llm, judge=args.judge))
-        classify = asyncio.run(_run_classify())
+        classify = asyncio.run(_run_classify(live_llm=args.live_llm))
         payload = {"lookup": report, "classify": classify}
     else:
         payload = {"error": f"unknown suite {args.suite}"}

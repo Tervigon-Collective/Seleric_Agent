@@ -15,27 +15,29 @@ instead of a shared mutable blackboard.
 ## Retires (delete only after its replacement clears parity, per strangler-fig rule)
 
 - `src/seleric_swarm/orchestration/dispatch.py::route_for` — lookup-vs-swarm
-  classification disappears; there's one path.
+classification disappears; there's one path.
 - `src/seleric_swarm/coordinator/graph.py` — the LangGraph `build_swarm_v2_graph`
-  state machine (intake/decompose/plan/assemble/execute/refine/specialists/
-  skeptic_gate/remediate/complete/synthesize nodes).
+state machine (intake/decompose/plan/assemble/execute/refine/specialists/
+skeptic_gate/remediate/complete/synthesize nodes).
 - `src/seleric_swarm/coordinator/lookup_fast_path.py` — folded into the one
-  agent loop; there's no separate fast path once the main loop is cheap
-  enough for simple lookups (verify this assumption in Sprint 4's cost gate
-  before deleting — if the new loop is materially more expensive per simple
-  lookup than `lookup_fast_path` was, that's a real finding, not a reason to
-  keep two paths; bring it back to the user).
+agent loop; there's no separate fast path once the main loop is cheap
+enough for simple lookups (verify this assumption in Sprint 4's cost gate
+before deleting — if the new loop is materially more expensive per simple
+lookup than `lookup_fast_path` was, that's a real finding, not a reason to
+keep two paths; bring it back to the user).
 - Blackboard (7 artifact types) → `ArtifactStore` (typed, per-kind tables/collections).
 - `LeadershipManager`/`LeadershipController` — no handoff concept in the new
-  loop; the agent decides its own next tool call each turn.
+loop; the agent decides its own next tool call each turn.
 - `AgentRegistry`, `config/agent_registry.yaml`'s per-specialist `enabled`
-  flags — replaced by toolset registration, which is static per deployment,
-  not a runtime-toggle registry.
+flags — replaced by toolset registration, which is static per deployment,
+not a runtime-toggle registry.
 - `PromptRegistry` → folded into `agent/instructions.py` + `RuntimeConfig`.
 - `governance/budget.py`'s currently-disabled `check_budget`/`check_hard_stops`
-  → replaced by the bounded-loop execution limits (spec §39); this is where
-  that "low-priority backlog item" from `docs/TASK_SHEET.md` actually gets
-  resolved, not re-patched onto the old dispatcher.
+→ replaced by the bounded-loop execution limits (spec §39); this is where
+that "low-priority backlog item" from `docs/TASK_SHEET.md` actually gets
+resolved, not re-patched onto the old dispatcher.
+
+
 
 ## Builds
 
@@ -44,34 +46,38 @@ instead of a shared mutable blackboard.
 - `agent/instructions.py` — system prompt / instructions, versioned.
 - `agent/output.py` — `MissionResult` Pydantic model (spec §36).
 - `agent/validation.py` — `EvidenceValidator` (replaces Skeptic's role at
-  the orchestration layer; Skeptic's causal-challenge *content* logic is
-  Profile C's, see below).
+the orchestration layer; Skeptic's causal-challenge *content* logic is
+Profile C's, see below).
 - `api/missions.py`, `api/events.py` — `POST /v1/missions`, SSE/WebSocket,
-  thin wrappers over Mission Service.
+thin wrappers over Mission Service.
 - Mission Service + `state/missions.py` (`Mission` model, `MissionStatus`
-  enum) — replaces ad hoc mission dict/context threading in
-  `coordinator/graph.py`.
+enum) — replaces ad hoc mission dict/context threading in
+`coordinator/graph.py`.
 - `state/artifacts.py` (`ArtifactStore`), `state/conversations.py`
-  (`ConversationMemory`), `state/cache.py` (`MissionQueryCache`).
+(`ConversationMemory`), `state/cache.py` (`MissionQueryCache`).
 - `observability/traces.py`, `observability/audit.py` — one trace per
-  mission (spec §42), OpenTelemetry/Logfire.
+mission (spec §42), OpenTelemetry/Logfire.
 - `evals/` — Pydantic Evals harness + golden dataset (spec §43), seeded from
-  the existing `eval/datasets/lookup_commerce.jsonl` and the replay fixtures
-  already in `tests/replay/`.
+the existing `eval/datasets/lookup_commerce.jsonl` and the replay fixtures
+already in `tests/replay/`.
 - Execution limits (spec §39) as actual enforcement, not a disabled no-op —
-  `max_tool_calls`, `max_cube_queries`, `max_causal_queries`,
-  `max_prediction_calls`, `max_validation_revisions`.
+`max_tool_calls`, `max_cube_queries`, `max_causal_queries`,
+`max_prediction_calls`, `max_validation_revisions`.
 - Durable execution: `Mission Service ↔ Temporal` for long/forensic
-  missions; short missions stay fully synchronous through the agent loop.
+missions; short missions stay fully synchronous through the agent loop.
+
+
 
 ## Depends on
 
 - Profile B's `SemanticToolset`/`ActionToolset` signatures (to wire
-  `TOOLSETS --> SEM/ACTIONS` in the agent).
+`TOOLSETS --> SEM/ACTIONS` in the agent).
 - Profile C's `AnalyticsToolset`/`CausalToolset`/`ModelToolset`/
-  `KnowledgeToolset`/`ExperimentToolset` signatures.
+`KnowledgeToolset`/`ExperimentToolset` signatures.
 - Nothing blocks Sprint 0/1 (contract + scaffolding) — B and C consume A's
-  contracts, not the other way around.
+contracts, not the other way around.
+
+
 
 ## Key risks
 
@@ -100,26 +106,29 @@ instead of a shared mutable blackboard.
   as having worked) never gets to fire. Also unanswered: what the loop does
   with a STRONG-trust + REVISE verdict when it has exactly one revision.
 - Removing `lookup_fast_path` risks the exact bug class it was built to
-  fix (`docs/BUG_SHEET.md` #2's metric-ID canonicalization bug, #9's
-  intentional no-handoff simplicity) reappearing if the new loop
-  reintroduces multi-hop handoff-like behavior. Explicitly test against
-  those two bugs' original repro cases before cutover.
+fix (`docs/BUG_SHEET.md` #2's metric-ID canonicalization bug, #9's
+intentional no-handoff simplicity) reappearing if the new loop
+reintroduces multi-hop handoff-like behavior. Explicitly test against
+those two bugs' original repro cases before cutover.
 - Temporal introduces new operational surface (durable execution) — confirm
-  it's actually needed for this workload before building it; if no mission
-  today runs long enough to need durability, defer this to a later sprint
-  and ship synchronous-only first (ponytail: don't build durability for a
-  workload that doesn't need it yet).
+it's actually needed for this workload before building it; if no mission
+today runs long enough to need durability, defer this to a later sprint
+and ship synchronous-only first (ponytail: don't build durability for a
+workload that doesn't need it yet).
+
+
 
 ## Exit criteria (parity gate before old pipeline deletion)
 
 1. Full existing test suite equivalent (`tests/unit`, `tests/coordinator`,
-   `tests/contract`, `tests/replay`) passes against the new runtime at the
+  `tests/contract`, `tests/replay`) passes against the new runtime at the
    same pass rate `docs/TASK_SHEET.md` last recorded (534 passed, 2
    pre-existing unrelated failures, 1 known live-data flake).
 2. The two live-trace repros already on record
-   (`docs/TASK_SHEET.md`'s bug #8/#14 production queries) produce
+  (`docs/TASK_SHEET.md`'s bug #8/#14 production queries) produce
    equivalent `MissionResult`s (same metric, same per-day granularity, same
    skeptic/validator verdict) end-to-end via the new agent loop.
 3. Execution limits actually reject a synthetic over-budget mission in a
-   test (currently impossible — `check_budget` is a no-op everywhere).
+  test (currently impossible — `check_budget` is a no-op everywhere).
 4. Program-level eval set (§8 of overview) at parity or better.
+

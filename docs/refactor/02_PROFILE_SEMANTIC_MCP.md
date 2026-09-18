@@ -80,6 +80,17 @@ trusting it as sufficient, per the consolidation plan's own note).
   wrappers over `mcp__seleric-mcp__catalogue_*` / `metrics_query` /
   `metrics_drilldown`. This is the **only** normal path allowed to fetch
   numeric business data (non-negotiable rule 5 in the overview).
+  **v0 done (Sprint 1, 2026-09-18)**: implemented in
+  `src/seleric_swarm/toolsets/semantic.py`, wired through the existing
+  `MCPGateway`/`services/mcp_query.py` (reused, not rebuilt). `drilldown()`
+  runs the live `metrics_query` → `metrics_drilldown` two-call sequence
+  (the real tool requires a parent `query_id`; the frozen signature hides
+  that bookkeeping from the agent). Not yet wired into an actual agent loop
+  or into the three legacy call sites — that's Sprint 2 consolidation.
+  Currently authorizes MCP calls under the existing `observer_agent`
+  identity (see `TASK_SHEET.md`) since `config/agent_registry.yaml`'s
+  per-agent allowlist is itself retired by this migration and isn't the
+  right place to add a new entry for the future single-agent identity.
 - `toolsets/actions.py` — `ActionToolset`: `propose_action()`,
   `validate()`, `preview()`, `commit_action()`, wrapping
   `mcp__seleric-mcp__actions_propose/commit/status` and the Meta/Google Ads

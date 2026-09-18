@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     minio_bucket: str = "seleric-attachments"
     minio_secure: bool = True
 
-    llm_provider: Literal["fake", "azure_openai_compatible"] = "fake"
+    llm_provider: Literal["fake", "azure_openai_compatible"] = "azure_openai_compatible"
     llm_timeout_s: float = 30.0
     llm_temperature: float = 0.0
     llm_max_tokens: int = 1024
