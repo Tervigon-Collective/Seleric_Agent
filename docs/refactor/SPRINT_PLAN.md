@@ -143,10 +143,9 @@ analytics toolset ahead of formal A1 sign-off and is now contract-authoritative.
 
 **A — Evidence Validator + execution limits**
 - [x] `agent/validation.py::EvidenceValidator` — orchestration slot only
-      (bounded 1-revision retry loop as frozen, pending the joint decision
-      below); content checks land once C's classification vocabulary is
-      ready (parallel work, integrate end of sprint). Done —
-      `agent/validation.py` + `tests/unit/test_v3_validation.py`.
+      (bounded 1-revision retry loop); content checks land once C's
+      classification vocabulary is ready (parallel work, integrate end of
+      sprint). Done — `agent/validation.py` + `tests/unit/test_v3_validation.py`.
 - [x] Real execution-limit enforcement (`max_tool_calls`, `max_cube_queries`,
       etc.) — first time any budget concept in this system actually rejects
       a mission since it was disabled. Done — `agent/limits.py::ExecutionBudgetTracker`.
