@@ -101,7 +101,7 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 | Task | Status | Evidence |
 |---|---|---|
 | Delete `catalogue_grounding.py` heuristics | Blocked by gate | Sprint 2 characterization ran clean multiple times on 2026-09-18, but Sprint 3 explicitly requires clean runs on 3 separate calendar days before deletion. No deletion performed. |
-| Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone | Blocked by gate | Same deletion gate; graph index currently reports 73 inbound dependencies on `MetricRegistry`, so this is not a safe cosmetic delete. |
+| Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone | Blocked — scope-corrected, not just gate-blocked | Ran the actual dependency graph query (codebase-memory `query_graph`, not a guess) to categorize the 83 raw call-graph edges instead of just citing the count. Real, non-test callers span: **the live swarm_v2 classifier itself** (`coordinator/intake/llm_classifier.py::classify_query_via_llm` — 100% of production mission traffic goes through this), the diagnostic causal pipeline (`agents/diagnostic/{causal_discovery,causal_graph_builder,intake,ontology,synthesis}.py`), `agents/skeptic/context.py::SkepticDeps.canonical_metric_id`, `swarm/domain/configs.py::build_domain_configs`, `swarm/providers/provider_selection.py`, plus `coordinator/catalogue_grounding.py` (the heuristic layer already known to be gated) and `bootstrap.py::build_runtime`'s own wiring. **Correction to the sprint plan's framing**: this was never a Sprint-3-scale "retire a standalone registry" task — `MetricRegistry` is load-bearing infrastructure for the still-100%-live swarm_v2 pipeline, not an incidental dependency of the heuristic layer alone. It cannot be retired until swarm_v2 itself is retired (Sprint 5), not before. Recommend moving this line item from Sprint 3 to Sprint 5's pipeline-deletion list in a future `SPRINT_PLAN.md` edit, rather than leaving it as a Sprint-3 "blocked" item that reads as almost-done. |
 | `ActionToolset` wired to propose/confirm/commit | Partial — local wiring done, upstream Google action unavailable | `src/seleric_swarm/toolsets/actions.py` implements the frozen `propose_action`/`validate`/`preview`/`commit_action` surface over `actions_propose/status/commit`; confirmation is the user turn before commit. Added the four remote MCP tools and a dedicated `v3_agent` allowlist so legacy observer/domain agents do not acquire writes. Confirmation tokens are process-local, stripped from `ToolResult` provenance, and fail closed after restart/expiry; caller idempotency keys prevent duplicate commits. `tests/unit/test_action_toolset.py`: 6 passed. Full focused Profile B transport/toolset set: 28 passed. Upstream `seleric-mcp` currently has no approved Google Ads action contract (its own catalogue audit says only the Meta `pause_meta_ad` pattern exists, while the live Sprint 0 spike returned an empty available-action list), so Google end-to-end execution cannot honestly be marked Done in this repo. |
 
 ### Profile C — Model/Skeptic port
@@ -385,3 +385,19 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   (Profile B's 3-calendar-day characterization gate; `ActionToolset`'s
   Google Ads action pending upstream `seleric-mcp` support). See Sprint 3
   table above for what's next.
+- 2026-09-18: **Sprint 3 Profile B — `MetricRegistry` retirement scope
+  corrected.** Rather than accept "73 inbound dependencies" as an opaque
+  blocker, ran the actual dependency graph query (codebase-memory
+  `query_graph`) and categorized all real (non-`__file__`, non-test) callers.
+  Finding: `coordinator/intake/llm_classifier.py::classify_query_via_llm` —
+  swarm_v2's live classifier, 100% of production mission traffic — depends
+  on `MetricRegistry` directly, alongside the diagnostic causal pipeline
+  (`causal_discovery.py`, `causal_graph_builder.py`, `ontology.py`,
+  `synthesis.py`) and `agents/skeptic/context.py`. This was never a Sprint-3
+  incidental cleanup; it's load-bearing infrastructure for the pipeline that
+  doesn't retire until Sprint 5. Moved the item from Sprint 3 to Sprint 5's
+  old-pipeline-deletion list in `SPRINT_PLAN.md`, with the same evidence.
+  `catalogue_grounding.py` deletion and the 3-calendar-day characterization
+  gate remain correctly blocked on Sprint 3's own explicit gate — no change
+  there. `ActionToolset`'s Google Ads gap remains an external (upstream
+  `seleric-mcp`) blocker, not something further local work resolves.
