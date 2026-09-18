@@ -30,6 +30,7 @@ from typing import Any
 from uuid import uuid4
 
 from seleric_swarm.contracts.lookup import MissionResult, MissionStatus, TraceInfo
+from seleric_swarm.coordinator.intake.conversation_context import is_business_followup
 from seleric_swarm.coordinator.intake.conversational_reply import classify_conversational_via_llm
 from seleric_swarm.coordinator.lookup_fast_path import run_lookup_fast_path
 from seleric_swarm.coordinator.overview import (
@@ -102,6 +103,7 @@ async def _complete_overview_mission(
             **overview.as_dict(),
             "events": events,
             "error_code": None,
+            "trace": {"request_id": resolved_request_id, "session_id": resolved_session_id},
         },
     )
     return {
@@ -156,6 +158,7 @@ def _complete_conversational_mission(
             "events": events,
             "final_response": response,
             "error_code": None,
+            "trace": {"request_id": resolved_request_id, "session_id": resolved_session_id},
         },
     )
     return {"route": "conversation", "result": result.model_dump()}
@@ -248,22 +251,26 @@ async def run_any_mission(
         from seleric_swarm.cancellation import MissionCancelledError
 
         raise MissionCancelledError(f"mission {mission_id} was cancelled")
-    conversational_response = await classify_conversational_via_llm(
-        query,
-        runtime=runtime,
-        session_id=session_id,
-        request_id=request_id,
-        mission_id=mission_id,
-    )
-    if conversational_response is not None:
-        return _complete_conversational_mission(
-            runtime,
-            query=query,
-            response=conversational_response,
+    if not is_business_followup(
+        query, timezone=timezone, as_of=as_of, context_bundle=context_bundle
+    ):
+        conversational_response = await classify_conversational_via_llm(
+            query,
+            runtime=runtime,
             session_id=session_id,
             request_id=request_id,
             mission_id=mission_id,
+            context_bundle=context_bundle,
         )
+        if conversational_response is not None:
+            return _complete_conversational_mission(
+                runtime,
+                query=query,
+                response=conversational_response,
+                session_id=session_id,
+                request_id=request_id,
+                mission_id=mission_id,
+            )
     if _OVERVIEW_PROMPT.search(query):
         return await _complete_overview_mission(
             runtime,

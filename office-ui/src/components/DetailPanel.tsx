@@ -19,6 +19,16 @@ export function DetailPanel() {
   const threadId = useConversationStore((s) => s.selectedThreadId);
   const thread = useConversationStore((s) => s.threads.find((item) => item.id === threadId));
   const messages = useConversationStore((s) => threadId ? s.messages[threadId] ?? [] : []);
+  const userTurns = messages.flatMap((message) => {
+    if (message.role !== "USER") return [];
+    const text = message.parts
+      .filter((part) => part.type === "TEXT" && typeof part.content === "string")
+      .map((part) => String(part.content).trim())
+      .filter(Boolean)
+      .join("\n");
+    return text ? [text] : [];
+  });
+  const priorAsks = userTurns.slice(0, -1).slice(-4);
   const memories = useConversationStore((s) => s.memories);
   const usedMemories = useConversationStore((s) => s.usedMemories);
   const memoryOptedOut = useConversationStore((s) => s.memoryOptedOut);
@@ -81,7 +91,16 @@ export function DetailPanel() {
             <div className="activity-row" key={event.eventId}><span className="activity-dot" /><div><strong>{event.summary || event.eventType.replaceAll("_", " ")}</strong><small>{event.agentId || "Swarm"} · #{event.seq}</small></div></div>
           ))}{!visibleTimeline.length && <Empty text={threadId ? "Activity appears here while this conversation runs." : "Select or start a conversation to see its activity."} />}</section>
         )}
-        {tab === "Context" && <section><h2>Thread context</h2><dl><dt>Title</dt><dd>{thread?.title || "Untitled"}</dd><dt>Question</dt><dd>{query || "No active mission"}</dd><dt>Route</dt><dd>{route || "Pending"}</dd><dt>Stage</dt><dd>{stage}</dd></dl></section>}
+        {tab === "Context" && <section><h2>Thread context</h2><dl>
+          <dt>Title</dt><dd>{thread?.title || "Untitled"}</dd>
+          <dt>Question</dt><dd>{userTurns.at(-1) || query || "No active mission"}</dd>
+          {priorAsks.length > 0 && <>
+            <dt>Prior asks</dt>
+            <dd><ol className="prior-asks">{priorAsks.map((text, index) => <li key={`${index}-${text}`}>{text}</li>)}</ol></dd>
+          </>}
+          <dt>Route</dt><dd>{route || "Pending"}</dd>
+          <dt>Stage</dt><dd>{stage}</dd>
+        </dl></section>}
         {tab === "Memory" && <section className="memory-panel">
           <div className="memory-heading"><h2>Memory</h2>
             <button onClick={() => {

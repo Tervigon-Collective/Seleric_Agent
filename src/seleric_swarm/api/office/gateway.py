@@ -27,6 +27,7 @@ from seleric_swarm.api.mission_access import (
 )
 from seleric_swarm.api.office.normalize import build_office_snapshot, normalize_events
 from seleric_swarm.api.office.registry import known_mission_ids
+from seleric_swarm.api.office.v3_adapter import v3_raw_snapshot
 
 router = APIRouter(prefix="/v1/office", tags=["office"])
 
@@ -47,6 +48,9 @@ def _raw(mission_id: str) -> dict[str, Any] | None:
     raw = getter(mission_id) if getter else None
     if raw is None and store.get(mission_id) is not None:
         raw = store.get(mission_id).model_dump()
+    if raw is None:
+        # Not a swarm_v2 mission id -- check the V3 store before 404ing.
+        raw = v3_raw_snapshot(mission_id)
     return raw
 
 

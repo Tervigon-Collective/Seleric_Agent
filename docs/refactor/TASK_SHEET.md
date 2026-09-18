@@ -250,6 +250,49 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   user asked for the profile work to be bug-free, not just present. Full
   suite via `.venv`: 780 passed, 1 failed (the same pre-existing
   `test_health_combo_never_returns_running`), 5 skipped.
+- 2026-09-18: Checked Sprint 1/2 for UI/UX connectivity per user request.
+  Found and fixed a real bug in `orchestration/dispatch.py`: both fast-path
+  completions (`_complete_conversational_mission`,
+  `_complete_overview_mission`) built a `MissionResult` with a populated
+  `trace` field but never wrote `trace` into the raw dict persisted to the
+  store — `api/office/gateway.py`'s Office UI snapshot reads `trace`
+  straight off that raw dict (`api/office/normalize.py::build_office_snapshot`),
+  so every greeting/business-overview mission showed no request/session
+  correlation in the UI. Fixed both call sites; added regression
+  assertions to `tests/unit/test_dispatch_routing.py` (would have failed
+  before the fix, pass now). Also found and documented (not fixed — not
+  actionable yet, no V3 toolsets exist to produce a real mission) a bigger
+  gap: `office-ui/` and `build_office_snapshot` are entirely swarm_v2-shaped
+  (`mission_lead`/`leadership_epoch`/`handoff_history`/typed artifact
+  buckets) and have zero mapping to the V3 `MissionResult`/`ArtifactStore`
+  shape — noted in `01_PROFILE_RUNTIME.md` Key risks + added as exit
+  criterion 5, since nothing in this folder had planned for the existing
+  frontend before. Full suite after the fix: unchanged pass/fail counts
+  (still only the one pre-existing live-data failure).
+- 2026-09-18: Built the V3-adapter fix for the Office UI gap above, rather
+  than leaving it only documented. Added `api/v3_state.py` (shared V3
+  Mission/Artifact store singletons — `api/missions.py` previously built a
+  throwaway `InMemoryArtifactStore()` per request and never persisted the
+  `Mission` at all, so a mission was unretrievable the instant the response
+  was sent). Added `api/office/v3_adapter.py::v3_raw_snapshot()`, translating
+  a V3 `Mission`+`Artifact`s into the swarm_v2-shaped raw dict
+  `build_office_snapshot` already renders (reuses that logic instead of
+  forking it; V3's one agent maps to the `"coordinator"` office-ui node as
+  a stand-in, not a real mapping — still tracked as exit criterion 5).
+  Wired into `api/office/gateway.py::_raw()` as a fallback when a mission
+  id isn't in the swarm_v2 store. Found two more real bugs while wiring
+  this: (1) the stub agent's fixed `TestModel` output carried a literal
+  `mission_id="stub"`/empty `query` that leaked into the API response
+  instead of the real request's values — fixed in `api/missions.py` by
+  correcting those fields post-run; (2) naming the new `MissionStore`
+  method `complete()` collided with
+  `tests/unit/test_numeric_audit_coverage.py`'s textual regex for detecting
+  new unaudited LLM-prose call sites (`\.complete\(` matches `llm.complete(`
+  AND `mission_store.complete(` — a false positive, not a real audit gap) —
+  renamed to `finish()` rather than diluting that allowlist with a
+  non-LLM entry. 9 new/updated tests, all passing. Full suite: 806 passed,
+  1 failed (the same pre-existing live-data issue), 5 skipped — lint/mypy
+  clean on every touched file.
 - 2026-09-18: Sprint 2 Profile B executed. Found and fixed a real
   duplication bug first: parallel Profile A work had built canonical
   `SelericDeps`/`ToolResult`/artifact schemas in `agent/dependencies.py`,

@@ -108,12 +108,25 @@ intentional no-handoff simplicity) reappearing if the new loop
 reintroduces multi-hop handoff-like behavior. Explicitly test against
 those two bugs' original repro cases before cutover.
 - Temporal introduces new operational surface (durable execution) — confirm
-it's actually needed for this workload before building it; if no mission
-today runs long enough to need durability, defer this to a later sprint
-and ship synchronous-only first (ponytail: don't build durability for a
-workload that doesn't need it yet).
-
-
+  it's actually needed for this workload before building it; if no mission
+  today runs long enough to need durability, defer this to a later sprint
+  and ship synchronous-only first (ponytail: don't build durability for a
+  workload that doesn't need it yet).
+- **Not planned anywhere in this folder, found 2026-09-18 while checking
+  Sprint 1/2 for UI connectivity:** the live `office-ui/` frontend
+  (`office-ui/src/api/missions.ts` → `GET /v1/office/missions*`) is driven
+  by `api/office/normalize.py::build_office_snapshot`, which reads the
+  swarm_v2-shaped raw mission dict directly — `mission_lead`,
+  `leadership_epoch`, `handoff_history`, `tasks` (for the parallel-task
+  fan-out view), and `artifacts` as typed buckets (`hypothesis`/
+  `prediction`/`strategy`/`skeptic`/...). None of that shape exists on the
+  V3 `MissionResult`/`ArtifactStore` (`agent/output.py`,
+  `agent/artifacts.py`) — a straight cutover would leave the Office UI
+  blank or crashing for every V3 mission. Either `api/office/normalize.py`
+  needs a V3-shaped adapter path, or the Office UI needs its own V3 view,
+  before any cutover percentage > 0. Not blocking now (no toolsets exist to
+  produce a real V3 mission to render yet) but must land before Sprint 4's
+  canary flip, not be discovered at that point.
 
 ## Exit criteria (parity gate before old pipeline deletion)
 
@@ -128,4 +141,6 @@ workload that doesn't need it yet).
 3. Execution limits actually reject a synthetic over-budget mission in a
   test (currently impossible — `check_budget` is a no-op everywhere).
 4. Program-level eval set (§8 of overview) at parity or better.
-
+5. `office-ui/` renders a V3 mission (agents/board/artifacts/trace) without
+   a blank/crashed view — either via a `build_office_snapshot`-equivalent
+   V3 adapter or a dedicated V3 view. See the Key risks entry above.

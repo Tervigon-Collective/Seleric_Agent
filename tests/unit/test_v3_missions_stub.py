@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from seleric_swarm.api.missions import router
+from seleric_swarm.api.v3_state import get_v3_mission_store
 
 
 def _client() -> TestClient:
@@ -33,3 +34,10 @@ def test_stub_agent_responds_when_enabled(monkeypatch) -> None:
     assert body["status"] == "partial"
     assert "no toolsets" in body["final_response"].lower()
     assert body["evidence_ids"] == []
+    # The mission must be retrievable afterward -- an earlier version of
+    # this handler discarded it entirely once the response was sent, which
+    # also left the Office UI with nothing to read for this mission id.
+    stored = get_v3_mission_store().get(body["mission_id"])
+    assert stored is not None
+    assert stored.status == "partial"
+    assert stored.final_response == body["final_response"]

@@ -8,6 +8,7 @@ from seleric_swarm.coordinator.intake import llm_classifier
 from seleric_swarm.coordinator.intake.conversation_context import (
     inherit_metric_source,
     inherit_time_range,
+    is_business_followup,
     is_incidental_time_chatter,
     leftover_tokens,
 )
@@ -108,6 +109,29 @@ def test_leftover_tokens_strip_time_and_glue_words():
     assert leftover_tokens("yesterday?") == []
     assert leftover_tokens("and last 7 days") == []
     assert leftover_tokens("same thing") == []
+    assert leftover_tokens("why?") == []
+
+
+def test_business_followup_skips_greetings_and_thanks():
+    prior = _bundle("gross sales today")
+    assert is_business_followup(
+        "yesterday?", timezone="Asia/Kolkata", as_of="2026-09-18", context_bundle=prior
+    )
+    assert is_business_followup(
+        "gross sale", timezone="Asia/Kolkata", as_of="2026-09-18", context_bundle=prior
+    )
+    assert is_business_followup(
+        "why?", timezone="Asia/Kolkata", as_of="2026-09-18", context_bundle=prior
+    )
+    assert not is_business_followup(
+        "hi", timezone="Asia/Kolkata", as_of="2026-09-18", context_bundle=prior
+    )
+    assert not is_business_followup(
+        "thanks that's all for today",
+        timezone="Asia/Kolkata",
+        as_of="2026-09-18",
+        context_bundle=prior,
+    )
 
 
 def test_inherit_metric_source_skips_time_only_followup():
@@ -149,6 +173,21 @@ async def test_classify_time_only_followup_keeps_prior_metric(runtime):
     assert result.primary_metric == "metric.gross_sales"
     assert result.time_range.relative_token == "yesterday"
     assert result.time_range.start == "2026-09-17"
+
+
+@pytest.mark.asyncio
+async def test_classify_why_followup_keeps_prior_metric(runtime):
+    result = await classify_query_via_llm(
+        "why?",
+        runtime=runtime,
+        timezone="Asia/Kolkata",
+        as_of="2026-09-18",
+        context_bundle=_bundle("gross sales today"),
+    )
+    assert result is not None
+    assert result.primary_metric == "metric.gross_sales"
+    assert "diagnostic" in result.intents
+    assert result.time_range.relative_token == "today"
 
 
 @pytest.mark.asyncio
@@ -209,3 +248,31 @@ async def test_unknown_named_ask_does_not_inherit_prior_metric(runtime):
     )
     assert result is not None
     assert result.primary_metric is None
+
+
+def test_context_builder_dump_feeds_followup_inherit():
+    from seleric_swarm.conversations.context import ContextBuilder
+    from seleric_swarm.conversations.contracts import Message, MessagePart, MessageRole, Thread
+    from seleric_swarm.conversations.memory import build_in_memory_repositories
+
+    repositories = build_in_memory_repositories()
+    thread = repositories.threads.create(Thread(workspace_id="w", owner_user_id="u"))
+    repositories.messages.create(
+        Message(
+            thread_id=thread.id,
+            workspace_id=thread.workspace_id,
+            user_id="u",
+            role=MessageRole.USER,
+            parts=[MessagePart(type="TEXT", content="gross sales today")],
+        )
+    )
+    dumped = ContextBuilder(repositories).build(thread, query="gross sale").model_dump(mode="json")
+    window = inherit_time_range(
+        "gross sale",
+        timezone="Asia/Kolkata",
+        as_of="2026-09-18",
+        context_bundle=dumped,
+    )
+    assert window is not None
+    assert window.relative_token == "today"
+    assert window.start == "2026-09-18"

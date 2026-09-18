@@ -146,6 +146,8 @@ button { color: inherit; }
 .detail-content dl { margin: 0; display: grid; grid-template-columns: 64px 1fr; gap: 8px; font-size: 12px; }
 .detail-content dt { color: var(--text-dim); }
 .detail-content dd { margin: 0; overflow-wrap: anywhere; }
+.prior-asks { margin: 0; padding-left: 18px; }
+.prior-asks li { margin: 0 0 4px; }
 .activity-row { display: grid; grid-template-columns: 8px 1fr; gap: 9px; margin-bottom: 14px; align-items: start; }
 .activity-dot { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: var(--st-working); }
 .activity-row strong { display: block; font-size: 11px; font-weight: 600; }

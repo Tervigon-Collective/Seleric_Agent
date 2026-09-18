@@ -26,6 +26,8 @@ class Mission:
     status: MissionStatus = "running"
     thread_id: str | None = None
     run_id: str | None = None
+    final_response: str | None = None
+    error_code: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -36,6 +38,15 @@ class MissionStore(Protocol):
     def get(self, mission_id: str) -> Mission | None: ...
 
     def update_status(self, mission_id: str, status: MissionStatus) -> Mission | None: ...
+
+    def finish(
+        self,
+        mission_id: str,
+        *,
+        status: MissionStatus,
+        final_response: str | None = None,
+        error_code: str | None = None,
+    ) -> Mission | None: ...
 
     def list_for_workspace(self, workspace_id: str, *, limit: int = 50) -> list[Mission]: ...
 
@@ -58,6 +69,23 @@ class InMemoryMissionStore:
         if mission is None:
             return None
         mission.status = status
+        mission.updated_at = datetime.now(UTC)
+        return mission
+
+    def finish(
+        self,
+        mission_id: str,
+        *,
+        status: MissionStatus,
+        final_response: str | None = None,
+        error_code: str | None = None,
+    ) -> Mission | None:
+        mission = self._by_id.get(mission_id)
+        if mission is None:
+            return None
+        mission.status = status
+        mission.final_response = final_response
+        mission.error_code = error_code
         mission.updated_at = datetime.now(UTC)
         return mission
 

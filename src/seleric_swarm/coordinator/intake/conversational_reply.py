@@ -16,11 +16,16 @@ are served from a small TTL cache instead of paying for another LLM call.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from pydantic import BaseModel
 
+from seleric_swarm.coordinator.intake.conversation_context import (
+    context_fingerprint,
+    format_prior_turns,
+)
 from seleric_swarm.llm.errors import LLMError, LLMStructuredOutputError
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.utils.ttl_cache import TTLCache
@@ -39,8 +44,9 @@ class ConversationalReplyV1(BaseModel):
     reply: str = ""
 
 
-def _cache_key(query: str) -> str:
-    return " ".join(re.sub(r"[^\w\s']", "", query.casefold()).split())
+def _cache_key(query: str, context_bundle: Mapping[str, Any] | None = None) -> str:
+    normalized = " ".join(re.sub(r"[^\w\s']", "", query.casefold()).split())
+    return f"{normalized}|{context_fingerprint(context_bundle)}"
 
 
 async def classify_conversational_via_llm(
@@ -51,9 +57,10 @@ async def classify_conversational_via_llm(
     request_id: str | None = None,
     session_id: str | None = None,
     agent_id: str = "coordinator_agent",
+    context_bundle: Mapping[str, Any] | None = None,
 ) -> str | None:
     """Return a natural reply if ``query`` is casual conversation, else None."""
-    key = _cache_key(query)
+    key = _cache_key(query, context_bundle)
     cached = _CACHE.get(key)
     if cached is not None:
         return cached or None
@@ -64,6 +71,13 @@ async def classify_conversational_via_llm(
         return None
 
     user = spec.render_user({"query": query})
+    prior_turns = format_prior_turns(context_bundle)
+    if prior_turns:
+        user = (
+            f"{user}\nPrior user turns (follow-up context only; Message above "
+            f"is the current ask — do not treat a metric/time follow-up as small talk):\n"
+            f"{prior_turns}"
+        )
     request = LLMRequest(
         messages=[
             ChatMessage(role="system", content=spec.system),

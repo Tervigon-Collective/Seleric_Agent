@@ -92,6 +92,8 @@ describe("conversation store submit", () => {
     expect(state.selectedThreadId).toBe("new-thread");
     expect(state.threads[0]?.title).toBe("Investigate checkout conversion");
     expect(state.messages["new-thread"][0]?.role).toBe("USER");
+    expect(state.messages["new-thread"][0]?.id).toBe("message-1");
+    expect(useOffice.getState().query).toBe("Investigate checkout conversion");
     useConversationStore.getState().reset();
   });
 
@@ -238,5 +240,39 @@ describe("conversation store submit", () => {
       started_at: null, completed_at: null, duration_ms: null, created_at: "now",
     });
     expect(useOffice.getState().timeline).toHaveLength(0);
+  });
+
+  it("hydrates office route from answer.completed so Context stays in sync", () => {
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: "t1",
+      currentRunId: "run-1",
+      messages: { t1: [] },
+    });
+    vi.spyOn(conversationsApi, "listMessages").mockResolvedValue([]);
+    useConversationStore.getState().applyRunEvent({
+      id: "event-answer",
+      thread_id: "t1",
+      workspace_id: "w1",
+      run_id: "run-1",
+      sequence: 4,
+      event_type: "answer.completed",
+      actor_type: null,
+      actor_id: null,
+      title: null,
+      summary: null,
+      evidence_ids: [],
+      payload: { mission_id: "MS-1", route: "lookup", query: "gross sale" },
+      metadata: {},
+      started_at: null,
+      completed_at: null,
+      duration_ms: null,
+      created_at: "2026-09-18T10:00:00Z",
+    });
+    expect(useOffice.getState()).toMatchObject({
+      query: "gross sale",
+      route: "lookup",
+      missionId: "MS-1",
+    });
   });
 });

@@ -87,12 +87,29 @@ def _time_range(normalized: NormalizedQuery) -> TimeRangeV1:
     return TimeRangeV1(kind="absolute", start=tr.start, end=tr.end or tr.start)
 
 
-def _evidence_row(metric_id: str, state: MetricState) -> EvidenceView:
+def _window_dict(time_range: TimeRangeV1 | None, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
+    if time_range is not None and time_range.start:
+        return {"start": time_range.start, "end": time_range.end or time_range.start}
+    return dict(fallback or {})
+
+
+def _period_suffix(row: EvidenceView) -> str:
+    window = row.time_range if isinstance(row.time_range, dict) else {}
+    start = window.get("start")
+    end = window.get("end") or start
+    if not start:
+        return ""
+    if start == end:
+        return f" ({start})"
+    return f" ({start} to {end})"
+
+
+def _evidence_row(metric_id: str, state: MetricState, time_range: TimeRangeV1 | None = None) -> EvidenceView:
     return EvidenceView(
         evidence_id=f"EV-{uuid4().hex[:12]}",
         metric_or_fact=metric_id,
         value=state.actual,
-        time_range=state.window,
+        time_range=_window_dict(time_range, state.window),
         source="deterministic.business_state",
         freshness=state.freshness,
         dimensions=state.dimensions,
@@ -133,12 +150,12 @@ def _narrate(evidence: list[EvidenceView]) -> str:
         # its single row too, which must NOT trigger breakdown-style
         # rendering (that showed "20=<value>" instead of "<value>").
         if len(rows) == 1:
-            lines.append(f"{label}: {rows[0].value}")
+            lines.append(f"{label}: {rows[0].value}{_period_suffix(rows[0])}")
         else:
             breakdown = ", ".join(
                 f"{'/'.join(str(v) for v in row.dimensions.values()) or 'total'}={row.value}" for row in rows
             )
-            lines.append(f"{label}: {breakdown}")
+            lines.append(f"{label}: {breakdown}{_period_suffix(rows[0])}")
     return "\n".join(lines)
 
 
@@ -454,7 +471,7 @@ async def run_lookup_fast_path(
                     if state.status == "UNAVAILABLE":
                         limitations.append(f"No data available for {_humanize_metric(metric_id)}.")
                         continue
-                    evidence.append(_evidence_row(metric_id, state))
+                    evidence.append(_evidence_row(metric_id, state, time_range))
 
         if grained:
             providers = _build_providers(runtime)
@@ -486,6 +503,9 @@ async def run_lookup_fast_path(
                 "workflow": "lookup_fast_path",
                 "user_query": query,
                 **result.model_dump(),
+                "artifacts": {
+                    "evidence": [row.model_dump(mode="json") for row in evidence],
+                },
             },
         )
     except Exception:  # noqa: S110 - persistence must never fail a completed mission

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ConversationApi, MAX_ATTACHMENT_SIZE, validateAttachment } from "../api/conversations";
+import { ConversationApi, MAX_ATTACHMENT_SIZE, conversationScope, validateAttachment } from "../api/conversations";
 import { HttpClient } from "../api/http";
 import { parseSseFrame } from "../api/runEvents";
 
@@ -17,6 +17,12 @@ describe("conversation API", () => {
     expect(url).toContain("/v1/threads/thread%2Fa/messages");
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer secret");
     expect(JSON.parse(String(init.body)).parts[0].content).toBe("hello");
+  });
+
+  it("builds the client timezone and local as_of the backend inherit path needs", () => {
+    const scope = conversationScope(new Date("2026-09-18T18:30:00Z"));
+    expect(scope.timezone).toBeTruthy();
+    expect(scope.as_of).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("parses SSE ids, event names, and multiline data", () => {

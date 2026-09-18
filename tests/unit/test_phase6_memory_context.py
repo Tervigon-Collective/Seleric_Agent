@@ -301,3 +301,88 @@ def test_submission_persists_context_bundle_without_changing_query(monkeypatch):
     assert raw and raw["query"] == "Original query"
     assert raw["input"]["query"] == "Original query"
     assert raw["input"]["context_bundle"]["memory_ids"]
+
+
+def test_followup_submit_includes_prior_user_turn_in_context_bundle(monkeypatch):
+    from seleric_swarm.coordinator.intake.conversation_context import (
+        inherit_time_range,
+        recent_user_texts,
+    )
+
+    repositories = build_in_memory_repositories()
+    thread = repositories.threads.create(Thread(workspace_id="w", owner_user_id="u"))
+    store = InMemoryMissionStore()
+    runtime = SimpleNamespace(
+        conversations=repositories,
+        store=store,
+        settings=SimpleNamespace(run_max_attempts=3),
+        activity_events=None,
+    )
+
+    async def no_execution(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(conversations_api, "_execute_submission", no_execution)
+    app = FastAPI()
+    app.state.runtime_provider = lambda: runtime
+    app.include_router(conversations_api.router)
+    app.add_middleware(
+        ApiSecurityMiddleware,
+        api_key="secret",
+        rate_limit_enabled=False,
+        default_workspace_id="w",
+        default_user_id="u",
+        trust_identity_headers=True,
+    )
+    client = TestClient(app)
+    headers = {"X-API-Key": "secret", "X-Workspace-ID": "w", "X-User-ID": "u"}
+    first = client.post(
+        f"/v1/threads/{thread.id}/messages",
+        json={
+            "parts": [{"type": "TEXT", "content": "gross sales today"}],
+            "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-18"},
+        },
+        headers=headers,
+    )
+    follow = client.post(
+        f"/v1/threads/{thread.id}/messages",
+        json={
+            "parts": [{"type": "TEXT", "content": "gross sale"}],
+            "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-18"},
+        },
+        headers=headers,
+    )
+    assert first.status_code == 202
+    assert follow.status_code == 202
+    run = repositories.runs.get(follow.json()["run_id"])
+    bundle = run.metadata["context_bundle"]
+    assert "gross sales today" in recent_user_texts(bundle)
+    window = inherit_time_range(
+        "gross sale",
+        timezone="Asia/Kolkata",
+        as_of="2026-09-18",
+        context_bundle=bundle,
+    )
+    assert window is not None
+    assert window.relative_token == "today"
+    assert window.start == "2026-09-18"
+
+
+def test_answer_parts_attach_lookup_sources_for_ui():
+    parts = conversations_api._answer_parts(
+        "gross sales: 4789.73 (2026-09-18)",
+        {
+            "evidence": [
+                {
+                    "evidence_id": "EV-1",
+                    "metric_or_fact": "metric.gross_sales",
+                    "value": 4789.73,
+                    "time_range": {"start": "2026-09-18", "end": "2026-09-18"},
+                }
+            ]
+        },
+    )
+    assert parts[0].type.value == "TEXT"
+    assert parts[1].type.value == "SOURCE"
+    assert parts[1].content["title"] == "gross sales"
+    assert parts[1].content["excerpt"] == "4789.73 for 2026-09-18"

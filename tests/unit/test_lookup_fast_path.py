@@ -365,7 +365,7 @@ async def test_lookup_reuses_cached_metric_state_for_same_window(monkeypatch):
     second = await lookup_fast_path.run_lookup_fast_path(runtime, query="gross sale today")
 
     assert first is not None and second is not None
-    assert first.final_response == second.final_response == "gross sales: 4789.73"
+    assert first.final_response == second.final_response == "gross sales: 4789.73 (2026-09-18)"
     assert len(runtime.business_state.requests) == 1
 
 

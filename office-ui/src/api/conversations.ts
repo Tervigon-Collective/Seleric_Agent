@@ -45,6 +45,18 @@ export async function sha256(file: Blob): Promise<string> {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+export function conversationScope(now = new Date()): { timezone: string; as_of: string } {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const lookup = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return { timezone, as_of: `${lookup.year}-${lookup.month}-${lookup.day}` };
+}
+
 export class ConversationApi {
   constructor(private readonly http: HttpClient = api) {}
 
