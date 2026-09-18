@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import base64
 import builtins
+import copy
 import json
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from threading import RLock
 
@@ -56,21 +58,45 @@ class InMemoryThreadRepository:
 
     def create(self, thread: Thread) -> Thread:
         with self._lock:
+            existing = self._items.get(thread.id)
+            if existing is not None and (
+                existing.workspace_id != thread.workspace_id
+                or existing.owner_user_id != thread.owner_user_id
+            ):
+                raise PermissionError("thread id belongs to another tenant")
             self._items.setdefault(thread.id, thread)
             return self._items[thread.id]
 
-    def get(self, thread_id: str) -> Thread | None:
+    def get(
+        self,
+        thread_id: str,
+        workspace_id: str | None = None,
+        owner_user_id: str | None = None,
+    ) -> Thread | None:
         with self._lock:
-            return self._items.get(thread_id)
+            item = self._items.get(thread_id)
+            if (
+                item is None
+                or (workspace_id is not None and item.workspace_id != workspace_id)
+                or (owner_user_id is not None and item.owner_user_id != owner_user_id)
+            ):
+                return None
+            return item
 
     def list_for_owner(
-        self, workspace_id: str, user_id: str, *, limit: int = 50
+        self,
+        workspace_id: str,
+        user_id: str,
+        *,
+        limit: int = 50,
+        status: str | None = None,
     ) -> list[Thread]:
         with self._lock:
             items = [
                 item
                 for item in self._items.values()
                 if item.workspace_id == workspace_id and item.owner_user_id == user_id
+                and (status is None or item.status.value == status)
             ]
         return sorted(items, key=lambda item: item.updated_at, reverse=True)[: max(1, limit)]
 
@@ -107,6 +133,12 @@ class InMemoryThreadRepository:
         with self._lock:
             if thread.id not in self._items:
                 raise KeyError(thread.id)
+            existing = self._items[thread.id]
+            if (
+                existing.workspace_id != thread.workspace_id
+                or existing.owner_user_id != thread.owner_user_id
+            ):
+                raise PermissionError("thread tenant ownership is immutable")
             self._items[thread.id] = thread
             return thread
 
@@ -118,12 +150,20 @@ class InMemoryMessageRepository:
 
     def create(self, message: Message) -> Message:
         with self._lock:
+            existing = self._items.get(message.id)
+            if existing is not None and existing.workspace_id != message.workspace_id:
+                raise PermissionError("message id belongs to another workspace")
             self._items.setdefault(message.id, message)
             return self._items[message.id]
 
-    def get(self, message_id: str) -> Message | None:
+    def get(self, message_id: str, workspace_id: str | None = None) -> Message | None:
         with self._lock:
-            return self._items.get(message_id)
+            item = self._items.get(message_id)
+            if item is None or (
+                workspace_id is not None and item.workspace_id != workspace_id
+            ):
+                return None
+            return item
 
     def list_for_thread(self, thread_id: str, *, limit: int = 100) -> list[Message]:
         with self._lock:
@@ -155,6 +195,8 @@ class InMemoryMessageRepository:
         with self._lock:
             if message.id not in self._items:
                 raise KeyError(message.id)
+            if self._items[message.id].workspace_id != message.workspace_id:
+                raise PermissionError("message workspace ownership is immutable")
             self._items[message.id] = message
             return message
 
@@ -164,21 +206,49 @@ class InMemoryRunRepository:
         self._items: dict[str, Run] = {}
         self._attempts: dict[str, RunAttempt] = {}
         self._events: dict[str, list[ActivityEvent]] = {}
+        self._outbox: dict[str, bool] = {}
         self._lock = RLock()
 
     def create(self, run: Run) -> Run:
         with self._lock:
+            existing = self._items.get(run.id)
+            if existing is not None and (
+                existing.workspace_id != run.workspace_id
+                or existing.requested_by_user_id != run.requested_by_user_id
+            ):
+                raise PermissionError("run id belongs to another tenant")
             self._items.setdefault(run.id, run)
             return self._items[run.id]
 
-    def get(self, run_id: str) -> Run | None:
+    def get(
+        self,
+        run_id: str,
+        workspace_id: str | None = None,
+        owner_user_id: str | None = None,
+    ) -> Run | None:
         with self._lock:
-            return self._items.get(run_id)
+            item = self._items.get(run_id)
+            if (
+                item is None
+                or (workspace_id is not None and item.workspace_id != workspace_id)
+                or (
+                    owner_user_id is not None
+                    and item.requested_by_user_id != owner_user_id
+                )
+            ):
+                return None
+            return item
 
     def update(self, run: Run) -> Run:
         with self._lock:
             if run.id not in self._items:
                 raise KeyError(run.id)
+            existing = self._items[run.id]
+            if (
+                existing.workspace_id != run.workspace_id
+                or existing.requested_by_user_id != run.requested_by_user_id
+            ):
+                raise PermissionError("run tenant ownership is immutable")
             self._items[run.id] = run
             return run
 
@@ -344,7 +414,238 @@ class InMemoryRunRepository:
             self._attempts[attempt_id] = updated
             return updated
 
-    def cancel(self, run_id: str, *, now: datetime | None = None) -> bool:
+    def finalize_attempt(
+        self,
+        attempt_id: str,
+        *,
+        worker_id: str,
+        expected_version: int,
+        requested_status: RunStatus,
+        terminal_event: ActivityEvent,
+        now: datetime | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> tuple[Run, RunAttempt, ActivityEvent] | None:
+        """Atomically fence an attempt and publish its terminal durable state."""
+        moment = now or datetime.now(UTC)
+        with self._lock:
+            attempt = self._attempts.get(attempt_id)
+            if (
+                attempt is None
+                or attempt.status is not RunAttemptStatus.RUNNING
+                or attempt.worker_id != worker_id
+                or attempt.version != expected_version
+            ):
+                return None
+            run = self._items.get(attempt.run_id)
+            if run is None:
+                return None
+            final_status = (
+                RunStatus.CANCELLED
+                if run.status is RunStatus.CANCELLED
+                else requested_status
+            )
+            if run.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
+                return None
+            attempt_status = {
+                RunStatus.COMPLETED: RunAttemptStatus.COMPLETED,
+                RunStatus.CANCELLED: RunAttemptStatus.CANCELLED,
+            }.get(final_status, RunAttemptStatus.FAILED)
+            completed_attempt = attempt.model_copy(
+                update={
+                    "status": attempt_status,
+                    "error_code": error_code,
+                    "error_message": error_message,
+                    "completed_at": moment,
+                    "lease_expires_at": None,
+                    "version": attempt.version + 1,
+                }
+            )
+            completed_run = run.model_copy(
+                update={
+                    "status": final_status,
+                    "completed_at": moment,
+                    "next_retry_at": None,
+                }
+            )
+            event = terminal_event.model_copy(
+                update={
+                    "event_type": {
+                        RunStatus.COMPLETED: "run.completed",
+                        RunStatus.CANCELLED: "run.cancelled",
+                    }.get(final_status, "run.failed"),
+                    "completed_at": moment,
+                    "payload": {
+                        **terminal_event.payload,
+                        "status": final_status.value.lower(),
+                    },
+                }
+            )
+            events = self._events.setdefault(run.id, [])
+            existing = next(
+                (
+                    item
+                    for item in events
+                    if item.id == event.id
+                    or (
+                        final_status is RunStatus.CANCELLED
+                        and item.event_type == "run.cancelled"
+                    )
+                ),
+                None,
+            )
+            if existing is None:
+                event = event.model_copy(
+                    update={
+                        "sequence": (events[-1].sequence if events else 0) + 1,
+                        "thread_sequence": max(
+                            (
+                                item.thread_sequence
+                                for run_events in self._events.values()
+                                for item in run_events
+                                if item.thread_id == event.thread_id
+                            ),
+                            default=0,
+                        )
+                        + 1,
+                    }
+                )
+                events.append(event)
+            else:
+                event = existing
+            self._attempts[attempt_id] = completed_attempt
+            self._items[run.id] = completed_run
+            if run.id in self._outbox:
+                self._outbox[run.id] = True
+            return completed_run, completed_attempt, event
+
+    def transition_failed_attempt(
+        self,
+        attempt_id: str,
+        *,
+        expected_version: int,
+        retry_delay_seconds: float,
+        now: datetime,
+        error_code: str,
+        error_message: str,
+        worker_id: str | None = None,
+        lease_expired_before: datetime | None = None,
+    ) -> str:
+        """Atomically fail one fenced attempt and schedule its successor."""
+        with self._lock:
+            attempt = self._attempts.get(attempt_id)
+            if (
+                attempt is None
+                or attempt.status is not RunAttemptStatus.RUNNING
+                or attempt.version != expected_version
+                or (worker_id is not None and attempt.worker_id != worker_id)
+                or (
+                    lease_expired_before is not None
+                    and (
+                        attempt.lease_expires_at is None
+                        or attempt.lease_expires_at > lease_expired_before
+                    )
+                )
+            ):
+                return "stale"
+            run = self._items.get(attempt.run_id)
+            if run is None:
+                return "stale"
+            if run.status is RunStatus.CANCELLED:
+                self._attempts[attempt_id] = attempt.model_copy(
+                    update={
+                        "status": RunAttemptStatus.CANCELLED,
+                        "completed_at": now,
+                        "lease_expires_at": None,
+                        "version": attempt.version + 1,
+                    }
+                )
+                return "cancelled"
+            failed_attempt = attempt.model_copy(
+                update={
+                    "status": RunAttemptStatus.FAILED,
+                    "error_code": error_code,
+                    "error_message": error_message,
+                    "completed_at": now,
+                    "lease_expires_at": None,
+                    "version": attempt.version + 1,
+                }
+            )
+            self._attempts[attempt_id] = failed_attempt
+            if not attempt.retryable or attempt.attempt_number >= run.max_attempts:
+                self._items[run.id] = run.model_copy(
+                    update={
+                        "status": RunStatus.FAILED,
+                        "completed_at": now,
+                        "next_retry_at": None,
+                    }
+                )
+                events = self._events.setdefault(run.id, [])
+                terminal_id = f"event_terminal_{run.id}_{attempt.id}"
+                if not any(item.id == terminal_id for item in events):
+                    events.append(
+                        ActivityEvent(
+                            id=terminal_id,
+                            thread_id=run.thread_id,
+                            workspace_id=run.workspace_id,
+                            run_id=run.id,
+                            owner_user_id=run.requested_by_user_id,
+                            sequence=(events[-1].sequence if events else 0) + 1,
+                            thread_sequence=max(
+                                (
+                                    item.thread_sequence
+                                    for run_events in self._events.values()
+                                    for item in run_events
+                                    if item.thread_id == run.thread_id
+                                ),
+                                default=0,
+                            )
+                            + 1,
+                            event_type="run.failed",
+                            payload={
+                                "mission_id": run.mission_id,
+                                "status": "failed",
+                                "attempt_id": attempt.id,
+                                "attempt_number": attempt.attempt_number,
+                                "error_code": error_code,
+                            },
+                            completed_at=now,
+                        )
+                    )
+                if run.id in self._outbox:
+                    self._outbox[run.id] = True
+                return "failed"
+            next_number = attempt.attempt_number + 1
+            next_id = f"attempt_retry_{run.id}_{next_number}"
+            self._attempts.setdefault(
+                next_id,
+                RunAttempt(
+                    id=next_id,
+                    run_id=run.id,
+                    attempt_number=next_number,
+                    status=RunAttemptStatus.RETRYABLE,
+                    retryable=attempt.retryable,
+                    started_at=now,
+                ),
+            )
+            self._items[run.id] = run.model_copy(
+                update={
+                    "status": RunStatus.QUEUED,
+                    "current_attempt": next_number,
+                    "retry_count": min(run.retry_count + 1, run.max_attempts - 1),
+                    "next_retry_at": now
+                    + timedelta(seconds=max(0.0, retry_delay_seconds)),
+                }
+            )
+            return "retryable"
+
+    def cancel(
+        self,
+        run_id: str,
+        *,
+        now: datetime | None = None,
+        terminal_event: ActivityEvent | None = None,
+    ) -> bool:
         moment = now or datetime.now(UTC)
         with self._lock:
             run = self._items.get(run_id)
@@ -370,6 +671,28 @@ class InMemoryRunRepository:
                             "version": attempt.version + 1,
                         }
                     )
+            if terminal_event is not None:
+                events = self._events.setdefault(run_id, [])
+                if not any(item.id == terminal_event.id for item in events):
+                    terminal_event = terminal_event.model_copy(
+                        update={
+                            "sequence": (events[-1].sequence if events else 0) + 1,
+                            "thread_sequence": max(
+                                (
+                                    item.thread_sequence
+                                    for run_events in self._events.values()
+                                    for item in run_events
+                                    if item.thread_id == terminal_event.thread_id
+                                ),
+                                default=0,
+                            )
+                            + 1,
+                            "completed_at": moment,
+                        }
+                    )
+                    events.append(terminal_event)
+            if run_id in self._outbox:
+                self._outbox[run_id] = True
             return True
 
     def list_recoverable(
@@ -380,11 +703,18 @@ class InMemoryRunRepository:
             items = [
                 attempt
                 for attempt in self._attempts.values()
-                if attempt.status is RunAttemptStatus.RETRYABLE
-                or (
-                    attempt.status is RunAttemptStatus.RUNNING
-                    and attempt.lease_expires_at is not None
-                    and attempt.lease_expires_at <= moment
+                if (
+                    (run := self._items.get(attempt.run_id)) is not None
+                    and run.status in {RunStatus.QUEUED, RunStatus.RUNNING}
+                    and (run.next_retry_at is None or run.next_retry_at <= moment)
+                    and (
+                        attempt.status is RunAttemptStatus.RETRYABLE
+                        or (
+                            attempt.status is RunAttemptStatus.RUNNING
+                            and attempt.lease_expires_at is not None
+                            and attempt.lease_expires_at <= moment
+                        )
+                    )
                 )
             ]
         return sorted(items, key=lambda item: item.started_at)[: max(1, limit)]
@@ -432,6 +762,23 @@ class InMemoryRunRepository:
             ]
         return sorted(events, key=lambda event: event.thread_sequence)
 
+    def add_outbox(self, run_id: str) -> None:
+        with self._lock:
+            self._outbox.setdefault(run_id, False)
+
+    def list_pending_outbox(self, *, limit: int = 100) -> list[str]:
+        with self._lock:
+            return [
+                run_id
+                for run_id, published in self._outbox.items()
+                if not published
+            ][: max(1, limit)]
+
+    def mark_outbox_published(self, run_id: str) -> None:
+        with self._lock:
+            if run_id in self._outbox:
+                self._outbox[run_id] = True
+
 
 class InMemoryArtifactRepository:
     def __init__(self) -> None:
@@ -441,12 +788,20 @@ class InMemoryArtifactRepository:
     def put(self, artifact: Artifact) -> Artifact:
         artifact = artifact.require_provenance()
         with self._lock:
+            existing = self._items.get(artifact.id)
+            if existing is not None and existing.workspace_id != artifact.workspace_id:
+                raise PermissionError("artifact id belongs to another workspace")
             self._items[artifact.id] = artifact
             return artifact
 
-    def get(self, artifact_id: str) -> Artifact | None:
+    def get(self, artifact_id: str, workspace_id: str | None = None) -> Artifact | None:
         with self._lock:
-            return self._items.get(artifact_id)
+            item = self._items.get(artifact_id)
+            if item is None or (
+                workspace_id is not None and item.workspace_id != workspace_id
+            ):
+                return None
+            return item
 
     def list_for_mission(self, mission_id: str) -> list[Artifact]:
         with self._lock:
@@ -473,18 +828,42 @@ class InMemoryAttachmentRepository:
     def create(self, attachment: Attachment) -> Attachment:
         attachment = Attachment.model_validate(attachment.model_dump())
         with self._lock:
+            existing = self._items.get(attachment.id)
+            if existing is not None and (
+                existing.workspace_id != attachment.workspace_id
+                or existing.owner_user_id != attachment.owner_user_id
+            ):
+                raise PermissionError("attachment id belongs to another tenant")
             self._items.setdefault(attachment.id, attachment)
             return self._items[attachment.id]
 
-    def get(self, attachment_id: str) -> Attachment | None:
+    def get(
+        self,
+        attachment_id: str,
+        workspace_id: str | None = None,
+        owner_user_id: str | None = None,
+    ) -> Attachment | None:
         with self._lock:
-            return self._items.get(attachment_id)
+            item = self._items.get(attachment_id)
+            if (
+                item is None
+                or (workspace_id is not None and item.workspace_id != workspace_id)
+                or (owner_user_id is not None and item.owner_user_id != owner_user_id)
+            ):
+                return None
+            return item
 
     def update(self, attachment: Attachment) -> Attachment:
         attachment = Attachment.model_validate(attachment.model_dump())
         with self._lock:
             if attachment.id not in self._items:
                 raise KeyError(attachment.id)
+            existing = self._items[attachment.id]
+            if (
+                existing.workspace_id != attachment.workspace_id
+                or existing.owner_user_id != attachment.owner_user_id
+            ):
+                raise PermissionError("attachment tenant ownership is immutable")
             self._items[attachment.id] = attachment
             return attachment
 
@@ -680,12 +1059,42 @@ def build_in_memory_repositories(
     runs = InMemoryRunRepository()
     artifacts = InMemoryArtifactRepository()
     memories = InMemoryMemoryRepository()
-    return ConversationRepositories(
+    attachments = InMemoryAttachmentRepository()
+    repositories: ConversationRepositories
+
+    @contextmanager
+    def unit_of_work():
+        mutable = [threads, messages, runs, artifacts, attachments, memories]
+        snapshots = [
+            copy.deepcopy(
+                {
+                    key: value
+                    for key, value in repository.__dict__.items()
+                    if not key.endswith("_lock")
+                }
+            )
+            for repository in mutable
+        ]
+        try:
+            yield repositories
+        except Exception:
+            for repository, snapshot in zip(mutable, snapshots, strict=True):
+                locks = {
+                    key: value
+                    for key, value in repository.__dict__.items()
+                    if key.endswith("_lock")
+                }
+                repository.__dict__.clear()
+                repository.__dict__.update(snapshot)
+                repository.__dict__.update(locks)
+            raise
+
+    repositories = ConversationRepositories(
         threads=threads,
         messages=messages,
         runs=runs,
         artifacts=artifacts,
-        attachments=InMemoryAttachmentRepository(),
+        attachments=attachments,
         memories=memories,
         thread_summaries=InMemoryThreadSummaryRepository(),
         search=InMemorySearchRepository(
@@ -697,4 +1106,6 @@ def build_in_memory_repositories(
             query_embedder=query_embedder,
         ),
         approvals=InMemoryApprovalRepository(),
+        unit_of_work=unit_of_work,
     )
+    return repositories

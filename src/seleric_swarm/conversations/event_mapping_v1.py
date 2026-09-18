@@ -142,7 +142,9 @@ def _safe_payload(source: dict[str, Any], kind: str) -> dict[str, Any]:
     return payload
 
 
-def map_mission_event(event: dict[str, Any], run: Run) -> ActivityEvent | None:
+def map_mission_event(
+    event: dict[str, Any], run: Run, *, attempt_id: str = "legacy"
+) -> ActivityEvent | None:
     """Map one legacy event without forwarding private reasoning fields."""
 
     kind = str(event.get("kind") or event.get("legacy_kind") or "").strip().lower()
@@ -153,7 +155,10 @@ def map_mission_event(event: dict[str, Any], run: Run) -> ActivityEvent | None:
     if not isinstance(created_at, (str, datetime)):
         created_at = run.created_at
     return ActivityEvent(
-        id=f"event_mission_{run.id}_{int(event.get('seq') or 0)}_{kind}",
+        id=(
+            f"event_mission_{run.id}_{attempt_id}_"
+            f"{int(event.get('seq') or 0)}_{kind}"
+        ),
         thread_id=run.thread_id,
         workspace_id=run.workspace_id,
         run_id=run.id,

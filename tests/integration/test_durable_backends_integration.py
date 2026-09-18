@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -69,6 +70,8 @@ async def test_postgres_checkpoint_pool_and_run_leases():
         expected_version=claimed.version,
     )
 
+    if type(asyncio.get_running_loop()).__name__ == "ProactorEventLoop":
+        pytest.skip("psycopg async pools require a selector event loop on Windows")
     provider = PostgresCheckpointProvider(url)
     await provider.setup()
     assert provider.get_checkpointer() is not None

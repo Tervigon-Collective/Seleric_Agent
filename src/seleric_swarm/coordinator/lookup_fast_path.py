@@ -61,18 +61,23 @@ module is part of.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+import copy
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from seleric_swarm.contracts.lookup import EvidenceView, MissionResult, TimeRangeV1, TraceInfo
 from seleric_swarm.coordinator.intake import normalize_query
 from seleric_swarm.domain.models import MetricState, StateRequest
 from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
+from seleric_swarm.utils.ttl_cache import TTLCache
 
 if TYPE_CHECKING:
     from seleric_swarm.coordinator.contracts import DomainQuestion, NormalizedQuery
     from seleric_swarm.runtime import SwarmRuntime
     from seleric_swarm.swarm.providers.base import MetricReading, ProviderBundle
+
+
+_LOOKUP_CACHE: TTLCache[tuple[Any, ...], Any] = TTLCache(maxsize=256, ttl_s=120.0)
 
 
 def _time_range(normalized: NormalizedQuery) -> TimeRangeV1:
@@ -184,13 +189,20 @@ async def _fetch_period_reading(
     daily point* in the range (``state.actual = series[-1].value``), not a
     period total. A single-day range still works fine through this path.
     """
+    cache_key = ("period", domain, metric_id, time_range.start, time_range.end)
+    cached = _LOOKUP_CACHE.get(cache_key)
+    if cached is not None:
+        return copy.deepcopy(cached)
     provider = providers.data_for(domain)
     if provider is None:
         return None
     result = await provider.fetch(
         metric_ids=[metric_id], time_range={"start": time_range.start, "end": time_range.end}
     )
-    return result.readings[0] if result.readings else None
+    reading = result.readings[0] if result.readings else None
+    if reading is not None and reading.value is not None:
+        _LOOKUP_CACHE.set(cache_key, copy.deepcopy(reading))
+    return reading
 
 
 def _reading_evidence_row(metric_id: str, reading: MetricReading, time_range: TimeRangeV1) -> EvidenceView:
@@ -254,6 +266,7 @@ async def run_lookup_fast_path(
     session_id: str | None = None,
     request_id: str | None = None,
     mission_id: str | None = None,
+    context_bundle: dict[str, Any] | None = None,
 ) -> MissionResult | None:
     """Answer a plain lookup query directly via BusinessStateService, no
     agent handoff. Returns ``None`` to signal the caller to fall back to
@@ -273,6 +286,7 @@ async def run_lookup_fast_path(
         mission_id=mid,
         request_id=rid,
         session_id=sid,
+        context_bundle=context_bundle,
     )
     if normalized.unsupported_reason or not normalized.domain_questions:
         return None
@@ -290,13 +304,22 @@ async def run_lookup_fast_path(
         return definition.id if definition else metric_id
 
     async def _fetch(domain: str, metric_id: str, time_range: TimeRangeV1) -> tuple[str, MetricState]:
+        canonical = _canon(metric_id)
+        cache_key = ("state", canonical, time_range.start, time_range.end)
+        cached = _LOOKUP_CACHE.get(cache_key)
+        if cached is not None:
+            return copy.deepcopy(cached)
         request = StateRequest(
             metric_id=metric_id,
             time_range=time_range,
             agent_id=f"{domain}_agent",
             need=["actual", "features"],
         )
-        return _canon(metric_id), await business_state.get_metric_state(request)
+        state = await business_state.get_metric_state(request)
+        fetched = canonical, state
+        if state.status == "OK":
+            _LOOKUP_CACHE.set(cache_key, copy.deepcopy(fetched))
+        return fetched
 
     evidence: list[EvidenceView] = []
     limitations: list[str] = []
@@ -319,8 +342,8 @@ async def run_lookup_fast_path(
             (
                 _canon(metric_id),
                 *await asyncio.gather(
-                    _fetch_period_reading(providers, dq.domain, metric_id, time_range_a),
-                    _fetch_period_reading(providers, dq.domain, metric_id, time_range_b),
+                    _fetch_period_reading(providers, dq.domain, _canon(metric_id), time_range_a),
+                    _fetch_period_reading(providers, dq.domain, _canon(metric_id), time_range_b),
                 ),
             )
             for dq in ungrained_dqs
@@ -415,7 +438,7 @@ async def run_lookup_fast_path(
                 providers = _build_providers(runtime)
                 readings = await asyncio.gather(
                     *[
-                        _fetch_period_reading(providers, domain, metric_id, time_range)
+                        _fetch_period_reading(providers, domain, _canon(metric_id), time_range)
                         for domain, metric_id in lookup_pairs
                     ]
                 )

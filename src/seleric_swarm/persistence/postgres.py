@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+
 from seleric_swarm.contracts.lookup import MissionResult
 from seleric_swarm.persistence.memory import (
     InMemoryMissionStore,
@@ -20,36 +23,17 @@ from seleric_swarm.persistence.memory import (
 class PostgresMissionStore:
     """Durable store backed by the ``missions`` / ``mission_events`` tables."""
 
-    def __init__(self, database_url: str) -> None:
-        from sqlalchemy import create_engine, text
+    def __init__(self, database_url: str | Engine) -> None:
+        from sqlalchemy import text
 
-        self._engine = create_engine(database_url)
+        self._engine = (
+            create_engine(database_url, pool_pre_ping=True)
+            if isinstance(database_url, str)
+            else database_url
+        )
         self._text = text
-        self._results: dict[str, MissionResult] = {}
-        self._raw: dict[str, dict[str, Any]] = {}
 
     def put(self, result: MissionResult, raw_state: dict[str, Any] | None = None) -> None:
-        # Refuse to clobber cancelled missions (async cancel vs late job completion).
-        existing = self._results.get(result.mission_id) or self.get(result.mission_id)
-        existing_raw = self._raw.get(result.mission_id) or self.get_raw(result.mission_id)
-        if result.status != "cancelled":
-            if existing is not None and existing.status == "cancelled":
-                return
-            if isinstance(existing_raw, dict) and existing_raw.get("status") == "cancelled":
-                return
-        else:
-            # Cancel is CAS: only overwrite while still running.
-            cur = None
-            if isinstance(existing_raw, dict):
-                cur = existing_raw.get("status")
-            if cur is None and existing is not None:
-                cur = existing.status
-            if cur is not None and str(cur) != "running":
-                return
-            if existing is None and existing_raw is None:
-                # Allow initial cancel seed only when something exists to cancel.
-                pass
-
         payload = result.model_dump(mode="json")
         raw = dict(raw_state or {})
         route = str(raw.get("route") or ("swarm" if "artifacts" in raw else "lookup"))
@@ -57,6 +41,7 @@ class PostgresMissionStore:
         # Lookup missions may only have events on raw LangGraph state.
         if not events and isinstance(raw.get("events"), list):
             events = [e for e in raw["events"] if isinstance(e, dict)]
+        events = filter_events(events, limit=max(1, len(events)))
 
         with self._engine.begin() as conn:
             write = conn.execute(
@@ -117,10 +102,6 @@ class PostgresMissionStore:
             if int(getattr(write, "rowcount", 0) or 0) == 0:
                 return
 
-            self._results[result.mission_id] = result
-            if raw_state is not None:
-                self._raw[result.mission_id] = raw_state
-
             # Append/upsert by source sequence so repeated persistence cannot erase
             # events observed by a concurrent reader.
             for event_position, event in enumerate(events, start=1):
@@ -144,7 +125,7 @@ class PostgresMissionStore:
                         "agent_id": event.get("agent_id") or event.get("by"),
                         "event_type": str(event.get("kind") or "event"),
                         "payload": _json(event),
-                        "source_seq": int(event.get("seq") or 0) or -event_position,
+                    "source_seq": int(event.get("seq") or event_position),
                     },
                 )
 
@@ -229,8 +210,6 @@ class PostgresMissionStore:
                 )
 
     def get(self, mission_id: str) -> MissionResult | None:
-        if mission_id in self._results:
-            return self._results[mission_id]
         with self._engine.begin() as conn:
             row = conn.execute(
                 self._text(
@@ -249,12 +228,9 @@ class PostgresMissionStore:
             result = MissionResult.model_validate(data)
         except Exception:
             return None
-        self._results[mission_id] = result
         return result
 
     def get_raw(self, mission_id: str) -> dict[str, Any] | None:
-        if mission_id in self._raw:
-            return self._raw[mission_id]
         with self._engine.begin() as conn:
             row = conn.execute(
                 self._text(
@@ -275,7 +251,6 @@ class PostgresMissionStore:
                 raw["workspace_id"] = row.get("workspace_id")
             if row.get("owner_user_id") is not None:
                 raw["owner_user_id"] = row.get("owner_user_id")
-            self._raw[mission_id] = raw
             return raw
         # Fall back to result_json wrapped for lookup missions
         result_json = row.get("result_json")
@@ -290,7 +265,6 @@ class PostgresMissionStore:
                 "workspace_id": row.get("workspace_id"),
                 "owner_user_id": row.get("owner_user_id"),
             }
-            self._raw[mission_id] = wrapped
             return wrapped
         return None
 
@@ -310,7 +284,7 @@ class PostgresMissionStore:
                     """
                     SELECT payload FROM mission_events
                     WHERE mission_id = :mission_id
-                    ORDER BY event_id ASC
+                    ORDER BY source_seq NULLS LAST, event_id ASC
                     """
                 ),
                 {"mission_id": mission_id},
@@ -328,7 +302,14 @@ class PostgresMissionStore:
             events = extract_events(self.get_raw(mission_id))
         return filter_events(events, family=family, after_seq=after_seq, limit=limit)
 
-    def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
+    def list_missions(
+        self,
+        *,
+        limit: int = 50,
+        workspace_id: str | None = None,
+        owner_user_id: str | None = None,
+        statuses: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Recent missions, newest first (durable — survives restart)."""
         with self._engine.begin() as conn:
             rows = conn.execute(
@@ -337,11 +318,21 @@ class PostgresMissionStore:
                     SELECT mission_id, user_query, status, route, mission_lead,
                            workspace_id, owner_user_id
                     FROM missions
+                    WHERE (CAST(:workspace_id AS TEXT) IS NULL
+                           OR workspace_id=:workspace_id)
+                      AND (CAST(:owner_user_id AS TEXT) IS NULL
+                           OR owner_user_id=:owner_user_id)
+                      AND (CAST(:statuses AS TEXT[]) IS NULL OR status = ANY(:statuses))
                     ORDER BY updated_at DESC
                     LIMIT :limit
                     """
                 ),
-                {"limit": max(1, int(limit))},
+                {
+                    "limit": max(1, int(limit)),
+                    "workspace_id": workspace_id,
+                    "owner_user_id": owner_user_id,
+                    "statuses": sorted(statuses) if statuses else None,
+                },
             ).mappings().all()
         return [
             {
@@ -364,9 +355,14 @@ def _json(value: Any) -> str:
     return json.dumps(value, default=str)
 
 
-def build_store(backend: str, database_url: str) -> InMemoryMissionStore | PostgresMissionStore:
+def build_store(
+    backend: str,
+    database_url: str,
+    *,
+    engine: Engine | None = None,
+) -> InMemoryMissionStore | PostgresMissionStore:
     if backend == "postgres":
         if not (database_url or "").strip():
             raise ValueError("persistence_backend=postgres requires a non-empty database_url")
-        return PostgresMissionStore(database_url)
+        return PostgresMissionStore(engine or database_url)
     return InMemoryMissionStore()

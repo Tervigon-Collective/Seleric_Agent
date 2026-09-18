@@ -32,6 +32,7 @@ export default function App() {
   const loadThreads = useConversationStore((s) => s.loadThreads);
   const error = useConversationStore((s) => s.error);
   const selectThread = useConversationStore((s) => s.selectThread);
+  const clearSelection = useConversationStore((s) => s.clearSelection);
   const selectedThreadId = useConversationStore((s) => s.selectedThreadId);
   useEffect(() => {
     if (window.matchMedia?.("(max-width: 900px)").matches) {
@@ -65,6 +66,8 @@ export default function App() {
       setWorkspace(route.workspace);
       if (route.threadId && route.threadId !== useConversationStore.getState().selectedThreadId) {
         void selectThread(route.threadId);
+      } else if (!route.threadId) {
+        clearSelection();
       }
     };
     window.addEventListener("keydown", keyboard);
@@ -75,7 +78,7 @@ export default function App() {
       window.removeEventListener("seleric:search-result", result);
       window.removeEventListener("popstate", popstate);
     };
-  }, [selectThread, setWorkspace]);
+  }, [clearSelection, selectThread, setWorkspace]);
 
   if (workspace === "office") {
     return (

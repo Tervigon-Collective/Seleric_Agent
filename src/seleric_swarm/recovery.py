@@ -7,13 +7,20 @@ import asyncio
 import contextlib
 import importlib
 import inspect
+import random
 import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from seleric_swarm.conversations.contracts import Run, RunAttempt, RunAttemptStatus, RunStatus
+from seleric_swarm.conversations.contracts import (
+    ActivityEvent,
+    Run,
+    RunAttempt,
+    RunAttemptStatus,
+    RunStatus,
+)
 from seleric_swarm.conversations.repositories import RunRepository
 
 
@@ -37,6 +44,8 @@ class RunExecutionResult:
     status: RunStatus = RunStatus.COMPLETED
     error_code: str | None = None
     error_message: str | None = None
+    retryable: bool = False
+    terminal_event: ActivityEvent | None = None
     on_committed: Callable[[RunStatus], Awaitable[None] | None] | None = None
 
 
@@ -46,15 +55,26 @@ class ResumableRunExecutor(Protocol):
     ) -> RunExecutionResult | None: ...
 
 
+class RetryableExecutionError(RuntimeError):
+    pass
+
+
 class RunWorkQueue(Protocol):
     async def enqueue(self, run_id: str) -> None: ...
     async def close(self) -> None: ...
 
 
 class RunRecoveryService:
-    def __init__(self, runs: RunRepository, *, retry_delay_s: float = 5.0) -> None:
+    def __init__(
+        self,
+        runs: RunRepository,
+        *,
+        retry_delay_s: float = 5.0,
+        retry_jitter_s: float = 1.0,
+    ) -> None:
         self._runs = runs
         self._retry_delay_s = retry_delay_s
+        self._retry_jitter_s = retry_jitter_s
 
     def _next_attempt(
         self,
@@ -66,61 +86,20 @@ class RunRecoveryService:
         error_message: str,
         lease_expired_before: datetime | None = None,
     ) -> bool:
-        can_retry = attempt.retryable and attempt.attempt_number < run.max_attempts
-        updated = self._runs.compare_and_set_attempt(
+        retry_delay = self._retry_delay_s * (2 ** max(0, attempt.attempt_number - 1))
+        if retry_delay > 0:
+            retry_delay += random.uniform(0.0, max(0.0, self._retry_jitter_s))
+        transition = self._runs.transition_failed_attempt(
             attempt.id,
-            RunAttemptStatus.RUNNING,
-            RunAttemptStatus.FAILED,
             worker_id=attempt.worker_id if lease_expired_before is None else None,
             expected_version=attempt.version,
             lease_expired_before=lease_expired_before,
             now=moment,
+            retry_delay_seconds=retry_delay,
             error_code=error_code,
             error_message=error_message,
         )
-        if updated is None:
-            return False
-        current_run = self._runs.get(run.id)
-        if current_run is None or current_run.status is RunStatus.CANCELLED:
-            return False
-        if not can_retry:
-            self._runs.compare_and_set_status(
-                run.id,
-                {RunStatus.RUNNING, RunStatus.QUEUED},
-                RunStatus.FAILED,
-                now=moment,
-            )
-            return False
-
-        next_number = attempt.attempt_number + 1
-        next_attempt = self._runs.add_attempt(
-            RunAttempt(
-                run_id=run.id,
-                attempt_number=next_number,
-                status=RunAttemptStatus.RETRYABLE,
-                retryable=attempt.retryable,
-            )
-        )
-        queued_run = self._runs.compare_and_set_status(
-            run.id,
-            {RunStatus.RUNNING, RunStatus.QUEUED},
-            RunStatus.QUEUED,
-            now=moment,
-        )
-        if queued_run is None:
-            return False
-        self._runs.update(
-            queued_run.model_copy(
-                update={
-                    "current_attempt": next_attempt.attempt_number,
-                    "retry_count": min(
-                        current_run.retry_count + 1, current_run.max_attempts - 1
-                    ),
-                    "next_retry_at": moment + timedelta(seconds=self._retry_delay_s),
-                }
-            )
-        )
-        return True
+        return transition == "retryable"
 
     def fail_attempt(
         self,
@@ -190,18 +169,24 @@ class RunRecoveryWorker:
         lease_s: float = 60.0,
         heartbeat_s: float = 15.0,
         retry_delay_s: float = 5.0,
+        retry_jitter_s: float = 1.0,
     ) -> None:
         self._runs = runs
         self._executor = executor
         self._worker_id = worker_id
         self._lease_s = lease_s
         self._heartbeat_s = min(max(0.1, heartbeat_s), max(0.1, lease_s / 2))
-        self._recovery = RunRecoveryService(runs, retry_delay_s=retry_delay_s)
+        self._recovery = RunRecoveryService(
+            runs,
+            retry_delay_s=retry_delay_s,
+            retry_jitter_s=retry_jitter_s,
+        )
 
     async def _heartbeat(self, attempt: RunAttempt) -> None:
         while True:
             await asyncio.sleep(self._heartbeat_s)
-            renewed = self._runs.heartbeat(
+            renewed = await asyncio.to_thread(
+                self._runs.heartbeat,
                 attempt.id,
                 self._worker_id,
                 self._lease_s,
@@ -221,7 +206,11 @@ class RunRecoveryWorker:
                 await heartbeat
             execution_result = await execution
             outcome = execution_result or RunExecutionResult()
-            persisted_run = self._runs.get(run.id)
+            if outcome.status is RunStatus.FAILED and outcome.retryable:
+                raise RetryableExecutionError(
+                    outcome.error_message or outcome.error_code or "transient mission failure"
+                )
+            persisted_run = await asyncio.to_thread(self._runs.get, run.id)
             if persisted_run is None:
                 raise RuntimeError(f"run {run.id} disappeared during execution")
             final_status = (
@@ -229,30 +218,32 @@ class RunRecoveryWorker:
                 if persisted_run.status is RunStatus.CANCELLED
                 else outcome.status
             )
-            attempt_status = {
-                RunStatus.COMPLETED: RunAttemptStatus.COMPLETED,
-                RunStatus.CANCELLED: RunAttemptStatus.CANCELLED,
-            }.get(final_status, RunAttemptStatus.FAILED)
-            updated = self._runs.compare_and_set_attempt(
+            terminal_event = outcome.terminal_event or ActivityEvent(
+                id=f"event_terminal_{run.id}_{attempt.id}",
+                thread_id=run.thread_id,
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+                owner_user_id=run.requested_by_user_id,
+                event_type="run.completed",
+                payload={
+                    "mission_id": run.mission_id,
+                    "attempt_id": attempt.id,
+                    "attempt_number": attempt.attempt_number,
+                },
+            )
+            committed = await asyncio.to_thread(
+                self._runs.finalize_attempt,
                 attempt.id,
-                RunAttemptStatus.RUNNING,
-                attempt_status,
                 worker_id=self._worker_id,
                 expected_version=attempt.version,
+                requested_status=final_status,
+                terminal_event=terminal_event,
                 error_code=outcome.error_code,
                 error_message=outcome.error_message,
             )
-            if updated is None:
+            if committed is None:
                 raise RuntimeError("run attempt lease was lost before completion")
-            committed_run = self._runs.compare_and_set_status(
-                run.id,
-                {RunStatus.RUNNING, RunStatus.QUEUED},
-                final_status,
-            )
-            if committed_run is None:
-                committed_run = self._runs.get(run.id)
-            if committed_run is None:
-                raise RuntimeError(f"run {run.id} disappeared before completion")
+            committed_run, _, _ = committed
             committed_status = committed_run.status
             if committed_status not in {
                 RunStatus.COMPLETED,
@@ -274,7 +265,8 @@ class RunRecoveryWorker:
             execution.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await execution
-            retryable = self._recovery.fail_attempt(
+            retryable = await asyncio.to_thread(
+                self._recovery.fail_attempt,
                 run,
                 attempt,
                 error_code="EXECUTION_FAILED",
@@ -298,21 +290,31 @@ class RunRecoveryWorker:
     async def run_once(
         self, *, now: datetime | None = None, limit: int = 100
     ) -> WorkerResult:
-        moment = now or datetime.now(UTC)
-        self._recovery.recover_expired(now=moment, limit=limit)
+        scan_moment = now or datetime.now(UTC)
+        await asyncio.to_thread(
+            self._recovery.recover_expired, now=scan_moment, limit=limit
+        )
         claimed = completed = retryable = failed = 0
-        for candidate in self._runs.list_recoverable(now=moment, limit=limit):
+        candidates = await asyncio.to_thread(
+            self._runs.list_recoverable, now=scan_moment, limit=limit
+        )
+        for candidate in candidates:
             if candidate.status is not RunAttemptStatus.RETRYABLE:
                 continue
-            run = self._runs.get(candidate.run_id)
+            claim_moment = now or datetime.now(UTC)
+            run = await asyncio.to_thread(self._runs.get, candidate.run_id)
             if (
                 run is None
                 or run.status is RunStatus.CANCELLED
-                or (run.next_retry_at is not None and run.next_retry_at > moment)
+                or (run.next_retry_at is not None and run.next_retry_at > claim_moment)
             ):
                 continue
-            attempt = self._runs.claim(
-                run.id, self._worker_id, self._lease_s, now=moment
+            attempt = await asyncio.to_thread(
+                self._runs.claim,
+                run.id,
+                self._worker_id,
+                self._lease_s,
+                now=claim_moment,
             )
             if attempt is None:
                 continue
@@ -365,6 +367,11 @@ class InProcessRunQueue:
         if self._tasks:
             await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
 
+    async def flush(self) -> None:
+        """Wait for currently scheduled work without closing the reusable queue."""
+        if self._tasks:
+            await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
+
 
 def build_run_queue(
     runtime: Any,
@@ -384,6 +391,7 @@ def build_run_queue(
             lease_s=runtime.settings.run_lease_s,
             heartbeat_s=runtime.settings.run_heartbeat_s,
             retry_delay_s=runtime.settings.run_retry_delay_s,
+            retry_jitter_s=runtime.settings.run_retry_jitter_s,
         )
     )
 
@@ -413,6 +421,7 @@ async def _main() -> None:
     recovery = RunRecoveryService(
         runtime.conversations.runs,
         retry_delay_s=runtime.settings.run_retry_delay_s,
+        retry_jitter_s=runtime.settings.run_retry_jitter_s,
     )
     worker = None
     if args.executor:
@@ -431,6 +440,7 @@ async def _main() -> None:
             lease_s=runtime.settings.run_lease_s,
             heartbeat_s=runtime.settings.run_heartbeat_s,
             retry_delay_s=runtime.settings.run_retry_delay_s,
+            retry_jitter_s=runtime.settings.run_retry_jitter_s,
         )
     try:
         if args.once:

@@ -4,7 +4,7 @@ import json
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     run_heartbeat_s: float = 15.0
     run_max_attempts: int = 3
     run_retry_delay_s: float = 5.0
+    run_retry_jitter_s: float = 1.0
+    shutdown_timeout_s: float = 10.0
     blob_backend: Literal["local", "minio"] = "local"
     blob_local_path: str = ".data/attachments"
     attachment_max_size_bytes: int = 25 * 1024 * 1024
@@ -43,6 +45,11 @@ class Settings(BaseSettings):
     minio_secret_key: str = ""
     minio_bucket: str = "seleric-attachments"
     minio_secure: bool = True
+    malware_scanner_backend: Literal["unavailable", "clamav"] = "unavailable"
+    clamav_host: str = ""
+    clamav_port: int = 3310
+    clamav_timeout_s: float = 5.0
+    readiness_timeout_s: float = 2.0
 
     llm_provider: Literal["fake", "azure_openai_compatible"] = "azure_openai_compatible"
     llm_timeout_s: float = 30.0
@@ -118,6 +125,12 @@ class Settings(BaseSettings):
     require_skeptic_for_causal: bool = True
     require_provenance_for_numeric: bool = True
 
+    # V3 refactor (docs/refactor/) — the new Agent[SelericDeps, MissionResult]
+    # loop. Sprint 1: not mounted into main.py at all, so this flag is not yet
+    # read anywhere — it documents the gate Sprint 4's cutover flips, per the
+    # strangler-fig migration rule (docs/refactor/00_OVERVIEW.md §5).
+    v3_agent_enabled: bool = False
+
     workflow_name: str = "lookup_v1"
     workflow_version: str = "1.0.0"
     # Swarm mission control plane (Coordinator V1). Only "swarm_v2" exists today —
@@ -167,6 +180,10 @@ class Settings(BaseSettings):
         "api_host",
         "redis_url",
         "run_worker_id",
+        "minio_endpoint",
+        "minio_access_key",
+        "minio_secret_key",
+        "clamav_host",
         mode="before",
     )
     @classmethod
@@ -202,17 +219,86 @@ class Settings(BaseSettings):
             raise ValueError("minio_bucket must not be blank")
         return value
 
+    @model_validator(mode="after")
+    def valid_runtime_limits(self) -> Settings:
+        positive = {
+            "run_lease_s": self.run_lease_s,
+            "run_heartbeat_s": self.run_heartbeat_s,
+            "llm_timeout_s": self.llm_timeout_s,
+            "a2a_timeout_s": self.a2a_timeout_s,
+            "mission_timeout_s": self.mission_timeout_s,
+            "shutdown_timeout_s": self.shutdown_timeout_s,
+            "clamav_timeout_s": self.clamav_timeout_s,
+            "readiness_timeout_s": self.readiness_timeout_s,
+        }
+        invalid = [name for name, value in positive.items() if value <= 0]
+        if invalid:
+            raise ValueError(f"{', '.join(invalid)} must be positive")
+        if self.run_heartbeat_s >= self.run_lease_s:
+            raise ValueError("run_heartbeat_s must be less than run_lease_s")
+        if self.run_max_attempts < 1:
+            raise ValueError("run_max_attempts must be at least 1")
+        if self.run_retry_delay_s < 0:
+            raise ValueError("run_retry_delay_s must not be negative")
+        if self.run_retry_jitter_s < 0:
+            raise ValueError("run_retry_jitter_s must not be negative")
+        if self.shutdown_timeout_s <= 0:
+            raise ValueError("shutdown_timeout_s must be positive")
+        if self.llm_max_retries < 0:
+            raise ValueError("llm_max_retries must not be negative")
+        if not 1 <= self.clamav_port <= 65535:
+            raise ValueError("clamav_port must be between 1 and 65535")
+        return self
+
     def is_dev_surface(self) -> bool:
         return self.app_env.lower() in {"local", "development", "dev", "test"}
+
+    def validate_for_startup(self) -> None:
+        """Reject unsafe production combinations while preserving local/test defaults."""
+        if self.is_dev_surface():
+            return
+        errors: list[str] = []
+        if not self.api_key.strip():
+            errors.append("api_key must be configured")
+        if self.llm_provider == "fake":
+            errors.append("llm_provider=fake is not allowed")
+        elif not (
+            self.azure_openai_endpoint.strip()
+            and self.azure_openai_api_key.strip()
+            and self.primary_model()
+        ):
+            errors.append("Azure LLM endpoint, API key, and model must be configured")
+        if self.persistence_backend != "postgres" or not self.database_url.strip():
+            errors.append("PostgreSQL persistence and database_url are required")
+        if self.checkpoint_backend != "postgres":
+            errors.append("checkpoint_backend=postgres is required")
+        if self.cancellation_backend != "redis" or not self.redis_url.strip():
+            errors.append("Redis cancellation and redis_url are required")
+        if self.resolved_event_notifier_backend() != "redis" or not self.redis_url.strip():
+            errors.append("Redis event notification is required")
+        if self.blob_backend != "minio":
+            errors.append("blob_backend=minio is required")
+        elif not all(
+            value.strip()
+            for value in (
+                self.minio_endpoint,
+                self.minio_access_key,
+                self.minio_secret_key,
+                self.minio_bucket,
+            )
+        ):
+            errors.append("MinIO endpoint, credentials, and bucket are required")
+        if self.malware_scanner_backend != "clamav" or not self.clamav_host.strip():
+            errors.append("a ClamAV malware scanner host is required")
+        if not self.seleric_mcp_url.strip() or not self.seleric_mcp_token.strip():
+            errors.append("Seleric MCP URL and token are required")
+        if errors:
+            raise ValueError("Unsafe production settings: " + "; ".join(errors))
 
     def resolved_event_notifier_backend(self) -> Literal["memory", "redis"]:
         if self.event_notifier_backend != "auto":
             return self.event_notifier_backend
-        if (
-            not self.is_dev_surface()
-            and self.persistence_backend == "postgres"
-            and self.redis_url
-        ):
+        if not self.is_dev_surface() and self.persistence_backend == "postgres" and self.redis_url:
             return "redis"
         return "memory"
 

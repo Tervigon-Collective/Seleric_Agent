@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai import RunContext
 
 from seleric_swarm.agent.contracts import EvidenceArtifact, ToolResult
-from seleric_swarm.conversations.contracts import ArtifactProvenance
+from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.mcp_query import build_metrics_query_args, call_metrics_query, dimension_value
 
 if TYPE_CHECKING:
@@ -140,13 +140,15 @@ async def query_metrics(
         source_query=args,
     )
     artifact = ctx.deps.artifact_store.put(
-        artifact_type="evidence",
-        payload=evidence.model_dump(mode="json"),
-        classification="factual",
-        workspace_id=ctx.deps.principal.workspace_id,
-        mission_id=ctx.deps.mission_id,
-        evidence_ids=[f"raw:{metric_id}:{period_start.date()}:{period_end.date()}"],
-        provenance=provenance,
+        Artifact(
+            workspace_id=ctx.deps.principal.workspace_id,
+            artifact_type="evidence",
+            payload=evidence.model_dump(mode="json"),
+            classification="factual",
+            evidence_ids=[f"raw:{metric_id}:{period_start.date()}:{period_end.date()}"],
+            provenance=provenance,
+            mission_id=ctx.deps.mission_id,
+        )
     )
     return ToolResult(
         success=True,
@@ -219,13 +221,15 @@ async def drilldown(
             source_query={"parent_query_id": parent["query_id"], "target_dimensions": [dimension]},
         )
         artifact = ctx.deps.artifact_store.put(
-            artifact_type="evidence",
-            payload=evidence.model_dump(mode="json"),
-            classification="factual",
-            workspace_id=ctx.deps.principal.workspace_id,
-            mission_id=ctx.deps.mission_id,
-            evidence_ids=[f"raw:{metric_id}:{dimension}:{dimension_value(row, dimension)}"],
-            provenance=provenance,
+            Artifact(
+                workspace_id=ctx.deps.principal.workspace_id,
+                artifact_type="evidence",
+                payload=evidence.model_dump(mode="json"),
+                classification="factual",
+                evidence_ids=[f"raw:{metric_id}:{dimension}:{dimension_value(row, dimension)}"],
+                provenance=provenance,
+                mission_id=ctx.deps.mission_id,
+            )
         )
         artifact_ids.append(artifact.id)
     if not artifact_ids:

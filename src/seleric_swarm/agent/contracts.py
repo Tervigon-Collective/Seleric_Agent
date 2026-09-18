@@ -11,11 +11,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from seleric_swarm.conversations.contracts import ArtifactProvenance, ContextBundle, Principal
+
+if TYPE_CHECKING:
+    from seleric_swarm.state.artifacts import ArtifactStore
 
 
 @dataclass(frozen=True)
@@ -36,20 +39,6 @@ class SelericMcpClient(Protocol):
     async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any: ...
 
 
-class ArtifactStoreProtocol(Protocol):
-    def put(
-        self,
-        *,
-        artifact_type: str,
-        payload: dict[str, Any],
-        classification: Literal["ui", "factual", "derived"],
-        workspace_id: str,
-        mission_id: str | None = None,
-        evidence_ids: list[str] | None = None,
-        provenance: ArtifactProvenance | None = None,
-    ) -> Any: ...
-
-
 @dataclass(frozen=True)
 class SelericDeps:
     """One instance per mission run, immutable for the run's lifetime."""
@@ -62,7 +51,7 @@ class SelericDeps:
     trace_id: str
     context: ContextBundle
     mcp_client: SelericMcpClient
-    artifact_store: ArtifactStoreProtocol
+    artifact_store: ArtifactStore
     limits: ExecutionLimits
 
 

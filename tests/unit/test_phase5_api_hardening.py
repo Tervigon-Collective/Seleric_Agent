@@ -299,7 +299,7 @@ def test_attachment_association_is_all_or_none_and_race_safe() -> None:
     assert repository.get("ready").message_id in {"message-one", "message-two"}
 
 
-def test_api_terminalizes_run_when_attachment_association_loses_race(
+def test_api_rolls_back_run_when_attachment_association_loses_race(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client, repositories, thread = _client(
@@ -340,8 +340,7 @@ def test_api_terminalizes_run_when_attachment_association_loses_race(
     )
 
     assert response.status_code == 409
-    [run] = repositories.runs.list_for_owner("w", "u")
-    assert run.status.value == "FAILED"
+    assert repositories.runs.list_for_owner("w", "u") == []
     assert repositories.runs.list_recoverable() == []
 
 

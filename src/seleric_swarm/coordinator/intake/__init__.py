@@ -278,6 +278,7 @@ async def normalize_query(
     mission_id: str | None = None,
     request_id: str | None = None,
     session_id: str | None = None,
+    context_bundle: dict[str, Any] | None = None,
 ) -> NormalizedQuery:
     """Classify a natural-language query via the LLM + live catalogue.
 
@@ -305,6 +306,7 @@ async def normalize_query(
         mission_id=mission_id,
         request_id=request_id,
         session_id=session_id,
+        context_bundle=context_bundle,
     )
     if llm_result is None:
         return _unsupported(query, requested_outputs, reason=UNSUPPORTED_NO_LLM)
@@ -327,6 +329,7 @@ async def normalize_query(
             mission_id=mission_id,
             request_id=request_id,
             session_id=session_id,
+            context_bundle=context_bundle,
         )
         if retry_result is not None:
             llm_result = retry_result

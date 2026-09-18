@@ -188,6 +188,11 @@ def narrate_overview(
             lines.append(f"{s.domain}: no threshold breaches ({status_plain}).")
         if detail:
             lines.extend(_metric_detail_line(m) for m in s.metrics)
+    if not lines:
+        lines.append(
+            "I couldn’t load a current business overview yet. The live data sources "
+            "are unavailable or the scheduled health snapshots have not completed."
+        )
     limitations = [
         f"{domain}: {_plain_unavailable_reason(reason)}." for domain, reason in unavailable
     ]

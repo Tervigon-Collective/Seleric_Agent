@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import socket
+import struct
 import tempfile
 from collections.abc import AsyncIterable, Iterator
 from dataclasses import dataclass
@@ -43,6 +45,40 @@ class UnavailableMalwareScanner:
         return MalwareScanResult(MalwareScanStatus.UNAVAILABLE, "scanner not configured")
 
 
+class ClamAVMalwareScanner:
+    """Scan files with clamd's bounded INSTREAM protocol."""
+
+    def __init__(self, host: str, port: int = 3310, timeout_s: float = 5.0) -> None:
+        self.host = host
+        self.port = port
+        self.timeout_s = timeout_s
+
+    def ping(self) -> bool:
+        with socket.create_connection((self.host, self.port), timeout=self.timeout_s) as client:
+            client.settimeout(self.timeout_s)
+            client.sendall(b"zPING\0")
+            return client.recv(16).rstrip(b"\0") == b"PONG"
+
+    def scan(self, path: Path) -> MalwareScanResult:
+        try:
+            with socket.create_connection((self.host, self.port), timeout=self.timeout_s) as client:
+                client.settimeout(self.timeout_s)
+                client.sendall(b"zINSTREAM\0")
+                with path.open("rb") as source:
+                    while chunk := source.read(1024 * 1024):
+                        client.sendall(struct.pack("!I", len(chunk)))
+                        client.sendall(chunk)
+                client.sendall(struct.pack("!I", 0))
+                response = client.recv(4096).rstrip(b"\0").decode("utf-8", errors="replace")
+        except (OSError, TimeoutError) as exc:
+            return MalwareScanResult(MalwareScanStatus.UNAVAILABLE, type(exc).__name__)
+        if response.endswith(" OK"):
+            return MalwareScanResult(MalwareScanStatus.CLEAN)
+        if response.endswith(" FOUND"):
+            return MalwareScanResult(MalwareScanStatus.QUARANTINED, response)
+        return MalwareScanResult(MalwareScanStatus.FAILED, response)
+
+
 # Compatibility import for callers that previously selected the default scanner explicitly.
 NoOpMalwareScanner = UnavailableMalwareScanner
 
@@ -78,6 +114,7 @@ class BlobStore(Protocol):
 
 
 class MinioClient(Protocol):
+    def bucket_exists(self, bucket_name: str) -> bool: ...
     def put_object(
         self,
         bucket_name: str,

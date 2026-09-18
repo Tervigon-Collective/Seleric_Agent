@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from seleric_swarm.orchestration import dispatch
 from seleric_swarm.orchestration.dispatch import route_for
 
 
@@ -30,3 +31,97 @@ from seleric_swarm.orchestration.dispatch import route_for
 )
 async def test_route_for_lookup_vs_swarm(runtime, query, expected):
     assert await route_for(runtime, query=query) == expected
+
+
+@pytest.mark.asyncio
+async def test_greeting_completes_without_classifier_or_swarm(runtime, monkeypatch):
+    async def fail_route(*args, **kwargs):
+        raise AssertionError("a greeting must not invoke business routing")
+
+    monkeypatch.setattr(dispatch, "route_for", fail_route)
+
+    response = await dispatch.run_any_mission(
+        runtime,
+        query="Hi!",
+        mission_id="MS-greeting",
+        request_id="request-greeting",
+        session_id="thread-greeting",
+    )
+
+    assert response["route"] == "conversation"
+    assert response["result"]["status"] == "completed"
+    assert "What would you like to investigate?" in response["result"]["final_response"]
+    assert runtime.store.get("MS-greeting").status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_business_overview_returns_without_classifier_or_swarm(runtime, monkeypatch):
+    async def fail_route(*args, **kwargs):
+        raise AssertionError("a broad overview must not wait for business routing")
+
+    async def no_snapshots(*args, **kwargs):
+        return [], [("commerce", "no snapshot available")]
+
+    monkeypatch.setattr(dispatch, "route_for", fail_route)
+    monkeypatch.setattr(dispatch, "read_overview_snapshots", no_snapshots)
+
+    response = await dispatch.run_any_mission(
+        runtime,
+        query="How are we doing today?",
+        mission_id="MS-overview",
+        request_id="request-overview",
+        session_id="thread-overview",
+    )
+
+    assert response["workflow"] == "overview_snapshot"
+    assert response["result"]["status"] == "partial"
+    assert "couldn’t load a current business overview" in response["result"]["final_response"]
+    assert runtime.store.get("MS-overview").status == "partial"
+
+
+@pytest.mark.asyncio
+async def test_lookup_mission_forwards_context_bundle(runtime, monkeypatch):
+    from seleric_swarm.contracts.lookup import EvidenceView, MissionResult, TraceInfo
+
+    seen: dict = {}
+
+    async def fake_lookup(*args, **kwargs):
+        seen["context_bundle"] = kwargs.get("context_bundle")
+        return MissionResult(
+            mission_id="MS-ctx",
+            status="completed",
+            query_class="lookup",
+            mission_lead="commerce_agent",
+            initial_mission_lead="commerce_agent",
+            evidence=[
+                EvidenceView(
+                    evidence_id="EV-1",
+                    metric_or_fact="metric.gross_sales",
+                    value=4789.73,
+                    time_range={"start": "2026-09-18", "end": "2026-09-18"},
+                    source="test",
+                )
+            ],
+            limitations=[],
+            final_response="gross sales: 4789.73",
+            trace=TraceInfo(request_id="r", session_id="s"),
+        )
+
+    monkeypatch.setattr(dispatch, "run_lookup_fast_path", fake_lookup)
+    bundle = {
+        "recent_messages": [
+            {"role": "USER", "parts": [{"type": "TEXT", "content": "gross sales today"}]}
+        ]
+    }
+
+    response = await dispatch.run_any_mission(
+        runtime,
+        query="gross sale",
+        mission_id="MS-ctx",
+        request_id="request-ctx",
+        session_id="thread-ctx",
+        context_bundle=bundle,
+    )
+
+    assert response["route"] == "lookup"
+    assert seen["context_bundle"] is bundle

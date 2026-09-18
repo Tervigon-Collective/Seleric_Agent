@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { conversationsApi } from "../api/conversations";
+import { ApiError } from "../api/http";
 import { useOffice } from "../store";
 import { useConversationStore } from "../stores/conversation";
 
@@ -92,6 +93,92 @@ describe("conversation store submit", () => {
     expect(state.threads[0]?.title).toBe("Investigate checkout conversion");
     expect(state.messages["new-thread"][0]?.role).toBe("USER");
     useConversationStore.getState().reset();
+  });
+
+  it("clears a stale running state when no conversations remain", async () => {
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: "removed-thread",
+      threads: [],
+      messages: { "removed-thread": [] },
+      submitting: true,
+      currentRunId: "orphaned-run",
+    });
+    vi.spyOn(conversationsApi, "listThreads").mockResolvedValue([]);
+
+    await useConversationStore.getState().loadThreads();
+
+    const state = useConversationStore.getState();
+    expect(state.selectedThreadId).toBeNull();
+    expect(state.submitting).toBe(false);
+    expect(state.currentRunId).toBeNull();
+    expect(state.messages).toEqual({});
+  });
+
+  it("falls back to a clean new chat when a deep-linked thread is missing", async () => {
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: null,
+      threads: [],
+      messages: {},
+    });
+    vi.spyOn(conversationsApi, "listMessages").mockRejectedValue(
+      new ApiError(404, "Thread not found"),
+    );
+    vi.spyOn(conversationsApi, "listThreadEvents").mockResolvedValue([]);
+
+    await useConversationStore.getState().selectThread("missing-thread");
+
+    const state = useConversationStore.getState();
+    expect(state.selectedThreadId).toBeNull();
+    expect(state.error).toBeNull();
+    expect(state.loading).toBe(false);
+    expect(state.submitting).toBe(false);
+  });
+
+  it("hydrates context and artifact summaries when selecting a conversation", async () => {
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: null,
+      threads: [{
+        id: "t1", workspace_id: "w", owner_user_id: "u", project_id: null,
+        title: "Investigate CAC", status: "ACTIVE", metadata: {},
+        created_at: "2026-09-17T10:00:00Z", updated_at: "2026-09-17T10:00:00Z",
+      }],
+      messages: {},
+    });
+    vi.spyOn(conversationsApi, "listMessages").mockResolvedValue([{
+      id: "m1", thread_id: "t1", workspace_id: "w", user_id: "u", role: "USER",
+      parts: [{ type: "TEXT", content: "Why did CAC rise?" }], run_id: "run-1",
+      parent_message_id: null, created_at: "2026-09-17T10:00:00Z",
+    }]);
+    vi.spyOn(conversationsApi, "listThreadEvents").mockResolvedValue([
+      {
+        id: "e1", thread_id: "t1", workspace_id: "w", run_id: "run-1",
+        sequence: 1, event_type: "mission.started", actor_type: null, actor_id: null,
+        title: null, summary: null, evidence_ids: [],
+        payload: { mission_id: "mission-1", route: "swarm" }, metadata: {},
+        started_at: null, completed_at: null, duration_ms: null,
+        created_at: "2026-09-17T10:00:01Z",
+      },
+      {
+        id: "e2", thread_id: "t1", workspace_id: "w", run_id: "run-1",
+        sequence: 2, event_type: "artifact.created", actor_type: null, actor_id: null,
+        title: null, summary: null, evidence_ids: ["ev-1"],
+        payload: { artifact_id: "artifact-1", artifact_type: "evidence" }, metadata: {},
+        started_at: null, completed_at: null, duration_ms: null,
+        created_at: "2026-09-17T10:00:02Z",
+      },
+    ]);
+
+    await useConversationStore.getState().selectThread("t1");
+
+    expect(useOffice.getState()).toMatchObject({
+      missionId: "mission-1",
+      query: "Why did CAC rise?",
+      route: "swarm",
+      artifacts: { evidence: 1 },
+    });
   });
 
   it("cancels a run that is requested before submit returns its run id", async () => {
