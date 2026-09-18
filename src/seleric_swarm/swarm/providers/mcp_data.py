@@ -16,14 +16,8 @@ from seleric_swarm.registry.agent_registry import AgentRegistry
 from seleric_swarm.registry.provider_registry import ProviderRegistry
 from seleric_swarm.services.business_state.detectors import RobustZScoreDetector
 from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
-from seleric_swarm.services.mcp_query import (
-    build_metrics_query_args,
-    call_metrics_query,
-    dimension_value,
-    row_date,
-    split_dimension_dict,
-)
-from seleric_swarm.services.measure import module_args, resolve_measure
+from seleric_swarm.services.mcp_query import dimension_value, row_date, split_dimension_dict
+from seleric_swarm.services.measure import module_args
 from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
 from seleric_swarm.swarm.domain.configs import build_domain_configs
 from seleric_swarm.swarm.providers.base import (
@@ -40,6 +34,7 @@ from seleric_swarm.swarm.providers.template import (
     TemplateOptimizer,
     TemplateStatsEngine,
 )
+from seleric_swarm.toolsets.semantic import raw_query_metric
 
 _MCP_QUERY_CONCURRENCY = 8
 
@@ -107,9 +102,17 @@ class HybridMcpDataProvider:
     """Live Seleric MCP for a domain module. Never returns fixture readings.
 
     Metrics are never hardcoded: for each requested ``metric_id`` we look up
-    its ``MetricDefinition`` (config/metric_registry.yaml) and resolve the
-    live catalogue measure id via ``seleric.catalogue_search_metrics``, then
-    query it with ``seleric.metrics_query``.
+    its ``MetricDefinition`` (config/metric_registry.yaml) and query its
+    static ``catalogue_metric`` id directly via ``toolsets/semantic.py::
+    raw_query_metric()`` (Sprint 2 consolidation, docs/refactor/SPRINT_PLAN.md
+    — the same no-heuristic call path the new agent's ``SemanticToolset``
+    uses). This deliberately no longer falls back to
+    ``services/measure.py::resolve_measure()``'s keyword-overlap catalogue
+    search when ``catalogue_metric`` is stale or unset — that fallback is
+    exactly the heuristic layer this profile retires (bug #8's root cause).
+    A stale/missing ``catalogue_metric`` now surfaces as a live Cube error
+    (caught below, same ``missing``/``fallback_reasons`` reporting as any
+    other failure) instead of being silently substituted.
     """
 
     def __init__(
@@ -136,15 +139,12 @@ class HybridMcpDataProvider:
         return DataResult(readings=[], events=[], missing=list(metric_ids), data_origin="MCP", synthetic=False)
 
     async def _resolve_measure(self, definition: MetricDefinition) -> str | None:
-        return await resolve_measure(
-            definition,
-            mcp=self._mcp,
-            agent_id=self._agent_id,
-            bootstrap=self._bootstrap,
-            metrics=self._metrics,
-            cache=self._measure_cache,
-            on_stale_sub=self._stats.record_stale_sub,
-        )
+        """Static ``catalogue_metric`` lookup only — no keyword-search fallback.
+
+        Kept as a method (not inlined) so the two call sites below don't
+        need to know this is now a plain config-field read.
+        """
+        return definition.catalogue_metric or None
 
     async def fetch(
         self,
@@ -196,22 +196,22 @@ class HybridMcpDataProvider:
             metric_id: str, definition: MetricDefinition, measure: str
         ) -> tuple[str, MetricDefinition, str, dict[str, Any]]:
             extra = module_args(definition)
-            args = build_metrics_query_args(
-                measure=measure,
-                start=start,
-                end=end,
-                dimensions=breakdown or None,
-                filters=extra_filters or None,
-                limit=limit,
-                sort=sort or ([{"field": measure, "direction": "desc"}] if breakdown else None),
-                compare_period=None if breakdown else "previous_period",
-                module=extra["module"] if extra else ...,
-            )
             async with sem:
                 self._stats.mcp_attempts += 1
-                return metric_id, definition, measure, await call_metrics_query(
-                    self._mcp, agent_id=self._agent_id, arguments=args
+                result = await raw_query_metric(
+                    self._mcp,
+                    agent_id=self._agent_id,
+                    metric_id=measure,
+                    start=start,
+                    end=end,
+                    dimensions=breakdown or None,
+                    filters=extra_filters or None,
+                    limit=limit,
+                    sort=sort or ([{"field": measure, "direction": "desc"}] if breakdown else None),
+                    compare_period=None if breakdown else "previous_period",
+                    module=extra["module"] if extra else ...,
                 )
+                return metric_id, definition, measure, result
 
         gathered = await asyncio.gather(*[_query_metric(*item) for item in resolved]) if resolved else []
         readings: list[MetricReading] = []
@@ -331,16 +331,17 @@ class HybridMcpDataProvider:
         async def _query_metric(
             metric_id: str, measure: str, extra: dict[str, Any]
         ) -> tuple[str, dict[str, float]]:
-            args = build_metrics_query_args(
-                measure=measure,
-                start=start.isoformat(),
-                end=end.isoformat(),
-                grain="day",
-                module=extra["module"] if extra else ...,
-            )
             async with sem:
                 self._stats.mcp_attempts += 1
-                result = await call_metrics_query(self._mcp, agent_id=self._agent_id, arguments=args)
+                result = await raw_query_metric(
+                    self._mcp,
+                    agent_id=self._agent_id,
+                    metric_id=measure,
+                    start=start.isoformat(),
+                    end=end.isoformat(),
+                    grain="day",
+                    module=extra["module"] if extra else ...,
+                )
             day_values: dict[str, float] = {}
             if result.get("error"):
                 return metric_id, day_values

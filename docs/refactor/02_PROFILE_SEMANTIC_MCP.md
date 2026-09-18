@@ -45,15 +45,31 @@ trusting it as sufficient, per the consolidation plan's own note).
 
 ## Retires
 
-- `swarm/providers/mcp_data.py::HybridMcpDataProvider` (both `fetch()` and
-  `fetch_series()`) — replaced by `SemanticToolset.query_metrics()`/
-  `drilldown()` calling `seleric-mcp` directly.
-- `services/business_state/series.py::fetch_series()`,
-  `services/business_state/facade.py::BusinessStateService` — folded into
-  the same toolset; if `BusinessStateService`'s "last day's point" semantics
-  is actually needed somewhere, it becomes an explicit
-  `query_metrics(as_of=..., grain="day")` call, not a separate code path.
-- `agents/intelligence/observer.py::_query_windows`.
+- **Done (Sprint 2, 2026-09-18)**: `services/measure.py::resolve_measure()`/
+  `measure_keywords_overlap()` — the keyword-overlap catalogue-search
+  fallback, bug #8's actual root cause — deleted outright, zero remaining
+  callers (whole-repo grep). Every fetch path (including the two below,
+  which still exist as classes) now resolves a metric via
+  `MetricDefinition.catalogue_metric` directly and calls
+  `toolsets/semantic.py::raw_query_metric()`, the one shared no-heuristic
+  MCP-call primitive both the new toolset and the legacy providers use.
+- **Not yet deleted, but internally consolidated**:
+  `swarm/providers/mcp_data.py::HybridMcpDataProvider` (both `fetch()` and
+  `fetch_series()`) and `services/business_state/series.py::fetch_series()`
+  — no longer contain the heuristic (see above), but still exist as the live
+  call path since nothing yet replaces them end-to-end at the call-site
+  level (in particular `fetch_series()`'s multi-metric pandas-DataFrame
+  output feeding `agents/diagnostic/swarm_bridge.py`'s DoWhy causal
+  specialist has no `SemanticToolset` equivalent yet — a Sprint 3 gap, not a
+  Sprint 2 one). Deleting these classes outright is still gated on building
+  that replacement.
+  `services/business_state/facade.py::BusinessStateService` — if its "last
+  day's point" semantics is actually needed somewhere, it becomes an
+  explicit `query_metrics(as_of=..., grain="day")` call, not a separate code
+  path — not yet done.
+- `agents/intelligence/observer.py::_query_windows` — pure date-range
+  shaping, not itself an MCP call; still live, becomes dead code once
+  `HybridMcpDataProvider` itself is deleted.
 - `coordinator/catalogue_grounding.py` in full —
   `dimensions_in_query()`/`apply_catalogue_grain()`/`hints_from_catalogue()`/
   `ground_live_grain()`/`_GENERIC_DIM_TOKENS` and friends. This is the exact
@@ -80,6 +96,17 @@ trusting it as sufficient, per the consolidation plan's own note).
   wrappers over `mcp__seleric-mcp__catalogue_*` / `metrics_query` /
   `metrics_drilldown`. This is the **only** normal path allowed to fetch
   numeric business data (non-negotiable rule 5 in the overview).
+  **v0 done (Sprint 1, 2026-09-18)**: implemented in
+  `src/seleric_swarm/toolsets/semantic.py`, wired through the existing
+  `MCPGateway`/`services/mcp_query.py` (reused, not rebuilt). `drilldown()`
+  runs the live `metrics_query` → `metrics_drilldown` two-call sequence
+  (the real tool requires a parent `query_id`; the frozen signature hides
+  that bookkeeping from the agent). Not yet wired into an actual agent loop
+  or into the three legacy call sites — that's Sprint 2 consolidation.
+  Currently authorizes MCP calls under the existing `observer_agent`
+  identity (see `TASK_SHEET.md`) since `config/agent_registry.yaml`'s
+  per-agent allowlist is itself retired by this migration and isn't the
+  right place to add a new entry for the future single-agent identity.
 - `toolsets/actions.py` — `ActionToolset`: `propose_action()`,
   `validate()`, `preview()`, `commit_action()`, wrapping
   `mcp__seleric-mcp__actions_propose/commit/status` and the Meta/Google Ads
@@ -118,6 +145,24 @@ trusting it as sufficient, per the consolidation plan's own note).
   by design) — Sprint 2's exit criteria must include the exact regression
   cases from bug #8's fix, run against the new LLM-direct + MCP-validate
   path, not just a "tests pass" check.
+
+## Cross-profile note (added 2026-09-18)
+
+Two things Profile C depends on B for, recorded here because C's brief was
+previously written as if it owned them:
+
+- **Bugs #2 and #8 are B's, not C's.** Both root-cause in modules B retires
+  (`lookup_fast_path.py`, `catalogue_grounding.py`). C's exit criteria used
+  to demand its own passing test for each; they now cite criteria 2 and 3
+  below instead. C reviews and signs off; B owns the gate.
+- **B is the writer of `EvidenceArtifact.grain`.** Profile C's analytics
+  precondition (`CONTRACTS.md` amendment A1.2 — reject an evidence set whose
+  grain doesn't match the baseline it's compared against, with
+  `error_code="EVIDENCE_GRAIN_MISMATCH"`) is only as good as that field
+  being set correctly at the source. `SemanticToolset.query_metrics()` must
+  set `grain` from what it actually asked Cube for, never a default or an
+  inference — a wrong-but-consistent grain would pass C's precondition and
+  reproduce bug #14 silently.
 
 ## Exit criteria
 

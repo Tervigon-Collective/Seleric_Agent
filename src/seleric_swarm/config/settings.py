@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     clamav_timeout_s: float = 5.0
     readiness_timeout_s: float = 2.0
 
-    llm_provider: Literal["fake", "azure_openai_compatible"] = "fake"
+    llm_provider: Literal["fake", "azure_openai_compatible"] = "azure_openai_compatible"
     llm_timeout_s: float = 30.0
     llm_temperature: float = 0.0
     llm_max_tokens: int = 1024
