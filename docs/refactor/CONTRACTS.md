@@ -89,9 +89,10 @@ Allowed `error_code` values (Amendment A1 accepted 2026-09-18; shape stays
 
 | Code | When |
 |---|---|
-| `INSUFFICIENT_EVIDENCE` | Rule 16 / policy-gate precondition decline (A1.3); also validator fail-closed when revisions exhausted |
-| `EVIDENCE_GRAIN_MISMATCH` | Analytics grain/span precondition failed (A1.2) |
+| `INSUFFICIENT_EVIDENCE` | Rule 16 / policy-gate precondition decline (A1.3); also validator fail-closed when revisions exhausted, and a REJECT verdict |
+| `EVIDENCE_GRAIN_MISMATCH` | Analytics/Model grain/span precondition failed (A1.2) |
 | `EXECUTION_LIMIT_EXCEEDED` | `ExecutionBudgetTracker` refused a consume / runtime check |
+| `METHOD_NOT_AVAILABLE` | A frozen signature offers a method this repo has no implementation for (added A1.7) |
 
 ## 3. Artifact payload schemas
 
@@ -320,6 +321,48 @@ Stub agent builds and runs against `RunContext[SelericDeps]` (Profile A
 Sprint 1). §4 signatures are implementable-as-written against the installed
 framework.
 
+### A1.7 — `METHOD_NOT_AVAILABLE` error code — PROPOSED (Sprint 3, Profile C)
+
+Filed 2026-09-18. `toolsets/analytics.py::detect_anomalies` accepts the frozen
+`method: Literal["robust_zscore", "mad", "seasonal"]`, but `"seasonal"` has no
+implementation anywhere in `src/`. Silently running `robust_zscore` instead
+would answer a different question than the agent asked, and folding it into
+`INSUFFICIENT_EVIDENCE` would tell the agent to go find more data when the data
+was never the problem. Added to §2's table above; `error_code` is `str | None`
+precisely so codes can be added without a schema break.
+
+### A1.8 — Evidence-classification migration, scope extension — PROPOSED (Sprint 3, Profile C)
+
+**A1.4 was complete as written but its scope was incomplete.** Its table covered
+`CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` and `ASSOCIATION_ONLY`, and Sprint 2
+correctly reports both grep-clean. But swarm_v2's *four-tier ladder* was never
+in that table and is still live in 13 files:
+
+| Legacy value | Sites | Proposed V3 target |
+|---|---|---|
+| `PLAUSIBLE_CAUSAL` | `diagnostic/causal/estimator.py:131,136`, `diagnostic/contracts.py:42`, `diagnostic/policies.py:18,88`, `skeptic/contracts.py:73`, `skeptic/registries.py:515,521`, `skeptic/services/dowhy_causal.py:36`, **`config/diagnostic_policies.yaml:26`** (`metadata_only_ceiling`) | `HYPOTHESIS` |
+| `STRONGLY_SUPPORTED` | `diagnostic/causal/estimator.py:133`, `diagnostic/contracts.py:44`, `diagnostic/policies.py:20`, `skeptic/contracts.py:75`, `skeptic/registries.py:517`, `skeptic/services/dowhy_causal.py:38` | `CAUSALLY_SUPPORTED` — V3 already requires `refutation_checks` for it, which is what STRONGLY_SUPPORTED meant |
+| `REJECTED` (temporal reversal / sign flip) | `diagnostic/causal/estimator.py:112-115` | `ASSOCIATION` **plus a blocking challenge** — V3 expresses rejection through the *verdict*, not the classification |
+
+Why this is load-bearing rather than cosmetic:
+`skeptic/validators/causal_validator.py:17-20` converts those tiers into numeric
+weights feeding the `causal_confidence` signal. Porting the trust arithmetic
+without settling the vocabulary would change the trust score silently.
+
+Related finding, not part of the proposal: the confidence vocabulary already has
+**three independent implementations** (`diagnostic/causal/estimator.py::_confidence`,
+`skeptic/services/dowhy_causal.py::_CONF_ORDER`,
+`skeptic/validators/causal_validator.py`'s weights). V3's
+`causal/service.py::classify_from_refutations` is a fourth. Sprint 3's validator
+port deliberately **consumes** V3's rather than adding a fifth.
+
+**Not applied.** The legacy ladder is only reachable through swarm_v2 code paths
+that Sprint 5 deletes wholesale, and V3's own path is already correct — so
+rewriting 13 swarm_v2 files now carries regression risk for a subsystem with a
+scheduled deletion date. Recommended disposition: **accept the mapping as the
+authoritative answer, apply it only if a swarm_v2 caller outlives Sprint 5.**
+Needs A and B sign-off either way; recorded here so it is not rediscovered.
+
 ### Joint decisions recorded with A1 acceptance (A + C, Sprint 2)
 
 1. **`max_validation_revisions = 1` confirmed.** Causal escalation is
@@ -345,3 +388,10 @@ framework.
   `pydantic-ai-slim`. Joint decisions: keep `max_validation_revisions = 1`
   (causal ladder is `search_breadth`); skeptic→validator recorded as a
   change in kind. Unblocks Profile C Sprint 2 Causal toolset.
+- 2026-09-18: **A1.7 / A1.8 proposed** (Sprint 3, Profile C). A1.7 adds
+  `METHOD_NOT_AVAILABLE` to §2's error-code table — applied, since the table is
+  explicitly open. A1.8 extends A1.4's migration scope to swarm_v2's four-tier
+  ladder (`PLAUSIBLE_CAUSAL`/`STRONGLY_SUPPORTED`/`REJECTED`), still live in 13
+  files including `config/diagnostic_policies.yaml:26`; mapping recorded, **not
+  applied**, pending A/B sign-off — see A1.8 for why deferring is the
+  lower-risk call.

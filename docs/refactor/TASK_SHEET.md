@@ -49,10 +49,12 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Profile C — Analytics toolset v0 (re-scoped 2026-09-18)
 | Task | Status | Evidence |
 |---|---|---|
-| Extract comparison/detection math in place (pure functions, existing suite green = proof of no drift) | Done | `src/seleric_swarm/analytics/comparison.py::period_deltas` (extracted period-over-period pairing math from `observer.py::_post_comparison_deltas`) + `services/business_state/detectors.py::robust_zscore` (median/MAD math retained). |
-| Wrap as `compare_periods`, `detect_anomalies` (delegate to existing `detectors.py::robust_zscore`) | Done | `src/seleric_swarm/toolsets/analytics.py` — `compare_periods` and `detect_anomalies` async tool adapters complying with non-negotiable rules 4 (no inter-tool calls) and 5 (no fetching evidence). |
-| A1.2 grain precondition + `EVIDENCE_GRAIN_MISMATCH`; do not port `anomaly.py`'s sum/normalize fallback | Done | `src/seleric_swarm/analytics/grain.py::validate_grain_set()` — validates grain, span, and count preconditions; returns structured `EVIDENCE_GRAIN_MISMATCH` refusal without sum/normalize fallbacks. |
-| Bug #14 regression, both halves (un-normalized per-day reaches detector; mismatched set rejected) | Done | Verified via `tests/unit/test_analytics_toolset.py` (16 passed in 0.08s: un-normalized daily values verified in `test_per_day_evidence_reaches_detector_unnormalized`, grain mismatches/spans rejected in `test_multi_day_aggregate_labelled_day_grain_is_rejected` and `test_mixed_grain_set_is_rejected`). |
+| Extract comparison/detection math in place (pure functions, existing suite green = proof of no drift) | Done | `src/seleric_swarm/analytics/comparison.py::period_deltas` — the pairing/subtraction lifted out of `observer.py::_post_comparison_deltas`, which keeps its signature and Blackboard writes and now delegates. **Drift proof**: the 27 offline tests covering the touched modules were not edited and stay green — `./.venv/Scripts/python.exe -m pytest tests/unit/test_domain_questions.py tests/unit/test_anomaly_specialist.py tests/unit/test_business_state_anomaly.py -q` → 27 passed. Two behaviors deliberately preserved and commented at the call site: deltas are `a - b` (a decline reads negative), and *both* periods are deduped by (metric, dimensions) before pairing — iterating period A directly would have turned a repeated key into N deltas instead of 1. Scope correction to the sprint plan: extraction was much smaller than assumed, because `detectors.py::robust_zscore`/`_rescore_against_expected` and `observer.py::_daily_windows` are **already pure functions** — nothing to extract, so they are reused as-is rather than moved. |
+| Wrap as `compare_periods`, `detect_anomalies` (delegate to existing `detectors.py::robust_zscore`) | Done | `src/seleric_swarm/toolsets/analytics.py`. Design consequence worth recording: `detect_anomalies` **cannot** wrap `RobustZScoreDetector` — that class fetches its own history via `BusinessStateService.get_metric_state()` mid-detection, which rule 5 forbids. History arrives as evidence instead (the set is the series: sorted by `period_start`, last point = observation, rest = baseline), and only the pure `robust_zscore` is reused. `method="seasonal"` is in the frozen signature but has no implementation in `src/`, so it returns `error_code="METHOD_NOT_AVAILABLE"` rather than silently running a different detector; `"mad"` maps to `robust_zscore` because that function *is* the median/MAD estimator. Needs a small A1 addendum for the new error code. |
+| A1.2 grain precondition + `EVIDENCE_GRAIN_MISMATCH`; do not port `anomaly.py`'s sum/normalize fallback | Done | `src/seleric_swarm/analytics/grain.py::validate_grain_set()` — three rules: one grain per call, each artifact's span matches its declared grain (day=1, week=7, month=28-31), all spans equal. Returns a reason string rather than raising, so a tool never raises across the agent boundary. `anomaly.py`'s sum/normalize branch is **not** ported. 11 passing: `tests/unit/test_analytics_grain.py`. |
+| Bug #14 regression, both halves (un-normalized per-day reaches detector; mismatched set rejected) | Done | `tests/unit/test_analytics_toolset.py` — 16 passed. Half 1: `test_per_day_evidence_reaches_detector_unnormalized` (5 daily rows, observed stays the raw 900.0, baseline is the median 4090.0 of the 4 prior days). Half 2: `test_multi_day_aggregate_labelled_day_grain_is_rejected`, `test_aggregate_mixed_into_a_daily_series_is_rejected`, `test_mixed_grain_set_is_rejected` — all `success=False` / `EVIDENCE_GRAIN_MISMATCH`, never normalized. |
+| Cross-profile seam test (B's evidence → C's analytics) | Done | `tests/unit/test_analytics_semantic_handoff.py` — 4 passed. Pins the B→C handoff end to end rather than assuming it: B emits one artifact per Cube bucket (each `period_start == period_end` for day grain), C scores the real drop against its own daily history, and a hand-built window-aggregate-labelled-day artifact is refused. Also pins the upstream hazard below. |
+| Full suite vs. Sprint 0 baseline (no new failures) | Done | `./.venv/Scripts/python.exe -m pytest -q --ignore=tests/integration/test_minio_blob_store_integration.py` (2026-09-18) → **842 passed, 1 failed, 4 skipped** in 607s. Sole failure is the same pre-existing `tests/unit/test_api_scenario_matrix.py::test_health_combo_never_returns_running` recorded in the Sprint 0 baseline — no new failures. Ruff clean on all new/modified files. |
 
 ## Sprint 2
 
@@ -78,7 +80,7 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 | Evidence classification vocabulary handed to A + A1.4 migration applied across `src/` and `config/diagnostic_policies.yaml` (owner = C) | Done | Grep-clean: no `CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` / `ASSOCIATION_ONLY` in `src/`/`config/`/`tests/`. YAML `retain_at_or_above: CAUSALLY_SUPPORTED`. Validator handoff: `agent/validation.py` + `tests/unit/test_v3_validation.py`. |
 | Bug #6 regression against `search_breadth` escalation (A1.1) | Done | `test_search_breadth_widens_history_and_candidate_cap` + `test_estimate_effect_records_widened_caps_in_query` — breadth 1 > breadth 0 for both `history_days` and `candidate_cap`. |
 | Bug #7 status (still intermittent) + confirm its #6-widening mitigation survives via `search_breadth` under revisions cap = 1 | Done (disposition) | Still intermittent (LLM primary_metric variance → thin history), not newly deterministic. Mitigation is now caller-chosen `search_breadth` on `estimate_effect`, independent of `max_validation_revisions=1` — widening does not consume validation revisions. Thin history refuses with `INSUFFICIENT_EVIDENCE` + `policy:thin_history` so a revision can escalate breadth instead of looping the same estimate. |
-| Bug #13 explicit disposition | Done (tracked ticket) | **Ticket disposition (not fixed):** fixture/`causal_truth` template path still diverges from live DoWhy observations (`skipped_unobserved_no_frame`). Porting DoWhy into `toolsets/causal.py` does not delete or paper over the fixture path — swarm_v2 `TemplateCausalEstimationService` remains for scenario tests. Follow-up: special-case `identify_candidate_nodes` for `causal_truth` scenarios (same next step as `docs/BUG_SHEET.md` #13). Tracked here; no silent "fix" by removing the fixture. |
+| Bug #13 explicit disposition | **Done — FIXED, disposition corrected 2026-09-18 (Sprint 3)** | Superseded the Sprint 2 "tracked ticket (not fixed)" entry, which was stale when written. Re-checked at Sprint 3 open: `tests/swarm/test_bridge_idempotency.py::test_diagnostic_bridge_is_idempotent` run **20×, 20 passed / 0 failed** — consistently green, so not bug #7's intermittent pattern. Mechanism confirmed by reading the code, not inferred from the green: commit `79e88cc` ("Refactor causal discovery logic…") added the `fallback_to_unfiltered_candidates` block at `agents/diagnostic/causal_discovery.py:224-233` — when every graph ancestor gets filtered for lacking observed movement, the graph's own ranking is re-emitted unfiltered, so a structurally-connected outcome never reports zero candidates. That addresses `docs/BUG_SHEET.md` #13's root cause (the `skipped_unobserved_no_frame` check at :192,:211-221 requiring an observations frame, which the `causal_truth` template path never populates) and does it *better* than #13's own suggested next step: the filter became a deprioritizer rather than a hard gate, so no `causal_truth` special-case was needed. The gate itself is still live and still correctly deprioritizes noise when a real signal exists. |
 | Policy-gate port: 8 `policy()` conditions → tool preconditions returning `INSUFFICIENT_EVIDENCE` (A1.3) | Done | Causal toolset: no evidence / missing treatment·outcome series / thin rows / thin history → `INSUFFICIENT_EVIDENCE` + named `policy:*` warnings (`toolsets/causal.py`, `toolsets/policy_config.py`). Analytics already refuses grain/empty via same error code (Sprint 1). Intent-match gates (diagnostic wants anomaly; strategy wants mechanism) remain agent-level — no blackboard in V3. |
 | Disposition of the five `config/*_policies.yaml` files (migrate into toolset config; keep YAML until port) | Done | Thresholds ported to `toolsets/policy_config.py`. YAML files retained for swarm_v2 `DiagnosticPolicies`/`SkepticPolicies`/… loaders until those callers retire. |
 
@@ -108,14 +110,15 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 | Task | Status | Evidence |
 |---|---|---|
 | Registry wiring question (consolidation-plan Item 3) | Done | Closed by source read 2026-09-18: `agents/prediction/swarm_bridge.py:61-62` builds an `InMemoryModelRegistry` from `scenario["forecast_truth"]` in `_fixture_deps()` whenever `self._deps` is None; the YAML path resolves `config/model_registry.yaml`, which does not exist — only `config/model_registry.example.yaml` (573 B, both entries `status: candidate`). Answer: neither a YAML-seeded registry nor an empty one in practice — it is fixture-seeded, and there are no approved production models. |
-| `toolsets/models.py` (greenfield, not a port — re-confirm priority with user) | Not started | |
-| `EvidenceValidator` content checks, two signals preserved (not merged) | Not started | |
-| Bug #12 STRONG+REVISE reproduced + loop behavior under the revisions cap recorded | Not started | |
+| `toolsets/models.py` (greenfield, not a port — priority confirmed with user 2026-09-18: **full build incl. a real forecaster**) | Done | `src/seleric_swarm/models/service.py` (exponential smoothing via `statsmodels.tsa.holtwinters` — Holt linear trend at ≥10 points, simple exponential smoothing below that; deterministic, so a forecast is reproducible from stored provenance), `src/seleric_swarm/models/evaluation.py` (prediction→actual: MAE/MAPE/interval coverage), `src/seleric_swarm/toolsets/models.py`, `config/model_registry.yaml` (new; 4 approved daily forecast models against real `config/metric_registry.yaml` ids). Added `statsmodels>=0.14` to `pyproject.toml` — it was installed transitively via `dowhy` but Sprint 0 deliberately trimmed it as unused, so re-adding is a recorded decision. **Scope honesty:** `forecast` is real; `predict_ltv`/`predict_propensity` refuse with `INSUFFICIENT_EVIDENCE` + `policy:no_approved_model` because this deployment has no per-customer labels and no feature store. Those are not stubs — the registry gate is the control, and inventing an approved entry is what would *start* the fabrication. Interval is mandatory (a point forecast with no stated uncertainty is a gap per `forecast_validator.py`); a collapsed interval warns rather than implying certainty. Verified: `tests/unit/test_models_toolset.py` (22 passed). |
+| `EvidenceValidator` content checks, two signals preserved (not merged) | Done | `agent/validation.py` became the package `agent/validation/` (`signals.py`, `trust.py`, `verdict.py`, `__init__.py`), public names unchanged. `score_trust`/`decide_verdict` are **faithful ports** of `agents/skeptic/scoring/*` — min-merge of duplicate signals, the `_alt_elimination` synthetic signal, dimension-weight renormalization when a feeder is absent, the 0.3 blocking cap, the three REVISE conditions, and `REVISE_CATEGORIES` copied exactly (it deliberately omits evidence/provenance/alternative_hypothesis/strategy — widening it turns PASSes into REVISEs). What *feeds* them is V3-native (`signals.py` over `ArtifactStore` artifacts) because 9 of swarm_v2's 11 validators depend on plumbing V3 lacks. `ValidationOutcome` widened from binary `ok`/`reason` to carry `verdict` + `trust_score`/`trust_label`/`trust_components` separately — Sprint 2's shape had nowhere to put two signals. Thresholds (incl. two numbers hard-coded in `verdict_engine.py:54,78`) moved into `toolsets/policy_config.py`; `config/skeptic_policies.yaml` stays on disk for `agents/skeptic/*`. **Non-regression:** `tests/skeptic/` 34 passed — the ported source is untouched and still green. |
+| Bug #12 STRONG+REVISE reproduced + loop behavior under the revisions cap recorded | Done | `tests/unit/test_v3_validation_signals.py` (19 passed). All three routes to the #12 shape pinned separately: unresolved alternative (`priority >= 6`), blocking evidence gap, and a `source_conflict` warning — each asserting `trust_label == "STRONG"` **and** `verdict == "REVISE"` on the same outcome as distinct fields. `test_the_two_signals_are_structurally_independent` asserts by signature inspection that `score_trust` cannot see a verdict and `decide_verdict` sees trust only as a float. `test_thresholds_leave_room_for_strong_plus_revise` pins the mechanism itself (STRONG 0.72 > revise_below 0.55) — if those ever crossed, #12's shape would become silently unreachable. **Loop behavior decision (new, recorded):** REVISE consumes a revision and re-prompts; **REJECT fails closed immediately without consuming one**, since re-prompting a claim whose evidence contradicts it buys the same answer for budget. Matches swarm_v2, where REJECT ended the mission and only REVISE triggered remediation. Exhaustion mid-REVISE → `status="failed"`, `error_code="INSUFFICIENT_EVIDENCE"`, per the A1 joint decision. |
 
 ### Profile C — Behavioral parity harness
 | Task | Status | Evidence |
 |---|---|---|
-| Replay missions diffed old specialists vs. new toolsets (same anomalies/hypotheses/classification, or written explanation per divergence) | Not started | |
+| Full suite vs. Sprint 1 bar (no new failures) | Done | `./.venv/Scripts/python.exe -m pytest -q --ignore=tests/integration/test_minio_blob_store_integration.py` (2026-09-18) → **911 passed, 1 failed, 4 skipped** in 522s. Sole failure is the same pre-existing `tests/unit/test_api_scenario_matrix.py::test_health_combo_never_returns_running` carried since the Sprint 0 baseline — no new failures. Up from 842 passed at Sprint 1 close. Ruff clean on all new/modified files. |
+| Replay missions diffed old specialists vs. new toolsets (same anomalies/hypotheses/classification, or written explanation per divergence) | Done | `src/seleric_swarm/evals/parity.py` + `tests/replay/test_v3_parity.py` (3 passed). Bar is **structural equivalence** (user decision 2026-09-18): the set of `(metric_id, direction)` anomalies, evidence classifications, hypothesis statements. Floats are reported, not asserted — exact numeric parity would fail on intentional changes, chiefly that `detect_anomalies` now takes its baseline from evidence rather than `BusinessStateService`, which is rule 5 working as designed. Both paths are driven **directly with the same evidence**, not through an LLM loop, so a divergence is attributable to the capability rather than to tool selection (that is Sprint 4's eval gate). Real `AnomalyAgent`+`Blackboard` on one side, real `detect_anomalies` on the other; both flag `metric.net_sales` moving `down` on an identical 8-day series. `EXPECTED_DIVERGENCES` registers known-intentional differences with reasons, so the report separates "changed on purpose, here's why" from "don't know why this moved" — and `test_parity_report_flags_an_unexplained_divergence` proves the harness can actually fail, which a gate that only ever passes cannot. |
 
 ## Sprint 4
 
@@ -323,13 +326,49 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   780/1/5 Sprint 2 Profile A baseline, no new unresolved failures. Live
   characterization suite (`tests/replay/`) re-run clean against production
   data after all changes: 45/45 passed.
-- 2026-09-18: **Sprint 1 Profile C executed** (all 4 tasks — see table above
-  for evidence). Implemented `src/seleric_swarm/toolsets/analytics.py`
-  (`compare_periods` and `detect_anomalies`), extracted pure pairing math
-  into `src/seleric_swarm/analytics/comparison.py`, and added grain
-  validation rules (A1.2) in `src/seleric_swarm/analytics/grain.py`. Fixed
-  median assertion in `tests/unit/test_analytics_toolset.py`. All 16 unit
-  tests for Profile C passing cleanly (`16 passed in 0.08s`).
+
+- 2026-09-18: **Sprint 1 / Profile C executed** — Analytics toolset v0.
+  New: `analytics/{__init__,comparison,grain}.py`,
+  `toolsets/analytics.py`, `tests/unit/test_analytics_{grain,toolset,semantic_handoff}.py`
+  (31 tests, all passing). Modified, behavior-preserving:
+  `swarm/specialists/observer.py::_post_comparison_deltas` now delegates its
+  pairing/subtraction to `analytics.comparison.period_deltas`. Full suite
+  **842 passed / 1 failed / 4 skipped**, the failure being the same
+  pre-existing `test_health_combo_never_returns_running`. Nothing wired into
+  `orchestration/dispatch.py` — swarm_v2 keeps 100% of traffic.
+
+  **Correction to two defects this profile reported during its 2026-09-18
+  design review.** Both were real when written and both are now fixed; the
+  review's text predates the fixes, not the other way round:
+  - *"Profile B's `query_metrics` collapses a multi-row series to
+    `rows[0]`"* — **fixed by B**. It now emits one `EvidenceArtifact` per
+    Cube bucket with `period_start == period_end` for a real grain.
+    Verified by `test_day_grain_query_emits_one_artifact_per_day_not_one_per_window`.
+  - *"Profile A ships duplicate, divergent frozen contracts"* — **fixed by
+    A**, which deleted the orphaned `agent/contracts.py` during Sprint 2.
+    `agent/{dependencies,output,artifacts}.py` are canonical; Profile C
+    imports those.
+
+  **New finding, routed to Profile B (latent, not currently firing).**
+  `services/mcp_query.py::row_date` identifies a Cube bucket by matching a
+  `.day`-suffixed column name. When it returns `None` for a day-grain
+  result — a renamed view, a different granularity suffix, an aggregate row
+  mixed into the series — `toolsets/semantic.py::query_metrics` falls back
+  to `period_start`/`period_end` for *every* row, emitting N artifacts that
+  each declare `grain="day"` while spanning the whole window. That is
+  `docs/BUG_SHEET.md` #14's shape multiplied by N, and B's own path reports
+  `success=True`. Not hypothetical: it is what the first draft of C's
+  fixture hit. C's A1.2 precondition catches it before it can reach a
+  Finding (`test_unparseable_date_column_degrades_to_window_labels_and_is_caught`),
+  so this is a defence-in-depth note rather than a live bug — but the
+  heuristic is a single string match standing between a renamed Cube view
+  and silently wrong evidence labels.
+
+  **Needs an A1 addendum:** `detect_anomalies` returns a new error code,
+  `METHOD_NOT_AVAILABLE`, for the frozen-but-unimplemented
+  `method="seasonal"`. Refusing is the honest option — running
+  `robust_zscore` instead would answer a different question than the agent
+  asked — but the code is not in `CONTRACTS.md` yet.
 - 2026-09-18: Merged conflicted `SPRINT_PLAN.md` / `TASK_SHEET.md` after
   parallel Profile B + Profile C work. Sprint plan checkboxes brought in
   line with this sheet: Sprint 1 A/B/C Done; Sprint 2 A Done; Sprint 2 B
@@ -401,3 +440,49 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   (Profile B's 3-calendar-day characterization gate; `ActionToolset`'s
   Google Ads action pending upstream `seleric-mcp` support). See Sprint 3
   table above for what's next.
+
+- 2026-09-18: **Sprint 3 / Profile C executed** — Model/Skeptic port + parity harness.
+  New: `agent/validation/` (package; `signals.py`/`trust.py`/`verdict.py`/`__init__.py`,
+  replacing the single `agent/validation.py`), `models/{service,evaluation}.py`,
+  `toolsets/models.py`, `config/model_registry.yaml`, `evals/parity.py`, and
+  `tests/{unit/test_v3_validation_signals,unit/test_models_toolset,replay/test_v3_parity}.py`
+  (44 new tests). Modified: `toolsets/policy_config.py` (skeptic threshold block),
+  `pyproject.toml` (`statsmodels>=0.14`), `tests/unit/test_v3_validation.py`.
+  Nothing wired into `orchestration/dispatch.py` — swarm_v2 keeps 100% of traffic.
+
+  **Bug #13's disposition was corrected, not re-stated.** Sprint 2 recorded it as
+  a tracked ticket, "not fixed". Re-checked at Sprint 3 open: 20 consecutive
+  passes, and the mechanism found in source (commit `79e88cc`'s
+  `fallback_to_unfiltered_candidates` block). Row updated above. Worth noting the
+  general lesson: that row would have stayed wrong indefinitely, because nothing
+  re-runs a disposition once it is written down.
+
+  **A behavior change the content checks introduced, stated plainly.** Three
+  Sprint 2 validator tests asserted `ok` for missions with essentially no
+  artifacts; they passed only because validation was structural. Two are now
+  correctly `NOT_APPLICABLE` (a mission that made no numerical claim owes no
+  evidence — rule 6 binds claims, not missions). The third stored a causal
+  artifact citing `evidence_ids=["ev-1"]` with no such artifact in the store; that
+  is a dangling provenance reference and the validator now flags it. The test was
+  updated to supply the evidence its claim says it has, preserving its intent —
+  not relaxed to keep it green.
+
+  **Two contract amendments filed:** A1.7 (`METHOD_NOT_AVAILABLE`, applied — §2's
+  table is explicitly open) and A1.8 (A1.4's scope gap: swarm_v2's four-tier
+  ladder `PLAUSIBLE_CAUSAL`/`STRONGLY_SUPPORTED`/`REJECTED` is still live in 13
+  files including `config/diagnostic_policies.yaml:26`; mapping recorded, **not
+  applied**, because those sites are only reachable through swarm_v2 paths Sprint 5
+  deletes and V3's own vocabulary is already correct — rewriting them now is
+  regression risk for a subsystem with a deletion date). Both need A/B sign-off.
+
+  **Open, flagged rather than absorbed:**
+  - `config/model_registry.yaml` needs a real owner. Profile C seeded it because
+    the toolset needs an approved-model gate to refuse against, but an entry there
+    is a claim that a model was built and validated, and it is the only thing
+    between `forecast()` and a fabricated number. Added to `00_OVERVIEW.md` §8.
+  - `models/evaluation.py` measures forecast accuracy but does not feed back into
+    model selection or registry promotion — `last_validated_at` is still set by
+    hand. That needs a scheduled job and a registry writer, neither of which
+    exists. The measurement half only; saying so beats implying the loop is closed.
+  - The confidence vocabulary has three swarm_v2 implementations plus V3's. Sprint
+    3 consumed V3's rather than adding a fifth, but the duplication stands.
