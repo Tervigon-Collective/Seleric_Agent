@@ -6,7 +6,7 @@ import pytest
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 
-from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
+from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.agent.output import MissionResult
 from seleric_swarm.agent.validation import EvidenceValidator, run_validated_mission
 from seleric_swarm.conversations.contracts import ContextBundle, Principal, PrincipalAuthMethod
@@ -28,7 +28,7 @@ def _deps(*, artifact_store=None, limits: ExecutionLimits | None = None) -> Sele
         run_id="run-1",
         trace_id="trace-1",
         context=ContextBundle(),
-        mcp_client=object(),
+        mcp_client=NullMcpClient(),
         artifact_store=artifact_store or InMemoryArtifactStore(),
         limits=limits or ExecutionLimits(),
     )

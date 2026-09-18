@@ -100,7 +100,7 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
         result = await ctx.deps.mcp_client.call(
             agent_id=_AGENT_ID, capability="seleric.catalogue_search_metrics", arguments={"query": query}
         )
-    except Exception as exc:  # noqa: BLE001 - convert to ToolResult, never raise across the tool boundary
+    except Exception as exc:  # convert to ToolResult, never raise across the tool boundary
         return _mcp_error_result(exc)
     matches = (result or {}).get("matches") or []
     return ToolResult(
@@ -117,7 +117,7 @@ async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) ->
         result = await ctx.deps.mcp_client.call(
             agent_id=_AGENT_ID, capability="seleric.catalogue_get_metric", arguments={"metric_id": metric_id}
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return _mcp_error_result(exc)
     if not result or result.get("error"):
         return ToolResult(
@@ -263,7 +263,7 @@ async def drilldown(
             capability="seleric.metrics_drilldown",
             arguments={"parent_query_id": parent["query_id"], "target_dimensions": [dimension]},
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return _mcp_error_result(exc)
     rows = (result or {}).get("rows") or []
     if not rows:

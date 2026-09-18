@@ -17,15 +17,22 @@ if TYPE_CHECKING:
 
 
 class SelericMcpClient(Protocol):
-    """Placeholder for Profile B's thin wrapper over the ``mcp__seleric-mcp__*``
-    tools (``catalogue_*`` / ``metrics_query`` / ``metrics_drilldown`` /
-    ``actions_*``). Not implemented yet — ``toolsets/semantic.py`` and
-    ``toolsets/actions.py`` (Profile B, Sprint 1/3) own the real shape;
-    ``SelericDeps.mcp_client`` is typed against this Protocol so Profile A's
-    skeleton can be built and tested (with a fake) before Profile B lands.
+    """Thin MCP surface used by semantic/actions toolsets.
+
+    Matches ``MCPGateway.call`` so Profile B/C tools can type against deps
+    without importing the gateway.
     """
 
-    async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any: ...
+    async def call(
+        self, *, agent_id: str, capability: str, arguments: dict[str, Any]
+    ) -> Any: ...
+
+
+class NullMcpClient:
+    """Stand-in for paths that must not talk to MCP (analytics, stub missions)."""
+
+    async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+        raise NotImplementedError("this path does not call MCP")
 
 
 @dataclass(frozen=True)

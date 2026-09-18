@@ -30,6 +30,9 @@ COPY schemas ./schemas
 COPY migrations ./migrations
 COPY pyproject.toml README.md ./
 
+RUN mkdir -p /app/.data/attachments \
+    && chown -R seleric:seleric /app/.data
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

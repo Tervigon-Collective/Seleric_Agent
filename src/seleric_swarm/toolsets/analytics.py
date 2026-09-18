@@ -86,7 +86,7 @@ def _load_evidence(ctx: RunContext[SelericDeps], evidence_ids: list[str]) -> tup
             )
         try:
             evidence.append(EvidenceArtifact.model_validate(artifact.payload))
-        except Exception as exc:  # noqa: BLE001 - never raise across the tool boundary
+        except Exception as exc:  # never raise across the tool boundary
             return [], _refuse(
                 f"artifact {artifact.id} payload is not a valid EvidenceArtifact: {exc}",
                 error_code="INSUFFICIENT_EVIDENCE",
@@ -183,10 +183,13 @@ async def compare_periods(ctx: RunContext[SelericDeps], evidence_ids: list[str])
 
     artifact_ids: list[str] = []
     for delta in deltas:
-        base = float(delta.b.value) if delta.b.value else None
-        metrics = {"delta": delta.delta, "value_a": float(delta.a.value), "value_b": float(delta.b.value)}
-        if base:
-            metrics["delta_pct"] = delta.delta / base * 100
+        a_value = delta.a.value
+        b_value = delta.b.value
+        if a_value is None or b_value is None:
+            continue
+        metrics = {"delta": delta.delta, "value_a": a_value, "value_b": b_value}
+        if b_value:
+            metrics["delta_pct"] = delta.delta / b_value * 100
         dims = f" [{', '.join(f'{k}={v}' for k, v in sorted(delta.dimensions.items()))}]" if delta.dimensions else ""
         artifact_ids.append(
             _write_finding(
@@ -262,8 +265,12 @@ async def detect_anomalies(
             )
             continue
 
-        *history, (observed_id, observed) = usable
-        result = robust_zscore([float(item.value) for _, item in history], float(observed.value))
+        *history, (_observed_id, observed) = usable
+        observed_value = observed.value
+        history_values = [item.value for _, item in history if item.value is not None]
+        if observed_value is None or not history_values:
+            continue
+        result = robust_zscore(history_values, observed_value)
         if not result.is_anomaly:
             continue
 
