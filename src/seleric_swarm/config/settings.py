@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     run_heartbeat_s: float = 15.0
     run_max_attempts: int = 3
     run_retry_delay_s: float = 5.0
+    run_retry_jitter_s: float = 1.0
     shutdown_timeout_s: float = 10.0
     blob_backend: Literal["local", "minio"] = "local"
     blob_local_path: str = ".data/attachments"
@@ -233,6 +234,8 @@ class Settings(BaseSettings):
             raise ValueError("run_max_attempts must be at least 1")
         if self.run_retry_delay_s < 0:
             raise ValueError("run_retry_delay_s must not be negative")
+        if self.run_retry_jitter_s < 0:
+            raise ValueError("run_retry_jitter_s must not be negative")
         if self.shutdown_timeout_s <= 0:
             raise ValueError("shutdown_timeout_s must be positive")
         if self.llm_max_retries < 0:

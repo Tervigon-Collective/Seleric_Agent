@@ -181,6 +181,7 @@ async def test_invoker_treats_ok_false_as_failure():
         mission_id="MS-1",
         task_type="diagnostic",
         objective="diagnose",
+        idempotency_key="reject-retry",
     )
     context = AgentContext(
         mission_id="MS-1",

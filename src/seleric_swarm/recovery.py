@@ -7,6 +7,7 @@ import asyncio
 import contextlib
 import importlib
 import inspect
+import random
 import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -64,9 +65,16 @@ class RunWorkQueue(Protocol):
 
 
 class RunRecoveryService:
-    def __init__(self, runs: RunRepository, *, retry_delay_s: float = 5.0) -> None:
+    def __init__(
+        self,
+        runs: RunRepository,
+        *,
+        retry_delay_s: float = 5.0,
+        retry_jitter_s: float = 1.0,
+    ) -> None:
         self._runs = runs
         self._retry_delay_s = retry_delay_s
+        self._retry_jitter_s = retry_jitter_s
 
     def _next_attempt(
         self,
@@ -78,13 +86,16 @@ class RunRecoveryService:
         error_message: str,
         lease_expired_before: datetime | None = None,
     ) -> bool:
+        retry_delay = self._retry_delay_s * (2 ** max(0, attempt.attempt_number - 1))
+        if retry_delay > 0:
+            retry_delay += random.uniform(0.0, max(0.0, self._retry_jitter_s))
         transition = self._runs.transition_failed_attempt(
             attempt.id,
             worker_id=attempt.worker_id if lease_expired_before is None else None,
             expected_version=attempt.version,
             lease_expired_before=lease_expired_before,
             now=moment,
-            retry_delay_seconds=self._retry_delay_s,
+            retry_delay_seconds=retry_delay,
             error_code=error_code,
             error_message=error_message,
         )
@@ -158,13 +169,18 @@ class RunRecoveryWorker:
         lease_s: float = 60.0,
         heartbeat_s: float = 15.0,
         retry_delay_s: float = 5.0,
+        retry_jitter_s: float = 1.0,
     ) -> None:
         self._runs = runs
         self._executor = executor
         self._worker_id = worker_id
         self._lease_s = lease_s
         self._heartbeat_s = min(max(0.1, heartbeat_s), max(0.1, lease_s / 2))
-        self._recovery = RunRecoveryService(runs, retry_delay_s=retry_delay_s)
+        self._recovery = RunRecoveryService(
+            runs,
+            retry_delay_s=retry_delay_s,
+            retry_jitter_s=retry_jitter_s,
+        )
 
     async def _heartbeat(self, attempt: RunAttempt) -> None:
         while True:
@@ -375,6 +391,7 @@ def build_run_queue(
             lease_s=runtime.settings.run_lease_s,
             heartbeat_s=runtime.settings.run_heartbeat_s,
             retry_delay_s=runtime.settings.run_retry_delay_s,
+            retry_jitter_s=runtime.settings.run_retry_jitter_s,
         )
     )
 
@@ -404,6 +421,7 @@ async def _main() -> None:
     recovery = RunRecoveryService(
         runtime.conversations.runs,
         retry_delay_s=runtime.settings.run_retry_delay_s,
+        retry_jitter_s=runtime.settings.run_retry_jitter_s,
     )
     worker = None
     if args.executor:
@@ -422,6 +440,7 @@ async def _main() -> None:
             lease_s=runtime.settings.run_lease_s,
             heartbeat_s=runtime.settings.run_heartbeat_s,
             retry_delay_s=runtime.settings.run_retry_delay_s,
+            retry_jitter_s=runtime.settings.run_retry_jitter_s,
         )
     try:
         if args.once:

@@ -1372,6 +1372,10 @@ async def run_swarm_v2_mission(
                 line = f"{agent_id} failed: {(reply or {}).get('error') or 'unknown error'}"
                 if line not in live_ctx.limitations:
                     live_ctx.limitations.append(line)
+            if not (reply or {}).get("ok", True):
+                code = str((reply or {}).get("error_code") or "A2A_ERROR")
+                detail = str((reply or {}).get("error") or "remote specialist failed")
+                raise RuntimeError(f"{code}: {detail}")
             return reply or {"ok": True}
 
     team_rows = assemble_team(

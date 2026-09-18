@@ -29,10 +29,16 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from seleric_swarm.contracts.lookup import MissionResult, TraceInfo
+from seleric_swarm.contracts.lookup import MissionResult, MissionStatus, TraceInfo
 from seleric_swarm.coordinator.lookup_fast_path import run_lookup_fast_path
+from seleric_swarm.coordinator.overview import (
+    build_overview_result,
+    overview_domains_for_query,
+    read_overview_snapshots,
+)
 from seleric_swarm.orchestration.runner import run_mission
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
 
 _SWARM_INTENTS = {"diagnostic", "predictive", "prescriptive", "executive_health"}
 _CONVERSATIONAL_PROMPTS = {
@@ -48,6 +54,11 @@ _CONVERSATIONAL_PROMPTS = {
     "thanks",
     "thank you",
 }
+_OVERVIEW_PROMPT = re.compile(
+    r"\b(how are we doing|how is (?:the )?business|business health|"
+    r"health check|business overview|company overview)\b",
+    re.IGNORECASE,
+)
 
 
 def _is_conversational_prompt(query: str) -> bool:
@@ -68,6 +79,68 @@ def _conversation_response(query: str) -> str:
         "Hi! What would you like to investigate? You can ask about sales, conversion, "
         "CAC, ROAS, inventory, customers, forecasts, or business anomalies."
     )
+
+
+async def _complete_overview_mission(
+    runtime: SwarmRuntime,
+    *,
+    query: str,
+    session_id: str | None,
+    request_id: str | None,
+    mission_id: str | None,
+) -> dict[str, Any]:
+    resolved_mission_id = mission_id or f"MS-{uuid4().hex[:10]}"
+    resolved_request_id = request_id or uuid4().hex
+    resolved_session_id = session_id or resolved_request_id
+    domains = overview_domains_for_query(query)
+    snapshots, unavailable = await read_overview_snapshots(SnapshotStore(), domains)
+    overview = build_overview_result(
+        mission_id=resolved_mission_id,
+        query=query,
+        snapshots=snapshots,
+        unavailable=unavailable,
+    )
+    status: MissionStatus = "completed" if overview.status == "completed" else "partial"
+    result = MissionResult(
+        mission_id=resolved_mission_id,
+        status=status,
+        query_class="executive_health",
+        final_response=overview.final_response,
+        limitations=overview.limitations,
+        trace=TraceInfo(
+            request_id=resolved_request_id,
+            session_id=resolved_session_id,
+        ),
+    )
+    existing = runtime.store.get_raw(resolved_mission_id) or {}
+    events = list(existing.get("events") or [])
+    events.append(
+        {
+            "kind": "mission_completed",
+            "family": "mission",
+            "mission_id": resolved_mission_id,
+            "seq": len(events) + 1,
+            "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "route": "overview",
+            "status": overview.status,
+        }
+    )
+    runtime.store.put(
+        result,
+        {
+            **existing,
+            "route": "overview",
+            "workflow": "overview_snapshot",
+            **overview.as_dict(),
+            "events": events,
+            "error_code": None,
+        },
+    )
+    return {
+        "route": "swarm",
+        "workflow": "overview_snapshot",
+        "result": overview.as_dict(),
+    }
 
 
 def _complete_conversational_mission(
@@ -201,6 +274,14 @@ async def run_any_mission(
         raise MissionCancelledError(f"mission {mission_id} was cancelled")
     if _is_conversational_prompt(query):
         return _complete_conversational_mission(
+            runtime,
+            query=query,
+            session_id=session_id,
+            request_id=request_id,
+            mission_id=mission_id,
+        )
+    if _OVERVIEW_PROMPT.search(query):
+        return await _complete_overview_mission(
             runtime,
             query=query,
             session_id=session_id,

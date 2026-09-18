@@ -52,3 +52,28 @@ async def test_greeting_completes_without_classifier_or_swarm(runtime, monkeypat
     assert response["result"]["status"] == "completed"
     assert "What would you like to investigate?" in response["result"]["final_response"]
     assert runtime.store.get("MS-greeting").status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_business_overview_returns_without_classifier_or_swarm(runtime, monkeypatch):
+    async def fail_route(*args, **kwargs):
+        raise AssertionError("a broad overview must not wait for business routing")
+
+    async def no_snapshots(*args, **kwargs):
+        return [], [("commerce", "no snapshot available")]
+
+    monkeypatch.setattr(dispatch, "route_for", fail_route)
+    monkeypatch.setattr(dispatch, "read_overview_snapshots", no_snapshots)
+
+    response = await dispatch.run_any_mission(
+        runtime,
+        query="How are we doing today?",
+        mission_id="MS-overview",
+        request_id="request-overview",
+        session_id="thread-overview",
+    )
+
+    assert response["workflow"] == "overview_snapshot"
+    assert response["result"]["status"] == "partial"
+    assert "couldn’t load a current business overview" in response["result"]["final_response"]
+    assert runtime.store.get("MS-overview").status == "partial"

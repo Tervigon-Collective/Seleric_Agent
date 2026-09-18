@@ -1492,6 +1492,7 @@ def _submission_queue(
             lease_s=_execution_setting(runtime, "run_lease_s", 60.0),
             heartbeat_s=_execution_setting(runtime, "run_heartbeat_s", 15.0),
             retry_delay_s=_execution_setting(runtime, "run_retry_delay_s", 5.0),
+            retry_jitter_s=_execution_setting(runtime, "run_retry_jitter_s", 1.0),
         )
     )
     try:
