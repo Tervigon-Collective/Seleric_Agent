@@ -228,6 +228,145 @@ def estimate_sample_size(ctx: RunContext[SelericDeps], baseline_rate: float, mde
 def evaluate_experiment(ctx: RunContext[SelericDeps], experiment_id: str, evidence_ids: list[str]) -> ToolResult: ...
 ```
 
+## Proposed Amendment A1 — preconditions and escalation
+
+Status: **PROPOSED — pending sign-off** (filed 2026-09-18 by Profile C after
+a design review against source). The freeze text above is unchanged and
+remains authoritative until all three profiles sign off. Rationale in
+`03_PROFILE_CAPABILITIES.md` §3 and §6.
+
+### Why this is needed at all
+
+Non-negotiable rules 4 (tools never call tools) and 5 (analytics don't
+fetch) together mean an analytics or causal tool can neither obtain evidence
+nor ask for it. The **caller** therefore chooses the grain, the window and
+the retry. Today that caller is deterministic code; after the refactor it is
+the LLM. The contract froze the tool signatures without the input
+constraints that made the current behavior correct, so three documented
+fixes (`docs/BUG_SHEET.md` #6, #8-adjacent, #14) currently port forward as
+conventions rather than guarantees.
+
+The corollary, proposed as a standing rule: **if the caller picks the
+inputs, the tool must validate them.** Control state becomes typed
+preconditions the tool enforces, not prose in a tool description.
+
+### A1.1 — Causal escalation surface (blocks Profile C Sprint 2)
+
+The frozen Causal toolset is exactly `estimate_effect` + `refute_estimate`:
+no hypothesis discovery, no candidate/history widening parameter, nothing
+stateful. Bug #6's shipped fix is stateful escalation — `remediation_round`
+on the long-lived mission object, widening history
+(`_CAUSAL_EXTRA_HISTORY_DAYS * (1 + round)`) and ancestor candidates
+(`cap + round`) on each retry. Per bug #7's entry that widening is also the
+**only documented mitigation** for #7's intermittent zero-observation-rows.
+
+As frozen, that fix has nowhere to live. Proposed: make the escalation an
+explicit typed input rather than hidden state, so "search wider" is a schema
+position the agent selects, not a counter the tool secretly keeps.
+
+```python
+def estimate_effect(
+    ctx: RunContext[SelericDeps],
+    evidence_ids: list[str],
+    treatment: str,
+    outcome: str,
+    method: str = "backdoor.linear_regression",
+    search_breadth: Literal[0, 1, 2] = 0,   # NEW — bounded escalation ladder
+) -> ToolResult: ...
+```
+
+`search_breadth` maps to the existing widening arithmetic (0 = today's base
+history/candidate cap, each step widens as the current `remediation_round`
+does). Bounded at 2 so rule 11 still holds without a counter living in the
+tool. Open for sign-off: whether a `discover_hypotheses()` function is also
+needed, or whether hypothesis discovery stays inside `estimate_effect`.
+
+### A1.2 — Analytics grain precondition
+
+`EvidenceArtifact.grain` is already a typed `Literal` in §3, so the tool can
+read grain off every `evidence_id` it is handed. Proposed contract rule,
+binding on `compare_periods()` and `detect_anomalies()`:
+
+> Every `EvidenceArtifact` in a single call must share one `grain`, and the
+> observation's period span must match the baseline's period span. On
+> violation the tool returns `success=False` with
+> `error_code="EVIDENCE_GRAIN_MISMATCH"` and empty `artifact_ids`. It never
+> normalizes a multi-period aggregate to make it comparable, and never
+> compares across grains silently.
+
+Boundary arithmetic is an implementation detail; the guarantee is not. This
+is what makes bug #14's fix survive the loss of the
+`classifier → mission.context → observer` thread. The old sum/normalize
+fallback in `swarm/specialists/anomaly.py` is explicitly not carried
+forward — it was the band-aid the real fix replaced.
+
+### A1.3 — Precondition refusal semantics (policy gates)
+
+Eight `policy(blackboard, mission) -> bool` gates and five
+`config/*_policies.yaml` files currently encode when an analysis is
+appropriate (minimum history, evidence sufficiency, intent match, retention
+thresholds). No profile owns them and nothing in the frozen contract
+replaces them. Bug #8's entry records them working correctly in the trace
+where everything else failed.
+
+Proposed: gate conditions become tool preconditions, and a tool that
+declines on policy grounds returns `success=False` with
+`error_code="INSUFFICIENT_EVIDENCE"` (rule 16's existing code) plus a
+`warnings` entry naming the unmet condition. A declined call is a normal,
+non-retryable outcome, not an error the agent should work around by calling
+a different tool. Disposition of the five YAML files (migrate values into
+toolset config, or fold into `ExecutionLimits`) to be decided in Sprint 2.
+
+### A1.4 — Evidence-classification migration mapping
+
+§3's `CausalArtifact.evidence_classification` froze `CAUSALLY_SUPPORTED`.
+The code in `src/` uses `CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` as a bare
+string literal, and `config/diagnostic_policies.yaml:24` uses it as a config
+**value** (`retain_at_or_above`). This is a cross-file plus cross-YAML
+migration with no owner today.
+
+The rename is defensible rather than a loss of precision: the frozen
+`causally_supported_requires_refutation` validator turns the "under
+assumptions" caveat into an *enforced refutation requirement*, which is
+strictly stronger than a string suffix. Proposed mapping, to be applied as
+one reviewed change:
+
+| Current value / site | New value |
+|---|---|
+| `"CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS"` — `causal/estimator.py:135` | `CAUSALLY_SUPPORTED` (+ populated `refutation_checks`) |
+| `agents/diagnostic/contracts.py:43`, `policies.py:19` | `CAUSALLY_SUPPORTED` |
+| `agents/diagnostic/policies.py:85` (default for `retain_at_or_above`) | `CAUSALLY_SUPPORTED` |
+| `agents/skeptic/contracts.py:74`, `registries.py:519` | `CAUSALLY_SUPPORTED` |
+| `services/dowhy_causal.py:37,100` | `CAUSALLY_SUPPORTED` |
+| `config/diagnostic_policies.yaml:24` (`retain_at_or_above`) | `CAUSALLY_SUPPORTED` — **config migration, owner needed** |
+
+`ASSOCIATION_ONLY` (seen in bug #6's trace) maps to `ASSOCIATION`.
+
+### A1.5 — Signature reconciliation (documentation-only, no shape change)
+
+The profile briefs listed function names that §4 never froze. Recorded here
+so the disagreement doesn't persist across two documents; §4 stands as-is
+and the extra names are struck unless separately re-proposed:
+
+| Toolset | Frozen in §4 | Struck from the brief |
+|---|---|---|
+| Analytics | 6 functions | `rolling_statistics`, `growth_rate`, `change_point`, `association_analysis` (`robust_zscore`/`seasonal_anomaly` fold into `detect_anomalies(method=)`) |
+| Model | 3 functions | `simulate`, `predict_reverse_risk`, `predict_demand` |
+| Experiment | 3 functions | `design_experiment`, `compare_variants`, `recommend_next_test` |
+
+### A1.6 — Unblocked dependency
+
+`pydantic-ai` is not in `pyproject.toml` and has no usage in `src/`. §4's
+signatures are typed against `RunContext[SelericDeps]`. Sprint 0 validated
+these shapes against the spec, not against an installed framework — a
+Sprint 1 spike must install it and confirm the toolset/`RunContext` API
+matches before any of §4 is treated as implementable-as-written.
+
 ## Change log
 
 - 2026-09-18: initial freeze, Sprint 0.
+- 2026-09-18: **Amendment A1 proposed** (not applied) — precondition and
+  escalation semantics for Analytics/Causal, policy-gate refusal codes,
+  evidence-classification migration mapping, brief/contract signature
+  reconciliation, `pydantic-ai` dependency spike. Filed by Profile C,
+  pending A and B sign-off. Frozen text above unchanged.

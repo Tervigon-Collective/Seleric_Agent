@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
+from seleric_swarm.analytics.comparison import MetricPoint, period_deltas
 from seleric_swarm.swarm.artifacts import Evidence
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.domain.base import DomainAgent
@@ -94,23 +95,31 @@ def _post_comparison_deltas(
     (services/intelligence/observer.py's _comparison_deltas).
     """
 
-    def _by_metric(ids: list[str]) -> dict[tuple[str, tuple[tuple[str, Any], ...]], dict[str, Any]]:
-        out: dict[tuple[str, tuple[tuple[str, Any], ...]], dict[str, Any]] = {}
+    def _points(ids: list[str]) -> list[MetricPoint]:
+        """Blackboard rows -> the neutral shape analytics.comparison pairs on.
+
+        The ``.delta`` suffix filter stays here rather than moving into the
+        pure function: it's this pipeline's naming rule (don't re-delta a
+        delta already posted to the board), not arithmetic.
+        """
+        out: list[MetricPoint] = []
         for aid in ids:
             row = blackboard.get(aid)
             if not row or row.get("metric_or_fact", "").endswith(".delta"):
                 continue
-            key = (row["metric_or_fact"], tuple(sorted((row.get("dimensions") or {}).items())))
-            out[key] = row
+            out.append(
+                MetricPoint(
+                    metric=row["metric_or_fact"],
+                    dimensions=dict(row.get("dimensions") or {}),
+                    value=row.get("value"),
+                    ref=row,
+                )
+            )
         return out
 
-    a_by_metric = _by_metric(period_a_ids)
-    b_by_metric = _by_metric(period_b_ids)
     posted: list[str] = []
-    for key, a_row in a_by_metric.items():
-        b_row = b_by_metric.get(key)
-        if b_row is None or a_row.get("value") is None or b_row.get("value") is None:
-            continue
+    for delta in period_deltas(_points(period_a_ids), _points(period_b_ids)):
+        a_row, b_row = delta.a.ref, delta.b.ref
         a_range = a_row.get("time_range") or {}
         b_range = b_row.get("time_range") or {}
         starts = [d for d in (a_range.get("start"), b_range.get("start")) if d]
@@ -118,10 +127,10 @@ def _post_comparison_deltas(
         ev = Evidence.new(
             mission_id=a_row["mission_id"],
             created_by=f"observer_agent@{agent_id}",
-            metric_or_fact=f"{key[0]}.delta",
-            value=float(a_row["value"]) - float(b_row["value"]),
+            metric_or_fact=f"{delta.metric}.delta",
+            value=delta.delta,
             unit=a_row.get("unit"),
-            dimensions=dict(a_row.get("dimensions") or {}),
+            dimensions=delta.dimensions,
             time_range={"start": min(starts) if starts else None, "end": max(ends) if ends else None},
             source="deterministic.metrics",
             provenance={

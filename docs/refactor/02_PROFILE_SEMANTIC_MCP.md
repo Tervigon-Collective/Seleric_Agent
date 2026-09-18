@@ -146,6 +146,24 @@ trusting it as sufficient, per the consolidation plan's own note).
   cases from bug #8's fix, run against the new LLM-direct + MCP-validate
   path, not just a "tests pass" check.
 
+## Cross-profile note (added 2026-09-18)
+
+Two things Profile C depends on B for, recorded here because C's brief was
+previously written as if it owned them:
+
+- **Bugs #2 and #8 are B's, not C's.** Both root-cause in modules B retires
+  (`lookup_fast_path.py`, `catalogue_grounding.py`). C's exit criteria used
+  to demand its own passing test for each; they now cite criteria 2 and 3
+  below instead. C reviews and signs off; B owns the gate.
+- **B is the writer of `EvidenceArtifact.grain`.** Profile C's analytics
+  precondition (`CONTRACTS.md` amendment A1.2 — reject an evidence set whose
+  grain doesn't match the baseline it's compared against, with
+  `error_code="EVIDENCE_GRAIN_MISMATCH"`) is only as good as that field
+  being set correctly at the source. `SemanticToolset.query_metrics()` must
+  set `grain` from what it actually asked Cube for, never a default or an
+  inference — a wrong-but-consistent grain would pass C's precondition and
+  reproduce bug #14 silently.
+
 ## Exit criteria
 
 1. `tests/replay/test_data_access_characterization.py`-equivalent suite
