@@ -8,8 +8,9 @@ const API = process.env.SELERIC_API_URL ?? "http://127.0.0.1:8090";
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: "127.0.0.1",
     port: 5173,
-    strictPort: false,
+    strictPort: true,
     proxy: {
       "/v1": { target: API, changeOrigin: true },
     },
