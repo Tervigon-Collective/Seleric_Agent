@@ -20,7 +20,7 @@ classifier into both the fetcher and the detector, which is what makes
 ``docs/BUG_SHEET.md`` #14's fix hold). Here it is a per-call model decision.
 So every entry point validates its inputs before computing and returns a
 structured refusal rather than a number it cannot stand behind — see
-``analytics/grain.py`` and ``CONTRACTS.md`` amendment A1.2.
+``analytics/grain.py`` and ``CONTRACTS.md`` A1.2 (ACCEPTED 2026-09-18).
 """
 
 from __future__ import annotations

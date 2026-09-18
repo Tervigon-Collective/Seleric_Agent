@@ -512,11 +512,11 @@ class BasicCausalValidationService:
         if not temporal_ok:
             confidence = "REJECTED"
         elif not graph_ok or not artifact.passed:
-            confidence = "ASSOCIATION_ONLY" if total == 0 else "PLAUSIBLE_CAUSAL"
+            confidence = "ASSOCIATION" if total == 0 else "PLAUSIBLE_CAUSAL"
         elif total >= 2 and passed == total and confounders_ok and estimator_ok:
             confidence = "STRONGLY_SUPPORTED"
         elif total >= 1 and passed == total:
-            confidence = "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS"
+            confidence = "CAUSALLY_SUPPORTED"
         else:
             confidence = "PLAUSIBLE_CAUSAL"
 
@@ -539,7 +539,7 @@ class UnavailableCausalValidationService:
         self, artifact: CausalAnalysisArtifact, *, context: dict[str, Any]
     ) -> CausalValidationResult:
         return CausalValidationResult(
-            confidence="ASSOCIATION_ONLY",
+            confidence="ASSOCIATION",
             temporal_ok=False,
             graph_ok=False,
             confounders_ok=False,

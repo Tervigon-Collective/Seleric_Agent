@@ -216,7 +216,7 @@ async def test_comparison_computes_period_a_minus_period_b_delta(monkeypatch):
     ]
     fake_provider = _FakeDataProvider(readings)
     bundle = _FakeProviderBundle({"commerce": fake_provider})
-    monkeypatch.setattr(lookup_fast_path, "build_hybrid_bundle", lambda **k: (bundle, None))
+    monkeypatch.setattr(lookup_fast_path, "build_mcp_bundle", lambda **k: (bundle, None))
     runtime = _runtime({})
 
     result = await lookup_fast_path.run_lookup_fast_path(runtime, query="compare net sales on aug 1 and aug 2")
@@ -247,7 +247,7 @@ async def test_grained_domain_question_uses_breakdown_fetch(monkeypatch):
     ]
     fake_provider = _FakeDataProvider(DataResult(readings=readings, missing=[]))
     bundle = _FakeProviderBundle({"attribution": fake_provider})
-    monkeypatch.setattr(lookup_fast_path, "build_hybrid_bundle", lambda **k: (bundle, None))
+    monkeypatch.setattr(lookup_fast_path, "build_mcp_bundle", lambda **k: (bundle, None))
     runtime = _runtime({})
 
     result = await lookup_fast_path.run_lookup_fast_path(runtime, query="attribution per channel")
@@ -273,7 +273,7 @@ async def test_breakdown_missing_metric_becomes_limitation(monkeypatch):
     monkeypatch.setattr(lookup_fast_path, "normalize_query", lambda *a, **k: _async(normalized))
     fake_provider = _FakeDataProvider(DataResult(readings=[], missing=["attributed_net_revenue"]))
     bundle = _FakeProviderBundle({"attribution": fake_provider})
-    monkeypatch.setattr(lookup_fast_path, "build_hybrid_bundle", lambda **k: (bundle, None))
+    monkeypatch.setattr(lookup_fast_path, "build_mcp_bundle", lambda **k: (bundle, None))
     runtime = _runtime({})
 
     result = await lookup_fast_path.run_lookup_fast_path(runtime, query="attribution per channel")
@@ -312,7 +312,7 @@ async def test_comparison_with_grain_computes_per_dimension_delta(monkeypatch):
     ]
     fake_provider = _FakeDataProvider(results)
     bundle = _FakeProviderBundle({"attribution": fake_provider})
-    monkeypatch.setattr(lookup_fast_path, "build_hybrid_bundle", lambda **k: (bundle, None))
+    monkeypatch.setattr(lookup_fast_path, "build_mcp_bundle", lambda **k: (bundle, None))
     runtime = _runtime({})
 
     result = await lookup_fast_path.run_lookup_fast_path(runtime, query="compare attribution per channel")
@@ -340,7 +340,7 @@ async def test_mixed_grained_and_ungrained_domain_questions(monkeypatch):
     readings = [MetricReading(metric_id="attributed_net_revenue", value=170.0, dimensions={"channel": "meta"})]
     fake_provider = _FakeDataProvider(DataResult(readings=readings, missing=[]))
     bundle = _FakeProviderBundle({"attribution": fake_provider})
-    monkeypatch.setattr(lookup_fast_path, "build_hybrid_bundle", lambda **k: (bundle, None))
+    monkeypatch.setattr(lookup_fast_path, "build_mcp_bundle", lambda **k: (bundle, None))
     runtime = _runtime({"net_sales": _state("net_sales", 71727.93)})
 
     result = await lookup_fast_path.run_lookup_fast_path(runtime, query="attribution per channel and net sales")

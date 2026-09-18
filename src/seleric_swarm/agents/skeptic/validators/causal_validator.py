@@ -14,9 +14,9 @@ from seleric_swarm.agents.skeptic.validators.base import Validator, challenge, f
 
 _CONF_SCORE = {
     "REJECTED": 0.0,
-    "ASSOCIATION_ONLY": 0.25,
+    "ASSOCIATION": 0.25,
     "PLAUSIBLE_CAUSAL": 0.45,
-    "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS": 0.72,
+    "CAUSALLY_SUPPORTED": 0.72,
     "STRONGLY_SUPPORTED": 0.9,
 }
 
@@ -61,7 +61,7 @@ class CausalValidator(Validator):
                 challenge("causal", "warning", "Causal service unavailable - claim downgraded to association.", evidence_refs=[artifact.causal_id])
             )
             out.score_signals["causal_confidence"] = 0.2
-            out.detail = {"confidence": "ASSOCIATION_ONLY", "service": "unavailable"}
+            out.detail = {"confidence": "ASSOCIATION", "service": "unavailable"}
             return out
 
         if not result.temporal_ok and ctx.policies.causal_flag("require_temporal_check"):

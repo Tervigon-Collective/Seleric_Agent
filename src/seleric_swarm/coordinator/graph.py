@@ -107,7 +107,7 @@ from seleric_swarm.swarm.domain.configs import build_domain_configs
 from seleric_swarm.swarm.envelope import Intent, SwarmMessage
 from seleric_swarm.swarm.mission import SwarmMission, SwarmMissionResult, TeamMember
 from seleric_swarm.swarm.providers.base import ProviderBundle
-from seleric_swarm.swarm.providers.mcp_data import McpFetchStats, build_hybrid_bundle
+from seleric_swarm.swarm.providers.mcp_data import McpFetchStats, build_mcp_bundle
 from seleric_swarm.swarm.specialists.anomaly import AnomalyAgent
 from seleric_swarm.swarm.specialists.observer import ObserverAgent
 from seleric_swarm.swarm.specialists.prediction import PredictionAgent
@@ -1071,7 +1071,7 @@ async def run_swarm_v2_mission(
     )
     mcp_stats: McpFetchStats | None = None
     if providers is None:
-        providers, mcp_stats = build_hybrid_bundle(
+        providers, mcp_stats = build_mcp_bundle(
             mcp=runtime.mcp,
             execution_mode=mode,
             metrics=runtime.metrics,

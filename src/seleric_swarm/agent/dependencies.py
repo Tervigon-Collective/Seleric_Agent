@@ -51,6 +51,8 @@ class ExecutionLimits:
     max_cube_queries: int = 6
     max_causal_queries: int = 3
     max_prediction_calls: int = 3
+    # Confirmed = 1 with A1 acceptance (2026-09-18). Causal widening uses
+    # estimate_effect(search_breadth=...), not this counter.
     max_validation_revisions: int = 1
     max_runtime_seconds: float = 120.0
 

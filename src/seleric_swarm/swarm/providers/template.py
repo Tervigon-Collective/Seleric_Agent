@@ -141,7 +141,7 @@ class TemplateCausalEngine:
     Real causal estimation lives behind ``SwarmDiagnosticSpecialist``, which
     routes to ``agents/diagnostic`` (DoWhy + registered causal graphs). This
     seam is a *contract-honest* placeholder for callers that have not enabled
-    the full diagnostic subsystem: it returns an ``ASSOCIATION_ONLY``-tier
+    the full diagnostic subsystem: it returns an ``ASSOCIATION``-tier
     result with every declared refuter marked failed so no consumer can mistake
     its output for a validated causal claim.
     """

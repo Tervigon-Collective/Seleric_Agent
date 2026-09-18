@@ -90,21 +90,18 @@ contracts, not the other way around.
   corollary in overview §6 and `03_PROFILE_CAPABILITIES.md` §3: deterministic
   control state becomes typed tool preconditions, not prompt text. A owns the
   `ToolResult` error codes those preconditions return
-  (`EVIDENCE_GRAIN_MISMATCH` is new — `CONTRACTS.md` amendment A1.2).
+  (`EVIDENCE_GRAIN_MISMATCH` — `CONTRACTS.md` A1.2, ACCEPTED).
 - **`EvidenceValidator` is not a drop-in replacement for the skeptic.** The
   skeptic is a separate agent with separate context, adversarial to the
   diagnostic agent's output; the validator sits in the same loop, informed by
   the same context that produced the claim. In-context self-review is a
-  weaker check than cross-agent challenge. That may be an acceptable trade,
-  but record it as a decision with the downgrade named rather than as a
-  consolidation (`03_PROFILE_CAPABILITIES.md` §4).
-- **`max_validation_revisions = 1` (frozen in `CONTRACTS.md` §1) has a cost
-  A should decide jointly with C in Sprint 2.** Bug #6's escalating widening
-  is, per bug #7's own entry, the only documented mitigation for #7's
-  intermittent zero-observation-rows. One revision means one widening step
-  and no ladder — and the old system's stall-detector (the part #6 credits
-  as having worked) never gets to fire. Also unanswered: what the loop does
-  with a STRONG-trust + REVISE verdict when it has exactly one revision.
+  weaker check than cross-agent challenge. **Decision recorded 2026-09-18
+  with A1 acceptance:** accepted as a change in kind, not a consolidation
+  (`03_PROFILE_CAPABILITIES.md` §4; `CONTRACTS.md` A1 joint decisions).
+- **`max_validation_revisions = 1` confirmed 2026-09-18 with A1.** Causal
+  escalation is `search_breadth` on `estimate_effect` (A1.1), not the
+  validation-revision counter. On STRONG-trust + REVISE when revisions are
+  exhausted → fail closed with `INSUFFICIENT_EVIDENCE`.
 - Removing `lookup_fast_path` risks the exact bug class it was built to
 fix (`docs/BUG_SHEET.md` #2's metric-ID canonicalization bug, #9's
 intentional no-handoff simplicity) reappearing if the new loop

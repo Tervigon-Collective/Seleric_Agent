@@ -95,7 +95,7 @@ class RobustZScoreDetector:
 
     Protocol-conformant today so it can be dropped into ``ProviderBundle``
     directly; the config-driven *selection* of it over
-    ``TemplateAnomalyDetector`` inside ``build_hybrid_bundle()`` is Sprint 2.5
+    ``TemplateAnomalyDetector`` inside ``build_mcp_bundle()`` is Sprint 2.5
     (05_SPRINT_PLAN.md) -- not implemented here.
     """
 

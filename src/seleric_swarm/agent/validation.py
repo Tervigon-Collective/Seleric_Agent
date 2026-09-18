@@ -1,19 +1,19 @@
-"""``EvidenceValidator`` — orchestration slot only (Sprint 2 Profile A).
+"""``EvidenceValidator`` — orchestration + minimal causal vocab check (Sprint 2).
 
 Per ``docs/refactor/SPRINT_PLAN.md`` Sprint 2: this ships the bounded
 1-revision retry loop (non-negotiable rule 11,
-``ExecutionLimits.max_validation_revisions``). Content checks — the real
-"does this causal claim carry a valid evidence classification" logic —
-land once Profile C hands off its evidence-classification vocabulary (end
-of Sprint 2, per the sprint gate); until then ``EvidenceValidator.validate``
-only checks what's mechanically verifiable without that vocabulary:
+``ExecutionLimits.max_validation_revisions``). Joint decision with A1
+acceptance (2026-09-18): keep ``max_validation_revisions = 1``; Causal
+escalation is ``search_breadth`` on ``estimate_effect`` (A1.1), not this
+counter. On STRONG-trust + REVISE when revisions are exhausted, fail closed
+with ``INSUFFICIENT_EVIDENCE``. Skeptic → validator is a change in kind
+(in-context self-review), not a consolidation — see ``CONTRACTS.md`` A1
+joint decisions.
 
-- every ``evidence_id``/``finding_id`` the ``MissionResult`` references
-  actually resolves in the ``ArtifactStore`` (the structural half of rule 6
-  — "every numerical claim maps to an EvidenceArtifact"; the semantic half,
-  matching specific numbers in ``final_response`` to specific artifacts,
-  needs Profile C's classification work to do meaningfully).
-- a "completed" mission has a non-empty ``final_response``.
+Sprint 2 C handoff (A1.4): every mission-scoped ``CausalArtifact`` must
+carry a present, frozen-vocabulary ``evidence_classification``. Full
+skeptic two-signal (``score_trust`` / ``decide_verdict``) and bug #12
+remain Sprint 3.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from pydantic_ai import Agent
 
+from seleric_swarm.agent.artifacts import CausalArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.limits import ExecutionBudgetTracker
 from seleric_swarm.agent.output import MissionResult
@@ -41,6 +42,26 @@ class EvidenceValidator:
             return ValidationOutcome(ok=False, reason=f"unresolved artifact ids: {missing}")
         if result.status == "completed" and not result.final_response.strip():
             return ValidationOutcome(ok=False, reason="completed mission has an empty final_response")
+
+        causal_check = self._validate_causal_classifications(deps)
+        if not causal_check.ok:
+            return causal_check
+        return ValidationOutcome(ok=True)
+
+    def _validate_causal_classifications(self, deps: SelericDeps) -> ValidationOutcome:
+        """Minimal Profile C vocabulary gate — presence + membership only."""
+        for artifact in deps.artifact_store.list_for_mission(deps.mission_id):
+            if artifact.artifact_type != "causal":
+                continue
+            try:
+                # CausalArtifact's Literal + model_validator enforce vocabulary
+                # and CAUSALLY_SUPPORTED→refutation_checks; failure is enough.
+                CausalArtifact.model_validate(artifact.payload)
+            except Exception as exc:
+                return ValidationOutcome(
+                    ok=False,
+                    reason=f"causal artifact {artifact.id} invalid: {exc}",
+                )
         return ValidationOutcome(ok=True)
 
 

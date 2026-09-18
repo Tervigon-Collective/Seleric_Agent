@@ -247,7 +247,7 @@ class CatalogueBootstrap:
 
         Note: does not pass ``registry_hints`` — startup staleness logging
         only happens on the first explicit ``warm()`` call (from
-        ``build_hybrid_bundle`` after the first mission triggers warming).
+        ``build_mcp_bundle`` after the first mission triggers warming).
         """
         if self.should_refresh():
             await self.warm()

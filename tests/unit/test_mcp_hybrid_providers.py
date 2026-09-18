@@ -6,12 +6,12 @@ import asyncio
 
 import pytest
 
-from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
+from seleric_swarm.swarm.providers.mcp_data import build_mcp_bundle
 
 
 @pytest.mark.asyncio
 async def test_hybrid_staging_uses_mcp_for_performance(runtime):
-    bundle, stats = build_hybrid_bundle(
+    bundle, stats = build_mcp_bundle(
         mcp=runtime.mcp,
         execution_mode="staging",
         metrics=runtime.metrics,
@@ -19,7 +19,7 @@ async def test_hybrid_staging_uses_mcp_for_performance(runtime):
     )
     assert "seleric.metrics_query" in runtime.mcp.capabilities
     provider = bundle.data_for("performance")
-    assert type(provider).__name__ == "HybridMcpDataProvider"
+    assert type(provider).__name__ == "McpDataProvider"
     result = await provider.fetch(
         metric_ids=["metric.cac"],
         time_range={"start": "2026-08-31", "end": "2026-09-03"},
@@ -36,7 +36,7 @@ async def test_hybrid_staging_uses_mcp_for_performance(runtime):
 async def test_fetch_series_below_min_rows_returns_none(runtime):
     # docs/44 ROB-002: a short (below min_rows) window must not hand DoWhy a
     # rank-deficient dataset — better to decline than fabricate confidence.
-    bundle, _stats = build_hybrid_bundle(
+    bundle, _stats = build_mcp_bundle(
         mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
     )
     provider = bundle.data_for("performance")
@@ -75,7 +75,7 @@ def _series_rows(measure: str, start: str, end: str) -> list[dict]:
 
 @pytest.mark.asyncio
 async def test_fetch_series_returns_dataframe_when_enough_days(runtime):
-    bundle, _stats = build_hybrid_bundle(
+    bundle, _stats = build_mcp_bundle(
         mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
     )
     provider = bundle.data_for("performance")
@@ -101,7 +101,7 @@ async def test_fetch_series_returns_dataframe_when_enough_days(runtime):
 
 @pytest.mark.asyncio
 async def test_fetch_series_returns_single_metric_frame(runtime):
-    bundle, _stats = build_hybrid_bundle(
+    bundle, _stats = build_mcp_bundle(
         mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
     )
     provider = bundle.data_for("performance")
@@ -126,7 +126,7 @@ async def test_fetch_series_returns_single_metric_frame(runtime):
 
 @pytest.mark.asyncio
 async def test_fetch_series_one_query_per_metric(runtime):
-    bundle, _stats = build_hybrid_bundle(
+    bundle, _stats = build_mcp_bundle(
         mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
     )
     provider = bundle.data_for("performance")
@@ -160,7 +160,7 @@ async def test_fetch_series_one_query_per_metric(runtime):
 
 @pytest.mark.asyncio
 async def test_fetch_passes_dimensions_to_mcp(runtime):
-    bundle, _stats = build_hybrid_bundle(
+    bundle, _stats = build_mcp_bundle(
         mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
     )
     provider = bundle.data_for("performance")
@@ -196,7 +196,7 @@ async def test_fetch_passes_dimensions_to_mcp(runtime):
 async def test_hybrid_direction_bad_comes_from_registry_not_hardcoded(runtime):
     # docs/44 ROB-001: net_sales is "more is better" (direction_bad: down in
     # metric_registry.yaml) — an upward move must never be reported adverse.
-    bundle, _stats = build_hybrid_bundle(
+    bundle, _stats = build_mcp_bundle(
         mcp=runtime.mcp,
         execution_mode="staging",
         metrics=runtime.metrics,
@@ -217,7 +217,7 @@ async def test_hybrid_production_returns_nothing_for_domain_with_no_module(runti
     # "technical" has no seleric_module (no live Technical MCP exists yet) —
     # no fixture fallback: missing live coverage means missing data, not a
     # fabricated synthetic number.
-    bundle, stats = build_hybrid_bundle(
+    bundle, stats = build_mcp_bundle(
         mcp=runtime.mcp,
         execution_mode="production",
         metrics=runtime.metrics,
@@ -271,7 +271,7 @@ async def test_resolve_measure_returns_catalogue_metric_field_with_no_mcp_calls(
     """_resolve_measure is now a static config-field read — no MCP round-trip
     at all, confirmed vs. current AND non-existent catalogue metric ids
     alike (validation happens downstream, at the real query call)."""
-    bundle, stats = build_hybrid_bundle(
+    bundle, stats = build_mcp_bundle(
         mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
     )
     provider = bundle.data_for("performance")
@@ -299,7 +299,7 @@ async def test_resolve_measure_returns_stale_id_verbatim_not_none(runtime):
     no None) — the live metrics_query call surfaces the real failure instead."""
     from seleric_swarm.services.metrics import MetricDefinition
 
-    bundle, _stats = build_hybrid_bundle(
+    bundle, _stats = build_mcp_bundle(
         mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
     )
     provider = bundle.data_for("funnel")
@@ -324,7 +324,7 @@ async def test_resolve_measure_returns_none_when_catalogue_metric_unset(runtime)
     there's nothing to query, no fallback to attempt."""
     from seleric_swarm.services.metrics import MetricDefinition
 
-    bundle, _stats = build_hybrid_bundle(
+    bundle, _stats = build_mcp_bundle(
         mcp=runtime.mcp, execution_mode="staging", metrics=runtime.metrics, agents=runtime.agents
     )
     provider = bundle.data_for("funnel")

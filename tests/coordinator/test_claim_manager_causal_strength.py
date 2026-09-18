@@ -33,9 +33,9 @@ def test_propose_causal_strength_variations():
     mgr = ClaimManager()
     
     strength_values = [
-        "ASSOCIATION_ONLY",
+        "ASSOCIATION",
         "PLAUSIBLE_CAUSAL",
-        "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS",
+        "CAUSALLY_SUPPORTED",
         "STRONGLY_SUPPORTED",
         None,  # No strength provided
     ]
@@ -83,7 +83,7 @@ async def test_skeptic_gate_with_causal_strength():
         mission_id="M_skeptic",
         statement="Causal claim with strength",
         claim_type="causal",
-        causal_strength="CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS",
+        causal_strength="CAUSALLY_SUPPORTED",
     )
     
     # Apply PASS verdict
@@ -102,7 +102,7 @@ async def test_skeptic_gate_with_causal_strength():
     
     # causal_strength should be preserved
     validated_claim = mgr.claims[claim.claim_id]
-    assert validated_claim.causal_strength == "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS"
+    assert validated_claim.causal_strength == "CAUSALLY_SUPPORTED"
 
 
 def test_dump_preserves_causal_strength():

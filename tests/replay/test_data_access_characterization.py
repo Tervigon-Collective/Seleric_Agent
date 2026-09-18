@@ -2,8 +2,8 @@
 
 Item 2 found three independent MCP-query-shaping implementations that all
 converge on the same two primitives (``resolve_measure`` /
-``call_metrics_query``): ``HybridMcpDataProvider.fetch()``,
-``HybridMcpDataProvider.fetch_series()``, and
+``call_metrics_query``): ``McpDataProvider.fetch()``,
+``McpDataProvider.fetch_series()``, and
 ``business_state/series.py::fetch_series()``. Before any of them are merged,
 this suite is the safety net Item 2's plan calls for: it captures what each
 path returns TODAY for the same live metric + time range, so a later refactor
@@ -26,7 +26,7 @@ import pytest
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import StateRequest
-from seleric_swarm.swarm.providers.mcp_data import HybridMcpDataProvider, McpFetchStats
+from seleric_swarm.swarm.providers.mcp_data import McpDataProvider, McpFetchStats
 
 # One representative metric per domain already exercised by
 # tests/replay/test_domain_lookups.py, reused here for the same reason: known
@@ -53,7 +53,7 @@ async def test_characterize_single_day_fetch_vs_business_state(runtime, agent_id
     in a one-day range, so the "last point vs period total" distinction
     lookup_fast_path.py's docstring warns about shouldn't apply here).
     """
-    provider = HybridMcpDataProvider(
+    provider = McpDataProvider(
         _domain_for(agent_id),
         mcp=runtime.mcp,
         stats=McpFetchStats(),
@@ -84,7 +84,7 @@ async def test_characterize_single_day_fetch_vs_business_state(runtime, agent_id
     # implementations line by line) needs -- surfaced here as a clear
     # failure message rather than silently passing either way.
     assert fetch_value is not None, (
-        f"HybridMcpDataProvider.fetch() returned no reading for {metric_id} on {_DAY} "
+        f"McpDataProvider.fetch() returned no reading for {metric_id} on {_DAY} "
         f"(missing={fetch_result.missing}) -- cannot characterize, MCP data unavailable"
     )
     assert bss_value is not None, (
@@ -93,7 +93,7 @@ async def test_characterize_single_day_fetch_vs_business_state(runtime, agent_id
     )
     assert fetch_value == pytest.approx(bss_value, rel=1e-6), (
         f"DIVERGENCE for {metric_id} on {_DAY}: "
-        f"HybridMcpDataProvider.fetch()={fetch_value} vs "
+        f"McpDataProvider.fetch()={fetch_value} vs "
         f"BusinessStateService.get_metric_state().actual={bss_value}. "
         "Both call resolve_measure()+call_metrics_query() independently for "
         "the same single-day window -- a divergence here means the two "
@@ -122,14 +122,14 @@ async def test_characterize_multi_day_window_last_point_vs_period_total(runtime,
 
     This test proves that documented behavior explicitly rather than taking
     it on faith: BSS's ``actual`` over the full period must equal
-    ``HybridMcpDataProvider.fetch()`` for the period's LAST DAY ALONE, not
+    ``McpDataProvider.fetch()`` for the period's LAST DAY ALONE, not
     the period total. If BSS ever starts returning a period aggregate
     instead (a behavior change, intentional or not), this test fails and
     flags it -- which matters because Item 2's eventual merge must decide
     which behavior the unified fetcher keeps, not silently inherit whichever
     implementation happens to win the merge.
     """
-    provider = HybridMcpDataProvider(
+    provider = McpDataProvider(
         _domain_for(agent_id),
         mcp=runtime.mcp,
         stats=McpFetchStats(),
@@ -181,7 +181,7 @@ async def test_characterize_multi_day_window_last_point_vs_period_total(runtime,
 async def test_characterize_dimensioned_fetch_has_no_business_state_equivalent(runtime):
     """Grain/breakdown fetches: a structural asymmetry, not a value mismatch.
 
-    ``HybridMcpDataProvider.fetch(dimensions=...)`` returns one reading per
+    ``McpDataProvider.fetch(dimensions=...)`` returns one reading per
     dimension value (a real per-channel breakdown). ``BusinessStateService
     .get_metric_state()`` has no equivalent capability at all --
     ``facade.py`` reads exactly one key out of ``StateRequest.dimensions``
@@ -192,14 +192,14 @@ async def test_characterize_dimensioned_fetch_has_no_business_state_equivalent(r
 
     This is recorded as a known, structural difference for Item 2's merge to
     decide on (does the unified fetcher gain grain support in BSS, or does
-    BSS stay scalar-only and defer to HybridMcpDataProvider for breakdowns?)
+    BSS stay scalar-only and defer to McpDataProvider for breakdowns?)
     -- not something this test tries to make "pass" by working around it.
     """
     metric_id = "metric.units_sold"  # supported_dimensions: [sku, product_title]
     agent_id = "product_agent"
     dimension_key = "product_title"
 
-    provider = HybridMcpDataProvider(
+    provider = McpDataProvider(
         _domain_for(agent_id),
         mcp=runtime.mcp,
         stats=McpFetchStats(),
@@ -212,7 +212,7 @@ async def test_characterize_dimensioned_fetch_has_no_business_state_equivalent(r
         dimensions={dimension_key: ""},
     )
     assert len(breakdown.readings) >= 1, (
-        f"HybridMcpDataProvider.fetch(dimensions={{{dimension_key!r}: ''}}) returned no rows "
+        f"McpDataProvider.fetch(dimensions={{{dimension_key!r}: ''}}) returned no rows "
         f"for {metric_id} on {_DAY} -- cannot characterize the grain asymmetry without live "
         "breakdown data"
     )

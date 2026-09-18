@@ -1,7 +1,7 @@
 """Config-driven AnomalyDetector selection (Sprint 2.5,
 docs/features/business-state-service/05_SPRINT_PLAN.md).
 
-``build_hybrid_bundle()`` instantiates one ``ConfiguredAnomalyDetector``
+``build_mcp_bundle()`` instantiates one ``ConfiguredAnomalyDetector``
 instead of hardcoding ``TemplateAnomalyDetector`` directly. Internally it
 dispatches each reading to Template or BusinessStateService's
 ``RobustZScoreDetector`` per ``config/provider_registry.yaml`` -- the live
@@ -61,7 +61,7 @@ class ConfiguredAnomalyDetector:
         if strategy == "robust_zscore" and self._robust_zscore is None:
             # Config asked for BusinessStateService's detector but none was
             # wired in (e.g. runtime.business_state wasn't passed to
-            # build_hybrid_bundle) -- degrade to template rather than crash.
+            # build_mcp_bundle) -- degrade to template rather than crash.
             log.warning("provider_registry selected robust_zscore for %s with no BusinessStateService wired; using template", reading.metric_id)
             return "template"
         return strategy
