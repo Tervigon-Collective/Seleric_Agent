@@ -86,7 +86,7 @@ def _load_evidence(ctx: RunContext[SelericDeps], evidence_ids: list[str]) -> tup
             )
         try:
             evidence.append(EvidenceArtifact.model_validate(artifact.payload))
-        except Exception as exc:  # noqa: BLE001 - never raise across the tool boundary
+        except Exception as exc:
             return [], _refuse(
                 f"artifact {artifact.id} payload is not a valid EvidenceArtifact: {exc}",
                 error_code="INSUFFICIENT_EVIDENCE",
@@ -262,7 +262,7 @@ async def detect_anomalies(
             )
             continue
 
-        *history, (observed_id, observed) = usable
+        *history, (_observed_id, observed) = usable
         result = robust_zscore([float(item.value) for _, item in history], float(observed.value))
         if not result.is_anomaly:
             continue

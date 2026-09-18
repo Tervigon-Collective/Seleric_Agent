@@ -49,10 +49,12 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Profile C — Analytics toolset v0 (re-scoped 2026-09-18)
 | Task | Status | Evidence |
 |---|---|---|
-| Extract comparison/detection math in place (pure functions, existing suite green = proof of no drift) | Done | `src/seleric_swarm/analytics/comparison.py::period_deltas` (extracted period-over-period pairing math from `observer.py::_post_comparison_deltas`) + `services/business_state/detectors.py::robust_zscore` (median/MAD math retained). |
-| Wrap as `compare_periods`, `detect_anomalies` (delegate to existing `detectors.py::robust_zscore`) | Done | `src/seleric_swarm/toolsets/analytics.py` — `compare_periods` and `detect_anomalies` async tool adapters complying with non-negotiable rules 4 (no inter-tool calls) and 5 (no fetching evidence). |
-| A1.2 grain precondition + `EVIDENCE_GRAIN_MISMATCH`; do not port `anomaly.py`'s sum/normalize fallback | Done | `src/seleric_swarm/analytics/grain.py::validate_grain_set()` — validates grain, span, and count preconditions; returns structured `EVIDENCE_GRAIN_MISMATCH` refusal without sum/normalize fallbacks. |
-| Bug #14 regression, both halves (un-normalized per-day reaches detector; mismatched set rejected) | Done | Verified via `tests/unit/test_analytics_toolset.py` (16 passed in 0.08s: un-normalized daily values verified in `test_per_day_evidence_reaches_detector_unnormalized`, grain mismatches/spans rejected in `test_multi_day_aggregate_labelled_day_grain_is_rejected` and `test_mixed_grain_set_is_rejected`). |
+| Extract comparison/detection math in place (pure functions, existing suite green = proof of no drift) | Done | `src/seleric_swarm/analytics/comparison.py::period_deltas` — the pairing/subtraction lifted out of `observer.py::_post_comparison_deltas`, which keeps its signature and Blackboard writes and now delegates. **Drift proof**: the 27 offline tests covering the touched modules were not edited and stay green — `./.venv/Scripts/python.exe -m pytest tests/unit/test_domain_questions.py tests/unit/test_anomaly_specialist.py tests/unit/test_business_state_anomaly.py -q` → 27 passed. Two behaviors deliberately preserved and commented at the call site: deltas are `a - b` (a decline reads negative), and *both* periods are deduped by (metric, dimensions) before pairing — iterating period A directly would have turned a repeated key into N deltas instead of 1. Scope correction to the sprint plan: extraction was much smaller than assumed, because `detectors.py::robust_zscore`/`_rescore_against_expected` and `observer.py::_daily_windows` are **already pure functions** — nothing to extract, so they are reused as-is rather than moved. |
+| Wrap as `compare_periods`, `detect_anomalies` (delegate to existing `detectors.py::robust_zscore`) | Done | `src/seleric_swarm/toolsets/analytics.py`. Design consequence worth recording: `detect_anomalies` **cannot** wrap `RobustZScoreDetector` — that class fetches its own history via `BusinessStateService.get_metric_state()` mid-detection, which rule 5 forbids. History arrives as evidence instead (the set is the series: sorted by `period_start`, last point = observation, rest = baseline), and only the pure `robust_zscore` is reused. `method="seasonal"` is in the frozen signature but has no implementation in `src/`, so it returns `error_code="METHOD_NOT_AVAILABLE"` rather than silently running a different detector; `"mad"` maps to `robust_zscore` because that function *is* the median/MAD estimator. Needs a small A1 addendum for the new error code. |
+| A1.2 grain precondition + `EVIDENCE_GRAIN_MISMATCH`; do not port `anomaly.py`'s sum/normalize fallback | Done | `src/seleric_swarm/analytics/grain.py::validate_grain_set()` — three rules: one grain per call, each artifact's span matches its declared grain (day=1, week=7, month=28-31), all spans equal. Returns a reason string rather than raising, so a tool never raises across the agent boundary. `anomaly.py`'s sum/normalize branch is **not** ported. 11 passing: `tests/unit/test_analytics_grain.py`. |
+| Bug #14 regression, both halves (un-normalized per-day reaches detector; mismatched set rejected) | Done | `tests/unit/test_analytics_toolset.py` — 16 passed. Half 1: `test_per_day_evidence_reaches_detector_unnormalized` (5 daily rows, observed stays the raw 900.0, baseline is the median 4090.0 of the 4 prior days). Half 2: `test_multi_day_aggregate_labelled_day_grain_is_rejected`, `test_aggregate_mixed_into_a_daily_series_is_rejected`, `test_mixed_grain_set_is_rejected` — all `success=False` / `EVIDENCE_GRAIN_MISMATCH`, never normalized. |
+| Cross-profile seam test (B's evidence → C's analytics) | Done | `tests/unit/test_analytics_semantic_handoff.py` — 4 passed. Pins the B→C handoff end to end rather than assuming it: B emits one artifact per Cube bucket (each `period_start == period_end` for day grain), C scores the real drop against its own daily history, and a hand-built window-aggregate-labelled-day artifact is refused. Also pins the upstream hazard below. |
+| Full suite vs. Sprint 0 baseline (no new failures) | Done | `./.venv/Scripts/python.exe -m pytest -q --ignore=tests/integration/test_minio_blob_store_integration.py` (2026-09-18) → **842 passed, 1 failed, 4 skipped** in 607s. Sole failure is the same pre-existing `tests/unit/test_api_scenario_matrix.py::test_health_combo_never_returns_running` recorded in the Sprint 0 baseline — no new failures. Ruff clean on all new/modified files. |
 
 ## Sprint 2
 
@@ -286,3 +288,46 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   780/1/5 Sprint 2 Profile A baseline, no new unresolved failures. Live
   characterization suite (`tests/replay/`) re-run clean against production
   data after all changes: 45/45 passed.
+
+- 2026-09-18: **Sprint 1 / Profile C executed** — Analytics toolset v0.
+  New: `analytics/{__init__,comparison,grain}.py`,
+  `toolsets/analytics.py`, `tests/unit/test_analytics_{grain,toolset,semantic_handoff}.py`
+  (31 tests, all passing). Modified, behavior-preserving:
+  `swarm/specialists/observer.py::_post_comparison_deltas` now delegates its
+  pairing/subtraction to `analytics.comparison.period_deltas`. Full suite
+  **842 passed / 1 failed / 4 skipped**, the failure being the same
+  pre-existing `test_health_combo_never_returns_running`. Nothing wired into
+  `orchestration/dispatch.py` — swarm_v2 keeps 100% of traffic.
+
+  **Correction to two defects this profile reported during its 2026-09-18
+  design review.** Both were real when written and both are now fixed; the
+  review's text predates the fixes, not the other way round:
+  - *"Profile B's `query_metrics` collapses a multi-row series to
+    `rows[0]`"* — **fixed by B**. It now emits one `EvidenceArtifact` per
+    Cube bucket with `period_start == period_end` for a real grain.
+    Verified by `test_day_grain_query_emits_one_artifact_per_day_not_one_per_window`.
+  - *"Profile A ships duplicate, divergent frozen contracts"* — **fixed by
+    A**, which deleted the orphaned `agent/contracts.py` during Sprint 2.
+    `agent/{dependencies,output,artifacts}.py` are canonical; Profile C
+    imports those.
+
+  **New finding, routed to Profile B (latent, not currently firing).**
+  `services/mcp_query.py::row_date` identifies a Cube bucket by matching a
+  `.day`-suffixed column name. When it returns `None` for a day-grain
+  result — a renamed view, a different granularity suffix, an aggregate row
+  mixed into the series — `toolsets/semantic.py::query_metrics` falls back
+  to `period_start`/`period_end` for *every* row, emitting N artifacts that
+  each declare `grain="day"` while spanning the whole window. That is
+  `docs/BUG_SHEET.md` #14's shape multiplied by N, and B's own path reports
+  `success=True`. Not hypothetical: it is what the first draft of C's
+  fixture hit. C's A1.2 precondition catches it before it can reach a
+  Finding (`test_unparseable_date_column_degrades_to_window_labels_and_is_caught`),
+  so this is a defence-in-depth note rather than a live bug — but the
+  heuristic is a single string match standing between a renamed Cube view
+  and silently wrong evidence labels.
+
+  **Needs an A1 addendum:** `detect_anomalies` returns a new error code,
+  `METHOD_NOT_AVAILABLE`, for the frozen-but-unimplemented
+  `method="seasonal"`. Refusing is the honest option — running
+  `robust_zscore` instead would answer a different question than the agent
+  asked — but the code is not in `CONTRACTS.md` yet.

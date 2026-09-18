@@ -25,7 +25,12 @@ import pytest
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
-from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance, ContextBundle, Principal
+from seleric_swarm.conversations.contracts import (
+    Artifact,
+    ArtifactProvenance,
+    ContextBundle,
+    Principal,
+)
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import analytics
 
