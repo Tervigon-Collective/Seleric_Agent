@@ -125,6 +125,12 @@ class Settings(BaseSettings):
     require_skeptic_for_causal: bool = True
     require_provenance_for_numeric: bool = True
 
+    # V3 refactor (docs/refactor/) — the new Agent[SelericDeps, MissionResult]
+    # loop. Sprint 1: not mounted into main.py at all, so this flag is not yet
+    # read anywhere — it documents the gate Sprint 4's cutover flips, per the
+    # strangler-fig migration rule (docs/refactor/00_OVERVIEW.md §5).
+    v3_agent_enabled: bool = False
+
     workflow_name: str = "lookup_v1"
     workflow_version: str = "1.0.0"
     # Swarm mission control plane (Coordinator V1). Only "swarm_v2" exists today —

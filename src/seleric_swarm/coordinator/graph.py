@@ -1035,6 +1035,7 @@ async def run_swarm_v2_mission(
     execution_mode: str = "production",
     budget_overrides: dict[str, Any] | None = None,
     mission_id: str | None = None,
+    context_bundle: dict[str, Any] | None = None,
 ) -> SwarmMissionResult:
     """Execute Coordinator V1 via LangGraph DECIDE→EXECUTE cycle."""
     mid = mission_id or f"MS-{uuid4().hex[:10]}"
@@ -1093,6 +1094,7 @@ async def run_swarm_v2_mission(
         mission_id=mid,
         request_id=rid,
         session_id=sid,
+        context_bundle=context_bundle,
     )
     if normalized.unsupported_reason:
         return _unsupported_swarm_result(

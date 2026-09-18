@@ -272,6 +272,7 @@ async def run_mission_job(
     full_skeptic: bool,
     full_strategy: bool,
     execution_mode: str,
+    context_bundle: dict | None = None,
 ) -> None:
     """Background worker: execute mission and overwrite the running placeholder."""
     seeded = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
@@ -298,6 +299,7 @@ async def run_mission_job(
                 full_skeptic=full_skeptic,
                 full_strategy=full_strategy,
                 execution_mode=execution_mode,
+                context_bundle=context_bundle,
             )
         if is_cancel_requested(mission_id, runtime):
             # Cancel won — store.put refuses overwrite of cancelled; restore if needed.

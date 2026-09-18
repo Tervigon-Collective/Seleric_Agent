@@ -30,6 +30,7 @@ from typing import Any
 from uuid import uuid4
 
 from seleric_swarm.contracts.lookup import MissionResult, MissionStatus, TraceInfo
+from seleric_swarm.coordinator.intake.conversational_reply import classify_conversational_via_llm
 from seleric_swarm.coordinator.lookup_fast_path import run_lookup_fast_path
 from seleric_swarm.coordinator.overview import (
     build_overview_result,
@@ -41,44 +42,11 @@ from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
 
 _SWARM_INTENTS = {"diagnostic", "predictive", "prescriptive", "executive_health"}
-_CONVERSATIONAL_PROMPTS = {
-    "hi",
-    "hello",
-    "hey",
-    "good morning",
-    "good afternoon",
-    "good evening",
-    "how are you",
-    "who are you",
-    "what can you do",
-    "thanks",
-    "thank you",
-}
 _OVERVIEW_PROMPT = re.compile(
     r"\b(how are we doing|how is (?:the )?business|business health|"
     r"health check|business overview|company overview)\b",
     re.IGNORECASE,
 )
-
-
-def _is_conversational_prompt(query: str) -> bool:
-    normalized = re.sub(r"[^\w\s']", "", query.casefold())
-    return " ".join(normalized.split()) in _CONVERSATIONAL_PROMPTS
-
-
-def _conversation_response(query: str) -> str:
-    normalized = " ".join(re.sub(r"[^\w\s']", "", query.casefold()).split())
-    if normalized in {"thanks", "thank you"}:
-        return "You’re welcome. What would you like to investigate next?"
-    if normalized in {"who are you", "what can you do"}:
-        return (
-            "I’m Seleric. I can investigate business performance, explain anomalies, "
-            "compare channels or periods, forecast outcomes, and recommend actions."
-        )
-    return (
-        "Hi! What would you like to investigate? You can ask about sales, conversion, "
-        "CAC, ROAS, inventory, customers, forecasts, or business anomalies."
-    )
 
 
 async def _complete_overview_mission(
@@ -147,6 +115,7 @@ def _complete_conversational_mission(
     runtime: SwarmRuntime,
     *,
     query: str,
+    response: str,
     session_id: str | None,
     request_id: str | None,
     mission_id: str | None,
@@ -154,7 +123,6 @@ def _complete_conversational_mission(
     resolved_mission_id = mission_id or f"MS-{uuid4().hex[:10]}"
     resolved_request_id = request_id or uuid4().hex
     resolved_session_id = session_id or resolved_request_id
-    response = _conversation_response(query)
     result = MissionResult(
         mission_id=resolved_mission_id,
         status="completed",
@@ -199,6 +167,7 @@ async def route_for(
     query: str,
     timezone: str = "Asia/Kolkata",
     as_of: str | None = None,
+    context_bundle: dict[str, Any] | None = None,
 ) -> str:
     """Return "lookup" or "swarm", based on the LLM's classified intent.
 
@@ -212,7 +181,13 @@ async def route_for(
     """
     from seleric_swarm.coordinator.intake.llm_classifier import classify_query_via_llm
 
-    classification = await classify_query_via_llm(query, runtime=runtime, timezone=timezone, as_of=as_of)
+    classification = await classify_query_via_llm(
+        query,
+        runtime=runtime,
+        timezone=timezone,
+        as_of=as_of,
+        context_bundle=context_bundle,
+    )
     if classification is None:
         return "lookup"
     intents = set(classification.intents)
@@ -259,6 +234,7 @@ async def run_any_mission(
     session_id: str | None = None,
     request_id: str | None = None,
     mission_id: str | None = None,
+    context_bundle: dict[str, Any] | None = None,
     **swarm_only: Any,
 ) -> dict[str, Any]:
     """Classify, then dispatch to the lookup fast path or the dynamic swarm.
@@ -272,10 +248,18 @@ async def run_any_mission(
         from seleric_swarm.cancellation import MissionCancelledError
 
         raise MissionCancelledError(f"mission {mission_id} was cancelled")
-    if _is_conversational_prompt(query):
+    conversational_response = await classify_conversational_via_llm(
+        query,
+        runtime=runtime,
+        session_id=session_id,
+        request_id=request_id,
+        mission_id=mission_id,
+    )
+    if conversational_response is not None:
         return _complete_conversational_mission(
             runtime,
             query=query,
+            response=conversational_response,
             session_id=session_id,
             request_id=request_id,
             mission_id=mission_id,
@@ -288,7 +272,9 @@ async def run_any_mission(
             request_id=request_id,
             mission_id=mission_id,
         )
-    route = await route_for(runtime, query=query, timezone=timezone, as_of=as_of)
+    route = await route_for(
+        runtime, query=query, timezone=timezone, as_of=as_of, context_bundle=context_bundle
+    )
     if mission_id and cancellation is not None and cancellation.is_requested(mission_id):
         from seleric_swarm.cancellation import MissionCancelledError
 
@@ -314,6 +300,7 @@ async def run_any_mission(
             session_id=session_id,
             request_id=request_id,
             mission_id=mission_id,
+            context_bundle=context_bundle,
         )
         if fast_result is not None:
             return {"route": "lookup", "result": fast_result.model_dump()}
@@ -336,7 +323,9 @@ async def run_any_mission(
             # what should have been a normal answer. One retry of the whole
             # routing decision catches that without adding any cost to the
             # common (successful) path -- it only fires on this rare failure.
-            retry_route = await route_for(runtime, query=query, timezone=timezone, as_of=as_of)
+            retry_route = await route_for(
+                runtime, query=query, timezone=timezone, as_of=as_of, context_bundle=context_bundle
+            )
             if retry_route == "swarm":
                 return await _run_swarm(
                     runtime,
@@ -346,7 +335,7 @@ async def run_any_mission(
                     session_id=session_id,
                     request_id=request_id,
                     mission_id=mission_id,
-                    swarm_only=swarm_only,
+                    swarm_only={**swarm_only, "context_bundle": context_bundle},
                 )
         return {"route": "lookup", "result": result.model_dump()}
 
@@ -358,5 +347,5 @@ async def run_any_mission(
         session_id=session_id,
         request_id=request_id,
         mission_id=mission_id,
-        swarm_only=swarm_only,
+        swarm_only={**swarm_only, "context_bundle": context_bundle},
     )

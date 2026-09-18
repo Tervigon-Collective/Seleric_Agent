@@ -1166,6 +1166,9 @@ async def _execute_submission(
             full_skeptic=full_skeptic,
             full_strategy=full_strategy,
             execution_mode=execution_mode,
+            context_bundle=run.metadata.get("context_bundle")
+            if isinstance(run.metadata.get("context_bundle"), dict)
+            else None,
         )
     raw = getattr(runtime.store, "get_raw", lambda _mission_id: None)(run.mission_id)
     raw = raw if isinstance(raw, dict) else {}
