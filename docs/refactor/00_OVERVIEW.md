@@ -3,11 +3,13 @@
 Status: execution underway. Sprint 0/1 Done; **Sprint 2 closed 2026-09-18**
 aside from Profile B 3-calendar-day characterization (**Partial** — see
 `CHARACTERIZATION_LEDGER.md`). Profile A through Sprint 3 (runtime
-scaffolding, validator + limits, mission cache/tracing/Temporal decision)
-Done. Profile C Causal + A1 Done. Hybrid fetch path extract-wrap-delete
-landed (`McpDataProvider` + `query_metric_series`). Next: Sprint 3
-residuals (characterization days 2–3, ActionToolset upstream, full
-validator two-signal, models). See `SPRINT_PLAN.md` / `TASK_SHEET.md`.
+scaffolding, validator + execution limits, mission cache/tracing/
+Temporal decision) Done. Profile B through Sprint 2 (semantic toolset v0 +
+hybrid fetch-path extract-wrap-delete: `McpDataProvider` +
+`query_metric_series`) Done. Profile C through Sprint 3 (analytics +
+causal + Model/Skeptic port + parity harness) Done. Next: Sprint 3
+residuals (characterization days 2–3, ActionToolset upstream). See
+`SPRINT_PLAN.md` / `TASK_SHEET.md`.
 Last verified against source: 2026-09-18.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube
