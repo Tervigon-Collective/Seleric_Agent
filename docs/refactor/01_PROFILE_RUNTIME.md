@@ -79,7 +79,26 @@ instead of a shared mutable blackboard.
   can regress control flow that was previously deterministic (e.g. the
   skeptic-gate's forced `REVISE` on a blocking evidence gap — spec rule 9,
   and `docs/BUG_SHEET.md` #12's documented "STRONG trust + REVISE" behavior
-  must still be reproducible under the new EvidenceValidator).
+  must still be reproducible under the new EvidenceValidator). The general
+  form of this risk, and the mitigation, is now written up as the rules 4+5
+  corollary in overview §6 and `03_PROFILE_CAPABILITIES.md` §3: deterministic
+  control state becomes typed tool preconditions, not prompt text. A owns the
+  `ToolResult` error codes those preconditions return
+  (`EVIDENCE_GRAIN_MISMATCH` is new — `CONTRACTS.md` amendment A1.2).
+- **`EvidenceValidator` is not a drop-in replacement for the skeptic.** The
+  skeptic is a separate agent with separate context, adversarial to the
+  diagnostic agent's output; the validator sits in the same loop, informed by
+  the same context that produced the claim. In-context self-review is a
+  weaker check than cross-agent challenge. That may be an acceptable trade,
+  but record it as a decision with the downgrade named rather than as a
+  consolidation (`03_PROFILE_CAPABILITIES.md` §4).
+- **`max_validation_revisions = 1` (frozen in `CONTRACTS.md` §1) has a cost
+  A should decide jointly with C in Sprint 2.** Bug #6's escalating widening
+  is, per bug #7's own entry, the only documented mitigation for #7's
+  intermittent zero-observation-rows. One revision means one widening step
+  and no ladder — and the old system's stall-detector (the part #6 credits
+  as having worked) never gets to fire. Also unanswered: what the loop does
+  with a STRONG-trust + REVISE verdict when it has exactly one revision.
 - Removing `lookup_fast_path` risks the exact bug class it was built to
   fix (`docs/BUG_SHEET.md` #2's metric-ID canonicalization bug, #9's
   intentional no-handoff simplicity) reappearing if the new loop

@@ -158,6 +158,20 @@ Rules for the whole program:
     boundary that can't be represented as a tool (bar: same as `new.mmd`'s
     rule 16).
 
+**Corollary to rules 4 + 5 (added 2026-09-18, pending sign-off as
+`CONTRACTS.md` amendment A1):** because a tool may neither fetch evidence
+nor call the tool that does, the **caller** chooses the grain, the window
+and the retry. Today that caller is deterministic code (e.g. the
+`granularity` field threaded `llm_classifier.py:57 → intake/__init__.py:411
+→ graph.py:1194 → observer.py:42`, which is what makes bug #14's fix hold);
+after the refactor it is the LLM. So: **if the caller picks the inputs, the
+tool must validate them.** Control state that today lives in typed mission
+state becomes typed *preconditions the tool enforces* — returning
+`success=False` with a named `error_code` — not prose in a tool description
+the model may or may not honor. Without this, several shipped fixes port
+forward as conventions rather than guarantees and will reappear as
+intermittents rather than test failures. See `03_PROFILE_CAPABILITIES.md` §3.
+
 ## 7. Three profiles
 
 | Profile | Owns | Full brief |
@@ -191,6 +205,15 @@ changes require all three profiles to sign off):
 - Budget/execution-limit enforcement (currently disabled system-wide,
   `governance/budget.py`) is either re-enabled in the new runtime's bounded
   loop or explicitly re-approved as still-disabled — not silently left off.
+- The eight `policy(blackboard, mission) -> bool` gates and five
+  `config/*_policies.yaml` files have an explicit disposition — ported to
+  tool preconditions or deliberately dropped. They are executable policy
+  that demonstrably worked (`docs/BUG_SHEET.md` #8: *"every downstream
+  specialist correctly skipped via policy gates for lack of data"*), and no
+  profile owned them before 2026-09-18.
+- `pydantic-ai` is an actual declared dependency and the frozen toolset
+  signatures have been validated against its real API, not only against the
+  spec text.
 - `docs/refactor/TASK_SHEET.md` shows every sprint task as Done, with the
   same "verify before claiming done" discipline the existing
   `docs/TASK_SHEET.md` already uses in this repo.
