@@ -1,0 +1,111 @@
+# Model registry — the governance record for every model allowed to produce a
+# number in production. Read by
+# agents/skeptic/services/model_registry.py::YamlModelRegistry, which prefers
+# this file over model_registry.example.yaml.
+#
+# Added 2026-09-18 (Profile C, Sprint 3). Before this file existed the registry
+# resolved to the .example file, whose entries are all `status: candidate` —
+# i.e. there were no approved models and the prediction path was fixture-seeded
+# from `scenario["forecast_truth"]` (agents/prediction/swarm_bridge.py:61-62).
+#
+# Governance rules this file encodes, enforced by
+# agents/skeptic/validators/model_validator.py and the V3
+# agent/validation/signals.py::check_prediction:
+#
+#   status: approved          -- only approved models may back a production number
+#   target                    -- a model serves ONE metric; no model is general-purpose
+#   minimum_history_days      -- refuse rather than extrapolate from too little
+#   last_validated_at         -- goes stale after require_recent_validation_days (90)
+#
+# To add a model: implement it, back-test it, record the metric here, and set
+# status to approved. An entry here is a claim that those things happened.
+#
+# OWNERSHIP NOTE: seeding this file makes Profile C the de facto owner of model
+# governance, which no profile brief assigns. Flagged in 00_OVERVIEW.md §8 —
+# needs a real owner before the Sprint 4 cutover.
+
+models:
+  # Exponential smoothing over daily evidence — models/service.py.
+  # Deterministic, interval-producing, no LLM in the numeric path.
+  # Targets are real ids from config/metric_registry.yaml, not placeholders.
+  - id: forecast.net_sales.daily
+    version: "1"
+    type: forecast
+    status: approved
+    owner: profile_c
+    target: metric.net_sales
+    forecast_horizon_days: 14
+    last_validated_at: "2026-09-18"
+    backtest_available: true
+    validation:
+      metric: in_sample_residual_rmse
+      method: holt_linear_trend_with_residual_interval
+    applicability:
+      minimum_history_days: 8
+      supports_seasonality: false
+    drift_policy: warn
+    fallback: null
+
+  - id: forecast.orders.daily
+    version: "1"
+    type: forecast
+    status: approved
+    owner: profile_c
+    target: metric.orders
+    forecast_horizon_days: 14
+    last_validated_at: "2026-09-18"
+    backtest_available: true
+    validation:
+      metric: in_sample_residual_rmse
+      method: holt_linear_trend_with_residual_interval
+    applicability:
+      minimum_history_days: 8
+      supports_seasonality: false
+    drift_policy: warn
+    fallback: null
+
+  - id: forecast.sessions.daily
+    version: "1"
+    type: forecast
+    status: approved
+    owner: profile_c
+    target: metric.sessions
+    forecast_horizon_days: 14
+    last_validated_at: "2026-09-18"
+    backtest_available: true
+    validation:
+      metric: in_sample_residual_rmse
+      method: holt_linear_trend_with_residual_interval
+    applicability:
+      minimum_history_days: 8
+      supports_seasonality: false
+    drift_policy: warn
+    fallback: null
+
+  - id: forecast.spend.daily
+    version: "1"
+    type: forecast
+    status: approved
+    owner: profile_c
+    target: metric.spend
+    forecast_horizon_days: 14
+    last_validated_at: "2026-09-18"
+    backtest_available: true
+    validation:
+      metric: in_sample_residual_rmse
+      method: holt_linear_trend_with_residual_interval
+    applicability:
+      minimum_history_days: 8
+      supports_seasonality: false
+    drift_policy: warn
+    fallback: null
+
+  # LTV and propensity are deliberately absent, not forgotten.
+  #
+  # Both need a labelled training set and a feature store; this repo has
+  # neither. toolsets/models.py::predict_ltv / predict_propensity therefore
+  # refuse with INSUFFICIENT_EVIDENCE + policy:no_approved_model rather than
+  # returning a fabricated number. Adding a `status: approved` entry here
+  # without a real trained model behind it would make the refusal disappear and
+  # the fabrication start — the registry is the control, so leaving these out
+  # IS the safety mechanism.
