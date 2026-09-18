@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from seleric_swarm.agent.contracts import EvidenceArtifact
+    from seleric_swarm.agent.artifacts import EvidenceArtifact
 
 # Stamped onto every Finding this profile writes. Artifact.require_provenance()
 # rejects a "derived" artifact with no calculation/query/prompt/tool/model

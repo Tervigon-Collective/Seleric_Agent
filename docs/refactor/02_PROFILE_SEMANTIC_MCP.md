@@ -45,15 +45,31 @@ trusting it as sufficient, per the consolidation plan's own note).
 
 ## Retires
 
-- `swarm/providers/mcp_data.py::HybridMcpDataProvider` (both `fetch()` and
-  `fetch_series()`) — replaced by `SemanticToolset.query_metrics()`/
-  `drilldown()` calling `seleric-mcp` directly.
-- `services/business_state/series.py::fetch_series()`,
-  `services/business_state/facade.py::BusinessStateService` — folded into
-  the same toolset; if `BusinessStateService`'s "last day's point" semantics
-  is actually needed somewhere, it becomes an explicit
-  `query_metrics(as_of=..., grain="day")` call, not a separate code path.
-- `agents/intelligence/observer.py::_query_windows`.
+- **Done (Sprint 2, 2026-09-18)**: `services/measure.py::resolve_measure()`/
+  `measure_keywords_overlap()` — the keyword-overlap catalogue-search
+  fallback, bug #8's actual root cause — deleted outright, zero remaining
+  callers (whole-repo grep). Every fetch path (including the two below,
+  which still exist as classes) now resolves a metric via
+  `MetricDefinition.catalogue_metric` directly and calls
+  `toolsets/semantic.py::raw_query_metric()`, the one shared no-heuristic
+  MCP-call primitive both the new toolset and the legacy providers use.
+- **Not yet deleted, but internally consolidated**:
+  `swarm/providers/mcp_data.py::HybridMcpDataProvider` (both `fetch()` and
+  `fetch_series()`) and `services/business_state/series.py::fetch_series()`
+  — no longer contain the heuristic (see above), but still exist as the live
+  call path since nothing yet replaces them end-to-end at the call-site
+  level (in particular `fetch_series()`'s multi-metric pandas-DataFrame
+  output feeding `agents/diagnostic/swarm_bridge.py`'s DoWhy causal
+  specialist has no `SemanticToolset` equivalent yet — a Sprint 3 gap, not a
+  Sprint 2 one). Deleting these classes outright is still gated on building
+  that replacement.
+  `services/business_state/facade.py::BusinessStateService` — if its "last
+  day's point" semantics is actually needed somewhere, it becomes an
+  explicit `query_metrics(as_of=..., grain="day")` call, not a separate code
+  path — not yet done.
+- `agents/intelligence/observer.py::_query_windows` — pure date-range
+  shaping, not itself an MCP call; still live, becomes dead code once
+  `HybridMcpDataProvider` itself is deleted.
 - `coordinator/catalogue_grounding.py` in full —
   `dimensions_in_query()`/`apply_catalogue_grain()`/`hints_from_catalogue()`/
   `ground_live_grain()`/`_GENERIC_DIM_TOKENS` and friends. This is the exact

@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from seleric_swarm.conversations.contracts import ArtifactProvenance
 
@@ -33,10 +33,19 @@ class ToolResult(BaseModel):
     success: bool
     artifact_ids: list[str] = Field(default_factory=list)
     summary: str
-    provenance: ArtifactProvenance
+    provenance: ArtifactProvenance = Field(default_factory=ArtifactProvenance)
     warnings: list[str] = Field(default_factory=list)
     error_code: str | None = None
     retryable: bool = False
+
+    @model_validator(mode="after")
+    def _envelope_invariants(self) -> ToolResult:
+        """success=False requires error_code and forbids artifact_ids (CONTRACTS.md §2)."""
+        if not self.success and not self.error_code:
+            raise ValueError("success=False requires error_code")
+        if not self.success and self.artifact_ids:
+            raise ValueError("success=False requires empty artifact_ids")
+        return self
 
 
 MissionStatus = Literal["running", "completed", "partial", "failed"]

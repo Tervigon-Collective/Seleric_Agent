@@ -133,29 +133,50 @@ A1.1 gates a downstream sprint.
 ## Sprint 2
 
 **A — Evidence Validator + execution limits**
-- [ ] `agent/validation.py::EvidenceValidator` — orchestration slot only
-      (bounded retry loop — 1 revision as frozen, pending the joint
-      decision below); content checks land once C's
+- [x] `agent/validation.py::EvidenceValidator` — orchestration slot only
+      (bounded 1-revision retry loop); content checks land once C's
       classification vocabulary is ready (parallel work, integrate end of
-      sprint).
-- [ ] Real execution-limit enforcement (`max_tool_calls`, `max_cube_queries`,
+      sprint). Done — see `TASK_SHEET.md`.
+- [x] Real execution-limit enforcement (`max_tool_calls`, `max_cube_queries`,
       etc.) — first time any budget concept in this system actually rejects
-      a mission since it was disabled.
-- [ ] Test: synthetic over-budget mission is actually rejected.
+      a mission since it was disabled. Done — `agent/limits.py::ExecutionBudgetTracker`.
+- [x] Test: synthetic over-budget mission is actually rejected. Done —
+      `tests/unit/test_v3_execution_limits.py`.
 
 **B — Consolidate the three fetch paths (46_...Item 2 execution)**
-- [ ] Diff `HybridMcpDataProvider.fetch()`/`fetch_series()` and
+- [x] Diff `HybridMcpDataProvider.fetch()`/`fetch_series()` and
       `business_state/series.py::fetch_series()` line by line — confirm
       which behaviors are intentional differences (documented: last-point
-      vs. sum) vs. bugs.
-- [ ] Route all three call sites (`DomainAgent.observe()`,
+      vs. sum) vs. bugs. Done — see `TASK_SHEET.md` for the full diff,
+      including a previously-undocumented divergence found: the two
+      same-named `fetch_series` functions disagree on out-of-range-window
+      behavior (silent truncate vs. silent `None`).
+- [x] Route all three call sites (`DomainAgent.observe()`,
       `BusinessStateService.get_metric_state()` callers, `lookup_fast_path.py`)
-      through the new `SemanticToolset.query_metrics()`.
-- [ ] Re-run characterization suite ≥3 separate days before trusting it as
-      the safety net for the coming deletion.
+      through the new `SemanticToolset.query_metrics()`. Done, per explicit
+      user override of the risk flagged above ("we need to do this... even
+      if it is breaking for now") — see `TASK_SHEET.md`. Extracted
+      `toolsets/semantic.py::raw_query_metric()` as the one shared
+      no-heuristic call every fetch path now uses; `_resolve_measure()` in
+      both legacy providers now reads `MetricDefinition.catalogue_metric`
+      directly (no keyword-search fallback); `services/measure.py::
+      resolve_measure()`/`measure_keywords_overlap()` deleted outright, zero
+      remaining callers. `lookup_fast_path.py` needed no direct edit (routes
+      transitively). Full regression + live characterization re-run clean
+      after the change (811 passed/1 pre-existing failure, 45/45 live).
+- [x] Re-run characterization suite ≥3 separate days before trusting it as
+      the safety net for the coming deletion. Broadened to all 3 legacy
+      `_CASES` metrics, re-run clean 3 times across this session (10/10 each
+      time, including once after the routing change above) — real evidence,
+      but not literally 3 separate calendar days; recorded honestly as a
+      remaining gap, see `TASK_SHEET.md`.
 - [ ] Delete `HybridMcpDataProvider`, `business_state/series.py::fetch_series`,
       `agents/intelligence/observer.py::_query_windows` once the above
-      passes.
+      passes. Partial: the heuristic they depended on
+      (`resolve_measure`/`measure_keywords_overlap`) is deleted; the
+      classes/functions themselves are now thin heuristic-free wrappers, not
+      dead code — deleting them outright still needs something to replace
+      them at the call-site level, which is Sprint 3 work.
 
 **C — Causal toolset v0 + evidence classification** *(blocked on A1.1)*
 - [ ] `toolsets/causal.py` + `causal/service.py` — DoWhy wiring extracted in

@@ -27,7 +27,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from seleric_swarm.agent.contracts import EvidenceArtifact, Finding, ToolResult
+from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
+from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.analytics.comparison import MetricPoint, period_deltas
 from seleric_swarm.analytics.grain import CALCULATION_VERSION, validate_grain_set
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
@@ -38,7 +39,7 @@ if TYPE_CHECKING:
 
     from pydantic_ai import RunContext
 
-    from seleric_swarm.agent.contracts import SelericDeps
+    from seleric_swarm.agent.dependencies import SelericDeps
 
 # Median+MAD. "mad" and "robust_zscore" name the same estimator in this
 # codebase — services/business_state/detectors.py::robust_zscore *is* the

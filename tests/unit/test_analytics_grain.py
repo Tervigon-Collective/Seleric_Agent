@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from seleric_swarm.agent.contracts import EvidenceArtifact
+from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.analytics.grain import period_span_days, validate_grain_set
 
 

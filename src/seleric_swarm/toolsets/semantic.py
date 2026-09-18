@@ -19,12 +19,18 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import RunContext
 
-from seleric_swarm.agent.contracts import EvidenceArtifact, ToolResult
+from seleric_swarm.agent.artifacts import EvidenceArtifact
+from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
-from seleric_swarm.services.mcp_query import build_metrics_query_args, call_metrics_query, dimension_value
+from seleric_swarm.services.mcp_query import (
+    build_metrics_query_args,
+    call_metrics_query,
+    dimension_value,
+    row_date,
+)
 
 if TYPE_CHECKING:
-    from seleric_swarm.agent.contracts import SelericDeps
+    from seleric_swarm.agent.dependencies import SelericDeps
 
 # Single agent identity for MCPGateway allowlisting/module-pin lookup — the
 # new runtime has one agent loop, not per-domain agent ids (see
@@ -45,6 +51,47 @@ def _mcp_error_result(exc: Exception) -> ToolResult:
         error_code="MCP_UNAVAILABLE",
         retryable=True,
     )
+
+
+async def raw_query_metric(
+    mcp_client: Any,
+    *,
+    agent_id: str,
+    metric_id: str,
+    start: str,
+    end: str,
+    grain: str | None = None,
+    dimensions: list[str] | None = None,
+    filters: list[dict[str, Any]] | None = None,
+    limit: int | None = None,
+    sort: list[dict[str, Any]] | None = None,
+    compare_period: str | None = None,
+    module: Any = ...,
+) -> dict[str, Any]:
+    """The one MCP call every fetch path in this repo goes through.
+
+    Sprint 2 consolidation (docs/refactor/SPRINT_PLAN.md): ``metric_id`` is
+    used as the ``measures`` value directly — no ``MetricRegistry``/
+    ``resolve_measure`` keyword-overlap fallback anywhere in this function.
+    Callers that only have a legacy ``metric.xxx`` id resolve it to a
+    catalogue id via ``MetricDefinition.catalogue_metric`` (a static config
+    field, not a heuristic search) before calling this. ``agent_id`` stays a
+    caller-supplied parameter (not the fixed ``_AGENT_ID`` below) so legacy
+    callers keep their existing ``MCPGateway`` module-scoping identity.
+    """
+    args = build_metrics_query_args(
+        measure=metric_id,
+        start=start,
+        end=end,
+        grain=grain,
+        dimensions=dimensions,
+        filters=filters,
+        limit=limit,
+        sort=sort,
+        compare_period=compare_period,
+        module=module,
+    )
+    return await call_metrics_query(mcp_client, agent_id=agent_id, arguments=args)
 
 
 async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResult:
@@ -123,37 +170,59 @@ async def query_metrics(
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )
-    row = rows[0]
-    value = row.get(metric_id)
     provenance = ArtifactProvenance(
         query_version=str(result.get("provenance", {}).get("query_id") or ""),
         source_metadata=result.get("provenance") or {},
     )
-    evidence = EvidenceArtifact(
-        metric_id=metric_id,
-        dimensions={k: v for k, v in dimensions.items() if v},
-        grain=grain,  # type: ignore[arg-type]
-        as_of=ctx.deps.as_of,
-        period_start=period_start,
-        period_end=period_end,
-        value=float(value) if value is not None else None,
-        source_query=args,
-    )
-    artifact = ctx.deps.artifact_store.put(
-        Artifact(
-            workspace_id=ctx.deps.principal.workspace_id,
-            artifact_type="evidence",
-            payload=evidence.model_dump(mode="json"),
-            classification="factual",
-            evidence_ids=[f"raw:{metric_id}:{period_start.date()}:{period_end.date()}"],
-            provenance=provenance,
-            mission_id=ctx.deps.mission_id,
+    # grain="none" -> Cube returns one period-aggregate row. A real grain
+    # ("day"/"week"/"month") -> one row per bucket; each bucket is its own
+    # EvidenceArtifact (rule 6/7: one artifact per fetched fact, not a
+    # multi-day value folded into a single artifact) — needed so a
+    # day-granularity series (e.g. feeding a causal/anomaly consumer) is
+    # immutable evidence per day, not one mutable blob.
+    per_row_dates = [row_date(row) for row in rows] if grain != "none" else [None] * len(rows)
+    artifact_ids: list[str] = []
+    last_value: float | None = None
+    for row, bucket_date in zip(rows, per_row_dates, strict=True):
+        value = row.get(metric_id)
+        if value is None:
+            continue
+        last_value = float(value)
+        bucket_start = datetime.fromisoformat(bucket_date).replace(tzinfo=period_start.tzinfo) if bucket_date else period_start
+        bucket_end = bucket_start if bucket_date else period_end
+        evidence = EvidenceArtifact(
+            metric_id=metric_id,
+            dimensions={k: v for k, v in dimensions.items() if v},
+            grain=grain,  # type: ignore[arg-type]
+            as_of=ctx.deps.as_of,
+            period_start=bucket_start,
+            period_end=bucket_end,
+            value=last_value,
+            source_query=args,
         )
-    )
+        artifact = ctx.deps.artifact_store.put(
+            Artifact(
+                workspace_id=ctx.deps.principal.workspace_id,
+                artifact_type="evidence",
+                payload=evidence.model_dump(mode="json"),
+                classification="factual",
+                evidence_ids=[f"raw:{metric_id}:{bucket_start.date()}:{bucket_end.date()}"],
+                provenance=provenance,
+                mission_id=ctx.deps.mission_id,
+            )
+        )
+        artifact_ids.append(artifact.id)
+    if not artifact_ids:
+        return ToolResult(
+            success=False,
+            summary=f"no usable value for {metric_id} over {period_start.date()}..{period_end.date()}",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+        )
     return ToolResult(
         success=True,
-        artifact_ids=[artifact.id],
-        summary=f"{metric_id}={evidence.value} over {period_start.date()}..{period_end.date()}",
+        artifact_ids=artifact_ids,
+        summary=f"{metric_id}={last_value} over {period_start.date()}..{period_end.date()} ({len(artifact_ids)} row(s))",
         provenance=provenance,
         warnings=list(result.get("warnings") or []),
     )
