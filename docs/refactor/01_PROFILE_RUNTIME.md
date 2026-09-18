@@ -90,33 +90,43 @@ contracts, not the other way around.
   corollary in overview §6 and `03_PROFILE_CAPABILITIES.md` §3: deterministic
   control state becomes typed tool preconditions, not prompt text. A owns the
   `ToolResult` error codes those preconditions return
-  (`EVIDENCE_GRAIN_MISMATCH` is new — `CONTRACTS.md` amendment A1.2).
+  (`EVIDENCE_GRAIN_MISMATCH` — `CONTRACTS.md` A1.2, ACCEPTED).
 - **`EvidenceValidator` is not a drop-in replacement for the skeptic.** The
   skeptic is a separate agent with separate context, adversarial to the
   diagnostic agent's output; the validator sits in the same loop, informed by
   the same context that produced the claim. In-context self-review is a
-  weaker check than cross-agent challenge. That may be an acceptable trade,
-  but record it as a decision with the downgrade named rather than as a
-  consolidation (`03_PROFILE_CAPABILITIES.md` §4).
-- **`max_validation_revisions = 1` (frozen in `CONTRACTS.md` §1) has a cost
-  A should decide jointly with C in Sprint 2.** Bug #6's escalating widening
-  is, per bug #7's own entry, the only documented mitigation for #7's
-  intermittent zero-observation-rows. One revision means one widening step
-  and no ladder — and the old system's stall-detector (the part #6 credits
-  as having worked) never gets to fire. Also unanswered: what the loop does
-  with a STRONG-trust + REVISE verdict when it has exactly one revision.
+  weaker check than cross-agent challenge. **Decision recorded 2026-09-18
+  with A1 acceptance:** accepted as a change in kind, not a consolidation
+  (`03_PROFILE_CAPABILITIES.md` §4; `CONTRACTS.md` A1 joint decisions).
+- **`max_validation_revisions = 1` confirmed 2026-09-18 with A1.** Causal
+  escalation is `search_breadth` on `estimate_effect` (A1.1), not the
+  validation-revision counter. On STRONG-trust + REVISE when revisions are
+  exhausted → fail closed with `INSUFFICIENT_EVIDENCE`.
 - Removing `lookup_fast_path` risks the exact bug class it was built to
 fix (`docs/BUG_SHEET.md` #2's metric-ID canonicalization bug, #9's
 intentional no-handoff simplicity) reappearing if the new loop
 reintroduces multi-hop handoff-like behavior. Explicitly test against
 those two bugs' original repro cases before cutover.
 - Temporal introduces new operational surface (durable execution) — confirm
-it's actually needed for this workload before building it; if no mission
-today runs long enough to need durability, defer this to a later sprint
-and ship synchronous-only first (ponytail: don't build durability for a
-workload that doesn't need it yet).
-
-
+  it's actually needed for this workload before building it; if no mission
+  today runs long enough to need durability, defer this to a later sprint
+  and ship synchronous-only first (ponytail: don't build durability for a
+  workload that doesn't need it yet).
+- **Not planned anywhere in this folder, found 2026-09-18 while checking
+  Sprint 1/2 for UI connectivity:** the live `office-ui/` frontend
+  (`office-ui/src/api/missions.ts` → `GET /v1/office/missions*`) is driven
+  by `api/office/normalize.py::build_office_snapshot`, which reads the
+  swarm_v2-shaped raw mission dict directly — `mission_lead`,
+  `leadership_epoch`, `handoff_history`, `tasks` (for the parallel-task
+  fan-out view), and `artifacts` as typed buckets (`hypothesis`/
+  `prediction`/`strategy`/`skeptic`/...). None of that shape exists on the
+  V3 `MissionResult`/`ArtifactStore` (`agent/output.py`,
+  `agent/artifacts.py`) — a straight cutover would leave the Office UI
+  blank or crashing for every V3 mission. Either `api/office/normalize.py`
+  needs a V3-shaped adapter path, or the Office UI needs its own V3 view,
+  before any cutover percentage > 0. Not blocking now (no toolsets exist to
+  produce a real V3 mission to render yet) but must land before Sprint 4's
+  canary flip, not be discovered at that point.
 
 ## Exit criteria (parity gate before old pipeline deletion)
 
@@ -131,4 +141,6 @@ workload that doesn't need it yet).
 3. Execution limits actually reject a synthetic over-budget mission in a
   test (currently impossible — `check_budget` is a no-op everywhere).
 4. Program-level eval set (§8 of overview) at parity or better.
-
+5. `office-ui/` renders a V3 mission (agents/board/artifacts/trace) without
+   a blank/crashed view — either via a `build_office_snapshot`-equivalent
+   V3 adapter or a dedicated V3 view. See the Key risks entry above.

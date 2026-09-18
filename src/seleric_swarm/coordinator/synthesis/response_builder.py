@@ -97,9 +97,9 @@ def comparisons_for_answer(blackboard: Blackboard) -> list[dict[str, Any]]:
 
 
 _CAUSAL_LANGUAGE = {
-    "ASSOCIATION_ONLY": "associated with",
+    "ASSOCIATION": "associated with",
     "PLAUSIBLE_CAUSAL": "may be contributing",
-    "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS": (
+    "CAUSALLY_SUPPORTED": (
         "evidence supports as a causal contributor under stated assumptions"
     ),
     "STRONGLY_SUPPORTED": "strong evidence indicates a primary contributor",
@@ -196,7 +196,7 @@ def build_claim_aware_response(
         c = validated[0]
         # Unset means the confidence tier genuinely wasn't computed — the safe
         # ceiling is the weakest tier, never the strongest (see swarm/artifacts.py Causal.confidence).
-        strength = c.get("causal_strength") or "ASSOCIATION_ONLY"
+        strength = c.get("causal_strength") or "ASSOCIATION"
         verb = _CAUSAL_LANGUAGE.get(strength, "evidence supports")
         lines.append("Primary finding:")
         lines.append(f"  {verb}: {c.get('statement')}")

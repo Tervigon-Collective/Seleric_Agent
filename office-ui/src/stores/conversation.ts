@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { conversationsApi } from "../api/conversations";
+import { conversationsApi, conversationScope } from "../api/conversations";
 import type { ActivityEvent, MemoryItem, Message, Thread } from "../api/contracts";
 import { ApiError } from "../api/http";
 import { subscribeToRunEvents } from "../api/runEvents";
@@ -360,6 +360,22 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       parent_message_id: parentMessageId,
     };
     useOffice.getState().reset();
+    useOffice.getState().hydrate({
+      missionId: "pending",
+      query: value,
+      status: "running",
+      stage: "intake",
+      route: null,
+      leadershipEpoch: 0,
+      lastSeq: 0,
+      agents: [],
+      board: { steps: [] },
+      handoffs: [],
+      artifacts: {},
+      unresolvedQuestions: [],
+      limitations: [],
+      timeline: [],
+    });
     set((s) => ({
       submitting: true, error: null,
       messages: { ...s.messages, [threadId]: [...(s.messages[threadId] ?? []), optimistic] },
@@ -389,7 +405,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           metadata: attachmentIds.length ? { attachment_ids: attachmentIds } : {},
         }],
         parent_message_id: parentMessageId,
-        scope: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+        scope: conversationScope(),
         execution_mode: "production",
       });
       if (cancelledSubmissions.delete(generation)) {
@@ -403,7 +419,33 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         generation !== submissionGeneration
         || get().selectedThreadId !== threadId
       ) return;
-      set({ currentRunId: result.run_id });
+      useOffice.getState().hydrate({
+        missionId: result.mission_id,
+        query: value,
+        status: "running",
+        stage: "intake",
+        route: null,
+        leadershipEpoch: 0,
+        lastSeq: 0,
+        agents: [],
+        board: { steps: [] },
+        handoffs: [],
+        artifacts: {},
+        unresolvedQuestions: [],
+        limitations: [],
+        timeline: [],
+      });
+      set((s) => ({
+        currentRunId: result.run_id,
+        messages: {
+          ...s.messages,
+          [threadId]: (s.messages[threadId] ?? []).map((message) =>
+            message.id === optimistic.id
+              ? { ...message, id: result.message_id, run_id: result.run_id }
+              : message
+          ),
+        },
+      }));
       subscriptions.get(threadId)?.();
       subscriptions.set(threadId, subscribeToRunEvents(result.run_id, {
         onEvent: (event) => {
@@ -592,6 +634,25 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     useOffice.getState().ingestEvent(toOfficeEvent(event));
     const terminal = ["run.completed", "run.failed", "run.cancelled"].includes(event.event_type);
     if (event.event_type === "answer.completed" || terminal) {
+      const office = useOffice.getState();
+      const route = optionalString(event.payload.route) ?? office.route;
+      const status = terminal ? event.event_type.replace("run.", "") : office.status;
+      office.hydrate({
+        missionId: optionalString(event.payload.mission_id) ?? office.missionId ?? event.run_id ?? "conversation",
+        query: optionalString(event.payload.query) ?? office.query,
+        status,
+        route,
+        stage: status || office.stage,
+        leadershipEpoch: office.leadershipEpoch,
+        lastSeq: event.sequence,
+        agents: [],
+        board: { steps: office.board },
+        handoffs: office.handoffs,
+        artifacts: office.artifacts,
+        unresolvedQuestions: office.unresolvedQuestions,
+        limitations: office.limitations,
+        timeline: [],
+      });
       void conversationsApi.listMessages(event.thread_id).then((messages) => {
         const current = get();
         if (

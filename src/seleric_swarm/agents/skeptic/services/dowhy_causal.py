@@ -32,9 +32,9 @@ _log = structlog.get_logger("seleric_swarm.agents.skeptic.services.dowhy")
 
 _CONF_ORDER = [
     "REJECTED",
-    "ASSOCIATION_ONLY",
+    "ASSOCIATION",
     "PLAUSIBLE_CAUSAL",
-    "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS",
+    "CAUSALLY_SUPPORTED",
     "STRONGLY_SUPPORTED",
 ]
 
@@ -97,7 +97,7 @@ class DoWhyCausalValidationService:
         elif base.graph_ok and total >= self._min_refutations and passed == total and base.confounders_ok:
             confidence = "STRONGLY_SUPPORTED"
         elif base.graph_ok and total >= 1 and passed == total:
-            confidence = "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS"
+            confidence = "CAUSALLY_SUPPORTED"
         elif passed < total:
             confidence = _downgrade(confidence)
         base.confidence = confidence

@@ -94,13 +94,88 @@ async def raw_query_metric(
     return await call_metrics_query(mcp_client, agent_id=agent_id, arguments=args)
 
 
+async def query_metric_series(
+    mcp_client: Any,
+    *,
+    agent_id: str,
+    jobs: list[tuple[str, str, Any]],
+    time_range: dict[str, Any],
+    max_days: int = 60,
+    min_rows: int = 8,
+    concurrency: int = 8,
+) -> Any:
+    """Daily multi-metric frame for DoWhy (extracted from former Hybrid.fetch_series).
+
+    ``jobs`` is ``(column_id, catalogue_measure, module_or_ellipsis)`` —
+    catalogue measure only, no heuristic resolve. Returns a pandas DataFrame
+    indexed by date, or ``None`` if the window is too short/long/sparse.
+    """
+    import asyncio
+    from datetime import date
+
+    import pandas as pd
+
+    start_s = str(time_range.get("start") or time_range.get("end") or "")[:10]
+    end_s = str(time_range.get("end") or time_range.get("start") or "")[:10]
+    if not start_s or not end_s:
+        return None
+    try:
+        start = date.fromisoformat(start_s)
+        end = date.fromisoformat(end_s)
+    except ValueError:
+        return None
+    if end < start:
+        start, end = end, start
+    n_days = (end - start).days + 1
+    if n_days < min_rows or n_days > max_days:
+        return None
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(column_id: str, measure: str, module: Any) -> tuple[str, dict[str, float]]:
+        async with sem:
+            result = await raw_query_metric(
+                mcp_client,
+                agent_id=agent_id,
+                metric_id=measure,
+                start=start.isoformat(),
+                end=end.isoformat(),
+                grain="day",
+                module=module,
+            )
+        day_values: dict[str, float] = {}
+        if result.get("error"):
+            return column_id, day_values
+        for row in result.get("rows") or []:
+            ts = row_date(row)
+            raw = row.get(measure)
+            if ts is None or raw is None:
+                continue
+            day_values[ts] = float(raw)
+        return column_id, day_values
+
+    gathered = await asyncio.gather(*[_one(*job) for job in jobs]) if jobs else []
+    columns: dict[str, dict[str, float]] = {
+        column_id: day_values
+        for column_id, day_values in gathered
+        if len(day_values) >= min_rows
+    }
+    if not columns:
+        return None
+    frame = pd.DataFrame(columns)
+    frame = frame.dropna(how="any")
+    if len(frame) < min_rows:
+        return None
+    return frame
+
+
 async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResult:
     """Resolve business language to catalogue metric ids (catalogue_search_metrics)."""
     try:
         result = await ctx.deps.mcp_client.call(
             agent_id=_AGENT_ID, capability="seleric.catalogue_search_metrics", arguments={"query": query}
         )
-    except Exception as exc:  # noqa: BLE001 - convert to ToolResult, never raise across the tool boundary
+    except Exception as exc:  # convert to ToolResult, never raise across the tool boundary
         return _mcp_error_result(exc)
     matches = (result or {}).get("matches") or []
     return ToolResult(
@@ -117,7 +192,7 @@ async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) ->
         result = await ctx.deps.mcp_client.call(
             agent_id=_AGENT_ID, capability="seleric.catalogue_get_metric", arguments={"metric_id": metric_id}
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return _mcp_error_result(exc)
     if not result or result.get("error"):
         return ToolResult(
@@ -263,7 +338,7 @@ async def drilldown(
             capability="seleric.metrics_drilldown",
             arguments={"parent_query_id": parent["query_id"], "target_dimensions": [dimension]},
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return _mcp_error_result(exc)
     rows = (result or {}).get("rows") or []
     if not rows:

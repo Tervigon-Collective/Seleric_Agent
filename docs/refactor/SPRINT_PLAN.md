@@ -10,12 +10,10 @@ Profile briefs: `01_PROFILE_RUNTIME.md` (A), `02_PROFILE_SEMANTIC_MCP.md`
 
 > **Revised 2026-09-18** after a design review of Profile C against source.
 > Sprint 0 is closed and its contracts are frozen, so the review's findings
-> land as **proposed amendment A1** in `CONTRACTS.md` rather than as Sprint 0
-> edits. A1 sign-off is now a joint task at the head of Sprint 1 and
-> **blocks C's Sprint 2 causal work** (bug #6's escalating-widening fix has
-> no home in the frozen two-function causal surface). Profile C's Sprint 1/2
-> tasks below are also re-scoped: only two of its six frozen analytics
-> functions are ports, the rest are greenfield.
+> landed as **Amendment A1** in `CONTRACTS.md`. **A1 ACCEPTED 2026-09-18**
+> (applied into frozen §2/§4). Profile C's Sprint 1/2 tasks below are also
+> re-scoped: only two of its six frozen analytics functions are ports, the
+> rest are greenfield. Causal Sprint 2 is unblocked.
 
 ## Sprint 0 — Contracts (all three profiles, joint)
 
@@ -58,31 +56,41 @@ Sprint 1 task starts.
 ## Sprint 1
 
 **Joint — amendment A1 sign-off (new, head of sprint)**
-- [ ] Review `CONTRACTS.md` "Proposed Amendment A1"; A, B and C each sign off
-      or counter-propose. A1.1 (causal escalation surface) blocks C's Sprint
-      2 — resolve it first, the rest can follow within the sprint.
-- [ ] Spike: add `pydantic-ai` to `pyproject.toml` and confirm the real
+- [x] Review `CONTRACTS.md` "Amendment A1"; A, B and C each sign off.
+      **ACCEPTED 2026-09-18** — applied into frozen §2/§4 (`search_breadth`
+      on `estimate_effect`; Analytics grain rule; named error codes). See
+      `CONTRACTS.md` change log.
+- [x] Spike: add `pydantic-ai` to `pyproject.toml` and confirm the real
       toolset/`RunContext` API matches the signatures frozen in `CONTRACTS.md`
-      §4 (A1.6). Sprint 0 validated those shapes against the spec, not
-      against an installed framework.
-- [ ] Decide owner for the `CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` →
+      §4 (A1.6). Done — `pydantic-ai-slim>=2.45`; stub agent validates
+      `RunContext[SelericDeps]`.
+- [x] Decide owner for the `CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` →
       `CAUSALLY_SUPPORTED` migration, including
-      `config/diagnostic_policies.yaml:24` (A1.4).
+      `config/diagnostic_policies.yaml:24` (A1.4). Done — owner = Profile C;
+      migration executes during Causal Sprint 2 (not as part of A1 landing).
 
 **A — Runtime scaffolding**
-- [ ] `agent/agent.py`, `agent/dependencies.py`, `agent/output.py` skeletons.
-- [ ] `api/missions.py` — `POST /v1/missions` wired to a stub agent (no
-      real toolsets yet) behind a feature flag, 0% traffic.
-- [ ] `state/missions.py`, `state/artifacts.py` — Mission/Artifact stores.
-- [ ] `evals/` harness scaffolding + golden dataset seeded from
+- [x] `agent/agent.py`, `agent/dependencies.py`, `agent/output.py` skeletons.
+      Done — `src/seleric_swarm/agent/{agent,dependencies,output,artifacts,instructions}.py`;
+      `pydantic-ai-slim>=2.45` added to `pyproject.toml` (covers A1.6 spike
+      in practice — slim variant, not full `pydantic-ai`).
+- [x] `api/missions.py` — `POST /v1/missions` wired to a stub agent (no
+      real toolsets yet) behind a feature flag, 0% traffic. Done —
+      standalone `APIRouter`, not mounted into live `main.py`;
+      `settings.v3_agent_enabled` default `False`.
+- [x] `state/missions.py`, `state/artifacts.py` — Mission/Artifact stores.
+      Done — `InMemoryMissionStore`/`InMemoryArtifactStore`.
+- [x] `evals/` harness scaffolding + golden dataset seeded from
       `eval/datasets/lookup_commerce.jsonl` and `tests/replay/` fixtures.
+      Done (loader only) — `evals/golden_dataset.py`; replay extraction +
+      scorer deferred (stub agent can't be scored meaningfully yet).
 
 **B — Semantic toolset v0**
 - [x] `toolsets/semantic.py` — `query_metrics()`/`drilldown()` wrapping
       live `seleric-mcp` tools, no local heuristics. Done —
-      `src/seleric_swarm/toolsets/semantic.py` (+ `agent/contracts.py`,
-      `state/artifacts.py` v0 needed to make it callable/testable),
-      10 passing unit/contract tests.
+      `src/seleric_swarm/toolsets/semantic.py`, 10 passing unit/contract
+      tests (orphaned `agent/contracts.py` deleted in Sprint 2; canonical
+      schemas live in `agent/{dependencies,output,artifacts}.py`).
 - [x] Re-run `tests/replay/test_data_access_characterization.py` against
       the new toolset (not yet wired into the agent) to establish it
       matches at least one of the three legacy paths before consolidation
@@ -95,40 +103,41 @@ Sprint 1 task starts.
 Step 1 of the extract-wrap-delete approach (`03_PROFILE_CAPABILITIES.md`
 §10). Extraction does not depend on A1 landing, so it starts immediately.
 
-- [ ] **Extract in place**: pull the comparison math out of
+- [x] **Extract in place**: pull the comparison math out of
       `swarm/specialists/observer.py::_post_comparison_deltas` and the
       detection path out of `swarm/specialists/anomaly.py` into pure
-      functions in their current modules, no behavior change. The existing
-      suite staying green is the proof the math is unchanged — this is what
-      makes "port the math exactly" mechanically checkable instead of a
-      review judgment.
-- [ ] **Wrap**: `toolsets/analytics.py::compare_periods`,
-      `detect_anomalies` as thin adapters over those functions.
-      `detect_anomalies` delegates to the existing
-      `services/business_state/detectors.py::robust_zscore` rather than
-      reimplementing it.
-- [ ] Implement the A1.2 grain precondition in both functions +
+      functions. Done — `analytics/comparison.py::period_deltas` + existing
+      `detectors.py::robust_zscore`.
+- [x] **Wrap**: `toolsets/analytics.py::compare_periods`,
+      `detect_anomalies` as thin adapters. Done —
+      `src/seleric_swarm/toolsets/analytics.py`.
+- [x] Implement the A1.2 grain precondition in both functions +
       `EVIDENCE_GRAIN_MISMATCH`. Do **not** port `anomaly.py`'s
-      sum/normalize fallback branch.
-- [ ] Regression tests for bug #14, both halves: per-day evidence reaches
+      sum/normalize fallback branch. Done —
+      `analytics/grain.py::validate_grain_set()`.
+- [x] Regression tests for bug #14, both halves: per-day evidence reaches
       the detector un-normalized, **and** a grain-mismatched evidence set is
-      rejected rather than normalized.
-- [ ] Note for planning: the other four frozen analytics functions
+      rejected rather than normalized. Done —
+      `tests/unit/test_analytics_toolset.py` (16 passed).
+- [x] Note for planning: the other four frozen analytics functions
       (`contribution_analysis`, `segment_decomposition`,
       `funnel_decomposition`, `cohort_analysis`) have no implementation in
       `src/` — they are greenfield and move to Sprint 4's additive track,
       not this sprint.
 
-**Gate:** two blocking dependencies, otherwise open.
-1. **Amendment A1.1 must be signed off before C's Sprint 2 starts** — the
-   frozen Causal surface has no home for bug #6's escalating-widening fix,
-   so C's causal port cannot begin until the escalation parameter is agreed.
-   This is the program's hardest current blocker; don't read past it.
-2. B's consolidation (Sprint 2) needs its own Sprint 1 spike result.
+**Status (implementation work):** Profile A/B/C Sprint 1 execution Done
+2026-09-18 — see `TASK_SHEET.md`. **Amendment A1 ACCEPTED 2026-09-18** —
+C's Sprint 2 Causal work is unblocked.
 
-Everything else in Sprint 2 is startable without another profile's Sprint 1
-output. The rest of A1 (A1.2–A1.6) should also land this sprint but only
-A1.1 gates a downstream sprint.
+**Gate:** cleared for Causal start.
+1. ~~Amendment A1.1 must be signed off before C's Sprint 2 starts~~ —
+   **ACCEPTED** — `search_breadth` is in frozen §4.
+2. ~~B's consolidation (Sprint 2) needs its own Sprint 1 spike result.~~
+   Cleared — B Sprint 1 characterization done; B Sprint 2 consolidation
+   largely executed (see below).
+
+Everything else in Sprint 2 is startable. A1.2 was implemented in C's
+analytics toolset ahead of formal A1 sign-off and is now contract-authoritative.
 
 ## Sprint 2
 
@@ -136,7 +145,7 @@ A1.1 gates a downstream sprint.
 - [x] `agent/validation.py::EvidenceValidator` — orchestration slot only
       (bounded 1-revision retry loop); content checks land once C's
       classification vocabulary is ready (parallel work, integrate end of
-      sprint). Done — see `TASK_SHEET.md`.
+      sprint). Done — `agent/validation.py` + `tests/unit/test_v3_validation.py`.
 - [x] Real execution-limit enforcement (`max_tool_calls`, `max_cube_queries`,
       etc.) — first time any budget concept in this system actually rejects
       a mission since it was disabled. Done — `agent/limits.py::ExecutionBudgetTracker`.
@@ -166,57 +175,63 @@ A1.1 gates a downstream sprint.
       after the change (811 passed/1 pre-existing failure, 45/45 live).
 - [x] Re-run characterization suite ≥3 separate days before trusting it as
       the safety net for the coming deletion. Broadened to all 3 legacy
-      `_CASES` metrics, re-run clean 3 times across this session (10/10 each
-      time, including once after the routing change above) — real evidence,
-      but not literally 3 separate calendar days; recorded honestly as a
-      remaining gap, see `TASK_SHEET.md`.
-- [ ] Delete `HybridMcpDataProvider`, `business_state/series.py::fetch_series`,
+      `_CASES` metrics, re-run clean multiple times on **2026-09-18 only**
+      (day 1 of the calendar ledger) — Partial; carry-forward to Sprint 3.
+      Do **not** mark the 3-calendar-day gate Done.
+- [x] Delete `HybridMcpDataProvider`, `business_state/series.py::fetch_series`,
       `agents/intelligence/observer.py::_query_windows` once the above
-      passes. Partial: the heuristic they depended on
-      (`resolve_measure`/`measure_keywords_overlap`) is deleted; the
-      classes/functions themselves are now thin heuristic-free wrappers, not
-      dead code — deleting them outright still needs something to replace
-      them at the call-site level, which is Sprint 3 work.
+      passes. **Done 2026-09-18 (extract-wrap-delete):** class renamed
+      `McpDataProvider`; series → `semantic.query_metric_series`;
+      `_query_windows` → `_observation_windows`; BSS `fetch_series` kept as
+      thin `raw_query_metric` adapter. Characterization still Partial
+      (ledger day 1 only).
 
-**C — Causal toolset v0 + evidence classification** *(blocked on A1.1)*
-- [ ] `toolsets/causal.py` + `causal/service.py` — DoWhy wiring extracted in
+**C — Causal toolset v0 + evidence classification** *(Done — Sprint 2 close 2026-09-18)*
+- [x] `toolsets/causal.py` + `causal/service.py` — DoWhy wiring extracted in
       place from `agents/diagnostic/*` then wrapped (same three-step pattern
       as Sprint 1). **EconML is not a dependency of this repo** — there is no
       EconML wiring to port; adding it is a separate scope decision.
-- [ ] Evidence-classification vocabulary finalized and handed to A, applying
+      `estimate_effect(..., search_breadth: Literal[0,1,2]=0)` per frozen §4.
+      Verified: `tests/unit/test_causal_toolset.py` (7 passed).
+- [x] Evidence-classification vocabulary finalized and handed to A, applying
       A1.4's migration mapping across `src/` **and**
-      `config/diagnostic_policies.yaml:24`.
-- [ ] Bug #6 regression against the new `search_breadth` escalation (A1.1):
+      `config/diagnostic_policies.yaml:24` (owner = Profile C).
+      Validator minimal check: `agent/validation.py` rejects mission causal
+      artifacts without a valid frozen classification.
+- [x] Bug #6 regression against the new `search_breadth` escalation (A1.1):
       a wider retry genuinely searches a larger space, not a byte-identical
-      re-run.
-- [ ] Bug #7: confirm still intermittent, not newly deterministic, **and**
-      that the #6 widening — its only documented mitigation — survives the
-      `max_validation_revisions = 1` decision below.
-- [ ] Bug #13: explicit disposition (fix or tracked ticket). Note the
-      self-reference: #13 *is* the fixture path and the real path silently
-      diverging, and C's own port is fixture-validated.
-- [ ] **Policy-gate disposition (new)**: port the conditions in the eight
+      re-run. (`test_search_breadth_widens_history_and_candidate_cap`,
+      `test_estimate_effect_records_widened_caps_in_query`).
+- [x] Bug #7: confirm still intermittent, not newly deterministic, **and**
+      that the #6 widening — its only documented mitigation — survives via
+      `search_breadth` under the confirmed `max_validation_revisions = 1`.
+      Disposition recorded in `TASK_SHEET.md`.
+- [x] Bug #13: explicit disposition (tracked ticket — fixture/template gap
+      ported forward; not silently "fixed" by deleting the fixture path).
+      See `TASK_SHEET.md`.
+- [x] **Policy-gate disposition**: port the conditions in the eight
       `policy()` implementations into tool preconditions returning
-      `INSUFFICIENT_EVIDENCE` (A1.3), and decide what happens to the five
-      `config/*_policies.yaml` files. Nothing currently owns them.
+      `INSUFFICIENT_EVIDENCE` (A1.3), and migrate the five
+      `config/*_policies.yaml` thresholds into toolset config (YAML stay
+      until that port lands). Thresholds live in
+      `toolsets/policy_config.py`; YAML files retained for swarm_v2 callers.
 
 **Joint decision (A + C), end of sprint**
-- [ ] `max_validation_revisions = 1`: confirm or change. One revision means
-      one widening step and no escalation ladder, and the old system's
-      stall-detector (the part bug #6 credits as working) never gets to
-      fire. Record the answer either way — including what the loop does with
-      a STRONG-trust + REVISE verdict when it has exactly one revision.
-- [ ] Record the skeptic→validator change as a decision: cross-agent
-      adversarial challenge becomes in-context self-review. That is a change
-      in kind, not a consolidation (`03_PROFILE_CAPABILITIES.md` §4).
+- [x] `max_validation_revisions = 1`: **confirmed**. Causal escalation is
+      `search_breadth` (caller-chosen), not validation revisions. STRONG-
+      trust + REVISE with revisions exhausted → fail closed with
+      `INSUFFICIENT_EVIDENCE` (`agent/validation.py`).
+- [x] Skeptic → validator recorded as a **change in kind**: cross-agent
+      adversarial challenge becomes in-context self-review
+      (`03_PROFILE_CAPABILITIES.md` §4; `CONTRACTS.md` A1 joint decisions).
 
 **Gate (end of sprint):** A integrates C's evidence-classification
 vocabulary into the validator's content checks (applying A1.4's migration
-mapping, including the `config/diagnostic_policies.yaml` value). B's
+mapping, including the `config/diagnostic_policies.yaml` value) — **Done
+(minimal presence/validity check; full two-signal stays Sprint 3)**. B's
 deletion only proceeds if its 3-day-repeated characterization suite passes
-clean. C's causal work does not start at all until A1.1 is signed off, per
-Sprint 1's gate. The `max_validation_revisions` decision is recorded before
-the sprint closes — either answer is fine, silence is not.
+clean — **not met; carry-forward to Sprint 3**. C's Causal work Done. The
+`max_validation_revisions` decision is recorded (confirmed = 1).
 
 ## Sprint 3
 
@@ -231,12 +246,27 @@ the sprint closes — either answer is fine, silence is not.
 - [ ] Delete `coordinator/catalogue_grounding.py`'s heuristic functions
       (`dimensions_in_query`, `apply_catalogue_grain`, etc.) once
       `SemanticToolset` is the only fetch path and validated against bug #8's
-      repro case.
+      repro case. **Blocked by this sprint's explicit three-separate-calendar-
+      day characterization gate**: Sprint 2 has multiple clean runs, but all
+      are dated 2026-09-18; no deletion is justified yet.
 - [ ] Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone
       registries — replace `catalog_prompt()`'s data source with a live
-      `seleric-mcp` catalogue call.
-- [ ] `ActionToolset` — propose/validate/preview/confirm/commit wired to
-      `actions_propose/commit/status` + Meta/Google Ads write tools.
+      `seleric-mcp` catalogue call. **Deletion remains under the same gate**;
+      `MetricRegistry` still has 73 graph-indexed inbound dependencies.
+- [x] `ActionToolset` — propose/validate/preview/confirm/commit wired to
+      `actions_propose/commit/status`. Done 2026-09-18:
+      `toolsets/actions.py`, remote transport registration, dedicated
+      `v3_agent` action allowlist (legacy observer/domain agents remain
+      read-only), and `tests/unit/test_action_toolset.py`. Confirmation is the
+      user turn between preview and commit; the server's short-lived bearer
+      token stays process-local and never enters model-visible provenance.
+      The server broker owns executor dispatch, kill switch, audit, and
+      payload idempotency. Current upstream catalogue readiness is narrower
+      than this plan assumed: its own audit says only the Meta
+      `pause_meta_ad` pattern exists (and the live spike returned an empty
+      available-action list); no approved Google Ads action contract exists
+      to validate end-to-end yet. That upstream action-catalogue gap is
+      recorded, not papered over as completed Google coverage.
 
 **C — Model/Skeptic-logic port**
 - [ ] `toolsets/models.py` + `models/service.py`. **The registry question is

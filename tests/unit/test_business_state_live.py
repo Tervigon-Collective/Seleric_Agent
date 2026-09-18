@@ -18,7 +18,7 @@ from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import StateRequest
 from seleric_swarm.registry.provider_registry import ProviderRegistry
 from seleric_swarm.swarm.providers.base import MetricReading
-from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
+from seleric_swarm.swarm.providers.mcp_data import build_mcp_bundle
 
 PILOT_METRICS = [
     ("metric.net_sales", "commerce_agent"),
@@ -76,10 +76,10 @@ async def test_evaluate_anomaly_live_never_fabricates(runtime, metric_id, agent_
 @pytest.mark.asyncio
 async def test_configured_anomaly_detector_live_end_to_end(runtime):
     """Same dispatch proven in test_provider_selection.py, run here as part
-    of the full-stack live confirmation: build_hybrid_bundle() -> real
+    of the full-stack live confirmation: build_mcp_bundle() -> real
     ConfiguredAnomalyDetector -> real BusinessStateService for an overridden
     metric, real TemplateAnomalyDetector for one that isn't."""
-    bundle, _stats = build_hybrid_bundle(
+    bundle, _stats = build_mcp_bundle(
         mcp=runtime.mcp,
         execution_mode="staging",
         metrics=runtime.metrics,

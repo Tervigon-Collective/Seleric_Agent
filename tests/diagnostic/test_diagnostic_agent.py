@@ -61,7 +61,7 @@ async def test_matching_observed_treatment_is_retained(make_agent):
         context={"trust_metadata_causal": True},
     ))
     assert r.finding is not None
-    assert r.finding.causal_confidence in {"CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS", "STRONGLY_SUPPORTED"}
+    assert r.finding.causal_confidence in {"CAUSALLY_SUPPORTED", "STRONGLY_SUPPORTED"}
     retained = r.retained()
     assert len(retained) == 1 and retained[0].treatment_metric == _TREATMENT
     assert "spend" in r.finding.statement.lower()

@@ -6,7 +6,7 @@ import pytest
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 
-from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
+from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.agent.output import MissionResult
 from seleric_swarm.agent.validation import EvidenceValidator, run_validated_mission
 from seleric_swarm.conversations.contracts import ContextBundle, Principal, PrincipalAuthMethod
@@ -28,7 +28,7 @@ def _deps(*, artifact_store=None, limits: ExecutionLimits | None = None) -> Sele
         run_id="run-1",
         trace_id="trace-1",
         context=ContextBundle(),
-        mcp_client=object(),
+        mcp_client=NullMcpClient(),
         artifact_store=artifact_store or InMemoryArtifactStore(),
         limits=limits or ExecutionLimits(),
     )
@@ -114,3 +114,61 @@ async def test_run_validated_mission_fails_after_exhausting_bounded_retries() ->
     result = await run_validated_mission(agent, deps, "hello")
     assert result.status == "failed"
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
+
+
+def test_validate_passes_causal_artifact_with_valid_classification() -> None:
+    from seleric_swarm.agent.artifacts import CausalArtifact
+    from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+
+    store = InMemoryArtifactStore()
+    deps = _deps(artifact_store=store)
+    causal = CausalArtifact(
+        query={"treatment": "t", "outcome": "o"},
+        evidence_classification="ASSOCIATION",
+        effect_estimate=None,
+        refutation_checks=[],
+        evidence_ids=["ev-1"],
+        method="backdoor.linear_regression",
+    )
+    store.put(
+        Artifact(
+            workspace_id="ws-1",
+            artifact_type="causal",
+            payload=causal.model_dump(mode="json"),
+            classification="derived",
+            evidence_ids=["ev-1"],
+            provenance=ArtifactProvenance(calculation_version="causal.v0"),
+            mission_id=deps.mission_id,
+        )
+    )
+    outcome = EvidenceValidator().validate(_result(), deps=deps)
+    assert outcome.ok
+
+
+def test_validate_fails_causal_artifact_with_legacy_classification() -> None:
+    """A1.4: legacy UNDER_ASSUMPTIONS / ASSOCIATION_ONLY must not pass."""
+    from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+
+    store = InMemoryArtifactStore()
+    deps = _deps(artifact_store=store)
+    store.put(
+        Artifact(
+            workspace_id="ws-1",
+            artifact_type="causal",
+            payload={
+                "query": {"treatment": "t", "outcome": "o"},
+                "evidence_classification": "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS",
+                "effect_estimate": 1.0,
+                "refutation_checks": [{"name": "x", "passed": True}],
+                "evidence_ids": ["ev-1"],
+                "method": "backdoor.linear_regression",
+            },
+            classification="derived",
+            evidence_ids=["ev-1"],
+            provenance=ArtifactProvenance(calculation_version="causal.v0"),
+            mission_id=deps.mission_id,
+        )
+    )
+    outcome = EvidenceValidator().validate(_result(), deps=deps)
+    assert not outcome.ok
+    assert "evidence_classification" in (outcome.reason or "")

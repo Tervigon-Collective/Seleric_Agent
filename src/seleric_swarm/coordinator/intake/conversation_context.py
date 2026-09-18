@@ -46,35 +46,56 @@ _FOLLOWUP = {
     "same", "thing", "those", "these", "one", "too", "also", "again",
     "what", "about", "how", "much", "was", "were", "is", "are", "did",
     "does", "do", "of", "on", "in", "to", "just", "only", "still",
-    "number", "value", "figure",
+    "number", "value", "figure", "why", "cause", "reason",
 }
 _CHATTER = _STOP | _SOCIAL
 
 
+def _as_dict(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        dumped = dump(mode="json")
+        return dumped if isinstance(dumped, dict) else None
+    return None
+
+
 def recent_user_texts(context_bundle: Mapping[str, Any] | None) -> list[str]:
-    """User TEXT parts from newest-last recent_messages, oldest first."""
-    if not context_bundle:
+    """User TEXT parts from newest-last recent_messages, oldest first.
+
+    Accepts the live ContextBuilder dump (enum values, extra message fields)
+    and a hand-built test bundle, so follow-ups from the office UI hit the
+    same inherit path as unit tests.
+    """
+    bundle = _as_dict(context_bundle) or (
+        dict(context_bundle) if isinstance(context_bundle, Mapping) else None
+    )
+    if not bundle:
         return []
-    messages = context_bundle.get("recent_messages")
+    messages = bundle.get("recent_messages")
     if not isinstance(messages, list):
         return []
     texts: list[str] = []
-    for message in messages:
-        if not isinstance(message, dict):
+    for raw in messages:
+        message = _as_dict(raw)
+        if not message:
             continue
-        if str(message.get("role") or "").upper() != "USER":
+        if str(message.get("role") or "").strip().upper() != "USER":
             continue
         parts = message.get("parts")
         if not isinstance(parts, list):
             continue
-        chunks = [
-            part["content"].strip()
-            for part in parts
-            if isinstance(part, dict)
-            and str(part.get("type") or "").upper() == "TEXT"
-            and isinstance(part.get("content"), str)
-            and part["content"].strip()
-        ]
+        chunks = []
+        for raw_part in parts:
+            part = _as_dict(raw_part)
+            if not part:
+                continue
+            if str(part.get("type") or "").strip().upper() != "TEXT":
+                continue
+            content = part.get("content")
+            if isinstance(content, str) and content.strip():
+                chunks.append(content.strip())
         if chunks:
             texts.append("\n".join(chunks))
     return texts
@@ -145,6 +166,38 @@ def inherit_metric_source(
         if leftover_tokens(text):
             return text
     return None
+
+
+def is_business_followup(
+    query: str,
+    *,
+    timezone: str,
+    as_of: str | None,
+    context_bundle: Mapping[str, Any] | None,
+) -> bool:
+    """True when this turn continues a thread ask, not a greeting/thanks.
+
+    Used so ``yesterday?`` / ``gross sale`` / ``why?`` are not swallowed by
+    the conversational small-talk classifier before lookup/swarm inherit.
+    """
+    if not recent_user_texts(context_bundle):
+        return False
+    leftover = leftover_tokens(query)
+    inherited_time = inherit_time_range(
+        query, timezone=timezone, as_of=as_of, context_bundle=context_bundle
+    )
+    if leftover:
+        return inherited_time is not None
+    if inherit_metric_source(
+        query, context_bundle=context_bundle, timezone=timezone, as_of=as_of
+    ) is None:
+        return False
+    if is_incidental_time_chatter(query, timezone, as_of):
+        return False
+    if window_from_query(query, timezone, as_of) is not None:
+        return True
+    raw = set(re.findall(r"[a-z0-9]+", (query or "").casefold()))
+    return bool(raw) and not (raw & _SOCIAL)
 
 
 def context_fingerprint(context_bundle: Mapping[str, Any] | None) -> str:

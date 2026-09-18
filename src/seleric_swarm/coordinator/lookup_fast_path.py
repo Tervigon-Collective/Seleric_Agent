@@ -16,9 +16,9 @@ of these mechanisms per ``DomainQuestion``:
 * ungrained lookup -- ``BusinessStateService.get_metric_state`` (canonicalizes
   ids through ``MetricRegistry.get()``), one scalar per metric.
 * grained lookup (e.g. "per channel") -- ``DataProvider.fetch(dimensions=...)``
-  via ``build_hybrid_bundle()``, reusing the exact dimensioned-breakdown MCP
+  via ``build_mcp_bundle()``, reusing the exact dimensioned-breakdown MCP
   query path the old Observer/domain-agent code already proved works
-  (``swarm/domain/base.py::observe`` -> ``HybridMcpDataProvider.fetch`` ->
+  (``swarm/domain/base.py::observe`` -> ``McpDataProvider.fetch`` ->
   ``services/mcp_query.py::build_metrics_query_args(dimensions=...)``).
   ``BusinessStateService``/``MetricState`` (Sprints 1-5) are deliberately
   left untouched -- they hold one scalar per metric, not a per-dimension
@@ -68,7 +68,7 @@ from uuid import uuid4
 from seleric_swarm.contracts.lookup import EvidenceView, MissionResult, TimeRangeV1, TraceInfo
 from seleric_swarm.coordinator.intake import normalize_query
 from seleric_swarm.domain.models import MetricState, StateRequest
-from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
+from seleric_swarm.swarm.providers.mcp_data import build_mcp_bundle
 from seleric_swarm.utils.ttl_cache import TTLCache
 
 if TYPE_CHECKING:
@@ -87,12 +87,29 @@ def _time_range(normalized: NormalizedQuery) -> TimeRangeV1:
     return TimeRangeV1(kind="absolute", start=tr.start, end=tr.end or tr.start)
 
 
-def _evidence_row(metric_id: str, state: MetricState) -> EvidenceView:
+def _window_dict(time_range: TimeRangeV1 | None, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
+    if time_range is not None and time_range.start:
+        return {"start": time_range.start, "end": time_range.end or time_range.start}
+    return dict(fallback or {})
+
+
+def _period_suffix(row: EvidenceView) -> str:
+    window = row.time_range if isinstance(row.time_range, dict) else {}
+    start = window.get("start")
+    end = window.get("end") or start
+    if not start:
+        return ""
+    if start == end:
+        return f" ({start})"
+    return f" ({start} to {end})"
+
+
+def _evidence_row(metric_id: str, state: MetricState, time_range: TimeRangeV1 | None = None) -> EvidenceView:
     return EvidenceView(
         evidence_id=f"EV-{uuid4().hex[:12]}",
         metric_or_fact=metric_id,
         value=state.actual,
-        time_range=state.window,
+        time_range=_window_dict(time_range, state.window),
         source="deterministic.business_state",
         freshness=state.freshness,
         dimensions=state.dimensions,
@@ -133,12 +150,12 @@ def _narrate(evidence: list[EvidenceView]) -> str:
         # its single row too, which must NOT trigger breakdown-style
         # rendering (that showed "20=<value>" instead of "<value>").
         if len(rows) == 1:
-            lines.append(f"{label}: {rows[0].value}")
+            lines.append(f"{label}: {rows[0].value}{_period_suffix(rows[0])}")
         else:
             breakdown = ", ".join(
                 f"{'/'.join(str(v) for v in row.dimensions.values()) or 'total'}={row.value}" for row in rows
             )
-            lines.append(f"{label}: {breakdown}")
+            lines.append(f"{label}: {breakdown}{_period_suffix(rows[0])}")
     return "\n".join(lines)
 
 
@@ -169,7 +186,7 @@ async def _fetch_breakdown(
 
 
 def _build_providers(runtime: SwarmRuntime) -> ProviderBundle:
-    providers, _stats = build_hybrid_bundle(
+    providers, _stats = build_mcp_bundle(
         mcp=runtime.mcp,
         execution_mode="production",
         metrics=runtime.metrics,
@@ -184,7 +201,7 @@ async def _fetch_period_reading(
     providers: ProviderBundle, domain: str, metric_id: str, time_range: TimeRangeV1
 ) -> MetricReading | None:
     """One period's total via the same aggregating provider fetch the
-    ``grained`` branch below already uses (``HybridMcpDataProvider.fetch``) --
+    ``grained`` branch below already uses (``McpDataProvider.fetch``) --
     NOT ``BusinessStateService.get_metric_state``, which returns the *last
     daily point* in the range (``state.actual = series[-1].value``), not a
     period total. A single-day range still works fine through this path.
@@ -454,7 +471,7 @@ async def run_lookup_fast_path(
                     if state.status == "UNAVAILABLE":
                         limitations.append(f"No data available for {_humanize_metric(metric_id)}.")
                         continue
-                    evidence.append(_evidence_row(metric_id, state))
+                    evidence.append(_evidence_row(metric_id, state, time_range))
 
         if grained:
             providers = _build_providers(runtime)
@@ -486,6 +503,9 @@ async def run_lookup_fast_path(
                 "workflow": "lookup_fast_path",
                 "user_query": query,
                 **result.model_dump(),
+                "artifacts": {
+                    "evidence": [row.model_dump(mode="json") for row in evidence],
+                },
             },
         )
     except Exception:  # noqa: S110 - persistence must never fail a completed mission

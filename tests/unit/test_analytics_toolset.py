@@ -24,7 +24,7 @@ from typing import Any
 import pytest
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
-from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
+from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.conversations.contracts import (
     Artifact,
     ArtifactProvenance,
@@ -49,7 +49,7 @@ def _deps(store: InMemoryArtifactStore | None = None) -> SelericDeps:
         run_id="run-1",
         trace_id="trace-1",
         context=ContextBundle(),
-        mcp_client=object(),  # analytics tools never touch MCP — rule 5
+        mcp_client=NullMcpClient(),  # analytics tools never touch MCP — rule 5
         artifact_store=store or InMemoryArtifactStore(),
         limits=ExecutionLimits(),
     )

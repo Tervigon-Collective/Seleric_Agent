@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 
@@ -17,13 +17,22 @@ if TYPE_CHECKING:
 
 
 class SelericMcpClient(Protocol):
-    """Placeholder for Profile B's thin wrapper over the ``mcp__seleric-mcp__*``
-    tools (``catalogue_*`` / ``metrics_query`` / ``metrics_drilldown`` /
-    ``actions_*``). Not implemented yet — ``toolsets/semantic.py`` and
-    ``toolsets/actions.py`` (Profile B, Sprint 1/3) own the real shape;
-    ``SelericDeps.mcp_client`` is typed against this Protocol so Profile A's
-    skeleton can be built and tested (with a fake) before Profile B lands.
+    """Thin MCP surface used by semantic/actions toolsets.
+
+    Matches ``MCPGateway.call`` so Profile B/C tools can type against deps
+    without importing the gateway.
     """
+
+    async def call(
+        self, *, agent_id: str, capability: str, arguments: dict[str, Any]
+    ) -> Any: ...
+
+
+class NullMcpClient:
+    """Stand-in for paths that must not talk to MCP (analytics, stub missions)."""
+
+    async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+        raise NotImplementedError("this path does not call MCP")
 
 
 @dataclass(frozen=True)
@@ -42,6 +51,8 @@ class ExecutionLimits:
     max_cube_queries: int = 6
     max_causal_queries: int = 3
     max_prediction_calls: int = 3
+    # Confirmed = 1 with A1 acceptance (2026-09-18). Causal widening uses
+    # estimate_effect(search_breadth=...), not this counter.
     max_validation_revisions: int = 1
     max_runtime_seconds: float = 120.0
 

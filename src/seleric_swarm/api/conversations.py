@@ -1022,6 +1022,50 @@ async def stream_thread_events(
     return _stream_response(generate())
 
 
+def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]:
+    """Transcript TEXT plus SOURCE rows so the office UI can show lookup evidence."""
+    parts = [MessagePart(type=MessagePartType.TEXT, content=final_response)]
+    raw_evidence = raw.get("evidence")
+    evidence: list[Any]
+    if isinstance(raw_evidence, list):
+        evidence = raw_evidence
+    else:
+        artifacts = raw.get("artifacts")
+        nested = artifacts.get("evidence") if isinstance(artifacts, dict) else None
+        evidence = nested if isinstance(nested, list) else []
+    for row in evidence:
+        if not isinstance(row, dict):
+            continue
+        evidence_id = str(row.get("evidence_id") or "").strip()
+        if not evidence_id:
+            continue
+        metric = str(row.get("metric_or_fact") or row.get("title") or "Evidence")
+        title = metric.removeprefix("metric.").replace("_", " ")
+        window_raw = row.get("time_range")
+        window = window_raw if isinstance(window_raw, dict) else {}
+        start = window.get("start")
+        end = window.get("end") or start
+        if start and start == end:
+            period = f" for {start}"
+        elif start and end:
+            period = f" for {start} to {end}"
+        else:
+            period = ""
+        value = row.get("value")
+        excerpt = f"{value}{period}" if value is not None else (period.strip() or None)
+        parts.append(
+            MessagePart(
+                type=MessagePartType.SOURCE,
+                content={
+                    "evidence_id": evidence_id,
+                    "title": title,
+                    "excerpt": excerpt,
+                },
+            )
+        )
+    return parts
+
+
 def _artifact_classification(
     artifact_type: object,
     payload: dict[str, Any],
@@ -1212,9 +1256,7 @@ async def _execute_submission(
         final_message = repositories.messages.update(
             placeholder.model_copy(
                 update={
-                    "parts": [
-                        MessagePart(type=MessagePartType.TEXT, content=final_response)
-                    ],
+                    "parts": _answer_parts(final_response, raw),
                     "updated_at": datetime.now(UTC),
                 }
             )
@@ -1223,7 +1265,7 @@ async def _execute_submission(
             running,
             "answer.completed",
             id=f"event_{run.id}_{attempt.id}_answer_completed",
-            payload={"message_id": final_message.id, "mission_id": run.mission_id},
+            payload={"message_id": final_message.id, "mission_id": run.mission_id, "route": raw.get("route"), "query": query},
         )
         summary_thread = repositories.threads.get(run.thread_id)
         if summary_thread is not None:

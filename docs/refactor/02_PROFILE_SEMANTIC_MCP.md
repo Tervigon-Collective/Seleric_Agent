@@ -111,7 +111,14 @@ trusting it as sufficient, per the consolidation plan's own note).
   `validate()`, `preview()`, `commit_action()`, wrapping
   `mcp__seleric-mcp__actions_propose/commit/status` and the Meta/Google Ads
   write tools, always through the propose→confirm→commit sequence
-  (non-negotiable rule 13).
+  (non-negotiable rule 13). **Local adapter done 2026-09-18**: the remote
+  transport registers all four action endpoints, a dedicated `v3_agent`
+  allowlist prevents legacy read agents from gaining writes, and the adapter
+  keeps confirmation tokens out of model-visible provenance. The live MCP
+  action catalogue still lacks an approved Google Ads contract (and returned
+  no available actions during the readiness spike), so cross-platform
+  execution coverage remains an upstream catalogue dependency rather than a
+  completed claim here.
 - `semantic/cube_client.py` — typed wrapper if a thin local abstraction is
   still useful for retries/tracing; does **not** talk to Cube/ClickHouse
   directly (confirmed invariant, `new.mmd`).

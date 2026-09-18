@@ -201,7 +201,7 @@ class StatsEngine(Protocol):
 class ProviderBundle:
     """Everything the swarm needs to run. Swap fields for real implementations.
 
-    ``build_hybrid_bundle`` fills intelligence seams with Template* defaults.
+    ``build_mcp_bundle`` fills intelligence seams with Template* defaults.
     Full diagnostic/prediction/strategy bridges may ignore these and use their
     own services; the lightweight specialists (``AnomalyAgent``,
     ``DiagnosticAgent``, ``PredictionAgent``, ``SkepticAgent``) call them

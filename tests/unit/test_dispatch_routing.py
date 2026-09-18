@@ -52,6 +52,12 @@ async def test_greeting_completes_without_classifier_or_swarm(runtime, monkeypat
     assert response["result"]["status"] == "completed"
     assert "What would you like to investigate?" in response["result"]["final_response"]
     assert runtime.store.get("MS-greeting").status == "completed"
+    # The office UI (api/office/gateway.py) reads trace/session off the raw
+    # persisted state, not off this handler's return value -- a mission that
+    # only ever populates it on `result` and not on the raw dict is invisible
+    # to the office snapshot's trace/session fields.
+    raw = runtime.store.get_raw("MS-greeting")
+    assert raw["trace"] == {"request_id": "request-greeting", "session_id": "thread-greeting"}
 
 
 @pytest.mark.asyncio
@@ -77,6 +83,8 @@ async def test_business_overview_returns_without_classifier_or_swarm(runtime, mo
     assert response["result"]["status"] == "partial"
     assert "couldn’t load a current business overview" in response["result"]["final_response"]
     assert runtime.store.get("MS-overview").status == "partial"
+    raw = runtime.store.get_raw("MS-overview")
+    assert raw["trace"] == {"request_id": "request-overview", "session_id": "thread-overview"}
 
 
 @pytest.mark.asyncio
@@ -125,3 +133,44 @@ async def test_lookup_mission_forwards_context_bundle(runtime, monkeypatch):
 
     assert response["route"] == "lookup"
     assert seen["context_bundle"] is bundle
+
+
+@pytest.mark.asyncio
+async def test_time_followup_is_not_swallowed_as_conversation(runtime, monkeypatch):
+    from seleric_swarm.contracts.lookup import MissionResult, TraceInfo
+
+    async def fake_chat(*args, **kwargs):
+        return "Hello! What would you like to investigate?"
+
+    async def fake_lookup(*args, **kwargs):
+        return MissionResult(
+            mission_id="MS-follow",
+            status="completed",
+            query_class="lookup",
+            mission_lead="commerce_agent",
+            initial_mission_lead="commerce_agent",
+            evidence=[],
+            limitations=[],
+            final_response="gross sales: 4789.73 (2026-09-17)",
+            trace=TraceInfo(request_id="r", session_id="s"),
+        )
+
+    monkeypatch.setattr(dispatch, "classify_conversational_via_llm", fake_chat)
+    monkeypatch.setattr(dispatch, "run_lookup_fast_path", fake_lookup)
+    bundle = {
+        "recent_messages": [
+            {"role": "USER", "parts": [{"type": "TEXT", "content": "gross sales today"}]}
+        ]
+    }
+
+    response = await dispatch.run_any_mission(
+        runtime,
+        query="yesterday?",
+        mission_id="MS-follow",
+        request_id="request-follow",
+        session_id="thread-follow",
+        context_bundle=bundle,
+    )
+
+    assert response["route"] == "lookup"
+    assert "4789.73" in response["result"]["final_response"]

@@ -14,9 +14,9 @@ _DEFAULT_PATH = "config/diagnostic_policies.yaml"
 
 _CONFIDENCE_ORDER = [
     "REJECTED",
-    "ASSOCIATION_ONLY",
+    "ASSOCIATION",
     "PLAUSIBLE_CAUSAL",
-    "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS",
+    "CAUSALLY_SUPPORTED",
     "STRONGLY_SUPPORTED",
 ]
 
@@ -82,7 +82,7 @@ class DiagnosticPolicies:
         )
 
     def retain_threshold(self) -> str:
-        return str(self._get("causal", "retain_at_or_above", default="CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS"))
+        return str(self._get("causal", "retain_at_or_above", default="CAUSALLY_SUPPORTED"))
 
     def metadata_only_ceiling(self) -> str:
         return str(self._get("causal", "metadata_only_ceiling", default="PLAUSIBLE_CAUSAL"))

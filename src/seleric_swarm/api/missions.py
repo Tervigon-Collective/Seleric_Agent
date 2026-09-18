@@ -17,6 +17,13 @@ decision, not implied by this file existing.
 
 ``settings.v3_agent_enabled`` is checked here anyway so the 501 behavior is
 already correct on the day this does get mounted.
+
+Persists to the shared V3 stores (``api/v3_state.py``) so the mission is
+retrievable afterward and visible to the Office UI's V3 adapter
+(``api/office/v3_adapter.py``) — an earlier version of this handler built a
+throwaway ``InMemoryArtifactStore()`` per request and never stored the
+``Mission`` at all, so nothing survived past the response (found 2026-09-18
+while checking Sprint 1/2 for UI connectivity).
 """
 
 from __future__ import annotations
@@ -29,10 +36,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from seleric_swarm.agent.agent import build_seleric_agent
-from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
+from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
+from seleric_swarm.agent.output import MissionResult
+from seleric_swarm.api.office.registry import register_mission
+from seleric_swarm.api.v3_state import get_v3_artifact_store, get_v3_mission_store
 from seleric_swarm.config.settings import Settings
 from seleric_swarm.conversations.contracts import ContextBundle, Principal, PrincipalAuthMethod
-from seleric_swarm.state.artifacts import InMemoryArtifactStore
+from seleric_swarm.state.missions import Mission
 
 router = APIRouter()
 
@@ -49,9 +59,26 @@ async def create_mission_v3(req: V3MissionRequest) -> dict[str, Any]:
         raise HTTPException(status_code=501, detail="v3 agent is not enabled")
 
     mission_id = f"MS3-{uuid4().hex[:10]}"
+    as_of = datetime.now(UTC)
+    thread_id = uuid4().hex
+    run_id = uuid4().hex
+    mission_store = get_v3_mission_store()
+    mission_store.create(
+        Mission(
+            mission_id=mission_id,
+            query=req.query,
+            as_of=as_of,
+            workspace_id=req.workspace_id,
+            owner_user_id=req.user_id,
+            thread_id=thread_id,
+            run_id=run_id,
+        )
+    )
+    register_mission(mission_id)
+
     deps = SelericDeps(
         mission_id=mission_id,
-        as_of=datetime.now(UTC),
+        as_of=as_of,
         principal=Principal(
             principal_id=uuid4().hex,
             workspace_id=req.workspace_id,
@@ -59,14 +86,28 @@ async def create_mission_v3(req: V3MissionRequest) -> dict[str, Any]:
             authenticated=False,
             auth_method=PrincipalAuthMethod.ANONYMOUS,
         ),
-        thread_id=uuid4().hex,
-        run_id=uuid4().hex,
+        thread_id=thread_id,
+        run_id=run_id,
         trace_id=uuid4().hex,
         context=ContextBundle(),
-        mcp_client=object(),  # Profile B hasn't built SelericMcpClient yet.
-        artifact_store=InMemoryArtifactStore(),
+        mcp_client=NullMcpClient(),
+        artifact_store=get_v3_artifact_store(),
         limits=ExecutionLimits(),
     )
     agent = build_seleric_agent()
-    result = await agent.run(req.query, deps=deps)
-    return result.output.model_dump(mode="json")
+    run = await agent.run(req.query, deps=deps)
+    # The stub model (agent/agent.py::_stub_test_model) returns a fixed
+    # payload with a placeholder mission_id/query/as_of -- correct those
+    # back to the real request context before this leaves the handler, so
+    # a caller (and the Office UI, via api/v3_state.py) sees the mission id
+    # it actually asked for, not the literal string "stub".
+    result: MissionResult = run.output.model_copy(
+        update={"mission_id": mission_id, "query": req.query, "as_of": as_of}
+    )
+    mission_store.finish(
+        mission_id,
+        status=result.status,
+        final_response=result.final_response,
+        error_code=result.error_code,
+    )
+    return result.model_dump(mode="json")

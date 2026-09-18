@@ -185,7 +185,7 @@ async def identify_candidate_nodes(ctx: DiagnosticContext) -> list[DiagnosticHyp
     # When no time-series observation frame is available, DoWhy has no empirical
     # data to fit a causal model against -- it can only echo the graph metadata.
     # Running it on a metric with zero observed movement (no anomaly, no evidence
-    # change_pct, no DataFrame column) produces "ASSOCIATION_ONLY" at best and a
+    # change_pct, no DataFrame column) produces "ASSOCIATION" at best and a
     # vague narrative at worst. Skip those unless they are direct formula
     # components (formula deps are always structurally relevant) or the caller
     # explicitly requested them via `alternatives_to_test`.

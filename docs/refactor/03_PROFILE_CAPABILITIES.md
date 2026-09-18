@@ -255,42 +255,37 @@ function names that were never frozen. Dispositions:
   **Struck, re-propose if wanted:** `design_experiment`, `compare_variants`,
   `recommend_next_test`. No experiment infrastructure exists in `src/` today.
 
-## 6. Proposed contract amendment (A1)
+## 6. Contract amendment A1 — ACCEPTED 2026-09-18
 
-Filed against frozen `CONTRACTS.md`, pending three-profile sign-off. Full
-text in that file under "Proposed Amendment A1". Summary of what C needs:
+Full text in `CONTRACTS.md` under "Amendment A1". Applied into frozen §2
+(error codes) and §4 (`search_breadth` on `estimate_effect`; Analytics grain
+rule). Summary of what landed for C:
 
-1. **Causal escalation surface** — §3.2. Without it bug #6's fix cannot be
-   ported at all. Highest priority; blocks C's Sprint 2.
-2. **Analytics grain precondition + `EVIDENCE_GRAIN_MISMATCH` error code** —
-   §3.1. Without it bug #14's fix is a convention, not a guarantee.
-3. **Precondition/refusal semantics for policy gates** — §3.3.
-4. **Evidence-classification migration mapping** — the code uses
-   `CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` (bare string literal in ≥6 files:
-   `causal/estimator.py:135`, `agents/diagnostic/contracts.py:43`,
-   `agents/diagnostic/policies.py:19,85`, `agents/skeptic/contracts.py:74`,
-   `agents/skeptic/registries.py:519`, `services/dowhy_causal.py:37,100`) and
-   as a **config value** in `config/diagnostic_policies.yaml:24`
-   (`retain_at_or_above`). The contract froze `CAUSALLY_SUPPORTED`. The
-   rename is defensible — the frozen `CausalArtifact` validator
-   `causally_supported_requires_refutation` turns the "under assumptions"
-   caveat into an *enforced refutation requirement* rather than a string
-   suffix, which is strictly stronger. But it is a cross-file plus
-   cross-YAML migration with no owner today.
+1. **Causal escalation surface** — `search_breadth: Literal[0,1,2]=0` on
+   `estimate_effect`. Unblocks C's Sprint 2. No separate
+   `discover_hypotheses()`.
+2. **Analytics grain precondition + `EVIDENCE_GRAIN_MISMATCH`** — already
+   implemented in `analytics/grain.py` (Sprint 1); now contract-authoritative.
+3. **Precondition/refusal semantics for policy gates** — declines return
+   `INSUFFICIENT_EVIDENCE` + named warning; YAML files migrate in Sprint 2 C.
+4. **Evidence-classification migration** — owner = Profile C; run during
+   Causal Sprint 2 (`CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS` →
+   `CAUSALLY_SUPPORTED` across `src/` + `config/diagnostic_policies.yaml:24`).
+
+Joint decisions recorded with acceptance: keep
+`max_validation_revisions = 1` (causal ladder is `search_breadth`); skeptic →
+validator is a change in kind (in-context self-review).
 
 ## 7. Depends on
 
 - Profile A's `SelericDeps`/`ToolResult`/artifact schemas (frozen
-  `CONTRACTS.md`, 2026-09-18) — and A's sign-off on amendment A1.
+  `CONTRACTS.md`, 2026-09-18) — and **A1 ACCEPTED** (same day).
 - Profile B's `SemanticToolset.query_metrics()`/`drilldown()` for evidence —
   Analytics/Causal consume evidence, they don't fetch it (rule 5). B is also
   the writer of `EvidenceArtifact.grain`, which §3.1's precondition depends
   on being set correctly at the source.
-- **Missing dependency, not yet actioned:** `pydantic-ai` is not in
-  `pyproject.toml`. Every deliverable here is a toolset for a PydanticAI
-  agent and the frozen signatures use `RunContext[SelericDeps]`. Sprint 0's
-  freeze validated the shapes against the spec, not against an installed
-  framework. Spike tracked in `SPRINT_PLAN.md` Sprint 1.
+- **`pydantic-ai-slim>=2.45`** is in `pyproject.toml` (A1.6 closed). Stub
+  agent validates `RunContext[SelericDeps]` against the installed framework.
 
 ## 8. Key risks
 

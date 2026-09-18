@@ -20,7 +20,7 @@ classifier into both the fetcher and the detector, which is what makes
 ``docs/BUG_SHEET.md`` #14's fix hold). Here it is a per-call model decision.
 So every entry point validates its inputs before computing and returns a
 structured refusal rather than a number it cannot stand behind — see
-``analytics/grain.py`` and ``CONTRACTS.md`` amendment A1.2.
+``analytics/grain.py`` and ``CONTRACTS.md`` A1.2 (ACCEPTED 2026-09-18).
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ def _load_evidence(ctx: RunContext[SelericDeps], evidence_ids: list[str]) -> tup
             )
         try:
             evidence.append(EvidenceArtifact.model_validate(artifact.payload))
-        except Exception as exc:
+        except Exception as exc:  # never raise across the tool boundary
             return [], _refuse(
                 f"artifact {artifact.id} payload is not a valid EvidenceArtifact: {exc}",
                 error_code="INSUFFICIENT_EVIDENCE",
@@ -183,10 +183,13 @@ async def compare_periods(ctx: RunContext[SelericDeps], evidence_ids: list[str])
 
     artifact_ids: list[str] = []
     for delta in deltas:
-        base = float(delta.b.value) if delta.b.value else None
-        metrics = {"delta": delta.delta, "value_a": float(delta.a.value), "value_b": float(delta.b.value)}
-        if base:
-            metrics["delta_pct"] = delta.delta / base * 100
+        a_value = delta.a.value
+        b_value = delta.b.value
+        if a_value is None or b_value is None:
+            continue
+        metrics = {"delta": delta.delta, "value_a": a_value, "value_b": b_value}
+        if b_value:
+            metrics["delta_pct"] = delta.delta / b_value * 100
         dims = f" [{', '.join(f'{k}={v}' for k, v in sorted(delta.dimensions.items()))}]" if delta.dimensions else ""
         artifact_ids.append(
             _write_finding(

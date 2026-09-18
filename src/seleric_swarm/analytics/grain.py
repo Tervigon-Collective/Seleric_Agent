@@ -1,4 +1,4 @@
-"""Grain preconditions for the Analytics toolset — ``CONTRACTS.md`` amendment A1.2.
+"""Grain preconditions for the Analytics toolset — ``CONTRACTS.md`` A1.2 (ACCEPTED).
 
 Why this module exists
 ----------------------

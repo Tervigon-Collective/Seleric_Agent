@@ -21,7 +21,7 @@ diagnostic:
       - random_common_cause
       - data_subset_refuter
     # confidence -> retain decision
-    retain_at_or_above: CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS
+    retain_at_or_above: CAUSALLY_SUPPORTED
     # a passing metadata-only causal check (no observations) caps confidence here
     metadata_only_ceiling: PLAUSIBLE_CAUSAL
 
