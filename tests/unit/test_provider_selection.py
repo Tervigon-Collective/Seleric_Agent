@@ -1,10 +1,10 @@
 """Sprint 2.5 checklist: config selects a non-default strategy ->
-build_hybrid_bundle returns that implementation, not the Template one.
+build_mcp_bundle returns that implementation, not the Template one.
 
 Uses the live-MCP ``runtime`` fixture (conftest.py) since ConfiguredAnomalyDetector's
 whole point is dispatching real BusinessStateService calls for overridden
 metrics -- a fake gateway would just prove the dispatch, not that the wiring
-survives a real build_hybrid_bundle() call.
+survives a real build_mcp_bundle() call.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from seleric_swarm.registry.provider_registry import ProviderRegistry
 from seleric_swarm.services.business_state.detectors import RobustZScoreDetector
 from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.swarm.providers.base import AnomalyFinding, MetricReading
-from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
+from seleric_swarm.swarm.providers.mcp_data import build_mcp_bundle
 from seleric_swarm.swarm.providers.provider_selection import ConfiguredAnomalyDetector
 from seleric_swarm.swarm.providers.template import TemplateAnomalyDetector
 
@@ -66,8 +66,8 @@ def test_catalogue_id_resolves_to_yaml_metric_override():
 
 
 @pytest.mark.asyncio
-async def test_build_hybrid_bundle_returns_configured_detector_not_bare_template(runtime):
-    bundle, _stats = build_hybrid_bundle(
+async def test_build_mcp_bundle_returns_configured_detector_not_bare_template(runtime):
+    bundle, _stats = build_mcp_bundle(
         mcp=runtime.mcp,
         execution_mode="staging",
         metrics=runtime.metrics,
@@ -176,7 +176,7 @@ async def test_force_robust_zscore_falls_back_to_template_on_sparse_history():
 
 @pytest.mark.asyncio
 async def test_registry_selects_robust_zscore_but_no_business_state_degrades_to_template(runtime):
-    """If config says robust_zscore but build_hybrid_bundle wasn't given a
+    """If config says robust_zscore but build_mcp_bundle wasn't given a
     business_state (e.g. an older call site), never crash -- fall back."""
     detector = ConfiguredAnomalyDetector(
         registry=_FakeRegistry(),

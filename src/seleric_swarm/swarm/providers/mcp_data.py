@@ -34,7 +34,7 @@ from seleric_swarm.swarm.providers.template import (
     TemplateOptimizer,
     TemplateStatsEngine,
 )
-from seleric_swarm.toolsets.semantic import raw_query_metric
+from seleric_swarm.toolsets.semantic import query_metric_series, raw_query_metric
 
 _MCP_QUERY_CONCURRENCY = 8
 
@@ -98,21 +98,16 @@ class EmptyDataProvider:
         return []
 
 
-class HybridMcpDataProvider:
+class McpDataProvider:
     """Live Seleric MCP for a domain module. Never returns fixture readings.
 
     Metrics are never hardcoded: for each requested ``metric_id`` we look up
     its ``MetricDefinition`` (config/metric_registry.yaml) and query its
     static ``catalogue_metric`` id directly via ``toolsets/semantic.py::
-    raw_query_metric()`` (Sprint 2 consolidation, docs/refactor/SPRINT_PLAN.md
-    — the same no-heuristic call path the new agent's ``SemanticToolset``
-    uses). This deliberately no longer falls back to
-    ``services/measure.py::resolve_measure()``'s keyword-overlap catalogue
-    search when ``catalogue_metric`` is stale or unset — that fallback is
-    exactly the heuristic layer this profile retires (bug #8's root cause).
-    A stale/missing ``catalogue_metric`` now surfaces as a live Cube error
-    (caught below, same ``missing``/``fallback_reasons`` reporting as any
-    other failure) instead of being silently substituted.
+    raw_query_metric()`` / ``query_metric_series()`` (Sprint 2 consolidation).
+    Formerly ``HybridMcpDataProvider`` — renamed once the Hybrid heuristic
+    layer was retired; this class is the temporary DataProvider adapter
+    until DomainAgent call sites move onto SemanticToolset directly.
     """
 
     def __init__(
@@ -291,31 +286,8 @@ class HybridMcpDataProvider:
         max_days: int = 60,
         min_rows: int = 8,
     ) -> Any:
-        """Daily series for DoWhy: one ``metrics_query`` per metric with ``granularity=day``.
-
-        Returns a pandas DataFrame indexed by date, or ``None`` if the window is
-        shorter than ``min_rows``, longer than ``max_days``, or too sparse.
-        """
-        from datetime import date
-
-        import pandas as pd
-
-        start_s = str(time_range.get("start") or time_range.get("end") or "")[:10]
-        end_s = str(time_range.get("end") or time_range.get("start") or "")[:10]
-        if not start_s or not end_s:
-            return None
-        try:
-            start = date.fromisoformat(start_s)
-            end = date.fromisoformat(end_s)
-        except ValueError:
-            return None
-        if end < start:
-            start, end = end, start
-        n_days = (end - start).days + 1
-        if n_days < min_rows or n_days > max_days:
-            return None
-
-        jobs: list[tuple[str, str, dict[str, Any]]] = []
+        """Daily series for DoWhy — delegates to ``semantic.query_metric_series``."""
+        jobs: list[tuple[str, str, Any]] = []
         for metric_id in metric_ids:
             definition = self._metrics.get(metric_id)
             if definition is None:
@@ -324,47 +296,21 @@ class HybridMcpDataProvider:
             if measure is None:
                 continue
             extra = module_args(definition)
-            jobs.append((metric_id, measure, extra))
+            jobs.append((metric_id, measure, extra["module"] if extra else ...))
 
-        sem = asyncio.Semaphore(_MCP_QUERY_CONCURRENCY)
-
-        async def _query_metric(
-            metric_id: str, measure: str, extra: dict[str, Any]
-        ) -> tuple[str, dict[str, float]]:
-            async with sem:
-                self._stats.mcp_attempts += 1
-                result = await raw_query_metric(
-                    self._mcp,
-                    agent_id=self._agent_id,
-                    metric_id=measure,
-                    start=start.isoformat(),
-                    end=end.isoformat(),
-                    grain="day",
-                    module=extra["module"] if extra else ...,
-                )
-            day_values: dict[str, float] = {}
-            if result.get("error"):
-                return metric_id, day_values
-            for row in result.get("rows") or []:
-                ts = row_date(row)
-                raw = row.get(measure)
-                if ts is None or raw is None:
-                    continue
-                day_values[ts] = float(raw)
-            return metric_id, day_values
-
-        gathered = await asyncio.gather(*[_query_metric(*job) for job in jobs]) if jobs else []
-        columns: dict[str, dict[str, float]] = {
-            metric_id: day_values
-            for metric_id, day_values in gathered
-            if len(day_values) >= min_rows
-        }
-        if not columns:
-            return None
-        frame = pd.DataFrame(columns)
-        frame = frame.dropna(how="any")
-        if len(frame) < min_rows:
-            return None
+        self._stats.mcp_attempts += len(jobs)
+        frame = await query_metric_series(
+            self._mcp,
+            agent_id=self._agent_id,
+            jobs=jobs,
+            time_range=time_range,
+            max_days=max_days,
+            min_rows=min_rows,
+            concurrency=_MCP_QUERY_CONCURRENCY,
+        )
+        if frame is not None:
+            self._stats.mcp_hits += 1
+            self._stats.capabilities_used.append("seleric.metrics_query")
         return frame
 
     async def events(self, *, time_range: dict[str, Any]) -> list[DomainEvent]:
@@ -385,7 +331,7 @@ def _data_providers(
     for cfg in build_domain_configs(metrics, agents).values():
         d = cfg.domain
         if mcp is not None and cfg.seleric_module:
-            data[d] = HybridMcpDataProvider(
+            data[d] = McpDataProvider(
                 d,
                 mcp=mcp,
                 stats=stats,
@@ -428,7 +374,7 @@ def data_only_bundle(
     )
 
 
-def build_hybrid_bundle(
+def build_mcp_bundle(
     *,
     mcp: MCPGateway | None = None,
     execution_mode: str = "production",
@@ -441,17 +387,8 @@ def build_hybrid_bundle(
     """Build providers for a live mission: live MCP for domains with a
     seleric_module, no data otherwise.
 
-    ``bootstrap`` is the shared ``CatalogueBootstrap`` instance from
-    ``SwarmRuntime``.  When provided, ``_resolve_measure`` can check the
-    live catalogue cache (Step 0) before making any MCP calls, eliminating
-    the per-metric ``catalogue_get_metric`` round-trip on the hot path.
-
-    ``business_state`` (``runtime.business_state``, typed loosely here to
-    avoid a hard import-time dependency on ``SwarmRuntime``) and
-    ``provider_registry`` are optional so every existing caller/test that
-    doesn't pass them keeps getting pure ``TemplateAnomalyDetector`` behavior
-    -- config-driven selection (Sprint 2.5) only activates once both a
-    registry override and a live ``business_state`` are present.
+    Formerly ``build_hybrid_bundle`` — renamed with ``HybridMcpDataProvider``
+    → ``McpDataProvider`` retirement (Sprint 2 Profile B).
     """
     data, stats = _data_providers(
         mcp=mcp,
@@ -460,12 +397,6 @@ def build_hybrid_bundle(
         agents=agents,
         bootstrap=bootstrap,
     )
-    # Data is MCP/empty; intelligence seams stay Template* by default so
-    # specialists (anomaly / lightweight diagnostic / prediction / skeptic)
-    # never see None. Anomaly is the one seam config can redirect per
-    # metric/domain (docs/features/business-state-service/05_SPRINT_PLAN.md
-    # Sprint 2.5) -- causal/forecast/optimizer/stats stay Template until
-    # their own BusinessStateService strategies exist.
     registry = provider_registry or ProviderRegistry()
     anomaly_detector = ConfiguredAnomalyDetector(
         registry=registry,

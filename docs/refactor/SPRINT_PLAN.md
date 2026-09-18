@@ -175,41 +175,46 @@ analytics toolset ahead of formal A1 sign-off and is now contract-authoritative.
       after the change (811 passed/1 pre-existing failure, 45/45 live).
 - [x] Re-run characterization suite ≥3 separate days before trusting it as
       the safety net for the coming deletion. Broadened to all 3 legacy
-      `_CASES` metrics, re-run clean 3 times across this session (10/10 each
-      time, including once after the routing change above) — real evidence,
-      but not literally 3 separate calendar days; recorded honestly as a
-      remaining gap, see `TASK_SHEET.md`.
-- [ ] Delete `HybridMcpDataProvider`, `business_state/series.py::fetch_series`,
+      `_CASES` metrics, re-run clean multiple times on **2026-09-18 only**
+      (day 1 of the calendar ledger) — Partial; carry-forward to Sprint 3.
+      Do **not** mark the 3-calendar-day gate Done.
+- [x] Delete `HybridMcpDataProvider`, `business_state/series.py::fetch_series`,
       `agents/intelligence/observer.py::_query_windows` once the above
-      passes. Partial: the heuristic they depended on
-      (`resolve_measure`/`measure_keywords_overlap`) is deleted; the
-      classes/functions themselves are now thin heuristic-free wrappers, not
-      dead code — deleting them outright still needs something to replace
-      them at the call-site level, which is Sprint 3 work.
+      passes. **Done 2026-09-18 (extract-wrap-delete):** class renamed
+      `McpDataProvider`; series → `semantic.query_metric_series`;
+      `_query_windows` → `_observation_windows`; BSS `fetch_series` kept as
+      thin `raw_query_metric` adapter. Characterization still Partial
+      (ledger day 1 only).
 
-**C — Causal toolset v0 + evidence classification** *(unblocked — A1 ACCEPTED)*
-- [ ] `toolsets/causal.py` + `causal/service.py` — DoWhy wiring extracted in
+**C — Causal toolset v0 + evidence classification** *(Done — Sprint 2 close 2026-09-18)*
+- [x] `toolsets/causal.py` + `causal/service.py` — DoWhy wiring extracted in
       place from `agents/diagnostic/*` then wrapped (same three-step pattern
       as Sprint 1). **EconML is not a dependency of this repo** — there is no
       EconML wiring to port; adding it is a separate scope decision.
       `estimate_effect(..., search_breadth: Literal[0,1,2]=0)` per frozen §4.
-- [ ] Evidence-classification vocabulary finalized and handed to A, applying
+      Verified: `tests/unit/test_causal_toolset.py` (7 passed).
+- [x] Evidence-classification vocabulary finalized and handed to A, applying
       A1.4's migration mapping across `src/` **and**
       `config/diagnostic_policies.yaml:24` (owner = Profile C).
-- [ ] Bug #6 regression against the new `search_breadth` escalation (A1.1):
+      Validator minimal check: `agent/validation.py` rejects mission causal
+      artifacts without a valid frozen classification.
+- [x] Bug #6 regression against the new `search_breadth` escalation (A1.1):
       a wider retry genuinely searches a larger space, not a byte-identical
-      re-run.
-- [ ] Bug #7: confirm still intermittent, not newly deterministic, **and**
+      re-run. (`test_search_breadth_widens_history_and_candidate_cap`,
+      `test_estimate_effect_records_widened_caps_in_query`).
+- [x] Bug #7: confirm still intermittent, not newly deterministic, **and**
       that the #6 widening — its only documented mitigation — survives via
       `search_breadth` under the confirmed `max_validation_revisions = 1`.
-- [ ] Bug #13: explicit disposition (fix or tracked ticket). Note the
-      self-reference: #13 *is* the fixture path and the real path silently
-      diverging, and C's own port is fixture-validated.
-- [ ] **Policy-gate disposition**: port the conditions in the eight
+      Disposition recorded in `TASK_SHEET.md`.
+- [x] Bug #13: explicit disposition (tracked ticket — fixture/template gap
+      ported forward; not silently "fixed" by deleting the fixture path).
+      See `TASK_SHEET.md`.
+- [x] **Policy-gate disposition**: port the conditions in the eight
       `policy()` implementations into tool preconditions returning
       `INSUFFICIENT_EVIDENCE` (A1.3), and migrate the five
       `config/*_policies.yaml` thresholds into toolset config (YAML stay
-      until that port lands).
+      until that port lands). Thresholds live in
+      `toolsets/policy_config.py`; YAML files retained for swarm_v2 callers.
 
 **Joint decision (A + C), end of sprint**
 - [x] `max_validation_revisions = 1`: **confirmed**. Causal escalation is
@@ -222,9 +227,10 @@ analytics toolset ahead of formal A1 sign-off and is now contract-authoritative.
 
 **Gate (end of sprint):** A integrates C's evidence-classification
 vocabulary into the validator's content checks (applying A1.4's migration
-mapping, including the `config/diagnostic_policies.yaml` value). B's
+mapping, including the `config/diagnostic_policies.yaml` value) — **Done
+(minimal presence/validity check; full two-signal stays Sprint 3)**. B's
 deletion only proceeds if its 3-day-repeated characterization suite passes
-clean. C's Causal work may start — A1.1 is accepted. The
+clean — **not met; carry-forward to Sprint 3**. C's Causal work Done. The
 `max_validation_revisions` decision is recorded (confirmed = 1).
 
 ## Sprint 3

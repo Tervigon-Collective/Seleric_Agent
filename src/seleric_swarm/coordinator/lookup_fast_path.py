@@ -16,9 +16,9 @@ of these mechanisms per ``DomainQuestion``:
 * ungrained lookup -- ``BusinessStateService.get_metric_state`` (canonicalizes
   ids through ``MetricRegistry.get()``), one scalar per metric.
 * grained lookup (e.g. "per channel") -- ``DataProvider.fetch(dimensions=...)``
-  via ``build_hybrid_bundle()``, reusing the exact dimensioned-breakdown MCP
+  via ``build_mcp_bundle()``, reusing the exact dimensioned-breakdown MCP
   query path the old Observer/domain-agent code already proved works
-  (``swarm/domain/base.py::observe`` -> ``HybridMcpDataProvider.fetch`` ->
+  (``swarm/domain/base.py::observe`` -> ``McpDataProvider.fetch`` ->
   ``services/mcp_query.py::build_metrics_query_args(dimensions=...)``).
   ``BusinessStateService``/``MetricState`` (Sprints 1-5) are deliberately
   left untouched -- they hold one scalar per metric, not a per-dimension
@@ -68,7 +68,7 @@ from uuid import uuid4
 from seleric_swarm.contracts.lookup import EvidenceView, MissionResult, TimeRangeV1, TraceInfo
 from seleric_swarm.coordinator.intake import normalize_query
 from seleric_swarm.domain.models import MetricState, StateRequest
-from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
+from seleric_swarm.swarm.providers.mcp_data import build_mcp_bundle
 from seleric_swarm.utils.ttl_cache import TTLCache
 
 if TYPE_CHECKING:
@@ -186,7 +186,7 @@ async def _fetch_breakdown(
 
 
 def _build_providers(runtime: SwarmRuntime) -> ProviderBundle:
-    providers, _stats = build_hybrid_bundle(
+    providers, _stats = build_mcp_bundle(
         mcp=runtime.mcp,
         execution_mode="production",
         metrics=runtime.metrics,
@@ -201,7 +201,7 @@ async def _fetch_period_reading(
     providers: ProviderBundle, domain: str, metric_id: str, time_range: TimeRangeV1
 ) -> MetricReading | None:
     """One period's total via the same aggregating provider fetch the
-    ``grained`` branch below already uses (``HybridMcpDataProvider.fetch``) --
+    ``grained`` branch below already uses (``McpDataProvider.fetch``) --
     NOT ``BusinessStateService.get_metric_state``, which returns the *last
     daily point* in the range (``state.actual = series[-1].value``), not a
     period total. A single-day range still works fine through this path.

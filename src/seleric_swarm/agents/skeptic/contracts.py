@@ -69,9 +69,9 @@ ContradictionType = Literal[
 ]
 
 CausalConfidence = Literal[
-    "ASSOCIATION_ONLY",
+    "ASSOCIATION",
     "PLAUSIBLE_CAUSAL",
-    "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS",
+    "CAUSALLY_SUPPORTED",
     "STRONGLY_SUPPORTED",
     "REJECTED",
 ]

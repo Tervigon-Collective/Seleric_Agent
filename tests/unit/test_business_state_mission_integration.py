@@ -3,7 +3,7 @@ reach BusinessStateService, not just the module-level facade in isolation?
 
 Everything here is real: live seleric-mcp, live LLM classification, the real
 LangGraph DECIDE->EXECUTE cycle (coordinator.graph.run_swarm_v2_mission), and
-build_hybrid_bundle()'s default providers (which now pass runtime.business_state
+build_mcp_bundle()'s default providers (which now pass runtime.business_state
 through per Sprint 2.5). The one non-real thing is a thin spy wrapped around
 BusinessStateService.get_metric_state -- it still calls straight through to
 the real implementation, it just also records that the call happened, since

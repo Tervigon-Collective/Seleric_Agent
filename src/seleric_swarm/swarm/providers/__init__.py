@@ -7,6 +7,6 @@ Submodules import from each other in a chain that must not be flattened here:
 callers must import from the leaf module directly:
 
     from seleric_swarm.swarm.providers.base import ProviderBundle
-    from seleric_swarm.swarm.providers.mcp_data import build_hybrid_bundle
+    from seleric_swarm.swarm.providers.mcp_data import build_mcp_bundle
     from seleric_swarm.swarm.providers.template import RelativeEffectAnomalyDetector
 """

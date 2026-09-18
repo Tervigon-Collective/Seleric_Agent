@@ -22,7 +22,7 @@ import pytest
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
-from seleric_swarm.swarm.providers.mcp_data import HybridMcpDataProvider, McpFetchStats
+from seleric_swarm.swarm.providers.mcp_data import McpDataProvider, McpFetchStats
 from seleric_swarm.toolsets import semantic
 
 _DAY = "2026-08-01"
@@ -52,7 +52,7 @@ class _RunContext:
 async def test_semantic_toolset_query_metrics_matches_hybrid_provider_fetch(
     runtime, agent_id, metric_id_legacy, metric_id_catalogue
 ):
-    provider = HybridMcpDataProvider(
+    provider = McpDataProvider(
         _domain_for(agent_id),
         mcp=runtime.mcp,
         stats=McpFetchStats(),
@@ -65,7 +65,7 @@ async def test_semantic_toolset_query_metrics_matches_hybrid_provider_fetch(
     )
     legacy_value = legacy.readings[0].value if legacy.readings else None
     assert legacy_value is not None, (
-        f"HybridMcpDataProvider.fetch() returned no reading for {metric_id_legacy} on {_DAY} "
+        f"McpDataProvider.fetch() returned no reading for {metric_id_legacy} on {_DAY} "
         f"(missing={legacy.missing}) -- cannot characterize, MCP data unavailable"
     )
 
@@ -103,7 +103,7 @@ async def test_semantic_toolset_query_metrics_matches_hybrid_provider_fetch(
     assert new_value == pytest.approx(legacy_value, rel=1e-6), (
         f"DIVERGENCE for {metric_id_catalogue} on {_DAY}: "
         f"SemanticToolset.query_metrics()={new_value} vs "
-        f"HybridMcpDataProvider.fetch()={legacy_value}. The new toolset calls "
+        f"McpDataProvider.fetch()={legacy_value}. The new toolset calls "
         "metrics_query directly with the catalogue id and no MetricRegistry/"
         "resolve_measure heuristic -- a divergence here means the legacy "
         "path's resolve_measure() was substituting a different measure than "

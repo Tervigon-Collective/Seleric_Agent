@@ -446,7 +446,7 @@ async def _fetch_observations(
     lookup fast path already trusts); only falls back to MCP ``fetch_series``
     via ``providers`` when BSS is unavailable or returns too little history.
     ``providers`` is a ``ProviderBundle`` (domain -> DataProvider). Only
-    ``HybridMcpDataProvider`` implements ``fetch_series``; fixture/template
+    ``McpDataProvider`` implements ``fetch_series``; fixture/template
     providers don't, and that's fine — this stays ``None`` for them, same as
     before this fix (metadata-only estimation, honestly capped).
 

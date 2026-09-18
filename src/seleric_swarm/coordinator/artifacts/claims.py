@@ -44,8 +44,8 @@ class ClaimManager:
             support_refs: List of artifact IDs supporting this claim
             origin_agent: Agent that proposed the claim
             synthetic: Whether the claim is based on synthetic data
-            causal_strength: Optional causal strength indicator (e.g., "ASSOCIATION_ONLY", 
-                           "PLAUSIBLE_CAUSAL", "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS", 
+            causal_strength: Optional causal strength indicator (e.g., "ASSOCIATION", 
+                           "PLAUSIBLE_CAUSAL", "CAUSALLY_SUPPORTED", 
                            "STRONGLY_SUPPORTED")
         
         Returns:

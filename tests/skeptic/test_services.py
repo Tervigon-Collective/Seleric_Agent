@@ -59,7 +59,7 @@ async def test_dowhy_service_reestimates_and_confirms_effect():
     res = await svc.validate(art, context={"observations": df})
     assert res.available is True
     assert res.refutations_total >= 2
-    assert res.confidence in {"CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS", "STRONGLY_SUPPORTED", "PLAUSIBLE_CAUSAL"}
+    assert res.confidence in {"CAUSALLY_SUPPORTED", "STRONGLY_SUPPORTED", "PLAUSIBLE_CAUSAL"}
     assert "dowhy_effect" in res.detail
 
 

@@ -128,11 +128,11 @@ def _confidence(
     need = ctx.policies.causal_min_refutations()
 
     if not art.passed or not graph_ok:
-        return "PLAUSIBLE_CAUSAL" if total else "ASSOCIATION_ONLY"
+        return "PLAUSIBLE_CAUSAL" if total else "ASSOCIATION"
     if total >= need and passed == total and len(art.common_causes) >= 1:
         return "STRONGLY_SUPPORTED"
     if total >= 1 and passed == total:
-        return "CAUSALLY_SUPPORTED_UNDER_ASSUMPTIONS"
+        return "CAUSALLY_SUPPORTED"
     return "PLAUSIBLE_CAUSAL"
 
 

@@ -146,7 +146,7 @@ class SelericMCPTransport:
         4xx responses are real errors (retrying won't help) — only connection
         errors, timeouts, and 5xx get retried. Raises ``MCPUnavailableError``
         once retries are exhausted instead of leaking the raw httpx exception,
-        so callers (``HybridMcpDataProvider.fetch``'s existing broad
+        so callers (``McpDataProvider.fetch``'s existing broad
         ``except Exception``) keep degrading gracefully either way, and a
         future caller can distinguish "MCP is down" from "MCP said no".
         """

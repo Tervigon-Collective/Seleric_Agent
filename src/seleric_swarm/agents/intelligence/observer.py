@@ -20,7 +20,7 @@ from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.evidence import make_evidence
 from seleric_swarm.swarm.blackboard import Blackboard
 from seleric_swarm.swarm.domain.base import DomainAgent, DomainConfig
-from seleric_swarm.swarm.providers.mcp_data import HybridMcpDataProvider, McpFetchStats
+from seleric_swarm.swarm.providers.mcp_data import McpDataProvider, McpFetchStats
 
 AGENT_VERSION = "0.1.0"
 _TOP_N_RE = re.compile(r"\btop\s+(\d+)\b", re.IGNORECASE)
@@ -125,10 +125,12 @@ def _comparison_deltas(evidence: list[dict[str, Any]], fallback_def: Any) -> lis
     return extras
 
 
-def _query_windows(time_range: dict[str, Any]) -> list[tuple[str, str]]:
-    """Comparison = two full periods (period A, period B) — each may be a
-    single day or a real range (a week, a month, ...). Otherwise one Cube
-    window (start, end).
+def _observation_windows(time_range: dict[str, Any]) -> list[tuple[str, str]]:
+    """Shape observe windows from mission time_range (no MCP call).
+
+    Comparison = two full periods; otherwise one Cube window (start, end).
+    Replaces the old ``_query_windows`` name so it is not mistaken for a
+    fetch path (Sprint 2 Profile B deletion gate).
     """
     kind = time_range.get("kind")
     start = time_range.get("start")
@@ -138,8 +140,6 @@ def _query_windows(time_range: dict[str, Any]) -> list[tuple[str, str]]:
         end_b = time_range.get("end_b") or start_b
         if start_b and end_b:
             return [(start, end), (start_b, end_b)]
-        # Legacy shape from a classifier that hasn't been updated to fill
-        # start_b/end_b: start/end were two single-day points, not a range.
         return [(start, start), (end, end)]
     if start:
         return [(start, end or start)]
@@ -152,12 +152,12 @@ class Agent(SwarmAgent):
     def __init__(self, runtime: SwarmRuntime) -> None:
         self.runtime = runtime
         self._stats = McpFetchStats()
-        self._providers: dict[str, HybridMcpDataProvider] = {}
+        self._providers: dict[str, McpDataProvider] = {}
 
-    def _provider(self, definition: Any) -> HybridMcpDataProvider:
+    def _provider(self, definition: Any) -> McpDataProvider:
         domain = definition.domain
         if domain not in self._providers:
-            self._providers[domain] = HybridMcpDataProvider(
+            self._providers[domain] = McpDataProvider(
                 domain,
                 mcp=self.runtime.mcp,
                 stats=self._stats,
@@ -198,7 +198,7 @@ class Agent(SwarmAgent):
                 "llm_calls": metric_llm_calls,
             }
 
-        windows = _query_windows(ctx.payload.get("time_range") or {})
+        windows = _observation_windows(ctx.payload.get("time_range") or {})
         if not windows:
             return {
                 "metric_id": metric_ids[0],
