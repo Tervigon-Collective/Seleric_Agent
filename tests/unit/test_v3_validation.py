@@ -34,6 +34,64 @@ def _deps(*, artifact_store=None, limits: ExecutionLimits | None = None) -> Sele
     )
 
 
+def _seed_daily_evidence(
+    store: InMemoryArtifactStore, mission_id: str, *, count: int = 10
+) -> list[str]:
+    """Enough clean single-day evidence to clear the row floor and score well."""
+    from seleric_swarm.agent.artifacts import EvidenceArtifact
+    from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+
+    ids: list[str] = []
+    for day in range(1, count + 1):
+        stamp = datetime(2026, 9, day, tzinfo=UTC)
+        payload = EvidenceArtifact(
+            metric_id="metric.net_sales",
+            grain="day",
+            as_of=datetime.now(UTC),
+            period_start=stamp,
+            period_end=stamp,
+            value=100.0 + day,
+            source_query={"measure": "metric.net_sales"},
+        )
+        artifact = store.put(
+            Artifact(
+                workspace_id="ws-1",
+                artifact_type="evidence",
+                payload=payload.model_dump(mode="json"),
+                classification="factual",
+                evidence_ids=[f"raw:net_sales:{day}"],
+                provenance=ArtifactProvenance(query_version="q1"),
+                mission_id=mission_id,
+            )
+        )
+        ids.append(artifact.id)
+    return ids
+
+
+def _put_derived(
+    store: InMemoryArtifactStore,
+    mission_id: str,
+    artifact_type: str,
+    payload: dict,
+    evidence_ids: list[str],
+) -> str:
+    from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+
+    return store.put(
+        Artifact(
+            workspace_id="ws-1",
+            artifact_type=artifact_type,
+            payload=payload,
+            classification="derived",
+            evidence_ids=evidence_ids,
+            provenance=ArtifactProvenance(
+                evidence_ids=evidence_ids, calculation_version=f"{artifact_type}.v0"
+            ),
+            mission_id=mission_id,
+        )
+    ).id
+
+
 def _result(**overrides: object) -> MissionResult:
     base: dict[str, object] = {
         "mission_id": "MS3-test",
@@ -117,32 +175,36 @@ async def test_run_validated_mission_fails_after_exhausting_bounded_retries() ->
 
 
 def test_validate_passes_causal_artifact_with_valid_classification() -> None:
+    """A1.4 vocabulary gate: a frozen-vocabulary classification passes.
+
+    Updated in Sprint 3. This originally stored a lone causal artifact citing
+    ``evidence_ids=["ev-1"]`` with no such artifact in the store, and passed
+    only because validation was structural. The content checks correctly flag
+    that as a dangling provenance reference (rule 6) — a blocking gap, so
+    REVISE. The test's intent is the vocabulary gate, so it now supplies the
+    backing evidence the causal claim says it has.
+    """
     from seleric_swarm.agent.artifacts import CausalArtifact
-    from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 
     store = InMemoryArtifactStore()
     deps = _deps(artifact_store=store)
+    evidence_ids = _seed_daily_evidence(store, deps.mission_id)
     causal = CausalArtifact(
         query={"treatment": "t", "outcome": "o"},
         evidence_classification="ASSOCIATION",
         effect_estimate=None,
         refutation_checks=[],
-        evidence_ids=["ev-1"],
+        evidence_ids=evidence_ids,
         method="backdoor.linear_regression",
     )
-    store.put(
-        Artifact(
-            workspace_id="ws-1",
-            artifact_type="causal",
-            payload=causal.model_dump(mode="json"),
-            classification="derived",
-            evidence_ids=["ev-1"],
-            provenance=ArtifactProvenance(calculation_version="causal.v0"),
-            mission_id=deps.mission_id,
-        )
-    )
+    _put_derived(store, deps.mission_id, "causal", causal.model_dump(mode="json"), evidence_ids)
+
     outcome = EvidenceValidator().validate(_result(), deps=deps)
-    assert outcome.ok
+
+    assert outcome.ok, outcome.reason
+    # Both signals present and independent — the #12 property.
+    assert outcome.verdict == "PASS"
+    assert outcome.trust_label is not None
 
 
 def test_validate_fails_causal_artifact_with_legacy_classification() -> None:

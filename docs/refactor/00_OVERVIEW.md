@@ -222,6 +222,13 @@ changes require all three profiles to sign off):
 - `pydantic-ai` is an actual declared dependency and the frozen toolset
   signatures have been validated against its real API, not only against the
   spec text.
+- **`config/model_registry.yaml` has a named owner.** Profile C seeded it in
+  Sprint 3 because `ModelToolset` needs an approved-model gate to refuse
+  against, but no profile brief assigns model governance to anyone. An entry in
+  that file is a claim that a model was implemented, back-tested and validated —
+  and it is the *only* thing standing between `forecast()` and fabricating a
+  number for an unbacked metric. Someone other than "whoever needed it last"
+  should own adding entries and refreshing `last_validated_at` before cutover.
 - `docs/refactor/TASK_SHEET.md` shows every sprint task as Done, with the
   same "verify before claiming done" discipline the existing
   `docs/TASK_SHEET.md` already uses in this repo.
