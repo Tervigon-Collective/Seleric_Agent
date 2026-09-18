@@ -36,7 +36,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from seleric_swarm.agent.agent import build_seleric_agent
-from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
+from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.agent.output import MissionResult
 from seleric_swarm.api.office.registry import register_mission
 from seleric_swarm.api.v3_state import get_v3_artifact_store, get_v3_mission_store
@@ -90,7 +90,7 @@ async def create_mission_v3(req: V3MissionRequest) -> dict[str, Any]:
         run_id=run_id,
         trace_id=uuid4().hex,
         context=ContextBundle(),
-        mcp_client=object(),  # Profile B hasn't built SelericMcpClient yet.
+        mcp_client=NullMcpClient(),
         artifact_store=get_v3_artifact_store(),
         limits=ExecutionLimits(),
     )

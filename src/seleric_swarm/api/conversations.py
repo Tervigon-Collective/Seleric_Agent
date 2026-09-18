@@ -1025,14 +1025,14 @@ async def stream_thread_events(
 def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]:
     """Transcript TEXT plus SOURCE rows so the office UI can show lookup evidence."""
     parts = [MessagePart(type=MessagePartType.TEXT, content=final_response)]
-    evidence = raw.get("evidence")
-    if not isinstance(evidence, list):
+    raw_evidence = raw.get("evidence")
+    evidence: list[Any]
+    if isinstance(raw_evidence, list):
+        evidence = raw_evidence
+    else:
         artifacts = raw.get("artifacts")
-        evidence = (
-            artifacts.get("evidence")
-            if isinstance(artifacts, dict) and isinstance(artifacts.get("evidence"), list)
-            else []
-        )
+        nested = artifacts.get("evidence") if isinstance(artifacts, dict) else None
+        evidence = nested if isinstance(nested, list) else []
     for row in evidence:
         if not isinstance(row, dict):
             continue
@@ -1041,7 +1041,8 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
             continue
         metric = str(row.get("metric_or_fact") or row.get("title") or "Evidence")
         title = metric.removeprefix("metric.").replace("_", " ")
-        window = row.get("time_range") if isinstance(row.get("time_range"), dict) else {}
+        window_raw = row.get("time_range")
+        window = window_raw if isinstance(window_raw, dict) else {}
         start = window.get("start")
         end = window.get("end") or start
         if start and start == end:

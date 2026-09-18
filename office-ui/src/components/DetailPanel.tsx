@@ -93,7 +93,7 @@ export function DetailPanel() {
         )}
         {tab === "Context" && <section><h2>Thread context</h2><dl>
           <dt>Title</dt><dd>{thread?.title || "Untitled"}</dd>
-          <dt>Question</dt><dd>{userTurns.at(-1) || query || "No active mission"}</dd>
+          <dt>Question</dt><dd>{userTurns[userTurns.length - 1] || query || "No active mission"}</dd>
           {priorAsks.length > 0 && <>
             <dt>Prior asks</dt>
             <dd><ol className="prior-asks">{priorAsks.map((text, index) => <li key={`${index}-${text}`}>{text}</li>)}</ol></dd>
