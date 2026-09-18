@@ -30,7 +30,9 @@ def run_migrations(database_url: str, migrations_dir: Path | None = None) -> lis
         for path in sorted(directory.glob("*.sql")):
             if path.name in known:
                 continue
-            conn.exec_driver_sql(path.read_text(encoding="utf-8"))
+            # Escape % so psycopg/SQLAlchemy pyformat does not treat PL/pgSQL
+            # RAISE placeholders (e.g. '% is append-only') as bind markers.
+            conn.exec_driver_sql(path.read_text(encoding="utf-8").replace("%", "%%"))
             conn.execute(
                 text("INSERT INTO schema_migrations(version) VALUES (:version)"),
                 {"version": path.name},

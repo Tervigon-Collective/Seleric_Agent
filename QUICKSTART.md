@@ -22,6 +22,18 @@ Postgres + Redis only:
 docker compose up -d postgres redis
 ```
 
+Postgres is published on host port **5433** by default (`POSTGRES_PUBLISH_PORT`)
+so it does not collide with other local Postgres instances on 5432. Inside the
+Compose network, services still reach it at `postgres:5432`.
+
+Apply schema migrations from the host (or let the `api` service run
+`seleric-migrate` on startup):
+
+```bash
+# Host-side migrate against the published port
+seleric-migrate --database-url postgresql+psycopg://seleric:seleric@127.0.0.1:5433/seleric_swarm
+```
+
 Full deployable stack (API + Postgres + Redis):
 
 ```bash

@@ -24,6 +24,12 @@ Persist the following independently from transient LangGraph state:
 
 Durable mission/control/audit metadata and structured artifact indexes.
 
+Local Compose publishes Postgres on host port **5433** by default
+(`POSTGRES_PUBLISH_PORT`) so it does not collide with other databases on 5432.
+In-compose services still connect to `postgres:5432` on the Docker network.
+Host-side migrate / local API use
+`postgresql+psycopg://seleric:seleric@127.0.0.1:5433/seleric_swarm`.
+
 ### Object storage
 
 Large raw extracts, model artifacts, plots, serialized datasets and investigation attachments.

@@ -5,8 +5,11 @@ services:
       POSTGRES_USER: seleric
       POSTGRES_PASSWORD: seleric
       POSTGRES_DB: seleric_swarm
+    # Host 5432 is commonly taken (e.g. OpenMetadata). Publish 5433 by default;
+    # override with POSTGRES_PUBLISH_PORT. In-compose services still use
+    # postgres:5432 on the Docker network (see DATABASE_URL defaults below).
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PUBLISH_PORT:-5433}:5432"
     volumes:
       - seleric_postgres:/var/lib/postgresql/data
     healthcheck:
@@ -37,7 +40,9 @@ services:
       API_PORT: 8000
       LLM_PROVIDER: ${LLM_PROVIDER:-fake}
       PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
+      # In-network URL only. Do not reuse host DATABASE_URL from .env (that
+      # points at 127.0.0.1:POSTGRES_PUBLISH_PORT for local tools/API).
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
       CHECKPOINT_BACKEND: ${CHECKPOINT_BACKEND:-postgres}
       CANCELLATION_BACKEND: ${CANCELLATION_BACKEND:-redis}
       EVENT_NOTIFIER_BACKEND: ${EVENT_NOTIFIER_BACKEND:-redis}
@@ -76,7 +81,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LLM_PROVIDER: ${LLM_PROVIDER:-fake}
       PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
+      # In-network URL only. Do not reuse host DATABASE_URL from .env (that
+      # points at 127.0.0.1:POSTGRES_PUBLISH_PORT for local tools/API).
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
       CHECKPOINT_BACKEND: ${CHECKPOINT_BACKEND:-postgres}
       CANCELLATION_BACKEND: ${CANCELLATION_BACKEND:-redis}
       EVENT_NOTIFIER_BACKEND: ${EVENT_NOTIFIER_BACKEND:-redis}

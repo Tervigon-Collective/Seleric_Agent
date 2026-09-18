@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck eval eval-llm validate ci dev docker-build docker-up docker-down office-ui-test
+.PHONY: install test lint typecheck eval eval-llm validate ci dev docker-build docker-up docker-down migrate office-ui-test
 
 install:
 	uv sync --extra dev
@@ -37,5 +37,10 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+# Apply pending SQL migrations to the Compose Postgres (host port 5433).
+DATABASE_URL ?= postgresql+psycopg://seleric:seleric@127.0.0.1:5433/seleric_swarm
+migrate:
+	uv run seleric-migrate --database-url $(DATABASE_URL)
 
 ci: lint test validate eval office-ui-test
