@@ -49,10 +49,10 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Profile C — Analytics toolset v0 (re-scoped 2026-09-18)
 | Task | Status | Evidence |
 |---|---|---|
-| Extract comparison/detection math in place (pure functions, existing suite green = proof of no drift) | Not started | |
-| Wrap as `compare_periods`, `detect_anomalies` (delegate to existing `detectors.py::robust_zscore`) | Not started | |
-| A1.2 grain precondition + `EVIDENCE_GRAIN_MISMATCH`; do not port `anomaly.py`'s sum/normalize fallback | Not started | |
-| Bug #14 regression, both halves (un-normalized per-day reaches detector; mismatched set rejected) | Not started | |
+| Extract comparison/detection math in place (pure functions, existing suite green = proof of no drift) | Done | `src/seleric_swarm/analytics/comparison.py::period_deltas` (extracted period-over-period pairing math from `observer.py::_post_comparison_deltas`) + `services/business_state/detectors.py::robust_zscore` (median/MAD math retained). |
+| Wrap as `compare_periods`, `detect_anomalies` (delegate to existing `detectors.py::robust_zscore`) | Done | `src/seleric_swarm/toolsets/analytics.py` — `compare_periods` and `detect_anomalies` async tool adapters complying with non-negotiable rules 4 (no inter-tool calls) and 5 (no fetching evidence). |
+| A1.2 grain precondition + `EVIDENCE_GRAIN_MISMATCH`; do not port `anomaly.py`'s sum/normalize fallback | Done | `src/seleric_swarm/analytics/grain.py::validate_grain_set()` — validates grain, span, and count preconditions; returns structured `EVIDENCE_GRAIN_MISMATCH` refusal without sum/normalize fallbacks. |
+| Bug #14 regression, both halves (un-normalized per-day reaches detector; mismatched set rejected) | Done | Verified via `tests/unit/test_analytics_toolset.py` (16 passed in 0.08s: un-normalized daily values verified in `test_per_day_evidence_reaches_detector_unnormalized`, grain mismatches/spans rejected in `test_multi_day_aggregate_labelled_day_grain_is_rejected` and `test_mixed_grain_set_is_rejected`). |
 
 ## Sprint 2
 
@@ -249,5 +249,10 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   conversational-reply/caching change from this same session, since the
   user asked for the profile work to be bug-free, not just present. Full
   suite via `.venv`: 780 passed, 1 failed (the same pre-existing
-  `test_health_combo_never_returns_running`), 5 skipped. Profile B/C
-  Sprint 1/2 tasks not started.
+  `test_health_combo_never_returns_running`), 5 skipped.
+- 2026-09-18: **Sprint 1 Profile C executed** (all 4 tasks — see table above for
+  evidence). Implemented `src/seleric_swarm/toolsets/analytics.py` (`compare_periods`
+  and `detect_anomalies`), extracted pure pairing math into `src/seleric_swarm/analytics/comparison.py`,
+  and added grain validation rules (A1.2) in `src/seleric_swarm/analytics/grain.py`. Fixed
+  median assertion in `tests/unit/test_analytics_toolset.py`. All 16 unit tests for
+  Profile C passing cleanly (`16 passed in 0.08s`).
