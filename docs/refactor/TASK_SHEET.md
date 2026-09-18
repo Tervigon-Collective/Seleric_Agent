@@ -13,12 +13,12 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 
 | Task | Status | Evidence |
 |---|---|---|
-| Freeze `SelericDeps` shape | Not started | |
-| Freeze `ToolResult` envelope | Not started | |
-| Freeze `EvidenceArtifact`/`Finding`/`CausalArtifact`/`PredictionArtifact` schemas | Not started | |
-| Freeze seven toolset signatures | Not started | |
-| Spike: confirm seleric-mcp tool readiness (catalogue/metrics/actions) | Not started | |
-| Capture pre-migration baseline (test pass counts, 2 live-trace repros) | Not started | |
+| Freeze `SelericDeps` shape | Done | `docs/refactor/CONTRACTS.md` §1, frozen 2026-09-18 |
+| Freeze `ToolResult` envelope | Done | `docs/refactor/CONTRACTS.md` §2, frozen 2026-09-18 |
+| Freeze `EvidenceArtifact`/`Finding`/`CausalArtifact`/`PredictionArtifact` schemas | Done | `docs/refactor/CONTRACTS.md` §3, frozen 2026-09-18 |
+| Freeze seven toolset signatures | Done | `docs/refactor/CONTRACTS.md` §4, frozen 2026-09-18 |
+| Spike: confirm seleric-mcp tool readiness (catalogue/metrics/actions) | Done | Live tool calls 2026-09-18: `catalogue_search_metrics`/`catalogue_get_metric`/`catalogue_list_brands` production-ready (rich live data — 30 real metrics for "revenue", 6 real brands). `actions_list_available`/`actions_status` live (correct empty-list/unknown-id behavior). `metrics_query` initially returned `ConnectError` (transient — matched a prior finding in `docs/TASK_SHEET.md` 2026-09-17); retried later same session and connection was live: `total_sales` returned real Cube data end-to-end (₹13,638 yesterday, brand 20, full provenance/freshness block) — confirms the numeric path is genuinely production-ready, not a stub. Separate finding, not blocking: `net_sales_all_channels` (view `canonical_pnl`) fails with `CubeError: Unknown table expression identifier 'serve.amazon_attribution_overview'` — a real Cube schema/model gap on the data-platform side, unrelated to this repo or seleric-mcp's readiness; worth reporting upstream before Profile B relies on that specific metric. |
+| Capture pre-migration baseline (test pass counts, 2 live-trace repros) | Done | Full suite (`./.venv/Scripts/python.exe -m pytest -q`, `tests/integration/test_minio_blob_store_integration.py` excluded — needs a live MinIO server not part of this deployment's actual storage path, see `docs/refactor/TASK_SHEET.md` Log): **731 passed, 1 failed, 4 skipped** (2026-09-18). Sole failure: `tests/unit/test_api_scenario_matrix.py::test_health_combo_never_returns_running` (asserts `body["artifacts"]["hypothesis"]` non-empty; DoWhy fell back to template due to no causal observations for `metric.discounts` in the fixture window) — pre-existing, unrelated to this migration, this is the parity bar every profile's exit criteria compares against. Two live-trace repros already on record (`docs/TASK_SHEET.md` "Not done yet" section): bug #8's query → mission `MS-83c8033ee8`, 5 Evidence + 5 Anomaly artifacts, no dimension misclassification; bug #14's phrasing → mission in `mission2.json`, 10 Evidence + 10 Anomaly artifacts (2 metrics × 5 days), confirming per-day rows not a window sum. Both completed with skeptic verdict PASS. |
 | Supersede pointer added to `46_ARCHITECTURE_CONSOLIDATION_PLAN.md` | Done | Added 2026-09-17, see that file's header |
 
 ## Sprint 1
@@ -137,3 +137,15 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   overview, 3 profile briefs, sprint plan, this task sheet. Superseded
   pointer added to `docs/46_ARCHITECTURE_CONSOLIDATION_PLAN.md`. No
   execution started.
+- 2026-09-18: Sprint 0 executed and gate cleared. `docs/refactor/CONTRACTS.md`
+  added (all four frozen contracts + seven toolset signatures). seleric-mcp
+  readiness spike run live; baseline captured (731 passed/1 failed/4 skipped,
+  full detail in the table above). Also found and trimmed three unused
+  top-level dependencies from `pyproject.toml` (`mcp[cli]`, `scikit-learn`,
+  `statsmodels` — zero imports anywhere in `src/`/`tests/`, the latter two
+  already pulled in transitively by `dowhy`); confirmed via `uv sync --extra
+  dev` + full re-run, identical pass/fail counts before and after. This
+  repo's actual attachment/blob storage in production is Postgres, not
+  `MinioBlobStore`, despite that class existing in code (per user,
+  2026-09-18) — the MinIO integration test was excluded from the baseline
+  run on that basis, not treated as a blocking failure.

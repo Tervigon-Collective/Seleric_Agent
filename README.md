@@ -79,3 +79,16 @@ Workers claim attempts using a lease version, heartbeat with that fencing token,
 and emit a terminal conversation event only after the terminal compare-and-set
 succeeds. `docker compose up` starts this worker automatically. Local in-memory
 runtimes use the same worker path through an in-process queue.
+
+## Local Postgres
+
+`docker compose` publishes Postgres on host port **5433** by default
+(`POSTGRES_PUBLISH_PORT`) to avoid clashing with other local databases on 5432.
+In-compose `api`/`recovery` always use `@postgres:5432` (override with
+`COMPOSE_DATABASE_URL`). Host-side tools use `DATABASE_URL` pointing at
+`127.0.0.1:5433`:
+
+```console
+seleric-migrate --database-url postgresql+psycopg://seleric:seleric@127.0.0.1:5433/seleric_swarm
+# or: make migrate
+```
