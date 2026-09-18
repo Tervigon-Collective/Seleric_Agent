@@ -103,8 +103,14 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 | Task | Status | Evidence |
 |---|---|---|
 | Delete `catalogue_grounding.py` heuristics | Blocked by gate | Sprint 2 characterization ran clean multiple times on 2026-09-18, but Sprint 3 explicitly requires clean runs on 3 separate calendar days before deletion. No deletion performed. |
-| Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone | Blocked by gate | Same deletion gate; graph index currently reports 73 inbound dependencies on `MetricRegistry`, so this is not a safe cosmetic delete. |
-| `ActionToolset` wired to propose/confirm/commit | Partial — local wiring done, upstream Google action unavailable | `src/seleric_swarm/toolsets/actions.py` implements the frozen `propose_action`/`validate`/`preview`/`commit_action` surface over `actions_propose/status/commit`; confirmation is the user turn before commit. Added the four remote MCP tools and a dedicated `v3_agent` allowlist so legacy observer/domain agents do not acquire writes. Confirmation tokens are process-local, stripped from `ToolResult` provenance, and fail closed after restart/expiry; caller idempotency keys prevent duplicate commits. `tests/unit/test_action_toolset.py`: 6 passed. Full focused Profile B transport/toolset set: 28 passed. Upstream `seleric-mcp` currently has no approved Google Ads action contract (its own catalogue audit says only the Meta `pause_meta_ad` pattern exists, while the live Sprint 0 spike returned an empty available-action list), so Google end-to-end execution cannot honestly be marked Done in this repo. |
+| Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone | Blocked — scope-corrected, not just gate-blocked | Ran the actual dependency graph query (codebase-memory `query_graph`, not a guess) to categorize the 83 raw call-graph edges instead of just citing the count. Real, non-test callers span: **the live swarm_v2 classifier itself** (`coordinator/intake/llm_classifier.py::classify_query_via_llm` — 100% of production mission traffic goes through this), the diagnostic causal pipeline (`agents/diagnostic/{causal_discovery,causal_graph_builder,intake,ontology,synthesis}.py`), `agents/skeptic/context.py::SkepticDeps.canonical_metric_id`, `swarm/domain/configs.py::build_domain_configs`, `swarm/providers/provider_selection.py`, plus `coordinator/catalogue_grounding.py` (the heuristic layer already known to be gated) and `bootstrap.py::build_runtime`'s own wiring. **Correction to the sprint plan's framing**: this was never a Sprint-3-scale "retire a standalone registry" task — `MetricRegistry` is load-bearing infrastructure for the still-100%-live swarm_v2 pipeline, not an incidental dependency of the heuristic layer alone. It cannot be retired until swarm_v2 itself is retired (Sprint 5), not before. Recommend moving this line item from Sprint 3 to Sprint 5's pipeline-deletion list in a future `SPRINT_PLAN.md` edit, rather than leaving it as a Sprint-3 "blocked" item that reads as almost-done. |
+| `ActionToolset` wired to propose/confirm/commit | Partial — local wiring done, upstream Google action unavailable | `src/seleric_swarm/toolsets/actions.py` implements the frozen `propose_action`/`validate`/`preview`/`commit_action` surface over `actions_propose/status/commit`; confirmation is the user turn before commit. Added the four remote MCP tools and a dedicated `v3_agent` allowlist so legacy observer/domain agents do not acquire writes. Confirmation tokens are process-local, stripped from `ToolResult` provenance, and fail closed after restart/expiry; caller idempotency keys prevent duplicate commits. `tests/unit/test_action_toolset.py`: 10 passed (6 original + 4 added 2026-09-18, see next row). Full focused Profile B transport/toolset set: 28+ passed. Upstream `seleric-mcp` currently has no approved Google Ads action contract (its own catalogue audit says only the Meta `pause_meta_ad` pattern exists, while the live Sprint 0 spike returned an empty available-action list), so Google end-to-end execution cannot honestly be marked Done in this repo. Unblocks only when `seleric-mcp` publishes that contract — re-check `actions_list_available` next time this file is touched, no scheduled polling. |
+| ActionToolset expiry + local-state-safety test coverage | Done | `tests/unit/test_action_toolset.py` — 4 new tests: `test_validate_reports_expired_proposal_as_not_eligible`, `test_commit_after_token_expiry_fails_closed_and_does_not_retry_forever` (pins the existing `terminal_failure`/idempotent-retry branches, `toolsets/actions.py` lines ~148-157, ~217-229, to an actual runtime path — previously unexercised by any test), `test_failed_commit_clears_local_confirmation_token_preventing_replay`, `test_exception_during_commit_releases_idempotency_key_for_retry` (pins the `_COMMIT_KEYS.pop(key, None)` cleanup on the exception path, line ~248, previously unasserted). **Scoping note**: "rollback" in these two tests means process-local confirmation-token/idempotency-key cleanup on commit failure — the frozen `ActionToolset` contract has no `rollback_action` tool and `seleric-mcp` exposes no rollback endpoint; do not read this as a claim that remote execution-reversal exists. |
+| Bug #8 regression test against new toolset path | Done | New `tests/unit/test_semantic_toolset_bug_regressions.py` — `test_dimensions_are_passed_through_verbatim_no_keyword_matching`, `test_unsupported_dimension_surfaces_mcp_rejection_not_silent_empty_success`, `test_per_day_phrasing_resolves_to_day_grain_not_a_dimension`. Closes Profile B Exit Criterion 2 (`02_PROFILE_SEMANTIC_MCP.md`): the original repro ("get per day data" → `session_day_of_week` dimension via `catalogue_grounding.py::dimensions_in_query()`'s keyword match) cannot reproduce through `toolsets/semantic.py::query_metrics()` because grain and dimensions are structurally separate parameters with no token-matching step between them. The old-path test (`test_catalogue_grounding.py::test_per_day_does_not_match_session_day_of_week`) stays as-is — it tests the heuristic file itself, still alive until the 3-day characterization gate clears. |
+| Bug #2 regression test against new toolset path | Done | Same new file — `test_two_spellings_of_same_metric_each_produce_their_own_artifact_no_silent_remap`, `test_metric_id_never_resolved_through_metric_registry`. Closes Exit Criterion 3: two spellings of the same metric (`cac` vs `metric.cac`) each reach `metrics_query` unchanged and produce independently-attributed `EvidenceArtifact`s — no `MetricRegistry`-style canonicalization step exists to get wrong. The old-path test (`test_skeptic_agent.py::test_03b_alias_spellings_of_one_metric_are_still_compared`) stays as-is — still valid for `SkepticDeps`/`MetricRegistry`, not retired until Sprint 5. |
+| `semantic/cube_client.py` / `semantic/discovery.py` (brief's "Builds" list) | Not needed — redundant with existing | `toolsets/semantic.py::search_semantics()` (server-side `catalogue_search_metrics` embedding search) and `get_metric_definition()` already provide what these two files were asked to build. A local `discovery.py` vector index would duplicate server-side search — exactly the "check before building a second vector index" the brief's own `discovery.py` bullet warns against. Not built, and not planned. |
+| `query_metric_series()` / `fetch_series()` Sprint 3 gap (brief: "no `SemanticToolset` equivalent yet") | Done | Already closed as of the Sprint 2 extract-wrap-delete work — `toolsets/semantic.py::query_metric_series()` (lines 97-169) is the DoWhy multi-metric DataFrame path; `swarm/providers/mcp_data.py::McpDataProvider.fetch_series()` (~281-314) delegates to it directly; `agents/diagnostic/swarm_bridge.py`'s DoWhy causal specialist reaches it transitively through that delegation. No further code change needed — this row corrects `02_PROFILE_SEMANTIC_MCP.md`'s "Builds" section, which still described this as an open Sprint 3 gap. |
+| `BusinessStateService.get_metric_state()` folding into `query_metrics()` | Deferred — explicit decision, not a silent skip | Evaluated 2026-09-18 for Sprint 3 inclusion and deferred. `get_metric_state()` is called on `lookup_fast_path.py`'s live ungrained-lookup fast path and anomaly-history lookups — a proven-nonempty, proven-live caller graph, unlike the Sprint 2 `resolve_measure()` deletion (safe specifically because a whole-repo grep proved *zero* remaining callers first). Its "last-day-point, not period-sum" semantics is already characterized as an intentional difference (`tests/replay/test_data_access_characterization.py::test_characterize_multi_day_window_last_point_vs_period_total`). Folding this now would be a live-call-site behavior swap with no characterized drop-in replacement — the exact strangler-fig-discipline violation this repo's rules exist to prevent, and unlike Sprint 2's fetch-path override, there's no proven-empty caller graph to justify it. No Profile B exit criterion requires this in Sprint 3. Revisit once a `query_metrics(as_of=..., grain="day")`-equivalent has its own characterization test proving last-day-point parity. |
 
 ### Profile C — Model/Skeptic port
 | Task | Status | Evidence |
@@ -440,7 +446,50 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   (Profile B's 3-calendar-day characterization gate; `ActionToolset`'s
   Google Ads action pending upstream `seleric-mcp` support). See Sprint 3
   table above for what's next.
-
+- 2026-09-18: **Sprint 3 Profile B — `MetricRegistry` retirement scope
+  corrected.** Rather than accept "73 inbound dependencies" as an opaque
+  blocker, ran the actual dependency graph query (codebase-memory
+  `query_graph`) and categorized all real (non-`__file__`, non-test) callers.
+  Finding: `coordinator/intake/llm_classifier.py::classify_query_via_llm` —
+  swarm_v2's live classifier, 100% of production mission traffic — depends
+  on `MetricRegistry` directly, alongside the diagnostic causal pipeline
+  (`causal_discovery.py`, `causal_graph_builder.py`, `ontology.py`,
+  `synthesis.py`) and `agents/skeptic/context.py`. This was never a Sprint-3
+  incidental cleanup; it's load-bearing infrastructure for the pipeline that
+  doesn't retire until Sprint 5. Moved the item from Sprint 3 to Sprint 5's
+  old-pipeline-deletion list in `SPRINT_PLAN.md`, with the same evidence.
+  `catalogue_grounding.py` deletion and the 3-calendar-day characterization
+  gate remain correctly blocked on Sprint 3's own explicit gate — no change
+  there. `ActionToolset`'s Google Ads gap remains an external (upstream
+  `seleric-mcp`) blocker, not something further local work resolves.
+- 2026-09-18: **Sprint 3 Profile B — real unblocked work closed** (plan
+  reviewed and approved by user first). Closed Profile B's own Exit
+  Criteria 2 and 3: new `tests/unit/test_semantic_toolset_bug_regressions.py`
+  proves bug #8 (dimension misclassification) and bug #2 (metric-ID
+  canonicalization) cannot reproduce through the new consolidated
+  `toolsets/semantic.py` path — both bugs previously only had regression
+  tests against the old swarm_v2 path. Added 4 tests to
+  `tests/unit/test_action_toolset.py` closing real, previously-unexercised
+  code paths (confirmation-token expiry, local-state cleanup on failed
+  commit — explicitly scoped as process-local safety, not a new remote
+  rollback capability, since the frozen contract has no such tool).
+  Corrected two items that were carried as open in
+  `02_PROFILE_SEMANTIC_MCP.md`'s "Builds"/gap list but were already
+  resolved or never needed: `semantic/cube_client.py`/`discovery.py`
+  (redundant with existing `search_semantics()`/`get_metric_definition()`)
+  and the `fetch_series` "Sprint 3 gap" (already closed via
+  `query_metric_series()` since Sprint 2's extract-wrap-delete). Made an
+  explicit deferral decision (not a silent skip) on folding
+  `BusinessStateService.get_metric_state()` into `query_metrics()` —
+  correctly out of scope given its live, proven-nonempty caller graph.
+  9 new tests total, all passing:
+  `./.venv/Scripts/python.exe -m pytest -q tests/unit/test_semantic_toolset_bug_regressions.py tests/unit/test_action_toolset.py -v`
+  → 5 + 10 = 15 passed (10 in `test_action_toolset.py` = 6 original + 4
+  new). The three known-blocked items (`catalogue_grounding.py` deletion,
+  `MetricRegistry` retirement, Google Ads execution) were confirmed with
+  the user to stay tracked-with-a-clearance-path rather than built around
+  — no automation, no speculative code against an unpublished upstream
+  contract, no incremental `MetricRegistry` migration ahead of Sprint 5.
 - 2026-09-18: **Sprint 3 / Profile C executed** — Model/Skeptic port + parity harness.
   New: `agent/validation/` (package; `signals.py`/`trust.py`/`verdict.py`/`__init__.py`,
   replacing the single `agent/validation.py`), `models/{service,evaluation}.py`,

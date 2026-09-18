@@ -26,7 +26,7 @@ class FakeMcpClient:
         self.calls.append((agent_id, capability, arguments))
         response = self.responses[capability]
         if isinstance(response, list):
-            return response.pop(0)
+            response = response.pop(0)
         if isinstance(response, Exception):
             raise response
         return response
@@ -171,3 +171,110 @@ def test_action_tools_registered_but_not_granted_to_legacy_agents():
     assert allowlist["v3_agent"] == SELERIC_ACTION_CAPABILITIES
     assert allowlist["observer_agent"].isdisjoint(SELERIC_ACTION_CAPABILITIES)
     assert allowlist["performance_agent"].isdisjoint(SELERIC_ACTION_CAPABILITIES)
+
+
+# ---- Sprint 3: confirmation-token expiry --------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_validate_reports_expired_proposal_as_not_eligible():
+    mcp = FakeMcpClient(
+        {
+            "seleric.actions_propose": _proposal(),
+            "seleric.actions_status": {"action_request_id": "act_1", "status": "EXPIRED"},
+        }
+    )
+    ctx = _ctx(mcp)
+    await actions.propose_action(ctx, "pause_meta_ad", {})
+
+    result = await actions.validate(ctx, "act_1")
+
+    assert result.success is False
+    assert result.error_code == "ACTION_NOT_ELIGIBLE"
+    assert result.retryable is False
+    assert "EXPIRED" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_commit_after_token_expiry_fails_closed_and_does_not_retry_forever():
+    mcp = FakeMcpClient(
+        {
+            "seleric.actions_propose": _proposal(),
+            "seleric.actions_commit": {"error": "confirmation token expired"},
+            "seleric.actions_status": {"action_request_id": "act_1", "status": "FAILED"},
+        }
+    )
+    ctx = _ctx(mcp)
+    await actions.propose_action(ctx, "pause_meta_ad", {})
+
+    first = await actions.commit_action(ctx, "act_1", "idem-expired")
+    assert first.success is False
+    assert first.error_code == "ACTION_COMMIT_FAILED"
+    assert first.retryable is False
+
+    # Same idempotency key again -> idempotent-retry branch (queries status),
+    # never re-attempts the remote commit call with the now-dead token.
+    second = await actions.commit_action(ctx, "act_1", "idem-expired")
+    assert second.success is False
+    commit_calls = [c for c in mcp.calls if c[1] == "seleric.actions_commit"]
+    assert len(commit_calls) == 1
+
+
+# ---- Sprint 3: local-state safety on failed commit ----------------------------------
+#
+# The frozen v3 ActionToolset contract (docs/refactor/CONTRACTS.md) has no
+# rollback_action tool, and seleric-mcp exposes no rollback endpoint --
+# "rollback" here means process-local confirmation-token/idempotency-key
+# cleanup on commit failure, not a new remote execution-reversal capability.
+
+
+@pytest.mark.asyncio
+async def test_failed_commit_clears_local_confirmation_token_preventing_replay():
+    mcp = FakeMcpClient(
+        {
+            "seleric.actions_propose": _proposal(),
+            "seleric.actions_commit": {"error": "business rule violation"},
+        }
+    )
+    ctx = _ctx(mcp)
+    await actions.propose_action(ctx, "pause_meta_ad", {})
+
+    first = await actions.commit_action(ctx, "act_1", "idem-1")
+    assert first.success is False
+    assert first.error_code == "ACTION_COMMIT_FAILED"
+
+    # A distinct commit attempt (different idempotency key) must not reuse
+    # the already-rejected local token -- it fails closed instead.
+    second = await actions.commit_action(ctx, "act_1", "idem-2")
+    assert second.success is False
+    assert second.error_code == "ACTION_NOT_APPROVED"
+    commit_calls = [c for c in mcp.calls if c[1] == "seleric.actions_commit"]
+    assert len(commit_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_exception_during_commit_releases_idempotency_key_for_retry():
+    mcp = FakeMcpClient(
+        {
+            "seleric.actions_propose": _proposal(),
+            "seleric.actions_commit": [
+                ConnectionError("transport down"),
+                {"action_request_id": "act_1", "status": "EXECUTED", "audit_ref": "audit_2"},
+            ],
+        }
+    )
+    ctx = _ctx(mcp)
+    await actions.propose_action(ctx, "pause_meta_ad", {})
+
+    first = await actions.commit_action(ctx, "act_1", "idem-transient")
+    assert first.success is False
+    assert first.error_code == "MCP_UNAVAILABLE"
+    assert first.retryable is True
+
+    # Same idempotency key retried -> a transient transport failure must not
+    # have permanently bound the key, so this re-attempts the real commit
+    # (not the idempotent-retry/status-polling branch) and succeeds.
+    second = await actions.commit_action(ctx, "act_1", "idem-transient")
+    assert second.success is True
+    commit_calls = [c for c in mcp.calls if c[1] == "seleric.actions_commit"]
+    assert len(commit_calls) == 2

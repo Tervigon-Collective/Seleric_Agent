@@ -257,8 +257,15 @@ clean — **not met; carry-forward to Sprint 3**. C's Causal work Done. The
       are dated 2026-09-18; no deletion is justified yet.
 - [ ] Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone
       registries — replace `catalog_prompt()`'s data source with a live
-      `seleric-mcp` catalogue call. **Deletion remains under the same gate**;
-      `MetricRegistry` still has 73 graph-indexed inbound dependencies.
+      `seleric-mcp` catalogue call. **Re-scoped, not just gate-blocked**
+      (2026-09-18 graph-query audit, see `TASK_SHEET.md`): the real callers
+      include `coordinator/intake/llm_classifier.py::classify_query_via_llm`
+      — the live swarm_v2 classifier itself, currently 100% of production
+      traffic — plus the diagnostic causal pipeline and skeptic. This is
+      load-bearing infrastructure for the still-live pipeline, not an
+      incidental heuristic-layer dependency; it cannot retire before
+      swarm_v2 does. **Moved to Sprint 5** (old-pipeline deletion) rather
+      than left as a Sprint 3 item.
 - [x] `ActionToolset` — propose/validate/preview/confirm/commit wired to
       `actions_propose/commit/status`. Done 2026-09-18:
       `toolsets/actions.py`, remote transport registration, dedicated
@@ -367,6 +374,12 @@ a production-risk call, not an engineering one).
 - [ ] Disposition `agents/intelligence/observer.py` — the second, 25 KB
       observer. B deletes its `_query_windows` in Sprint 2; the rest has no
       owner.
+- [ ] Delete `services/metrics.py::MetricRegistry`/`MetricSemanticsRegistry`
+      as standalone registries — moved here from Sprint 3 (2026-09-18 graph
+      audit): real callers include `coordinator/intake/llm_classifier.py`
+      (swarm_v2's live classifier), the diagnostic causal pipeline, and
+      skeptic — load-bearing for the pipeline this sprint retires, not a
+      Sprint-3-scale incidental cleanup. See `TASK_SHEET.md`.
 - [ ] Delete `orchestration/dispatch.py::route_for` and
       `coordinator/lookup_fast_path.py` (only if Sprint 1's cost
       assumption held — recheck before deleting).
