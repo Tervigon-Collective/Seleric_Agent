@@ -1,9 +1,13 @@
 # Seleric V3 — Refactor Overview
 
-Status: execution underway. Sprint 0 (contracts) and Sprint 1/Profile B
-(Semantic toolset v0) done — see `SPRINT_PLAN.md` and `TASK_SHEET.md` for
-current status, don't assume this line reflects it going forward. Last
-verified against source: 2026-09-18.
+Status: execution underway. Sprint 0 done. Profile A through Sprint 3
+(runtime scaffolding, validator + execution limits, mission cache/tracing/
+Temporal decision) done. Profile B through Sprint 2 (semantic toolset v0 +
+fetch-path consolidation) done. Profile C through Sprint 1 (analytics
+toolset v0) done, Sprint 2 causal work blocked on amendment A1 sign-off —
+see `SPRINT_PLAN.md` and `TASK_SHEET.md` for current status, don't assume
+this line reflects it going forward. Last verified against source:
+2026-09-18.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube
 migration. Everything produced during the refactor (profile briefs, sprint
