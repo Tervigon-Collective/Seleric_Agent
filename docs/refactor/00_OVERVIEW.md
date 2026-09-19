@@ -3,19 +3,22 @@
 Status: execution underway. **Sprints 0–3 verified green 2026-09-19** by a
 full cross-profile test run — 911 passed / 1 failed / 4 skipped, the one
 failure being the pre-existing `test_health_combo_never_returns_running` from
-the Sprint 0 baseline. Per-profile figures and the frozen-surface audit
-at that checkpoint (**15/23 functions live**) are in `SPRINT_PLAN.md`
-"Verification checkpoint".
+the Sprint 0 baseline. Per-profile figures are in `SPRINT_PLAN.md`
+"Verification checkpoint" (pre–Sprint 4 audit recorded **15/23** functions
+live; Sprint 4 C closed the remaining 8).
 
-Sprint 0/1/2 Done. Profile A through Sprint 3 Done. Profile B through
-Sprint 3 Done (semantic toolset + hybrid fetch-path extract-wrap-delete;
-catalogue heuristic retirement under explicit user override of the
-3-calendar-day gate, including the `lookup_v1` grain-resolution follow-on;
-`MetricRegistry` kept as catalogue-first wrapper; `ActionToolset` covers
-Meta only by design — Google Ads action execution is explicitly **not part
-of this program's requirements**, decided 2026-09-19). Profile C Sprint 3
-Done (validator two-signal + bug #12, models with a real forecaster, parity
-harness). The characterization ledger is retired with that override.
+Sprint 0/1/2 Done; **Sprint 3 closed 2026-09-19**. Profile A through Sprint 3
+(runtime scaffolding, validator + execution limits, mission cache/tracing/
+Temporal decision) Done. Profile B through Sprint 3 (semantic toolset +
+hybrid fetch-path extract-wrap-delete: `McpDataProvider` +
+`query_metric_series`; catalogue heuristic retirement under explicit user
+override of the 3-calendar-day gate, including the `lookup_v1`
+grain-resolution follow-on; `MetricRegistry` kept as catalogue-first
+wrapper; `ActionToolset` covers Meta only by design — Google Ads action
+execution is explicitly **not part of this program's requirements**,
+decided 2026-09-19). Profile C Sprint 3 Done (validator two-signal + bug
+#12, models with a real forecaster, parity harness). The characterization
+ledger is retired with that override.
 
 **Sprint 4 progress (2026-09-19):**
 - **Profile B Done** — `ProviderRegistry` deletion; deleted without waiting
