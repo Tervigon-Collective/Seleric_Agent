@@ -172,6 +172,7 @@ async def test_run_validated_mission_fails_after_exhausting_bounded_retries() ->
     result = await run_validated_mission(agent, deps, "hello")
     assert result.status == "failed"
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
+    assert "live metric evidence" in result.final_response
 
 
 def test_validate_passes_causal_artifact_with_valid_classification() -> None:

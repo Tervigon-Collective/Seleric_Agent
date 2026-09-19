@@ -13,9 +13,12 @@ explicitly **not part of this program's requirements** (decided
 pending gap. **Sprint 4 Profile B (`ProviderRegistry` deletion) Done
 2026-09-19** — see `SPRINT_PLAN.md`/`TASK_SHEET.md`; deleted without
 waiting on swarm_v2's own retirement since nothing in this repo is in
-production yet. Sprint 4 Profile A (cutover flag + cost/latency gate) and
-the rest of Profile C's greenfield toolsets remain not started. See
-`SPRINT_PLAN.md` / `TASK_SHEET.md`.
+production yet. Sprint 4 Profile A: all 15 tools registered; **local UI
+connected** behind `V3_AGENT_ENABLED` (conversations + `POST /v1/missions`
++ Office list/snapshot). That is a local flag, **not** a production canary
+%. Next: cost/latency replay and an explicit production-canary decision;
+Profile C's greenfield toolsets (Knowledge/Experiments + remaining
+Analytics) remain not started. See `SPRINT_PLAN.md` / `TASK_SHEET.md`.
 Last verified against source: 2026-09-19.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube

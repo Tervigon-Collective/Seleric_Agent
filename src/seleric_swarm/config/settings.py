@@ -125,10 +125,10 @@ class Settings(BaseSettings):
     require_skeptic_for_causal: bool = True
     require_provenance_for_numeric: bool = True
 
-    # V3 refactor (docs/refactor/) — the new Agent[SelericDeps, MissionResult]
-    # loop. Sprint 1: not mounted into main.py at all, so this flag is not yet
-    # read anywhere — it documents the gate Sprint 4's cutover flips, per the
-    # strangler-fig migration rule (docs/refactor/00_OVERVIEW.md §5).
+    # V3 refactor (docs/refactor/) — when True, conversations and
+    # POST /v1/missions run Agent[SelericDeps, MissionResult] instead of
+    # swarm_v2. Default False (strangler-fig: 0% until flipped). Local UI
+    # connect sets V3_AGENT_ENABLED=true in .env; tests force it off.
     v3_agent_enabled: bool = False
 
     workflow_name: str = "lookup_v1"

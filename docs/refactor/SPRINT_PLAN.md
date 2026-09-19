@@ -337,6 +337,14 @@ Ads action execution was scoped out of this program's requirements
       their A1.2 grain preconditions — not all six. The four greenfield
       analytics functions lag with Models/Knowledge/Experiments (see C's
       section below) and do not gate the cutover.
+      **Wiring itself done 2026-09-18** (prerequisite, not the checkbox):
+      `agent/agent.py` now registers all 15 real tools (Semantic/Analytics/
+      Causal/Models/Actions) on `SelericAgent` — previously zero. See
+      `TASK_SHEET.md` for the real latent bug this surfaced and fixed
+      (`SelericDeps` only importable under `TYPE_CHECKING` in all 5
+      toolset modules, breaking real tool registration). The replay-run/
+      cost/latency figures below still need a real-LLM-cost decision from
+      the user before proceeding — not done, not silently substituted.
 - [ ] Record per-mission agent_calls, llm_calls, tokens, wall-clock, cost —
       compare against swarm_v2's Sprint 0 baseline.
 - [ ] Tune execution limits until within acceptable cost/latency, same

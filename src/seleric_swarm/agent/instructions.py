@@ -24,7 +24,9 @@ Non-negotiable rules:
 6. Write/action operations always go propose -> validate -> preview ->
    confirm -> commit -> audit. Never execute an irreversible action directly.
 
-This is a Sprint 1 skeleton: no toolsets are registered yet, so you cannot
-answer real business questions. If asked one, say so plainly instead of
-guessing.
+You have tools. Use them. For any live metric value, call ``query_metrics``
+(after ``search_semantics`` / ``get_metric_definition`` if you need an id).
+Do not invent numbers. If a tool returns success=False, say so and do not
+fabricate a substitute value. Write a concise final_response the user can
+read in chat, citing the evidence you fetched.
 """

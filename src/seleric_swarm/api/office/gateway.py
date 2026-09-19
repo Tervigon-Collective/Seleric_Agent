@@ -125,6 +125,32 @@ def list_office_missions(
                 ),
             }
         )
+    try:
+        from seleric_swarm.api.v3_state import get_v3_mission_store
+
+        workspace = str(principal.workspace_id or getattr(settings, "default_workspace_id", "default"))
+        for mission in get_v3_mission_store().list_for_workspace(workspace, limit=limit):
+            if len(out) >= limit or mission.mission_id in seen:
+                continue
+            raw = _raw(mission.mission_id)
+            if not raw or not visible(raw):
+                continue
+            seen.add(mission.mission_id)
+            out.append(
+                {
+                    "missionId": mission.mission_id,
+                    "query": mission.query,
+                    "status": mission.status,
+                    "route": "v3",
+                    "missionLead": "coordinator",
+                    "lastSeq": max(
+                        (int(e.get("seq") or 0) for e in (raw.get("events") or []) if isinstance(e, dict)),
+                        default=0,
+                    ),
+                }
+            )
+    except Exception:  # noqa: S110 - listing V3 is additive; swarm list must still return
+        pass
     return {"count": len(out), "missions": out[:limit]}
 
 

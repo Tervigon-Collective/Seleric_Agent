@@ -36,24 +36,81 @@ _ARTIFACT_TYPE_TO_BUCKET = {
 }
 
 
-def _mission_events(mission: Mission) -> list[dict[str, Any]]:
-    kind = {
-        "running": "mission_created",
-        "completed": "mission_completed",
-        "partial": "mission_partial",
-        "failed": "mission_failed",
-        "cancelled": "mission_cancelled",
-    }[mission.status]
-    return [
-        {
-            "kind": kind,
-            "family": "mission",
-            "mission_id": mission.mission_id,
-            "seq": 1,
-            "ts": mission.updated_at.isoformat().replace("+00:00", "Z"),
-            "route": "v3",
-        }
-    ]
+def _iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return str(value.isoformat()).replace("+00:00", "Z")
+    text = str(value).strip()
+    return text or None
+
+
+def _mission_events(mission: Mission, *, has_evidence: bool) -> list[dict[str, Any]]:
+    created = {
+        "kind": "mission_created",
+        "family": "mission",
+        "mission_id": mission.mission_id,
+        "seq": 1,
+        "ts": mission.created_at.isoformat().replace("+00:00", "Z"),
+        "route": "v3",
+    }
+    events: list[dict[str, Any]] = [created]
+    seq = 2
+    if has_evidence:
+        events.append(
+            {
+                "kind": "task_wave_executed",
+                "family": "mission",
+                "mission_id": mission.mission_id,
+                "seq": seq,
+                "ts": mission.updated_at.isoformat().replace("+00:00", "Z"),
+                "route": "v3",
+                "mission_lead": "coordinator",
+            }
+        )
+        seq += 1
+    if mission.status != "running":
+        kind = {
+            "completed": "mission_completed",
+            "partial": "mission_partial",
+            "failed": "mission_failed",
+            "cancelled": "mission_cancelled",
+        }.get(mission.status, "mission_completed")
+        events.append(
+            {
+                "kind": kind,
+                "family": "mission",
+                "mission_id": mission.mission_id,
+                "seq": seq,
+                "ts": mission.updated_at.isoformat().replace("+00:00", "Z"),
+                "route": "v3",
+            }
+        )
+    return events
+
+
+def _evidence_rows(artifacts: list[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for artifact in artifacts:
+        if getattr(artifact, "artifact_type", None) != "evidence":
+            continue
+        payload = artifact.payload if isinstance(artifact.payload, dict) else {}
+        start = _iso(payload.get("period_start"))
+        end = _iso(payload.get("period_end")) or start
+        rows.append(
+            {
+                "evidence_id": artifact.id,
+                "metric_or_fact": str(payload.get("metric_id") or "Evidence"),
+                "value": payload.get("value"),
+                "unit": payload.get("unit"),
+                "time_range": {"start": start, "end": end},
+                "source": "seleric-mcp",
+                "freshness": _iso(payload.get("fetched_at")),
+                "dimensions": payload.get("dimensions") or {},
+                "provenance": {"artifact_id": artifact.id},
+            }
+        )
+    return rows
 
 
 def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
@@ -65,11 +122,20 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
         return None
 
     artifacts = get_v3_artifact_store().list_for_mission(mission_id)
-    buckets: dict[str, list[str]] = {}
+    buckets: dict[str, list[str]] = {
+        "evidence": [],
+        "anomaly": [],
+        "hypothesis": [],
+        "causal": [],
+        "prediction": [],
+        "strategy": [],
+        "skeptic": [],
+    }
     for artifact in artifacts:
         bucket = _ARTIFACT_TYPE_TO_BUCKET.get(artifact.artifact_type)
         if bucket:
             buckets.setdefault(bucket, []).append(artifact.id)
+    evidence = _evidence_rows(artifacts)
 
     return {
         "route": "v3",
@@ -82,9 +148,13 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
         "leadership_epoch": 0,
         "workspace_id": mission.workspace_id,
         "owner_user_id": mission.owner_user_id,
-        "events": _mission_events(mission),
+        "thread_id": mission.thread_id,
+        "run_id": mission.run_id,
+        "events": _mission_events(mission, has_evidence=bool(evidence)),
         "artifacts": buckets,
+        "evidence": evidence,
         "final_response": mission.final_response or "",
         "error_code": mission.error_code,
+        "limitations": [] if mission.status != "failed" else [mission.final_response or "failed"],
         "trace": {"request_id": mission.run_id, "session_id": mission.thread_id},
     }

@@ -59,6 +59,21 @@ def test_registry_resolved_aliases_are_not_a_semantic_conflict():
         assert not semantic, f"{bare!r}/{prefixed!r} should resolve to one metric, got {semantic}"
 
 
+def test_canonical_metric_id_duck_types_get_without_canonical_id_method():
+    from seleric_swarm.coordinator.governance.conflicts import _canonical_metric_id
+
+    class _GetOnlyRegistry:
+        def get(self, metric_id: str):
+            if metric_id in {"units_sold", "metric.units_sold"}:
+                return _FakeMetric("metric.units_sold")
+            return None
+
+    registry = _GetOnlyRegistry()
+    assert not hasattr(registry, "canonical_id")
+    assert _canonical_metric_id("units_sold", registry) == "metric.units_sold"
+    assert _canonical_metric_id("unknown", None) == "unknown"
+
+
 def test_metric_semantic_conflict_prefers_normalized_primary():
     conflicts = detect_conflicts(
         {

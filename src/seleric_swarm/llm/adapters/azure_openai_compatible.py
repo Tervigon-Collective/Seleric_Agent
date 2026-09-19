@@ -90,6 +90,11 @@ class AzureOpenAICompatibleAdapter:
         self._client, self._traced = self._wrap_tracing(client)
         self._max_retries = max(0, settings.llm_max_retries)
 
+    @property
+    def async_client(self) -> Any:
+        """The underlying AsyncOpenAI/Azure client — reused by the V3 pydantic-ai model."""
+        return self._client
+
     @staticmethod
     def _build_client(settings: Settings, api_key: str) -> Any:
         endpoint = settings.azure_openai_endpoint.rstrip("/")

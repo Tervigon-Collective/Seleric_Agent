@@ -9,6 +9,7 @@ from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.protocols.mcp.gateway import (
     SELERIC_ACTION_CAPABILITIES,
+    SELERIC_CAPABILITIES,
     _build_allowlist,
 )
 from seleric_swarm.protocols.mcp.servers.seleric_remote import TOOLS
@@ -168,7 +169,8 @@ def test_action_tools_registered_but_not_granted_to_legacy_agents():
     registry = AgentRegistry("config/agent_registry.yaml")
     allowlist, _ = _build_allowlist(registry)
 
-    assert allowlist["v3_agent"] == SELERIC_ACTION_CAPABILITIES
+    assert SELERIC_ACTION_CAPABILITIES <= allowlist["v3_agent"]
+    assert SELERIC_CAPABILITIES <= allowlist["v3_agent"]
     assert allowlist["observer_agent"].isdisjoint(SELERIC_ACTION_CAPABILITIES)
     assert allowlist["performance_agent"].isdisjoint(SELERIC_ACTION_CAPABILITIES)
 

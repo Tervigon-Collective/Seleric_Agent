@@ -71,7 +71,7 @@ def _build_allowlist(agents: AgentRegistry) -> tuple[dict[str, set[str]], dict[s
     # write capabilities to the legacy observer/domain agents. The remote MCP
     # server still enforces caller scopes, proposal eligibility, explicit
     # confirmation tokens, its write kill switch, and executor-level policy.
-    allowlist["v3_agent"] = SELERIC_ACTION_CAPABILITIES
+    allowlist["v3_agent"] = SELERIC_CAPABILITIES | SELERIC_ACTION_CAPABILITIES
     return allowlist, module_map
 
 
