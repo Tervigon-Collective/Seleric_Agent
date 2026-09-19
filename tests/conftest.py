@@ -14,6 +14,7 @@ os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["PERSISTENCE_BACKEND"] = "memory"
 os.environ["AZURE_OPENAI_API_KEY"] = ""
 os.environ["LANGSMITH_API_KEY"] = ""
+os.environ["V3_AGENT_ENABLED"] = "false"
 
 import pytest
 

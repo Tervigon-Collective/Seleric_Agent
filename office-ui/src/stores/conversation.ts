@@ -95,7 +95,8 @@ const toOfficeEvent = (event: ActivityEvent): SwarmUIEvent => {
     agentId:
       event.actor_id
       ?? optionalString(event.payload.agent_id)
-      ?? optionalString(event.payload.agent),
+      ?? optionalString(event.payload.agent)
+      ?? (optionalString(event.payload.route) === "v3" ? "coordinator" : undefined),
     eventType,
     summary:
       event.summary
@@ -632,10 +633,11 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       || (state.currentRunId && event.run_id !== state.currentRunId)
     ) return;
     useOffice.getState().ingestEvent(toOfficeEvent(event));
+    const office = useOffice.getState();
+    const incomingRoute = optionalString(event.payload.route);
     const terminal = ["run.completed", "run.failed", "run.cancelled"].includes(event.event_type);
-    if (event.event_type === "answer.completed" || terminal) {
-      const office = useOffice.getState();
-      const route = optionalString(event.payload.route) ?? office.route;
+    if (event.event_type === "answer.completed" || terminal || incomingRoute) {
+      const route = incomingRoute ?? office.route;
       const status = terminal ? event.event_type.replace("run.", "") : office.status;
       office.hydrate({
         missionId: optionalString(event.payload.mission_id) ?? office.missionId ?? event.run_id ?? "conversation",
@@ -653,6 +655,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         limitations: office.limitations,
         timeline: [],
       });
+    }
+    if (event.event_type === "answer.completed" || terminal) {
       void conversationsApi.listMessages(event.thread_id).then((messages) => {
         const current = get();
         if (

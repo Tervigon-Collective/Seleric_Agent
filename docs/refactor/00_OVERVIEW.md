@@ -6,9 +6,12 @@ limits, mission cache/tracing/Temporal decision) Done. Profile B through
 Sprint 3 (semantic toolset v0 + hybrid fetch-path extract-wrap-delete:
 `McpDataProvider` + `query_metric_series`; catalogue heuristic retirement)
 Done. Profile C through Sprint 3 (analytics + causal + Model/Skeptic port +
-parity harness) Done. Next: Sprint 3 residuals (ActionToolset upstream).
+parity harness) Done. Sprint 4: all 15 tools registered; **local UI
+connected** behind `V3_AGENT_ENABLED` (conversations + `POST /v1/missions`
++ Office list/snapshot). That is a local flag, **not** a production canary
+%. Next: cost/latency replay and an explicit production-canary decision.
 See `SPRINT_PLAN.md` / `TASK_SHEET.md`.
-Last verified against source: 2026-09-18.
+Last verified against source: 2026-09-19.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube
 migration. Everything produced during the refactor (profile briefs, sprint

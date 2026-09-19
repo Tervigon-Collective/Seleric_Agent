@@ -189,12 +189,26 @@ async def run_validated_mission(
             # Terminal: the evidence contradicts the claim. Re-prompting spends
             # a revision to get the same rejection.
             return result.model_copy(
-                update={"status": "failed", "error_code": "INSUFFICIENT_EVIDENCE"}
+                update={
+                    "status": "failed",
+                    "error_code": "INSUFFICIENT_EVIDENCE",
+                    "final_response": (
+                        "I could not back this answer with live metric evidence. Please retry."
+                    ),
+                    "limitations": ["INSUFFICIENT_EVIDENCE"],
+                }
             )
         verdict = tracker.consume("validation_revisions")
         if not verdict.ok:
             return result.model_copy(
-                update={"status": "failed", "error_code": "INSUFFICIENT_EVIDENCE"}
+                update={
+                    "status": "failed",
+                    "error_code": "INSUFFICIENT_EVIDENCE",
+                    "final_response": (
+                        "I could not back this answer with live metric evidence. Please retry."
+                    ),
+                    "limitations": ["INSUFFICIENT_EVIDENCE"],
+                }
             )
         revision_prompt = (
             f"{query}\n\nYour previous answer was rejected: {outcome.reason}. Revise it."

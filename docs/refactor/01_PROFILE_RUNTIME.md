@@ -121,12 +121,11 @@ those two bugs' original repro cases before cutover.
   fan-out view), and `artifacts` as typed buckets (`hypothesis`/
   `prediction`/`strategy`/`skeptic`/...). None of that shape exists on the
   V3 `MissionResult`/`ArtifactStore` (`agent/output.py`,
-  `agent/artifacts.py`) — a straight cutover would leave the Office UI
-  blank or crashing for every V3 mission. Either `api/office/normalize.py`
-  needs a V3-shaped adapter path, or the Office UI needs its own V3 view,
-  before any cutover percentage > 0. Not blocking now (no toolsets exist to
-  produce a real V3 mission to render yet) but must land before Sprint 4's
-  canary flip, not be discovered at that point.
+  `agent/artifacts.py`). **Mitigated 2026-09-19 (local flag only):**
+  `api/office/v3_adapter.py` translates V3 missions into that raw shape,
+  `agent/runner.py` persists into both stores, and office-ui Activity
+  hydrates `route=v3`. A genuine V3-native office view is still exit
+  criterion 5. Production canary % is still off.
 
 ## Exit criteria (parity gate before old pipeline deletion)
 

@@ -29,3 +29,10 @@ def get_v3_artifact_store() -> InMemoryArtifactStore:
     if _artifact_store is None:
         _artifact_store = InMemoryArtifactStore()
     return _artifact_store
+
+
+def reset_v3_stores() -> None:
+    """Test helper — drop the process-level V3 stores."""
+    global _mission_store, _artifact_store
+    _mission_store = InMemoryMissionStore()
+    _artifact_store = InMemoryArtifactStore()
