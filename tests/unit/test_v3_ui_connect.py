@@ -208,9 +208,9 @@ async def test_completed_with_empty_response_is_caught_not_shipped(monkeypatch):
     assert result["error"]["code"] == "INSUFFICIENT_EVIDENCE"
 
 
-def test_dispatch_route_follows_v3_flag():
+def test_dispatch_route_is_always_v3():
     from seleric_swarm.api.conversations import _dispatch_route
 
     assert _dispatch_route(SimpleNamespace(settings=SimpleNamespace(v3_agent_enabled=True))) == "v3"
-    assert _dispatch_route(SimpleNamespace(settings=SimpleNamespace(v3_agent_enabled=False))) == "swarm"
-    assert _dispatch_route(SimpleNamespace()) == "swarm"
+    assert _dispatch_route(SimpleNamespace(settings=SimpleNamespace(v3_agent_enabled=False))) == "v3"
+    assert _dispatch_route(SimpleNamespace()) == "v3"

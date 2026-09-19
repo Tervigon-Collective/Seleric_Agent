@@ -553,26 +553,26 @@ cost gate. C's rows are **not** part of this gate.
 
 ## Sprint 5 — Old pipeline deletion (per-subsystem PRs, not a bulk delete)
 
-Only after the canary has run clean for an agreed soak period (pick this
-number explicitly before the sprint starts — not defaulted here since it's
-a production-risk call, not an engineering one).
+Greenfield deletion executed 2026-09-19 (nothing in production yet — soak
+period waived by the same policy used for ProviderRegistry in Sprint 4).
+All checklist items below Done; evidence in `TASK_SHEET.md` Sprint 5.
 
-- [ ] Delete `coordinator/graph.py` (LangGraph state machine).
-- [ ] Delete Blackboard.
-- [ ] Delete `LeadershipManager`/`LeadershipController`.
-- [ ] Delete `AgentRegistry`, `config/agent_registry.yaml`'s specialist flags.
-- [ ] Delete `swarm/domain/` (`base.py` + `configs.py` — one config-driven
+- [x] Delete `coordinator/graph.py` (LangGraph state machine).
+- [x] Delete Blackboard.
+- [x] Delete `LeadershipManager`/`LeadershipController`.
+- [x] Delete `AgentRegistry`, `config/agent_registry.yaml`'s specialist flags.
+- [x] Delete `swarm/domain/` (`base.py` + `configs.py` — one config-driven
       base class) and `agents/domains/*.py` (8 config stubs, ~730 B each).
       Note `funnel_agent` is `enabled: true` in
       `config/agent_registry.yaml:47` — it is not already disabled.
-- [ ] Delete `swarm/specialists/*`, `agents/diagnostic/*`,
+- [x] Delete `swarm/specialists/*`, `agents/diagnostic/*`,
       `agents/prediction/*`, `agents/strategy/*`, `agents/skeptic/*`
       (each its own reviewed PR, gated on the corresponding toolset already
       running in production for the soak period). `agents/skeptic/registries.py`
       also holds the `CausalGraphRegistry`/`ModelRegistry`/
       `MetricSemanticsRegistry` Protocols that three subsystems import —
       untangle before deleting, it is not a standalone registry file.
-- [ ] Disposition `agents/intelligence/observer.py` — the second, 25 KB
+- [x] Disposition `agents/intelligence/observer.py` — the second, 25 KB
       observer. B deletes its `_query_windows` in Sprint 2; the rest has no
       owner.
 
@@ -581,10 +581,14 @@ Note: `services/metrics.py::MetricRegistry`/`MetricSemanticsRegistry` is
 practice (`bind_catalogue()` makes the live catalogue authoritative); kept
 as a standalone class/abstraction by explicit decision, not carried here.
 See `TASK_SHEET.md` Sprint 3 Profile B.
-- [ ] Delete `orchestration/dispatch.py::route_for` and
+- [x] Delete `orchestration/dispatch.py::route_for` and
       `coordinator/lookup_fast_path.py` (only if Sprint 1's cost
       assumption held — recheck before deleting).
-- [ ] Update `diagrams/current_architecture.mmd` to reflect the deletion
+- [x] Update `diagrams/current_architecture.mmd` to reflect the deletion
       (or retire the file with a pointer to `new.mmd`).
 
-**Gate:** Program-level definition of done (overview §8) fully met.
+**Gate:** Program-level definition of done (overview §8) fully met —
+suite green at 537 passed / 4 skipped (2026-09-19). Remaining overview §8
+items that are *not* deletion work (named owners for model/experiment/
+knowledge registries, production canary %) stay tracked outside this
+sprint's deletion checklist.

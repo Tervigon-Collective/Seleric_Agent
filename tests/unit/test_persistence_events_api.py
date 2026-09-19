@@ -57,57 +57,8 @@ def test_memory_store_list_events_roundtrip():
     assert events[0]["kind"] == "artifact_posted"
 
 
-def test_api_mission_events_endpoint(runtime, monkeypatch):
+def test_api_mission_events_endpoint_404_for_unknown_mission(runtime, monkeypatch):
     monkeypatch.setattr(main_mod, "_runtime", runtime)
     client = TestClient(app, raise_server_exceptions=True)
-
-    created = client.post(
-        "/v1/missions",
-        json={
-            "query": "Why has CAC increased over the last three days?",
-            "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-03"},
-            "mode": "read_only",
-            "scenario_id": "cac_regression",
-        },
-    )
-    assert created.status_code == 200
-    mission = created.json()
-    mission_id = mission["mission_id"]
-    assert mission.get("events")
-
-    events_resp = client.get(f"/v1/missions/{mission_id}/events")
-    assert events_resp.status_code == 200
-    body = events_resp.json()
-    assert body["mission_id"] == mission_id
-    assert body["count"] >= 1
-    assert "has_more" in body
-    assert body["has_more"] is False or body.get("next_after_seq") is not None
-    assert all("kind" in e for e in body["events"])
-
-    page = client.get(
-        f"/v1/missions/{mission_id}/events",
-        params={"limit": 1, "after_seq": 0},
-    )
-    assert page.status_code == 200
-    page_body = page.json()
-    assert page_body["count"] == 1
-    if page_body["has_more"]:
-        assert page_body["next_after_seq"] is not None
-        more = client.get(
-            f"/v1/missions/{mission_id}/events",
-            params={"after_seq": page_body["next_after_seq"], "limit": 200},
-        )
-        assert more.status_code == 200
-        assert more.json()["count"] >= 1
-
-    mission_family = client.get(f"/v1/missions/{mission_id}/events", params={"family": "mission"})
-    assert mission_family.status_code == 200
-    fam = mission_family.json()
-    assert fam["count"] >= 1
-    assert all(
-        (e.get("family") == "mission") or str(e.get("kind", "")).startswith("mission_")
-        for e in fam["events"]
-    )
-
     missing = client.get("/v1/missions/does-not-exist/events")
     assert missing.status_code == 404

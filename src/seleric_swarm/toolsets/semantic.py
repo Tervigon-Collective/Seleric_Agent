@@ -86,16 +86,10 @@ def _unknown_dimension_error(error: object) -> bool:
     return "unknown brand" in text or "unknown dimension" in text or "invalid brand" in text
 
 
-# Single agent identity for MCPGateway allowlisting/module-pin lookup — the
-# new runtime has one agent loop, not per-domain agent ids (see
-# docs/refactor/01_PROFILE_RUNTIME.md: no handoff concept in the new loop).
-# Reuses "observer_agent" (config/agent_registry.yaml already unions every
-# domain agent's seleric capabilities onto it) rather than adding a new
-# entry to a registry this migration retires (AgentRegistry/agent_registry.yaml
-# per-specialist flags go away once toolset registration replaces it,
-# docs/refactor/01_PROFILE_RUNTIME.md "Retires"). Revisit once Profile A's
-# real toolset-registration replacement lands.
-_AGENT_ID = "observer_agent"
+# Single agent identity for MCPGateway allowlisting — the V3 runtime has one
+# agent loop (see docs/refactor/01_PROFILE_RUNTIME.md). Write/actions stay
+# gated on this id in MCPGateway._authorize; reads accept any caller.
+_AGENT_ID = "v3_agent"
 _ALIAS_REGISTRY: MetricRegistry | None = None
 
 

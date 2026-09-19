@@ -36,7 +36,7 @@ def test_async_mission_accept_then_poll_to_terminal(client):
     assert body["status"] == "running"
     assert body.get("async") is True
     mission_id = body["mission_id"]
-    assert mission_id.startswith("MS-")
+    assert mission_id.startswith("MS3-")
 
     # TestClient runs BackgroundTasks after the response is sent.
     deadline = time.time() + 15
@@ -54,29 +54,10 @@ def test_async_mission_accept_then_poll_to_terminal(client):
 
 
 def test_async_strips_swagger_scenario_id_placeholder(client, monkeypatch):
-    async def _fake_classify(*_args, **_kwargs):
-        from seleric_swarm.contracts.lookup import TimeRangeV1
-        from seleric_swarm.coordinator.intake.llm_classifier import LlmClassification
-
-        return LlmClassification(
-            intents=["diagnostic"],
-            domain_lead="funnel_agent",
-            entities=[],
-            time_range=TimeRangeV1(),
-            primary_metric="metric.cac",
-            secondary_metrics=[],
-            unresolved=False,
-            unsupported_reason=None,
-        )
-
     async def _fake_run(*_args, **_kwargs):
-        return {"route": "swarm", "result": {"mission_id": "MS-swagger", "status": "completed"}}
+        return {"route": "v3", "result": {"mission_id": "MS-swagger", "status": "completed"}}
 
-    monkeypatch.setattr(
-        "seleric_swarm.coordinator.intake.llm_classifier.classify_query_via_llm",
-        _fake_classify,
-    )
-    monkeypatch.setattr(main_mod, "run_any_mission", _fake_run)
+    monkeypatch.setattr(main_mod, "run_v3_mission", _fake_run)
     ok = client.post(
         "/v1/missions",
         json={
@@ -127,7 +108,7 @@ async def test_run_mission_job_failure_path_marks_failed(runtime, monkeypatch):
     async def _boom(*_a, **_kw):
         raise RuntimeError("provider exploded")
 
-    monkeypatch.setattr(async_missions, "run_any_mission", _boom)
+    monkeypatch.setattr(async_missions, "run_v3_mission", _boom)
     mid = "MS-failtest01"
     async_missions.seed_running_mission(
         runtime, mission_id=mid, query="why did cac increase", request_id="r1", session_id="s1"

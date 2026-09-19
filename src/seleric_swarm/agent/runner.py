@@ -155,8 +155,8 @@ async def run_v3_mission(
     """Execute the V3 agent and persist for conversations + Office UI.
 
     Extra kwargs (``full_diagnostic`` etc.) are accepted and ignored so
-    ``run_mission_job`` / ``create_mission`` can call this with the same
-    argument set they pass ``run_any_mission``.
+    ``run_mission_job`` / ``create_mission`` can call this with their full
+    historical argument set after the swarm_v2 dispatcher was deleted.
     """
     mission_id = mission_id or f"MS3-{uuid4().hex[:10]}"
     request_id = request_id or uuid4().hex

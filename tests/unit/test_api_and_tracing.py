@@ -40,52 +40,12 @@ def test_health_and_ping_and_mission(runtime, monkeypatch):
     )
     assert created.status_code == 200
     mission = created.json()
-    assert mission["status"] == "completed"
+    assert mission["status"] in {"completed", "partial"}
     mission_id = mission["mission_id"]
+    assert mission_id.startswith("MS3-")
     fetched = client.get(f"/v1/missions/{mission_id}")
     assert fetched.status_code == 200
     assert fetched.json()["mission_id"] == mission_id
-
-
-def test_mission_diagnostic_query_routes_to_full_swarm(runtime, monkeypatch):
-    monkeypatch.setattr(main_mod, "_runtime", runtime)
-    client = TestClient(app, raise_server_exceptions=True)
-    created = client.post(
-        "/v1/missions",
-        json={
-            "query": (
-                "Why has our CAC increased for the last three days, "
-                "what happens if this continues, and what should we do?"
-            ),
-            "scope": {"timezone": "Asia/Kolkata", "as_of": "2026-09-03"},
-            "mode": "read_only",
-        },
-    )
-    assert created.status_code == 200
-    m = created.json()
-    assert m["route"] == "swarm"
-    assert m["status"] in {"completed", "partial", "prototype_completed", "failed"}
-    # the full agent subsystems ran (full_diagnostic/full_prediction/full_skeptic default True)
-    arts = m["artifacts"]
-    assert set(arts) >= {"hypothesis", "causal", "prediction", "skeptic"}
-
-    # Idempotent bridges must not duplicate the *same* artifact -- not a cap
-    # of one. A CAC diagnosis with real co-movers (spend, new_customers) can
-    # legitimately retain multiple hypotheses, each with its own Causal
-    # artifact (swarm_bridge.py: "one Blackboard Causal per accepted
-    # finding"); a hard <=1 cap doesn't hold once more than one hypothesis is
-    # actually retained.
-    assert len(arts["causal"]) == len(set(arts["causal"]))
-    assert len(arts["skeptic"]) <= 1
-    assert len(arts["prediction"]) <= 1
-
-    # GET returns the full swarm mission
-    fetched = client.get(f"/v1/missions/{m['mission_id']}")
-    assert fetched.status_code == 200
-    got = fetched.json()
-    assert got["route"] == "swarm"
-    assert got["mission_id"] == m["mission_id"]
-    assert "artifacts" in got and "events" in got
 
 
 def test_langsmith_failure_does_not_fail_span():

@@ -157,23 +157,38 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 
 | Task | Status | Evidence |
 |---|---|---|
-| Delete `coordinator/graph.py` | Not started | |
-| Delete Blackboard | Not started | |
-| Delete LeadershipManager/Controller | Not started | |
-| Delete AgentRegistry + registry.yaml flags | Not started | |
-| Delete `swarm/domain/` (base + configs) and `agents/domains/*.py` (8 stubs; `funnel_agent` is `enabled: true`, not already disabled) | Not started | |
-| Untangle `agents/skeptic/registries.py` Protocols (`CausalGraphRegistry`/`ModelRegistry`/`MetricSemanticsRegistry`) before deleting the package | Not started | |
-| Disposition `agents/intelligence/observer.py` (second observer, 25 KB — only `_query_windows` is owned today) | Not started | |
-| Delete `swarm/specialists/*` | Not started | |
-| Delete `agents/diagnostic/*` | Not started | |
-| Delete `agents/prediction/*` | Not started | |
-| Delete `agents/strategy/*` | Not started | |
-| Delete `agents/skeptic/*` | Not started | |
-| Delete `route_for`/`lookup_fast_path` (if cost assumption held) | Not started | |
-| `current_architecture.mmd` updated/retired | Not started | |
+| Delete `coordinator/graph.py` | Done | Deleted with LangGraph state machine + dependent control-plane packages (`execution/`, `routing/`, `governance/`, `evidence/`, `artifacts/`, `synthesis/`, `plane.py`, `lookup_fast_path.py`). |
+| Delete Blackboard | Done | `swarm/blackboard.py` deleted; sole live caller `api/conversations.py` now imports `observe_mission_events` from `coordinator/observability/events.py`. |
+| Delete LeadershipManager/Controller | Done | `leadership/manager.py` + `coordinator/leadership/*` (except empty package cleanup) deleted. |
+| Delete AgentRegistry + registry.yaml flags | Done | `registry/agent_registry.py` + `config/agent_registry.yaml` deleted. `MCPGateway` allowlist is `v3_agent`-only for writes; reads accept any caller identity for provenance stamping. `SwarmRuntime.agents` field removed. |
+| Delete `swarm/domain/` (base + configs) and `agents/domains/*.py` (8 stubs; `funnel_agent` is `enabled: true`, not already disabled) | Done | Packages deleted. |
+| Untangle `agents/skeptic/registries.py` Protocols (`CausalGraphRegistry`/`ModelRegistry`/`MetricSemanticsRegistry`) before deleting the package | Done | `ModelRecord` + `YamlModelRegistry`/`model_registry_from_yaml` ported to `models/service.py`; `toolsets/models.py` imports from there. Skeptic package then deleted. |
+| Disposition `agents/intelligence/observer.py` (second observer, 25 KB — only `_query_windows` is owned today) | Done | Deleted with swarm_v2 leaf set (only caller was `orchestration/graph.py`). |
+| Delete `swarm/specialists/*` | Done | Deleted. |
+| Delete `agents/diagnostic/*` | Done | Deleted. |
+| Delete `agents/prediction/*` | Done | Deleted. |
+| Delete `agents/strategy/*` | Done | Deleted. |
+| Delete `agents/skeptic/*` | Done | Deleted after ModelRecord port. |
+| Delete `route_for`/`lookup_fast_path` (if cost assumption held) | Done | `orchestration/dispatch.py` + `coordinator/lookup_fast_path.py` deleted. `main.py` / `api/async_missions.py` / conversations always call `run_v3_mission`. `v3_agent_enabled` defaults `True` (soak kill-switch retained). Also deleted the third legacy pipeline `orchestration/graph.py`/`runner.py`. |
+| `current_architecture.mmd` updated/retired | Done | Retired to a pointer at `diagrams/new.mmd`. |
+
+**Verification (2026-09-19):** full suite via project `.venv`: **537 passed, 4 skipped**, 0 failures. Repo-wide grep for deleted module import paths is clean (remaining `domain.models` hits are the unrelated `seleric_swarm.domain` package).
+
+**Known gaps flagged, not closed by this sprint** (from execution plan): V3 mission/artifact stores remain in-memory (`state/missions.py`, `api/v3_state.py`) — fine for single-process soak, not multi-replica; `SelericDeps.context` is still an empty `ContextBundle` (cross-turn memory not wired into the agent loop).
 
 ## Log
 
+- 2026-09-19: **Sprint 5 executed** — swarm_v2 deleted, V3 is the only
+  mission path. Plan: Claude session `elegant-singing-swing.md` (Phases
+  A–F). `ModelRecord` ported to `models/service.py`; `AgentRegistry` +
+  `config/agent_registry.yaml` deleted; leaf specialists/domains/diagnostic/
+  prediction/strategy/skeptic deleted; trunk (`coordinator/graph.py`,
+  blackboard, leadership, `orchestration/{dispatch,graph,runner}.py`,
+  lookup_fast_path) deleted; `main.py`/`async_missions`/`conversations`
+  always call `run_v3_mission`; `v3_agent_enabled` defaults True;
+  `diagrams/current_architecture.mmd` retired to pointer at `new.mmd`.
+  Full suite: **537 passed, 4 skipped**. Known gaps left explicit: in-memory
+  V3 stores; empty `SelericDeps.context` (no cross-turn memory yet).
 - 2026-09-17: Planning pass complete. `docs/refactor/` created with
   overview, 3 profile briefs, sprint plan, this task sheet. Superseded
   pointer added to `docs/46_ARCHITECTURE_CONSOLIDATION_PLAN.md`. No

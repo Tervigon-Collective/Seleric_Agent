@@ -22,7 +22,6 @@ from seleric_swarm.conversations.contracts import (
     RunAttemptStatus,
     Thread,
 )
-from seleric_swarm.orchestration.dispatch import run_any_mission
 from seleric_swarm.runtime import SwarmRuntime
 
 _log = logging.getLogger("seleric.api.async_missions")
@@ -68,9 +67,10 @@ def clear_cancel(mission_id: str, runtime: SwarmRuntime | None = None) -> None:
         backend.clear(mission_id)
 
 
-def new_mission_id(*, swarm_likely: bool = True) -> str:
-    prefix = "MS" if swarm_likely else "M"
-    return f"{prefix}-{uuid4().hex[:10]}"
+def new_mission_id(*, swarm_likely: bool = False) -> str:
+    # Sprint 5: V3 is the only path. ``swarm_likely`` kept for call-site
+    # compatibility but no longer selects a prefix.
+    return f"MS3-{uuid4().hex[:10]}"
 
 
 def seed_running_mission(
@@ -287,12 +287,7 @@ async def run_mission_job(
         return
     try:
         async with asyncio.timeout(runtime.settings.mission_timeout_s):
-            execute = (
-                run_v3_mission
-                if getattr(runtime.settings, "v3_agent_enabled", False)
-                else run_any_mission
-            )
-            dispatched = await execute(
+            dispatched = await run_v3_mission(
                 runtime,
                 query=query,
                 timezone=timezone,

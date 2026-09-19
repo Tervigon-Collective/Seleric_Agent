@@ -16,8 +16,6 @@ import pytest
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import StateRequest
-from seleric_swarm.swarm.providers.base import MetricReading
-from seleric_swarm.swarm.providers.mcp_data import build_mcp_bundle
 
 PILOT_METRICS = [
     ("metric.net_sales", "commerce_agent"),
@@ -70,37 +68,3 @@ async def test_evaluate_anomaly_live_never_fabricates(runtime, metric_id, agent_
     assert anomaly["score"] >= 0
     assert isinstance(anomaly["is_anomaly"], bool)
     assert anomaly["detector"]["strategy"] == "robust_zscore"
-
-
-@pytest.mark.asyncio
-async def test_configured_anomaly_detector_live_end_to_end(runtime):
-    """Same dispatch proven in test_provider_selection.py, run here as part
-    of the full-stack live confirmation: build_mcp_bundle() -> real
-    ConfiguredAnomalyDetector -> real BusinessStateService for an overridden
-    metric, real TemplateAnomalyDetector for one that isn't."""
-    bundle, _stats = build_mcp_bundle(
-        mcp=runtime.mcp,
-        execution_mode="staging",
-        metrics=runtime.metrics,
-        agents=runtime.agents,
-        bootstrap=runtime.bootstrap,
-        business_state=runtime.business_state,
-    )
-    readings = [
-        MetricReading(metric_id="metric.spend", value=100.0, baseline=90.0, direction_bad="up"),
-        MetricReading(metric_id="total_ad_spend", value=100.0, baseline=90.0, direction_bad="up"),
-        MetricReading(
-            metric_id="metric.attributed_net_revenue", value=100.0, baseline=80.0,
-            direction_bad="down", data_origin="MCP",
-        ),
-    ]
-    findings = await bundle.anomaly.detect(readings, context={"time_range": {"kind": "relative", "relative_token": "last_30d"}})
-
-    by_metric = {f.metric_id: f for f in findings}
-    # metric.spend is overridden -> real BusinessStateService/MCP history.
-    assert by_metric["metric.spend"].data_origin == "BUSINESS_STATE"
-    # Live intake spelling of the same metric must not miss the YAML override.
-    assert by_metric["total_ad_spend"].data_origin == "BUSINESS_STATE"
-    assert by_metric["total_ad_spend"].detector.get("strategy") == "robust_zscore"
-    # attributed_net_revenue has no override -> stays on the Template path.
-    assert by_metric["metric.attributed_net_revenue"].data_origin == "MCP"

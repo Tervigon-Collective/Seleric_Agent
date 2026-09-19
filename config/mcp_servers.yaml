@@ -1,6 +1,7 @@
 servers:
-  # Live Seleric catalogue + metrics_query. Domain scope is the `module`
-  # argument MCPGateway pins from config/agent_registry.yaml.
+  # Live Seleric catalogue + metrics_query. Sprint 5: MCPGateway no longer
+  # pins a per-domain module from agent_registry.yaml (deleted); the V3
+  # agent calls unscoped unless the tool args pass module explicitly.
   seleric:
     capability_prefix: seleric
     transport: streamable_http

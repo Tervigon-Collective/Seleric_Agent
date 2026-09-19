@@ -34,8 +34,12 @@ from __future__ import annotations
 import math
 import statistics
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import yaml
+
+from seleric_swarm.paths import repo_root
 from seleric_swarm.toolsets import policy_config as policy
 
 if TYPE_CHECKING:
@@ -163,3 +167,90 @@ def _fit_and_forecast(values: list[float], horizon_days: int) -> tuple[float, li
             "model produced a non-finite forecast", warning=policy.WARN_MODEL_FIT_FAILED
         )
     return point, fitted, method
+
+
+# --------------------------------------------------------------------------- #
+# Model registry — ported from agents/skeptic/registries.py +
+# agents/skeptic/services/model_registry.py (Sprint 5: V3-owned, no longer a
+# skeptic import). DriftMonitor/DriftReport stayed behind: nothing under
+# toolsets/ reads them.
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class ModelRecord:
+    model_id: str
+    version: str = "1"
+    status: str = "candidate"  # candidate | approved | deprecated
+    target: str = ""
+    model_type: str = "forecast"
+    minimum_history_days: int = 0
+    supports_seasonality: bool = False
+    last_validated_at: str | None = None
+    backtest_available: bool = False
+
+
+class InMemoryModelRegistry:
+    def __init__(self, models: dict[str, ModelRecord] | None = None) -> None:
+        self._m = dict(models or {})
+
+    def add(self, rec: ModelRecord) -> None:
+        self._m[rec.model_id] = rec
+
+    def get(self, model_id: str) -> ModelRecord | None:
+        return self._m.get(model_id)
+
+    def ids(self) -> list[str]:
+        return list(self._m)
+
+    def for_target(self, target: str) -> list[ModelRecord]:
+        return [r for r in self._m.values() if r.target == target]
+
+
+_MODEL_REGISTRY_CANDIDATE_PATHS = ("config/model_registry.yaml", "config/model_registry.example.yaml")
+
+
+class YamlModelRegistry(InMemoryModelRegistry):
+    """Same interface as InMemoryModelRegistry; seeded from YAML."""
+
+    def __init__(self, path: str | Path | None = None) -> None:
+        super().__init__()
+        p = _resolve_model_registry_path(path)
+        if p is None:
+            return
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        for item in data.get("models", []):
+            applic = item.get("applicability", {}) or {}
+            self.add(
+                ModelRecord(
+                    model_id=str(item["id"]),
+                    version=str(item.get("version", "1")),
+                    status=str(item.get("status", "candidate")),
+                    target=str(item.get("target", "")),
+                    model_type=str(item.get("type", "forecast")),
+                    minimum_history_days=int(applic.get("minimum_history_days", 0)),
+                    supports_seasonality=bool(applic.get("supports_seasonality", False)),
+                    last_validated_at=item.get("last_validated_at"),
+                    backtest_available=bool(
+                        item.get("backtest_available")
+                        or (item.get("validation") or {}).get("metric")
+                        or item.get("backtest_metrics")
+                    ),
+                )
+            )
+
+
+def model_registry_from_yaml(path: str | Path | None = None) -> YamlModelRegistry:
+    return YamlModelRegistry(path)
+
+
+def _resolve_model_registry_path(path: str | Path | None) -> Path | None:
+    if path is not None:
+        p = Path(path)
+        return p if p.exists() else None
+    root = repo_root()
+    for candidate in _MODEL_REGISTRY_CANDIDATE_PATHS:
+        p = root / candidate
+        if p.exists():
+            return p
+    return None
