@@ -274,6 +274,22 @@ def _dims_from_resolve(result: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def query_tokens_for_grain(query: str) -> list[str]:
+    """Non-stopword tokens (len>=3), in order, deduped — per-token fallback
+    for when a whole-sentence ``resolve_catalogue_dimension`` call resolves
+    to nothing (e.g. "units sold by product" as one string vs. "product"
+    alone). Same idea as the deleted ``_resolve_metric_term()``'s per-token
+    retry, kept here since ``resolve_catalogue_dimension`` is the live-only
+    replacement for that whole heuristic chain."""
+    out: list[str] = []
+    for tok in _tokens(query):
+        if tok in _STOPWORDS or len(tok) < _MIN_DIM_TOKEN:
+            continue
+        if tok not in out:
+            out.append(tok)
+    return out
+
+
 async def resolve_catalogue_dimension(query: str, *, runtime: SwarmRuntime) -> list[str]:
     """Dimension ids from catalogue_resolve_dimension (or typed resolve_term).
 

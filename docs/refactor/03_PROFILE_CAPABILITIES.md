@@ -225,35 +225,39 @@ STRONG-trust + REVISE when it gets exactly one revision? Answer it alongside
 `CONTRACTS.md` §4 is authoritative; the earlier draft of this brief listed
 function names that were never frozen. Dispositions:
 
-- `toolsets/analytics.py` + `analytics/*` — frozen surface is six functions:
-  `compare_periods`, `detect_anomalies`, `contribution_analysis`,
-  `segment_decomposition`, `funnel_decomposition`, `cohort_analysis`.
-  Folded into `detect_anomalies(method=...)`: `robust_zscore`,
-  `seasonal_anomaly`. **Struck, re-propose if wanted:** `rolling_statistics`,
-  `growth_rate`, `change_point`, `association_analysis`.
-  Scope reality: only `robust_zscore` exists in source today
-  (`services/business_state/detectors.py:32`), plus `compare_periods` logic
-  inline in `observer.py::_post_comparison_deltas`. The other four frozen
-  functions have no implementation anywhere in `src/` — **Analytics is
-  mostly greenfield, not a port**, which the earlier draft flagged only for
-  Models/Knowledge/Experiments. Sequenced accordingly in `SPRINT_PLAN.md`.
-- `toolsets/causal.py` + `causal/*` — frozen surface is `estimate_effect` +
+- **Done (Sprint 1) — 2 of 6.** `toolsets/analytics.py` + `analytics/*`:
+  `compare_periods`, `detect_anomalies` (with the A1.2 grain precondition).
+  Folded into `detect_anomalies(method=...)`: `robust_zscore` (implemented),
+  `seasonal_anomaly` (frozen but no implementation — returns
+  `METHOD_NOT_AVAILABLE`, A1.7). **Struck, re-propose if wanted:**
+  `rolling_statistics`, `growth_rate`, `change_point`, `association_analysis`.
+- **Not started (Sprint 4) — 4 of 6, greenfield.** `contribution_analysis`,
+  `segment_decomposition`, `funnel_decomposition`, `cohort_analysis` have no
+  implementation anywhere in `src/` — **Analytics is mostly greenfield, not
+  a port**, which the earlier draft flagged only for Models/Knowledge/
+  Experiments. Sequenced in `SPRINT_PLAN.md` Sprint 4.
+- **Done (Sprint 2).** `toolsets/causal.py` + `causal/*` — `estimate_effect` +
   `refute_estimate`. `CausalQuery` in, `CausalArtifact` out, DoWhy
   underneath. Every result carries an evidence classification (rule 9), which
   the frozen `CausalArtifact` already makes a required field with no default.
-  See §6 for the missing escalation/discovery surface.
-- `toolsets/models.py` + `models/*` — frozen surface is `forecast`,
-  `predict_ltv`, `predict_propensity`. **Struck, re-propose if wanted:**
-  `simulate`, `predict_reverse_risk`, `predict_demand`. `models/evaluation.py`'s
-  prediction→actual feedback loop (spec §20) is additive scope and blocked on
-  real models existing at all (§2).
-- `toolsets/knowledge.py` + `knowledge/*` — frozen surface is
-  `search_knowledge`. Schema-enforced that it cannot return a bare numeric
-  metric value (overview §9 suggestion 3).
-- `toolsets/experiments.py` + `experiments/*` — frozen surface is
-  `get_experiment_history`, `estimate_sample_size`, `evaluate_experiment`.
-  **Struck, re-propose if wanted:** `design_experiment`, `compare_variants`,
-  `recommend_next_test`. No experiment infrastructure exists in `src/` today.
+- **Done (Sprint 3) — full build, not a stub.** `toolsets/models.py` +
+  `models/*` — `forecast` (real Holt/exponential-smoothing forecaster via
+  `statsmodels`), `predict_ltv`/`predict_propensity` (both correctly refuse
+  with `INSUFFICIENT_EVIDENCE` + `policy:no_approved_model` — no per-customer
+  labels or feature store exist in this deployment, so an approved entry
+  would be the fabrication, not the refusal). `models/evaluation.py`
+  measures forecast accuracy but does not yet feed back into registry
+  promotion — `last_validated_at` is still hand-set (`00_OVERVIEW.md` §8
+  flags this as needing a named owner). **Struck, re-propose if wanted:**
+  `simulate`, `predict_reverse_risk`, `predict_demand`.
+- **Not started (Sprint 4).** `toolsets/knowledge.py` + `knowledge/*` —
+  frozen surface is `search_knowledge`. Schema-enforced that it cannot
+  return a bare numeric metric value (overview §9 suggestion 3).
+- **Not started (Sprint 4).** `toolsets/experiments.py` + `experiments/*` —
+  frozen surface is `get_experiment_history`, `estimate_sample_size`,
+  `evaluate_experiment`. **Struck, re-propose if wanted:**
+  `design_experiment`, `compare_variants`, `recommend_next_test`. No
+  experiment infrastructure exists in `src/` today.
 
 ## 6. Contract amendment A1 — ACCEPTED 2026-09-18
 
@@ -298,12 +302,15 @@ validator is a change in kind (in-context self-review).
   (`TemplateCausalEstimationService` never populates `observations`, so
   scenario runs produce 0 hypotheses while the DoWhy path works). The port's
   validation strategy has the same failure mode as the open bug it's meant
-  to disposition.
+  to disposition. **Resolved (Sprint 3):** #13 root-caused to commit
+  `79e88cc`'s `fallback_to_unfiltered_candidates` block and confirmed fixed
+  by 20 consecutive live passes — the risk materialized as this one named
+  bug and didn't recur elsewhere in the port.
 - Models/Knowledge/Experiments and four of six Analytics functions are **new
   capability surface**, not 1:1 ports. They must not block Profile A/B's
   cutover gate; sequence after Analytics-port/Causal/Validator parity.
 
-## 9. Exit criteria
+## 9. Exit criteria — all 8 met, Sprint 3 close 2026-09-19 (see `TASK_SHEET.md` for evidence)
 
 Revised — the previous version demanded "an explicit passing test" for
 `#2, #6, #7, #8, #12, #14`, which is not satisfiable: #7 is documented as
@@ -315,34 +322,45 @@ As written the gate would either block forever or be waived, and a waived
 gate is worse than no gate. Split by what each bug actually is:
 
 **a. C-owned deterministic regressions — named passing test required**
-1. Bug #6: escalating widening genuinely searches a larger space across
-   retries (not byte-identical results) — against the new causal surface.
-2. Bug #14: per-day evidence reaches the detector un-normalized, **and** a
-   grain-mismatched evidence set is rejected with
-   `EVIDENCE_GRAIN_MISMATCH` rather than normalized (§3.1).
+1. **Met.** Bug #6: escalating widening genuinely searches a larger space
+   across retries — `test_search_breadth_widens_history_and_candidate_cap`,
+   `test_estimate_effect_records_widened_caps_in_query`.
+2. **Met.** Bug #14: per-day evidence reaches the detector un-normalized,
+   **and** a grain-mismatched evidence set is rejected with
+   `EVIDENCE_GRAIN_MISMATCH` rather than normalized (§3.1) —
+   `tests/unit/test_analytics_toolset.py`.
 
 **b. Cross-profile — C reviews and signs off, B owns the gate**
-3. Bugs #2 and #8 are already Profile B's exit criteria 2 and 3
-   (`02_PROFILE_SEMANTIC_MCP.md`). C cites B's gate; no separate machinery.
+3. **Met.** Bugs #2 and #8 closed via Profile B's exit criteria 2 and 3
+   (`02_PROFILE_SEMANTIC_MCP.md`) —
+   `tests/unit/test_semantic_toolset_bug_regressions.py`.
 
 **c. Behavioral assertions, not regression tests**
-4. Bug #7: confirm still intermittent and not newly deterministic, and that
-   its documented mitigation (the #6 widening) still exists after §3.2's cap
-   decision. If the cap removes the mitigation, that is a recorded
-   behavior change, not a silent one.
-5. Bug #12: `EvidenceValidator` reproduces STRONG-trust + REVISE with the
-   same **two independent signals**, not merged into one score — plus a
-   recorded answer to what the loop does with that state under
-   `max_validation_revisions = 1`.
-6. Bug #13: explicit disposition (fixed, or ported forward with a tracked
-   follow-up) — not silently dropped because the containing module was
-   rewritten.
+4. **Met.** Bug #7: confirmed still intermittent (LLM primary-metric
+   variance), not newly deterministic; its mitigation (the #6 widening) is
+   now caller-chosen `search_breadth`, independent of and surviving the
+   `max_validation_revisions = 1` cap.
+5. **Met.** Bug #12: `EvidenceValidator` reproduces STRONG-trust + REVISE
+   with the same **two independent signals**, not merged —
+   `tests/unit/test_v3_validation_signals.py` (19 passed, incl. a
+   signature-inspection test that `score_trust` cannot see a verdict).
+   Recorded loop behavior: REVISE consumes a revision and re-prompts,
+   REJECT fails closed without consuming one, exhaustion mid-REVISE →
+   `status="failed"`, `error_code="INSUFFICIENT_EVIDENCE"`.
+6. **Met.** Bug #13: fixed, not just ported forward — root-caused to commit
+   `79e88cc`'s `fallback_to_unfiltered_candidates` block; 20 consecutive
+   live runs of `test_diagnostic_bridge_is_idempotent` passed, confirming
+   it isn't #7's intermittent pattern.
 
 **d. Behavioral parity — new, and the one that actually matters**
-7. The replay missions run through both the old specialists and the new
-   toolsets produce equivalent findings: same anomalies flagged, same
-   hypotheses surfaced, same evidence classification — or a reviewed,
-   written explanation of each divergence.
+7. **Met.** The replay missions run through both the old specialists and
+   the new toolsets produce equivalent findings —
+   `evals/parity.py` + `tests/replay/test_v3_parity.py` (3 passed). Bar is
+   structural equivalence (metric/direction/classification/hypothesis, per
+   user decision), with `EXPECTED_DIVERGENCES` naming the intentional ones
+   (e.g. `detect_anomalies` sourcing its baseline from evidence, not
+   `BusinessStateService` — rule 5 working as designed) and a test proving
+   the harness can actually fail on an *unexplained* divergence.
 
    This profile previously had no behavioral parity criterion at all, while
    the brief itself called it the highest-behavioral-risk profile. The old
@@ -351,9 +369,11 @@ gate is worse than no gate. Split by what each bug actually is:
    as a cheap automatable floor, but it is not the parity gate.
 
 **e. Schema floor (automatable)**
-8. Causal/prediction outputs carry evidence classification / model version
-   metadata on 100% of `CausalArtifact`/`PredictionArtifact` instances in
-   the eval set.
+8. **Met by construction.** `evidence_classification`/`model_id`+`model_version`
+   are required fields with no default on `CausalArtifact`/`PredictionArtifact`
+   (`CONTRACTS.md` §3) — a mission cannot produce either artifact type
+   without them; not separately re-verified against a live eval-set run
+   this pass.
 
 ## 10. Recommended approach: extract in place, then wrap, then delete
 

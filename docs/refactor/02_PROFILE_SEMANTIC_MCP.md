@@ -15,7 +15,7 @@ paths into calls through the already-live `seleric-mcp` tools
 delete this repo's own heuristic metric/dimension-resolution layer in
 favor of that server's catalogue.
 
-## Current state (confirmed by direct read, 2026-09-16/17)
+## Original state (as found, 2026-09-16/17 — superseded by "Status as of Sprint 3 close" below)
 
 Three divergent fetch implementations, all bottoming out in the same two
 shared primitives (`resolve_measure()`, `call_metrics_query()`) but each
@@ -39,55 +39,52 @@ independently deciding time-range/grain/dimension handling above that:
 2026-09-16) already proved: single-day case consistent across paths;
 multi-day case has the "last point vs. sum" divergence above (not a bug —
 by design difference, previously undocumented); one transient live-data
-mismatch recorded but not reproduced on retry (real risk for the merge
-step's safety net — re-run this suite across a few different days before
-trusting it as sufficient, per the consolidation plan's own note).
+mismatch recorded but not reproduced on retry.
 
-## Retires
+## Status as of Sprint 3 close (2026-09-19) — see `TASK_SHEET.md` for evidence
 
-- **Done (Sprint 2, 2026-09-18)**: `services/measure.py::resolve_measure()`/
+- **Done (Sprint 2)**: `services/measure.py::resolve_measure()`/
   `measure_keywords_overlap()` — the keyword-overlap catalogue-search
   fallback, bug #8's actual root cause — deleted outright, zero remaining
-  callers (whole-repo grep). Every fetch path (including the two below,
-  which still exist as classes) now resolves a metric via
+  callers (whole-repo grep). Every fetch path resolves a metric via
   `MetricDefinition.catalogue_metric` directly and calls
   `toolsets/semantic.py::raw_query_metric()`, the one shared no-heuristic
   MCP-call primitive both the new toolset and the legacy providers use.
-- **Not yet deleted, but internally consolidated**:
-  `swarm/providers/mcp_data.py::HybridMcpDataProvider` (both `fetch()` and
-  `fetch_series()`) and `services/business_state/series.py::fetch_series()`
-  — no longer contain the heuristic (see above), but still exist as the live
-  call path since nothing yet replaces them end-to-end at the call-site
-  level (in particular `fetch_series()`'s multi-metric pandas-DataFrame
-  output feeding `agents/diagnostic/swarm_bridge.py`'s DoWhy causal
-  specialist has no `SemanticToolset` equivalent yet — a Sprint 3 gap, not a
-  Sprint 2 one). Deleting these classes outright is still gated on building
-  that replacement.
-  `services/business_state/facade.py::BusinessStateService` — if its "last
-  day's point" semantics is actually needed somewhere, it becomes an
-  explicit `query_metrics(as_of=..., grain="day")` call, not a separate code
-  path — not yet done.
-- `agents/intelligence/observer.py::_query_windows` — pure date-range
-  shaping, not itself an MCP call; still live, becomes dead code once
-  `HybridMcpDataProvider` itself is deleted.
-- `coordinator/catalogue_grounding.py` in full —
-  `dimensions_in_query()`/`apply_catalogue_grain()`/`hints_from_catalogue()`/
-  `ground_live_grain()`/`_GENERIC_DIM_TOKENS` and friends. This is the exact
-  heuristic layer `docs/BUG_SHEET.md` bugs #8 and the original
-  `docs/TASK_SHEET.md` plan already identified as the root cause of a whole
-  bug class (false-positive dimension matching on generic tokens). The
-  fix under this plan isn't "widen the exclusion set again" — it's "the LLM
-  states the metric/dimension id directly against the live catalogue
-  (already true per `docs/TASK_SHEET.md` Phase 1/2), and `seleric-mcp`'s own
-  `catalogue_resolve_dimension`/`catalogue_resolve_term` validates it — no
-  local token-matching heuristic at all."
-- `services/metrics.py::MetricRegistry`, `MetricSemanticsRegistry` (as
-  standalone in-repo registries) — the live catalogue behind `seleric-mcp`
-  is now the single source; this repo keeps at most a thin typed wrapper
-  for prompt-building (`catalog_prompt()`'s job), not a parallel registry
-  with its own YAML.
-- `ProviderRegistry` — no longer needed once there's one provider (the MCP
-  client), not several swappable ones.
+- **Done (Sprint 2, extract-wrap-delete)**: `HybridMcpDataProvider` renamed
+  `McpDataProvider` (class kept as a thin `DomainAgent` adapter, not
+  deleted outright — its heuristic is gone, not the class); `fetch_series()`
+  body extracted to `toolsets/semantic.py::query_metric_series()`, with the
+  provider method now a thin wrapper (closing the "no `SemanticToolset`
+  equivalent" gap this section originally flagged — `agents/diagnostic/
+  swarm_bridge.py`'s DoWhy causal specialist reaches it transitively);
+  `business_state/series.py::fetch_series()` kept as a brand-scoped adapter
+  over `raw_query_metric()` (`BusinessStateService.get_metric_state()`'s
+  live, proven-nonempty caller graph — folding it fully into `query_metrics()`
+  was evaluated and explicitly deferred, not silently dropped); `_query_windows`
+  renamed `_observation_windows` (pure date-range shaping, not an MCP call —
+  still live, disposition of the rest of that module tracked separately,
+  Sprint 5).
+- **Done (Sprint 3)**: `coordinator/catalogue_grounding.py`'s heuristic
+  functions (`dimensions_in_query()`, `apply_catalogue_grain()`,
+  `hints_from_catalogue()`, `ground_live_grain()`, `_GENERIC_DIM_TOKENS` and
+  friends) deleted outright — 671 lines down to 322. The one live caller
+  found afterward (`agents/coordinator.py`'s `lookup_v1` classify path,
+  which had regressed to a hardcoded empty `resolved_dimensions`) was fixed
+  2026-09-19 with `resolve_grain_for_metrics()` — grain now resolves via the
+  live `catalogue_resolve_dimension`/`catalogue_resolve_term` resolver only,
+  corroborated against the canonical metric's own `supported_dimensions`.
+  `breakdown_from_query`/`pick_grain`/`query_has_grain_intent` remain, still
+  used by `agents/intelligence/observer.py`'s own grain path — not a
+  heuristic in the retired sense (no query-vs-name keyword matching).
+- **Resolved without deletion (Sprint 3)**: `services/metrics.py::MetricRegistry`/
+  `MetricSemanticsRegistry` — already catalogue-first in practice
+  (`bind_catalogue()` makes the live catalogue authoritative once warm;
+  YAML is a cold-start/exception overlay only). Kept as a class by explicit
+  user decision — ~15 live callers (swarm_v2's classifier, diagnostic
+  pipeline, skeptic) have no isolated test harness for a full rewrite. Not
+  carried to Sprint 5.
+- **Not started**: `ProviderRegistry` deletion — moved to Sprint 4 Profile B
+  cleanup (`SPRINT_PLAN.md`).
 
 ## Builds
 
@@ -96,36 +93,36 @@ trusting it as sufficient, per the consolidation plan's own note).
   wrappers over `mcp__seleric-mcp__catalogue_*` / `metrics_query` /
   `metrics_drilldown`. This is the **only** normal path allowed to fetch
   numeric business data (non-negotiable rule 5 in the overview).
-  **v0 done (Sprint 1, 2026-09-18)**: implemented in
-  `src/seleric_swarm/toolsets/semantic.py`, wired through the existing
-  `MCPGateway`/`services/mcp_query.py` (reused, not rebuilt). `drilldown()`
-  runs the live `metrics_query` → `metrics_drilldown` two-call sequence
-  (the real tool requires a parent `query_id`; the frozen signature hides
-  that bookkeeping from the agent). Not yet wired into an actual agent loop
-  or into the three legacy call sites — that's Sprint 2 consolidation.
+  **Done**: implemented in `src/seleric_swarm/toolsets/semantic.py` (Sprint 1),
+  wired through the existing `MCPGateway`/`services/mcp_query.py` (reused,
+  not rebuilt). `drilldown()` runs the live `metrics_query` → `metrics_drilldown`
+  two-call sequence (the real tool requires a parent `query_id`; the frozen
+  signature hides that bookkeeping from the agent). All three legacy call
+  sites now route through it (`raw_query_metric()`/`query_metric_series()`,
+  Sprint 2 consolidation — see status section above); still not wired into
+  a real agent loop, since no such loop exists to run traffic yet (Sprint 4).
   Currently authorizes MCP calls under the existing `observer_agent`
   identity (see `TASK_SHEET.md`) since `config/agent_registry.yaml`'s
   per-agent allowlist is itself retired by this migration and isn't the
   right place to add a new entry for the future single-agent identity.
 - `toolsets/actions.py` — `ActionToolset`: `propose_action()`,
   `validate()`, `preview()`, `commit_action()`, wrapping
-  `mcp__seleric-mcp__actions_propose/commit/status` and the Meta/Google Ads
-  write tools, always through the propose→confirm→commit sequence
-  (non-negotiable rule 13). **Local adapter done 2026-09-18**: the remote
-  transport registers all four action endpoints, a dedicated `v3_agent`
-  allowlist prevents legacy read agents from gaining writes, and the adapter
-  keeps confirmation tokens out of model-visible provenance. The live MCP
-  action catalogue still lacks an approved Google Ads contract (and returned
-  no available actions during the readiness spike), so cross-platform
-  execution coverage remains an upstream catalogue dependency rather than a
-  completed claim here.
-- `semantic/cube_client.py` — typed wrapper if a thin local abstraction is
-  still useful for retries/tracing; does **not** talk to Cube/ClickHouse
-  directly (confirmed invariant, `new.mmd`).
-- `semantic/discovery.py` — semantic search over Cube metadata (spec §12),
-  backed by `catalogue_search_metrics` if that tool already does embedding
-  search server-side (check before building a second vector index — ponytail
-  rung 2: reuse before rebuild).
+  `mcp__seleric-mcp__actions_propose/commit/status` and the Meta write
+  tools, always through the propose→confirm→commit sequence (non-negotiable
+  rule 13). **Google Ads action execution is not part of this program's
+  requirements** — the live MCP action catalogue only ever needed to cover
+  Meta (`pause_meta_ad`); there is no Google Ads action contract to build
+  against and none is planned. **Done 2026-09-18**: the remote transport
+  registers all four action endpoints, a dedicated `v3_agent` allowlist
+  prevents legacy read agents from gaining writes, and the adapter keeps
+  confirmation tokens out of model-visible provenance.
+- `semantic/cube_client.py` / `semantic/discovery.py` — **not built, not
+  planned (Sprint 3 finding)**. `toolsets/semantic.py::search_semantics()`
+  (server-side `catalogue_search_metrics` embedding search) and
+  `get_metric_definition()` already do what these two files would have
+  built; a local `discovery.py` vector index would duplicate server-side
+  search — exactly the "check before building a second vector index"
+  ponytail rung 2 this brief's own text warned against.
 
 ## Depends on
 
@@ -135,23 +132,24 @@ trusting it as sufficient, per the consolidation plan's own note).
   `actions_propose/commit/status` are production-ready, not stubs — this is
   a Sprint 1 spike, not an assumption.
 
-## Key risks
+## Key risks (as planned; see Status section above for what actually happened)
 
 - The "one transient anomaly" in the characterization suite (a 2.6x value
-  mismatch that didn't reproduce) means the merge's safety net isn't fully
-  trustworthy yet from one run. Re-run the suite across several different
-  days/times before treating step 4 (re-run suite against refactored code)
-  as sufficient evidence of parity.
+  mismatch that didn't reproduce) meant the merge's safety net wasn't fully
+  trustworthy from one run alone. **Resolved by explicit override, not by
+  waiting out the re-run plan**: the user directed deletion to proceed on
+  the existing green run ("delete it, we are almost rebuilding this"),
+  recorded in `TASK_SHEET.md` rather than silently skipped. The live
+  `tests/replay/` suite (40/40) was re-run again 2026-09-19 during the
+  grain-resolution fix and stayed clean.
 - `metric.net_profit`'s registry `supported_dimensions: [channel]` returning
-  zero rows live (already found, consolidation plan Item 2 step 1) means
-  the live catalogue's declared capabilities aren't fully trustworthy either
-  — don't just trust `catalogue_get_metric`'s metadata at face value in
-  Sprint 2; spot-check against a live `query_metrics` call.
-- Deleting `catalogue_grounding.py`'s heuristics removes a safety net for
-  legacy/degraded LLM behavior (spec doesn't reintroduce keyword matching
-  by design) — Sprint 2's exit criteria must include the exact regression
-  cases from bug #8's fix, run against the new LLM-direct + MCP-validate
-  path, not just a "tests pass" check.
+  zero rows live was a real finding — no further action recorded against it
+  in this profile; not re-verified this pass.
+- Deleting `catalogue_grounding.py`'s heuristics removed a safety net for
+  legacy/degraded LLM behavior by design. The exact bug #8/#2 regression
+  cases now have dedicated tests against the new path
+  (`tests/unit/test_semantic_toolset_bug_regressions.py`), closing exit
+  criteria 2 and 3 below.
 
 ## Cross-profile note (added 2026-09-18)
 
@@ -171,15 +169,20 @@ previously written as if it owned them:
   inference — a wrong-but-consistent grain would pass C's precondition and
   reproduce bug #14 silently.
 
-## Exit criteria
+## Exit criteria — all met, Sprint 3 close 2026-09-19
 
-1. `tests/replay/test_data_access_characterization.py`-equivalent suite
-   passes with the new single fetch path against the same fixtures the old
-   three paths were compared on, re-run on ≥3 separate days.
-2. Bug #8's original repro ("get per day data" misclassified as
-   `session_day_of_week`) does not reproduce through the new
-   catalogue-validate path.
-3. Bug #2's original repro (metric-ID canonicalization inconsistency)
-   does not reproduce.
-4. `docs/46_ARCHITECTURE_CONSOLIDATION_PLAN.md` Item 2 marked done, pointing
-   here.
+1. **Met, by override not by the 3-day plan.** `tests/replay/test_data_access_characterization.py`
+   passed 7/7 on the day of deletion; the original "≥3 separate days" bar
+   was explicitly waived by the user rather than satisfied literally (see
+   Key risks above). Re-confirmed clean again 2026-09-19
+   (`tests/replay/` 40/40 live).
+2. **Met.** Bug #8's original repro does not reproduce through the new
+   catalogue-validate path —
+   `tests/unit/test_semantic_toolset_bug_regressions.py::test_dimensions_are_passed_through_verbatim_no_keyword_matching`
+   and siblings.
+3. **Met.** Bug #2's original repro does not reproduce — same file,
+   `test_two_spellings_of_same_metric_each_produce_their_own_artifact_no_silent_remap`.
+4. Not verified this pass whether `docs/46_ARCHITECTURE_CONSOLIDATION_PLAN.md`
+   Item 2 itself was marked done pointing here — check that file directly if
+   it matters for external tracking; it is not re-derived from source the
+   way the other three criteria are.

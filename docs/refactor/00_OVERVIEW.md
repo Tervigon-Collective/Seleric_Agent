@@ -9,8 +9,10 @@ the Sprint 0 baseline. Per-profile figures and the frozen-surface audit
 Sprint 0/1/2 Done. Profile A through Sprint 3 Done. Profile B through
 Sprint 3 Done (semantic toolset + hybrid fetch-path extract-wrap-delete;
 catalogue heuristic retirement under explicit user override of the
-3-calendar-day gate; `MetricRegistry` kept as catalogue-first wrapper;
-ActionToolset local-only pending upstream Google action). Profile C Sprint 3
+3-calendar-day gate, including the `lookup_v1` grain-resolution follow-on;
+`MetricRegistry` kept as catalogue-first wrapper; `ActionToolset` covers
+Meta only by design — Google Ads action execution is explicitly **not part
+of this program's requirements**, decided 2026-09-19). Profile C Sprint 3
 Done (validator two-signal + bug #12, models with a real forecaster, parity
 harness). The characterization ledger is retired with that override.
 
@@ -64,7 +66,8 @@ Broker, Provenance Composer) is **largely already live**, as a separate MCP
 server this repo already calls (`mcp__seleric-mcp__*`: `catalogue_search_metrics`,
 `catalogue_get_metric`, `catalogue_get_ontology`, `metrics_query`,
 `metrics_drilldown`, `insights_explain`, `actions_propose/commit/status`,
-plus the Meta/Google Ads write tools). Profile 2's job is **consolidating
+plus the Meta write tools — Google Ads execution is not part of this
+program's requirements, see `02_PROFILE_SEMANTIC_MCP.md`). Profile 2's job is **consolidating
 this repo's three duplicate in-process fetch paths onto that existing
 surface and deleting the duplicates** — not building a gateway from
 scratch. Confirm this by direct inspection of the `seleric-mcp` server repo

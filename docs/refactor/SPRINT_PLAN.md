@@ -342,12 +342,11 @@ clean — **not met; carry-forward to Sprint 3**. C's Causal work Done. The
       user turn between preview and commit; the server's short-lived bearer
       token stays process-local and never enters model-visible provenance.
       The server broker owns executor dispatch, kill switch, audit, and
-      payload idempotency. Current upstream catalogue readiness is narrower
-      than this plan assumed: its own audit says only the Meta
-      `pause_meta_ad` pattern exists (and the live spike returned an empty
-      available-action list); no approved Google Ads action contract exists
-      to validate end-to-end yet. That upstream action-catalogue gap is
-      recorded, not papered over as completed Google coverage.
+      payload idempotency. **Google Ads action execution is not part of
+      this program's requirements** (decided 2026-09-19) — the action
+      catalogue only ever needed to cover Meta (`pause_meta_ad`, the only
+      pattern the upstream `seleric-mcp` audit found live); there is no
+      Google Ads action contract to build against or wait on.
 
 **C — Model/Skeptic-logic port** *(Done — Sprint 3 close 2026-09-18)*
 - [x] `toolsets/models.py` + `models/service.py`. The registry question was
@@ -381,7 +380,8 @@ clean — **not met; carry-forward to Sprint 3**. C's Causal work Done. The
       (STRONG 0.72 > revise_below 0.55 — if those crossed, #12's shape would
       become silently unreachable). **Loop decision recorded:** REVISE consumes
       a revision and re-prompts; REJECT fails closed immediately without
-      consuming one.
+      consuming one; exhaustion mid-REVISE → `status="failed"`,
+      `error_code="INSUFFICIENT_EVIDENCE"`.
 
 **C — Behavioral parity harness (new, runs alongside)** *(Done — 2026-09-18)*
 - [x] Run the replay missions through both the old specialists and the new
@@ -403,9 +403,19 @@ clean — **not met; carry-forward to Sprint 3**. C's Causal work Done. The
       "don't know why this moved", and a test proves the harness can actually
       fail — a gate that only ever passes is not a gate.
 
-**Gate:** B's Sprint 3 deletions require Sprint 2's characterization suite
-to have already passed 3 separate days clean — do not delete on a single
-green run.
+**Gate (original):** B's Sprint 3 deletions require Sprint 2's
+characterization suite to have already passed 3 separate days clean — do
+not delete on a single green run. **Overridden by explicit user decision,
+2026-09-18** ("delete it, we are almost rebuilding this") — the deletion
+proceeded on the existing green run instead; recorded, not silently
+skipped. See `TASK_SHEET.md` Sprint 3 Profile B.
+
+**Status: CLOSED 2026-09-19** — all Sprint 3 tasks across A/B/C Done (the
+one item genuinely still open past Sprint 3, `lookup_v1` grain-resolution
+follow-on, was found and fixed 2026-09-19 — see `TASK_SHEET.md`). Google
+Ads action execution was scoped out of this program's requirements
+2026-09-19, not carried forward as a gap. Full suite: 903 passed, 1 failed
+(pre-existing, unrelated), 4 skipped.
 
 ## Sprint 4
 
