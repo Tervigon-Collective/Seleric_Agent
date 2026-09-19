@@ -41,7 +41,6 @@ dev = [
 ]
 
 [project.scripts]
-seleric-eval = "seleric_swarm.eval.cli:main"
 seleric-api = "seleric_swarm.main:serve"
 seleric-migrate = "seleric_swarm.persistence.migrate:main"
 seleric-recover = "seleric_swarm.recovery:main"

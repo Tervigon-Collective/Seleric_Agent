@@ -127,9 +127,8 @@ class Settings(BaseSettings):
 
     # V3 refactor (docs/refactor/) — when True, conversations and
     # POST /v1/missions run Agent[SelericDeps, MissionResult] instead of
-    # swarm_v2. Default False (strangler-fig: 0% until flipped). Local UI
-    # connect sets V3_AGENT_ENABLED=true in .env; tests force it off.
-    v3_agent_enabled: bool = False
+    # swarm_v2. Sprint 5: V3 is now the only mission path, default True.
+    v3_agent_enabled: bool = True
 
     workflow_name: str = "lookup_v1"
     workflow_version: str = "1.0.0"

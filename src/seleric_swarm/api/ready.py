@@ -61,7 +61,7 @@ def _mcp_probe(runtime: SwarmRuntime) -> bool:
     async def call() -> None:
         await asyncio.wait_for(
             runtime.mcp.call(
-                agent_id="coordinator_agent",
+                agent_id="v3_agent",
                 capability=capability,
                 arguments={},
             ),

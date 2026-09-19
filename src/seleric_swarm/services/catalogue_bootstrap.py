@@ -18,10 +18,10 @@ Design constraints
 - ``CatalogueBootstrap`` is created synchronously inside ``build_runtime``
   (which is sync) and warmed lazily on the first ``_resolve_measure`` call
   (which is async).  No change to ``build_runtime``'s signature needed.
-- ``coordinator_agent`` is the right agent for warming: its allowlist includes
-  catalogue listing tools and it carries no module pin, so it sees the
-  full unscoped catalogue — including cross-module views like ``canonical_pnl``
-  that are invisible when the call is scoped to ``paidmedia`` or ``commerce``.
+- ``v3_agent`` is the right agent for warming: it is the single Sprint 5
+  MCP identity and carries no module pin, so it sees the full unscoped
+  catalogue — including cross-module views like ``canonical_pnl`` that are
+  invisible when the call is scoped to ``paidmedia`` or ``commerce``.
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ class CatalogueBootstrap:
     def __init__(
         self,
         mcp: MCPGateway,
-        agent_id: str = "coordinator_agent",
+        agent_id: str = "v3_agent",
         ttl_seconds: int = DEFAULT_TTL_SECONDS,
     ) -> None:
         self._mcp = mcp

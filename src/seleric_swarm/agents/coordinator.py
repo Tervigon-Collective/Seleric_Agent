@@ -129,7 +129,7 @@ class Agent(SwarmAgent):
                 mission_id=mission_id,
                 task_id=task_id,
                 agent_id=self.agent_id,
-                agent_version=self.runtime.agents.version(self.agent_id, AGENT_VERSION),
+                agent_version=AGENT_VERSION,
                 prompt_id=spec.id,
                 prompt_version=spec.version,
                 workflow_name=self.runtime.settings.workflow_name,

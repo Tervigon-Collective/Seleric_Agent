@@ -74,7 +74,7 @@ from seleric_swarm.recovery import (
     RunWorkQueue,
 )
 from seleric_swarm.runtime import SwarmRuntime
-from seleric_swarm.swarm.blackboard import observe_mission_events
+from seleric_swarm.coordinator.observability.events import observe_mission_events
 
 router = APIRouter(prefix="/v1", tags=["conversations"])
 ArtifactClassification = Literal["ui", "factual", "derived"]
@@ -1082,9 +1082,8 @@ def _artifact_classification(
 
 
 def _dispatch_route(runtime: SwarmRuntime) -> str:
-    if getattr(getattr(runtime, "settings", None), "v3_agent_enabled", False):
-        return "v3"
-    return "swarm"
+    # Sprint 5: V3 is the only mission path.
+    return "v3"
 
 
 def _attempt_event(

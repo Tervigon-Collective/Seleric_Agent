@@ -90,20 +90,21 @@ async def test_seleric_capability_unavailable_without_env(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_seleric_capability_denied_for_wrong_agent(monkeypatch):
+async def test_seleric_action_denied_for_non_v3_agent(monkeypatch):
     monkeypatch.setenv("SELERIC_MCP_URL", "https://example.invalid/mcp")
     monkeypatch.setenv("SELERIC_MCP_TOKEN", "test-token")
     gw = MCPGateway("config/mcp_servers.yaml")
     with pytest.raises(PermissionError):
         await gw.call(
             agent_id="inventory_agent",
-            capability="seleric.metrics_query",
-            arguments={"measures": ["net_profit"], "time_range": {"preset": "last_30d"}},
+            capability="seleric.actions_propose",
+            arguments={},
         )
 
 
 @pytest.mark.asyncio
-async def test_module_is_pinned_server_side(monkeypatch):
+async def test_module_is_not_auto_pinned_without_registry(monkeypatch):
+    """Sprint 5 deleted agent_registry module pins — no silent module injection."""
     monkeypatch.setenv("SELERIC_MCP_URL", "https://example.invalid/mcp")
     monkeypatch.setenv("SELERIC_MCP_TOKEN", "test-token")
     gw = MCPGateway("config/mcp_servers.yaml")
@@ -121,11 +122,23 @@ async def test_module_is_pinned_server_side(monkeypatch):
         capability="seleric.metrics_query",
         arguments={"measures": ["net_profit"], "time_range": {"preset": "last_30d"}},
     )
+    assert "module" not in captured
+
+    captured.clear()
+    await gw.call(
+        agent_id="v3_agent",
+        capability="seleric.metrics_query",
+        arguments={
+            "measures": ["cac"],
+            "time_range": {"preset": "last_30d"},
+            "module": "finance",
+        },
+    )
     assert captured["module"] == "finance"
 
     captured.clear()
     await gw.call(
-        agent_id="finance_agent",
+        agent_id="v3_agent",
         capability="seleric.metrics_query",
         arguments={
             "measures": ["cac"],

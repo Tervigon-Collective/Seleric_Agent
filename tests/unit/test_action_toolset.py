@@ -10,10 +10,10 @@ from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.protocols.mcp.gateway import (
     SELERIC_ACTION_CAPABILITIES,
     SELERIC_CAPABILITIES,
+    MCPGateway,
     _build_allowlist,
 )
 from seleric_swarm.protocols.mcp.servers.seleric_remote import TOOLS
-from seleric_swarm.registry.agent_registry import AgentRegistry
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import actions
 
@@ -164,15 +164,24 @@ async def test_ineligible_proposal_cannot_validate_or_commit():
     assert committed.error_code == "ACTION_NOT_APPROVED"
 
 
-def test_action_tools_registered_but_not_granted_to_legacy_agents():
+def test_action_tools_registered_only_on_v3_agent():
     assert {name.removeprefix("seleric.") for name in SELERIC_ACTION_CAPABILITIES} <= set(TOOLS)
-    registry = AgentRegistry("config/agent_registry.yaml")
-    allowlist, _ = _build_allowlist(registry)
+    allowlist, _ = _build_allowlist()
 
+    assert set(allowlist) == {"v3_agent"}
     assert SELERIC_ACTION_CAPABILITIES <= allowlist["v3_agent"]
     assert SELERIC_CAPABILITIES <= allowlist["v3_agent"]
-    assert allowlist["observer_agent"].isdisjoint(SELERIC_ACTION_CAPABILITIES)
-    assert allowlist["performance_agent"].isdisjoint(SELERIC_ACTION_CAPABILITIES)
+
+    gw = object.__new__(MCPGateway)
+    gw._allowlist = allowlist
+    # Read capabilities remain open; writes stay v3_agent-only.
+    gw._authorize("observer_agent", next(iter(SELERIC_CAPABILITIES)))
+    try:
+        gw._authorize("observer_agent", next(iter(SELERIC_ACTION_CAPABILITIES)))
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("legacy agent_id must not call action capabilities")
 
 
 # ---- Sprint 3: confirmation-token expiry --------------------------------------------

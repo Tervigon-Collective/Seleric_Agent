@@ -1,12 +1,10 @@
 """PRD-005: fail CI if a new LLM-prose call site appears unaccounted for.
 
-``services/numeric_audit.py`` only guards the two known synthesis paths
-(``orchestration/synthesize.py`` for lookup_v1, ``coordinator/synthesis/
-llm_response.py`` for swarm_v2). Nothing stops a *future* ``llm.complete(...)``/
-``generate_text(...)`` call site from feeding free text into a user-facing
-response without going through it. This test enumerates every such call site
-today and fails if an unrecognized one shows up, forcing whoever adds it to
-explicitly classify it here instead of silently skipping the audit.
+Nothing stops a *future* ``llm.complete(...)``/``generate_text(...)`` call
+site from feeding free text into a user-facing response without going
+through ``services/numeric_audit.py``. This test enumerates every such call
+site today and fails if an unrecognized one shows up, forcing whoever adds
+it to explicitly classify it here instead of silently skipping the audit.
 """
 
 from __future__ import annotations
@@ -20,10 +18,6 @@ _SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "seleric_swarm"
 
 # file (relative to src/seleric_swarm) -> why it's safe without numeric_audit.
 _ALLOWLIST: dict[str, str] = {
-    # Audited: both wrap their LLM output in numeric_audit.unaudited_numbers
-    # before it reaches final_response.
-    "orchestration/synthesize.py": "audited (lookup_v1 synthesis)",
-    "coordinator/synthesis/llm_response.py": "audited (swarm_v2 synthesis)",
     # Not prose producers: LLMPort implementations / wrappers themselves,
     # not callers deciding what to do with the text.
     "llm/metering.py": "LLMPort wrapper, forwards whatever the caller sent",
@@ -67,13 +61,3 @@ def test_every_llm_prose_call_site_is_classified() -> None:
         "returning it, then add it to the allowlist as 'audited'. Otherwise "
         "add it with a comment explaining why it's safe."
     )
-
-
-def test_known_synthesis_paths_still_call_the_audit() -> None:
-    for rel in ("orchestration/synthesize.py", "coordinator/synthesis/llm_response.py"):
-        text = (_SRC_ROOT / rel).read_text(encoding="utf-8")
-        assert "unaudited_numbers" in text, (
-            f"{rel} used to call services.numeric_audit.unaudited_numbers on its "
-            "LLM output but no longer does — the numeric-fabrication guard on "
-            "this synthesis path was removed."
-        )

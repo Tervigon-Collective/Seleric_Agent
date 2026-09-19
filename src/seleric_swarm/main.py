@@ -31,7 +31,6 @@ from seleric_swarm.observability.tracing import (
     instrument_fastapi,
     traced_span,
 )
-from seleric_swarm.orchestration.dispatch import _SWARM_INTENTS, run_any_mission
 from seleric_swarm.runtime import SwarmRuntime
 
 # event families the control plane emits (without the trailing "_")
@@ -372,46 +371,10 @@ async def create_mission(
     # Correlate with X-Request-ID middleware (echoed on the response).
     request_id = str(getattr(request.state, "request_id", None) or uuid4().hex)
     session_id = req.session_id or uuid4().hex
-    v3_enabled = bool(getattr(runtime.settings, "v3_agent_enabled", False))
-
-    if v3_enabled:
-        route_hint = "v3"
-    else:
-        # Single LLM classification drives both the routing decision and the
-        # "is this a real query" rejection — no keyword/regex gating. A query the
-        # LLM can't map to any metric or supported intent (e.g. "?????") reports
-        # unresolved=True with its own reason; anything else routes on its intents.
-        from seleric_swarm.coordinator.intake.llm_classifier import classify_query_via_llm
-
-        classification = await classify_query_via_llm(
-            query,
-            runtime=runtime,
-            timezone=timezone,
-            as_of=as_of,
-            request_id=request_id,
-            session_id=session_id,
-        )
-        if classification is None or classification.unresolved:
-            # Classification is occasionally non-deterministic even at
-            # temperature=0 (confirmed directly: the same query, re-classified
-            # repeatedly, sometimes comes back unresolved and sometimes doesn't).
-            # This is the first, hardest gate in the request — a false "unresolved"
-            # here 400s the whole request before routing/retry logic downstream
-            # ever gets a chance to run. One retry before rejecting.
-            classification = await classify_query_via_llm(
-                query,
-                runtime=runtime,
-                timezone=timezone,
-                as_of=as_of,
-                request_id=request_id,
-                session_id=session_id,
-            )
-        if classification is None or classification.unresolved:
-            reason = (classification.unsupported_reason if classification else None) or (
-                "Query does not name a resolvable metric or a supported analysis intent."
-            )
-            raise HTTPException(status_code=400, detail=reason)
-        route_hint = "swarm" if set(classification.intents) & _SWARM_INTENTS else "lookup"
+    # Sprint 5: V3 is the only mission path — swarm_v2's LLM-classification
+    # routing gate (diagnostic/predictive/prescriptive -> "swarm",
+    # everything else -> "lookup") was retired along with the pipeline it fed.
+    route_hint = "v3"
     try:
         from seleric_swarm.observability.flow import log_mission_step
 
@@ -419,7 +382,7 @@ async def create_mission(
             None,
             "mission_classified",
             route=route_hint,
-            intents=[] if v3_enabled else list(classification.intents),
+            intents=[],
             query=query[:160],
             request_id=request_id,
         )
@@ -428,7 +391,7 @@ async def create_mission(
 
     # Async accept path.
     if not req.wait:
-        mission_id = new_mission_id(swarm_likely=route_hint == "swarm")
+        mission_id = new_mission_id(swarm_likely=False)
         _register_mission(mission_id)
         accepted = await enqueue_durable_mission(
             runtime,
@@ -454,11 +417,7 @@ async def create_mission(
         )
         return accepted
 
-    dispatched = await (
-        run_v3_mission
-        if v3_enabled
-        else run_any_mission
-    )(
+    dispatched = await run_v3_mission(
         runtime,
         query=query,
         timezone=timezone,

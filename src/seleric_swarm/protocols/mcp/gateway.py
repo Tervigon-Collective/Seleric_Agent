@@ -11,7 +11,6 @@ import yaml
 from seleric_swarm.paths import repo_root
 from seleric_swarm.protocols.mcp.servers.seleric_remote import TOOLS as SELERIC_TOOLS
 from seleric_swarm.protocols.mcp.servers.seleric_remote import build_seleric_servers
-from seleric_swarm.registry.agent_registry import AgentRegistry
 
 # Every domain agent with catalogue access gets the same read-only tool set
 # (a catalogue-level constant, not a per-domain one); what differs per agent is
@@ -42,41 +41,26 @@ SELERIC_MODULE_ARG_TOOLS = {
 }
 
 
-def _build_allowlist(agents: AgentRegistry) -> tuple[dict[str, set[str]], dict[str, str]]:
-    """Per-agent MCP allowlist + module pin, entirely from config/agent_registry.yaml."""
+def _build_allowlist() -> tuple[dict[str, set[str]], dict[str, str]]:
+    """MCP allowlist + module pin for the single V3 agent.
 
-    allowlist: dict[str, set[str]] = {}
-    module_map: dict[str, str] = {}
-    observer_caps: set[str] = set()
-    for agent in agents.domain_agents(enabled_only=True):
-        aid = agent["id"]
-        caps = set(agent.get("mcp_capabilities") or [])
-        module = agent.get("seleric_module")
-        if module:
-            caps |= SELERIC_CAPABILITIES
-            module_map[aid] = module
-        allowlist[aid] = caps
-        observer_caps |= caps
-    allowlist["observer_agent"] = observer_caps
-    allowlist["coordinator_agent"] = {
-        "seleric.catalogue_search_metrics",
-        "seleric.catalogue_list_metrics",
-        "seleric.catalogue_bootstrap",
-        "seleric.catalogue_get_metric",
-        "seleric.catalogue_list_dimensions",
-        "seleric.catalogue_resolve_term",
-        "seleric.catalogue_resolve_dimension",
-    }
-    # The new single-agent runtime gets the action surface without granting
-    # write capabilities to the legacy observer/domain agents. The remote MCP
-    # server still enforces caller scopes, proposal eligibility, explicit
-    # confirmation tokens, its write kill switch, and executor-level policy.
-    allowlist["v3_agent"] = SELERIC_CAPABILITIES | SELERIC_ACTION_CAPABILITIES
-    return allowlist, module_map
+    Sprint 5: the legacy observer/domain/coordinator agents this allowlist
+    used to also cover (read from ``config/agent_registry.yaml`` via
+    ``AgentRegistry``) were deleted along with swarm_v2 — ``v3_agent`` is the
+    only caller left, so this is just its capability set now, not a
+    registry-driven per-agent lookup.
+    """
+
+    # The single-agent runtime gets the action surface without granting
+    # write capabilities to anything else. The remote MCP server still
+    # enforces caller scopes, proposal eligibility, explicit confirmation
+    # tokens, its write kill switch, and executor-level policy.
+    allowlist = {"v3_agent": SELERIC_CAPABILITIES | SELERIC_ACTION_CAPABILITIES}
+    return allowlist, {}
 
 
 class MCPGateway:
-    def __init__(self, config_path: str, agents: AgentRegistry | None = None) -> None:
+    def __init__(self, config_path: str) -> None:
         root = repo_root()
         path = Path(config_path)
         if not path.is_absolute():
@@ -96,9 +80,7 @@ class MCPGateway:
                     url=url, token=token, capability_prefix=cfg.get("capability_prefix", "seleric")
                 ):
                     self._servers[remote.capability] = remote
-        if agents is None:
-            agents = AgentRegistry(str(root / "config" / "agent_registry.yaml"))
-        self._allowlist, self._module = _build_allowlist(agents)
+        self._allowlist, self._module = _build_allowlist()
         self.invocations: list[dict[str, Any]] = []
 
     @property
@@ -112,6 +94,16 @@ class MCPGateway:
         return self._module.get(agent_id)
 
     def _authorize(self, agent_id: str, capability: str) -> None:
+        # Writes stay v3_agent-only. Reads are open to any caller identity —
+        # surviving service paths (catalogue warmup, ontology, business_state)
+        # still stamp coordinator/observer/domain agent_ids for provenance,
+        # and there is no multi-agent permission model left after Sprint 5.
+        if capability in SELERIC_ACTION_CAPABILITIES:
+            if agent_id != "v3_agent":
+                raise PermissionError(f"agent {agent_id} is not allowed to call {capability}")
+            return
+        if capability in SELERIC_CAPABILITIES:
+            return
         allowed = self._allowlist.get(agent_id, set())
         if capability not in allowed:
             raise PermissionError(f"agent {agent_id} is not allowed to call {capability}")

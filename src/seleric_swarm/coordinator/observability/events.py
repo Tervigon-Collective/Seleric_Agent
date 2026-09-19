@@ -7,11 +7,37 @@ can join without ad-hoc parsing.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
 
-from seleric_swarm.swarm.blackboard import Blackboard
+MissionEventObserver = Callable[[dict[str, Any]], None]
+_event_observer: ContextVar[MissionEventObserver | None] = ContextVar(
+    "seleric_mission_event_observer", default=None
+)
+
+
+@contextmanager
+def observe_mission_events(observer: MissionEventObserver) -> Iterator[None]:
+    """Observe mission events emitted in this async context."""
+    token = _event_observer.set(observer)
+    try:
+        yield
+    finally:
+        _event_observer.reset(token)
+
+
+def notify_mission_event(event: dict[str, Any]) -> None:
+    """Notify the active observer without changing execution semantics."""
+    observer = _event_observer.get()
+    if observer is not None:
+        try:
+            observer(dict(event))
+        except Exception:
+            return
+
 
 # Prefix families required by the observability contract.
 EVENT_FAMILIES = (
@@ -102,61 +128,3 @@ def family_of(kind: str) -> str | None:
 
 def now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-class MissionEventEmitter:
-    """Appends envelope-normalized events onto a Blackboard."""
-
-    def __init__(
-        self,
-        blackboard: Blackboard,
-        *,
-        workflow_name: str = "swarm_v2",
-        workflow_version: str = "1.3.0",
-    ) -> None:
-        self.blackboard = blackboard
-        self.workflow_name = workflow_name
-        self.workflow_version = workflow_version
-
-    def emit(self, kind: str, **data: Any) -> dict[str, Any]:
-        canon = canonical_kind(kind)
-        payload = {k: v for k, v in data.items() if v is not None}
-        if kind != canon:
-            payload.setdefault("legacy_kind", kind)
-        event = {
-            "kind": canon,
-            "ts": now_iso(),
-            "seq": len(self.blackboard.events) + 1,
-            "mission_id": self.blackboard.mission_id,
-            "workflow_name": self.workflow_name,
-            "workflow_version": self.workflow_version,
-            "family": family_of(canon),
-            **payload,
-        }
-        self.blackboard.append_event(event)
-        try:
-            from seleric_swarm.observability.flow import log_mission_event
-
-            log_mission_event(event)
-        except Exception:  # noqa: S110 - telemetry must never block event emission
-            pass
-        return event
-
-    def kinds(self) -> list[str]:
-        return [str(e["kind"]) for e in self.blackboard.events if e.get("kind")]
-
-
-def summarize_event_families(events: Iterable[dict[str, Any]]) -> dict[str, int]:
-    counts: dict[str, int] = {f.rstrip("_"): 0 for f in EVENT_FAMILIES}
-    for event in events:
-        fam = event.get("family") or family_of(str(event.get("kind") or ""))
-        if fam in counts:
-            counts[fam] += 1
-    return counts
-
-
-def assert_lifecycle_coverage(events: list[dict[str, Any]]) -> list[str]:
-    """Return missing required families for a completed swarm_v2 mission."""
-    present = summarize_event_families(events)
-    required = ("mission", "decomposition", "task")
-    return [name for name in required if present.get(name, 0) == 0]

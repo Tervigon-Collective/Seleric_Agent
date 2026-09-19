@@ -15,7 +15,6 @@ import pytest
 from seleric_swarm.services.business_state.detectors import RobustZScoreDetector
 from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.swarm.providers.base import AnomalyFinding, MetricReading
-from seleric_swarm.swarm.providers.mcp_data import build_mcp_bundle
 from seleric_swarm.swarm.providers.provider_selection import ConfiguredAnomalyDetector
 from seleric_swarm.swarm.providers.template import TemplateAnomalyDetector
 
@@ -36,19 +35,6 @@ def test_catalogue_id_resolves_to_metric_override():
     assert detector._strategy_for(MetricReading(metric_id="metric.units_sold", value=1, baseline=1)) == "template"
     # commerce domain -> robust_zscore even though this specific metric id isn't overridden
     assert detector._strategy_for(MetricReading(metric_id="commerce_net_revenue_daily", value=1, baseline=1)) == "robust_zscore"
-
-
-@pytest.mark.asyncio
-async def test_build_mcp_bundle_returns_configured_detector_not_bare_template(runtime):
-    bundle, _stats = build_mcp_bundle(
-        mcp=runtime.mcp,
-        execution_mode="staging",
-        metrics=runtime.metrics,
-        agents=runtime.agents,
-        business_state=runtime.business_state,
-    )
-    assert isinstance(bundle.anomaly, ConfiguredAnomalyDetector)
-    assert not isinstance(bundle.anomaly, TemplateAnomalyDetector)
 
 
 @pytest.mark.asyncio

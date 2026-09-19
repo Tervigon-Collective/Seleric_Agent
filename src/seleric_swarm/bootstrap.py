@@ -28,7 +28,6 @@ from seleric_swarm.paths import repo_root
 from seleric_swarm.persistence.postgres import build_store
 from seleric_swarm.prompts.registry import PromptRegistry
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
-from seleric_swarm.registry.agent_registry import AgentRegistry
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.business_state import BusinessStateService
 from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
@@ -63,8 +62,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     configure_logging(settings)
     configure_langsmith_env(settings)
     configure_opentelemetry(settings)
-    agents = AgentRegistry(str(repo_root() / "config" / "agent_registry.yaml"))
-    mcp = MCPGateway(settings.mcp_config_path, agents=agents)
+    mcp = MCPGateway(settings.mcp_config_path)
     # CatalogueBootstrap is created eagerly but NOT warmed here — build_runtime
     # is sync, warming is async.  The first _resolve_measure() call triggers
     # refresh_if_stale() which does the actual MCP call.
@@ -129,7 +127,6 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         prompts=PromptRegistry(settings.prompts_dir, settings.prompt_versions_path),
         mcp=mcp,
         metrics=metrics,
-        agents=agents,
         store=build_store(
             settings.persistence_backend,
             settings.database_url,

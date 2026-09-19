@@ -79,7 +79,7 @@ async def decompose_mission_via_llm(
             session_id=session_id or uuid4().hex,
             mission_id=mission_id or uuid4().hex,
             agent_id=agent_id,
-            agent_version=runtime.agents.version(agent_id, AGENT_VERSION),
+            agent_version=AGENT_VERSION,
             prompt_id=spec.id,
             prompt_version=spec.version,
             workflow_name=runtime.settings.workflow_name,

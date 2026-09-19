@@ -30,16 +30,10 @@ from seleric_swarm.services.mcp_query import (
     row_date,
 )
 
-# Single agent identity for MCPGateway allowlisting/module-pin lookup — the
-# new runtime has one agent loop, not per-domain agent ids (see
-# docs/refactor/01_PROFILE_RUNTIME.md: no handoff concept in the new loop).
-# Reuses "observer_agent" (config/agent_registry.yaml already unions every
-# domain agent's seleric capabilities onto it) rather than adding a new
-# entry to a registry this migration retires (AgentRegistry/agent_registry.yaml
-# per-specialist flags go away once toolset registration replaces it,
-# docs/refactor/01_PROFILE_RUNTIME.md "Retires"). Revisit once Profile A's
-# real toolset-registration replacement lands.
-_AGENT_ID = "observer_agent"
+# Single agent identity for MCPGateway allowlisting — the V3 runtime has one
+# agent loop (see docs/refactor/01_PROFILE_RUNTIME.md). Write/actions stay
+# gated on this id in MCPGateway._authorize; reads accept any caller.
+_AGENT_ID = "v3_agent"
 
 
 def _mcp_error_result(exc: Exception) -> ToolResult:
