@@ -16,6 +16,9 @@ from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from openai import APITimeoutError as OpenAIAPITimeoutError
+from pydantic_ai.exceptions import ModelHTTPError
+
 from seleric_swarm.agent.agent import build_seleric_agent
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.agent.model import resolve_v3_model
@@ -69,16 +72,32 @@ def _lookup_alias(query: str) -> MetricDefinition | None:
     return _alias_registry().resolve_alias(query)
 
 
+def _flatten_exceptions(exc: BaseException) -> list[BaseException]:
+    """Unwrap ``BaseExceptionGroup`` (e.g. ``FallbackModel``'s all-candidates-failed
+    group) into its leaf exceptions so failure classification can inspect the
+    actual provider errors, not just the group's own summary message."""
+    if isinstance(exc, BaseExceptionGroup):
+        flat: list[BaseException] = []
+        for sub in exc.exceptions:
+            flat.extend(_flatten_exceptions(sub))
+        return flat
+    return [exc]
+
+
 def _user_facing_agent_failure(exc: BaseException) -> tuple[str, str]:
-    """Chat-safe failure text — never dump provider HTTP bodies to the UI."""
-    text = str(exc)
-    lowered = text.lower()
-    if "429" in text or "ratelimit" in lowered or "rate limit" in lowered:
+    """Chat-safe failure text — never dump provider HTTP bodies to the UI.
+
+    Classifies by exception type/attributes, not string content: a
+    ``FallbackExceptionGroup`` from an exhausted model fallback chain carries
+    no "429" in its own message, only in its wrapped sub-exceptions.
+    """
+    causes = _flatten_exceptions(exc)
+    if any(isinstance(c, ModelHTTPError) and c.status_code == 429 for c in causes):
         return (
             "The language model is rate-limited right now. Please retry in a moment.",
             "LLM_RATE_LIMITED",
         )
-    if "timeout" in lowered:
+    if any(isinstance(c, OpenAIAPITimeoutError) for c in causes):
         return ("The agent timed out. Please retry.", "V3_AGENT_TIMEOUT")
     return (
         "The agent could not complete this question. Please retry.",
