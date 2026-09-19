@@ -174,3 +174,52 @@ async def test_time_followup_is_not_swallowed_as_conversation(runtime, monkeypat
 
     assert response["route"] == "lookup"
     assert "4789.73" in response["result"]["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_run_any_mission_accepts_v3_style_kwargs_on_swarm_route(runtime, monkeypatch):
+    """Regression, found live 2026-09-19: ``main.py`` now calls
+    ``run_v3_mission``/``run_any_mission`` with the same unified kwarg set
+    (``workspace_id``/``owner_user_id``/``thread_id``/``run_id``) so it can
+    pick either at request time via ``v3_agent_enabled``. Those extra kwargs
+    used to fall into ``run_any_mission``'s ``**swarm_only`` and get
+    forwarded straight into ``run_swarm_v2_mission(**swarm_only)``, which
+    doesn't accept them -- a live ``TypeError`` on every swarm-routed
+    mission, not just a theoretical one."""
+
+    async def force_swarm(*args, **kwargs):
+        return "swarm"
+
+    async def fake_swarm(*args, **kwargs):
+        from seleric_swarm.swarm.mission import SwarmMissionResult
+
+        return SwarmMissionResult(
+            mission_id="MS-kwargs",
+            status="completed",
+            query="why did CAC rise?",
+            complexity="L0",
+            initial_mission_lead="coordinator_agent",
+            mission_lead="coordinator_agent",
+            leadership_epoch=0,
+            team=[],
+            handoff_history=[],
+            artifacts={},
+            final_response="ok",
+        )
+
+    monkeypatch.setattr(dispatch, "route_for", force_swarm)
+    monkeypatch.setattr("seleric_swarm.coordinator.graph.run_swarm_v2_mission", fake_swarm)
+
+    response = await dispatch.run_any_mission(
+        runtime,
+        query="why did CAC rise?",
+        mission_id="MS-kwargs",
+        request_id="request-kwargs",
+        session_id="thread-kwargs",
+        workspace_id="ws-1",
+        owner_user_id="user-1",
+        thread_id="thread-kwargs",
+        run_id="request-kwargs",
+    )
+
+    assert response["route"] == "swarm"

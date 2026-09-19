@@ -238,6 +238,10 @@ async def run_any_mission(
     request_id: str | None = None,
     mission_id: str | None = None,
     context_bundle: dict[str, Any] | None = None,
+    workspace_id: str | None = None,
+    owner_user_id: str | None = None,
+    thread_id: str | None = None,
+    run_id: str | None = None,
     **swarm_only: Any,
 ) -> dict[str, Any]:
     """Classify, then dispatch to the lookup fast path or the dynamic swarm.
@@ -245,7 +249,19 @@ async def run_any_mission(
     Shared kwargs (``session_id`` / ``request_id`` / ``mission_id``) are forwarded
     to whichever route runs. ``**swarm_only`` (e.g. ``providers``) applies only
     when the swarm route is taken and is ignored on the lookup route.
+
+    ``workspace_id``/``owner_user_id``/``thread_id``/``run_id`` are accepted
+    but not forwarded — ``main.py`` now calls this and ``agent.runner.
+    run_v3_mission`` with the same unified kwarg set (``v3_enabled`` picks
+    which one runs), and only the V3 runner uses these; neither
+    ``run_swarm_v2_mission`` nor ``run_lookup_fast_path``/``run_mission``
+    accept them (``main.py`` already re-applies ``workspace_id``/
+    ``owner_user_id`` onto the persisted store record itself after this
+    returns). Named explicitly here, rather than left to land in
+    ``**swarm_only`` and blow up ``run_swarm_v2_mission(**swarm_only)`` with
+    an unexpected-keyword ``TypeError`` (found live 2026-09-19).
     """
+    del workspace_id, owner_user_id, thread_id, run_id
     cancellation = getattr(runtime, "cancellation", None)
     if mission_id and cancellation is not None and cancellation.is_requested(mission_id):
         from seleric_swarm.cancellation import MissionCancelledError

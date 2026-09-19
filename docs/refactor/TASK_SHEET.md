@@ -790,3 +790,33 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   and raises `NameError` when the tool actually registers. Profile A hit this in
   `dbdc3c3` and reversed the convention across all five existing toolsets;
   `test_v3_agent_wiring.py` is the guard, and it now covers all 23.
+- 2026-09-19: **Fixed a real, live regression: `run_swarm_v2_mission() got an
+  unexpected keyword argument 'workspace_id'`.** `main.py`'s live
+  `/v1/missions` handler now calls `run_v3_mission`/`run_any_mission`
+  behind the same unified kwarg set (`workspace_id`/`owner_user_id`/
+  `thread_id`/`run_id`, picked at request time by `v3_agent_enabled`) so
+  either runner sees the same call shape. `run_v3_mission` has named
+  params for all four; `run_any_mission` didn't, so they fell into its
+  `**swarm_only` and got forwarded blind into
+  `run_swarm_v2_mission(**swarm_only)`, which doesn't accept them —
+  breaking every swarm-routed mission on the live path, not a theoretical
+  edge case (this was 6 of the 8 full-suite failures observed earlier in
+  this session). Fixed in `orchestration/dispatch.py::run_any_mission`:
+  the four kwargs are now named parameters, accepted and explicitly
+  dropped (`del workspace_id, owner_user_id, thread_id, run_id`) rather
+  than silently forwarded — neither the lookup path nor
+  `run_swarm_v2_mission` use them; `main.py` already re-applies
+  `workspace_id`/`owner_user_id` onto the persisted store record itself
+  after the call returns. New regression test:
+  `tests/unit/test_dispatch_routing.py::
+  test_run_any_mission_accepts_v3_style_kwargs_on_swarm_route`. Verified:
+  the 6 originally-failing tests all pass now; full suite **978 passed, 1
+  failed (the same pre-existing `test_health_combo_never_returns_running`),
+  5 skipped** — the flaky `test_classify_resolves_grain_via_live_catalogue_
+  not_left_empty` also passed this run (live-Cube-data-dependent, not a
+  deterministic bug). `ruff check src` clean; `mypy src` has 8 remaining
+  errors, all pre-existing and none touched by this fix: 2 new ones in
+  Profile C's `analytics/breakdown.py` (Sprint 4 addition), and the 6
+  already-recorded ones in `agent/runner.py`/`main.py` from other
+  concurrent work — left alone rather than edited mid-flight on files
+  another session owns right now.
