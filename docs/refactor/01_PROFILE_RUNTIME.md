@@ -112,24 +112,28 @@ those two bugs' original repro cases before cutover.
   today runs long enough to need durability, defer this to a later sprint
   and ship synchronous-only first (ponytail: don't build durability for a
   workload that doesn't need it yet).
-- **Found 2026-09-18, fixed the same day (not "not planned" any more).**
+- **Found 2026-09-18, fixed/mitigated (not "not planned" any more).**
   The live `office-ui/` frontend (`office-ui/src/api/missions.ts` →
   `GET /v1/office/missions*`) is driven by
   `api/office/normalize.py::build_office_snapshot`, which reads the
-  swarm_v2-shaped raw mission dict directly. None of that shape exists on
-  the V3 `MissionResult`/`ArtifactStore` — a straight cutover would have
-  left the Office UI blank/crashing for every V3 mission. **Done**:
-  `api/v3_state.py` (shared V3 Mission/Artifact store singletons —
+  swarm_v2-shaped raw mission dict directly — `mission_lead`,
+  `leadership_epoch`, `handoff_history`, `tasks` (for the parallel-task
+  fan-out view), and `artifacts` as typed buckets (`hypothesis`/
+  `prediction`/`strategy`/`skeptic`/...). None of that shape exists on the
+  V3 `MissionResult`/`ArtifactStore` (`agent/output.py`,
+  `agent/artifacts.py`) — a straight cutover would have left the Office UI
+  blank/crashing for every V3 mission. **Mitigated 2026-09-19 (local flag
+  only):** `api/v3_state.py` (shared V3 Mission/Artifact store singletons —
   `api/missions.py` previously built a throwaway store per request and
-  never persisted the `Mission`, so it was unretrievable after the
-  response) + `api/office/v3_adapter.py::v3_raw_snapshot()` (translates a
-  V3 `Mission`+`Artifact`s into the same raw dict shape
-  `build_office_snapshot` already renders, reusing that logic rather than
-  forking it), wired into `api/office/gateway.py::_raw()` as a fallback.
-  V3's one agent maps to the `"coordinator"` office-ui node as a
-  stand-in, not a real per-specialist mapping — that narrower scope is
-  still open, tracked in exit criterion 5 below, but the blank/crash
-  failure mode itself is fixed.
+  never persisted the `Mission`) + `api/office/v3_adapter.py::v3_raw_snapshot()`
+  (translates a V3 `Mission`+`Artifact`s into the same raw dict shape
+  `build_office_snapshot` already renders), wired into
+  `api/office/gateway.py::_raw()` as a fallback; `agent/runner.py` persists
+  into both stores, and office-ui Activity hydrates `route=v3`. V3's one
+  agent maps to the `"coordinator"` office-ui node as a stand-in, not a
+  real per-specialist mapping — a genuine V3-native office view is still
+  exit criterion 5. Production canary % is still off.
+
 
 ## Exit criteria (parity gate before old pipeline deletion)
 

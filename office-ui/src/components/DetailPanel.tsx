@@ -88,7 +88,7 @@ export function DetailPanel() {
       >
         {tab === "Activity" && (
           <section><h2>Run activity</h2>{visibleTimeline.slice(-30).reverse().map((event) => (
-            <div className="activity-row" key={event.eventId}><span className="activity-dot" /><div><strong>{event.summary || event.eventType.replaceAll("_", " ")}</strong><small>{event.agentId || "Swarm"} · #{event.seq}</small></div></div>
+            <div className="activity-row" key={event.eventId}><span className="activity-dot" /><div><strong>{event.summary || event.eventType.replaceAll("_", " ")}</strong><small>{event.agentId || (route === "v3" ? "Seleric" : "Swarm")} · #{event.seq}</small></div></div>
           ))}{!visibleTimeline.length && <Empty text={threadId ? "Activity appears here while this conversation runs." : "Select or start a conversation to see its activity."} />}</section>
         )}
         {tab === "Context" && <section><h2>Thread context</h2><dl>

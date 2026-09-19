@@ -51,8 +51,16 @@ def _canonical_metric_id(metric_id: str, registry: Any) -> str:
     """Resolve any spelling of a metric (bare catalogue name, "metric." id,
     live-catalogue id) to one canonical id via the shared MetricRegistry —
     generic across every metric, no per-metric string list to maintain."""
-    if registry is not None:
-        return registry.canonical_id(metric_id)
+    if registry is None:
+        return metric_id
+    canonical = getattr(registry, "canonical_id", None)
+    if callable(canonical):
+        return str(canonical(metric_id))
+    getter = getattr(registry, "get", None)
+    if callable(getter):
+        item = getter(metric_id)
+        if item is not None:
+            return str(getattr(item, "id", metric_id) or metric_id)
     return metric_id
 
 

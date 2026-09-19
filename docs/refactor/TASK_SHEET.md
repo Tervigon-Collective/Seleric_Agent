@@ -34,7 +34,7 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 | Task | Status | Evidence |
 |---|---|---|
 | `agent/agent.py`/`dependencies.py`/`output.py` skeletons | Done | `src/seleric_swarm/agent/{agent,dependencies,output,artifacts,instructions}.py`; `SelericAgent = Agent[SelericDeps, MissionResult]` built and run end-to-end with a fixed-output `TestModel` stub (no real toolsets) — verified via `agent.run()` smoke test and `tests/unit/test_v3_missions_stub.py`. Added `pydantic-ai-slim>=2.45` to `pyproject.toml` (slim variant chosen deliberately — full `pydantic-ai` pulls ~38 packages incl. mcp/anthropic/google-genai/logfire SDKs unrelated to this repo's own LLM port; slim adds only 5: `pydantic-ai-slim`, `pydantic-graph`, `griffelib`, `logfire-api`, `genai-prices`). `MissionResult`'s exact shape is a draft, not frozen — see `agent/output.py` module docstring: spec §36's text isn't captured anywhere in this repo, only `CONTRACTS.md`'s four Sprint-0 contracts are frozen. |
-| `POST /v1/missions` behind flag, 0% traffic | Done | `src/seleric_swarm/api/missions.py` — a standalone `APIRouter`, deliberately **not** `include_router`-ed into `main.py`'s live app (that endpoint is large and already serves 100% of production traffic per the strangler-fig rule; replacing it in place would violate that rule, not honor it). `settings.v3_agent_enabled` (new, default `False`) gates it with a 501 for when it does get mounted. Tested in isolation: `tests/unit/test_v3_missions_stub.py` (2 cases: disabled-by-default 501, enabled stub-agent 200). |
+| `POST /v1/missions` behind flag, 0% traffic | Done (local flag only — not a production canary %) | `src/seleric_swarm/api/missions.py` remains a standalone unmounted stub (strangler-fig: do not replace the live endpoint in place). Live traffic is gated in `main.py` + `api/async_missions.py`: when `settings.v3_agent_enabled` is True, conversations and `POST /v1/missions` call `agent/runner.py::run_v3_mission` instead of swarm_v2. Default False; `tests/conftest.py` forces it off so the suite stays on swarm_v2. Local `.env` may set `V3_AGENT_ENABLED=true` for a developer canary. Office list/snapshot reuse `v3_adapter.v3_raw_snapshot`. Evidence: `tests/unit/test_v3_ui_connect.py`. |
 | Mission/Artifact stores | Done | `src/seleric_swarm/state/{missions,artifacts}.py` — `InMemoryMissionStore`/`InMemoryArtifactStore`, deliberately separate from swarm_v2's `persistence/memory.py` (must not share mutable state with the pipeline still carrying 100% of traffic). `ArtifactStore.put` enforces immutability (rule 8) and calls `Artifact.require_provenance()`. Verified: `tests/unit/test_v3_state_stores.py`. |
 | Evals harness scaffolding | Done (loader only — see evidence) | `src/seleric_swarm/evals/golden_dataset.py::load_golden_dataset()` loads `eval/datasets/lookup_commerce.jsonl` into typed `EvalCase`s. Verified: `tests/unit/test_v3_golden_dataset.py`. Explicitly NOT done: extracting `tests/replay/`'s pytest-embedded cases into this shape, and wiring an actual scorer (`pydantic_evals` or hand-rolled) — deferred honestly, see `evals/__init__.py` docstring, because Sprint 1's agent is a fixed-output stub and scoring against it would only prove the stub returns its own hardcoded text. |
 
@@ -131,16 +131,17 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Profile A — Cutover gate
 | Task | Status | Evidence |
 |---|---|---|
-| Replay set run through new loop, cost/latency recorded | Not started | |
-| Execution limits tuned to acceptable cost/latency | Not started | |
-| Figures documented | Not started | |
-| Canary flag flipped | Not started | |
+| Toolset wiring (prerequisite for the row below — not itself a Sprint 4 checklist line, but blocking) | Done | `agent/agent.py` registers all 15 tools with a real implementation (`toolsets/{semantic,analytics,causal,models,actions}.py`) on `SelericAgent` — previously zero tools were registered. Found and fixed a real, repo-wide latent bug while wiring: all 5 toolset modules imported `SelericDeps` only under `if TYPE_CHECKING:`, so `RunContext[SelericDeps]` annotations resolved fine for a human/mypy reading the file but raised `NameError: name 'SelericDeps' is not defined` the moment pydantic_ai's real tool-registration path called `get_type_hints()` on them at runtime — nothing had exercised that path before this wiring existed. Promoted the import to a real top-level import in all 5 files (no circular-import risk — `agent/dependencies.py` doesn't import `toolsets/*`). Also fixed 2 pre-existing `mypy` errors surfaced along the way (`agent/validation/signals.py`'s `_payload()` needed `type[BaseModel]` not bare `type`; `toolsets/analytics.py::detect_anomalies` needed an explicit `cast` where a list comprehension's `value is not None` filter doesn't survive tuple unpack/slice narrowing) and added `statsmodels.*` to `pyproject.toml`'s mypy override list (same treatment as `dowhy`/`pandas`/`numpy` — untyped third-party lib). The 0%-traffic stub path (`TestModel(call_tools=[])`) is unaffected — tools are registered but never invoked by it, verified explicitly. New tests: `tests/unit/test_v3_agent_wiring.py` (3 cases: all 15 tools present, all 15 register cleanly, stub model still calls zero of them). `ruff check src` + `mypy src` both clean repo-wide (341 source files) after all fixes. |
+| Replay set run through new loop, cost/latency recorded | Partial — 3 real queries run, 2 real bugs found | Flagged the LLM-spend decision to the user first (real cost, real `seleric-mcp` calls) rather than substituting a zero-cost scripted model and calling it cost data; user confirmed live testing is intentional (`V3_AGENT_ENABLED=true` in the real `.env`). Ran 3 queries through `agent/runner.py::run_v3_mission()` against the real Azure-backed model + live `seleric-mcp` (not a mock): "What were net sales yesterday?" (10.64s, `INSUFFICIENT_EVIDENCE` — see finding 1 below), "What were gross sales yesterday?" (**144.73s**, `status=completed` with an **empty `final_response`** — see finding 2), "Why has CAC increased over the last three days?" (56.62s, completed, coherent response citing the anomaly detector). **Finding 1 (correctness):** the "net sales yesterday" query's own error text says `2024-09-16`, not `2026-09-16` — the model appears to be resolving "yesterday" from its own training-era sense of the date rather than the `as_of` passed into `SelericDeps`, because `agent/instructions.py`'s system prompt never states the current date/`as_of` as text; nothing in `SelericDeps` is currently surfaced to the model as "today is X." Real, not a fixture quirk. **Finding 2 (validation gap):** a `status="completed"` mission with an empty `final_response` should be structurally impossible — `agent/validation.py::EvidenceValidator.validate()` (Sprint 2 Profile A) explicitly checks for exactly this — but `agent/runner.py::run_v3_mission()` calls `agent.run()` directly, **not** `run_validated_mission()`, so the validator never runs on the live path. Same gap applies to `agent/limits.py::ExecutionBudgetTracker` — the 144.73s run exceeded `ExecutionLimits.max_runtime_seconds` (120.0 default) with nothing enforcing it, because nothing calls `check_runtime()` on this path either. Both are real, live-observed gaps, not theoretical — reported to the user rather than silently patched into someone else's in-progress `runner.py`, since it's actively being built by a concurrent session. |
+| Execution limits tuned to acceptable cost/latency | Not started | Can't tune what isn't enforced yet on the live path (see finding 2 above — `ExecutionBudgetTracker` isn't wired into `runner.py`). Wiring it is the prerequisite, and it's not this session's file to edit unilaterally mid-build by another session. |
+| Figures documented | Partial | The three real timings above are the first real figures against the live path (10.64s / 144.73s / 56.62s) — token/cost figures were not captured (`agent.run()`'s `usage()` wasn't read back in this pass); a follow-up run should capture it explicitly now that the harness exists. |
+| Canary flag flipped | Clarified, not a Sprint-4 "flip" in the plan's sense | `V3_AGENT_ENABLED=true` in the real `.env` is confirmed intentional by the user — but it is a **local on/off flag** (`main.py`'s `v3_enabled = runtime.settings.v3_agent_enabled` routes 100% of `/v1/missions` traffic when true), not the percentage-based canary `SPRINT_PLAN.md`'s Sprint 4 gate describes. Left as the user's explicit call; not edited by this session. `00_OVERVIEW.md` already carries the same clarification ("local flag, not a production canary %"). |
 
 ### Profile B — Cleanup
 | Task | Status | Evidence |
 |---|---|---|
-| `ProviderRegistry` deleted | Not started | |
-| Whole-repo grep confirms no dangling callers | Not started | |
+| `ProviderRegistry` deleted | Done | `src/seleric_swarm/registry/provider_registry.py` + `config/provider_registry.yaml` deleted. Sole consumer `swarm/providers/provider_selection.py::ConfiguredAnomalyDetector` (built by `swarm/providers/mcp_data.py::build_mcp_bundle()`) now hardcodes the shipped config's only two real overrides (`_ROBUST_ZSCORE_DOMAINS={"commerce"}`, `_ROBUST_ZSCORE_METRICS={"metric.spend","metric.net_profit"}`) instead of reading YAML through a swappable registry class. `force_robust_zscore` and the sparse-history→template fallback in `detect()` untouched. Deleted deliberately without waiting on swarm_v2's Sprint 5 retirement even though `ConfiguredAnomalyDetector` is still `AnomalyAgent`'s live 100%-traffic detector — explicit user call: this repo has nothing in production yet. Updated `tests/unit/test_provider_selection.py` (removed `ProviderRegistry`/`_FakeRegistry`; two assertions that had assumed `metric.net_sales` resolves to `"template"` were actually wrong under the real shipped config — it's domain `commerce`, so it always resolved to `robust_zscore`, the isolated fake registry in the old test just never exposed that — swapped those cases to `metric.units_sold`, product domain) and `tests/unit/test_business_state_live.py`. `./.venv/Scripts/python.exe -m pytest -q tests/unit/test_provider_selection.py tests/unit/test_business_state_live.py tests/unit/test_business_state_mission_integration.py` → 14 passed. |
+| Whole-repo grep confirms no dangling callers | Done | `grep -rn "ProviderRegistry\|provider_registry"` — zero hits in `src`/`tests`/`config`. Remaining hits are `provider_selection.py`'s own docstring (explains what was removed), and historical/doc mentions (`docs/refactor/*`, `diagrams/*.mmd`, `docs/features/business-state-service/*`) not in scope for this deletion. Two stale code comments referencing the deleted YAML (`swarm/specialists/anomaly.py:105`, `tests/unit/test_business_state_mission_integration.py:58`) updated to name the new hardcoded set. Full suite after deletion: **901 passed, 1 failed (pre-existing, unrelated — `test_health_combo_never_returns_running`, a live-data-dependent flake, same failure recorded since the Sprint 0 baseline), 4 skipped.** |
 
 ### Profile C — Greenfield capability (additive, non-blocking)
 | Task | Status | Evidence |
@@ -660,7 +661,8 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
     functions import and exist. Gaps are exactly Sprint 4 C's scope (4 analytics
     + `knowledge` + 3 experiments). Worth keeping as a standing check — it is
     the one test that catches a *missing* deliverable, which a passing test
-    suite cannot.
+    suite cannot. (Totals later corrected to **15/23 with 8 gaps** — see Sprint 4
+    Profile C entry below; the gap *list* was right both times.)
   - **Program-level assumption corrected:** "nothing V3 is wired in" is only
     half true. The agent loop genuinely is not (verified: zero references from
     `dispatch.py`/`main.py`/`coordinator/graph.py`; `api/missions.py` unmounted),
@@ -674,6 +676,57 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
     `swarm/providers/mcp_data.py:19` (`row_date`, Profile B) and
     `tests/unit/test_causal_toolset.py:10` (`typing.Any`, Profile C Sprint 2).
     Queued as the first task of Sprint 4 C.
+
+- 2026-09-19: **Sprint 4 Profile A — toolset wiring.** Registered all 15
+  real tool functions (`toolsets/{semantic,analytics,causal,models,
+  actions}.py`) on `SelericAgent` in `agent/agent.py` — previously zero
+  tools were registered, so the loop had contracts and stores but nothing
+  to actually call. Found and fixed a real, repo-wide bug this surfaced:
+  all 5 toolset modules imported `SelericDeps` only under
+  `if TYPE_CHECKING:`, which type-checks fine (mypy sees the string
+  annotation) but raises `NameError: name 'SelericDeps' is not defined`
+  the instant pydantic_ai's real tool-registration path calls
+  `get_type_hints()` on the function at runtime — nothing had exercised
+  that path before this wiring existed, so it sat latent. Promoted to a
+  real top-level import in all 5 files (confirmed no circular-import risk
+  first). Also fixed 2 pre-existing `mypy` errors caught while re-checking
+  (`agent/validation/signals.py::_payload()`'s `model: type` →
+  `type[BaseModel]`; a `cast` needed in `toolsets/analytics.py::
+  detect_anomalies` where a comprehension's `is not None` filter doesn't
+  survive a later tuple unpack) and added `statsmodels.*` to
+  `pyproject.toml`'s mypy override list (same untyped-third-party-lib
+  treatment as `dowhy`/`pandas`/`numpy`). Confirmed the 0%-traffic stub
+  path is unaffected: `TestModel(call_tools=[])` still returns its fixed
+  output and invokes zero of the 15 real tools, asserted explicitly (not
+  just "should still work"). New: `tests/unit/test_v3_agent_wiring.py` (3
+  cases). Repo-wide `ruff check src` and `mypy src` both clean (341 source
+  files). Full suite: **923 passed, 1 failed (the same pre-existing
+  `test_health_combo_never_returns_running`), 5 skipped**.
+
+  **Stopped deliberately before the rest of Sprint 4's checklist and asked
+  the user, rather than guessing or spending money unasked:** the
+  remaining three items (replay set run for real cost/latency, execution
+  limits tuned against that data, canary flag flipped) all need either
+  real LLM spend against live `seleric-mcp` or a production-traffic
+  decision. A scripted zero-cost `FunctionModel` run would prove the tool
+  → artifact → answer path works end-to-end, but would not produce
+  genuine per-mission cost/token/latency figures (there's no real model
+  making decisions) — substituting one for the other and calling it "cost
+  data" would misrepresent what was measured. Flipping any percentage of
+  canary traffic is explicitly named a production-risk call in
+  `SPRINT_PLAN.md`'s own Sprint 4 gate, not an engineering one.
+- 2026-09-19: **Local UI connect (not a production canary).** Wired
+  conversations, live `POST /v1/missions`, and Office list/snapshot through
+  `run_v3_mission` when `V3_AGENT_ENABLED=true`. Persists V3 results into
+  the swarm_v2 store + V3 stores so existing office-ui / chat surfaces keep
+  working. Follow-up pass the same day: timezone-local `as_of` injected into
+  the agent prompt (live chat had resolved "yesterday" against a stale
+  training date); 429/timeout bodies sanitized before they reach
+  `final_response`; `run.queued`/`run.started`/`run.completed` carry
+  `route: v3` so Activity no longer falls back to "Swarm"; Office mission
+  list retries at 0.8s/2.5s so first paint is not empty. Tests:
+  `tests/unit/test_v3_ui_connect.py`, office-ui `conversationStore.test.ts`.
+  Production canary % remains unflipped (settings default still False).
 
 - 2026-09-19: **Sprint 4 / Profile C executed** — the last 8 frozen functions.
   New: `analytics/{breakdown,funnel,cohort}.py`, `knowledge/{__init__,corpus,search}.py`,

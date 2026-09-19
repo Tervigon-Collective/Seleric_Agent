@@ -83,8 +83,12 @@ mismatch recorded but not reproduced on retry.
   user decision — ~15 live callers (swarm_v2's classifier, diagnostic
   pipeline, skeptic) have no isolated test harness for a full rewrite. Not
   carried to Sprint 5.
-- **Not started**: `ProviderRegistry` deletion — moved to Sprint 4 Profile B
-  cleanup (`SPRINT_PLAN.md`).
+- **Done (Sprint 4, 2026-09-19)**: `ProviderRegistry` deletion — see
+  `SPRINT_PLAN.md`/`TASK_SHEET.md` Sprint 4 Profile B for the full
+  disposition (it was a config-driven anomaly-strategy selector, unrelated
+  to the MCP fetch-path duplication this section otherwise tracks; its two
+  shipped overrides are now hardcoded directly in
+  `swarm/providers/provider_selection.py`).
 
 ## Builds
 

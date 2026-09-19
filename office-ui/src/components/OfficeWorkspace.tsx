@@ -38,11 +38,21 @@ export function OfficeWorkspace({
     const load = () => provider.listMissions().then((items) => {
       if (!alive) return;
       setMissions(items);
-      setMissionId((current) => current ?? readRoute().missionId ?? items[0]?.missionId ?? null);
+      setMissionId((current) => {
+        const fromRoute = readRoute().missionId;
+        const chosen = current ?? fromRoute;
+        if (chosen && items.some((item) => item.missionId === chosen)) return chosen;
+        return items[0]?.missionId ?? (chosen && items.length === 0 ? chosen : null);
+      });
     }).catch(() => alive && setMissions([]));
     void load();
+    const early = [800, 2500].map((ms) => window.setTimeout(load, ms));
     const timer = setInterval(load, 10_000);
-    return () => { alive = false; clearInterval(timer); };
+    return () => {
+      alive = false;
+      early.forEach(clearTimeout);
+      clearInterval(timer);
+    };
   }, [provider]);
   useEffect(() => {
     let active = true;

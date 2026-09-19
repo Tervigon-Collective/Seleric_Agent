@@ -427,6 +427,14 @@ Ads action execution was scoped out of this program's requirements
       their A1.2 grain preconditions — not all six. The four greenfield
       analytics functions lag with Models/Knowledge/Experiments (see C's
       section below) and do not gate the cutover.
+      **Wiring itself done 2026-09-18** (prerequisite, not the checkbox):
+      `agent/agent.py` now registers all 15 real tools (Semantic/Analytics/
+      Causal/Models/Actions) on `SelericAgent` — previously zero. See
+      `TASK_SHEET.md` for the real latent bug this surfaced and fixed
+      (`SelericDeps` only importable under `TYPE_CHECKING` in all 5
+      toolset modules, breaking real tool registration). The replay-run/
+      cost/latency figures below still need a real-LLM-cost decision from
+      the user before proceeding — not done, not silently substituted.
 - [ ] Record per-mission agent_calls, llm_calls, tokens, wall-clock, cost —
       compare against swarm_v2's Sprint 0 baseline.
 - [ ] Tune execution limits until within acceptable cost/latency, same
@@ -436,11 +444,32 @@ Ads action execution was scoped out of this program's requirements
       both pass (per profile exit criteria in each brief).
 
 **B — Cleanup**
-- [ ] `ProviderRegistry` deletion.
-- [ ] Confirm no remaining caller of any deleted module (whole-repo grep,
+- [x] `ProviderRegistry` deletion. Done 2026-09-19 —
+      `src/seleric_swarm/registry/provider_registry.py` and
+      `config/provider_registry.yaml` deleted outright. It was a
+      YAML-backed per-{domain,metric} anomaly-strategy selector consumed
+      in exactly one place (`swarm/providers/provider_selection.py::
+      ConfiguredAnomalyDetector`, built by
+      `swarm/providers/mcp_data.py::build_mcp_bundle()`); the shipped
+      config had only two real overrides (domain `commerce`; metrics
+      `metric.spend`/`metric.net_profit`), both now hardcoded directly in
+      `provider_selection.py` (`_ROBUST_ZSCORE_DOMAINS`/
+      `_ROBUST_ZSCORE_METRICS`) rather than kept as a swappable table with
+      one shipped configuration ever plugged into it. `force_robust_zscore`
+      override and the sparse-history-degrades-to-template fallback are
+      unchanged. Per explicit user direction this was deleted without
+      strangler-fig deferral even though it was still live in swarm_v2's
+      100%-traffic `AnomalyAgent` path — this repo has nothing in
+      production yet, so a live call-graph dependency wasn't treated as a
+      reason to wait for swarm_v2's own Sprint 5 retirement.
+- [x] Confirm no remaining caller of any deleted module (whole-repo grep,
       not src-only — per the process note in
       `46_ARCHITECTURE_CONSOLIDATION_PLAN.md` about the Item 1a src-only
-      grep miss).
+      grep miss). Done — zero `ProviderRegistry`/`provider_registry` hits
+      in `src`/`tests`/`config`; three stale comments referencing the
+      deleted YAML (`swarm/specialists/anomaly.py`,
+      `tests/unit/test_business_state_mission_integration.py`) updated to
+      name the new hardcoded set instead.
 
 **C — Greenfield capability (additive scope, non-blocking)**
 

@@ -11,6 +11,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from seleric_swarm.agent.runner import run_v3_mission
 from seleric_swarm.api.async_missions import (
     cancel_running_mission,
     enqueue_durable_mission,
@@ -247,6 +248,7 @@ def root() -> dict[str, Any]:
         "docs": "/docs",
         "health": "/health",
         "readyz": "/readyz",
+        "ready": "/ready",
         "missions": "POST /v1/missions",
         "mission_get": "GET /v1/missions/{mission_id}",
         "mission_cancel": "POST /v1/missions/{mission_id}/cancel",
@@ -260,6 +262,7 @@ def health() -> dict[str, str]:
 
 
 @app.get("/readyz")
+@app.get("/ready")
 def readyz() -> dict[str, Any]:
     """Dependency readiness — 200 when ready, 503 when not."""
     payload = check_readiness(get_runtime())
@@ -369,28 +372,17 @@ async def create_mission(
     # Correlate with X-Request-ID middleware (echoed on the response).
     request_id = str(getattr(request.state, "request_id", None) or uuid4().hex)
     session_id = req.session_id or uuid4().hex
+    v3_enabled = bool(getattr(runtime.settings, "v3_agent_enabled", False))
 
-    # Single LLM classification drives both the routing decision and the
-    # "is this a real query" rejection — no keyword/regex gating. A query the
-    # LLM can't map to any metric or supported intent (e.g. "?????") reports
-    # unresolved=True with its own reason; anything else routes on its intents.
-    from seleric_swarm.coordinator.intake.llm_classifier import classify_query_via_llm
+    if v3_enabled:
+        route_hint = "v3"
+    else:
+        # Single LLM classification drives both the routing decision and the
+        # "is this a real query" rejection — no keyword/regex gating. A query the
+        # LLM can't map to any metric or supported intent (e.g. "?????") reports
+        # unresolved=True with its own reason; anything else routes on its intents.
+        from seleric_swarm.coordinator.intake.llm_classifier import classify_query_via_llm
 
-    classification = await classify_query_via_llm(
-        query,
-        runtime=runtime,
-        timezone=timezone,
-        as_of=as_of,
-        request_id=request_id,
-        session_id=session_id,
-    )
-    if classification is None or classification.unresolved:
-        # Classification is occasionally non-deterministic even at
-        # temperature=0 (confirmed directly: the same query, re-classified
-        # repeatedly, sometimes comes back unresolved and sometimes doesn't).
-        # This is the first, hardest gate in the request — a false "unresolved"
-        # here 400s the whole request before routing/retry logic downstream
-        # ever gets a chance to run. One retry before rejecting.
         classification = await classify_query_via_llm(
             query,
             runtime=runtime,
@@ -399,12 +391,27 @@ async def create_mission(
             request_id=request_id,
             session_id=session_id,
         )
-    if classification is None or classification.unresolved:
-        reason = (classification.unsupported_reason if classification else None) or (
-            "Query does not name a resolvable metric or a supported analysis intent."
-        )
-        raise HTTPException(status_code=400, detail=reason)
-    route_hint = "swarm" if set(classification.intents) & _SWARM_INTENTS else "lookup"
+        if classification is None or classification.unresolved:
+            # Classification is occasionally non-deterministic even at
+            # temperature=0 (confirmed directly: the same query, re-classified
+            # repeatedly, sometimes comes back unresolved and sometimes doesn't).
+            # This is the first, hardest gate in the request — a false "unresolved"
+            # here 400s the whole request before routing/retry logic downstream
+            # ever gets a chance to run. One retry before rejecting.
+            classification = await classify_query_via_llm(
+                query,
+                runtime=runtime,
+                timezone=timezone,
+                as_of=as_of,
+                request_id=request_id,
+                session_id=session_id,
+            )
+        if classification is None or classification.unresolved:
+            reason = (classification.unsupported_reason if classification else None) or (
+                "Query does not name a resolvable metric or a supported analysis intent."
+            )
+            raise HTTPException(status_code=400, detail=reason)
+        route_hint = "swarm" if set(classification.intents) & _SWARM_INTENTS else "lookup"
     try:
         from seleric_swarm.observability.flow import log_mission_step
 
@@ -412,7 +419,7 @@ async def create_mission(
             None,
             "mission_classified",
             route=route_hint,
-            intents=list(classification.intents),
+            intents=[] if v3_enabled else list(classification.intents),
             query=query[:160],
             request_id=request_id,
         )
@@ -447,7 +454,11 @@ async def create_mission(
         )
         return accepted
 
-    dispatched = await run_any_mission(
+    dispatched = await (
+        run_v3_mission
+        if v3_enabled
+        else run_any_mission
+    )(
         runtime,
         query=query,
         timezone=timezone,
@@ -459,6 +470,10 @@ async def create_mission(
         full_skeptic=req.full_skeptic,
         full_strategy=req.full_strategy,
         execution_mode=req.execution_mode,
+        workspace_id=principal.workspace_id,
+        owner_user_id=principal.user_id,
+        thread_id=session_id,
+        run_id=request_id,
     )
     # Flatten: a consistent top-level mission object with a `route` marker.
     # lookup  -> MissionResult fields; swarm -> SwarmMissionResult fields.
@@ -485,10 +500,14 @@ def get_mission(mission_id: str, request: Request) -> dict[str, Any]:
     runtime = get_runtime()
     # Prefer raw payload (swarm + async running placeholders).
     raw = getattr(runtime.store, "get_raw", lambda _mid: None)(mission_id)
+    if not isinstance(raw, dict):
+        from seleric_swarm.api.office.v3_adapter import v3_raw_snapshot
+
+        raw = v3_raw_snapshot(mission_id)
     if isinstance(raw, dict):
         require_mission_access(request, raw, runtime)
     if isinstance(raw, dict) and (
-        raw.get("route") in {"swarm", "pending", "failed", "lookup"} or raw.get("async")
+        raw.get("route") in {"swarm", "pending", "failed", "lookup", "v3"} or raw.get("async")
     ):
         return raw
     result = runtime.store.get(mission_id)

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from seleric_swarm.agent.runner import run_v3_mission
 from seleric_swarm.api.status import TERMINAL_STATUSES
 from seleric_swarm.cancellation import InMemoryCancellationBackend
 from seleric_swarm.contracts.lookup import MissionResult, TraceInfo
@@ -286,7 +287,12 @@ async def run_mission_job(
         return
     try:
         async with asyncio.timeout(runtime.settings.mission_timeout_s):
-            dispatched = await run_any_mission(
+            execute = (
+                run_v3_mission
+                if getattr(runtime.settings, "v3_agent_enabled", False)
+                else run_any_mission
+            )
+            dispatched = await execute(
                 runtime,
                 query=query,
                 timezone=timezone,
@@ -300,6 +306,10 @@ async def run_mission_job(
                 full_strategy=full_strategy,
                 execution_mode=execution_mode,
                 context_bundle=context_bundle,
+                workspace_id=ownership.get("workspace_id"),
+                owner_user_id=ownership.get("owner_user_id"),
+                thread_id=ownership.get("thread_id") or session_id,
+                run_id=ownership.get("run_id") or request_id,
             )
         if is_cancel_requested(mission_id, runtime):
             # Cancel won — store.put refuses overwrite of cancelled; restore if needed.

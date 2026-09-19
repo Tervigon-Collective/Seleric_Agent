@@ -1,7 +1,6 @@
-"""Seleric V3 agent runtime (Profile A — Sprint 1 scaffolding).
+"""Seleric V3 agent runtime (Profile A).
 
 See ``docs/refactor/01_PROFILE_RUNTIME.md`` and ``docs/refactor/CONTRACTS.md``.
-Nothing here is wired into production traffic yet — ``orchestration/dispatch.py``
-still owns 100% of routing per the strangler-fig migration rule
-(``docs/refactor/00_OVERVIEW.md`` §5).
+Live traffic stays on swarm_v2 unless ``settings.v3_agent_enabled`` is True,
+in which case ``agent/runner.py`` owns conversations and ``POST /v1/missions``.
 """

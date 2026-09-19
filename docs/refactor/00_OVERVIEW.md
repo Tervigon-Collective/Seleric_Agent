@@ -4,7 +4,8 @@ Status: execution underway. **Sprints 0–3 verified green 2026-09-19** by a
 full cross-profile test run — 911 passed / 1 failed / 4 skipped, the one
 failure being the pre-existing `test_health_combo_never_returns_running` from
 the Sprint 0 baseline. Per-profile figures and the frozen-surface audit
-(**15/23 functions live**) are in `SPRINT_PLAN.md` "Verification checkpoint".
+at that checkpoint (**15/23 functions live**) are in `SPRINT_PLAN.md`
+"Verification checkpoint".
 
 Sprint 0/1/2 Done. Profile A through Sprint 3 Done. Profile B through
 Sprint 3 Done (semantic toolset + hybrid fetch-path extract-wrap-delete;
@@ -16,12 +17,19 @@ of this program's requirements**, decided 2026-09-19). Profile C Sprint 3
 Done (validator two-signal + bug #12, models with a real forecaster, parity
 harness). The characterization ledger is retired with that override.
 
-**Sprint 4 Profile C is Done** (2026-09-19): the 8 remaining frozen-surface
-gaps closed, so `CONTRACTS.md` §4's full 23-function surface now exists and
-all 23 are registered on `SelericAgent`. Additive and non-gating, as planned.
+**Sprint 4 progress (2026-09-19):**
+- **Profile B Done** — `ProviderRegistry` deletion; deleted without waiting
+  on swarm_v2's own retirement since nothing in this repo is in production
+  yet (see `SPRINT_PLAN.md`/`TASK_SHEET.md`).
+- **Profile A** — all tools registered on `SelericAgent`; **local UI
+  connected** behind `V3_AGENT_ENABLED` (conversations + `POST /v1/missions`
+  + Office list/snapshot). That is a local flag, **not** a production canary %.
+- **Profile C Done** — the 8 remaining frozen-surface gaps closed, so
+  `CONTRACTS.md` §4's full 23-function surface now exists and all 23 are
+  registered on `SelericAgent`. Additive and non-gating, as planned.
 
-Next: Sprint 4's remaining rows — A's cutover cost/latency gate and B's
-cleanup.
+Next: Sprint 4's remaining Profile A rows — cost/latency replay and an
+explicit production-canary decision.
 See `SPRINT_PLAN.md` / `TASK_SHEET.md`. Last verified against source:
 2026-09-19.
 
@@ -254,13 +262,13 @@ changes require all three profiles to sign off):
   emptiness is a safety property, not an oversight — each is the control that
   makes its tool refuse rather than fabricate. Whoever fills them is asserting
   that the model was trained, the experiment was run, or the document is true.
-- **`config/model_registry.yaml` has a named owner.** Profile C seeded it in
-  Sprint 3 because `ModelToolset` needs an approved-model gate to refuse
-  against, but no profile brief assigns model governance to anyone. An entry in
-  that file is a claim that a model was implemented, back-tested and validated —
-  and it is the *only* thing standing between `forecast()` and fabricating a
-  number for an unbacked metric. Someone other than "whoever needed it last"
-  should own adding entries and refreshing `last_validated_at` before cutover.
+  Profile C seeded `model_registry.yaml` in Sprint 3 because `ModelToolset`
+  needs an approved-model gate to refuse against, but no profile brief assigns
+  model governance to anyone. An entry in that file is a claim that a model was
+  implemented, back-tested and validated — and it is the *only* thing standing
+  between `forecast()` and fabricating a number for an unbacked metric. Someone
+  other than "whoever needed it last" should own adding entries and refreshing
+  `last_validated_at` before cutover.
 - `docs/refactor/TASK_SHEET.md` shows every sprint task as Done, with the
   same "verify before claiming done" discipline the existing
   `docs/TASK_SHEET.md` already uses in this repo.

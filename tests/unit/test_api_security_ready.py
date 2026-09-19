@@ -72,6 +72,9 @@ def test_readyz_and_health(runtime, monkeypatch):
     assert body["ready"] is True
     assert "store" in body["checks"]
     assert "mcp" in body["checks"]
+    alias = client.get("/ready")
+    assert alias.status_code == 200
+    assert alias.json()["ready"] is True
 
 
 def test_cors_preflight_allows_localhost_docs_origin():

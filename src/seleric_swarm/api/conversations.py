@@ -1081,6 +1081,12 @@ def _artifact_classification(
     raise ValueError("missing explicit classification and evidence provenance")
 
 
+def _dispatch_route(runtime: SwarmRuntime) -> str:
+    if getattr(getattr(runtime, "settings", None), "v3_agent_enabled", False):
+        return "v3"
+    return "swarm"
+
+
 def _attempt_event(
     run: Run,
     attempt: RunAttempt,
@@ -1167,6 +1173,7 @@ async def _execute_submission(
                     attempt,
                     "run.cancelled",
                     suffix="terminal",
+                    payload={"route": _dispatch_route(runtime)},
                     completed_at=datetime.now(UTC),
                 ),
             )
@@ -1179,6 +1186,7 @@ async def _execute_submission(
             "mission_id": run.mission_id,
             "attempt_id": attempt.id,
             "attempt_number": attempt.attempt_number,
+            "route": _dispatch_route(runtime),
         },
         started_at=running.started_at,
     )
@@ -1434,11 +1442,16 @@ async def _execute_submission(
                 "ASYNC_EXECUTION_FAILED",
                 "LLM_UNAVAILABLE",
                 "LLM_CLASSIFICATION_UNAVAILABLE",
+                "LLM_RATE_LIMITED",
                 "MCP_ERROR",
                 "MCP_UNAVAILABLE",
                 "MISSION_TIMEOUT",
                 "SERVICE_UNAVAILABLE",
                 "TIMEOUT",
+                "V3_AGENT_TIMEOUT",
+                "V3_AGENT_FAILED",
+                "INSUFFICIENT_EVIDENCE",
+                "EXECUTION_LIMIT_EXCEEDED",
             }
         ),
         terminal_event=_attempt_event(
@@ -1449,6 +1462,7 @@ async def _execute_submission(
                 RunStatus.CANCELLED: "run.cancelled",
             }.get(final_status, "run.failed"),
             suffix="terminal",
+            payload={"route": raw.get("route") or _dispatch_route(runtime)},
             completed_at=completed_at,
         ),
     )
@@ -1738,7 +1752,7 @@ async def submit_message(
     _event_sink(runtime, repositories).emit(
         run,
         "run.queued",
-        payload={"message_id": message.id, "mission_id": mission_id},
+        payload={"message_id": message.id, "mission_id": mission_id, "route": _dispatch_route(runtime)},
         actor_user_id=principal.user_id,
     )
     try:
