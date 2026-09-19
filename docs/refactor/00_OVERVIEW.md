@@ -10,8 +10,12 @@ follow-on) Done. Profile C through Sprint 3 (analytics + causal +
 Model/Skeptic port + parity harness) Done. Google Ads action execution is
 explicitly **not part of this program's requirements** (decided
 2026-09-19) — `ActionToolset` covers Meta only, by design, not as a
-pending gap. Next: Sprint 4 (cutover gate). See `SPRINT_PLAN.md` /
-`TASK_SHEET.md`.
+pending gap. **Sprint 4 Profile B (`ProviderRegistry` deletion) Done
+2026-09-19** — see `SPRINT_PLAN.md`/`TASK_SHEET.md`; deleted without
+waiting on swarm_v2's own retirement since nothing in this repo is in
+production yet. Sprint 4 Profile A (cutover flag + cost/latency gate) and
+the rest of Profile C's greenfield toolsets remain not started. See
+`SPRINT_PLAN.md` / `TASK_SHEET.md`.
 Last verified against source: 2026-09-19.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube

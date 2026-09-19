@@ -1,5 +1,6 @@
-"""Sprint 2.5 checklist: config selects a non-default strategy ->
-build_mcp_bundle returns that implementation, not the Template one.
+"""Sprint 2.5 checklist: the hardcoded commerce/spend/net_profit set selects
+robust_zscore -> build_mcp_bundle returns that implementation, not the
+Template one.
 
 Uses the live-MCP ``runtime`` fixture (conftest.py) since ConfiguredAnomalyDetector's
 whole point is dispatching real BusinessStateService calls for overridden
@@ -11,7 +12,6 @@ from __future__ import annotations
 
 import pytest
 
-from seleric_swarm.registry.provider_registry import ProviderRegistry
 from seleric_swarm.services.business_state.detectors import RobustZScoreDetector
 from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.swarm.providers.base import AnomalyFinding, MetricReading
@@ -20,49 +20,22 @@ from seleric_swarm.swarm.providers.provider_selection import ConfiguredAnomalyDe
 from seleric_swarm.swarm.providers.template import TemplateAnomalyDetector
 
 
-class _FakeRegistry(ProviderRegistry):
-    """Override just metric.spend -> robust_zscore, everything else default."""
-
-    def __init__(self) -> None:  # no super().__init__: skip the YAML read entirely
-        self._default = {"anomaly_strategy": "template", "forecast_strategy": "template"}
-        self._domain = {}
-        self._metric = {"metric.spend": {"anomaly_strategy": "robust_zscore"}}
-
-
-def test_default_registry_resolves_template():
-    registry = ProviderRegistry()
-    assert registry.anomaly_strategy_for(metric_id="metric.units_sold", domain="product") == "template"
-
-
-def test_provider_registry_yaml_has_a_real_override():
-    """config/provider_registry.yaml ships with at least one non-default
-    override (metric.spend -> robust_zscore) so the mechanism is exercised
-    by default, not just in tests."""
-    registry = ProviderRegistry()
-    assert registry.anomaly_strategy_for(metric_id="metric.spend") == "robust_zscore"
-
-
-def test_catalogue_id_resolves_to_yaml_metric_override():
-    """Live classifier emits catalogue ids; registry keys are YAML metric.* ids."""
+def test_catalogue_id_resolves_to_metric_override():
+    """Live classifier emits catalogue ids; the hardcoded set is keyed on
+    YAML overlay metric.* ids."""
     metrics = MetricRegistry("config/metric_registry.yaml")
     # stand-in so the no-BSS degrade path isn't taken; we only assert dispatch.
     detector = ConfiguredAnomalyDetector(
-        registry=_FakeRegistry(),
         metrics=metrics,
         template=TemplateAnomalyDetector(),
         robust_zscore=TemplateAnomalyDetector(),
     )
     assert detector._strategy_for(MetricReading(metric_id="total_ad_spend", value=1, baseline=1)) == "robust_zscore"
     assert detector._strategy_for(MetricReading(metric_id="metric.spend", value=1, baseline=1)) == "robust_zscore"
-    assert detector._strategy_for(MetricReading(metric_id="metric.net_sales", value=1, baseline=1)) == "template"
-
-    shipped = ConfiguredAnomalyDetector(
-        registry=ProviderRegistry(),
-        metrics=metrics,
-        template=TemplateAnomalyDetector(),
-        robust_zscore=TemplateAnomalyDetector(),
-    )
-    assert shipped._strategy_for(MetricReading(metric_id="commerce_net_revenue_daily", value=1, baseline=1)) == "robust_zscore"
+    # product domain, not commerce, and not in the robust_zscore metric set -> template
+    assert detector._strategy_for(MetricReading(metric_id="metric.units_sold", value=1, baseline=1)) == "template"
+    # commerce domain -> robust_zscore even though this specific metric id isn't overridden
+    assert detector._strategy_for(MetricReading(metric_id="commerce_net_revenue_daily", value=1, baseline=1)) == "robust_zscore"
 
 
 @pytest.mark.asyncio
@@ -81,7 +54,6 @@ async def test_build_mcp_bundle_returns_configured_detector_not_bare_template(ru
 @pytest.mark.asyncio
 async def test_overridden_metric_uses_business_state_others_use_template(runtime):
     detector = ConfiguredAnomalyDetector(
-        registry=_FakeRegistry(),
         metrics=runtime.metrics,
         template=TemplateAnomalyDetector(),
         robust_zscore=RobustZScoreDetector(runtime.business_state),
@@ -96,7 +68,7 @@ async def test_overridden_metric_uses_business_state_others_use_template(runtime
             synthetic=False,
         ),
         MetricReading(
-            metric_id="metric.net_sales",  # not overridden -> template, value/baseline only
+            metric_id="metric.units_sold",  # product domain, not overridden -> template, value/baseline only
             value=100.0,
             baseline=80.0,
             direction_bad="down",
@@ -109,14 +81,14 @@ async def test_overridden_metric_uses_business_state_others_use_template(runtime
     by_metric = {f.metric_id: f for f in findings}
     assert by_metric["metric.spend"].data_origin == "BUSINESS_STATE"
     assert by_metric["metric.spend"].detector.get("strategy") == "robust_zscore"
-    assert by_metric["metric.net_sales"].data_origin == "TEMPLATE_TEST"
-    assert by_metric["metric.net_sales"].detector.get("method") == "relative_effect_size"
+    assert by_metric["metric.units_sold"].data_origin == "TEMPLATE_TEST"
+    assert by_metric["metric.units_sold"].detector.get("method") == "relative_effect_size"
 
 
 def test_force_robust_zscore_overrides_template_default():
     metrics = MetricRegistry("config/metric_registry.yaml")
     detector = ConfiguredAnomalyDetector(
-        registry=ProviderRegistry(),  # metric.units_sold isn't overridden -> template by default
+        # metric.units_sold isn't in the hardcoded robust_zscore set -> template by default
         metrics=metrics,
         template=TemplateAnomalyDetector(),
         robust_zscore=TemplateAnomalyDetector(),  # stand-in; only dispatch is asserted
@@ -156,7 +128,6 @@ class _SparseHistoryOnSecondCall:
 async def test_force_robust_zscore_falls_back_to_template_on_sparse_history():
     metrics = MetricRegistry("config/metric_registry.yaml")
     detector = ConfiguredAnomalyDetector(
-        registry=ProviderRegistry(),
         metrics=metrics,
         template=TemplateAnomalyDetector(),
         robust_zscore=_SparseHistoryOnSecondCall(sparse_metric_id="metric.net_sales"),
@@ -176,10 +147,10 @@ async def test_force_robust_zscore_falls_back_to_template_on_sparse_history():
 
 @pytest.mark.asyncio
 async def test_registry_selects_robust_zscore_but_no_business_state_degrades_to_template(runtime):
-    """If config says robust_zscore but build_mcp_bundle wasn't given a
-    business_state (e.g. an older call site), never crash -- fall back."""
+    """If the hardcoded set selects robust_zscore but build_mcp_bundle
+    wasn't given a business_state (e.g. an older call site), never crash --
+    fall back."""
     detector = ConfiguredAnomalyDetector(
-        registry=_FakeRegistry(),
         metrics=runtime.metrics,
         template=TemplateAnomalyDetector(),
         robust_zscore=None,

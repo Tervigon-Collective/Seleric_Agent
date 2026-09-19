@@ -55,7 +55,7 @@ async def test_diagnostic_mission_reaches_business_state_for_overridden_metric(r
     assert result.status in TERMINAL_STATUSES
     assert result.error_code != "ROUTING_UNSUPPORTED"
 
-    # config/provider_registry.yaml overrides metric.spend -> robust_zscore,
+    # provider_selection.py's hardcoded set maps metric.spend -> robust_zscore,
     # so if AnomalyAgent got a metric.spend reading with a real baseline, the
     # dispatch in ConfiguredAnomalyDetector must have called BusinessStateService
     # for it -- this is the thing a bare HTTP-response assertion can't see.

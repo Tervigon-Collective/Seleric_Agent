@@ -102,8 +102,9 @@ class AnomalyAgent(SpecialistAgent):
         # A "why" mission wants real BusinessStateService history for
         # whatever Observer fetched (the asked metric + its co-movers, not
         # the full catalogue) -- not just the commerce/spend/net_profit
-        # subset config/provider_registry.yaml defaults to. Lookup/overview
-        # missions never set this intent, so they keep the current default.
+        # subset provider_selection.py's hardcoded set defaults to.
+        # Lookup/overview missions never set this intent, so they keep the
+        # current default.
         if mission.wants("diagnostic") or mission.wants("executive_health"):
             detect_ctx["force_robust_zscore"] = True
 

@@ -13,7 +13,6 @@ from typing import Any
 
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
 from seleric_swarm.registry.agent_registry import AgentRegistry
-from seleric_swarm.registry.provider_registry import ProviderRegistry
 from seleric_swarm.services.business_state.detectors import RobustZScoreDetector
 from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
 from seleric_swarm.services.mcp_query import dimension_value, split_dimension_dict
@@ -382,7 +381,6 @@ def build_mcp_bundle(
     agents: AgentRegistry | None = None,
     bootstrap: CatalogueBootstrap | None = None,
     business_state: Any | None = None,
-    provider_registry: ProviderRegistry | None = None,
 ) -> tuple[ProviderBundle, McpFetchStats]:
     """Build providers for a live mission: live MCP for domains with a
     seleric_module, no data otherwise.
@@ -397,9 +395,7 @@ def build_mcp_bundle(
         agents=agents,
         bootstrap=bootstrap,
     )
-    registry = provider_registry or ProviderRegistry()
     anomaly_detector = ConfiguredAnomalyDetector(
-        registry=registry,
         metrics=metrics,
         template=TemplateAnomalyDetector(),
         robust_zscore=RobustZScoreDetector(business_state) if business_state is not None else None,

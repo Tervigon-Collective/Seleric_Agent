@@ -1,12 +1,15 @@
-"""Config-driven AnomalyDetector selection (Sprint 2.5,
+"""Anomaly-strategy dispatch (Sprint 2.5,
 docs/features/business-state-service/05_SPRINT_PLAN.md).
 
 ``build_mcp_bundle()`` instantiates one ``ConfiguredAnomalyDetector``
 instead of hardcoding ``TemplateAnomalyDetector`` directly. Internally it
 dispatches each reading to Template or BusinessStateService's
-``RobustZScoreDetector`` per ``config/provider_registry.yaml`` -- the live
-specialists (``swarm/specialists/anomaly.py``) still just call
-``self.providers.anomaly.detect(...)`` once, unaware of the split.
+``RobustZScoreDetector`` per the hardcoded sets below (formerly a
+YAML-backed ``ProviderRegistry``, deleted -- it was a swappable per-
+{domain,metric} config table with exactly one shipped configuration ever
+plugged into it) -- the live specialists (``swarm/specialists/anomaly.py``)
+still just call ``self.providers.anomaly.detect(...)`` once, unaware of
+the split.
 """
 
 from __future__ import annotations
@@ -14,32 +17,37 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from seleric_swarm.registry.provider_registry import ProviderRegistry
 from seleric_swarm.services.metrics import MetricRegistry
 from seleric_swarm.swarm.providers.base import AnomalyDetector, AnomalyFinding, MetricReading
 
 log = logging.getLogger(__name__)
+
+# Formerly config/provider_registry.yaml's shipped overrides -- domain
+# `commerce` and metrics `metric.spend`/`metric.net_profit` are the only
+# non-default entries that config ever had. Everything else stays
+# "template".
+_ROBUST_ZSCORE_DOMAINS = frozenset({"commerce"})
+_ROBUST_ZSCORE_METRICS = frozenset({"metric.spend", "metric.net_profit"})
 
 
 class ConfiguredAnomalyDetector:
     def __init__(
         self,
         *,
-        registry: ProviderRegistry,
         metrics: MetricRegistry,
         template: AnomalyDetector,
         robust_zscore: AnomalyDetector | None,
     ) -> None:
-        self._registry = registry
         self._metrics = metrics
         self._template = template
         self._robust_zscore = robust_zscore
 
     def _strategy_for(self, reading: MetricReading, *, force_robust: bool = False) -> str:
         definition = self._metrics.get(reading.metric_id)
-        # Live intake emits catalogue ids (total_ad_spend); provider_registry.yaml
-        # is keyed on YAML overlay ids (metric.spend). Try both spellings, and
-        # the overlay's domain (performance), not the live category (finance).
+        # Live intake emits catalogue ids (total_ad_spend); the metric set
+        # above is keyed on YAML overlay ids (metric.spend). Try both
+        # spellings, and the overlay's domain (performance), not the live
+        # category (finance).
         overlay = self._metrics._overlay_for(reading.metric_id)
         domain = (overlay.domain if overlay else None) or (definition.domain if definition else None)
         strategy = "template"
@@ -53,7 +61,8 @@ class ConfiguredAnomalyDetector:
             )
             if mid
         ):
-            strategy = self._registry.anomaly_strategy_for(metric_id=mid, domain=domain)
+            if mid in _ROBUST_ZSCORE_METRICS or (domain and domain in _ROBUST_ZSCORE_DOMAINS):
+                strategy = "robust_zscore"
             if strategy != "template":
                 break
         if strategy == "template" and force_robust:

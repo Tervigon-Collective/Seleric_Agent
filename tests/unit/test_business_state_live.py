@@ -16,7 +16,6 @@ import pytest
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import StateRequest
-from seleric_swarm.registry.provider_registry import ProviderRegistry
 from seleric_swarm.swarm.providers.base import MetricReading
 from seleric_swarm.swarm.providers.mcp_data import build_mcp_bundle
 
@@ -86,7 +85,6 @@ async def test_configured_anomaly_detector_live_end_to_end(runtime):
         agents=runtime.agents,
         bootstrap=runtime.bootstrap,
         business_state=runtime.business_state,
-        provider_registry=ProviderRegistry(),
     )
     readings = [
         MetricReading(metric_id="metric.spend", value=100.0, baseline=90.0, direction_bad="up"),
