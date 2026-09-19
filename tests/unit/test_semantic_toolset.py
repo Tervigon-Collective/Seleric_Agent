@@ -263,34 +263,18 @@ async def test_search_semantics_reports_match_count():
     assert "metric(s) matched" in result.summary
     ids = [m["id"] for m in result.provenance.source_metadata["matches"]]
     assert "total_sales" in ids
-    assert "commerce_net_revenue_daily" in ids  # declared alias "revenue"
 
 
-@pytest.mark.asyncio
-async def test_search_semantics_resolves_declared_short_aliases_when_mcp_is_empty():
-    mcp = FakeMcpClient({"seleric.catalogue_search_metrics": {"matches": []}})
-    ctx = FakeRunContext(_deps(mcp))
-    result = await semantic.search_semantics(ctx, "ns")
-    assert result.success is True
-    ids = [m["id"] for m in result.provenance.source_metadata["matches"]]
-    assert "commerce_net_revenue_daily" in ids
-
-
-@pytest.mark.asyncio
-async def test_query_metrics_resolves_declared_alias_to_catalogue_id():
-    mcp = FakeMcpClient(
-        {
-            "seleric.metrics_query": {
-                "query_id": "q1",
-                "rows": [{"commerce_net_revenue_daily": "71727"}],
-                "provenance": {},
-            }
-        }
-    )
-    ctx = FakeRunContext(_deps(mcp))
-    result = await semantic.query_metrics(ctx, metric_id="ns")
-    assert result.success is True
-    assert mcp.calls[0][1]["measures"] == ["commerce_net_revenue_daily"]
+# A short-lived "declared alias" overlay (``ns``/``np``/``adsp`` -> catalogue
+# id via ``MetricRegistry``) briefly lived here alongside these five tests.
+# Removed 2026-09-19: it collapsed
+# ``test_semantic_toolset_bug_regressions.py``'s bug #2 regression guard
+# (two spellings of one metric — e.g. "cac"/"metric.cac" — must each reach
+# Cube unchanged, never canonicalized) because ``MetricRegistry.resolve_alias``
+# matches by id-prefix candidates first, not only the declared ``aliases:``
+# list, so it silently canonicalized far more than short operator shorthand.
+# ``search_semantics``/``query_metrics`` take ``metric_id`` verbatim again
+# (rule 1: no local heuristic resolves a metric id in this module).
 
 
 @pytest.mark.asyncio

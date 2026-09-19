@@ -67,6 +67,7 @@ from seleric_swarm.conversations.contracts import (
 from seleric_swarm.conversations.events import ActivityEventSink, InMemoryEventNotifier
 from seleric_swarm.conversations.privacy import event_for_principal
 from seleric_swarm.conversations.repositories import ConversationRepositories
+from seleric_swarm.coordinator.observability.events import observe_mission_events
 from seleric_swarm.recovery import (
     InProcessRunQueue,
     RunExecutionResult,
@@ -74,7 +75,6 @@ from seleric_swarm.recovery import (
     RunWorkQueue,
 )
 from seleric_swarm.runtime import SwarmRuntime
-from seleric_swarm.coordinator.observability.events import observe_mission_events
 
 router = APIRouter(prefix="/v1", tags=["conversations"])
 ArtifactClassification = Literal["ui", "factual", "derived"]

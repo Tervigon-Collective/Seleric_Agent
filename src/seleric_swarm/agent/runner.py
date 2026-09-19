@@ -34,8 +34,10 @@ from seleric_swarm.contracts.lookup import (
 from seleric_swarm.conversations.contracts import ContextBundle, Principal, PrincipalAuthMethod
 from seleric_swarm.observability.traces import mission_trace
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
 from seleric_swarm.services.time_range import as_of_date
 from seleric_swarm.state.missions import Mission
+from seleric_swarm.toolsets.semantic import query_metrics
 
 _LOOKUP_STATUSES = {
     "completed",
@@ -46,6 +48,24 @@ _LOOKUP_STATUSES = {
     "blocked",
     "prototype_completed",
 }
+
+_ALIAS_REGISTRY: MetricRegistry | None = None
+
+
+def _alias_registry() -> MetricRegistry:
+    global _ALIAS_REGISTRY
+    if _ALIAS_REGISTRY is None:
+        _ALIAS_REGISTRY = MetricRegistry("config/metric_registry.yaml")
+    return _ALIAS_REGISTRY
+
+
+def _lookup_alias(query: str) -> MetricDefinition | None:
+    """Exact YAML overlay only (``ns``/``np``/``adsp``/``gs``).
+
+    Lives on the runner, not ``query_metrics``: Profile B requires two
+    spellings of one metric to stay independently attributed at the tool.
+    """
+    return _alias_registry().resolve_alias(query)
 
 
 def _user_facing_agent_failure(exc: BaseException) -> tuple[str, str]:
@@ -75,16 +95,67 @@ def _as_of_datetime(as_of: str | None, timezone: str = "Asia/Kolkata") -> dateti
     return datetime(day.year, day.month, day.day, tzinfo=tz)
 
 
-def _mission_prompt(query: str, as_of_dt: datetime, timezone: str) -> str:
+def _mission_prompt(
+    query: str,
+    as_of_dt: datetime,
+    timezone: str,
+    context: ContextBundle | None = None,
+) -> str:
     as_of_day = as_of_dt.date()
     yesterday = as_of_day.fromordinal(as_of_day.toordinal() - 1)
+    thread = _thread_context_block(context)
     return (
-        f"{query}\n\n"
+        f"{thread}{query}\n\n"
         f"[system: mission as_of={as_of_day.isoformat()} timezone={timezone}. "
         f"'today' is {as_of_day.isoformat()}. "
         f"'yesterday' is {yesterday.isoformat()}. "
-        f"Use only this calendar; do not invent another year from training data.]"
+        f"Use only this calendar; do not invent another year from training data. "
+        f"Use thread context for follow-ups; do not treat this as a brand-new chat.]"
     )
+
+
+def _part_text(message: dict[str, Any]) -> str:
+    chunks: list[str] = []
+    for part in message.get("parts") or []:
+        if not isinstance(part, dict):
+            continue
+        if str(part.get("type") or "").upper() != "TEXT":
+            continue
+        content = part.get("content")
+        if isinstance(content, str) and content.strip():
+            chunks.append(content.strip())
+    return "\n".join(chunks)
+
+
+def _thread_context_block(bundle: ContextBundle | None) -> str:
+    """Prior turns / summary / memories already stored by conversations."""
+    if bundle is None:
+        return ""
+    lines: list[str] = []
+    summary = bundle.latest_summary.summary.strip() if bundle.latest_summary else ""
+    if summary:
+        lines.append(f"Summary: {summary[:500]}")
+    for mem in bundle.memories[:6]:
+        content = mem.content if isinstance(mem.content, str) else str(mem.content)
+        text = content.strip()
+        if not text:
+            continue
+        kind = getattr(mem.type, "value", mem.type)
+        lines.append(f"Memory ({kind}): {text[:240]}")
+    turns: list[str] = []
+    for raw in bundle.recent_messages[-8:]:
+        message = raw if isinstance(raw, dict) else {}
+        text = _part_text(message)
+        if not text:
+            continue
+        who = "User" if str(message.get("role") or "").upper() == "USER" else "Seleric"
+        turns.append(f"{who}: {text[:400]}")
+    if turns:
+        lines.append("Recent turns:")
+        lines.extend(turns)
+    if not lines:
+        return ""
+    return "[thread context]\n" + "\n".join(lines) + "\n\n"
 
 
 def _context_bundle(raw: dict[str, Any] | None) -> ContextBundle:
@@ -108,6 +179,51 @@ def _principal(*, workspace_id: str, user_id: str) -> Principal:
 
 def _lookup_status(status: str) -> str:
     return status if status in _LOOKUP_STATUSES else "partial"
+
+
+class _ToolCtx:
+    def __init__(self, deps: SelericDeps) -> None:
+        self.deps = deps
+
+
+async def _alias_lookup_result(
+    deps: SelericDeps,
+    *,
+    query: str,
+    definition: Any,
+    request_id: str,
+    thread_id: str,
+) -> V3MissionResult:
+    """Live Cube lookup for an exact YAML alias — no LLM, no invented metric id."""
+    catalogue_id = str(definition.catalogue_metric or definition.id.removeprefix("metric."))
+    tool = await query_metrics(_ToolCtx(deps), metric_id=catalogue_id)
+    value = None
+    if tool.artifact_ids:
+        artifact = deps.artifact_store.get(tool.artifact_ids[0])
+        if artifact is not None and isinstance(artifact.payload, dict):
+            value = artifact.payload.get("value")
+    label = next(iter(definition.aliases), definition.id.removeprefix("metric."))
+    unit = str(getattr(definition, "unit", "") or "").strip()
+    if tool.success and value is not None:
+        amount = f"{value:,.0f}" if isinstance(value, (int, float)) else str(value)
+        answer = f"{label}: {amount} {unit}".strip()
+        status = "completed"
+        error_code = None
+    else:
+        answer = tool.summary or f"No live data for {label}."
+        status = "failed"
+        error_code = tool.error_code or "INSUFFICIENT_EVIDENCE"
+    return V3MissionResult(
+        mission_id=deps.mission_id,
+        status=status,
+        query=query,
+        as_of=deps.as_of,
+        final_response=answer,
+        evidence_ids=list(tool.artifact_ids),
+        limitations=[] if tool.success else [error_code or "INSUFFICIENT_EVIDENCE"],
+        error_code=error_code,
+        trace={"request_id": request_id, "session_id": thread_id, "lookup": "alias"},
+    )
 
 
 def _to_lookup(
@@ -199,28 +315,32 @@ async def run_v3_mission(
             ),
         ),
     )
-    agent = build_seleric_agent(model=resolve_v3_model(runtime.settings))
-    prompt = _mission_prompt(query, as_of_dt, timezone)
+    alias_def = _lookup_alias(query)
     with mission_trace(mission_id, query=query, route="v3"):
         try:
-            # run_validated_mission (not a bare agent.run()) so the bounded
-            # 1-revision retry loop (agent/validation.py, non-negotiable
-            # rule 11) and the execution-limit tracker (agent/limits.py) are
-            # actually exercised on this live path — without it, a
-            # status="completed" mission with an empty final_response can
-            # reach a real user (observed 2026-09-19, see TASK_SHEET.md).
-            v3_result = await asyncio.wait_for(
-                run_validated_mission(agent, deps, prompt),
-                timeout=deps.limits.max_runtime_seconds,
-            )
-            result: V3MissionResult = v3_result.model_copy(
-                update={
-                    "mission_id": mission_id,
-                    "query": query,
-                    "as_of": as_of_dt,
-                    "trace": {"request_id": request_id, "session_id": thread_id},
-                }
-            )
+            if alias_def is not None:
+                result = await _alias_lookup_result(
+                    deps,
+                    query=query,
+                    definition=alias_def,
+                    request_id=request_id,
+                    thread_id=thread_id,
+                )
+            else:
+                agent = build_seleric_agent(model=resolve_v3_model(runtime.settings))
+                prompt = _mission_prompt(query, as_of_dt, timezone, context=deps.context)
+                v3_result = await asyncio.wait_for(
+                    run_validated_mission(agent, deps, prompt),
+                    timeout=deps.limits.max_runtime_seconds,
+                )
+                result = v3_result.model_copy(
+                    update={
+                        "mission_id": mission_id,
+                        "query": query,
+                        "as_of": as_of_dt,
+                        "trace": {"request_id": request_id, "session_id": thread_id},
+                    }
+                )
         except TimeoutError:
             result = V3MissionResult(
                 mission_id=mission_id,

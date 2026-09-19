@@ -67,6 +67,37 @@ async def test_v3_runner_persists_for_conversations_and_office():
     assert v3.status in {"partial", "completed", "failed"}
 
 
+@pytest.mark.asyncio
+async def test_v3_runner_ns_uses_live_catalogue_id_not_llm():
+    class _Mcp:
+        async def call(self, *, agent_id: str, capability: str, arguments: dict) -> dict:
+            del agent_id
+            if capability == "seleric.metrics_query":
+                assert arguments["measures"] == ["commerce_net_revenue_daily"]
+                return {
+                    "query_id": "q1",
+                    "rows": [{"commerce_net_revenue_daily": "71727"}],
+                    "provenance": {},
+                }
+            return {}
+
+    runtime = _runtime()
+    runtime.mcp = _Mcp()
+    dispatched = await run_v3_mission(
+        runtime,  # type: ignore[arg-type]
+        query="ns",
+        mission_id="MS3-ns",
+        workspace_id="default",
+        owner_user_id="default",
+        thread_id="thread-ns",
+        run_id="run-ns",
+        request_id="req-ns",
+    )
+    assert dispatched["route"] == "v3"
+    assert "71,727" in dispatched["result"]["final_response"]
+    assert dispatched["result"]["status"] == "completed"
+
+
 def test_v3_office_snapshot_and_list(monkeypatch):
     from seleric_swarm import main as main_mod
     from seleric_swarm.api.office import gateway
@@ -162,6 +193,30 @@ def test_mission_prompt_pins_as_of_and_timezone():
     assert "'today' is 2026-09-19" in prompt
     assert as_of.tzinfo is not None
     assert getattr(as_of.tzinfo, "key", None) == "Asia/Kolkata"
+
+
+def test_mission_prompt_includes_stored_thread_context():
+    from seleric_swarm.agent.runner import _as_of_datetime, _mission_prompt
+    from seleric_swarm.conversations.contracts import ContextBundle
+
+    as_of = _as_of_datetime("2026-09-19", "Asia/Kolkata")
+    bundle = ContextBundle(
+        recent_messages=[
+            {
+                "role": "USER",
+                "parts": [{"type": "TEXT", "content": "ns"}],
+            },
+            {
+                "role": "ASSISTANT",
+                "parts": [{"type": "TEXT", "content": "sales: 71,727 INR"}],
+            },
+        ]
+    )
+    prompt = _mission_prompt("and np", as_of, "Asia/Kolkata", context=bundle)
+    assert "User: ns" in prompt
+    assert "Seleric: sales: 71,727 INR" in prompt
+    assert "and np" in prompt
+    assert "thread context" in prompt
 
 
 @pytest.mark.asyncio

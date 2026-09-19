@@ -835,3 +835,47 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   already-recorded ones in `agent/runner.py`/`main.py` from other
   concurrent work — left alone rather than edited mid-flight on files
   another session owns right now.
+- 2026-09-19: **Fixed a build-breaking unresolved git merge conflict in
+  `toolsets/semantic.py`** (literal `<<<<<<< HEAD`/`=======`/`>>>>>>>`
+  markers left in the working tree — a syntax error that broke every
+  import of that module, i.e. most of the app). Also discovered along the
+  way: `AgentRegistry`/`config/agent_registry.yaml` and
+  `orchestration/dispatch.py`/`coordinator/graph.py` are already deleted by
+  concurrent Sprint 5 work — the strangler-fig cutover has substantially
+  completed since this file's Sprint 4 entries above were written.
+  First resolution attempt (keep both sides: alias-registry helpers +
+  `_AGENT_ID` rename to `"v3_agent"`) fixed the syntax but reintroduced
+  exactly bug #2's canonicalization — `MetricRegistry.resolve_alias()`
+  matches by id-prefix candidates before ever checking the declared
+  `aliases:` list, so it silently collapsed `"cac"`/`"metric.cac"` to the
+  same value, failing `test_semantic_toolset_bug_regressions.py`'s
+  formally-closed Sprint 3 exit criterion. Investigated rather than picked
+  a side blind: `agent/runner.py` (a different concurrent change, landing
+  mid-investigation) turned out to depend on that same alias machinery for
+  a real, deliberate feature — an LLM-free fast path that recognizes an
+  exact declared short alias (`"ns"`/`"np"`/`"adsp"`, optionally with
+  "yesterday"/"today") in the raw query text *before* the agent loop even
+  runs, answering with a direct Cube lookup. That's a different mechanism
+  from canonicizing an LLM-chosen `metric_id` mid-tool-call (bug #2's actual
+  failure mode), so both correctness requirements are real and compatible
+  once they're not sharing one module. Final fix: removed all
+  `MetricRegistry`/alias code from `toolsets/semantic.py` entirely (`rule
+  1` intact, `metric_id` passed verbatim to `metrics_query`/
+  `metrics_drilldown`); the concurrent session had already independently
+  relocated the same alias machinery inline into `agent/runner.py` by the
+  time this landed (a duplicate fix module this session drafted was
+  deleted once that was confirmed, rather than leaving two copies).
+  Updated `tests/unit/test_semantic_toolset.py` to drop the 5 tests that
+  asserted the now-removed in-module alias behavior (one line removed from
+  a 6th, still-valid test), with a comment explaining why rather than a
+  silent deletion. Verified: `tests/unit/test_semantic_toolset.py` +
+  `test_semantic_toolset_bug_regressions.py` + `test_analytics_semantic_handoff.py`
+  all pass (23/23). Repo-wide `ruff check src tests` clean. `mypy src`: 9
+  remaining errors, none new, none in files this fix touched (2 in
+  Profile C's `analytics/breakdown.py`, 7 pre-existing in the actively-being-
+  edited `agent/runner.py`). **Full suite: 543 passed, 0 failed, 4
+  skipped** — down from ~980 tests because Sprint 5's deletions removed
+  the swarm_v2 test files along with the code; genuinely 0 failures for
+  the first time this session, including the previously-carried
+  pre-existing live-data flake (its test file was among what Sprint 5
+  deleted).
