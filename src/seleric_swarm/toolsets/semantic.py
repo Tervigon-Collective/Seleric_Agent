@@ -30,6 +30,64 @@ from seleric_swarm.services.mcp_query import (
     row_date,
 )
 
+# LLM placeholders that are not real catalogue values. ``query_metrics``
+# requires a ``dimensions`` dict in the frozen signature, so models fill it
+# with "some_brand" / "example" when the user never named a brand (live
+# 2026-09-19: "gross sale" → unknown brand 'some_brand').
+_PLACEHOLDER_DIM_VALUES = frozenset(
+    {
+        "acme",
+        "bar",
+        "baz",
+        "brand",
+        "brand_id",
+        "brand_name",
+        "dummy",
+        "example",
+        "example_brand",
+        "foo",
+        "my_brand",
+        "n/a",
+        "na",
+        "none",
+        "null",
+        "placeholder",
+        "sample",
+        "some_brand",
+        "somebrand",
+        "string",
+        "test",
+        "unknown",
+        "your_brand",
+    }
+)
+
+
+def _is_placeholder_dimension_value(value: str) -> bool:
+    text = value.strip().lower().replace("-", "_").replace(" ", "_")
+    if not text or text in _PLACEHOLDER_DIM_VALUES:
+        return True
+    return text.startswith(("some_", "example_", "sample_", "dummy_", "test_"))
+
+
+def _sanitize_dimensions(dimensions: dict[str, str] | None) -> dict[str, str]:
+    cleaned: dict[str, str] = {}
+    for key, raw in (dimensions or {}).items():
+        if raw is None:
+            cleaned[str(key)] = ""
+            continue
+        text = str(raw).strip()
+        if text and _is_placeholder_dimension_value(text):
+            continue
+        cleaned[str(key)] = text
+    return cleaned
+
+
+def _unknown_dimension_error(error: object) -> bool:
+    text = str(error).lower()
+    return "unknown brand" in text or "unknown dimension" in text or "invalid brand" in text
+
+
 # Single agent identity for MCPGateway allowlisting — the V3 runtime has one
 # agent loop (see docs/refactor/01_PROFILE_RUNTIME.md). Write/actions stay
 # gated on this id in MCPGateway._authorize; reads accept any caller.
@@ -203,12 +261,19 @@ async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) ->
 async def query_metrics(
     ctx: RunContext[SelericDeps],
     metric_id: str,
-    dimensions: dict[str, str],
-    grain: str,
-    period_start: datetime,
-    period_end: datetime,
+    dimensions: dict[str, str] | None = None,
+    grain: str = "none",
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
 ) -> ToolResult:
-    """The only path to a numeric metric value. Writes one EvidenceArtifact."""
+    """The only path to a numeric metric value. Writes one EvidenceArtifact.
+
+    ``dimensions`` / periods default empty-or-as_of so the model can look up
+    "gross sale" without inventing a brand filter or a training-data year.
+    """
+    dimensions = _sanitize_dimensions(dimensions)
+    period_end = period_end or ctx.deps.as_of
+    period_start = period_start or period_end
     breakdown = [k for k, v in dimensions.items() if not v]
     filters = [
         {"dimension": k, "operator": "equals", "values": [v]} for k, v in dimensions.items() if v
@@ -222,6 +287,17 @@ async def query_metrics(
         filters=filters or None,
     )
     result = await call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=args)
+    if result.get("error") and filters and _unknown_dimension_error(result["error"]):
+        dimensions = {}
+        breakdown = []
+        filters = []
+        args = build_metrics_query_args(
+            measure=metric_id,
+            start=period_start.date().isoformat(),
+            end=period_end.date().isoformat(),
+            grain=None if grain == "none" else grain,
+        )
+        result = await call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=args)
     if result.get("error"):
         return ToolResult(
             success=False,
