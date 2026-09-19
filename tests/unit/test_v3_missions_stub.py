@@ -32,7 +32,7 @@ def test_stub_agent_responds_when_enabled(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "partial"
-    assert "no toolsets" in body["final_response"].lower()
+    assert "not exercised" in body["final_response"].lower()
     assert body["evidence_ids"] == []
     # The mission must be retrievable afterward -- an earlier version of
     # this handler discarded it entirely once the response was sent, which

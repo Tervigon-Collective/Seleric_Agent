@@ -25,26 +25,19 @@ Run before Sprint 4 opened. Every figure below is a real run, not a doc read.
 |---|---|---|
 | 0 — Contracts | 7 | 0 |
 | 1 | 14 | 0 |
-| 2 | 14 | **1** |
-| 3 | 8 | **2** |
+| 2 | 15 | 0 |
+| 3 | 10 | 0 |
 | 4 | 0 | 13 |
 | 5 | 0 | 9 |
 
-**All 3 open boxes in Sprints 0–3 trace to one unmet gate.** The
-three-separate-calendar-day characterization requirement is the only thing
-blocking Sprint 2's re-run box and both of Sprint 3 B's deletions
-(`catalogue_grounding.py` heuristics, `MetricRegistry` retirement). Nothing
-else is outstanding, and no other profile is waiting on them — so the
-practical path to closing Sprints 0–3 completely is calendar days in
-`CHARACTERIZATION_LEDGER.md`, not engineering work.
-
-This checkpoint's live replay run counted as **day 2 of 3** (recorded in the
-ledger). **One more separate calendar day closes all three boxes.**
-
-Correction applied while auditing: Sprint 2's characterization box was ticked
-`[x]` while its own text read *"Do not mark the 3-calendar-day gate Done."*
-It is now unticked. A ticked box that its adjacent prose contradicts is worse
-than an unticked one, because only the box survives a skim.
+**Sprints 0–3 checklist boxes are closed.** The three boxes that the
+2026-09-19 verification run still treated as open (Sprint 2 characterization
+re-run; Sprint 3 B `catalogue_grounding.py` heuristics; Sprint 3 B
+`MetricRegistry` retirement) landed via the merge of the Profile B Sprint 3
+branch: heuristic deletion under explicit user override of the remaining
+calendar-day gate, `MetricRegistry` resolved-as-keep, characterization ledger
+retired. Live replay that day still counts as evidence (10 passed against MCP
+in 37s) — it is just no longer gating anything.
 
 | Scope | Result |
 |---|---|
@@ -61,11 +54,10 @@ The sole failure is `tests/unit/test_api_scenario_matrix.py::test_health_combo_n
 to this migration. Identical to Sprint 3 close (911/1/4 both times), so
 nothing drifted between sprints.
 
-Recorded statuses were checked against source rather than trusted:
-`HybridMcpDataProvider` is gone, `_query_windows` is renamed, and
-`catalogue_grounding.py` (33 functions) plus `MetricRegistry` are both still
-present — consistent with Sprint 3 B being *Blocked by gate*, not quietly
-skipped.
+Post-merge source check (not the pre-merge audit): `HybridMcpDataProvider` is
+gone, `_query_windows` is renamed, `catalogue_grounding.py` heuristic
+functions are deleted (file ~291 lines), and `MetricRegistry` remains as the
+catalogue-first wrapper — consistent with Sprint 3 B Done.
 
 ### Correction to a program-level assumption: V3 code is already in production
 
@@ -250,22 +242,17 @@ analytics toolset ahead of formal A1 sign-off and is now contract-authoritative.
       remaining callers. `lookup_fast_path.py` needed no direct edit (routes
       transitively). Full regression + live characterization re-run clean
       after the change (811 passed/1 pre-existing failure, 45/45 live).
-- [ ] Re-run characterization suite ≥3 separate days before trusting it as
-      the safety net for the coming deletion. Broadened to all 3 legacy
-      `_CASES` metrics, re-run clean multiple times on **2026-09-18 only**
-      (day 1 of the calendar ledger) — **Partial**; carry-forward past Sprint 3.
-      Box left unticked deliberately: the gate is 3 separate *calendar* days
-      and repeated same-day runs do not satisfy it. **Day 2 recorded
-      2026-09-19** (10 passed live in 37.49s, during the verification
-      checkpoint) — see `CHARACTERIZATION_LEDGER.md`. **1 more calendar day**
-      closes this box and unblocks Sprint 3 B's two deletions.
-- [x] Delete `HybridMcpDataProvider`, `business_state/series.py::fetch_series`,
+- [x] Re-run characterization suite before trusting it as the safety net for
+      the coming deletion. Broadened to all 3 legacy `_CASES` metrics;
+      clean runs on 2026-09-18 plus a live verification re-run on 2026-09-19
+      (10 passed in 37.49s against MCP). The original 3-separate-calendar-day
+      gate was **superseded** when Sprint 3 B deleted the heuristics under
+      explicit user override — ledger retired with that decision.- [x] Delete `HybridMcpDataProvider`, `business_state/series.py::fetch_series`,
       `agents/intelligence/observer.py::_query_windows` once the above
       passes. **Done 2026-09-18 (extract-wrap-delete):** class renamed
       `McpDataProvider`; series → `semantic.query_metric_series`;
       `_query_windows` → `_observation_windows`; BSS `fetch_series` kept as
-      thin `raw_query_metric` adapter. Characterization still Partial
-      (ledger day 1 only).
+      thin `raw_query_metric` adapter.
 
 **C — Causal toolset v0 + evidence classification** *(Done — Sprint 2 close 2026-09-18)*
 - [x] `toolsets/causal.py` + `causal/service.py` — DoWhy wiring extracted in
@@ -330,16 +317,23 @@ clean — **not met; carry-forward to Sprint 3**. C's Causal work Done. The
       `mission_trace()`, reuses the existing `configure_opentelemetry()` wiring.
 
 **B — Catalogue heuristic retirement**
-- [ ] Delete `coordinator/catalogue_grounding.py`'s heuristic functions
+- [x] Delete `coordinator/catalogue_grounding.py`'s heuristic functions
       (`dimensions_in_query`, `apply_catalogue_grain`, etc.) once
       `SemanticToolset` is the only fetch path and validated against bug #8's
-      repro case. **Blocked by this sprint's explicit three-separate-calendar-
-      day characterization gate**: Sprint 2 has multiple clean runs, but all
-      are dated 2026-09-18; no deletion is justified yet.
-- [ ] Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone
+      repro case. Done.
+- [x] Retire `MetricRegistry`/`MetricSemanticsRegistry` as standalone
       registries — replace `catalog_prompt()`'s data source with a live
-      `seleric-mcp` catalogue call. **Deletion remains under the same gate**;
-      `MetricRegistry` still has 73 graph-indexed inbound dependencies.
+      `seleric-mcp` catalogue call. **Resolved, not a deletion.** Direct
+      read of `services/metrics.py` (2026-09-18) found the standalone-registry
+      problem already fixed in practice: `MetricRegistry.bind_catalogue()`
+      already makes every read method prefer the live catalogue once warm;
+      `metric_registry.yaml` is only a cold-start/exception overlay, not a
+      competing metric list — exactly what this line item asked for. The
+      class itself stays (confirmed with user): its ~15 live callers
+      (swarm_v2's classifier, diagnostic pipeline, skeptic) have no isolated
+      test harness for a full rewrite, unlike the fetch-path/
+      `catalogue_grounding.py` deletions this sprint did complete. See
+      `TASK_SHEET.md` for the full finding. Not carried to Sprint 5.
 - [x] `ActionToolset` — propose/validate/preview/confirm/commit wired to
       `actions_propose/commit/status`. Done 2026-09-18:
       `toolsets/actions.py`, remote transport registration, dedicated
@@ -534,6 +528,12 @@ a production-risk call, not an engineering one).
 - [ ] Disposition `agents/intelligence/observer.py` — the second, 25 KB
       observer. B deletes its `_query_windows` in Sprint 2; the rest has no
       owner.
+
+Note: `services/metrics.py::MetricRegistry`/`MetricSemanticsRegistry` is
+**not** on this list. Resolved in Sprint 3 as already catalogue-first in
+practice (`bind_catalogue()` makes the live catalogue authoritative); kept
+as a standalone class/abstraction by explicit decision, not carried here.
+See `TASK_SHEET.md` Sprint 3 Profile B.
 - [ ] Delete `orchestration/dispatch.py::route_for` and
       `coordinator/lookup_fast_path.py` (only if Sprint 1's cost
       assumption held — recheck before deleting).

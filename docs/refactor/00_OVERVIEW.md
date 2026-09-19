@@ -6,12 +6,13 @@ failure being the pre-existing `test_health_combo_never_returns_running` from
 the Sprint 0 baseline. Per-profile figures and the frozen-surface audit
 (**13/20 functions live**) are in `SPRINT_PLAN.md` "Verification checkpoint".
 
-Sprint 0/1/2 Done aside from Profile B's 3-calendar-day characterization
-(**Partial** — see `CHARACTERIZATION_LEDGER.md`). Profile A through Sprint 3
-Done. Profile C Sprint 3 Done (validator two-signal + bug #12, models with a
-real forecaster, parity harness). Profile B Sprint 3 partially **Blocked by
-gate** (`catalogue_grounding.py` and `MetricRegistry` deletions await 3 clean
-characterization days; ActionToolset local-only pending upstream).
+Sprint 0/1/2 Done. Profile A through Sprint 3 Done. Profile B through
+Sprint 3 Done (semantic toolset + hybrid fetch-path extract-wrap-delete;
+catalogue heuristic retirement under explicit user override of the
+3-calendar-day gate; `MetricRegistry` kept as catalogue-first wrapper;
+ActionToolset local-only pending upstream Google action). Profile C Sprint 3
+Done (validator two-signal + bug #12, models with a real forecaster, parity
+harness). The characterization ledger is retired with that override.
 
 Next: Sprint 4 — A's cutover cost/latency gate, B's cleanup, C's greenfield
 capability (4 analytics functions + Knowledge + Experiments, the 7 remaining

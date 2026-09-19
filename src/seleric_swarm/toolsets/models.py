@@ -28,21 +28,17 @@ point the same code path starts serving them with no change here.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pydantic_ai import RunContext
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact, PredictionArtifact
+from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
+from seleric_swarm.agents.skeptic.registries import ModelRecord
 from seleric_swarm.agents.skeptic.services.model_registry import model_registry_from_yaml
 from seleric_swarm.analytics.grain import CALCULATION_VERSION, validate_grain_set
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.models.service import ForecastUnavailable, forecast_series
 from seleric_swarm.toolsets import policy_config as policy
-
-if TYPE_CHECKING:
-    from pydantic_ai import RunContext
-
-    from seleric_swarm.agent.dependencies import SelericDeps
-    from seleric_swarm.agents.skeptic.registries import ModelRecord
 
 _registry_cache: dict[str, object] = {}
 
