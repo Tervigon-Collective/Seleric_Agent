@@ -2,11 +2,9 @@
 against the NEW consolidated fetch path (`toolsets/semantic.py`).
 
 Both bugs already have regression tests against the OLD swarm_v2 path:
-- Bug #8: `tests/unit/test_catalogue_grounding.py::
-  test_per_day_does_not_match_session_day_of_week` — tests
-  `coordinator/catalogue_grounding.py::dimensions_in_query()` itself, kept
-  alive only until the 3-calendar-day characterization gate clears and that
-  file is deleted.
+- Bug #8: previously also covered against the OLD swarm_v2 path directly
+  (`coordinator/catalogue_grounding.py::dimensions_in_query()`), now removed
+  along with that heuristic.
 - Bug #2: `tests/skeptic/test_skeptic_agent.py::
   test_03b_alias_spellings_of_one_metric_are_still_compared` — tests
   `MetricRegistry`/`SkepticAgent` canonicalization, still valid until
