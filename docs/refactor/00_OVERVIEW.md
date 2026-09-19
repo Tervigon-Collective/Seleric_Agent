@@ -1,14 +1,18 @@
 # Seleric V3 — Refactor Overview
 
-Status: execution underway. Sprint 0/1 Done; **Sprint 2 closed 2026-09-18**.
-Profile A through Sprint 3 (runtime scaffolding, validator + execution
-limits, mission cache/tracing/Temporal decision) Done. Profile B through
-Sprint 3 (semantic toolset v0 + hybrid fetch-path extract-wrap-delete:
-`McpDataProvider` + `query_metric_series`; catalogue heuristic retirement)
-Done. Profile C through Sprint 3 (analytics + causal + Model/Skeptic port +
-parity harness) Done. Next: Sprint 3 residuals (ActionToolset upstream).
-See `SPRINT_PLAN.md` / `TASK_SHEET.md`.
-Last verified against source: 2026-09-18.
+Status: execution underway. Sprint 0/1 Done; **Sprint 2 closed 2026-09-18**;
+**Sprint 3 closed 2026-09-19**. Profile A through Sprint 3 (runtime
+scaffolding, validator + execution limits, mission cache/tracing/Temporal
+decision) Done. Profile B through Sprint 3 (semantic toolset v0 + hybrid
+fetch-path extract-wrap-delete: `McpDataProvider` + `query_metric_series`;
+catalogue heuristic deletion, including the `lookup_v1` grain-resolution
+follow-on) Done. Profile C through Sprint 3 (analytics + causal +
+Model/Skeptic port + parity harness) Done. Google Ads action execution is
+explicitly **not part of this program's requirements** (decided
+2026-09-19) — `ActionToolset` covers Meta only, by design, not as a
+pending gap. Next: Sprint 4 (cutover gate). See `SPRINT_PLAN.md` /
+`TASK_SHEET.md`.
+Last verified against source: 2026-09-19.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube
 migration. Everything produced during the refactor (profile briefs, sprint
@@ -54,7 +58,8 @@ Broker, Provenance Composer) is **largely already live**, as a separate MCP
 server this repo already calls (`mcp__seleric-mcp__*`: `catalogue_search_metrics`,
 `catalogue_get_metric`, `catalogue_get_ontology`, `metrics_query`,
 `metrics_drilldown`, `insights_explain`, `actions_propose/commit/status`,
-plus the Meta/Google Ads write tools). Profile 2's job is **consolidating
+plus the Meta write tools — Google Ads execution is not part of this
+program's requirements, see `02_PROFILE_SEMANTIC_MCP.md`). Profile 2's job is **consolidating
 this repo's three duplicate in-process fetch paths onto that existing
 surface and deleting the duplicates** — not building a gateway from
 scratch. Confirm this by direct inspection of the `seleric-mcp` server repo

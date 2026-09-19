@@ -271,41 +271,61 @@ clean — **not met; carry-forward to Sprint 3**. C's Causal work Done. The
       user turn between preview and commit; the server's short-lived bearer
       token stays process-local and never enters model-visible provenance.
       The server broker owns executor dispatch, kill switch, audit, and
-      payload idempotency. Current upstream catalogue readiness is narrower
-      than this plan assumed: its own audit says only the Meta
-      `pause_meta_ad` pattern exists (and the live spike returned an empty
-      available-action list); no approved Google Ads action contract exists
-      to validate end-to-end yet. That upstream action-catalogue gap is
-      recorded, not papered over as completed Google coverage.
+      payload idempotency. **Google Ads action execution is not part of
+      this program's requirements** (decided 2026-09-19) — the action
+      catalogue only ever needed to cover Meta (`pause_meta_ad`, the only
+      pattern the upstream `seleric-mcp` audit found live); there is no
+      Google Ads action contract to build against or wait on.
 
 **C — Model/Skeptic-logic port**
-- [ ] `toolsets/models.py` + `models/service.py`. **The registry question is
-      already answered** — `agents/prediction/swarm_bridge.py:61-62` builds an
-      `InMemoryModelRegistry` from `scenario["forecast_truth"]`, and
-      `config/model_registry.yaml` does not exist (only a 573 B
-      `.example.yaml`, both entries `status: candidate`). There are no
-      approved production models, so this is greenfield on a fixture-driven
-      template service, not a port. Re-confirm priority with the user before
-      building it.
-- [ ] `EvidenceValidator` content checks — port trust-score/verdict-engine
+- [x] `toolsets/models.py` + `models/service.py`. **The registry question
+      was already answered** — `agents/prediction/swarm_bridge.py:61-62` builds
+      an `InMemoryModelRegistry` from `scenario["forecast_truth"]`, and
+      `config/model_registry.yaml` didn't exist (only a 573 B
+      `.example.yaml`, both entries `status: candidate`) — no approved
+      production models, so this was greenfield on a fixture-driven
+      template service, not a port. Priority confirmed with user
+      2026-09-18: **full build incl. a real forecaster**. Done —
+      `models/service.py` (Holt/exponential smoothing via `statsmodels`),
+      `models/evaluation.py`, `toolsets/models.py`, `config/model_registry.yaml`
+      (4 approved daily forecast models). See `TASK_SHEET.md`.
+- [x] `EvidenceValidator` content checks — ported trust-score/verdict-engine
       logic from `agents/skeptic/*`, preserving **two independent signals**
-      (`score_trust` and `decide_verdict` look at different things); do not
-      merge into one score.
-- [ ] Reproduce bug #12's STRONG-trust + REVISE state and record the loop's
-      behavior under the cap decided in Sprint 2.
+      (`score_trust` and `decide_verdict` look at different things), not
+      merged into one score. Done — `agent/validation/` package
+      (`signals.py`/`trust.py`/`verdict.py`), faithful port verified against
+      `tests/skeptic/` staying green (34 passed, untouched).
+- [x] Reproduced bug #12's STRONG-trust + REVISE state and recorded the
+      loop's behavior under the Sprint 2 cap. Done —
+      `tests/unit/test_v3_validation_signals.py` (19 passed); loop decision:
+      REVISE consumes a revision and re-prompts, REJECT fails closed
+      without consuming one, exhaustion mid-REVISE → `INSUFFICIENT_EVIDENCE`.
 
 **C — Behavioral parity harness (new, runs alongside)**
-- [ ] Run the replay missions through both the old specialists and the new
+- [x] Run the replay missions through both the old specialists and the new
       toolsets and diff the findings: same anomalies flagged, same hypotheses
       surfaced, same evidence classification. Every divergence gets a written
       explanation. This profile had no behavioral parity criterion at all
       while being the one the plan calls highest-behavioral-risk — schema
       completeness (metadata present on 100% of artifacts) is a floor a
-      required Pydantic field satisfies trivially, not a parity gate.
+      required Pydantic field satisfies trivially, not a parity gate. Done —
+      `evals/parity.py` + `tests/replay/test_v3_parity.py`; bar is
+      structural equivalence (metric/direction/classification/hypothesis),
+      not exact-float parity, per user decision 2026-09-18. See `TASK_SHEET.md`.
 
-**Gate:** B's Sprint 3 deletions require Sprint 2's characterization suite
-to have already passed 3 separate days clean — do not delete on a single
-green run.
+**Gate (original):** B's Sprint 3 deletions require Sprint 2's
+characterization suite to have already passed 3 separate days clean — do
+not delete on a single green run. **Overridden by explicit user decision,
+2026-09-18** ("delete it, we are almost rebuilding this") — the deletion
+proceeded on the existing green run instead; recorded, not silently
+skipped. See `TASK_SHEET.md` Sprint 3 Profile B.
+
+**Status: CLOSED 2026-09-19** — all Sprint 3 tasks across A/B/C Done (the
+one item genuinely still open past Sprint 3, `lookup_v1` grain-resolution
+follow-on, was found and fixed 2026-09-19 — see `TASK_SHEET.md`). Google
+Ads action execution was scoped out of this program's requirements
+2026-09-19, not carried forward as a gap. Full suite: 903 passed, 1 failed
+(pre-existing, unrelated), 4 skipped.
 
 ## Sprint 4
 

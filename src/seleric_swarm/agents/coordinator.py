@@ -10,6 +10,7 @@ from seleric_swarm.contracts.lookup import CoordinatorClassificationV1
 from seleric_swarm.coordinator.catalogue_grounding import (
     collapse_assigned_metrics,
     query_has_grain_intent,
+    query_tokens_for_grain,
     resolve_catalogue_dimension,
 )
 from seleric_swarm.coordinator.intake import partition_domain_questions
@@ -42,11 +43,28 @@ async def resolve_grain_for_metrics(
     """
     if not canonical or bootstrap is None or not query_has_grain_intent(query):
         return []
+    # Corroboration below reads bootstrap.get(cat_id).supported_dimensions —
+    # an unwarmed cache (nothing on this call path fetches a metric yet, so
+    # nothing else warms it) silently makes every live dimension
+    # uncorroborated, not just an unsupported one. Same warm-before-read the
+    # deleted _resolve_one_term() did.
+    await bootstrap.refresh_if_stale()
     live_dims = await resolve_catalogue_dimension(query, runtime=runtime)
     for entity in entities or []:
         for dim in await resolve_catalogue_dimension(str(entity), runtime=runtime):
             if dim not in live_dims:
                 live_dims.append(dim)
+    if not live_dims:
+        # Whole-sentence resolve found nothing and the classifier named no
+        # entities either ("units sold by product" -> entities=[]). Fall
+        # back to trying each meaningful token in isolation, stopping at the
+        # first that resolves -- mirrors the deleted _resolve_metric_term()'s
+        # per-token retry, now against the live resolver instead of a local
+        # keyword table.
+        for token in query_tokens_for_grain(query):
+            live_dims = await resolve_catalogue_dimension(token, runtime=runtime)
+            if live_dims:
+                break
     if not live_dims:
         return []
     supported: set[str] = set()
