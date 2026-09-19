@@ -43,7 +43,7 @@ def _database_probe(runtime: SwarmRuntime) -> bool:
         if repository_engine is not None and repository_engine not in engines:
             engines.append(repository_engine)
     if not engines:
-        return runtime.settings.persistence_backend == "memory"
+        return runtime.settings.persistence_backend in {"memory", "file"}
     for engine in engines:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))

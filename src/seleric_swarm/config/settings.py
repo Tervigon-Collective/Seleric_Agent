@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     app_env: str = "local"
     log_level: str = "INFO"
 
-    persistence_backend: Literal["memory", "postgres"] = "memory"
+    persistence_backend: Literal["memory", "postgres", "file"] = "memory"
+    persistence_path: str = ".data/persistence"
     database_url: str = ""
     checkpoint_backend: Literal["none", "memory", "postgres"] = "none"
     cancellation_backend: Literal["memory", "redis"] = "memory"

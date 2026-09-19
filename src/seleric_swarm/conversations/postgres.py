@@ -26,6 +26,7 @@ from seleric_swarm.conversations.contracts import (
     Thread,
     ThreadSummary,
 )
+from seleric_swarm.conversations.file_store import build_file_repositories
 from seleric_swarm.conversations.memory import build_in_memory_repositories
 from seleric_swarm.conversations.phase7 import (
     PostgresApprovalRepository,
@@ -1657,7 +1658,13 @@ def build_conversation_repositories(
     *,
     query_embedder: QueryEmbeddingHook | None = None,
     engine: Engine | None = None,
+    persist_path: str | None = None,
 ) -> ConversationRepositories:
+    if backend == "file":
+        return build_file_repositories(
+            persist_path or ".data/persistence",
+            query_embedder=query_embedder,
+        )
     if backend != "postgres":
         return build_in_memory_repositories(query_embedder=query_embedder)
     if not database_url.strip():

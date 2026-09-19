@@ -7,10 +7,11 @@ can keep threads and answers across reloads (``PERSISTENCE_BACKEND=file``).
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from seleric_swarm.contracts.lookup import MissionResult
 from seleric_swarm.conversations.contracts import Artifact

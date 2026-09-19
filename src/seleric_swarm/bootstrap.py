@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
+from seleric_swarm.api.v3_state import configure_v3_persistence
 from seleric_swarm.cancellation import build_cancellation_backend
 from seleric_swarm.checkpointing import build_checkpoint_provider
 from seleric_swarm.config.settings import Settings, get_settings
@@ -70,6 +71,9 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     metrics = MetricRegistry(settings.metric_registry_path)
     metrics.bind_catalogue(cat_bootstrap)
     query_embedder = build_query_embedder(settings)
+    persist_path = str(repo_root() / settings.persistence_path)
+    if settings.persistence_backend == "file":
+        configure_v3_persistence(persist_path)
     database_engine = (
         create_engine(settings.database_url, pool_pre_ping=True)
         if settings.persistence_backend == "postgres"
@@ -80,6 +84,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         settings.database_url,
         query_embedder=query_embedder,
         engine=database_engine,
+        persist_path=persist_path,
     )
     allowed_mime_types = {
         item.strip().lower()
@@ -131,6 +136,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
             settings.persistence_backend,
             settings.database_url,
             engine=database_engine,
+            persist_path=persist_path,
         ),
         ontology=OntologyService(mcp),
         bootstrap=cat_bootstrap,

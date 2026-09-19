@@ -360,9 +360,14 @@ def build_store(
     database_url: str,
     *,
     engine: Engine | None = None,
+    persist_path: str | None = None,
 ) -> InMemoryMissionStore | PostgresMissionStore:
     if backend == "postgres":
         if not (database_url or "").strip():
             raise ValueError("persistence_backend=postgres requires a non-empty database_url")
         return PostgresMissionStore(engine or database_url)
+    if backend == "file":
+        from seleric_swarm.persistence.file_store import FileMissionStore, file_paths
+
+        return FileMissionStore(file_paths(persist_path or ".data/persistence").missions)
     return InMemoryMissionStore()
