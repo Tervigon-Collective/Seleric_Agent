@@ -4,7 +4,7 @@ Status: execution underway. **Sprints 0–3 verified green 2026-09-19** by a
 full cross-profile test run — 911 passed / 1 failed / 4 skipped, the one
 failure being the pre-existing `test_health_combo_never_returns_running` from
 the Sprint 0 baseline. Per-profile figures and the frozen-surface audit
-(**13/20 functions live**) are in `SPRINT_PLAN.md` "Verification checkpoint".
+(**15/23 functions live**) are in `SPRINT_PLAN.md` "Verification checkpoint".
 
 Sprint 0/1/2 Done. Profile A through Sprint 3 Done. Profile B through
 Sprint 3 Done (semantic toolset + hybrid fetch-path extract-wrap-delete;
@@ -16,9 +16,12 @@ of this program's requirements**, decided 2026-09-19). Profile C Sprint 3
 Done (validator two-signal + bug #12, models with a real forecaster, parity
 harness). The characterization ledger is retired with that override.
 
-Next: Sprint 4 — A's cutover cost/latency gate, B's cleanup, C's greenfield
-capability (4 analytics functions + Knowledge + Experiments, the 7 remaining
-frozen-surface gaps; additive and explicitly not gating the canary flip).
+**Sprint 4 Profile C is Done** (2026-09-19): the 8 remaining frozen-surface
+gaps closed, so `CONTRACTS.md` §4's full 23-function surface now exists and
+all 23 are registered on `SelericAgent`. Additive and non-gating, as planned.
+
+Next: Sprint 4's remaining rows — A's cutover cost/latency gate and B's
+cleanup.
 See `SPRINT_PLAN.md` / `TASK_SHEET.md`. Last verified against source:
 2026-09-19.
 
@@ -246,6 +249,11 @@ changes require all three profiles to sign off):
 - `pydantic-ai` is an actual declared dependency and the frozen toolset
   signatures have been validated against its real API, not only against the
   spec text.
+- **`config/model_registry.yaml`, `config/experiment_registry.yaml` and
+  `knowledge_corpus/` have named owners.** All three ship empty and that
+  emptiness is a safety property, not an oversight — each is the control that
+  makes its tool refuse rather than fabricate. Whoever fills them is asserting
+  that the model was trained, the experiment was run, or the document is true.
 - **`config/model_registry.yaml` has a named owner.** Profile C seeded it in
   Sprint 3 because `ModelToolset` needs an approved-model gate to refuse
   against, but no profile brief assigns model governance to anyone. An entry in

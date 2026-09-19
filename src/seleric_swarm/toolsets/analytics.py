@@ -1,12 +1,13 @@
 """AnalyticsToolset v0 — calculations over already-fetched evidence (Profile C).
 
-Frozen signatures: ``docs/refactor/CONTRACTS.md`` §4. Sprint 1 ships the two
-*ported* functions, ``compare_periods`` and ``detect_anomalies``; the other
-four frozen analytics functions (``contribution_analysis``,
-``segment_decomposition``, ``funnel_decomposition``, ``cohort_analysis``)
-have no implementation anywhere in ``src/`` to port and are Sprint 4
-greenfield — deliberately absent here rather than stubbed, so a caller gets
-an import error rather than a silently empty result.
+Frozen signatures: ``docs/refactor/CONTRACTS.md`` §4. Sprint 1 shipped the
+two *ported* functions, ``compare_periods`` and ``detect_anomalies``. Sprint 4
+adds the other four — ``contribution_analysis``, ``segment_decomposition``,
+``funnel_decomposition``, ``cohort_analysis`` — which had no implementation
+anywhere in ``src/`` to port and are genuinely new capability. Their
+arithmetic lives in ``analytics/{breakdown,funnel,cohort}.py`` so it can be
+unit tested without a ``RunContext``; this module is the thin agent-facing
+wrapper.
 
 Non-negotiable rule 5: these tools calculate, they never fetch. Evidence
 arrives as ``evidence_ids`` that ``toolsets/semantic.py`` already wrote to
@@ -33,10 +34,14 @@ from pydantic_ai import RunContext
 from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
+from seleric_swarm.analytics import cohort as cohort_math
+from seleric_swarm.analytics import funnel as funnel_math
+from seleric_swarm.analytics.breakdown import Segment, contributions, shares
 from seleric_swarm.analytics.comparison import MetricPoint, period_deltas
 from seleric_swarm.analytics.grain import CALCULATION_VERSION, validate_grain_set
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.business_state.detectors import robust_zscore
+from seleric_swarm.toolsets import policy_config as policy
 
 # Median+MAD. "mad" and "robust_zscore" name the same estimator in this
 # codebase — services/business_state/detectors.py::robust_zscore *is* the
@@ -307,4 +312,401 @@ async def detect_anomalies(
         summary=f"{len(artifact_ids)} anomaly(ies) across {len(grouped)} series",
         provenance=_provenance(evidence_ids),
         warnings=warnings,
+    )
+
+
+# ---- Sprint 4: breakdowns ---------------------------------------------------
+#
+# All four apply the A1.2 grain precondition. CONTRACTS.md §4 binds that rule
+# textually to compare_periods/detect_anomalies only, but A1's standing rule is
+# "if the caller picks the inputs, the tool must validate them", and these four
+# take caller-chosen evidence_ids like the others. Verified safe for drilldown
+# output: validate_grain_set skips its span-vs-grain check for grain="none",
+# which is what drilldown stamps.
+
+
+def _segments_for_period(
+    evidence: list[EvidenceArtifact], evidence_ids: list[str], dimension: str
+) -> dict[tuple[datetime, datetime], list[Segment]]:
+    """Group dimension-stamped evidence into one segment list per period."""
+    out: dict[tuple[datetime, datetime], list[Segment]] = {}
+    for aid, item in zip(evidence_ids, evidence, strict=True):
+        label = item.dimensions.get(dimension)
+        if not label:
+            continue
+        key = (item.period_start, item.period_end)
+        out.setdefault(key, []).append(Segment(label=label, value=item.value, ref=aid))
+    return out
+
+
+async def contribution_analysis(
+    ctx: RunContext[SelericDeps], evidence_ids: list[str], dimension: str
+) -> ToolResult:
+    """How much each value of ``dimension`` makes up — or moved.
+
+    With one period: each segment's share of the total. With two: each
+    segment's contribution to the overall change, which is what the question
+    "why did it move?" usually means.
+
+    **The denominator is the sum of the supplied segments, not the metric's
+    true total.** ``toolsets/semantic.py::drilldown`` computes a parent total
+    and discards it, and it skips null-valued rows, so a server-side residual
+    bucket never reaches us. Shares are therefore shares *of the observed
+    parts*; a warning says so rather than letting them read as exact.
+    """
+    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    if refusal is not None:
+        return refusal
+
+    mismatch = validate_grain_set(evidence)
+    if mismatch is not None:
+        return _refuse(mismatch, error_code="EVIDENCE_GRAIN_MISMATCH")
+
+    by_period = _segments_for_period(evidence, list(evidence_ids), dimension)
+    if not by_period:
+        return ToolResult(
+            success=False,
+            summary=(
+                f"no evidence carries a {dimension!r} dimension value; "
+                "contribution_analysis needs drilldown output, not a plain query_metrics "
+                "breakdown (which leaves dimensions empty on every row)"
+            ),
+            error_code="INSUFFICIENT_EVIDENCE",
+            warnings=[policy.WARN_NO_DIMENSION_EVIDENCE],
+        )
+    if len(by_period) > 2:
+        return _refuse(
+            f"contribution_analysis handles 1 or 2 periods, got {len(by_period)}",
+            error_code="INSUFFICIENT_EVIDENCE",
+        )
+
+    metric_id = evidence[0].metric_id
+    periods = list(by_period)
+    warnings: list[str] = []
+    artifact_ids: list[str] = []
+
+    if len(periods) == 2:
+        rows, total_delta = contributions(by_period[periods[0]], by_period[periods[1]])
+        if not rows:
+            return _refuse(
+                f"no {dimension!r} value appears in both periods with a usable number",
+                error_code="INSUFFICIENT_EVIDENCE",
+            )
+        if total_delta == 0:
+            warnings.append(
+                "segments exactly offset (total change is zero); per-segment deltas are "
+                "reported but share-of-change is undefined"
+            )
+        for row in rows:
+            artifact_ids.append(
+                _write_finding(
+                    ctx,
+                    finding_type="contribution",
+                    statement=(
+                        f"{metric_id} [{dimension}={row.label}] changed by {row.delta:+.4g}, "
+                        f"{row.share_of_change:+.1%} of the total change"
+                    ),
+                    evidence_ids=[row.ref_a, row.ref_b],
+                    metrics={
+                        "delta": row.delta,
+                        "value_a": row.value_a,
+                        "value_b": row.value_b,
+                        "share_of_change": row.share_of_change,
+                    },
+                )
+            )
+        summary = (
+            f"{len(rows)} {dimension} segment(s) contributing to a {total_delta:+.4g} change"
+        )
+    else:
+        result = shares(by_period[periods[0]])
+        if result is None or not result.shares:
+            return _refuse(
+                f"no usable {dimension!r} segment values (or they sum to zero)",
+                error_code="INSUFFICIENT_EVIDENCE",
+            )
+        warnings.append(
+            "shares are of the summed segments, not an independently fetched total — "
+            "drilldown discards the parent total and skips null rows"
+        )
+        if result.other_count:
+            warnings.append(
+                f"{result.other_count} segment(s) below {policy.MIN_SEGMENT_SHARE:.0%} "
+                f"folded into 'other' ({result.other_value:+.4g}); they remain in the "
+                "denominator"
+            )
+        for share in result.shares:
+            artifact_ids.append(
+                _write_finding(
+                    ctx,
+                    finding_type="contribution",
+                    statement=(
+                        f"{metric_id} [{dimension}={share.label}] is {share.value:.4g}, "
+                        f"{share.share:.1%} of the observed total"
+                    ),
+                    evidence_ids=[share.ref],
+                    metrics={
+                        "value": share.value,
+                        "share": share.share,
+                        "total": result.total,
+                    },
+                )
+            )
+        summary = f"{len(result.shares)} {dimension} segment(s) of a {result.total:.4g} total"
+
+    return ToolResult(
+        success=True,
+        artifact_ids=artifact_ids,
+        summary=summary,
+        provenance=_provenance(evidence_ids),
+        warnings=warnings,
+    )
+
+
+async def segment_decomposition(
+    ctx: RunContext[SelericDeps], evidence_ids: list[str], dimensions: list[str]
+) -> ToolResult:
+    """Break a metric down across several dimensions at once.
+
+    One ``Finding`` per dimension, each carrying that dimension's segments.
+    Dimensions with no stamped evidence are named in ``warnings`` rather than
+    silently producing nothing.
+
+    Requires **dimension-stamped** evidence, i.e. ``drilldown`` output. A
+    ``query_metrics`` breakdown call writes N rows that all carry
+    ``dimensions={}`` (``semantic.py`` keeps only *filtered* dims on the
+    artifact), which would pool into one indistinguishable series — this
+    refuses that rather than averaging it into a number nobody can trace.
+    """
+    if not dimensions:
+        return _refuse("no dimensions supplied", error_code="INSUFFICIENT_EVIDENCE")
+
+    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    if refusal is not None:
+        return refusal
+
+    mismatch = validate_grain_set(evidence)
+    if mismatch is not None:
+        return _refuse(mismatch, error_code="EVIDENCE_GRAIN_MISMATCH")
+
+    if not any(item.dimensions for item in evidence):
+        return ToolResult(
+            success=False,
+            summary=(
+                "every evidence row has empty dimensions — these are pooled rows from a "
+                "query_metrics breakdown, not per-segment drilldown output, and cannot be "
+                "told apart"
+            ),
+            error_code="INSUFFICIENT_EVIDENCE",
+            warnings=[policy.WARN_POOLED_SEGMENTS],
+        )
+
+    metric_id = evidence[0].metric_id
+    artifact_ids: list[str] = []
+    warnings: list[str] = []
+
+    for dimension in dimensions:
+        by_period = _segments_for_period(evidence, list(evidence_ids), dimension)
+        if not by_period:
+            warnings.append(f"{policy.WARN_NO_DIMENSION_EVIDENCE}:{dimension}")
+            continue
+        # One period per dimension here; a multi-period breakdown is
+        # contribution_analysis's job, not this one's.
+        segments = [s for period in by_period.values() for s in period]
+        result = shares(segments)
+        if result is None or not result.shares:
+            warnings.append(f"{policy.WARN_NO_DIMENSION_EVIDENCE}:{dimension}")
+            continue
+        top = result.shares[0]
+        artifact_ids.append(
+            _write_finding(
+                ctx,
+                finding_type="segment_decomposition",
+                statement=(
+                    f"{metric_id} by {dimension}: {len(result.shares)} segment(s), "
+                    f"largest is {top.label} at {top.share:.1%} of {result.total:.4g}"
+                ),
+                evidence_ids=[s.ref for s in result.shares],
+                metrics={
+                    "segments": float(len(result.shares)),
+                    "total": result.total,
+                    "top_share": top.share,
+                    "top_value": top.value,
+                    "other_count": float(result.other_count),
+                },
+            )
+        )
+
+    if not artifact_ids:
+        return _refuse(
+            f"none of {dimensions} had usable stamped evidence",
+            error_code="INSUFFICIENT_EVIDENCE",
+        )
+
+    return ToolResult(
+        success=True,
+        artifact_ids=artifact_ids,
+        summary=(
+            f"{metric_id} decomposed across {len(artifact_ids)} of "
+            f"{len(dimensions)} dimension(s)"
+        ),
+        provenance=_provenance(evidence_ids),
+        warnings=warnings,
+    )
+
+
+async def funnel_decomposition(
+    ctx: RunContext[SelericDeps], evidence_ids: list[str]
+) -> ToolResult:
+    """Step-to-step conversion and drop-off across the website funnel.
+
+    Steps and their order come from ``policy_config.FUNNEL_STEPS``, which is
+    declared rather than inferred — see that constant's comment for why
+    parsing ``formula`` strings to order them would be a regression.
+
+    Every step in that list is session-anchored (``X_sessions / sessions``),
+    so conversion between consecutive steps is ``rate[i+1] / rate[i]`` and no
+    cross-axis division is involved. Metric ids outside the declared funnel
+    are dropped and named in ``warnings``, never positioned by guesswork.
+    """
+    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    if refusal is not None:
+        return refusal
+
+    mismatch = validate_grain_set(evidence)
+    if mismatch is not None:
+        return _refuse(mismatch, error_code="EVIDENCE_GRAIN_MISMATCH")
+
+    readings = [
+        funnel_math.StepReading(metric_id=item.metric_id, value=item.value, ref=aid)
+        for aid, item in zip(evidence_ids, evidence, strict=True)
+    ]
+    steps = funnel_math.ordered_steps(readings)
+    warnings: list[str] = []
+
+    unknown = funnel_math.unknown_steps(readings)
+    if unknown:
+        warnings.append(f"{policy.WARN_UNKNOWN_FUNNEL_STEP}:{','.join(unknown)}")
+
+    if len(steps) < 2:
+        return ToolResult(
+            success=False,
+            summary=(
+                f"{len(steps)} recognized funnel step(s); need at least 2 to measure a "
+                f"conversion. Declared funnel: {', '.join(policy.FUNNEL_STEPS)}"
+            ),
+            error_code="INSUFFICIENT_EVIDENCE",
+            warnings=[policy.WARN_NO_FUNNEL_STEPS, *warnings],
+        )
+
+    moves = funnel_math.transitions(steps)
+    if not moves:
+        return _refuse(
+            "no measurable transition (an upstream step is zero)",
+            error_code="INSUFFICIENT_EVIDENCE",
+        )
+
+    artifact_ids = [
+        _write_finding(
+            ctx,
+            finding_type="funnel_decomposition",
+            statement=(
+                f"{move.from_step} -> {move.to_step}: {move.conversion:.1%} converted, "
+                f"{move.drop_off:.1%} dropped off"
+            ),
+            evidence_ids=[s.ref for s in steps],
+            metrics={"conversion": move.conversion, "drop_off": move.drop_off},
+        )
+        for move in moves
+    ]
+
+    worst = funnel_math.worst_transition(moves)
+    worst_text = (
+        f"; largest drop-off {worst.drop_off:.1%} at {worst.from_step} -> {worst.to_step}"
+        if worst is not None
+        else ""
+    )
+    return ToolResult(
+        success=True,
+        artifact_ids=artifact_ids,
+        summary=(
+            f"{len(moves)} funnel transition(s) across {len(steps)} step(s){worst_text}"
+        ),
+        provenance=_provenance(evidence_ids),
+        warnings=warnings,
+    )
+
+
+async def cohort_analysis(ctx: RunContext[SelericDeps], evidence_ids: list[str]) -> ToolResult:
+    """Compare cohorts against their own median.
+
+    **Does not assume a time series.** The customer-domain retention metrics
+    have no daily grain — ``repeat_rate`` slices by ``brand_id`` only, and a
+    windowed query returns a single row for the whole window
+    (``feature_class: windowed_point``). So a cohort here is a dimension
+    value, or, when the evidence carries no dimension, a measurement window.
+    The summary says which of the two it did, because they answer different
+    questions.
+    """
+    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    if refusal is not None:
+        return refusal
+
+    mismatch = validate_grain_set(evidence)
+    if mismatch is not None:
+        return _refuse(mismatch, error_code="EVIDENCE_GRAIN_MISMATCH")
+
+    readings = [
+        cohort_math.CohortReading(
+            # One dimension value identifies the cohort; with several stamped,
+            # join them so two cohorts never collapse onto one label.
+            label="/".join(str(v) for _, v in sorted(item.dimensions.items())),
+            value=item.value,
+            period_start=item.period_start,
+            ref=aid,
+        )
+        for aid, item in zip(evidence_ids, evidence, strict=True)
+    ]
+    readings, by_period = cohort_math.label_readings(readings)
+
+    spread = cohort_math.cohort_spread(readings)
+    if spread is None:
+        return ToolResult(
+            success=False,
+            summary="fewer than 2 cohorts carry a value; nothing to compare",
+            error_code="INSUFFICIENT_EVIDENCE",
+            warnings=[policy.WARN_SINGLE_COHORT],
+        )
+
+    metric_id = evidence[0].metric_id
+    basis = "measurement window" if by_period else "dimension value"
+    artifact_ids = [
+        _write_finding(
+            ctx,
+            finding_type="cohort_analysis",
+            statement=(
+                f"{metric_id} cohort {c.label} is {c.value:.4g} "
+                f"({c.delta_from_median:+.4g} vs the cohort median {spread.median:.4g})"
+            ),
+            evidence_ids=[c.ref],
+            metrics={
+                "value": c.value,
+                "delta_from_median": c.delta_from_median,
+                "cohort_median": spread.median,
+            },
+        )
+        for c in spread.cohorts
+    ]
+
+    return ToolResult(
+        success=True,
+        artifact_ids=artifact_ids,
+        summary=(
+            f"{len(spread.cohorts)} cohort(s) of {metric_id} by {basis}; "
+            f"best {spread.best.label} {spread.best.value:.4g}, "
+            f"worst {spread.worst.label} {spread.worst.value:.4g}, "
+            f"spread {spread.spread:.4g}"
+        ),
+        provenance=_provenance(evidence_ids),
+        warnings=[f"cohorts identified by {basis}"] if by_period else [],
     )

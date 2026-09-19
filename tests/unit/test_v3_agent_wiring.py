@@ -1,6 +1,6 @@
 """Sprint 4 Profile A: the agent actually has every implemented toolset.
 
-This is a wiring test, not an integration test — it proves 15 real tool
+This is a wiring test, not an integration test — it proves all 23 real tool
 functions register on ``SelericAgent`` without a schema error (the bug this
 test guards: ``RunContext[SelericDeps]`` annotations that only resolved
 under ``TYPE_CHECKING`` blew up at real tool-registration time with
@@ -14,8 +14,14 @@ from __future__ import annotations
 from seleric_swarm.agent.agent import TOOLS, build_seleric_agent
 
 
-def test_all_fifteen_tools_are_listed() -> None:
-    assert len(TOOLS) == 15
+def test_every_frozen_function_is_registered() -> None:
+    """23 is the full CONTRACTS.md §4 surface (Sprint 4 closed the last 8).
+
+    Counting here is what stops a toolset being written and then silently left
+    unregistered — the test suite would stay green, because a tool nobody
+    registers is a tool nobody tests.
+    """
+    assert len(TOOLS) == 23
 
 
 def test_all_tools_register_on_the_agent() -> None:
@@ -37,11 +43,21 @@ def test_all_tools_register_on_the_agent() -> None:
         "validate",
         "preview",
         "commit_action",
+        # Sprint 4 Profile C — the four greenfield analytics functions...
+        "contribution_analysis",
+        "segment_decomposition",
+        "funnel_decomposition",
+        "cohort_analysis",
+        # ...and the two toolsets that had no module at all before Sprint 4.
+        "search_knowledge",
+        "get_experiment_history",
+        "estimate_sample_size",
+        "evaluate_experiment",
     }
 
 
 async def test_stub_model_still_calls_zero_tools() -> None:
-    # call_tools=[] on the stub model must still hold even with 15 real
+    # call_tools=[] on the stub model must still hold even with 23 real
     # tools registered -- the 0%-traffic path stays side-effect-free.
     # "final_result" is pydantic_ai's own internal structured-output call,
     # not one of the 15 real tools -- excluded, not counted as a tool call.

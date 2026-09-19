@@ -445,29 +445,36 @@ Ads action execution was scoped out of this program's requirements
 **C — Greenfield capability (additive scope, non-blocking)**
 
 All three rows are genuinely new capability, not ports. The
-**frozen-surface audit at Sprint 4 open (2026-09-19) is 13/20**: `semantic`
+**frozen-surface audit at Sprint 4 open (2026-09-19) is 15/23**: `semantic`
 4/4, `actions` 4/4, `causal` 2/2, `models` 3/3, `analytics` **2/6**,
 `knowledge` and `experiments` **module missing**. This section closes exactly
-those 7 gaps; re-running that audit to 20/20 is the section's own exit check.
+those 8 gaps; re-running that audit to 23/23 is the section's own exit check.
+(Corrected 2026-09-19: an earlier pass of this section said 13/20 and 7 gaps.
+That was an arithmetic slip — `CONTRACTS.md` §4 declares 23 functions and 15
+are live. The gap list itself was right; only the totals were wrong.)
 
-- [ ] Clear two pre-existing `F401` lint errors found during verification:
+- [x] Clear two pre-existing `F401` lint errors found during verification:
       `swarm/providers/mcp_data.py:19` (`row_date` unused, Profile B) and
       `tests/unit/test_causal_toolset.py:10` (`typing.Any` unused, Profile C).
       Both auto-fixable; do this first so `ruff check src tests` is clean
       before new code lands.
-- [ ] The four non-port analytics functions: `contribution_analysis`,
+- [x] The four non-port analytics functions: `contribution_analysis`,
       `segment_decomposition`, `funnel_decomposition`, `cohort_analysis`
       (moved here from Sprint 1 — no implementation exists in `src/` to
       port). Each follows the established call order in
       `toolsets/analytics.py`: `_load_evidence` → `validate_grain_set` →
       compute → `_write_finding` → `ToolResult`.
-- [ ] **Record the decision that A1.2 binds all four.** `CONTRACTS.md` §4
+- [x] **Record the decision that A1.2 binds all four.** Filed as `CONTRACTS.md`
+      amendment **A1.9** (2026-09-19) and applied to §4's text.
+      Original note: `CONTRACTS.md` §4
       binds the grain precondition textually to `compare_periods`/
       `detect_anomalies` only. All four new functions take caller-chosen
       `evidence_ids`, so A1's standing rule applies ("if the caller picks the
       inputs, the tool must validate them") — but extending a frozen
       precondition is a decision to write down, not to assume.
-- [ ] `toolsets/knowledge.py` + `knowledge/*`. **Reuse, don't rebuild:**
+- [x] `toolsets/knowledge.py` + `knowledge/*`. **Built file-backed instead** — see
+      `TASK_SHEET.md` for why the hybrid search below turned out not to fit.
+      Original plan:
       `conversations/phase7.py` is already a working hybrid search engine
       (lexical `ts_rank` + optional pgvector cosine + `reciprocal_rank_fusion`,
       with `build_query_embedder()` returning `None` when unconfigured so the
@@ -480,7 +487,7 @@ those 7 gaps; re-running that audit to 20/20 is the section's own exit check.
       `success=True` with zero artifacts). Corpus ships **empty** with a
       documented ingestion path — nothing writes knowledge artifacts today,
       and inventing business knowledge to fill it is not the job.
-- [ ] `toolsets/experiments.py` + `experiments/*`. `config/experiment_registry.yaml`
+- [x] `toolsets/experiments.py` + `experiments/*`. `config/experiment_registry.yaml`
       mirroring the `config/model_registry.yaml` pattern from Sprint 3 —
       version-controlled and reviewable, no migration for a table nothing
       writes yet. `estimate_sample_size` is real power math via
@@ -488,8 +495,9 @@ those 7 gaps; re-running that audit to 20/20 is the section's own exit check.
       was declared in Sprint 3 and `scipy` is not needed).
       `evaluate_experiment` reuses `models/evaluation.py`'s tri-state
       discipline, where a missing interval is *not* a miss.
-- [ ] These do not block A's Sprint 4 cutover gate — land after, don't
-      hold up the canary flip for genuinely new capability.
+- [x] These do not block A's Sprint 4 cutover gate — land after, don't
+      hold up the canary flip for genuinely new capability. Confirmed: nothing
+      in this section is wired into `orchestration/dispatch.py`.
 
 **Three live-data constraints for C, verified — do not design around guesses:**
 

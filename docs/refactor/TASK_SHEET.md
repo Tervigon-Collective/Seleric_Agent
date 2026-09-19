@@ -145,9 +145,12 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 ### Profile C — Greenfield capability (additive, non-blocking)
 | Task | Status | Evidence |
 |---|---|---|
-| `contribution_analysis`, `segment_decomposition`, `funnel_decomposition`, `cohort_analysis` (moved from Sprint 1 — no source to port) | Not started | |
-| `toolsets/knowledge.py` | Not started | |
-| `toolsets/experiments.py` | Not started | |
+| `contribution_analysis`, `segment_decomposition`, `funnel_decomposition`, `cohort_analysis` (moved from Sprint 1 — no source to port) | Done | Math in `analytics/{breakdown,funnel,cohort}.py` (pure, unit-testable without a `RunContext`); wrappers in `toolsets/analytics.py`. **A1.2 extended to all six** analytics functions — filed as amendment A1.9 rather than widened silently. Three decisions worth knowing: (1) `contribution_analysis`'s denominator is the sum of supplied segments, because `semantic.py::drilldown` computes a parent total and discards it and skips null rows — so shares are of the *observed parts* and a warning says so; (2) funnel step order is an explicit `policy_config.FUNNEL_STEPS` constant, and the five chosen metrics all share the `sessions` denominator (verified `config/metric_registry.yaml:148-215`), which is what makes conversion `rate[i+1]/rate[i]` rather than a cross-axis division the catalogue warns against; (3) `cohort_analysis` does not assume a time series — `repeat_rate` is a `windowed_point` with no daily grain. `segment_decomposition` refuses pooled `query_metrics` breakdown rows (they all carry `dimensions={}` and are indistinguishable) rather than averaging them. Verified: `tests/unit/test_analytics_breakdowns.py` (28 passed). |
+| `toolsets/knowledge.py` | Done | `knowledge/{corpus,search}.py` + `toolsets/knowledge.py`; corpus at `knowledge_corpus/` with a README documenting ingestion. **File-backed, not the existing hybrid search** — `conversations/phase7.py` is real and wired, but it is synchronous (tools are async), has no `artifact_type` filter, and searches a Postgres `artifacts` table that `ctx.deps.artifact_store` does not write to, so it would never surface anything this agent produced and answers "what did we discuss" rather than "what does the SOP say". **Rule 12 is enforced structurally**: `search_knowledge` writes zero artifacts, so a document can never be cited as evidence for a numeric claim no matter what the model does with the text — pinned by `test_knowledge_never_writes_an_artifact`. **The corpus ships empty** and says so (`success=True` + `policy:empty_knowledge_corpus`), kept distinguishable from "documents exist, none match". Verified: `tests/unit/test_knowledge_toolset.py` (17 passed). |
+| `toolsets/experiments.py` | Done | `experiments/{registry,stats}.py` + `toolsets/experiments.py` + `config/experiment_registry.yaml` (mirrors the Sprint 3 model-registry pattern; no migration for a table nothing writes). `estimate_sample_size` is **real power analysis** via `statsmodels.stats.power.NormalIndPower` + `proportion_effectsize` — zero new dependencies, and pinned against a known figure (2.0%→2.5% at 80% power ≈ 13.8k per variant). **`mde` is absolute, and the summary says so**, because relative-vs-absolute is how that number ends up silently several times wrong. **The registry is a control**: `evaluate_experiment` refuses an unregistered id rather than scoring supplied evidence, since measuring lift against an undeclared control is how a system asserts a result nobody designed — which is also why the shipped registry is empty. **Significance is never asserted**: evidence carries point values with no interval or sample count, so it stays unknown rather than reporting "not significant". Verified: `tests/unit/test_experiments_toolset.py` (23 passed). |
+| Register all 23 frozen functions on `SelericAgent` (Profile A file, touched by C) | Done | `agent/agent.py::TOOLS` 15 → 23 plus `knowledge`/`experiments` imports; `tests/unit/test_v3_agent_wiring.py` updated (count, name set, and the test name itself, which said "fifteen"). All 23 register without a schema error — the trap that guards is `RunContext`/`SelericDeps` imported only under `TYPE_CHECKING`, which resolves fine for mypy and raises `NameError` at real tool-registration time. Every new module imports them at runtime for that reason. |
+| Full suite vs. post-merge bar | Done | `./.venv/Scripts/python.exe -m pytest -q --ignore=tests/integration/test_minio_blob_store_integration.py` (2026-09-19) → **971 passed, 1 failed, 4 skipped** in 504s. Up exactly 68 from the 903 post-merge bar — the 68 new tests, no collateral. Sole failure remains the pre-existing `tests/unit/test_api_scenario_matrix.py::test_health_combo_never_returns_running` carried since the Sprint 0 baseline. `ruff check src tests` clean repo-wide, including two pre-existing F401s inherited from earlier sprints. |
+| Frozen-surface audit 23/23 | Done | `CONTRACTS.md` §4 declares 23 functions; all 23 now import and exist (`semantic` 4/4, `actions` 4/4, `analytics` 6/6, `causal` 2/2, `models` 3/3, `knowledge` 1/1, `experiments` 3/3). This is the one check a green suite cannot make — it catches a *missing* deliverable rather than a broken one. Also corrected a figure: earlier passes recorded "13/20, 7 gaps", which was my arithmetic error; the gap list was right, the totals were not. Fixed in `SPRINT_PLAN.md` and `00_OVERVIEW.md`. |
 
 ## Sprint 5 — Old pipeline deletion
 
@@ -671,3 +674,66 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
     `swarm/providers/mcp_data.py:19` (`row_date`, Profile B) and
     `tests/unit/test_causal_toolset.py:10` (`typing.Any`, Profile C Sprint 2).
     Queued as the first task of Sprint 4 C.
+
+- 2026-09-19: **Sprint 4 / Profile C executed** — the last 8 frozen functions.
+  New: `analytics/{breakdown,funnel,cohort}.py`, `knowledge/{__init__,corpus,search}.py`,
+  `toolsets/{knowledge,experiments}.py`, `experiments/{__init__,registry,stats}.py`,
+  `config/experiment_registry.yaml`, `knowledge_corpus/README.md`, and three test files
+  (68 new tests). Modified: `toolsets/analytics.py` (+4 functions),
+  `toolsets/policy_config.py` (Sprint 4 block), `agent/agent.py` (TOOLS 15→23),
+  `tests/unit/test_v3_agent_wiring.py`. **Frozen surface is now 23/23.** Nothing wired
+  into `orchestration/dispatch.py`.
+
+  **A figure I reported earlier was wrong.** The verification checkpoint said the
+  frozen surface was "13/20, 7 gaps". `CONTRACTS.md` §4 declares **23** functions and
+  **15** were live, so it was **15/23 with 8 gaps**. The gap *list* was right both
+  times — only the totals were wrong, and Sprint 4's scope never actually changed.
+  Corrected in `SPRINT_PLAN.md` and `00_OVERVIEW.md`.
+
+  **Three design decisions that a reader should not have to infer:**
+  - `contribution_analysis`'s denominator is the **sum of the supplied segments**, not
+    the metric's true total. `semantic.py::drilldown` computes a parent total and
+    throws it away, and skips null-valued rows, so a server-side residual bucket never
+    reaches us. Shares are therefore shares *of the observed parts*, and a warning says
+    so rather than letting them read as exact.
+  - **Funnel order is declared, not derived.** `policy_config.FUNNEL_STEPS` lists five
+    metrics that all share the `sessions` denominator (verified against
+    `config/metric_registry.yaml:148-215`), which is exactly what makes step conversion
+    `rate[i+1]/rate[i]` instead of the cross-axis division the live catalogue rejects
+    with `CROSS_AXIS_RATIO_UNSUPPORTED`. Inferring order by parsing `formula` strings
+    would have rebuilt the heuristic layer Profile B deleted in Sprint 3.
+  - **`search_knowledge` is file-backed, not the existing hybrid search.**
+    `conversations/phase7.py` is real and wired, and reusing it was the first instinct.
+    It does not fit: `search()` is synchronous (tools are async), it has no
+    `artifact_type` filter, and it searches a Postgres `artifacts` table that
+    `ctx.deps.artifact_store` never writes to — so it would surface nothing this agent
+    produced, and it answers "what did we discuss" rather than "what does the SOP say".
+
+  **Two empty files that are load-bearing.** `knowledge_corpus/` and
+  `config/experiment_registry.yaml` both ship empty on purpose, for the same reason
+  `config/model_registry.yaml` has no LTV entry: `evaluate_experiment` scores evidence
+  against whatever is declared, so a plausible-looking fake entry would produce a
+  real-looking lift finding for a test that never ran. The emptiness *is* the safety
+  property. Both report it as `success=True` with a named warning, kept distinguishable
+  from "records exist, none match".
+
+  **Rule 12 is now structural rather than instructional.** `search_knowledge` writes
+  zero artifacts, so a document cannot be cited as evidence for a numeric claim
+  whatever the model does with the text.
+  `test_knowledge_never_writes_an_artifact` is the guard — if someone later makes it
+  return a Finding, rule 12 quietly stops holding and only that test fails.
+
+  **Amendment A1.9 filed**, not applied silently: A1.2's grain precondition was written
+  for the two analytics functions that existed at the time and now binds all six. It
+  also records a deliberate limitation — the equal-spans rule refuses August (31 days)
+  against September (30) for `cohort_analysis`. Weakening it for cohorts would remove
+  the guard for raw counts too, since the tool cannot tell a normalized rate from a
+  count, so the refusal stands and callers fetch equal windows. Pinned as a test so the
+  tradeoff is visible rather than rediscovered as a bug.
+
+  **A trap worth recording for anyone adding a toolset:** `RunContext`/`SelericDeps`
+  must be imported at **runtime**, not under `TYPE_CHECKING`. pydantic_ai resolves
+  annotations at tool-registration time, so a `TYPE_CHECKING`-only import passes mypy
+  and raises `NameError` when the tool actually registers. Profile A hit this in
+  `dbdc3c3` and reversed the convention across all five existing toolsets;
+  `test_v3_agent_wiring.py` is the guard, and it now covers all 23.
