@@ -16,7 +16,7 @@ from seleric_swarm.registry.agent_registry import AgentRegistry
 from seleric_swarm.registry.provider_registry import ProviderRegistry
 from seleric_swarm.services.business_state.detectors import RobustZScoreDetector
 from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
-from seleric_swarm.services.mcp_query import dimension_value, row_date, split_dimension_dict
+from seleric_swarm.services.mcp_query import dimension_value, split_dimension_dict
 from seleric_swarm.services.measure import module_args
 from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
 from seleric_swarm.swarm.domain.configs import build_domain_configs

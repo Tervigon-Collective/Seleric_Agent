@@ -7,9 +7,12 @@ Frozen signatures: ``docs/refactor/CONTRACTS.md`` §4. Non-negotiable rules
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
+
+from pydantic_ai import RunContext
 
 from seleric_swarm.agent.artifacts import CausalArtifact, EvidenceArtifact
+from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal.service import estimate_from_evidence
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
@@ -23,11 +26,6 @@ from seleric_swarm.toolsets.policy_config import (
     WARN_THIN_HISTORY,
     WARN_THIN_ROWS,
 )
-
-if TYPE_CHECKING:
-    from pydantic_ai import RunContext
-
-    from seleric_swarm.agent.dependencies import SelericDeps
 
 SearchBreadth = Literal[0, 1, 2]
 
