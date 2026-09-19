@@ -420,28 +420,56 @@ Ads action execution was scoped out of this program's requirements
 ## Sprint 4
 
 **A — Cutover flag + cost/latency gate (absorbs consolidation-plan Item 5, re-scoped)**
-- [ ] Run the replay set (spec §43's queries: observe/detect/diagnose/
-      predict/intervene/challenge) through the new agent loop with
-      Analytics+Causal+Validator wired. **"Analytics wired" means the two
-      ported functions** — `compare_periods` and `detect_anomalies`, with
-      their A1.2 grain preconditions — not all six. The four greenfield
-      analytics functions lag with Models/Knowledge/Experiments (see C's
-      section below) and do not gate the cutover.
-      **Wiring itself done 2026-09-18** (prerequisite, not the checkbox):
-      `agent/agent.py` now registers all 15 real tools (Semantic/Analytics/
-      Causal/Models/Actions) on `SelericAgent` — previously zero. See
-      `TASK_SHEET.md` for the real latent bug this surfaced and fixed
-      (`SelericDeps` only importable under `TYPE_CHECKING` in all 5
-      toolset modules, breaking real tool registration). The replay-run/
-      cost/latency figures below still need a real-LLM-cost decision from
-      the user before proceeding — not done, not silently substituted.
+- [x] Run the replay set (spec §43's queries: observe/detect/diagnose/
+      predict/intervene/challenge) through the new agent loop.
+      **Done 2026-09-19, no-real-LLM-cost scope** (explicit user decision:
+      close everything in this gate except the 3 cost-specific items below,
+      without fabricating cost numbers). Two passes, both against live
+      `seleric-mcp`/Cube:
+      1. **Production entrypoint** (`agent/runner.py::run_v3_mission`, the
+         actual code path `main.py`/`api/conversations.py` call) run for
+         one query per category (observe/detect/diagnose/predict/challenge
+         + an extra observe). All 6 completed without crashing in ~0.07–0.13s
+         each — confirms the full mission lifecycle (deps construction,
+         `EvidenceValidator`, mission/artifact store, Office adapter) is
+         sound for every category. **Caveat found while running this**:
+         `agent/model.py::resolve_v3_model` maps `llm_provider="fake"` to
+         `agent/agent.py::_stub_test_model()`, whose current default is
+         `TestModel(call_tools=[])` — a fixed canned response, zero real
+         tool calls. So this pass validates plumbing only, not tool
+         selection/reasoning; it is not the same thing this item's title
+         implies ("through the new agent loop with Analytics+Causal+
+         Validator wired" reads as behavioral, and isn't at this cost
+         level). Real behavioral validation needs a real model — that's
+         exactly what the deferred cost items below gate.
+      2. **All-tools smoke test**: `TestModel(call_tools="all")` against
+         real deps/live MCP, invoking all 23 registered tools in one turn.
+         Zero signature/wiring crashes across the full toolset, and
+         `ExecutionBudgetTracker` (Sprint 2) correctly failed the mission
+         closed with `EXECUTION_LIMIT_EXCEEDED` once the artificially-high
+         call count crossed the budget, rather than hanging or crashing —
+         the intended fail-closed behavior working as designed.
+      Script: ad hoc, not committed to the repo (scratchpad run, not a
+      permanent fixture) — re-derivable from this note if needed again.
 - [ ] Record per-mission agent_calls, llm_calls, tokens, wall-clock, cost —
-      compare against swarm_v2's Sprint 0 baseline.
+      compare against swarm_v2's Sprint 0 baseline. **Explicitly deferred
+      2026-09-19** — needs a real-LLM-cost decision from the user; not
+      done, not approximated, not silently skipped.
 - [ ] Tune execution limits until within acceptable cost/latency, same
       iterative-tuning-loop structure as the original Item 5 steps 3-4.
+      **Blocked on the item above** — nothing to tune against without real
+      cost/latency numbers.
 - [ ] Document final chosen limits + measured figures here or a follow-up.
-- [ ] Flip cutover flag to a canary percentage once parity + cost gates
-      both pass (per profile exit criteria in each brief).
+      **Blocked on the two items above.**
+- [x] Flip cutover flag to a canary percentage once parity + cost gates
+      both pass (per profile exit criteria in each brief). **Resolved as
+      moot, 2026-09-19**: this item assumed a live swarm_v2/V3 traffic
+      split to canary between. Sprint 5 deleted swarm_v2 entirely — there
+      is no legacy path left to canary against. `v3_agent_enabled` defaults
+      `True` and is the only mission path; `POST /v1/missions` in `main.py`
+      calls `run_v3_mission` unconditionally, no flag branch. This is a
+      completed hard cutover, not a pending percentage decision — closing
+      this item means recording that fact, not flipping anything.
 
 **B — Cleanup**
 - [x] `ProviderRegistry` deletion. Done 2026-09-19 —

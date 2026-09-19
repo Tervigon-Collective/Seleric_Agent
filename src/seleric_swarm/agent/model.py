@@ -15,18 +15,27 @@ from seleric_swarm.config.settings import Settings, configured_chat_model
 
 
 def resolve_v3_model(settings: Settings) -> Model:
-    """Live OpenAI-compatible model when configured; otherwise the stub TestModel."""
+    """Live OpenAI-compatible model when configured; otherwise the stub TestModel.
+
+    Wraps every configured model (``AZURE_OPENAI_MODELS``, primary first) in a
+    ``FallbackModel`` so a rate-limited/erroring model doesn't fail the mission
+    outright — pydantic-ai tries the next candidate on any ``ModelAPIError``
+    (429s included).
+    """
     model_name = configured_chat_model(settings)
     if settings.llm_provider == "fake" or not model_name or not settings.azure_openai_api_key.strip():
         return _stub_test_model()
 
+    from pydantic_ai.models.fallback import FallbackModel
     from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
     from seleric_swarm.llm.adapters.azure_openai_compatible import AzureOpenAICompatibleAdapter
 
     adapter = AzureOpenAICompatibleAdapter(settings)
-    return OpenAIChatModel(
-        model_name,
-        provider=OpenAIProvider(openai_client=adapter.async_client),
-    )
+    provider = OpenAIProvider(openai_client=adapter.async_client)
+    model_names = settings.resolved_models() or [model_name]
+    models = [OpenAIChatModel(name, provider=provider) for name in model_names]
+    if len(models) == 1:
+        return models[0]
+    return FallbackModel(*models)
