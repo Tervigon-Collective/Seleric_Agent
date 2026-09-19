@@ -15,6 +15,83 @@ Profile briefs: `01_PROFILE_RUNTIME.md` (A), `02_PROFILE_SEMANTIC_MCP.md`
 > re-scoped: only two of its six frozen analytics functions are ports, the
 > rest are greenfield. Causal Sprint 2 is unblocked.
 
+## Verification checkpoint — Sprints 0–3, all three profiles (2026-09-19)
+
+Run before Sprint 4 opened. Every figure below is a real run, not a doc read.
+
+### Checklist state
+
+| Sprint | Done | Open |
+|---|---|---|
+| 0 — Contracts | 7 | 0 |
+| 1 | 14 | 0 |
+| 2 | 14 | **1** |
+| 3 | 8 | **2** |
+| 4 | 0 | 13 |
+| 5 | 0 | 9 |
+
+**All 3 open boxes in Sprints 0–3 trace to one unmet gate.** The
+three-separate-calendar-day characterization requirement is the only thing
+blocking Sprint 2's re-run box and both of Sprint 3 B's deletions
+(`catalogue_grounding.py` heuristics, `MetricRegistry` retirement). Nothing
+else is outstanding, and no other profile is waiting on them — so the
+practical path to closing Sprints 0–3 completely is calendar days in
+`CHARACTERIZATION_LEDGER.md`, not engineering work.
+
+This checkpoint's live replay run counted as **day 2 of 3** (recorded in the
+ledger). **One more separate calendar day closes all three boxes.**
+
+Correction applied while auditing: Sprint 2's characterization box was ticked
+`[x]` while its own text read *"Do not mark the 3-calendar-day gate Done."*
+It is now unticked. A ticked box that its adjacent prose contradicts is worse
+than an unticked one, because only the box survives a skim.
+
+| Scope | Result |
+|---|---|
+| **Full suite** (`pytest -q --ignore=tests/integration/test_minio_blob_store_integration.py`) | **911 passed, 1 failed, 4 skipped** (551s) |
+| Profile A — runtime, stores, limits, evals, validator | 24 passed |
+| Profile B — semantic + action toolsets | 17 passed |
+| Profile B — replay characterization | 10 passed, **live against MCP** (37s, not skipped) |
+| Profile C — analytics/causal/models/validator/parity | 83 passed |
+| Profile C — non-regression on ported skeptic/diagnostic sources | 55 passed |
+| swarm_v2 legacy (`coordinator/`, `swarm/`, `adversarial/`, `contract/`) | 126 passed, 1 skipped |
+
+The sole failure is `tests/unit/test_api_scenario_matrix.py::test_health_combo_never_returns_running`
+— the same pre-existing failure recorded in the Sprint 0 baseline, unrelated
+to this migration. Identical to Sprint 3 close (911/1/4 both times), so
+nothing drifted between sprints.
+
+Recorded statuses were checked against source rather than trusted:
+`HybridMcpDataProvider` is gone, `_query_windows` is renamed, and
+`catalogue_grounding.py` (33 functions) plus `MetricRegistry` are both still
+present — consistent with Sprint 3 B being *Blocked by gate*, not quietly
+skipped.
+
+### Correction to a program-level assumption: V3 code is already in production
+
+"Nothing V3 is wired in" is repeated across these docs and is now only half
+true. Stated precisely so nobody plans against the wrong model:
+
+- The V3 **agent loop is not wired in.** `orchestration/dispatch.py`,
+  `main.py` and `coordinator/graph.py` contain zero references to
+  `toolsets.*`, `agent.validation` or `run_validated_mission`, and
+  `api/missions.py` is deliberately not `include_router`-ed (only
+  conversations, phase7 and office are). §5 rule 1 holds.
+- But Profile B's **semantic fetch code is live.**
+  `swarm/providers/mcp_data.py:37` imports `query_metric_series`/
+  `raw_query_metric` and `services/business_state/series.py:11` imports
+  `raw_query_metric` — both on the production path feeding
+  `DomainAgent.observe()` and `BusinessStateService`.
+
+This was deliberate and user-approved (`TASK_SHEET.md` Sprint 2 B: *"Done —
+per explicit user direction to proceed despite the risk flagged below"*), so
+it is not a rule violation. It does change the risk profile: **a defect in
+`toolsets/semantic.py` reaches production today, not at canary time.** The
+upside is equally real — that code has live exposure well ahead of cutover,
+which is why B's characterization suite passes against live MCP instead of
+skipping. Sprint 4 A's cost/latency gate should account for the fact that
+part of the new fetch path is already carrying traffic.
+
 ## Sprint 0 — Contracts (all three profiles, joint)
 
 Nothing else starts until this is frozen — B and C both build against A's
@@ -173,11 +250,15 @@ analytics toolset ahead of formal A1 sign-off and is now contract-authoritative.
       remaining callers. `lookup_fast_path.py` needed no direct edit (routes
       transitively). Full regression + live characterization re-run clean
       after the change (811 passed/1 pre-existing failure, 45/45 live).
-- [x] Re-run characterization suite ≥3 separate days before trusting it as
+- [ ] Re-run characterization suite ≥3 separate days before trusting it as
       the safety net for the coming deletion. Broadened to all 3 legacy
       `_CASES` metrics, re-run clean multiple times on **2026-09-18 only**
-      (day 1 of the calendar ledger) — Partial; carry-forward to Sprint 3.
-      Do **not** mark the 3-calendar-day gate Done.
+      (day 1 of the calendar ledger) — **Partial**; carry-forward past Sprint 3.
+      Box left unticked deliberately: the gate is 3 separate *calendar* days
+      and repeated same-day runs do not satisfy it. **Day 2 recorded
+      2026-09-19** (10 passed live in 37.49s, during the verification
+      checkpoint) — see `CHARACTERIZATION_LEDGER.md`. **1 more calendar day**
+      closes this box and unblocks Sprint 3 B's two deletions.
 - [x] Delete `HybridMcpDataProvider`, `business_state/series.py::fetch_series`,
       `agents/intelligence/observer.py::_query_windows` once the above
       passes. **Done 2026-09-18 (extract-wrap-delete):** class renamed
@@ -274,30 +355,59 @@ clean — **not met; carry-forward to Sprint 3**. C's Causal work Done. The
       to validate end-to-end yet. That upstream action-catalogue gap is
       recorded, not papered over as completed Google coverage.
 
-**C — Model/Skeptic-logic port**
-- [ ] `toolsets/models.py` + `models/service.py`. **The registry question is
-      already answered** — `agents/prediction/swarm_bridge.py:61-62` builds an
-      `InMemoryModelRegistry` from `scenario["forecast_truth"]`, and
-      `config/model_registry.yaml` does not exist (only a 573 B
-      `.example.yaml`, both entries `status: candidate`). There are no
-      approved production models, so this is greenfield on a fixture-driven
-      template service, not a port. Re-confirm priority with the user before
-      building it.
-- [ ] `EvidenceValidator` content checks — port trust-score/verdict-engine
+**C — Model/Skeptic-logic port** *(Done — Sprint 3 close 2026-09-18)*
+- [x] `toolsets/models.py` + `models/service.py`. The registry question was
+      answered by source read (`agents/prediction/swarm_bridge.py:61-62`
+      fixture-seeds an `InMemoryModelRegistry`; `config/model_registry.yaml`
+      did not exist) — so this was greenfield, not a port. Priority confirmed
+      with the user: **full build incl. a real forecaster.** Done —
+      exponential smoothing via `statsmodels.tsa.holtwinters` (Holt linear
+      trend at ≥10 points, simple exponential smoothing below), deterministic
+      and interval-mandatory; `models/evaluation.py` for prediction→actual;
+      `config/model_registry.yaml` seeded with 4 approved daily forecast
+      models. `statsmodels>=0.14` declared. **`predict_ltv`/`predict_propensity`
+      refuse** with `policy:no_approved_model` — no per-customer labels or
+      feature store exist, and the registry gate is the control that keeps
+      that honest. 22 tests.
+- [x] `EvidenceValidator` content checks — port trust-score/verdict-engine
       logic from `agents/skeptic/*`, preserving **two independent signals**
       (`score_trust` and `decide_verdict` look at different things); do not
-      merge into one score.
-- [ ] Reproduce bug #12's STRONG-trust + REVISE state and record the loop's
-      behavior under the cap decided in Sprint 2.
+      merge into one score. Done — `agent/validation.py` became the package
+      `agent/validation/`; the scoring arithmetic is a faithful port (min-merge,
+      `_alt_elimination`, weight renormalization, 0.3 blocking cap,
+      `REVISE_CATEGORIES` copied exactly), while what *feeds* it is V3-native
+      (`signals.py`) because 9 of swarm_v2's 11 validators depend on plumbing
+      V3 lacks. `ValidationOutcome` widened from binary to carry both signals.
+      Non-regression: `tests/skeptic/` 34 passed, ported source untouched.
+- [x] Reproduce bug #12's STRONG-trust + REVISE state and record the loop's
+      behavior under the cap decided in Sprint 2. Done — 19 tests pinning all
+      three routes (unresolved alternative, blocking gap, source-conflict
+      warning), plus a signature-inspection test proving the two functions
+      cannot see each other's outputs, plus a test pinning the *mechanism*
+      (STRONG 0.72 > revise_below 0.55 — if those crossed, #12's shape would
+      become silently unreachable). **Loop decision recorded:** REVISE consumes
+      a revision and re-prompts; REJECT fails closed immediately without
+      consuming one.
 
-**C — Behavioral parity harness (new, runs alongside)**
-- [ ] Run the replay missions through both the old specialists and the new
+**C — Behavioral parity harness (new, runs alongside)** *(Done — 2026-09-18)*
+- [x] Run the replay missions through both the old specialists and the new
       toolsets and diff the findings: same anomalies flagged, same hypotheses
       surfaced, same evidence classification. Every divergence gets a written
       explanation. This profile had no behavioral parity criterion at all
       while being the one the plan calls highest-behavioral-risk — schema
       completeness (metadata present on 100% of artifacts) is a floor a
       required Pydantic field satisfies trivially, not a parity gate.
+      Done — `evals/parity.py` + `tests/replay/test_v3_parity.py`. Bar is
+      **structural equivalence** (user decision): same `(metric_id, direction)`
+      anomaly set, same classifications, same hypothesis statements; floats
+      reported not asserted, since exact numeric parity would fail on
+      intentional changes (evidence-sourced vs. `BusinessStateService`
+      baselines — rule 5 working as designed). Both paths driven directly with
+      the same evidence, so a divergence is attributable to the capability and
+      not to tool selection (that is A's Sprint 4 eval gate).
+      `EXPECTED_DIVERGENCES` separates "changed on purpose, here's why" from
+      "don't know why this moved", and a test proves the harness can actually
+      fail — a gate that only ever passes is not a gate.
 
 **Gate:** B's Sprint 3 deletions require Sprint 2's characterization suite
 to have already passed 3 separate days clean — do not delete on a single
@@ -329,19 +439,76 @@ green run.
       grep miss).
 
 **C — Greenfield capability (additive scope, non-blocking)**
+
+All three rows are genuinely new capability, not ports. The
+**frozen-surface audit at Sprint 4 open (2026-09-19) is 13/20**: `semantic`
+4/4, `actions` 4/4, `causal` 2/2, `models` 3/3, `analytics` **2/6**,
+`knowledge` and `experiments` **module missing**. This section closes exactly
+those 7 gaps; re-running that audit to 20/20 is the section's own exit check.
+
+- [ ] Clear two pre-existing `F401` lint errors found during verification:
+      `swarm/providers/mcp_data.py:19` (`row_date` unused, Profile B) and
+      `tests/unit/test_causal_toolset.py:10` (`typing.Any` unused, Profile C).
+      Both auto-fixable; do this first so `ruff check src tests` is clean
+      before new code lands.
 - [ ] The four non-port analytics functions: `contribution_analysis`,
       `segment_decomposition`, `funnel_decomposition`, `cohort_analysis`
       (moved here from Sprint 1 — no implementation exists in `src/` to
-      port).
-- [ ] `toolsets/knowledge.py` + `knowledge/*`.
-- [ ] `toolsets/experiments.py` + `experiments/*`.
+      port). Each follows the established call order in
+      `toolsets/analytics.py`: `_load_evidence` → `validate_grain_set` →
+      compute → `_write_finding` → `ToolResult`.
+- [ ] **Record the decision that A1.2 binds all four.** `CONTRACTS.md` §4
+      binds the grain precondition textually to `compare_periods`/
+      `detect_anomalies` only. All four new functions take caller-chosen
+      `evidence_ids`, so A1's standing rule applies ("if the caller picks the
+      inputs, the tool must validate them") — but extending a frozen
+      precondition is a decision to write down, not to assume.
+- [ ] `toolsets/knowledge.py` + `knowledge/*`. **Reuse, don't rebuild:**
+      `conversations/phase7.py` is already a working hybrid search engine
+      (lexical `ts_rank` + optional pgvector cosine + `reciprocal_rank_fusion`,
+      with `build_query_embedder()` returning `None` when unconfigured so the
+      lexical path always works), wired in at `bootstrap.py`. The `artifacts`
+      table already carries a generated `search_vector`, a GIN index, and
+      membership in the `search_documents` view. So `search_knowledge`
+      retrieves over `artifact_type="knowledge_document"` with **no new store
+      and no migration**. Rule 12 holds structurally: it returns text and
+      citations and writes no artifact (§2 permits Knowledge to return
+      `success=True` with zero artifacts). Corpus ships **empty** with a
+      documented ingestion path — nothing writes knowledge artifacts today,
+      and inventing business knowledge to fill it is not the job.
+- [ ] `toolsets/experiments.py` + `experiments/*`. `config/experiment_registry.yaml`
+      mirroring the `config/model_registry.yaml` pattern from Sprint 3 —
+      version-controlled and reviewable, no migration for a table nothing
+      writes yet. `estimate_sample_size` is real power math via
+      `statsmodels.stats.power` (**zero new dependencies** — `statsmodels>=0.14`
+      was declared in Sprint 3 and `scipy` is not needed).
+      `evaluate_experiment` reuses `models/evaluation.py`'s tri-state
+      discipline, where a missing interval is *not* a miss.
 - [ ] These do not block A's Sprint 4 cutover gate — land after, don't
       hold up the canary flip for genuinely new capability.
+
+**Three live-data constraints for C, verified — do not design around guesses:**
+
+1. The funnel step order is already defined by numerator/denominator linkage
+   in `config/metric_registry.yaml`: `sessions → pdp → atc → checkout →
+   purchase`. Do not invent one. Note `metric.atc_to_purchase_rate` is
+   **misnamed** — its formula is `purchased_sessions / checkout_sessions` and
+   its catalogue id is `session_checkout_to_purchase_rate`; trust the formula.
+   `landing_page` is a sliceable dimension, not a stage.
+2. Do **not** compute funnel rates client-side.
+   `docs/features/business-state-service/06_DATA_VALIDATION_FINDINGS.md`
+   records the rates existing as pre-built daily ratios, and a live
+   two-metric query returning them on *different date axes* with a
+   `CROSS_AXIS_RATIO_UNSUPPORTED` warning.
+3. Cohorts have **no daily grain** — `repeat_rate` supports `brand_id` only
+   and a windowed query returns one row for the whole window
+   (`feature_class: windowed_point`). `cohort_analysis` must not assume a
+   daily series.
 
 **Gate:** Program-level cutover decision. If A's cost/latency figures don't
 clear the bar, iterate within Sprint 4 (same tuning-loop pattern as the
 original Item 5) before flipping the flag — do not cut over on a failing
-cost gate.
+cost gate. C's rows are **not** part of this gate.
 
 ## Sprint 5 — Old pipeline deletion (per-subsystem PRs, not a bulk delete)
 

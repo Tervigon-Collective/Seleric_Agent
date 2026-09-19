@@ -26,6 +26,23 @@ Paste the pytest summary line under a new `### YYYY-MM-DD` heading.
 - **Still only one calendar day** — days 2 and 3 required before deletion
   gate / catalogue heuristic retirement can claim Done.
 
-## Day 2 — _(empty — append next calendar day)_
+## Day 2 — 2026-09-19
+
+- Recorded during the cross-profile verification checkpoint (`SPRINT_PLAN.md`).
+- Live run, both characterization suites together:
+  `./.venv/Scripts/python.exe -m pytest -q tests/replay/test_semantic_toolset_characterization.py tests/replay/test_data_access_characterization.py`
+  → **10 passed in 37.49s** (2026-09-19). The 37s wall-clock confirms it ran
+  against live MCP rather than skipping — a skipped run returns in under a
+  second, which is the thing to check before counting a day.
+- Full suite the same day: 911 passed / 1 failed (pre-existing
+  `test_health_combo_never_returns_running`) / 4 skipped.
+- **Day 2 of 3.** One more separate calendar day is required before Sprint 3
+  B's deletions (`catalogue_grounding.py` heuristics, `MetricRegistry`
+  retirement) may claim Done.
 
 ## Day 3 — _(empty — append next calendar day)_
+
+Reminder for whoever records Day 3: the gate is three *separate calendar
+days*, so this cannot be closed by re-running today. Check the wall-clock on
+the replay suite before counting the day — a fast pass means MCP was down and
+the tests skipped, which does not count.

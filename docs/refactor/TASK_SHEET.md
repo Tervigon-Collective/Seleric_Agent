@@ -486,3 +486,34 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
     exists. The measurement half only; saying so beats implying the loop is closed.
   - The confidence vocabulary has three swarm_v2 implementations plus V3's. Sprint
     3 consumed V3's rather than adding a fifth, but the duplication stands.
+
+- 2026-09-19: **Cross-profile verification of Sprints 0–3 — GREEN.** Run before
+  opening Sprint 4, on request. No code changed; three planning docs updated
+  (`SPRINT_PLAN.md`, `00_OVERVIEW.md`, this file). Full figures in
+  `SPRINT_PLAN.md` "Verification checkpoint": full suite **911 passed / 1 failed
+  / 4 skipped**, Profile A 24, Profile B 17 + 10 live-MCP replay, Profile C 83 +
+  55 non-regression, swarm_v2 legacy 126 + 1 skipped. The one failure is the
+  pre-existing `test_health_combo_never_returns_running`, identical to Sprint 3
+  close — nothing drifted between sprints.
+  - **Frozen-surface audit added as a check:** 13/20 of `CONTRACTS.md` §4's
+    functions import and exist. Gaps are exactly Sprint 4 C's scope (4 analytics
+    + `knowledge` + 3 experiments). Worth keeping as a standing check — it is
+    the one test that catches a *missing* deliverable, which a passing test
+    suite cannot.
+  - **Recorded statuses spot-checked against source**, not trusted:
+    `HybridMcpDataProvider` gone, `_query_windows` renamed,
+    `catalogue_grounding.py` (33 functions) and `MetricRegistry` both still
+    present — consistent with Sprint 3 B's *Blocked by gate*.
+  - **Program-level assumption corrected:** "nothing V3 is wired in" is only
+    half true. The agent loop genuinely is not (verified: zero references from
+    `dispatch.py`/`main.py`/`coordinator/graph.py`; `api/missions.py` unmounted),
+    but `toolsets/semantic.py` is imported by `swarm/providers/mcp_data.py:37`
+    and `services/business_state/series.py:11`, both live paths — by the explicit
+    user decision recorded in Sprint 2 B. Not a rule violation; it does mean a
+    defect in `toolsets/semantic.py` reaches production today rather than at
+    canary. Clarified in `00_OVERVIEW.md` §5 rule 1 so nobody plans against the
+    wrong model.
+  - **Two pre-existing `F401` lint errors** found, neither introduced by Sprint 3:
+    `swarm/providers/mcp_data.py:19` (`row_date`, Profile B) and
+    `tests/unit/test_causal_toolset.py:10` (`typing.Any`, Profile C Sprint 2).
+    Queued as the first task of Sprint 4 C.

@@ -1,14 +1,23 @@
 # Seleric V3 — Refactor Overview
 
-Status: execution underway. Sprint 0/1 Done; **Sprint 2 closed 2026-09-18**
-aside from Profile B 3-calendar-day characterization (**Partial** — see
-`CHARACTERIZATION_LEDGER.md`). Profile A through Sprint 3 (runtime
-scaffolding, validator + limits, mission cache/tracing/Temporal decision)
-Done. Profile C Causal + A1 Done. Hybrid fetch path extract-wrap-delete
-landed (`McpDataProvider` + `query_metric_series`). Next: Sprint 3
-residuals (characterization days 2–3, ActionToolset upstream, full
-validator two-signal, models). See `SPRINT_PLAN.md` / `TASK_SHEET.md`.
-Last verified against source: 2026-09-18.
+Status: execution underway. **Sprints 0–3 verified green 2026-09-19** by a
+full cross-profile test run — 911 passed / 1 failed / 4 skipped, the one
+failure being the pre-existing `test_health_combo_never_returns_running` from
+the Sprint 0 baseline. Per-profile figures and the frozen-surface audit
+(**13/20 functions live**) are in `SPRINT_PLAN.md` "Verification checkpoint".
+
+Sprint 0/1/2 Done aside from Profile B's 3-calendar-day characterization
+(**Partial** — see `CHARACTERIZATION_LEDGER.md`). Profile A through Sprint 3
+Done. Profile C Sprint 3 Done (validator two-signal + bug #12, models with a
+real forecaster, parity harness). Profile B Sprint 3 partially **Blocked by
+gate** (`catalogue_grounding.py` and `MetricRegistry` deletions await 3 clean
+characterization days; ActionToolset local-only pending upstream).
+
+Next: Sprint 4 — A's cutover cost/latency gate, B's cleanup, C's greenfield
+capability (4 analytics functions + Knowledge + Experiments, the 7 remaining
+frozen-surface gaps; additive and explicitly not gating the canary flip).
+See `SPRINT_PLAN.md` / `TASK_SHEET.md`. Last verified against source:
+2026-09-19.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube
 migration. Everything produced during the refactor (profile briefs, sprint
@@ -130,6 +139,17 @@ Rules for the whole program:
    traffic to swarm_v2 until a profile's replacement passes its exit
    criteria for parity, on the same replay/eval set swarm_v2 currently
    passes.
+
+   **Scope of this rule, clarified 2026-09-19** (verified, see
+   `SPRINT_PLAN.md` "Verification checkpoint"): it governs the **agent loop**,
+   and there it holds — no V3 agent, toolset registration or validator is
+   reachable from `dispatch.py`, `main.py` or `coordinator/graph.py`, and
+   `api/missions.py` is not mounted. It does **not** mean no V3 module runs in
+   production. Profile B's `toolsets/semantic.py` is imported by
+   `swarm/providers/mcp_data.py` and `services/business_state/series.py`, both
+   live paths, by explicit user decision in Sprint 2. Read "100% of traffic
+   goes to swarm_v2" as a statement about *who decides the next step*, not
+   about which files execute.
 2. Nothing in `swarm_v2`, `coordinator/graph.py`, or the specialists is
    deleted until its PydanticAI-toolset replacement is live behind a flag
    and has run in shadow (or a canary %) against production-shaped traffic.
