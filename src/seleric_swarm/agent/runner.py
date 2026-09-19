@@ -10,6 +10,7 @@ stores the office gateway falls back to.
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -248,6 +249,7 @@ def _to_lookup(
         trace=TraceInfo(
             request_id=str(result.trace.get("request_id") or request_id),
             session_id=str(result.trace.get("session_id") or session_id),
+            elapsed_seconds=result.trace.get("elapsed_seconds"),
         ),
     )
 
@@ -310,12 +312,11 @@ async def run_v3_mission(
         artifact_store=get_v3_artifact_store(),
         limits=ExecutionLimits(
             max_tool_calls=int(getattr(runtime.settings, "max_tool_calls", 8)),
-            max_runtime_seconds=min(
-                45.0, float(getattr(runtime.settings, "mission_timeout_s", 120.0))
-            ),
+            max_runtime_seconds=float(getattr(runtime.settings, "mission_timeout_s", 120.0)),
         ),
     )
     alias_def = _lookup_alias(query)
+    started = time.perf_counter()
     with mission_trace(mission_id, query=query, route="v3"):
         try:
             if alias_def is not None:
@@ -338,7 +339,11 @@ async def run_v3_mission(
                         "mission_id": mission_id,
                         "query": query,
                         "as_of": as_of_dt,
-                        "trace": {"request_id": request_id, "session_id": thread_id},
+                        "trace": {
+                            "request_id": request_id,
+                            "session_id": thread_id,
+                            "elapsed_seconds": round(time.perf_counter() - started, 3),
+                        },
                     }
                 )
         except TimeoutError:
@@ -350,7 +355,11 @@ async def run_v3_mission(
                 final_response="The agent took too long to answer. Please retry.",
                 limitations=["EXECUTION_LIMIT_EXCEEDED"],
                 error_code="EXECUTION_LIMIT_EXCEEDED",
-                trace={"request_id": request_id, "session_id": thread_id},
+                trace={
+                    "request_id": request_id,
+                    "session_id": thread_id,
+                    "elapsed_seconds": round(time.perf_counter() - started, 3),
+                },
             )
         except Exception as exc:
             message, error_code = _user_facing_agent_failure(exc)
@@ -362,7 +371,11 @@ async def run_v3_mission(
                 final_response=message,
                 limitations=[error_code],
                 error_code=error_code,
-                trace={"request_id": request_id, "session_id": thread_id},
+                trace={
+                    "request_id": request_id,
+                    "session_id": thread_id,
+                    "elapsed_seconds": round(time.perf_counter() - started, 3),
+                },
             )
 
     v3_store.finish(

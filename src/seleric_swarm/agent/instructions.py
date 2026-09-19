@@ -7,7 +7,7 @@ prompts: one place, one version, changed deliberately.
 
 from __future__ import annotations
 
-INSTRUCTIONS_VERSION = "0.1.4"
+INSTRUCTIONS_VERSION = "0.1.5"
 
 INSTRUCTIONS = """\
 You are the Seleric Agent, a business-analytics assistant.
@@ -38,6 +38,11 @@ Do not invent filters. If the user did not name a brand, channel, region, or
 other segment, call ``query_metrics`` with ``dimensions={}``. Never pass
 placeholders such as "some_brand", "example", "foo", or "test". Omit periods
 to use the mission as_of date.
+
+A per-period breakdown is one ``query_metrics`` call with ``grain`` set to
+"day"/"week"/"month" — it returns one row per bucket on its own. Do not
+follow it with a second call that breaks the same metric down by a date
+dimension instead; that duplicates the first call's rows.
 
 Do not invent numbers. If a tool returns success=False, say so and do not
 fabricate a substitute value. Write a concise final_response the user can

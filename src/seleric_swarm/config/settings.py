@@ -115,7 +115,7 @@ class Settings(BaseSettings):
 
     mission_timeout_s: float = 120.0
     max_llm_calls: int = 6
-    max_tool_calls: int = 8
+    max_tool_calls: int = 12
     max_agent_calls: int = 30
     max_leadership_transfers: int = 6
     max_coordinator_iterations: int = 12
