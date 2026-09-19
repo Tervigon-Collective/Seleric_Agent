@@ -1,0 +1,52 @@
+# Experiment registry — the record of what was actually run.
+#
+# Read by src/seleric_swarm/experiments/registry.py::registry_from_yaml, used
+# by toolsets/experiments.py::get_experiment_history and evaluate_experiment.
+# Same pattern as config/model_registry.yaml (Sprint 3): version-controlled,
+# reviewable in a diff, no migration for a table nothing writes yet.
+#
+# Added 2026-09-19 (Profile C, Sprint 4).
+#
+# WHY THE LIST IS EMPTY
+# ---------------------
+# No A/B test has been run through this system. Seeding plausible-looking
+# entries would be fabricating experimental history — and `evaluate_experiment`
+# scores evidence against whatever is declared here, so a fake entry would
+# produce a real-looking lift finding for an experiment that never happened.
+# The empty list IS the safety property, the same way an absent LTV model in
+# config/model_registry.yaml is what makes `predict_ltv` refuse.
+#
+# `get_experiment_history` reports an empty registry as success with a
+# `policy:no_experiment_records` warning — "nothing has been run" is an answer,
+# not a lookup failure.
+#
+# ADDING AN EXPERIMENT
+# --------------------
+# Register it BEFORE evaluating it. `evaluate_experiment` refuses an unknown
+# id rather than scoring supplied evidence, because measuring lift against an
+# undeclared control is how a system asserts a result nobody designed.
+#
+#   experiments:
+#     - id: exp.checkout_button_copy.2026_09
+#       name: Checkout button copy — "Buy now" vs "Complete order"
+#       status: running          # draft | running | complete | abandoned
+#       metric_id: metric.purchase_cvr
+#       hypothesis: Clearer terminal copy reduces checkout abandonment.
+#       started_at: "2026-09-01"
+#       baseline_rate: 0.021     # feeds estimate_sample_size
+#       mde: 0.004               # ABSOLUTE rate difference, not relative
+#       variants:
+#         - name: control
+#           label: buy_now       # the dimension VALUE stamped on drilldown rows
+#           control: true
+#         - name: treatment
+#           label: complete_order
+#       notes: >
+#         Evidence must come from drilldown on the variant dimension so each
+#         arm is separable; a plain query_metrics breakdown leaves dimensions
+#         empty and the variants cannot be told apart.
+#
+# `label` is what matters at evaluation time: it must equal the dimension
+# value carried on the evidence artifacts. `name` is only for display.
+
+experiments: []

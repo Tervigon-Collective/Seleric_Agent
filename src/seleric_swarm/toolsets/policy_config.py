@@ -116,3 +116,85 @@ WARN_MODEL_TARGET_MISMATCH: str = "policy:model_target_mismatch"
 WARN_MODEL_UNAVAILABLE: str = "policy:model_unavailable"
 WARN_MODEL_FIT_FAILED: str = "policy:model_fit_failed"
 WARN_INVALID_HORIZON: str = "policy:invalid_horizon"
+
+# ---- Sprint 4 C: breakdowns, knowledge, experiments -------------------------
+
+# Funnel step order, declared rather than inferred.
+#
+# There is no declarative funnel ordering anywhere in this repo: no `step`/
+# `order` key in config/metric_registry.yaml, nothing in
+# config/diagnostic_ontology.yaml (that file is causal-graph wiring), and
+# agents/domains/funnel.py is a 24-line stub. So it is written out here.
+#
+# These five are chosen because they share ONE denominator. Verified in
+# config/metric_registry.yaml:148-215 — every rate is session-anchored:
+#
+#   metric.sessions        formula: count(sessions)            <- absolute base
+#   metric.pdp_view_rate   formula: pdp_sessions / sessions
+#   metric.atc_rate        formula: atc_sessions / sessions
+#   metric.checkout_rate   formula: checkout_sessions / sessions
+#   metric.purchase_cvr    formula: purchased_sessions / sessions
+#
+# That common denominator is what makes step-to-step conversion well defined:
+# the survival rate between consecutive steps is rate[i+1] / rate[i], and
+# `metric.sessions` enters as an implicit rate of 1.0. Mixing in a metric with
+# a different denominator would silently produce meaningless conversions, so
+# do not add one without reworking analytics/funnel.py.
+#
+# Deriving this order at runtime by parsing `formula` strings would
+# reintroduce exactly the name/keyword heuristic layer Profile B deleted in
+# Sprint 3 (docs/BUG_SHEET.md #8), and `.formula` degrades to the bare metric
+# id on catalogue-bound entries anyway. If the funnel changes, change this list.
+FUNNEL_STEPS: tuple[str, ...] = (
+    "metric.sessions",
+    "metric.pdp_view_rate",
+    "metric.atc_rate",
+    "metric.checkout_rate",
+    "metric.purchase_cvr",
+)
+
+# Caution for anyone extending FUNNEL_STEPS. Two real traps:
+#   * `metric.atc_to_purchase_rate` is MISNAMED — its formula is
+#     `purchased_sessions / checkout_sessions` and its catalogue id is
+#     `session_checkout_to_purchase_rate`. The name says ATC, the math says
+#     checkout. Trust the formula, not the id.
+#   * `metric.session_atc_to_checkout_rate` is `checkout_sessions /
+#     atc_sessions` — ATC-anchored, not session-anchored. Adding it here would
+#     break the shared-denominator property above.
+
+# Shares below this are folded into an explicit "other" bucket rather than
+# listed individually — a 200-row channel breakdown is not a finding.
+MIN_SEGMENT_SHARE: float = 0.01
+MAX_SEGMENTS_REPORTED: int = 20
+
+# Contribution shares are derived by summing drilldown children, because
+# toolsets/semantic.py::drilldown discards the parent total it computes. If the
+# children disagree with a supplied total by more than this, say so rather than
+# presenting the shares as exact.
+CONTRIBUTION_RECONCILIATION_TOLERANCE: float = 0.005
+
+WARN_NO_DIMENSION_EVIDENCE: str = "policy:no_dimension_stamped_evidence"
+WARN_POOLED_SEGMENTS: str = "policy:pooled_segment_evidence"
+WARN_CONTRIBUTION_UNRECONCILED: str = "policy:contribution_unreconciled"
+WARN_UNKNOWN_FUNNEL_STEP: str = "policy:unknown_funnel_step"
+WARN_NO_FUNNEL_STEPS: str = "policy:no_recognized_funnel_steps"
+WARN_SINGLE_COHORT: str = "policy:single_cohort"
+
+# Knowledge toolset (Sprint 4 C). The corpus ships empty; an empty corpus is a
+# miss, not an error — CONTRACTS.md §2 permits Knowledge to return
+# success=True with zero artifacts.
+KNOWLEDGE_CORPUS_DIRNAME: str = "knowledge_corpus"
+KNOWLEDGE_MAX_RESULTS: int = 5
+KNOWLEDGE_SNIPPET_CHARS: int = 400
+WARN_EMPTY_CORPUS: str = "policy:empty_knowledge_corpus"
+
+# Experiment toolset (Sprint 4 C).
+# 0.8 power / 0.05 alpha are the conventional defaults; named here so a
+# refusal can cite them rather than hiding a literal in the call site.
+DEFAULT_POWER: float = 0.8
+DEFAULT_ALPHA: float = 0.05
+MIN_DETECTABLE_EFFECT: float = 0.001  # below this, sample size explodes meaninglessly
+WARN_UNKNOWN_EXPERIMENT: str = "policy:unknown_experiment"
+WARN_NO_EXPERIMENT_RECORDS: str = "policy:no_experiment_records"
+WARN_MISSING_VARIANT_EVIDENCE: str = "policy:missing_variant_evidence"
+WARN_INVALID_RATE: str = "policy:invalid_rate"

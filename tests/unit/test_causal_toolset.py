@@ -7,7 +7,6 @@ a larger space (history_days + candidate_cap), not a byte-identical re-run.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest

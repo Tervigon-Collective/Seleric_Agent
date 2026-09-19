@@ -1,25 +1,39 @@
 # Seleric V3 — Refactor Overview
 
-Status: execution underway. Sprint 0/1 Done; **Sprint 2 closed 2026-09-18**;
-**Sprint 3 closed 2026-09-19**. Profile A through Sprint 3 (runtime
-scaffolding, validator + execution limits, mission cache/tracing/Temporal
-decision) Done. Profile B through Sprint 3 (semantic toolset v0 + hybrid
-fetch-path extract-wrap-delete: `McpDataProvider` + `query_metric_series`;
-catalogue heuristic deletion, including the `lookup_v1` grain-resolution
-follow-on) Done. Profile C through Sprint 3 (analytics + causal +
-Model/Skeptic port + parity harness) Done. Google Ads action execution is
-explicitly **not part of this program's requirements** (decided
-2026-09-19) — `ActionToolset` covers Meta only, by design, not as a
-pending gap. **Sprint 4 Profile B (`ProviderRegistry` deletion) Done
-2026-09-19** — see `SPRINT_PLAN.md`/`TASK_SHEET.md`; deleted without
-waiting on swarm_v2's own retirement since nothing in this repo is in
-production yet. Sprint 4 Profile A: all 15 tools registered; **local UI
+Status: execution underway. **Sprints 0–3 verified green 2026-09-19** by a
+full cross-profile test run — 911 passed / 1 failed / 4 skipped, the one
+failure being the pre-existing `test_health_combo_never_returns_running` from
+the Sprint 0 baseline. Per-profile figures are in `SPRINT_PLAN.md`
+"Verification checkpoint" (pre–Sprint 4 audit recorded **15/23** functions
+live; Sprint 4 C closed the remaining 8).
+
+Sprint 0/1/2 Done; **Sprint 3 closed 2026-09-19**. Profile A through Sprint 3
+(runtime scaffolding, validator + execution limits, mission cache/tracing/
+Temporal decision) Done. Profile B through Sprint 3 (semantic toolset +
+hybrid fetch-path extract-wrap-delete: `McpDataProvider` +
+`query_metric_series`; catalogue heuristic retirement under explicit user
+override of the 3-calendar-day gate, including the `lookup_v1`
+grain-resolution follow-on; `MetricRegistry` kept as catalogue-first
+wrapper; `ActionToolset` covers Meta only by design — Google Ads action
+execution is explicitly **not part of this program's requirements**,
+decided 2026-09-19). Profile C Sprint 3 Done (validator two-signal + bug
+#12, models with a real forecaster, parity harness). The characterization
+ledger is retired with that override.
+
+**Sprint 4 Profile A:** tools registered on `SelericAgent`; **local UI
 connected** behind `V3_AGENT_ENABLED` (conversations + `POST /v1/missions`
 + Office list/snapshot). That is a local flag, **not** a production canary
-%. Next: cost/latency replay and an explicit production-canary decision;
-Profile C's greenfield toolsets (Knowledge/Experiments + remaining
-Analytics) remain not started. See `SPRINT_PLAN.md` / `TASK_SHEET.md`.
-Last verified against source: 2026-09-19.
+%. **Sprint 4 Profile B (`ProviderRegistry` deletion) Done 2026-09-19** —
+see `SPRINT_PLAN.md`/`TASK_SHEET.md`; deleted without waiting on swarm_v2's
+own retirement since nothing in this repo is in production yet.
+**Sprint 4 Profile C is Done** (2026-09-19): the 8 remaining frozen-surface
+gaps closed, so `CONTRACTS.md` §4's full 23-function surface now exists and
+all 23 are registered on `SelericAgent`. Additive and non-gating, as planned.
+
+Next: Sprint 4's remaining cutover work — A's cost/latency replay and an
+explicit production-canary decision.
+See `SPRINT_PLAN.md` / `TASK_SHEET.md`. Last verified against source:
+2026-09-19.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube
 migration. Everything produced during the refactor (profile briefs, sprint
@@ -142,6 +156,17 @@ Rules for the whole program:
    traffic to swarm_v2 until a profile's replacement passes its exit
    criteria for parity, on the same replay/eval set swarm_v2 currently
    passes.
+
+   **Scope of this rule, clarified 2026-09-19** (verified, see
+   `SPRINT_PLAN.md` "Verification checkpoint"): it governs the **agent loop**,
+   and there it holds — no V3 agent, toolset registration or validator is
+   reachable from `dispatch.py`, `main.py` or `coordinator/graph.py`, and
+   `api/missions.py` is not mounted. It does **not** mean no V3 module runs in
+   production. Profile B's `toolsets/semantic.py` is imported by
+   `swarm/providers/mcp_data.py` and `services/business_state/series.py`, both
+   live paths, by explicit user decision in Sprint 2. Read "100% of traffic
+   goes to swarm_v2" as a statement about *who decides the next step*, not
+   about which files execute.
 2. Nothing in `swarm_v2`, `coordinator/graph.py`, or the specialists is
    deleted until its PydanticAI-toolset replacement is live behind a flag
    and has run in shadow (or a canary %) against production-shaped traffic.
@@ -234,6 +259,11 @@ changes require all three profiles to sign off):
 - `pydantic-ai` is an actual declared dependency and the frozen toolset
   signatures have been validated against its real API, not only against the
   spec text.
+- **`config/model_registry.yaml`, `config/experiment_registry.yaml` and
+  `knowledge_corpus/` have named owners.** All three ship empty and that
+  emptiness is a safety property, not an oversight — each is the control that
+  makes its tool refuse rather than fabricate. Whoever fills them is asserting
+  that the model was trained, the experiment was run, or the document is true.
 - **`config/model_registry.yaml` has a named owner.** Profile C seeded it in
   Sprint 3 because `ModelToolset` needs an approved-model gate to refuse
   against, but no profile brief assigns model governance to anyone. An entry in

@@ -204,8 +204,8 @@ def commit_action(ctx: RunContext[SelericDeps], approval_id: str, idempotency_ke
 
 **Analytics** (`toolsets/analytics.py`, Profile C — pure functions over evidence, no fetch)
 
-Grain precondition (A1.2), binding on `compare_periods()` and
-`detect_anomalies()`: every `EvidenceArtifact` in a single call must share
+Grain precondition (A1.2), binding on **all six** analytics functions
+(extended from `compare_periods`/`detect_anomalies` in Sprint 4 — see A1.9): every `EvidenceArtifact` in a single call must share
 one `grain`, and the observation's period span must match the baseline's
 period span. Violation → `success=False`, `error_code="EVIDENCE_GRAIN_MISMATCH"`,
 empty `artifact_ids`. Never normalize a multi-period aggregate to make it
@@ -363,6 +363,34 @@ scheduled deletion date. Recommended disposition: **accept the mapping as the
 authoritative answer, apply it only if a swarm_v2 caller outlives Sprint 5.**
 Needs A and B sign-off either way; recorded here so it is not rediscovered.
 
+### A1.9 — A1.2 extended to all six Analytics functions — PROPOSED (Sprint 4, Profile C)
+
+Filed 2026-09-19. A1.2 was written binding the grain precondition to
+`compare_periods` and `detect_anomalies`, the only two that existed at the
+time. Sprint 4 added `contribution_analysis`, `segment_decomposition`,
+`funnel_decomposition` and `cohort_analysis`, which take caller-chosen
+`evidence_ids` exactly as the first two do, so A1's standing rule applies:
+**if the caller picks the inputs, the tool must validate them.**
+
+All six now call `analytics/grain.py::validate_grain_set` and return
+`EVIDENCE_GRAIN_MISMATCH` on violation. Recorded rather than assumed, because
+silently widening a frozen precondition is the same class of drift the
+amendment process exists to prevent — even when the widening is the safe
+direction.
+
+Verified compatible with `drilldown` output before extending: `validate_grain_set`
+skips its span-vs-grain rule for `grain="none"`, which is what `drilldown`
+stamps, so per-dimension evidence passes unchanged.
+
+One consequence worth naming: the equal-spans rule (rule 3) refuses August
+(31 days) against September (30) for `cohort_analysis`, which is a natural
+cohort comparison. That is a deliberate limitation, not an oversight — the
+tool cannot distinguish a normalized rate, where a one-day window difference
+is harmless, from a raw count, where it is not. Weakening the rule for
+cohorts would remove the guard for counts too. Callers fetch equal-length
+windows; pinned in
+`tests/unit/test_analytics_breakdowns.py::test_unequal_calendar_months_are_refused_for_cohorts_too`.
+
 ### Joint decisions recorded with A1 acceptance (A + C, Sprint 2)
 
 1. **`max_validation_revisions = 1` confirmed.** Causal escalation is
@@ -395,3 +423,8 @@ Needs A and B sign-off either way; recorded here so it is not rediscovered.
   files including `config/diagnostic_policies.yaml:26`; mapping recorded, **not
   applied**, pending A/B sign-off — see A1.8 for why deferring is the
   lower-risk call.
+- 2026-09-19: **A1.9 proposed** (Sprint 4, Profile C) — A1.2's grain
+  precondition extended from 2 to all 6 Analytics functions, now that the
+  other four exist. Applied in code and in §4's text; needs A/B sign-off like
+  any frozen-shape change. Also records the deliberate limitation that the
+  equal-spans rule refuses unequal calendar months for `cohort_analysis`.
