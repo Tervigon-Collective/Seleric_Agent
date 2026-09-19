@@ -175,6 +175,14 @@ async def test_run_validated_mission_fails_after_exhausting_bounded_retries() ->
     assert "live metric evidence" in result.final_response
 
 
+def test_usage_limits_follow_tool_call_cap() -> None:
+    from seleric_swarm.agent.validation import _usage_limits
+
+    limits = _usage_limits(ExecutionLimits(max_tool_calls=4))
+    assert limits.tool_calls_limit == 4
+    assert limits.request_limit == 6
+
+
 def test_validate_passes_causal_artifact_with_valid_classification() -> None:
     """A1.4 vocabulary gate: a frozen-vocabulary classification passes.
 

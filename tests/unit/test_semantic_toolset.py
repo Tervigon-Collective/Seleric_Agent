@@ -260,7 +260,37 @@ async def test_search_semantics_reports_match_count():
     ctx = FakeRunContext(_deps(mcp))
     result = await semantic.search_semantics(ctx, "revenue")
     assert result.success is True
-    assert "1 metric(s)" in result.summary
+    assert "metric(s) matched" in result.summary
+    ids = [m["id"] for m in result.provenance.source_metadata["matches"]]
+    assert "total_sales" in ids
+    assert "commerce_net_revenue_daily" in ids  # declared alias "revenue"
+
+
+@pytest.mark.asyncio
+async def test_search_semantics_resolves_declared_short_aliases_when_mcp_is_empty():
+    mcp = FakeMcpClient({"seleric.catalogue_search_metrics": {"matches": []}})
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.search_semantics(ctx, "ns")
+    assert result.success is True
+    ids = [m["id"] for m in result.provenance.source_metadata["matches"]]
+    assert "commerce_net_revenue_daily" in ids
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_resolves_declared_alias_to_catalogue_id():
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "q1",
+                "rows": [{"commerce_net_revenue_daily": "71727"}],
+                "provenance": {},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.query_metrics(ctx, metric_id="ns")
+    assert result.success is True
+    assert mcp.calls[0][1]["measures"] == ["commerce_net_revenue_daily"]
 
 
 @pytest.mark.asyncio

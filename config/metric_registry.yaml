@@ -3,7 +3,7 @@ metrics:
     version: 1
     owner: commerce
     catalogue_metric: commerce_net_revenue_daily
-    aliases: [sales, revenue, net sale, net sales]
+    aliases: [sales, revenue, net sale, net sales, ns]
     description: Shopify Net Sales (ex-GST), dashboard-parity daily rollup.
     formula: commerce_net_revenue_daily
     depends_on: [gross_sales, discounts, returns, purchase]
@@ -60,7 +60,7 @@ metrics:
     # causing catalogue_get_metric to fail and the semantic fallback to choose
     # amazon_ads_spend instead.  null = unscoped = accesses canonical_pnl.
     seleric_module: null
-    aliases: [ad spend, media spend]
+    aliases: [ad spend, media spend, adsp, adspend]
     description: Total paid media ad spend across all platforms (Meta + Google + Amazon Ads) from serve.canonical_pnl. Use for blended-spend, MER, and net profit calculations.
     formula: total_ad_spend
     frontier: true
@@ -220,6 +220,7 @@ metrics:
     version: 2
     owner: finance
     catalogue_metric: net_profit_all_channels
+    aliases: [np, net profit, net profits]
     description: >
       All-channels Net Profit (Shopify net + Amazon Attribution net − TOC −
       Meta+Google+Amazon spend). Distinct from Shopify-only net_profit.

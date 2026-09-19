@@ -41,8 +41,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.usage import UsageLimits
+
 from seleric_swarm.agent.artifacts import CausalArtifact
+from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.agent.limits import ExecutionBudgetTracker
+from seleric_swarm.agent.output import MissionResult
 from seleric_swarm.agent.validation.signals import (
     AlternativeHypothesis,
     Challenge,
@@ -56,8 +61,6 @@ from seleric_swarm.agent.validation.verdict import decide_verdict
 if TYPE_CHECKING:
     from pydantic_ai import Agent
 
-    from seleric_swarm.agent.dependencies import SelericDeps
-    from seleric_swarm.agent.output import MissionResult
     from seleric_swarm.agent.validation.trust import TrustLabel
     from seleric_swarm.agent.validation.verdict import Verdict
 
@@ -165,6 +168,35 @@ class EvidenceValidator:
         return ValidationOutcome(ok=True)
 
 
+def _usage_limits(limits: ExecutionLimits) -> UsageLimits:
+    """Cap model round-trips so a lookup cannot wander through all 23 tools."""
+    tool_cap = max(1, limits.max_tool_calls)
+    return UsageLimits(request_limit=tool_cap + 2, tool_calls_limit=tool_cap)
+
+
+async def _run_agent(agent: Agent[SelericDeps, MissionResult], deps: SelericDeps, query: str) -> MissionResult:
+    try:
+        return (
+            await agent.run(
+                query,
+                deps=deps,
+                usage_limits=_usage_limits(deps.limits),
+                retries=0,
+            )
+        ).output
+    except UsageLimitExceeded:
+        return MissionResult(
+            mission_id=deps.mission_id,
+            status="failed",
+            query=query,
+            as_of=deps.as_of,
+            final_response="This question took too many steps. Please retry with a more specific metric name.",
+            error_code="EXECUTION_LIMIT_EXCEEDED",
+            limitations=["EXECUTION_LIMIT_EXCEEDED"],
+            trace={},
+        )
+
+
 async def run_validated_mission(
     agent: Agent[SelericDeps, MissionResult],
     deps: SelericDeps,
@@ -182,7 +214,9 @@ async def run_validated_mission(
     validator = validator or EvidenceValidator()
     tracker = tracker or ExecutionBudgetTracker(limits=deps.limits)
 
-    result = (await agent.run(query, deps=deps)).output
+    result = await _run_agent(agent, deps, query)
+    if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
+        return result
     outcome = validator.validate(result, deps=deps)
     while not outcome.ok:
         if outcome.rejected:
@@ -213,6 +247,8 @@ async def run_validated_mission(
         revision_prompt = (
             f"{query}\n\nYour previous answer was rejected: {outcome.reason}. Revise it."
         )
-        result = (await agent.run(revision_prompt, deps=deps)).output
+        result = await _run_agent(agent, deps, revision_prompt)
+        if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
+            return result
         outcome = validator.validate(result, deps=deps)
     return result

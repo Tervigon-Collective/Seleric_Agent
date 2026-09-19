@@ -192,7 +192,12 @@ async def run_v3_mission(
         context=_context_bundle(context_bundle),
         mcp_client=mcp,
         artifact_store=get_v3_artifact_store(),
-        limits=ExecutionLimits(),
+        limits=ExecutionLimits(
+            max_tool_calls=int(getattr(runtime.settings, "max_tool_calls", 8)),
+            max_runtime_seconds=min(
+                45.0, float(getattr(runtime.settings, "mission_timeout_s", 120.0))
+            ),
+        ),
     )
     agent = build_seleric_agent(model=resolve_v3_model(runtime.settings))
     prompt = _mission_prompt(query, as_of_dt, timezone)

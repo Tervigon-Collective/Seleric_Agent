@@ -4,12 +4,9 @@ Thin wrappers over live ``seleric-mcp`` catalogue/metrics tools via the
 already-live ``MCPGateway`` (``protocols/mcp/gateway.py``) and its generic
 arg-builder (``services/mcp_query.py``) — both reused as-is, not rebuilt.
 
-No local metric registry, no keyword/alias resolution: ``metric_id`` is
-whatever the LLM states, validated by the live catalogue itself (rule 1).
-This is deliberately NOT ``services/measure.py::resolve_measure`` — that
-module's keyword-overlap matching is exactly the heuristic layer this
-profile retires (``docs/BUG_SHEET.md`` bug #8), not something to carry
-forward into the new toolset.
+``metric_id`` is a live catalogue id. Declared YAML ``aliases`` (exact match
+only, e.g. ``gs``) are an overlay so operator shorthand reaches that id —
+not ``services/measure.py::resolve_measure`` keyword heuristics.
 """
 
 from __future__ import annotations
@@ -29,6 +26,7 @@ from seleric_swarm.services.mcp_query import (
     dimension_value,
     row_date,
 )
+from seleric_swarm.services.metrics import MetricRegistry
 
 # LLM placeholders that are not real catalogue values. ``query_metrics``
 # requires a ``dimensions`` dict in the frozen signature, so models fill it
@@ -98,6 +96,46 @@ def _unknown_dimension_error(error: object) -> bool:
 # docs/refactor/01_PROFILE_RUNTIME.md "Retires"). Revisit once Profile A's
 # real toolset-registration replacement lands.
 _AGENT_ID = "observer_agent"
+_ALIAS_REGISTRY: MetricRegistry | None = None
+
+
+def _alias_registry() -> MetricRegistry:
+    global _ALIAS_REGISTRY
+    if _ALIAS_REGISTRY is None:
+        _ALIAS_REGISTRY = MetricRegistry("config/metric_registry.yaml")
+    return _ALIAS_REGISTRY
+
+
+def _catalogue_metric_id(metric_id: str) -> str:
+    """Map a declared alias / legacy ``metric.*`` id to the Cube catalogue id."""
+    definition = _alias_registry().resolve_alias(metric_id)
+    if definition is None:
+        return metric_id
+    return str(definition.catalogue_metric or definition.id.removeprefix("metric."))
+
+
+def _alias_search_hits(query: str) -> list[dict[str, Any]]:
+    registry = _alias_registry()
+    hits: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    tokens = [query.strip()]
+    tokens.extend(part for part in query.lower().replace("-", " ").split() if part)
+    for token in tokens:
+        definition = registry.resolve_alias(token)
+        if definition is None:
+            continue
+        catalogue_id = str(definition.catalogue_metric or definition.id.removeprefix("metric."))
+        if catalogue_id in seen:
+            continue
+        seen.add(catalogue_id)
+        hits.append(
+            {
+                "id": catalogue_id,
+                "label": definition.description,
+                "matched_alias": token,
+            }
+        )
+    return hits
 
 
 def _mcp_error_result(exc: Exception) -> ToolResult:
@@ -227,13 +265,31 @@ async def query_metric_series(
 
 async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResult:
     """Resolve business language to catalogue metric ids (catalogue_search_metrics)."""
+    matches: list[Any] = []
     try:
         result = await ctx.deps.mcp_client.call(
             agent_id=_AGENT_ID, capability="seleric.catalogue_search_metrics", arguments={"query": query}
         )
+        matches = list((result or {}).get("matches") or [])
     except Exception as exc:  # convert to ToolResult, never raise across the tool boundary
-        return _mcp_error_result(exc)
-    matches = (result or {}).get("matches") or []
+        if not _alias_search_hits(query):
+            return _mcp_error_result(exc)
+    try:
+        resolved = await ctx.deps.mcp_client.call(
+            agent_id=_AGENT_ID,
+            capability="seleric.catalogue_resolve_term",
+            arguments={"text": query, "kind": "metric"},
+        )
+        extra = (resolved or {}).get("matches") or (resolved or {}).get("metrics") or []
+        if isinstance(extra, list):
+            matches.extend(item for item in extra if isinstance(item, dict))
+    except Exception:  # noqa: S110 - resolve_term is additive; search still returns
+        pass
+    known = {str(item.get("id")) for item in matches if isinstance(item, dict)}
+    for hit in _alias_search_hits(query):
+        if hit["id"] not in known:
+            matches.insert(0, hit)
+            known.add(hit["id"])
     return ToolResult(
         success=True,
         summary=f"{len(matches)} metric(s) matched '{query}'",
@@ -277,6 +333,7 @@ async def query_metrics(
     ``dimensions`` / periods default empty-or-as_of so the model can look up
     "gross sale" without inventing a brand filter or a training-data year.
     """
+    metric_id = _catalogue_metric_id(metric_id)
     dimensions = _sanitize_dimensions(dimensions)
     period_end = period_end or ctx.deps.as_of
     period_start = period_start or period_end
@@ -393,6 +450,7 @@ async def drilldown(
     contract; that's orchestration of the live two-call API, not a new
     heuristic.
     """
+    metric_id = _catalogue_metric_id(metric_id)
     parent_args = build_metrics_query_args(
         measure=metric_id,
         start=period_start.date().isoformat(),

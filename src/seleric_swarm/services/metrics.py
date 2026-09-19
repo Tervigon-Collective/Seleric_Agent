@@ -209,6 +209,25 @@ class MetricRegistry:
             return None
         return f"{m.domain}_agent"
 
+    def resolve_alias(self, hint: str) -> MetricDefinition | None:
+        """Exact id or declared YAML alias only — never substring/keyword match.
+
+        Operator shorthand lives on each metric's ``aliases`` list in
+        ``metric_registry.yaml`` (the same overlay ``gs`` already used). This is
+        not the retired ``resolve_measure`` heuristic.
+        """
+        raw = str(hint or "").strip().lower()
+        if not raw:
+            return None
+        for candidate in (raw, f"metric.{raw}", raw.replace(" ", "_"), f"metric.{raw.replace(' ', '_')}"):
+            hit = self.get(candidate) or self._metrics.get(candidate)
+            if hit is not None:
+                return hit
+        for metric in self._metrics.values():
+            if raw in metric.aliases:
+                return metric
+        return None
+
     def resolve_hint(self, hint: str) -> str | None:
         """Best-effort resolve a raw classifier hint (e.g. ``metric.roas``) to a
         known metric id, checking YAML aliases and the live catalogue before

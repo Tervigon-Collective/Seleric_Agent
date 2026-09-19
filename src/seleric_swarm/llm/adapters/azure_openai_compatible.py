@@ -108,6 +108,7 @@ class AzureOpenAICompatibleAdapter:
                 api_key=api_key,
                 api_version=settings.azure_openai_api_version,
                 timeout=settings.llm_timeout_s,
+                max_retries=0,
             )
         base_url = endpoint if endpoint.endswith(("/v1", "/models")) else f"{endpoint}/models"
         return AsyncOpenAI(
@@ -115,6 +116,7 @@ class AzureOpenAICompatibleAdapter:
             api_key=api_key,
             timeout=settings.llm_timeout_s,
             default_query={"api-version": settings.azure_openai_api_version},
+            max_retries=0,
         )
 
     @staticmethod
