@@ -25,21 +25,18 @@ structured refusal rather than a number it cannot stand behind — see
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from datetime import datetime
+from typing import Literal, cast
+
+from pydantic_ai import RunContext
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
+from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.analytics.comparison import MetricPoint, period_deltas
 from seleric_swarm.analytics.grain import CALCULATION_VERSION, validate_grain_set
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.business_state.detectors import robust_zscore
-
-if TYPE_CHECKING:
-    from datetime import datetime
-
-    from pydantic_ai import RunContext
-
-    from seleric_swarm.agent.dependencies import SelericDeps
 
 # Median+MAD. "mad" and "robust_zscore" name the same estimator in this
 # codebase — services/business_state/detectors.py::robust_zscore *is* the
@@ -266,7 +263,13 @@ async def detect_anomalies(
             continue
 
         *history, (_observed_id, observed) = usable
-        result = robust_zscore([float(item.value) for _, item in history], float(observed.value))
+        # `usable` already filtered out `value is None` above; mypy can't
+        # carry that narrowing through the slice/unpack, so tell it what's
+        # already proven rather than re-filtering (which would silently
+        # change `history`'s length if the invariant ever broke).
+        result = robust_zscore(
+            [cast(float, item.value) for _, item in history], cast(float, observed.value)
+        )
         if not result.is_anomaly:
             continue
 

@@ -38,6 +38,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
+from pydantic import BaseModel
+
 from seleric_swarm.agent.artifacts import CausalArtifact, EvidenceArtifact, PredictionArtifact
 from seleric_swarm.toolsets import policy_config as policy
 
@@ -91,7 +93,7 @@ class CheckOutcome:
         return any(ch.severity == "blocking" for ch in self.challenges)
 
 
-def _payload(artifact: Artifact, model: type) -> Any | None:
+def _payload(artifact: Artifact, model: type[BaseModel]) -> Any | None:
     try:
         return model.model_validate(artifact.payload)
     except Exception:

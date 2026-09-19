@@ -15,11 +15,12 @@ forward into the new toolset.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic_ai import RunContext
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
+from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.mcp_query import (
@@ -28,9 +29,6 @@ from seleric_swarm.services.mcp_query import (
     dimension_value,
     row_date,
 )
-
-if TYPE_CHECKING:
-    from seleric_swarm.agent.dependencies import SelericDeps
 
 # Single agent identity for MCPGateway allowlisting/module-pin lookup — the
 # new runtime has one agent loop, not per-domain agent ids (see

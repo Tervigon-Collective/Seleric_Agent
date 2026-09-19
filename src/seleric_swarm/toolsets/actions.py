@@ -13,15 +13,13 @@ contract: confirmation is the user turn between ``preview`` and ``commit``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic_ai import RunContext
 
+from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import ArtifactProvenance
-
-if TYPE_CHECKING:
-    from seleric_swarm.agent.dependencies import SelericDeps
 
 _AGENT_ID = "v3_agent"
 

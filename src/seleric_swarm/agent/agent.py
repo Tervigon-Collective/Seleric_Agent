@@ -1,20 +1,24 @@
 """The one ``SelericAgent = Agent[SelericDeps, MissionResult]``.
 
-Sprint 1 scaffolding (``docs/refactor/01_PROFILE_RUNTIME.md``): no toolsets
-are registered yet — that's Sprint 1-3 work for Profiles B/C
-(``toolsets/semantic.py``, ``toolsets/analytics.py``, etc.). This module
-exists so the loop's shape (one agent, one deps type, one output type) is
-real code, not just a diagram, and so ``api/missions.py``'s stub endpoint
-has something to call.
+Sprint 4 (``docs/refactor/01_PROFILE_RUNTIME.md``/``SPRINT_PLAN.md``): all
+seven frozen toolset surfaces that have a real implementation
+(``toolsets/{semantic,analytics,causal,models,actions}.py`` — Profile B/C's
+Sprint 1-3 work) are registered here. ``KnowledgeToolset``/
+``ExperimentToolset`` don't exist in ``src/`` yet (Sprint 4's own additive
+track for Profile C) so there is nothing to register for those two.
 
-Model defaults to ``TestModel`` (deterministic, no API key needed) so this
-runs in CI without live credentials — the point of a stub agent at 0%
-traffic. Pass a real ``model=`` once a provider is wired for real use.
+Model defaults to ``TestModel`` with ``call_tools=[]`` (deterministic, no
+API key needed, and — now that real tools are registered — explicitly
+**not** exercised, so the 0%-traffic stub path stays exactly as cheap and
+side-effect-free as before this wiring landed). Pass a real ``model=`` (or
+a scripted ``FunctionModel``/``TestModel(call_tools="all")`` for
+integration testing) to actually exercise the tools.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
@@ -23,22 +27,54 @@ from pydantic_ai.models.test import TestModel
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.instructions import INSTRUCTIONS
 from seleric_swarm.agent.output import MissionResult
+from seleric_swarm.toolsets import actions, analytics, causal, models, semantic
+
+# Typed as `list[Any]` deliberately: pydantic_ai's own `tools` parameter
+# wants a `Sequence[Tool[SelericDeps] | ToolFuncEither[SelericDeps, ...]]`,
+# and mypy cannot unify 15 tool functions with genuinely different
+# parameter lists into that single Callable shape even though every one of
+# them is a real `RunContext[SelericDeps]`-first tool function (verified at
+# runtime — see tests/unit/test_v3_agent_wiring.py, which registers and
+# introspects all 15). Narrowing the annotation here is honest about a
+# real typing-system limitation, not a suppression of a real bug.
+TOOLS: list[Any] = [
+    semantic.search_semantics,
+    semantic.get_metric_definition,
+    semantic.query_metrics,
+    semantic.drilldown,
+    analytics.compare_periods,
+    analytics.detect_anomalies,
+    causal.estimate_effect,
+    causal.refute_estimate,
+    models.forecast,
+    models.predict_ltv,
+    models.predict_propensity,
+    actions.propose_action,
+    actions.validate,
+    actions.preview,
+    actions.commit_action,
+]
 
 
 def _stub_test_model() -> TestModel:
     # TestModel's default arbitrary-data generator doesn't respect datetime
     # field constraints (produces "a" for `as_of`, failing validation) — a
     # fixed custom output is what makes a *stub* agent, not a flaky one.
+    # call_tools=[] additionally means none of the 15 real tools registered
+    # below get invoked against whatever (possibly fake) deps a 0%-traffic
+    # caller supplies — tools ARE registered (Sprint 4), just not exercised
+    # by this particular model.
     return TestModel(
+        call_tools=[],
         custom_output_args={
             "mission_id": "stub",
             "status": "partial",
             "query": "",
             "as_of": datetime.now(UTC),
-            "final_response": "No toolsets are registered yet (Sprint 1 skeleton).",
+            "final_response": "Stub model — tools are registered but not exercised.",
             "evidence_ids": [],
             "finding_ids": [],
-            "limitations": ["stub agent — no toolsets wired"],
+            "limitations": ["stub model — tools registered but not called"],
             "error_code": None,
             "trace": {},
         }
@@ -46,11 +82,12 @@ def _stub_test_model() -> TestModel:
 
 
 def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDeps, MissionResult]:
-    """Construct the agent. No toolsets registered — see module docstring."""
+    """Construct the agent with every implemented toolset registered."""
     return Agent(
         model=model or _stub_test_model(),
         deps_type=SelericDeps,
         output_type=MissionResult,
         instructions=INSTRUCTIONS,
         name="seleric_agent",
+        tools=TOOLS,
     )
