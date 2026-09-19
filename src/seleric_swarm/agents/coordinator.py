@@ -8,9 +8,9 @@ from uuid import uuid4
 from seleric_swarm.agents.base import AgentContext, SwarmAgent
 from seleric_swarm.contracts.lookup import CoordinatorClassificationV1
 from seleric_swarm.coordinator.catalogue_grounding import (
-    apply_catalogue_grain,
     collapse_assigned_metrics,
-    hints_from_catalogue,
+    query_has_grain_intent,
+    resolve_catalogue_dimension,
 )
 from seleric_swarm.coordinator.intake import partition_domain_questions
 from seleric_swarm.coordinator.planning.complexity import looks_like_diagnostic
@@ -21,6 +21,42 @@ from seleric_swarm.services.metrics import lead_agent_for_hints
 from seleric_swarm.services.time_range import resolve_time_range, window_from_query
 
 AGENT_VERSION = "0.1.0"
+
+
+async def resolve_grain_for_metrics(
+    query: str,
+    canonical: list[str],
+    *,
+    entities: list[str] | None,
+    runtime: SwarmRuntime,
+    bootstrap: Any,
+) -> list[str]:
+    """Grain resolution via the live catalogue resolver, never a local
+    keyword table — the replacement for the deleted
+    apply_catalogue_grain()/ground_live_grain() heuristic chain
+    (docs/refactor/TASK_SHEET.md, Sprint 3 Profile B). A live dimension
+    corroborates only if a canonical metric's own catalogue entry declares
+    it — the same "does the asked metric support this dim?" rule the
+    deleted ground_live_grain used, extracted here (rather than left inline
+    in classify()) so it has its own direct unit test.
+    """
+    if not canonical or bootstrap is None or not query_has_grain_intent(query):
+        return []
+    live_dims = await resolve_catalogue_dimension(query, runtime=runtime)
+    for entity in entities or []:
+        for dim in await resolve_catalogue_dimension(str(entity), runtime=runtime):
+            if dim not in live_dims:
+                live_dims.append(dim)
+    if not live_dims:
+        return []
+    supported: set[str] = set()
+    for metric_id in canonical:
+        definition = runtime.metrics.get(metric_id)
+        cat_id = getattr(definition, "catalogue_metric", None) if definition else None
+        meta = bootstrap.get(cat_id) if cat_id else None
+        if meta:
+            supported.update(meta.supported_dimensions)
+    return [d for d in live_dims if d in supported]
 
 
 class Agent(SwarmAgent):
@@ -119,16 +155,14 @@ class Agent(SwarmAgent):
                 "llm_calls": 1,
             }
 
-        # Skip observer's LLM metric-mapping call when a single registered
-        # metric is already named. Union catalogue search (the live glossary)
-        # with the classifier — never a local phrase table.
-        catalogue_hints = []
-        if not looks_like_diagnostic(query):
-            catalogue_hints = await hints_from_catalogue(query, runtime=self.runtime, agent_id=self.agent_id)
-        merged_hints = list(dict.fromkeys([*classification.metric_hints, *catalogue_hints]))
-        # Collapse cadence siblings before grain. Hourly CTR supports
-        # campaign_objective; daily meta_ctr does not. Grain against the
-        # uncollapsed set was keeping that dim, then Observer skip-fetched.
+        # Trust the LLM classifier's own metric hints directly — no local
+        # catalogue-search/keyword-alias layer (coordinator/catalogue_grounding.py's
+        # hints_from_catalogue()/apply_catalogue_grain(), deleted 2026-09-18 as
+        # the bug #8-class heuristic this migration retires; see
+        # docs/refactor/02_PROFILE_SEMANTIC_MCP.md).
+        merged_hints = list(dict.fromkeys(classification.metric_hints))
+        # Collapse cadence siblings. Hourly CTR supports campaign_objective;
+        # daily meta_ctr does not.
         bootstrap = getattr(self.runtime, "bootstrap", None)
         merged_hints = collapse_assigned_metrics(
             [m for m in merged_hints if self.runtime.metrics.get(m) is not None] or merged_hints,
@@ -136,14 +170,18 @@ class Agent(SwarmAgent):
             query,
             bootstrap,
         )
-        merged_hints, resolved_dimensions = await apply_catalogue_grain(
-            query, merged_hints, runtime=self.runtime, entities=classification.entities
-        )
         canonical = collapse_assigned_metrics(
             [m for m in merged_hints if self.runtime.metrics.get(m) is not None],
             self.runtime.metrics,
             query,
             bootstrap,
+        )
+        resolved_dimensions = await resolve_grain_for_metrics(
+            query,
+            canonical,
+            entities=classification.entities,
+            runtime=self.runtime,
+            bootstrap=bootstrap,
         )
         preset_metric = canonical[0] if len(canonical) == 1 else None
 

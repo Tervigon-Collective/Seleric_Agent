@@ -1,16 +1,13 @@
 # Seleric V3 — Refactor Overview
 
-Status: execution underway. Sprint 0/1 Done. **Sprint 2 closed 2026-09-18**
-aside from Profile B 3-calendar-day characterization (**Partial** — see
-`CHARACTERIZATION_LEDGER.md`). Profile A through Sprint 3 (runtime
-scaffolding, validator + execution limits, mission cache/tracing/
-Temporal decision) done. Profile B through Sprint 2 (semantic toolset v0 +
-hybrid fetch-path extract-wrap-delete: `McpDataProvider` +
-`query_metric_series`) done. Profile C through Sprint 3 (analytics
-toolset v0 + causal toolset v0 + model/skeptic port + parity harness)
-done. Next: remaining Sprint 3 (ActionToolset upstream, characterization
-days 2–3). See `SPRINT_PLAN.md` and `TASK_SHEET.md` for current status,
-don't assume this line reflects it going forward.
+Status: execution underway. Sprint 0/1 Done; **Sprint 2 closed 2026-09-18**.
+Profile A through Sprint 3 (runtime scaffolding, validator + execution
+limits, mission cache/tracing/Temporal decision) Done. Profile B through
+Sprint 3 (semantic toolset v0 + hybrid fetch-path extract-wrap-delete:
+`McpDataProvider` + `query_metric_series`; catalogue heuristic retirement)
+Done. Profile C through Sprint 3 (analytics + causal + Model/Skeptic port +
+parity harness) Done. Next: Sprint 3 residuals (ActionToolset upstream).
+See `SPRINT_PLAN.md` / `TASK_SHEET.md`.
 Last verified against source: 2026-09-18.
 
 This folder is the single source of truth for the swarm_v2 → PydanticAI+Cube
