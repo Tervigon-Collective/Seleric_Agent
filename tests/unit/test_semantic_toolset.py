@@ -178,6 +178,79 @@ async def test_query_metrics_mcp_unavailable_is_retryable():
     assert result.retryable is True
 
 
+@pytest.mark.asyncio
+async def test_query_metrics_drops_invented_brand_placeholder():
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "q1",
+                "rows": [{"total_sales": "13638"}],
+                "provenance": {},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="total_sales",
+        dimensions={"brand": "some_brand"},
+        grain="none",
+        period_start=datetime(2026, 9, 17, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert result.success is True
+    assert "filters" not in mcp.calls[0][1]
+    assert len(mcp.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_retries_unfiltered_on_unknown_brand():
+    class _BrandGate:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict[str, Any]]] = []
+
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+            del agent_id
+            self.calls.append((capability, arguments))
+            if arguments.get("filters"):
+                return {"error": "unknown brand 'nikee'"}
+            return {"query_id": "q1", "rows": [{"total_sales": "200"}], "provenance": {}}
+
+    mcp = _BrandGate()
+    ctx = FakeRunContext(_deps(mcp))  # type: ignore[arg-type]
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="total_sales",
+        dimensions={"brand_id": "nikee"},
+        grain="none",
+        period_start=datetime(2026, 9, 17, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert result.success is True
+    assert len(mcp.calls) == 2
+    assert mcp.calls[0][1]["filters"]
+    assert "filters" not in mcp.calls[1][1]
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_defaults_period_to_mission_as_of():
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "q1",
+                "rows": [{"total_sales": "10"}],
+                "provenance": {},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.query_metrics(ctx, metric_id="total_sales")
+    assert result.success is True
+    time_range = mcp.calls[0][1]["time_range"]
+    assert time_range["start"] == "2026-09-18"
+    assert time_range["end"] == "2026-09-18"
+
+
 # ---- search_semantics / get_metric_definition ---------------------------------------
 
 
