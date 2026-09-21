@@ -120,13 +120,27 @@ mismatch recorded but not reproduced on retry.
   registers all four action endpoints, a dedicated `v3_agent` allowlist
   prevents legacy read agents from gaining writes, and the adapter keeps
   confirmation tokens out of model-visible provenance.
-- `semantic/cube_client.py` / `semantic/discovery.py` — **not built, not
-  planned (Sprint 3 finding)**. `toolsets/semantic.py::search_semantics()`
-  (server-side `catalogue_search_metrics` embedding search) and
-  `get_metric_definition()` already do what these two files would have
-  built; a local `discovery.py` vector index would duplicate server-side
-  search — exactly the "check before building a second vector index"
-  ponytail rung 2 this brief's own text warned against.
+- `semantic/cube_client.py` / `semantic/discovery.py` — still not built.
+  Sprint 3's finding above (a bespoke local vector index would duplicate
+  server-side `catalogue_search_metrics` embedding search) held until this
+  decision was **explicitly revisited and reversed 2026-09-21**: repeated
+  remote `catalogue_search_metrics`/`catalogue_resolve_term` calls had no
+  caching at all (unlike `query_metrics`/`drilldown`, which dedupe per
+  mission via `MissionQueryCache`), so every identical metric-name lookup
+  paid a live MCP round trip. `toolsets/semantic.py::search_semantics()`
+  now searches a local Qdrant index (`toolsets/catalogue_index.py`,
+  `text-embedding-3-small`) kept in sync via
+  `scripts/sync_catalogue_to_qdrant.py` instead of calling
+  `catalogue_search_metrics`/`catalogue_resolve_term` remotely. This is
+  scoped to **search only** — it does not reintroduce the local-heuristic
+  metric-resolution problem rule 1 exists to prevent: `get_metric_definition()`
+  (`catalogue_get_metric`) and `query_metrics()`/`drilldown()` are
+  unchanged and still hit Cube live, so an id the index still returns but
+  Cube no longer recognizes surfaces as a normal `INSUFFICIENT_EVIDENCE`
+  error, not a fabricated match. The index's `synced_at` age is checked at
+  query time and surfaces a `ToolResult` warning past
+  `catalogue_index.STALE_AFTER_HOURS` (24h) since sync is a manual script
+  for now, not a live guarantee.
 
 ## Depends on
 

@@ -35,6 +35,7 @@ from seleric_swarm.toolsets import (
     experiments,
     knowledge,
     models,
+    sandbox,
     semantic,
 )
 
@@ -57,6 +58,7 @@ TOOLS: list[Any] = [
     analytics.segment_decomposition,
     analytics.funnel_decomposition,
     analytics.cohort_analysis,
+    sandbox.run_python,
     causal.estimate_effect,
     causal.refute_estimate,
     models.forecast,
@@ -71,6 +73,22 @@ TOOLS: list[Any] = [
     experiments.estimate_sample_size,
     experiments.evaluate_experiment,
 ]
+
+
+def capability_manifest() -> str:
+    """One line per registered tool (name + first docstring line).
+
+    Derived from the ``TOOLS`` list so a newly-registered tool shows up here
+    automatically — the model gets an at-a-glance capability map to plan
+    against instead of discovering tools one schema at a time.
+    """
+    lines = ["Tools available to you (call by name):"]
+    for fn in TOOLS:
+        name = getattr(fn, "__name__", str(fn))
+        doc = (getattr(fn, "__doc__", "") or "").strip()
+        summary = doc.splitlines()[0].strip() if doc else ""
+        lines.append(f"- {name}: {summary}")
+    return "\n".join(lines)
 
 
 def _stub_test_model() -> TestModel:
@@ -104,7 +122,7 @@ def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDep
         model=model or _stub_test_model(),
         deps_type=SelericDeps,
         output_type=MissionResult,
-        instructions=INSTRUCTIONS,
+        instructions=INSTRUCTIONS + "\n\n" + capability_manifest(),
         name="seleric_agent",
         tools=TOOLS,
     )

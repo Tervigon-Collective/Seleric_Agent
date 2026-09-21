@@ -14,13 +14,18 @@ from seleric_swarm.agent.agent import _stub_test_model
 from seleric_swarm.config.settings import Settings, configured_chat_model
 
 
-def resolve_v3_model(settings: Settings) -> Model:
+def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
     """Live OpenAI-compatible model when configured; otherwise the stub TestModel.
 
     Wraps every configured model (``AZURE_OPENAI_MODELS``, primary first) in a
     ``FallbackModel`` so a rate-limited/erroring model doesn't fail the mission
     outright — pydantic-ai tries the next candidate on any ``ModelAPIError``
     (429s included).
+
+    ``prefer_fast`` (set by the runner for simple read-only intents) puts
+    ``AZURE_OPENAI_FAST_MODEL`` first in the chain when it is configured, so a
+    lookup runs on the cheaper/faster deployment while the strong models stay
+    behind it as reliability fallbacks. No-op when no fast model is set.
 
     Every model above shares one ``AsyncOpenAI`` client against
     ``AZURE_OPENAI_ENDPOINT``, so an endpoint-level 429 (the whole resource is
@@ -42,6 +47,10 @@ def resolve_v3_model(settings: Settings) -> Model:
     adapter = AzureOpenAICompatibleAdapter(settings)
     provider = OpenAIProvider(openai_client=adapter.async_client)
     model_names = settings.resolved_models() or [model_name]
+    fast_model = getattr(settings, "azure_openai_fast_model", "").strip()
+    if prefer_fast and fast_model:
+        # Fast deployment first; strong chain stays behind it as fallback.
+        model_names = [fast_model, *[m for m in model_names if m != fast_model]]
     models = [OpenAIChatModel(name, provider=provider) for name in model_names]
 
     if settings.azure_openai_endpoint_2.strip() and settings.azure_openai_api_key_2.strip():

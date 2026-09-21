@@ -20,10 +20,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from openai import APITimeoutError as OpenAIAPITimeoutError
 from pydantic_ai.exceptions import ModelHTTPError
 
-from seleric_swarm.agent.agent import build_seleric_agent
+from seleric_swarm.agent.agent import build_seleric_agent, capability_manifest
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
+from seleric_swarm.agent.intent import QueryClassification, classify_query
 from seleric_swarm.agent.model import resolve_v3_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
+from seleric_swarm.agent.plan import build_plan
 from seleric_swarm.agent.validation import run_validated_mission
 from seleric_swarm.api.office.registry import register_mission
 from seleric_swarm.api.office.v3_adapter import v3_raw_snapshot
@@ -36,9 +38,15 @@ from seleric_swarm.contracts.lookup import (
 from seleric_swarm.contracts.lookup import (
     MissionResult as LookupMissionResult,
 )
-from seleric_swarm.conversations.contracts import ContextBundle, Principal, PrincipalAuthMethod
+from seleric_swarm.conversations.contracts import (
+    Artifact,
+    ContextBundle,
+    Principal,
+    PrincipalAuthMethod,
+)
 from seleric_swarm.observability.traces import mission_trace
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
 from seleric_swarm.services.time_range import as_of_date
 from seleric_swarm.state.missions import Mission
@@ -73,6 +81,53 @@ def _lookup_alias(query: str) -> MetricDefinition | None:
     spellings of one metric to stay independently attributed at the tool.
     """
     return _alias_registry().resolve_alias(query)
+
+
+# --- Jev-driven routing (latency optimizations) --------------------------------
+
+# Intents whose answers genuinely benefit from an upfront plan. Simple lookups
+# already have the full catalogue + capability manifest in context.
+_PLAN_INTENTS = frozenset(
+    {"diagnostic", "causal_investigation", "simulation", "forecast", "comparison"}
+)
+
+# Per-intent tool-call ceilings — a tight budget stops a simple lookup from
+# wandering through all the tools. Unknown intent (Jev down) keeps the
+# configured ceiling, never tightening on missing signal.
+_TOOL_BUDGET_BY_INTENT: dict[str, int] = {
+    "lookup": 4,
+    "aggregation": 6,
+    "trend": 6,
+    "comparison": 6,
+    "diagnostic": 10,
+    "forecast": 10,
+    "simulation": 10,
+    "causal_investigation": 12,
+}
+
+# Simple, read-only intents cheap enough for the fast model tier.
+_FAST_MODEL_INTENTS = frozenset({"lookup", "aggregation", "trend"})
+
+
+def _should_plan(classification: QueryClassification) -> bool:
+    """#1: plan only for multi-step work (by intent) or when Jev rates it complex."""
+    return classification.intent in _PLAN_INTENTS or classification.complexity == "complex"
+
+
+def _tool_budget(intent: str | None, ceiling: int) -> int:
+    """#3: per-intent tool-call budget, never above the configured ceiling."""
+    if intent is None:
+        return ceiling
+    return min(ceiling, _TOOL_BUDGET_BY_INTENT.get(intent, ceiling))
+
+
+def _prefer_fast_model(classification: QueryClassification) -> bool:
+    """#3: route simple, read-only, non-complex queries to the fast model tier."""
+    return (
+        classification.intent in _FAST_MODEL_INTENTS
+        and classification.complexity != "complex"
+        and classification.needs_write is not True
+    )
 
 
 def _flatten_exceptions(exc: BaseException) -> list[BaseException]:
@@ -118,17 +173,59 @@ def _as_of_datetime(as_of: str | None, timezone: str = "Asia/Kolkata") -> dateti
     return datetime(day.year, day.month, day.day, tzinfo=tz)
 
 
+async def _catalogue_snapshot(runtime: SwarmRuntime) -> CatalogueSnapshot:
+    """Warm the live catalogue cache and snapshot it for the agent's memory.
+
+    Fail-open: a warming failure leaves an empty snapshot, and the agent falls
+    back to ``search_semantics`` exactly as before.
+    """
+    bootstrap = getattr(runtime, "bootstrap", None)
+    if bootstrap is None:
+        return CatalogueSnapshot()
+    try:
+        await bootstrap.refresh_if_stale()
+        return bootstrap.snapshot()
+    except Exception:
+        _log.warning("catalogue_snapshot_failed", exc_info=True)
+        return CatalogueSnapshot()
+
+
+def _store_plan_artifact(deps: SelericDeps, *, plan: str, intent: str | None) -> None:
+    """Persist the plan for observability. Non-fatal — a store failure never
+    blocks the mission (the plan is already prepended to the prompt)."""
+    try:
+        deps.artifact_store.put(
+            Artifact(
+                workspace_id=deps.principal.workspace_id,
+                artifact_type="plan",
+                payload={"plan": plan, "intent": intent},
+                classification="ui",
+                mission_id=deps.mission_id,
+            )
+        )
+    except Exception:
+        _log.warning("plan_artifact_store_failed", exc_info=True)
+
+
 def _mission_prompt(
     query: str,
     as_of_dt: datetime,
     timezone: str,
     context: ContextBundle | None = None,
+    catalogue: CatalogueSnapshot | None = None,
+    plan: str | None = None,
 ) -> str:
     as_of_day = as_of_dt.date()
     yesterday = as_of_day.fromordinal(as_of_day.toordinal() - 1)
     thread = _thread_context_block(context)
+    catalogue_block = ""
+    if catalogue is not None:
+        rendered = catalogue.render()
+        if rendered:
+            catalogue_block = f"[catalogue]\n{rendered}\n\n"
+    plan_block = f"[plan]\n{plan}\n\n" if plan else ""
     return (
-        f"{thread}{query}\n\n"
+        f"{thread}{catalogue_block}{plan_block}{query}\n\n"
         f"[system: mission as_of={as_of_day.isoformat()} timezone={timezone}. "
         f"'today' is {as_of_day.isoformat()}. "
         f"'yesterday' is {yesterday.isoformat()}. "
@@ -217,6 +314,7 @@ async def _alias_lookup_result(
     definition: Any,
     request_id: str,
     thread_id: str,
+    intent: str | None = None,
 ) -> V3MissionResult:
     """Live Cube lookup for an exact YAML alias — no LLM, no invented metric id."""
     catalogue_id = str(definition.catalogue_metric or definition.id.removeprefix("metric."))
@@ -246,7 +344,12 @@ async def _alias_lookup_result(
         evidence_ids=list(tool.artifact_ids),
         limitations=[] if tool.success else [error_code or "INSUFFICIENT_EVIDENCE"],
         error_code=error_code,
-        trace={"request_id": request_id, "session_id": thread_id, "lookup": "alias"},
+        trace={
+            "request_id": request_id,
+            "session_id": thread_id,
+            "lookup": "alias",
+            "intent": intent,
+        },
     )
 
 
@@ -260,9 +363,11 @@ def _to_lookup(
     error = None
     if result.error_code:
         error = MissionError(code=result.error_code, message=result.final_response or result.error_code)
+    intent = result.trace.get("intent")
     return LookupMissionResult(
         mission_id=result.mission_id,
         status=_lookup_status(result.status),  # type: ignore[arg-type]
+        query_class=str(intent) if intent else None,
         mission_lead="coordinator",
         initial_mission_lead="coordinator",
         evidence=evidence,
@@ -323,6 +428,15 @@ async def run_v3_mission(
         )
 
     mcp = getattr(runtime, "mcp", None) or NullMcpClient()
+    catalogue = await _catalogue_snapshot(runtime)
+    classification = await classify_query(
+        query,
+        base_url=getattr(runtime.settings, "jev_base_url", ""),
+        api_key=getattr(runtime.settings, "jev_api_key", ""),
+        timeout=float(getattr(runtime.settings, "jev_timeout_s", 1.0)),
+    )
+    intent = classification.intent
+    ceiling = int(getattr(runtime.settings, "max_tool_calls", 8))
     deps = SelericDeps(
         mission_id=mission_id,
         as_of=as_of_dt,
@@ -334,13 +448,22 @@ async def run_v3_mission(
         mcp_client=mcp,
         artifact_store=get_v3_artifact_store(),
         limits=ExecutionLimits(
-            max_tool_calls=int(getattr(runtime.settings, "max_tool_calls", 8)),
+            max_tool_calls=_tool_budget(intent, ceiling),
             max_runtime_seconds=float(getattr(runtime.settings, "mission_timeout_s", 120.0)),
+            agent_retries=int(getattr(runtime.settings, "agent_retries", 2)),
         ),
+        catalogue=catalogue,
     )
-    alias_def = _lookup_alias(query)
+    alias_def = _lookup_alias(query) if intent in (None, "lookup") else None
     started = time.perf_counter()
-    with mission_trace(mission_id, query=query, route="v3"):
+    with mission_trace(
+        mission_id,
+        query=query,
+        route="v3",
+        intent=intent,
+        complexity=classification.complexity,
+        needs_write=classification.needs_write,
+    ):
         try:
             if alias_def is not None:
                 result = await _alias_lookup_result(
@@ -349,10 +472,36 @@ async def run_v3_mission(
                     definition=alias_def,
                     request_id=request_id,
                     thread_id=thread_id,
+                    intent=intent,
                 )
             else:
-                agent = build_seleric_agent(model=resolve_v3_model(runtime.settings))
-                prompt = _mission_prompt(query, as_of_dt, timezone, context=deps.context)
+                model = resolve_v3_model(
+                    runtime.settings, prefer_fast=_prefer_fast_model(classification)
+                )
+                agent = build_seleric_agent(model=model)
+                # #1: only pay for an upfront plan on genuinely multi-step work;
+                # a simple lookup already has the full catalogue + manifest.
+                plan = (
+                    await build_plan(
+                        model,
+                        query=query,
+                        intent=intent,
+                        manifest=capability_manifest(),
+                        catalogue=catalogue,
+                    )
+                    if _should_plan(classification)
+                    else None
+                )
+                if plan:
+                    _store_plan_artifact(deps, plan=plan, intent=intent)
+                prompt = _mission_prompt(
+                    query,
+                    as_of_dt,
+                    timezone,
+                    context=deps.context,
+                    catalogue=catalogue,
+                    plan=plan,
+                )
                 v3_result = await asyncio.wait_for(
                     run_validated_mission(agent, deps, prompt),
                     timeout=deps.limits.max_runtime_seconds,
@@ -366,6 +515,9 @@ async def run_v3_mission(
                             "request_id": request_id,
                             "session_id": thread_id,
                             "elapsed_seconds": round(time.perf_counter() - started, 3),
+                            "intent": intent,
+                            "complexity": classification.complexity,
+                            "needs_write": classification.needs_write,
                         },
                     }
                 )
@@ -382,6 +534,7 @@ async def run_v3_mission(
                     "request_id": request_id,
                     "session_id": thread_id,
                     "elapsed_seconds": round(time.perf_counter() - started, 3),
+                    "intent": intent,
                 },
             )
         except Exception as exc:
@@ -398,6 +551,7 @@ async def run_v3_mission(
                     "request_id": request_id,
                     "session_id": thread_id,
                     "elapsed_seconds": round(time.perf_counter() - started, 3),
+                    "intent": intent,
                 },
             )
 

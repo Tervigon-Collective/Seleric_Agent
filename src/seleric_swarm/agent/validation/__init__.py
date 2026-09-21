@@ -181,7 +181,7 @@ async def _run_agent(agent: Agent[SelericDeps, MissionResult], deps: SelericDeps
                 query,
                 deps=deps,
                 usage_limits=_usage_limits(deps.limits),
-                retries=1,
+                retries=max(1, deps.limits.agent_retries),
             )
         ).output
     except UsageLimitExceeded:

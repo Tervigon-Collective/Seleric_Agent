@@ -43,6 +43,7 @@ TOOLS = (
     "catalogue_get_ontology",
     "catalogue_related_metrics",
     "catalogue_list_dimensions",
+    "catalogue_list_brands",
     "modules_list",
     "metrics_query",
     "metrics_drilldown",

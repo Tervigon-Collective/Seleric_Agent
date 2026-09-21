@@ -233,7 +233,7 @@ async def test_completed_with_empty_response_is_caught_not_shipped(monkeypatch):
 
     from seleric_swarm.agent import runner as runner_mod
 
-    def _broken_model(_settings: object) -> TestModel:
+    def _broken_model(_settings: object, **_kwargs: object) -> TestModel:
         return TestModel(
             call_tools=[],
             custom_output_args={

@@ -15,10 +15,11 @@ independently-attributed evidence).
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 
-from pydantic_ai import RunContext
+from pydantic_ai import ModelRetry, RunContext
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
@@ -30,6 +31,7 @@ from seleric_swarm.services.mcp_query import (
     dimension_value,
     row_date,
 )
+from seleric_swarm.toolsets import catalogue_index
 
 # LLM placeholders that are not real catalogue values. ``query_metrics``
 # requires a ``dimensions`` dict in the frozen signature, so models fill it
@@ -71,6 +73,19 @@ def _is_placeholder_dimension_value(value: str) -> bool:
     return text.startswith(("some_", "example_", "sample_", "dummy_", "test_"))
 
 
+def _normalize_dim_token(text: str) -> str:
+    return text.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _is_self_referential_dimension_value(key: str, value: str) -> bool:
+    """LLM echoed the dimension name back as its own value (live
+    2026-09-21: ``dimensions={"product_title": "product_title"}`` when the
+    caller wanted a breakdown by product, not a literal filter for a
+    product named after its own column) — that's "give me no value", i.e.
+    a group-by, not a filter that can never match a real row."""
+    return _normalize_dim_token(value) == _normalize_dim_token(key)
+
+
 def _sanitize_dimensions(dimensions: dict[str, str] | None) -> dict[str, str]:
     cleaned: dict[str, str] = {}
     for key, raw in (dimensions or {}).items():
@@ -78,6 +93,9 @@ def _sanitize_dimensions(dimensions: dict[str, str] | None) -> dict[str, str]:
             cleaned[str(key)] = ""
             continue
         text = str(raw).strip()
+        if text and _is_self_referential_dimension_value(key, text):
+            cleaned[str(key)] = ""
+            continue
         if text and _is_placeholder_dimension_value(text):
             continue
         cleaned[str(key)] = text
@@ -103,6 +121,26 @@ def _unknown_dimension_error(error: object) -> bool:
 # same-day merge briefly reintroduced an exact-alias overlay here; removed
 # 2026-09-19 after it collapsed that regression test back to failing.
 _AGENT_ID = "v3_agent"
+
+
+def _cache_key(capability: str, arguments: dict[str, Any]) -> str:
+    """Deterministic key for ``SelericDeps.query_cache`` — same capability +
+    same arguments always means the same fetch, so this is the one place
+    that decides what "identical query" means for dedup purposes."""
+    return f"{capability}:{json.dumps(arguments, sort_keys=True, default=str)}"
+
+
+_QUERY_CACHE_ENABLED = True
+
+
+async def _cached_metrics_query(
+    ctx: RunContext[SelericDeps], arguments: dict[str, Any]
+) -> dict[str, Any]:
+    fetch = lambda: call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=arguments)  # noqa: E731
+    if not _QUERY_CACHE_ENABLED:
+        return await fetch()
+    key = _cache_key("seleric.metrics_query", arguments)
+    return await ctx.deps.query_cache.get_or_fetch(key, fetch)
 
 
 def _mcp_error_result(exc: Exception) -> ToolResult:
@@ -231,36 +269,50 @@ async def query_metric_series(
 
 
 async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResult:
-    """Resolve business language to catalogue metric ids (catalogue_search_metrics)."""
-    matches: list[Any] = []
+    """Resolve business language to catalogue metric ids via the local Qdrant
+    catalogue index (``toolsets/catalogue_index.py``), kept in sync with the
+    live catalogue by ``scripts/sync_catalogue_to_qdrant.py``. This replaces
+    the former ``catalogue_search_metrics``/``catalogue_resolve_term`` MCP
+    round trips — search only; ``get_metric_definition``/``query_metrics``
+    still validate against the live catalogue/Cube unchanged (rule 1)."""
     try:
-        result = await ctx.deps.mcp_client.call(
-            agent_id=_AGENT_ID, capability="seleric.catalogue_search_metrics", arguments={"query": query}
-        )
-        matches = list((result or {}).get("matches") or [])
+        matches = catalogue_index.search(query, kind="metric")
     except Exception as exc:  # convert to ToolResult, never raise across the tool boundary
         return _mcp_error_result(exc)
-    try:
-        resolved = await ctx.deps.mcp_client.call(
-            agent_id=_AGENT_ID,
-            capability="seleric.catalogue_resolve_term",
-            arguments={"text": query, "kind": "metric"},
-        )
-        extra = (resolved or {}).get("matches") or (resolved or {}).get("metrics") or []
-        if isinstance(extra, list):
-            matches.extend(item for item in extra if isinstance(item, dict))
-    except Exception:  # noqa: S110 - resolve_term is additive; search still returns
-        pass
+    warnings = [] if matches else [f"no catalogue match for '{query}'"]
+    if any(match.get("stale") for match in matches):
+        warnings.append("catalogue index may be stale; rerun scripts/sync_catalogue_to_qdrant.py")
     return ToolResult(
         success=True,
         summary=f"{len(matches)} metric(s) matched '{query}'",
-        warnings=[] if matches else [f"no catalogue match for '{query}'"],
+        warnings=warnings,
         provenance=ArtifactProvenance(source_metadata={"matches": matches}),
+    )
+
+
+def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> None:
+    """Raise ``ModelRetry`` with candidate ids when *metric_id* isn't in the
+    warmed catalogue snapshot. Validation only — never rewrites the id to a
+    guess (rule 1 / the no-alias-table warning in this module's docstring):
+    it hands the model the closest catalogue ids and lets it re-pick. Skipped
+    when the snapshot is empty (fail-open) or the id is present.
+    """
+    catalogue = ctx.deps.catalogue
+    if not catalogue.metrics or catalogue.has_metric(metric_id):
+        return
+    candidates = catalogue.closest_metric_ids(metric_id)
+    if not candidates:
+        return
+    raise ModelRetry(
+        f"'{metric_id}' is not a catalogue metric id. Closest ids: "
+        f"{', '.join(candidates)}. Pick the exact id from the [catalogue] "
+        f"listing and retry."
     )
 
 
 async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult:
     """Fetch one metric's full catalogue definition (catalogue_get_metric)."""
+    _reject_unknown_metric(ctx, metric_id)
     try:
         result = await ctx.deps.mcp_client.call(
             agent_id=_AGENT_ID, capability="seleric.catalogue_get_metric", arguments={"metric_id": metric_id}
@@ -294,6 +346,7 @@ async def query_metrics(
     ``dimensions`` / periods default empty-or-as_of so the model can look up
     "gross sale" without inventing a brand filter or a training-data year.
     """
+    _reject_unknown_metric(ctx, metric_id)
     dimensions = _sanitize_dimensions(dimensions)
     period_end = period_end or ctx.deps.as_of
     period_start = period_start or period_end
@@ -309,7 +362,7 @@ async def query_metrics(
         dimensions=breakdown or None,
         filters=filters or None,
     )
-    result = await call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=args)
+    result = await _cached_metrics_query(ctx, args)
     if result.get("error") and filters and _unknown_dimension_error(result["error"]):
         dimensions = {}
         breakdown = []
@@ -320,7 +373,7 @@ async def query_metrics(
             end=period_end.date().isoformat(),
             grain=None if grain == "none" else grain,
         )
-        result = await call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=args)
+        result = await _cached_metrics_query(ctx, args)
     if result.get("error"):
         return ToolResult(
             success=False,
@@ -340,58 +393,80 @@ async def query_metrics(
         query_version=str(result.get("provenance", {}).get("query_id") or ""),
         source_metadata=result.get("provenance") or {},
     )
-    # grain="none" -> Cube returns one period-aggregate row. A real grain
-    # ("day"/"week"/"month") -> one row per bucket; each bucket is its own
-    # EvidenceArtifact (rule 6/7: one artifact per fetched fact, not a
-    # multi-day value folded into a single artifact) — needed so a
-    # day-granularity series (e.g. feeding a causal/anomaly consumer) is
-    # immutable evidence per day, not one mutable blob.
-    per_row_dates = [row_date(row) for row in rows] if grain != "none" else [None] * len(rows)
-    artifact_ids: list[str] = []
-    last_value: float | None = None
-    for row, bucket_date in zip(rows, per_row_dates, strict=True):
-        value = row.get(metric_id)
-        if value is None:
-            continue
-        last_value = float(value)
-        bucket_start = datetime.fromisoformat(bucket_date).replace(tzinfo=period_start.tzinfo) if bucket_date else period_start
-        bucket_end = bucket_start if bucket_date else period_end
-        evidence = EvidenceArtifact(
-            metric_id=metric_id,
-            dimensions={k: v for k, v in dimensions.items() if v},
-            grain=grain,  # type: ignore[arg-type]
-            as_of=ctx.deps.as_of,
-            period_start=bucket_start,
-            period_end=bucket_end,
-            value=last_value,
-            source_query=args,
-        )
-        artifact = ctx.deps.artifact_store.put(
-            Artifact(
-                workspace_id=ctx.deps.principal.workspace_id,
-                artifact_type="evidence",
-                payload=evidence.model_dump(mode="json"),
-                classification="factual",
-                evidence_ids=[f"raw:{metric_id}:{bucket_start.date()}:{bucket_end.date()}"],
-                provenance=provenance,
-                mission_id=ctx.deps.mission_id,
+
+    async def _write_evidence() -> ToolResult:
+        # grain="none" -> Cube returns one period-aggregate row. A real grain
+        # ("day"/"week"/"month") -> one row per bucket; each bucket is its own
+        # EvidenceArtifact (rule 6/7: one artifact per fetched fact, not a
+        # multi-day value folded into a single artifact) — needed so a
+        # day-granularity series (e.g. feeding a causal/anomaly consumer) is
+        # immutable evidence per day, not one mutable blob.
+        per_row_dates = [row_date(row) for row in rows] if grain != "none" else [None] * len(rows)
+        artifact_ids: list[str] = []
+        last_value: float | None = None
+        for row, bucket_date in zip(rows, per_row_dates, strict=True):
+            value = row.get(metric_id)
+            if value is None:
+                continue
+            last_value = float(value)
+            bucket_start = datetime.fromisoformat(bucket_date).replace(tzinfo=period_start.tzinfo) if bucket_date else period_start
+            bucket_end = bucket_start if bucket_date else period_end
+            # Filters (truthy dimension values) are known up front. A breakdown
+            # key (empty value, e.g. dimensions={"product_id": ""}) groups the
+            # Cube query, but which group THIS row belongs to only exists in the
+            # row itself — read it there (live 2026-09-21: a product_id breakdown
+            # via query_metrics wrote every row with dimensions={}, making ~200
+            # per-product counts indistinguishable from each other).
+            row_dimensions = {k: v for k, v in dimensions.items() if v}
+            for key in breakdown:
+                row_dimensions[key] = str(dimension_value(row, key))
+            evidence = EvidenceArtifact(
+                metric_id=metric_id,
+                dimensions=row_dimensions,
+                grain=grain,  # type: ignore[arg-type]
+                as_of=ctx.deps.as_of,
+                period_start=bucket_start,
+                period_end=bucket_end,
+                value=last_value,
+                source_query=args,
             )
-        )
-        artifact_ids.append(artifact.id)
-    if not artifact_ids:
+            artifact = ctx.deps.artifact_store.put(
+                Artifact(
+                    workspace_id=ctx.deps.principal.workspace_id,
+                    artifact_type="evidence",
+                    payload=evidence.model_dump(mode="json"),
+                    classification="factual",
+                    evidence_ids=[f"raw:{metric_id}:{bucket_start.date()}:{bucket_end.date()}"],
+                    provenance=provenance,
+                    mission_id=ctx.deps.mission_id,
+                )
+            )
+            artifact_ids.append(artifact.id)
+        if not artifact_ids:
+            return ToolResult(
+                success=False,
+                summary=f"no usable value for {metric_id} over {period_start.date()}..{period_end.date()}",
+                error_code="INSUFFICIENT_EVIDENCE",
+                retryable=False,
+            )
         return ToolResult(
-            success=False,
-            summary=f"no usable value for {metric_id} over {period_start.date()}..{period_end.date()}",
-            error_code="INSUFFICIENT_EVIDENCE",
-            retryable=False,
+            success=True,
+            artifact_ids=artifact_ids,
+            summary=f"{metric_id}={last_value} over {period_start.date()}..{period_end.date()} ({len(artifact_ids)} row(s))",
+            provenance=provenance,
+            warnings=list(result.get("warnings") or []),
         )
-    return ToolResult(
-        success=True,
-        artifact_ids=artifact_ids,
-        summary=f"{metric_id}={last_value} over {period_start.date()}..{period_end.date()} ({len(artifact_ids)} row(s))",
-        provenance=provenance,
-        warnings=list(result.get("warnings") or []),
-    )
+
+    # A cache HIT above means the same fetch already ran this mission — but
+    # every call to this function still reached this point and would write a
+    # fresh, duplicate set of EvidenceArtifacts for identical rows (live
+    # 2026-09-21: a 200-row product_title breakdown was called twice 18s
+    # apart, doubling the evidence the model had to re-read next turn).
+    # Cache the built ToolResult too, so a repeat call reuses the same
+    # artifact_ids instead of writing them again.
+    if not _QUERY_CACHE_ENABLED:
+        return await _write_evidence()
+    return await ctx.deps.query_cache.get_or_fetch(_cache_key("query_metrics_result", args), _write_evidence)
 
 
 async def drilldown(
@@ -415,7 +490,10 @@ async def drilldown(
         start=period_start.date().isoformat(),
         end=period_end.date().isoformat(),
     )
-    parent = await call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=parent_args)
+    # Same args shape (and cache key) as an unfiltered query_metrics() call —
+    # a prior plain total for this metric/period is reused here instead of
+    # re-issuing an identical parent query against Cube.
+    parent = await _cached_metrics_query(ctx, parent_args)
     if parent.get("error") or not parent.get("query_id"):
         return ToolResult(
             success=False,
@@ -423,12 +501,17 @@ async def drilldown(
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=True,
         )
+    drilldown_args = {"parent_query_id": parent["query_id"], "target_dimensions": [dimension]}
+    fetch_drilldown = lambda: ctx.deps.mcp_client.call(  # noqa: E731
+        agent_id=_AGENT_ID, capability="seleric.metrics_drilldown", arguments=drilldown_args
+    )
     try:
-        result: dict[str, Any] = await ctx.deps.mcp_client.call(
-            agent_id=_AGENT_ID,
-            capability="seleric.metrics_drilldown",
-            arguments={"parent_query_id": parent["query_id"], "target_dimensions": [dimension]},
-        )
+        if _QUERY_CACHE_ENABLED:
+            result: dict[str, Any] = await ctx.deps.query_cache.get_or_fetch(
+                _cache_key("seleric.metrics_drilldown", drilldown_args), fetch_drilldown
+            )
+        else:
+            result = await fetch_drilldown()
     except Exception as exc:
         return _mcp_error_result(exc)
     rows = (result or {}).get("rows") or []

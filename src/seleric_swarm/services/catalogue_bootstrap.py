@@ -40,7 +40,6 @@ DEFAULT_TTL_SECONDS: int = 900  # 15 minutes
 
 _BOOTSTRAP_CAP = "seleric.catalogue_bootstrap"
 _LIST_METRICS_CAP = "seleric.catalogue_list_metrics"
-_SEARCH_CAP = "seleric.catalogue_search_metrics"
 
 
 @dataclass
@@ -52,6 +51,81 @@ class CatalogueMetricMeta:
     view: str = ""
     supported_dimensions: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CatalogueSnapshot:
+    """Immutable whole-catalogue snapshot handed to the agent as in-memory
+    context, so metric resolution reads the *full* catalogue instead of a
+    Qdrant top-k guess.
+
+    Non-negotiable rule 1: Cube stays the sole authority — this only lets the
+    model pick the right id up front; ``query_metrics`` still validates it and
+    returns ``INSUFFICIENT_EVIDENCE`` on a miss.
+    """
+
+    metrics: tuple[CatalogueMetricMeta, ...] = ()
+    dimensions: tuple[str, ...] = ()
+
+    def metric_ids(self) -> frozenset[str]:
+        return frozenset(m.id for m in self.metrics)
+
+    def has_metric(self, metric_id: str) -> bool:
+        return any(m.id == metric_id for m in self.metrics)
+
+    def closest_metric_ids(self, query: str, n: int = 5) -> list[str]:
+        """Best-effort id suggestions for a bad pick — feeds ``ModelRetry``."""
+        import difflib
+
+        pool: set[str] = set()
+        for meta in self.metrics:
+            pool.add(meta.id)
+            for alias in meta.raw.get("aliases") or []:
+                if alias:
+                    pool.add(str(alias))
+        matches = difflib.get_close_matches(query, sorted(pool), n=n, cutoff=0.4)
+        # Map any matched alias back to its metric id.
+        alias_to_id = {
+            str(a): meta.id
+            for meta in self.metrics
+            for a in (meta.raw.get("aliases") or [])
+            if a
+        }
+        seen: list[str] = []
+        for match in matches:
+            resolved = alias_to_id.get(match, match)
+            if resolved in self.metric_ids() and resolved not in seen:
+                seen.append(resolved)
+        return seen
+
+    def render(self) -> str:
+        """Compact one-line-per-metric listing for the mission prompt."""
+        if not self.metrics:
+            return ""
+        lines = [
+            (
+                "Full metric catalogue — resolve the user's metric by matching "
+                "this list and use the id exactly as written (Cube validates it):"
+            )
+        ]
+        for meta in sorted(self.metrics, key=lambda m: m.id):
+            raw = meta.raw or {}
+            bits: list[str] = []
+            unit = raw.get("unit")
+            if unit:
+                bits.append(f"unit={unit}")
+            aliases = [str(a) for a in (raw.get("aliases") or []) if a]
+            if aliases:
+                bits.append(f"aliases={', '.join(aliases)}")
+            dims = [d for d in (meta.supported_dimensions or []) if d]
+            if dims:
+                bits.append(f"dims={', '.join(dims)}")
+            suffix = f" ({'; '.join(bits)})" if bits else ""
+            label = meta.label or meta.id
+            lines.append(f"- {meta.id}: {label}{suffix}")
+        if self.dimensions:
+            lines.append("Dimensions: " + ", ".join(sorted(self.dimensions)))
+        return "\n".join(lines)
 
 
 class CatalogueBootstrap:
@@ -144,6 +218,13 @@ class CatalogueBootstrap:
     def grain_defaults(self) -> dict[str, Any]:
         return dict(self._grain_defaults)
 
+    def snapshot(self) -> CatalogueSnapshot:
+        """Immutable copy of the whole catalogue for the agent's in-memory cache."""
+        return CatalogueSnapshot(
+            metrics=tuple(self.entries()),
+            dimensions=tuple(sorted(self.dimension_ids())),
+        )
+
     def unresolvable(self, candidate_ids: list[str]) -> list[str]:
         """Return the subset of *candidate_ids* that are NOT in the live cache.
 
@@ -206,11 +287,33 @@ class CatalogueBootstrap:
         self._grain_defaults = dict(defaults) if isinstance(defaults, dict) else {}
         return len(self._cache)
 
+    def _load_from_local_index(self) -> int:
+        """Last-resort fallback for servers with neither ``catalogue_bootstrap``
+        nor ``catalogue_list_metrics``: read the local Qdrant catalogue index
+        (``toolsets/catalogue_index.py``, kept in sync via
+        ``scripts/sync_catalogue_to_qdrant.py``) instead of a third remote
+        call. This is a full listing (Qdrant ``scroll``), not a semantic
+        search, so an empty-string query isn't needed the way the old
+        ``catalogue_search_metrics`` fallback required one."""
+        try:
+            from seleric_swarm.toolsets import catalogue_index
+
+            metrics = [row.get("full_definition") or row for row in catalogue_index.list_all(kind="metric")]
+            dimensions = [
+                row.get("full_definition") or row for row in catalogue_index.list_all(kind="dimension")
+            ]
+        except Exception as exc:
+            log.warning(
+                "CatalogueBootstrap local-index fallback failed (%s: %s)", type(exc).__name__, exc
+            )
+            return 0
+        return self._load_payload({"metrics": metrics, "dimensions": dimensions})
+
     async def warm(self, registry_hints: list[str] | None = None) -> int:
         """Pull the live metric list (and dimension index when the server sends it).
 
         Prefer ``catalogue_bootstrap``, then ``catalogue_list_metrics``, then
-        empty ``catalogue_search_metrics``. Never raises — a failing call
+        the local Qdrant catalogue index. Never raises — a failing call
         leaves the cache empty so ``_resolve_measure`` falls through to
         Steps 1+2 unchanged.
         """
@@ -221,8 +324,7 @@ class CatalogueBootstrap:
             payload = await self._call(_LIST_METRICS_CAP, {})
             count = self._load_payload(payload)
         if count == 0:
-            payload = await self._call(_SEARCH_CAP, {"query": ""})
-            count = self._load_payload(payload)
+            count = self._load_from_local_index()
 
         self._warmed_at = time.monotonic()
         if count:

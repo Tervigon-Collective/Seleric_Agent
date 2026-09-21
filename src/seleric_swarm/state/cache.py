@@ -15,6 +15,7 @@ call site once it exists.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Generic, TypeVar
 
@@ -26,10 +27,23 @@ class MissionQueryCache(Generic[K, V]):
     """Plain memoization, no TTL/eviction — a mission run is bounded
     (``ExecutionLimits``) and short-lived, so unlike ``utils/ttl_cache.py``
     (long-lived, cross-request) this never needs to expire an entry before
-    the mission itself ends and the cache is discarded with it."""
+    the mission itself ends and the cache is discarded with it.
+
+    ``get_or_fetch`` single-flights concurrent callers for the same key —
+    two tool calls dispatched in the same LLM turn (pydantic_ai can issue
+    several tool calls per turn) both see a store-miss before either has
+    awaited its fetch. Without coalescing, both hit seleric-mcp/Cube
+    independently and, for a live/mutating dataset, can come back with two
+    different values for the identical query — live 2026-09-21: two
+    ``units_sold`` fetches 3ms apart, same metric/period/dimensions,
+    returned 816 and 977. That contradiction is worse than a slow cache:
+    the agent has no way to know which fetch is "right" and can burn its
+    remaining budget trying to reconcile them instead of answering.
+    """
 
     def __init__(self) -> None:
         self._store: dict[K, V] = {}
+        self._inflight: dict[K, asyncio.Future[V]] = {}
         self.hits = 0
         self.misses = 0
 
@@ -49,7 +63,21 @@ class MissionQueryCache(Generic[K, V]):
         if cached is not None:
             self.hits += 1
             return cached
+        pending = self._inflight.get(key)
+        if pending is not None:
+            self.hits += 1
+            return await asyncio.shield(pending)
         self.misses += 1
-        value = await fetch()
-        self._store[key] = value
-        return value
+        future: asyncio.Future[V] = asyncio.get_running_loop().create_future()
+        self._inflight[key] = future
+        try:
+            value = await fetch()
+        except BaseException as exc:
+            future.set_exception(exc)
+            raise
+        else:
+            future.set_result(value)
+            self._store[key] = value
+            return value
+        finally:
+            del self._inflight[key]

@@ -255,14 +255,27 @@ async def test_query_metrics_defaults_period_to_mission_as_of():
 
 
 @pytest.mark.asyncio
-async def test_search_semantics_reports_match_count():
-    mcp = FakeMcpClient({"seleric.catalogue_search_metrics": {"matches": [{"id": "total_sales"}]}})
-    ctx = FakeRunContext(_deps(mcp))
+async def test_search_semantics_reports_match_count(monkeypatch):
+    monkeypatch.setattr(
+        semantic.catalogue_index, "search", lambda query, **kwargs: [{"id": "total_sales", "stale": False}]
+    )
+    ctx = FakeRunContext(_deps(FakeMcpClient({})))
     result = await semantic.search_semantics(ctx, "revenue")
     assert result.success is True
     assert "metric(s) matched" in result.summary
     ids = [m["id"] for m in result.provenance.source_metadata["matches"]]
     assert "total_sales" in ids
+
+
+@pytest.mark.asyncio
+async def test_search_semantics_surfaces_stale_index_warning(monkeypatch):
+    monkeypatch.setattr(
+        semantic.catalogue_index, "search", lambda query, **kwargs: [{"id": "total_sales", "stale": True}]
+    )
+    ctx = FakeRunContext(_deps(FakeMcpClient({})))
+    result = await semantic.search_semantics(ctx, "revenue")
+    assert result.success is True
+    assert any("stale" in w for w in result.warnings)
 
 
 # A short-lived "declared alias" overlay (``ns``/``np``/``adsp`` -> catalogue

@@ -119,12 +119,19 @@ async def test_refresh_if_stale_only_calls_warm_when_ttl_exceeded():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_warm_failure_is_nonfatal():
+async def test_warm_failure_is_nonfatal(monkeypatch):
     """When the MCP call raises, warm() must not propagate the exception.
     The cache must remain empty and is_warm() must return False so
     _resolve_measure falls through to Steps 1+2 unchanged."""
     mcp = _mock_mcp(raises=RuntimeError("MCP timeout"))
     bootstrap = CatalogueBootstrap(mcp)
+
+    from seleric_swarm.toolsets import catalogue_index
+
+    def _raise(*, kind=None):
+        raise RuntimeError("qdrant unavailable")
+
+    monkeypatch.setattr(catalogue_index, "list_all", _raise)
 
     count = await bootstrap.warm()
 
@@ -194,17 +201,25 @@ async def test_warm_with_registry_hints_logs_stale_entries(caplog):
 
 
 @pytest.mark.asyncio
-async def test_warm_falls_back_to_empty_search_when_bootstrap_empty():
-    """Old servers without catalogue_bootstrap still warm via search("")."""
+async def test_warm_falls_back_to_local_index_when_bootstrap_empty(monkeypatch):
+    """Servers without catalogue_bootstrap/catalogue_list_metrics still warm,
+    from the local Qdrant catalogue index instead of a third remote call."""
 
     async def call(*, agent_id, capability, arguments):
-        del agent_id, arguments
-        if capability == "seleric.catalogue_search_metrics":
-            return {"matches": _SAMPLE_MATCHES}
+        del agent_id, capability, arguments
         return {"metrics": []}
 
     mcp = MagicMock()
     mcp.call = AsyncMock(side_effect=call)
+
+    from seleric_swarm.toolsets import catalogue_index
+
+    monkeypatch.setattr(
+        catalogue_index,
+        "list_all",
+        lambda *, kind=None: [{"full_definition": m} for m in _SAMPLE_MATCHES] if kind == "metric" else [],
+    )
+
     bootstrap = CatalogueBootstrap(mcp, agent_id="coordinator_agent")
     count = await bootstrap.warm()
     assert count == len(_SAMPLE_MATCHES)
@@ -213,7 +228,6 @@ async def test_warm_falls_back_to_empty_search_when_bootstrap_empty():
     assert caps == [
         "seleric.catalogue_bootstrap",
         "seleric.catalogue_list_metrics",
-        "seleric.catalogue_search_metrics",
     ]
 
 

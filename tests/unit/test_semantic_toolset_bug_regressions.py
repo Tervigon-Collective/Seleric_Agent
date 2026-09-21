@@ -160,6 +160,78 @@ async def test_per_day_phrasing_resolves_to_day_grain_not_a_dimension():
     assert query_call[1].get("dimensions") is None
 
 
+# ---- Live 2026-09-21: dimension value echoing its own key name ----
+
+
+@pytest.mark.asyncio
+async def test_dimension_value_equal_to_its_key_becomes_a_breakdown_not_a_dead_filter():
+    """Live incident: ``dimensions={"product_title": "product_title"}`` built
+    a Cube filter for a product literally named "product_title", which
+    matched zero rows. The caller wanted a breakdown by product_title, not
+    a filter — echoing the key back as the value is treated the same as
+    leaving the value empty (rule 5: no keyword-matching, but this is
+    structural — key == value can never be a real dimension value)."""
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "rows": [{"units_sold": "768", "product_title": "Pawveralls Suspender Boots"}],
+                "provenance": {},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="units_sold",
+        dimensions={"product_title": "product_title"},
+        grain="none",
+        period_start=datetime(2026, 8, 21, tzinfo=UTC),
+        period_end=datetime(2026, 9, 20, tzinfo=UTC),
+    )
+    query_call = next(c for c in mcp.calls if c[0] == "seleric.metrics_query")
+    assert query_call[1]["dimensions"] == ["product_title"]
+    assert query_call[1].get("filters") is None
+    assert result.success is True
+
+
+# ---- Live 2026-09-21: query_metrics breakdown rows lost their dimension ----
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_breakdown_attaches_each_rows_own_dimension_value():
+    """Live incident: ``dimensions={"product_id": ""}`` (a breakdown request)
+    produced rows whose evidence.dimensions was always ``{}`` — the request
+    dict has an empty value for a breakdown key by definition, and the old
+    code only copied truthy (filter) values into evidence. ~200 per-product
+    counts came back indistinguishable from each other, so the mission
+    re-fetched the same breakdown via drilldown() to get real labels,
+    tripling the evidence volume fed back into every subsequent LLM turn."""
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "rows": [
+                    {"product_orders": "216", "product_id": "8240181837913"},
+                    {"product_orders": "108", "product_id": "8123760607321"},
+                ],
+                "provenance": {},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="product_orders",
+        dimensions={"product_id": ""},
+        grain="none",
+        period_start=datetime(2026, 8, 21, tzinfo=UTC),
+        period_end=datetime(2026, 9, 20, tzinfo=UTC),
+    )
+    assert result.success is True
+    payloads = [ctx.deps.artifact_store.get(aid).payload for aid in result.artifact_ids]
+    dims_seen = {p["dimensions"].get("product_id") for p in payloads}
+    assert dims_seen == {"8240181837913", "8123760607321"}
+
+
 # ---- Bug #2: metric-ID canonicalization inconsistency ----
 
 

@@ -492,7 +492,12 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   Corrected two items that were carried as open in
   `02_PROFILE_SEMANTIC_MCP.md`'s "Builds"/gap list but were already
   resolved or never needed: `semantic/cube_client.py`/`discovery.py`
-  (redundant with existing `search_semantics()`/`get_metric_definition()`)
+  (redundant with existing `search_semantics()`/`get_metric_definition()`
+  at the time — **reversed 2026-09-21**, see that file's updated note:
+  `search_semantics()` now searches a local Qdrant catalogue index instead
+  of calling `catalogue_search_metrics`/`catalogue_resolve_term` remotely,
+  to fix those calls having no caching at all; `get_metric_definition()`/
+  `query_metrics()` still hit Cube live and remain the sole authority)
   and the `fetch_series` "Sprint 3 gap" (already closed via
   `query_metric_series()` since Sprint 2's extract-wrap-delete). Made an
   explicit deferral decision (not a silent skip) on folding
