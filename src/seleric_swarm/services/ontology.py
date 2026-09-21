@@ -8,9 +8,12 @@ Falls back to empty dicts when the live catalogue is not configured.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol, runtime_checkable
 
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
+
+_log = logging.getLogger("seleric.services.ontology")
 
 _GET_ONTOLOGY = "seleric.catalogue_get_ontology"
 _GET_METRIC = "seleric.catalogue_get_metric"
@@ -51,6 +54,9 @@ class OntologyService:
         try:
             result = await self._mcp.call(agent_id=agent_id, capability=capability, arguments=arguments)
         except Exception:
+            _log.warning(
+                "ontology_call_failed", exc_info=True, extra={"capability": capability, "agent_id": agent_id}
+            )
             return {}
         return result if isinstance(result, dict) else {}
 

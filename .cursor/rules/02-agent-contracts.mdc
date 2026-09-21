@@ -5,44 +5,27 @@ alwaysApply: true
 
 # Agent Contract Rules
 
-**Status (2026-09-17):** same migration status as `00-project-architecture.mdc`
-— rules 1-6 below describe swarm_v2's handoff-based agent contracts and
-still apply to existing `src/` code until cutover. Rules 7+ describe the V3
-tool-contract model (`docs/refactor/`), which has no handoffs at all.
+**Status (2026-09-21):** swarm_v2's handoff-based agent contracts are
+retired along with the rest of the old pipeline. There is one agent
+(`SelericAgent`); no agent-to-agent handoffs, just a tool-call contract.
 
-## Current (swarm_v2) — applies to existing `src/` code until cutover
-
-1. Agents exchange structured artifacts/references, not uncontrolled prose histories.
-2. Handoffs require reason, evidence refs, unresolved question and requested output.
-3. Context sent to another agent must be minimized to what that agent needs.
-4. Every task/message must carry mission/task IDs and be idempotent where practical.
-5. Coordinator arbitration is required for handoff loops, unsupported transfers and permission-boundary changes.
-6. The Skeptic must be able to return PASS, REVISE or REJECT and create explicit follow-up work.
-
-## V3 target — no agent-to-agent handoffs; a tool-call contract instead
-
-7. There is one agent (`SelericAgent`); "contracts" apply to tool calls, not
-   agent handoffs. Rule 1's spirit (structured data, not prose) carries
-   forward as the `ToolResult` envelope (`success`, `artifact_ids`,
-   `summary`, `provenance`, `warnings`, `error_code`, `retryable`) every
-   tool must return.
-8. Every tool call still carries `mission_id`/`task_id` and should be
-   idempotent where practical — rule 4 carries forward unchanged in spirit,
-   just at the tool-call boundary instead of the agent-handoff boundary.
-9. The `EvidenceValidator` replaces the Skeptic's role: it validates the
-   agent's own draft `MissionResult` and can force at most one bounded
-   revision (`max_validation_revisions = 1`) — not an unbounded
-   REVISE/REJECT loop across agents. Rule 6's PASS/REVISE/REJECT semantics
-   carry forward (see `docs/BUG_SHEET.md` #12's "STRONG trust + REVISE"
-   case, which the new validator must still reproduce), but there's no
-   second agent to hand off to — the same agent reads the validator's
-   verdict and continues or returns.
-10. Rule 5's "coordinator arbitration for handoff loops" has no direct V3
-    equivalent — there are no handoffs to loop. If a genuine "two valid but
-    conflicting findings" case exists in V3, that's the validator's or the
-    agent's own reasoning to resolve, not a new arbitration layer (see
-    architecture rule 14: don't add a component unless there's a genuine
-    isolation boundary that can't be a tool).
+1. "Contracts" apply to tool calls, not agent handoffs. Every tool returns a
+   structured `ToolResult` envelope (`success`, `artifact_ids`, `summary`,
+   `provenance`, `warnings`, `error_code`, `retryable`) — not uncontrolled
+   prose.
+2. Every tool call carries `mission_id`/`task_id` and should be idempotent
+   where practical.
+3. The `EvidenceValidator` validates the agent's own draft `MissionResult`
+   and can force at most one bounded revision (`max_validation_revisions = 1`)
+   — not an unbounded REVISE/REJECT loop across agents (see
+   `docs/BUG_SHEET.md` #12's "STRONG trust + REVISE" case, which the
+   validator must still reproduce). The same agent reads the validator's
+   verdict and continues or returns; there's no second agent to hand off to.
+4. There are no handoffs to loop, so no arbitration layer for handoff loops.
+   If a genuine "two valid but conflicting findings" case exists, that's the
+   validator's or the agent's own reasoning to resolve, not a new
+   arbitration component (architecture rule 7: don't add a component unless
+   there's a genuine isolation boundary that can't be a tool).
 
 Full rationale: Claude memory `feedback_ai_multiagent_principles.md`,
-`docs/refactor/01_PROFILE_RUNTIME.md`.
+`docs/CURRENT_ARCHITECTURE.md`.

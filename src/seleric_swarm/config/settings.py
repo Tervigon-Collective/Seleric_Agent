@@ -126,22 +126,15 @@ class Settings(BaseSettings):
     mission_timeout_s: float = 120.0
     max_llm_calls: int = 6
     max_tool_calls: int = 12
-    max_agent_calls: int = 30
-    max_leadership_transfers: int = 6
-    max_coordinator_iterations: int = 12
     completion_threshold: float = 0.90
-    completion_review_threshold: float = 0.70
 
     allow_write_actions: bool = False
-    require_skeptic_for_causal: bool = True
-    require_provenance_for_numeric: bool = True
 
     # V3 refactor (docs/refactor/) — when True, conversations and
     # POST /v1/missions run Agent[SelericDeps, MissionResult] instead of
     # swarm_v2. Sprint 5: V3 is now the only mission path, default True.
     v3_agent_enabled: bool = True
 
-    workflow_name: str = "lookup_v1"
     workflow_version: str = "1.0.0"
     # Swarm mission control plane (Coordinator V1). Only "swarm_v2" exists today —
     # the legacy "swarm_v1" imperative workflow was removed.

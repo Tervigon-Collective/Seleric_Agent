@@ -128,6 +128,7 @@ def _drop_collinear_common_causes(
         try:
             corr = float(treatment_col.corr(data[cause]))
         except Exception:
+            _log.warning("collinearity_check_failed", exc_info=True, extra={"cause": cause})
             kept.append(cause)
             continue
         if not math.isnan(corr) and abs(corr) >= _COLLINEARITY_THRESHOLD:

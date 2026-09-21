@@ -10,6 +10,7 @@ stores the office gateway falls back to.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -42,6 +43,8 @@ from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
 from seleric_swarm.services.time_range import as_of_date
 from seleric_swarm.state.missions import Mission
 from seleric_swarm.toolsets.semantic import query_metrics
+
+_log = logging.getLogger("seleric.agent.runner")
 
 _LOOKUP_STATUSES = {
     "completed",
@@ -184,6 +187,7 @@ def _context_bundle(raw: dict[str, Any] | None) -> ContextBundle:
     try:
         return ContextBundle.model_validate(raw)
     except Exception:
+        _log.warning("context_bundle_validation_failed", exc_info=True)
         return ContextBundle()
 
 
