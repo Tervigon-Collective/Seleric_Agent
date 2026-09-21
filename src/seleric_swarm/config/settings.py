@@ -82,6 +82,16 @@ class Settings(BaseSettings):
     azure_auth_style: Literal["openai_compatible", "azure"] = "openai_compatible"
     azure_key_vault_url: str | None = None
 
+    # Optional second Azure resource (distinct endpoint + key + quota), tried
+    # after every model on the primary resource is exhausted. Unlike
+    # AZURE_OPENAI_MODELS (multiple deployments on one resource, sharing one
+    # quota), this survives an endpoint-level rate limit. Same auth style as
+    # the primary resource. Empty (default) = no second resource, unchanged
+    # single-resource fallback behavior.
+    azure_openai_endpoint_2: str = ""
+    azure_openai_api_key_2: str = ""
+    azure_openai_models_2: str = ""
+
     langsmith_tracing: bool = False
     langsmith_api_key: str = ""
     langsmith_project: str = ""
@@ -175,6 +185,8 @@ class Settings(BaseSettings):
         "azure_openai_models",
         "azure_openai_model1",
         "azure_openai_model2",
+        "azure_openai_endpoint_2",
+        "azure_openai_models_2",
         "seleric_mcp_url",
         "a2a_public_base_url",
         "api_host",
@@ -194,6 +206,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "azure_openai_api_key",
+        "azure_openai_api_key_2",
         "langsmith_api_key",
         "api_key",
         "seleric_mcp_token",

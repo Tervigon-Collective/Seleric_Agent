@@ -94,7 +94,7 @@ class SubmitMessageRequest(BaseModel):
     parts: list[MessagePart] = Field(min_length=1)
     parent_message_id: str | None = None
     scope: dict[str, Any] = Field(default_factory=dict)
-    execution_mode: str = "production"
+    execution_mode: str = "development"
     attachment_ids: list[str] = Field(default_factory=list)
 
 
@@ -1519,7 +1519,7 @@ class SubmissionRunExecutor:
                 else None
             ),
             request_id=str(submission.get("request_id") or run.id),
-            execution_mode=str(submission.get("execution_mode") or "production"),
+            execution_mode=str(submission.get("execution_mode") or "development"),
             assistant_message_id=assistant_message_id,
             full_diagnostic=bool(submission.get("full_diagnostic", True)),
             full_prediction=bool(submission.get("full_prediction", True)),
@@ -1575,7 +1575,7 @@ async def submit_message(
     thread = _owned_thread(repositories, principal, thread_id)
     if thread.status is not ThreadStatus.ACTIVE:
         raise HTTPException(status_code=409, detail="thread is not active")
-    if body.execution_mode not in {"staging", "production"}:
+    if body.execution_mode != "development":
         raise HTTPException(status_code=400, detail="invalid execution_mode")
     if body.parent_message_id is not None:
         parent = repositories.messages.get(

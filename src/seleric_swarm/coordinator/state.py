@@ -15,7 +15,7 @@ def empty_mission_extensions() -> dict[str, Any]:
     """Default Coordinator V1 fields safe to merge into MissionState."""
     return {
         "status_reason": None,
-        "execution_mode": "production",
+        "execution_mode": "development",
         "synthetic": False,
         "normalized_query": {},
         "decomposition_refs": [],

@@ -117,7 +117,7 @@ class MissionRequest(BaseModel):
     user_id: str | None = None
     session_id: str | None = None
     scope: MissionScope = Field(default_factory=MissionScope)
-    execution_mode: Literal["production", "staging"] = "production"
+    execution_mode: Literal["development"] = "development"
     requested_outputs: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 

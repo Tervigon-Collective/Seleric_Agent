@@ -210,8 +210,8 @@ class MissionRequest(BaseModel):
     full_prediction: bool = True
     full_skeptic: bool = True
     full_strategy: bool = True
-    # staging/production both use the live Seleric MCP (catalogue + metrics_query).
-    execution_mode: str = "production"
+    # Only one mode: development, using the live Seleric MCP (catalogue + metrics_query).
+    execution_mode: str = "development"
     # wait=true (default): run synchronously and return the finished mission.
     # wait=false: accept immediately (status=running); poll GET /v1/missions/{id}.
     wait: bool = True
@@ -223,7 +223,7 @@ class MissionRequest(BaseModel):
                     "query": "Why has CAC increased over the last three days?",
                     "scope": {"timezone": "Asia/Kolkata"},
                     "mode": "read_only",
-                    "execution_mode": "production",
+                    "execution_mode": "development",
                     "full_diagnostic": True,
                     "full_prediction": True,
                     "full_skeptic": True,
@@ -252,6 +252,7 @@ def root() -> dict[str, Any]:
         "mission_get": "GET /v1/missions/{mission_id}",
         "mission_cancel": "POST /v1/missions/{mission_id}/cancel",
         "mission_events": "GET /v1/missions/{mission_id}/events",
+        "mission_trace": "GET /v1/missions/{mission_id}/trace",
     }
 
 
@@ -324,10 +325,10 @@ async def create_mission(
     principal = request_principal(request)
     if req.mode != "read_only":
         raise HTTPException(status_code=400, detail="Only read_only mode is allowed in V1")
-    if req.execution_mode not in {"staging", "production"}:
+    if req.execution_mode != "development":
         raise HTTPException(
             status_code=400,
-            detail="execution_mode must be one of: staging, production",
+            detail="execution_mode must be: development",
         )
     if _is_swagger_placeholder(req.scenario_id):
         req.scenario_id = None
@@ -451,6 +452,14 @@ async def create_mission(
                 "owner_user_id": principal.user_id,
             },
         )
+    list_events = getattr(runtime.store, "list_events", None)
+    if list_events is None:
+        from seleric_swarm.persistence.memory import extract_events, filter_events
+
+        events = filter_events(extract_events(raw), family=None, after_seq=0, limit=1000)
+    else:
+        events = list_events(out.get("mission_id"), family=None, after_seq=0, limit=1000)
+    out["trace"] = {**out["trace"], "events": events}
     return out
 
 
@@ -545,6 +554,38 @@ def get_mission_events(
     }
 
 
+@app.get("/v1/missions/{mission_id}/trace")
+def get_mission_trace(mission_id: str, request: Request) -> dict[str, Any]:
+    """Return trace metadata (request/session/langsmith ids) plus the full event timeline."""
+    runtime = get_runtime()
+    store = runtime.store
+    raw = getattr(store, "get_raw", lambda _m: None)(mission_id)
+    result = store.get(mission_id)
+    if raw is None and result is None:
+        raise HTTPException(status_code=404, detail="mission not found")
+    require_mission_access(request, raw if isinstance(raw, dict) else {}, runtime)
+
+    trace = (raw or {}).get("trace") if isinstance(raw, dict) else None
+    if not isinstance(trace, dict):
+        trace = result.trace.model_dump() if result is not None else {}
+
+    list_events = getattr(store, "list_events", None)
+    if list_events is None:
+        from seleric_swarm.persistence.memory import extract_events, filter_events
+
+        events = filter_events(extract_events(raw), family=None, after_seq=0, limit=1000)
+    else:
+        events = list_events(mission_id, family=None, after_seq=0, limit=1000)
+
+    status = (raw or {}).get("status") if isinstance(raw, dict) else (result.status if result else None)
+    return {
+        "mission_id": mission_id,
+        "status": status,
+        "trace": trace,
+        "events": events,
+    }
+
+
 def serve() -> None:
     """Console entrypoint used by `seleric-api` after an editable install."""
     import os
@@ -559,4 +600,5 @@ def serve() -> None:
     port = settings.api_port or int(os.environ.get("API_PORT") or "0")
     if not host or not port:
         raise SystemExit("API_HOST and API_PORT must be set in the environment (or .env)")
-    uvicorn.run("seleric_swarm.main:app", host=host, port=port, reload=settings.is_dev_surface())
+    # See scripts/run_dev.py for why --reload is off (hangs on this stack/OS combo).
+    uvicorn.run("seleric_swarm.main:app", host=host, port=port, reload=False)
