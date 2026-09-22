@@ -115,10 +115,15 @@ Key points as implemented in V3:
 
 ## 6. Observability & tracing
 
-- `src/seleric_swarm/coordinator/observability/events.py` —
-  `observe_mission_events`/`canonical_kind`, the structured mission-event
-  vocabulary that replaced the old Blackboard. Used live by
-  `api/conversations.py` and `conversations/event_mapping_v1.py`.
+- The live V3 event stream is `conversations/events.py::ActivityEventSink`
+  (thread/run `ActivityEvent`s, persisted via `append_event`). The only
+  surviving piece of the old swarm control-plane observability is
+  `coordinator/observability/events.py::canonical_kind` — a
+  backward-compat alias map used by `conversations/event_mapping_v1.py`
+  to normalize kinds on old persisted records. The `observe_mission_events`/
+  `notify_mission_event` observer plane and the swarm event vocabulary
+  (leadership/skeptic/specialist/remediation constants) were deleted as
+  dead no-op plumbing — nothing emitted through them in V3.
 - `src/seleric_swarm/observability/traces.py::mission_trace` — wraps each
   agent run; `observability/tracing.py` configures OpenTelemetry/LangSmith
   export (`configure_opentelemetry`, `instrument_fastapi`).
