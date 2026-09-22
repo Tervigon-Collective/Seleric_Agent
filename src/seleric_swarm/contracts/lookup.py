@@ -64,6 +64,8 @@ class TraceInfo(BaseModel):
     langsmith_run_id: str | None = None
     langsmith_run_url: str | None = None
     elapsed_seconds: float | None = None
+    # Per-step agent trace (tool calls + args, returns, retries, model text).
+    steps: list[dict[str, Any]] | None = None
 
 
 class MissionError(BaseModel):

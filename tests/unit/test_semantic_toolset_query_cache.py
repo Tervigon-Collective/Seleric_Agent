@@ -69,10 +69,39 @@ async def test_identical_query_metrics_calls_hit_mcp_once():
     assert first.success is True
     assert second.success is True
     assert len([c for c in mcp.calls if c[0] == "seleric.metrics_query"]) == 1
-    # Two cache layers share deps.query_cache: the raw-fetch cache and the
-    # built-ToolResult cache (see test_repeated_breakdown_call_reuses_...
-    # below) — a repeat call hits both.
-    assert ctx.deps.query_cache.hits == 2
+    # A repeat identical query short-circuits: the raw-fetch cache serves the
+    # rows (1 hit), then a counter-neutral ``peek`` finds the prior built
+    # ToolResult and returns the stop-nudge before the ToolResult cache layer's
+    # own get_or_fetch runs — so one recorded hit, not two.
+    assert ctx.deps.query_cache.hits == 1
+
+
+@pytest.mark.asyncio
+async def test_third_identical_query_metrics_call_hard_stops_with_model_retry():
+    # Live 2026-09-22 MS3-0bb3863a2e: the model ignored the soft nudge and
+    # called the identical query 3x. The 2nd repeat must hard-stop (ModelRetry
+    # → forces final_result) instead of handing back another "success".
+    from pydantic_ai import ModelRetry
+
+    mcp = FakeMcpClient(
+        {"seleric.metrics_query": {"rows": [{"units_sold": "2314"}], "provenance": {}}}
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    kwargs = dict(
+        metric_id="units_sold",
+        dimensions={},
+        grain="none",
+        period_start=datetime(2026, 7, 1, tzinfo=UTC),
+        period_end=datetime(2026, 7, 31, tzinfo=UTC),
+    )
+    await semantic.query_metrics(ctx, **kwargs)  # fetch
+    second = await semantic.query_metrics(ctx, **kwargs)  # 1st repeat → nudge
+    assert second.success is True and "ALREADY FETCHED" in second.summary
+    with pytest.raises(ModelRetry):  # 2nd repeat → hard stop
+        await semantic.query_metrics(ctx, **kwargs)
+    # Still only one real Cube call throughout.
+    assert len([c for c in mcp.calls if c[0] == "seleric.metrics_query"]) == 1
+    assert "ALREADY FETCHED" in second.summary
 
 
 @pytest.mark.asyncio

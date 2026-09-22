@@ -15,14 +15,15 @@ from seleric_swarm.agent.agent import TOOLS, build_seleric_agent
 
 
 def test_every_frozen_function_is_registered() -> None:
-    """24 = the 23 CONTRACTS.md §4 functions plus ``sandbox.run_python`` (the
-    python sandbox added on top of the frozen analytics surface).
+    """25 = the 23 CONTRACTS.md §4 functions, ``sandbox.run_python`` (the
+    python sandbox added on top of the frozen analytics surface), and
+    ``semantic.get_metric_definitions`` (batch of the frozen singular one).
 
     Counting here is what stops a toolset being written and then silently left
     unregistered — the test suite would stay green, because a tool nobody
     registers is a tool nobody tests.
     """
-    assert len(TOOLS) == 24
+    assert len(TOOLS) == 25
 
 
 def test_all_tools_register_on_the_agent() -> None:
@@ -31,6 +32,7 @@ def test_all_tools_register_on_the_agent() -> None:
     assert names == {
         "search_semantics",
         "get_metric_definition",
+        "get_metric_definitions",
         "query_metrics",
         "drilldown",
         "compare_periods",

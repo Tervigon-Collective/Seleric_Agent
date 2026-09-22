@@ -18,6 +18,7 @@ from typing import Any
 from pydantic_ai import RunContext
 
 from seleric_swarm.agent.dependencies import SelericDeps
+from seleric_swarm.agent.intent import classify_action_risk
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import ArtifactProvenance
 
@@ -114,6 +115,16 @@ async def propose_action(
         warnings.append("proposal is not eligible and cannot be committed")
     if not result.get("write_enabled", True):
         warnings.append("remote write kill switch is disabled")
+    # #4: advisory blast-radius tier so the confirmation preview can flag a
+    # high-impact write. Fail-open — no Jev config / any error ⇒ no risk line.
+    risk = await classify_action_risk(
+        f"{action_type}: {action_params}",
+        base_url=ctx.deps.jev.base_url,
+        api_key=ctx.deps.jev.api_key,
+        timeout=ctx.deps.jev.timeout,
+    )
+    if risk in ("medium", "high"):
+        warnings.append(f"action risk: {risk} — confirm the blast radius before committing")
     return ToolResult(
         success=True,
         summary=(

@@ -73,6 +73,22 @@ class CatalogueSnapshot:
     def has_metric(self, metric_id: str) -> bool:
         return any(m.id == metric_id for m in self.metrics)
 
+    def supported_dimensions_for(self, metric_id: str) -> list[str]:
+        """The metric's ``supported_dimensions``, or [] if unknown/not carried."""
+        for meta in self.metrics:
+            if meta.id == metric_id:
+                return [d for d in (meta.supported_dimensions or []) if d]
+        return []
+
+    def metrics_supporting_dimension(self, dimension: str, n: int = 6) -> list[str]:
+        """Ids of metrics whose ``supported_dimensions`` include *dimension* —
+        the redirect candidates when a chosen metric can't carry a requested
+        breakdown/filter. Empty when nothing supports it (a real capability gap,
+        not a bad pick)."""
+        target = dimension.strip()
+        hits = [m.id for m in self.metrics if target in (m.supported_dimensions or [])]
+        return sorted(hits)[:n]
+
     def closest_metric_ids(self, query: str, n: int = 5) -> list[str]:
         """Best-effort id suggestions for a bad pick — feeds ``ModelRetry``."""
         import difflib

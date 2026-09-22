@@ -6,9 +6,24 @@ from datetime import datetime
 from typing import Any, cast
 
 from seleric_swarm.conversations.contracts import ActivityEvent, EventVisibility, Run
-from seleric_swarm.coordinator.observability.events import canonical_kind
 
 MAPPING_VERSION = "1"
+
+# Old swarm-era event kind → canonical kind, applied before mapping so old
+# persisted mission records normalize onto the same UI events as new ones.
+_KIND_ALIASES: dict[str, str] = {
+    "query_normalized": "mission_created",
+    "plan_created": "task_plan_created",
+    "decide_execute_wave": "task_wave_executed",
+    "budget_exhausted": "mission_budget_exhausted",
+    "handoff_rejected": "leadership_rejected",
+    "skeptic_revise_remediation": "remediation_planned",
+    "remediation_activate": "remediation_activated",
+}
+
+
+def canonical_kind(kind: str) -> str:
+    return _KIND_ALIASES.get(kind, kind)
 
 CANONICAL_EVENT_TYPES = frozenset(
     {

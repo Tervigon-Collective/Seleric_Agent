@@ -21,7 +21,12 @@ from openai import APITimeoutError as OpenAIAPITimeoutError
 from pydantic_ai.exceptions import ModelHTTPError
 
 from seleric_swarm.agent.agent import build_seleric_agent, capability_manifest
-from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
+from seleric_swarm.agent.dependencies import (
+    ExecutionLimits,
+    JevConfig,
+    NullMcpClient,
+    SelericDeps,
+)
 from seleric_swarm.agent.intent import QueryClassification, classify_query
 from seleric_swarm.agent.model import resolve_v3_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
@@ -94,15 +99,17 @@ _PLAN_INTENTS = frozenset(
 # Per-intent tool-call ceilings — a tight budget stops a simple lookup from
 # wandering through all the tools. Unknown intent (Jev down) keeps the
 # configured ceiling, never tightening on missing signal.
+# lookup=6: the fast tier (gpt-5-mini) resolves a metric in more steps than the
+# strong model, so it needs search→resolve→query→synthesis headroom, not 4.
 _TOOL_BUDGET_BY_INTENT: dict[str, int] = {
-    "lookup": 4,
-    "aggregation": 6,
-    "trend": 6,
-    "comparison": 6,
-    "diagnostic": 10,
-    "forecast": 10,
-    "simulation": 10,
-    "causal_investigation": 12,
+    "lookup": 12,
+    "aggregation": 12,
+    "trend": 12,
+    "comparison": 12,
+    "diagnostic": 20,
+    "forecast": 20,
+    "simulation": 20,
+    "causal_investigation": 20,
 }
 
 # Simple, read-only intents cheap enough for the fast model tier.
@@ -207,6 +214,30 @@ def _store_plan_artifact(deps: SelericDeps, *, plan: str, intent: str | None) ->
         _log.warning("plan_artifact_store_failed", exc_info=True)
 
 
+def _routing_hint(classification: QueryClassification) -> str:
+    """Render the Jev per-query signals as an advisory hint. Only signals that
+    carry information are shown (a ``none``/``either``/``False`` answer is noise).
+    Advisory: the agent must ignore any hint the question text contradicts, and
+    Jev never supplies dates — ``period=custom_date_range`` means the user gave
+    explicit dates the agent should read from the question itself."""
+    parts: list[str] = []
+    if classification.grain and classification.grain != "none":
+        parts.append(f"grain={classification.grain}")
+    if classification.period and classification.period != "none":
+        parts.append(f"period={classification.period}")
+    if classification.direction and classification.direction != "either":
+        parts.append(f"direction={classification.direction}")
+    if classification.depends_on_prior:
+        parts.append("follow_up=true")
+    if not parts:
+        return ""
+    return (
+        "[routing hint (advisory — defer to the question if it disagrees; "
+        "for period=custom_date_range use the explicit dates in the question, "
+        f"never invent dates): {' '.join(parts)}]\n\n"
+    )
+
+
 def _mission_prompt(
     query: str,
     as_of_dt: datetime,
@@ -214,6 +245,7 @@ def _mission_prompt(
     context: ContextBundle | None = None,
     catalogue: CatalogueSnapshot | None = None,
     plan: str | None = None,
+    hint: str = "",
 ) -> str:
     as_of_day = as_of_dt.date()
     yesterday = as_of_day.fromordinal(as_of_day.toordinal() - 1)
@@ -225,7 +257,7 @@ def _mission_prompt(
             catalogue_block = f"[catalogue]\n{rendered}\n\n"
     plan_block = f"[plan]\n{plan}\n\n" if plan else ""
     return (
-        f"{thread}{catalogue_block}{plan_block}{query}\n\n"
+        f"{thread}{catalogue_block}{plan_block}{hint}{query}\n\n"
         f"[system: mission as_of={as_of_day.isoformat()} timezone={timezone}. "
         f"'today' is {as_of_day.isoformat()}. "
         f"'yesterday' is {yesterday.isoformat()}. "
@@ -378,6 +410,7 @@ def _to_lookup(
             request_id=str(result.trace.get("request_id") or request_id),
             session_id=str(result.trace.get("session_id") or session_id),
             elapsed_seconds=result.trace.get("elapsed_seconds"),
+            steps=result.trace.get("steps"),
         ),
     )
 
@@ -453,6 +486,11 @@ async def run_v3_mission(
             agent_retries=int(getattr(runtime.settings, "agent_retries", 2)),
         ),
         catalogue=catalogue,
+        jev=JevConfig(
+            base_url=getattr(runtime.settings, "jev_base_url", ""),
+            api_key=getattr(runtime.settings, "jev_api_key", ""),
+            timeout=float(getattr(runtime.settings, "jev_timeout_s", 1.0)),
+        ),
     )
     alias_def = _lookup_alias(query) if intent in (None, "lookup") else None
     started = time.perf_counter()
@@ -494,13 +532,20 @@ async def run_v3_mission(
                 )
                 if plan:
                     _store_plan_artifact(deps, plan=plan, intent=intent)
+                # Only pay the ~8.6k-token full-catalogue dump when explicitly
+                # enabled; otherwise the agent resolves via search_semantics +
+                # get_metric_definitions. The snapshot still rides in deps for
+                # id validation (_reject_unknown_metric) either way.
                 prompt = _mission_prompt(
                     query,
                     as_of_dt,
                     timezone,
                     context=deps.context,
-                    catalogue=catalogue,
+                    catalogue=catalogue
+                    if getattr(runtime.settings, "catalogue_in_prompt", False)
+                    else None,
                     plan=plan,
+                    hint=_routing_hint(classification),
                 )
                 v3_result = await asyncio.wait_for(
                     run_validated_mission(agent, deps, prompt),
@@ -518,6 +563,11 @@ async def run_v3_mission(
                             "intent": intent,
                             "complexity": classification.complexity,
                             "needs_write": classification.needs_write,
+                            "grain": classification.grain,
+                            "period": classification.period,
+                            "direction": classification.direction,
+                            "depends_on_prior": classification.depends_on_prior,
+                            "steps": v3_result.trace.get("steps"),
                         },
                     }
                 )

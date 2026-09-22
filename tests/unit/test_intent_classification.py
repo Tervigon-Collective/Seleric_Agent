@@ -12,12 +12,18 @@ import pytest
 
 from seleric_swarm.agent import intent as intent_mod
 from seleric_swarm.agent.intent import (
+    _COMPLEXITY_LEVELS,
+    _RISK_LEVELS,
     QueryClassification,
     _normalize_bool,
-    _normalize_complexity,
+    _normalize_ordinal,
     _parse_answers,
     classify_query,
 )
+
+
+def _normalize_complexity(value):
+    return _normalize_ordinal(value, _COMPLEXITY_LEVELS)
 
 
 def test_parse_full_answers() -> None:
@@ -72,6 +78,57 @@ def test_normalize_complexity(value, expected) -> None:
 )
 def test_normalize_bool(value, expected) -> None:
     assert _normalize_bool(value) == expected
+
+
+def test_parse_new_signals() -> None:
+    # grain / period / direction (choice) + depends_on_prior (noul).
+    answers = {
+        "grain": {"choice": "day"},
+        "period": {"choice": "custom_date_range"},
+        "direction": {"choice": "decrease"},
+        "depends_on_prior": {"noul": 0.8},
+    }
+    result = _parse_answers(answers)
+    assert result.grain == "day"
+    assert result.period == "custom_date_range"
+    assert result.direction == "decrease"
+    assert result.depends_on_prior is True
+
+
+def test_parse_new_signals_fail_open() -> None:
+    # Labels we did not offer are dropped to None (never trusted blindly).
+    result = _parse_answers(
+        {"grain": {"choice": "fortnight"}, "period": {"choice": "someday"},
+         "direction": {"choice": "sideways"}}
+    )
+    assert result.grain is None
+    assert result.period is None
+    assert result.direction is None
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [(0, "low"), (0.4, "low"), (1.0, "medium"), (2, "high"), (9, "high"), ("x", None), (True, None)],
+)
+def test_normalize_risk_ordinal(value, expected) -> None:
+    assert _normalize_ordinal(value, _RISK_LEVELS) == expected
+
+
+def test_routing_hint_only_shows_signal() -> None:
+    from seleric_swarm.agent.runner import _routing_hint
+
+    # none/either/False carry no signal → empty hint.
+    assert _routing_hint(QueryClassification()) == ""
+    assert _routing_hint(
+        QueryClassification(grain="none", period="none", direction="either", depends_on_prior=False)
+    ) == ""
+    hint = _routing_hint(
+        QueryClassification(grain="day", period="custom_date_range", direction="decrease",
+                            depends_on_prior=True)
+    )
+    assert "grain=day" in hint and "period=custom_date_range" in hint
+    assert "direction=decrease" in hint and "follow_up=true" in hint
+    assert "never invent dates" in hint
 
 
 @pytest.mark.asyncio

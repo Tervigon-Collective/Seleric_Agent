@@ -39,7 +39,7 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
         return _stub_test_model()
 
     from pydantic_ai.models.fallback import FallbackModel
-    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
     from pydantic_ai.providers.openai import OpenAIProvider
 
     from seleric_swarm.llm.adapters.azure_openai_compatible import AzureOpenAICompatibleAdapter
@@ -51,7 +51,20 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
     if prefer_fast and fast_model:
         # Fast deployment first; strong chain stays behind it as fallback.
         model_names = [fast_model, *[m for m in model_names if m != fast_model]]
-    models = [OpenAIChatModel(name, provider=provider) for name in model_names]
+    # Lean settings (minimal reasoning, bounded output) only on the fast deployment
+    # so a lookup doesn't pay unbounded thinking. Strong fallbacks keep provider
+    # defaults — an unsupported reasoning_effort can't break the reliability chain.
+    fast_settings = (
+        OpenAIChatModelSettings(openai_reasoning_effort="minimal", max_tokens=2048)
+        if prefer_fast and fast_model
+        else None
+    )
+    models = [
+        OpenAIChatModel(
+            name, provider=provider, settings=fast_settings if name == fast_model else None
+        )
+        for name in model_names
+    ]
 
     if settings.azure_openai_endpoint_2.strip() and settings.azure_openai_api_key_2.strip():
         settings_2 = settings.model_copy(

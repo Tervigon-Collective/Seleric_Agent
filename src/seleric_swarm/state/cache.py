@@ -55,6 +55,13 @@ class MissionQueryCache(Generic[K, V]):
             self.misses += 1
         return value
 
+    def peek(self, key: K) -> V | None:
+        """Read without recording a hit/miss — for callers that inspect the
+        cache to make a control-flow decision (e.g. "did we already run this
+        exact query?") rather than to serve a fetch. Counting these would
+        double-count the same logical access alongside the real ``get_or_fetch``."""
+        return self._store.get(key)
+
     def set(self, key: K, value: V) -> None:
         self._store[key] = value
 

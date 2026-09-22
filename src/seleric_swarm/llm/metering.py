@@ -2,10 +2,8 @@
 
 ``TokenUsage``/``latency_ms`` were already returned per-call by every real
 ``LLMResponse`` but never summed anywhere. Wraps any ``LLMPort`` and
-accumulates usage by ``request.metadata.mission_id`` so
-``coordinator.governance.budget.check_swarm_budget`` can enforce
-``MissionBudget.token_budget`` the same way it already enforces
-``max_llm_calls``.
+accumulates usage by ``request.metadata.mission_id`` so token budgets can be
+enforced alongside the ``ExecutionLimits`` call counters.
 """
 
 from __future__ import annotations

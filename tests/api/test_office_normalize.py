@@ -1,8 +1,9 @@
 """Office gateway normalization — event stream + snapshot derivation.
 
-Uses a synthetic persisted mission payload shaped like the real swarm_v2
-control-plane output (see seleric_swarm/coordinator/observability/events.py),
-walking the full CAC investigation incl. a Skeptic REVISE + remediation round.
+Uses a synthetic persisted mission payload shaped like the old swarm_v2
+control-plane output, walking the full CAC investigation incl. a Skeptic
+REVISE + remediation round — the vocabulary the office gateway still
+normalizes for old persisted records.
 """
 
 from __future__ import annotations

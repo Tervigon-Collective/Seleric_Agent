@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 
@@ -50,6 +50,7 @@ from seleric_swarm.toolsets import (
 TOOLS: list[Any] = [
     semantic.search_semantics,
     semantic.get_metric_definition,
+    semantic.get_metric_definitions,
     semantic.query_metrics,
     semantic.drilldown,
     analytics.compare_periods,
@@ -118,7 +119,7 @@ def _stub_test_model() -> TestModel:
 
 def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDeps, MissionResult]:
     """Construct the agent with every implemented toolset registered."""
-    return Agent(
+    agent = Agent(
         model=model or _stub_test_model(),
         deps_type=SelericDeps,
         output_type=MissionResult,
@@ -126,3 +127,13 @@ def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDep
         name="seleric_agent",
         tools=TOOLS,
     )
+
+    @agent.instructions
+    def _working_memory(ctx: RunContext[SelericDeps]) -> str:
+        # Zero-latency scratchpad read: the ledger rides the system prompt sent
+        # each turn — no tool call, no round-trip. Null-safe for the deps=None
+        # stub path (test_v3_agent_wiring's zero-tool run).
+        pad = getattr(ctx.deps, "scratchpad", None)
+        return pad.render() if pad is not None else ""
+
+    return agent

@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 from seleric_swarm.config.settings import Settings
 from seleric_swarm.llm.port import LLMPort
 from seleric_swarm.persistence.memory import MissionStore
-from seleric_swarm.prompts.registry import PromptRegistry
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
 from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
 from seleric_swarm.services.metrics import MetricRegistry
@@ -27,7 +26,6 @@ if TYPE_CHECKING:
 class SwarmRuntime:
     settings: Settings
     llm: LLMPort
-    prompts: PromptRegistry
     mcp: MCPGateway
     metrics: MetricRegistry
     store: MissionStore

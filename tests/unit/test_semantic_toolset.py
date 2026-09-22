@@ -106,6 +106,168 @@ async def test_query_metrics_writes_evidence_artifact_on_success():
 
 
 @pytest.mark.asyncio
+async def test_query_metrics_wildcard_dimension_value_becomes_a_breakdown():
+    # Live 2026-09-22 MS3: dimensions={"product_title": "*"} meant "group by"
+    # but was sent as a filter product_title="*". The "*" must become a
+    # breakdown (empty value) so Cube groups instead of filtering on a literal.
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "q1",
+                "rows": [{"product_return_revenue": "100", "product_title": "A"}],
+                "provenance": {"query_id": "q1"},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    await semantic.query_metrics(
+        ctx,
+        metric_id="product_return_revenue",
+        dimensions={"product_title": "*"},
+        period_start=datetime(2026, 6, 1, tzinfo=UTC),
+        period_end=datetime(2026, 6, 30, tzinfo=UTC),
+    )
+    sent = mcp.calls[0][1]
+    assert sent.get("dimensions") == ["product_title"]  # grouped
+    assert "filters" not in sent  # not a literal filter on "*"
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_top_n_sends_sort_and_limit():
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "q1",
+                "rows": [{"product_return_revenue": "100", "product_title": "A"}],
+                "provenance": {"query_id": "q1"},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    await semantic.query_metrics(
+        ctx,
+        metric_id="product_return_revenue",
+        dimensions={"product_title": ""},
+        period_start=datetime(2026, 6, 1, tzinfo=UTC),
+        period_end=datetime(2026, 6, 30, tzinfo=UTC),
+        order="desc",
+        limit=10,
+    )
+    sent = mcp.calls[0][1]
+    assert sent["sort"] == [{"field": "product_return_revenue", "direction": "desc"}]
+    assert sent["limit"] == 10
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_rejects_incompatible_dimension_with_redirect():
+    # refunded_orders (order-grain) can't break down by product_title; the guard
+    # must ModelRetry and name the product-grain metric that can.
+    from seleric_swarm.services.catalogue_bootstrap import (
+        CatalogueMetricMeta,
+        CatalogueSnapshot,
+    )
+
+    import dataclasses
+
+    from pydantic_ai import ModelRetry
+
+    mcp = FakeMcpClient({})
+    snapshot = CatalogueSnapshot(
+        metrics=(
+            CatalogueMetricMeta(id="refunded_orders", supported_dimensions=["brand_id", "event_date"]),
+            CatalogueMetricMeta(
+                id="product_return_revenue",
+                supported_dimensions=["brand_id", "order_date", "product_title"],
+            ),
+        )
+    )
+    deps = dataclasses.replace(_deps(mcp), catalogue=snapshot)
+    ctx = FakeRunContext(deps)
+    with pytest.raises(ModelRetry) as exc:
+        await semantic.query_metrics(
+            ctx,
+            metric_id="refunded_orders",
+            dimensions={"product_title": ""},
+            period_start=datetime(2026, 6, 1, tzinfo=UTC),
+            period_end=datetime(2026, 6, 30, tzinfo=UTC),
+        )
+    msg = str(exc.value)
+    assert "product_title" in msg
+    assert "product_return_revenue" in msg
+    assert len(mcp.calls) == 0  # rejected before any Cube call
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_repeat_returns_stop_nudge_without_duplicating_evidence():
+    # Live 2026-09-22 (MS3-0b46db4d98): a lookup re-issued an identical
+    # successful query_metrics ~10x and blew its step budget without answering.
+    # A repeat must reuse the same artifact and hand back a blunt stop signal.
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "q1",
+                "rows": [{"total_sales": "13638"}],
+                "provenance": {"query_id": "q1"},
+                "warnings": [],
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    kwargs = dict(
+        metric_id="total_sales",
+        dimensions={},
+        grain="none",
+        period_start=datetime(2026, 9, 17, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    first = await semantic.query_metrics(ctx, **kwargs)
+    second = await semantic.query_metrics(ctx, **kwargs)
+    assert second.success is True
+    assert "ALREADY FETCHED" in second.summary
+    assert second.artifact_ids == first.artifact_ids  # same evidence, not a new write
+    assert len(ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_multirow_summary_carries_every_value_and_unit():
+    # Live 2026-09-22 MS3-ad0fe7c8a2: a 7-day series returned only the LAST
+    # row as a scalar summary, so the model couldn't see the daily values and
+    # fabricated them. The tool return must carry every row's value (and the
+    # currency as unit) so the model reports them verbatim.
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "q1",
+                "rows": [
+                    {"nsd.day": "2026-09-16", "nsd": "16568.26"},
+                    {"nsd.day": "2026-09-17", "nsd": "-742.79"},
+                    {"nsd.day": "2026-09-18", "nsd": "-4963.49"},
+                ],
+                "provenance": {"query_id": "q1", "currency": "INR"},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="nsd",
+        dimensions={},
+        grain="day",
+        period_start=datetime(2026, 9, 16, tzinfo=UTC),
+        period_end=datetime(2026, 9, 18, tzinfo=UTC),
+    )
+    assert result.success is True
+    # Every value present in the summary the model reads — not just the last.
+    for token in ("16568.26", "-742.79", "-4963.49"):
+        assert token in result.summary
+    series = result.provenance.source_metadata["series"]
+    assert [s["value"] for s in series] == [16568.26, -742.79, -4963.49]
+    # Currency propagated onto the evidence (unit was previously null).
+    artifact = ctx.deps.artifact_store.get(result.artifact_ids[0])
+    assert artifact.payload["unit"] == "INR"
+
+
+@pytest.mark.asyncio
 async def test_query_metrics_day_grain_writes_one_artifact_per_row():
     mcp = FakeMcpClient(
         {
@@ -255,27 +417,111 @@ async def test_query_metrics_defaults_period_to_mission_as_of():
 
 
 @pytest.mark.asyncio
-async def test_search_semantics_reports_match_count(monkeypatch):
-    monkeypatch.setattr(
-        semantic.catalogue_index, "search", lambda query, **kwargs: [{"id": "total_sales", "stale": False}]
-    )
-    ctx = FakeRunContext(_deps(FakeMcpClient({})))
-    result = await semantic.search_semantics(ctx, "revenue")
+async def test_search_semantics_uses_glossary_search_and_slims_shortlist():
+    # 10 matches back; the tool keeps only the top _SEARCH_SHORTLIST and slims
+    # each to the id/name/view/dims/matched_on the model needs to pick.
+    matches = [
+        {
+            "id": f"m{i}",
+            "display_name": f"Metric {i}",
+            "view": "canonical_pnl",
+            "supported_dimensions": ["brand_id"],
+            "matched_on": "glossary:net sales" if i == 0 else "name",
+            "description": "x" * 500,  # dropped by the slimmer
+        }
+        for i in range(10)
+    ]
+    mcp = FakeMcpClient({"seleric.catalogue_search_metrics": {"matches": matches}})
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.search_semantics(ctx, "net sales")
     assert result.success is True
-    assert "metric(s) matched" in result.summary
-    ids = [m["id"] for m in result.provenance.source_metadata["matches"]]
-    assert "total_sales" in ids
+    shortlist = result.provenance.source_metadata["matches"]
+    assert len(shortlist) == semantic._SEARCH_SHORTLIST
+    assert shortlist[0]["id"] == "m0"
+    assert "description" not in shortlist[0]  # slimmed
+    assert mcp.calls[0][0] == "seleric.catalogue_search_metrics"
 
 
 @pytest.mark.asyncio
-async def test_search_semantics_surfaces_stale_index_warning(monkeypatch):
+async def test_search_semantics_hard_stops_over_budget_with_model_retry():
+    # Live 2026-09-22 MS3-53296c1a5e: the soft "STOP SEARCHING" summary was
+    # ignored 11 times until the budget tripped. Past _MAX_SEARCHES the tool
+    # must hard-stop with ModelRetry, not return another success.
+    from pydantic_ai import ModelRetry
+
+    mcp = FakeMcpClient(
+        {"seleric.catalogue_search_metrics": {"matches": [{"id": "product_return_revenue"}]}}
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    for _ in range(semantic._MAX_SEARCHES):
+        assert (await semantic.search_semantics(ctx, "returns")).success is True
+    with pytest.raises(ModelRetry) as exc:
+        await semantic.search_semantics(ctx, "returns again")
+    assert "SEMANTIC_RESOLUTION_LOOP" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_search_semantics_hoists_exact_id_over_vector_rank():
+    # An exact metric-id query must surface that metric first even when the
+    # server buries it below glossary hits (live: product_net_revenue ranked
+    # 31st for its own id).
+    server_matches = [
+        {"id": "net_sales_all_channels", "matched_on": "glossary:revenue"},
+        {"id": "commerce_net_revenue", "matched_on": "name"},
+        {"id": "product_net_revenue", "display_name": "Product Net Revenue (ex-GST)", "matched_on": "name"},
+    ]
+    mcp = FakeMcpClient({"seleric.catalogue_search_metrics": {"matches": server_matches}})
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.search_semantics(ctx, "product net revenue")
+    ids = [m["id"] for m in result.provenance.source_metadata["matches"]]
+    assert ids[0] == "product_net_revenue"
+
+
+@pytest.mark.asyncio
+async def test_search_semantics_falls_back_to_local_index_when_mcp_down(monkeypatch):
     monkeypatch.setattr(
         semantic.catalogue_index, "search", lambda query, **kwargs: [{"id": "total_sales", "stale": True}]
     )
-    ctx = FakeRunContext(_deps(FakeMcpClient({})))
+    mcp = FakeMcpClient({"seleric.catalogue_search_metrics": RuntimeError("mcp down")})
+    ctx = FakeRunContext(_deps(mcp))
     result = await semantic.search_semantics(ctx, "revenue")
     assert result.success is True
+    assert "local index" in result.summary
+    assert [m["id"] for m in result.provenance.source_metadata["matches"]] == ["total_sales"]
     assert any("stale" in w for w in result.warnings)
+
+
+# ---- get_metric_definitions (batch) --------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_metric_definitions_returns_valid_and_flags_unknown():
+    mcp = FakeMcpClient(
+        {
+            "seleric.catalogue_get_metrics": {
+                "metrics": {"net_sales_all_channels": {"id": "net_sales_all_channels"}},
+                "errors": {"bogus_id": {"error": "Unknown metric 'bogus_id'"}},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.get_metric_definitions(ctx, ["net_sales_all_channels", "bogus_id"])
+    assert result.success is True
+    assert "net_sales_all_channels" in result.provenance.source_metadata["definitions"]
+    assert any("bogus_id" in w for w in result.warnings)
+    # ids passed through verbatim, no local rewriting (rule 1)
+    assert mcp.calls[0] == (
+        "seleric.catalogue_get_metrics",
+        {"metric_ids": ["net_sales_all_channels", "bogus_id"]},
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_metric_definitions_empty_ids_is_insufficient_evidence():
+    ctx = FakeRunContext(_deps(FakeMcpClient({})))
+    result = await semantic.get_metric_definitions(ctx, [])
+    assert result.success is False
+    assert result.error_code == "INSUFFICIENT_EVIDENCE"
 
 
 # A short-lived "declared alias" overlay (``ns``/``np``/``adsp`` -> catalogue

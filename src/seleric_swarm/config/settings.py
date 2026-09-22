@@ -127,12 +127,15 @@ class Settings(BaseSettings):
     qdrant_api_key: str = ""
     qdrant_collection: str = "seleric_catalogue"
     qdrant_embedding_model: str = "text-embedding-3-small"
+    # When True, render the whole live catalogue (~8.6k tokens) into every
+    # mission prompt. Default False: the agent resolves via search_semantics
+    # (glossary-backed) + get_metric_definitions instead of paying the dump on
+    # every model turn. Flip on to revert to the in-prompt catalogue.
+    catalogue_in_prompt: bool = False
     jev_base_url: str = ""
     jev_api_key: str = ""
     jev_timeout_s: float = 1.0
     metric_registry_path: str = "config/metric_registry.yaml"
-    prompt_versions_path: str = "config/prompt_versions.yaml"
-    prompts_dir: str = "prompts"
 
     a2a_public_base_url: str = ""
     api_host: str = ""
@@ -157,11 +160,6 @@ class Settings(BaseSettings):
     v3_agent_enabled: bool = True
 
     workflow_version: str = "1.0.0"
-    # Swarm mission control plane (Coordinator V1). Only "swarm_v2" exists today —
-    # the legacy "swarm_v1" imperative workflow was removed.
-    swarm_workflow: Literal["swarm_v2"] = "swarm_v2"
-    coordinator_policies_path: str = "config/coordinator_policies.yaml"
-    max_remediation_rounds: int = 3
 
     # API security (v1.13)
     # When set, all non-probe routes require X-API-Key or Authorization: Bearer.

@@ -40,6 +40,7 @@ TOOLS = (
     "catalogue_resolve_term",
     "catalogue_resolve_dimension",
     "catalogue_get_metric",
+    "catalogue_get_metrics",
     "catalogue_get_ontology",
     "catalogue_related_metrics",
     "catalogue_list_dimensions",
