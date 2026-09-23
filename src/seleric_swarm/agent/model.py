@@ -83,6 +83,19 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
             OpenAIChatModel(name, provider=provider_2) for name in settings_2.resolved_models()
         )
 
+    # Independent-provider tail fallback: after every Azure resource is
+    # exhausted, fall through to OpenRouter's separate provider pool. Additive —
+    # unset OpenRouter env leaves the chain exactly as above.
+    from seleric_swarm.llm.openrouter import (
+        build_openrouter_provider,
+        resolved_openrouter_models,
+    )
+
+    or_models = resolved_openrouter_models(settings)
+    if or_models and settings.openrouter_api_key.strip():
+        or_provider = build_openrouter_provider(settings)
+        models.extend(OpenAIChatModel(name, provider=or_provider) for name in or_models)
+
     if len(models) == 1:
         return models[0]
     return FallbackModel(*models)

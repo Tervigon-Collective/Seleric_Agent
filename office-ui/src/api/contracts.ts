@@ -71,7 +71,7 @@ export interface SubmitMessageRequest {
   parts: MessagePart[];
   parent_message_id?: string | null;
   scope?: Record<string, unknown>;
-  execution_mode?: "staging" | "production";
+  execution_mode?: "development" | "staging" | "production";
 }
 
 export interface SubmitMessageResponse {

@@ -97,6 +97,15 @@ class Settings(BaseSettings):
     azure_openai_api_key_2: str = ""
     azure_openai_models_2: str = ""
 
+    # Optional independent-provider fallback tier (OpenRouter). Appended after
+    # every Azure model in resolve_v3_model's FallbackModel chain, so an
+    # Azure-wide 429 (both resources throttled) falls through to a genuinely
+    # separate provider pool. OpenAI-compatible; no api-version. Empty (default)
+    # = no OpenRouter tier, unchanged Azure-only behavior.
+    openrouter_api_key: str = ""
+    openrouter_models: str = ""  # JSON array or comma-separated; first = highest priority
+    openrouter_endpoint: str = "https://openrouter.ai/api/v1"
+
     langsmith_tracing: bool = False
     langsmith_api_key: str = ""
     langsmith_project: str = ""
@@ -201,6 +210,8 @@ class Settings(BaseSettings):
         "azure_openai_model2",
         "azure_openai_endpoint_2",
         "azure_openai_models_2",
+        "openrouter_models",
+        "openrouter_endpoint",
         "seleric_mcp_url",
         "qdrant_url",
         "qdrant_collection",
@@ -225,6 +236,7 @@ class Settings(BaseSettings):
     @field_validator(
         "azure_openai_api_key",
         "azure_openai_api_key_2",
+        "openrouter_api_key",
         "langsmith_api_key",
         "api_key",
         "seleric_mcp_token",

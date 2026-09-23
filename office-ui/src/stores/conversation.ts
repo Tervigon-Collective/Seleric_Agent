@@ -407,7 +407,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         }],
         parent_message_id: parentMessageId,
         scope: conversationScope(),
-        execution_mode: "production",
+        execution_mode: "development",
       });
       if (cancelledSubmissions.delete(generation)) {
         await conversationsApi.cancelRun(result.run_id).catch(() => undefined);

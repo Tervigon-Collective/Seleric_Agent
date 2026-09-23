@@ -588,6 +588,11 @@ async def run_v3_mission(
             )
         except Exception as exc:
             message, error_code = _user_facing_agent_failure(exc)
+            _log.warning(
+                "v3_agent_failed",
+                exc_info=True,
+                extra={"mission_id": mission_id, "error_code": error_code, "intent": intent},
+            )
             result = V3MissionResult(
                 mission_id=mission_id,
                 status="failed",
