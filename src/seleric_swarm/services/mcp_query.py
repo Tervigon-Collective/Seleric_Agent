@@ -5,13 +5,20 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_GRANULARITY_DATE_KEY = re.compile(r"\.day$")
+# Cube appends the granularity to the time dimension:
+# ``meta_ad_performance.report_date.week``, ``….day``, ``….month``, and the
+# rest of its set. Matching only ``.day`` dropped every weekly bucket onto
+# the query window (live 2026-09-23 MS3-b45585f72d: two meta_ctr weeks, both
+# labelled 2026-09-09..2026-09-22, flagged as one source contradiction).
+_GRANULARITY_DATE_KEY = re.compile(
+    r"\.(?:second|minute|hour|day|week|month|quarter|year)$"
+)
 
 
 def row_date(row: dict[str, Any]) -> str | None:
     """Cube names a grain time dimension ``<view>.<dimension>.<granularity>``."""
     for key, value in row.items():
-        if _GRANULARITY_DATE_KEY.search(key) and isinstance(value, str):
+        if _GRANULARITY_DATE_KEY.search(key) and isinstance(value, str) and len(value) >= 10:
             return value[:10]
     return None
 

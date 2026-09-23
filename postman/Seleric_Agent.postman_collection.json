@@ -1,0 +1,1530 @@
+{
+  "info": {
+    "name": "Seleric Agent",
+    "_postman_id": "bb2cca01-7724-4509-85e0-79269c7c66cb",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "All live Seleric API routes against {{baseUrl}}."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8090"
+    },
+    {
+      "key": "apiKey",
+      "value": ""
+    },
+    {
+      "key": "thread_id",
+      "value": ""
+    },
+    {
+      "key": "mission_id",
+      "value": ""
+    },
+    {
+      "key": "run_id",
+      "value": ""
+    },
+    {
+      "key": "memory_id",
+      "value": ""
+    },
+    {
+      "key": "attachment_id",
+      "value": ""
+    },
+    {
+      "key": "approval_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Root",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/",
+            "description": "Root"
+          }
+        },
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/health",
+            "description": "Health"
+          }
+        },
+        {
+          "name": "Readyz",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/ready",
+            "description": "Dependency readiness \u2014 200 when ready, 503 when not."
+          }
+        },
+        {
+          "name": "Readyz",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/readyz",
+            "description": "Dependency readiness \u2014 200 when ready, 503 when not."
+          }
+        }
+      ]
+    },
+    {
+      "name": "LLM",
+      "item": [
+        {
+          "name": "Llm Ping",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/llm/ping",
+            "description": "Llm Ping",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"ping\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Missions",
+      "item": [
+        {
+          "name": "Create Mission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "Create Mission",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Why has CAC increased over the last three days?\",\n  \"scope\": {\n    \"timezone\": \"Asia/Kolkata\"\n  },\n  \"mode\": \"read_only\",\n  \"execution_mode\": \"development\",\n  \"full_diagnostic\": true,\n  \"full_prediction\": true,\n  \"full_skeptic\": true,\n  \"full_strategy\": true,\n  \"wait\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const id = body.mission_id || body.missionId;",
+                  "if (id) pm.environment.set('mission_id', id);",
+                  "if (body.run_id) pm.environment.set('run_id', body.run_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Mission",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions/{{mission_id}}",
+            "description": "Get Mission"
+          }
+        },
+        {
+          "name": "Cancel Mission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions/{{mission_id}}/cancel",
+            "description": "Cancel a running async mission (cooperative / best-effort)."
+          }
+        },
+        {
+          "name": "Get Mission Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions/{{mission_id}}/events?after_seq=0&limit=200",
+            "description": "Return structured control-plane events for a persisted mission."
+          }
+        },
+        {
+          "name": "Get Mission Trace",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions/{{mission_id}}/trace",
+            "description": "Return trace metadata (request/session/langsmith ids) plus the full event timeline."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Threads",
+      "item": [
+        {
+          "name": "List Threads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads?limit=50",
+            "description": "List Threads"
+          }
+        },
+        {
+          "name": "Create Thread",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads",
+            "description": "Create Thread",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"CAC investigation\",\n  \"metadata\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.environment.set('thread_id', body.id);",
+                  "pm.test('thread created', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Threads Paginated",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/paginated?limit=50&include_deleted=false",
+            "description": "List Threads Paginated"
+          }
+        },
+        {
+          "name": "Get Thread",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}",
+            "description": "Get Thread"
+          }
+        },
+        {
+          "name": "Update Thread",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}",
+            "description": "Update Thread",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"CAC investigation (updated)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete Thread",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}",
+            "description": "Delete Thread"
+          }
+        },
+        {
+          "name": "Archive Thread",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}/archive",
+            "description": "Archive Thread"
+          }
+        },
+        {
+          "name": "List Thread Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}/events?after_sequence=0",
+            "description": "List Thread Events"
+          }
+        },
+        {
+          "name": "Stream Thread Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}/events/stream?after_sequence=0&heartbeat_seconds=15.0",
+            "description": "Stream Thread Events"
+          }
+        },
+        {
+          "name": "Restore Thread",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}/restore",
+            "description": "Restore Thread"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "List Messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}/messages?limit=100",
+            "description": "List Messages"
+          }
+        },
+        {
+          "name": "Submit Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}/messages",
+            "description": "Submit Message",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parts\": [\n    {\n      \"type\": \"TEXT\",\n      \"content\": \"Why has CAC increased over the last three days?\"\n    }\n  ],\n  \"scope\": {\n    \"timezone\": \"Asia/Kolkata\"\n  },\n  \"execution_mode\": \"development\",\n  \"attachment_ids\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.run_id) pm.environment.set('run_id', body.run_id);",
+                  "if (body.mission_id) pm.environment.set('mission_id', body.mission_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Messages Paginated",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}/messages/paginated?limit=100",
+            "description": "List Messages Paginated"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Attachments",
+      "item": [
+        {
+          "name": "Get Attachment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/attachments/{{attachment_id}}",
+            "description": "Get Attachment"
+          }
+        },
+        {
+          "name": "Delete Attachment",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/attachments/{{attachment_id}}",
+            "description": "Delete Attachment"
+          }
+        },
+        {
+          "name": "Complete Presigned Upload",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/attachments/{{attachment_id}}/complete",
+            "description": "Complete Presigned Upload",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"checksum_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Upload Attachment Content",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "text/plain",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/attachments/{{attachment_id}}/content",
+            "description": "Upload Attachment Content",
+            "body": {
+              "mode": "raw",
+              "raw": "sample attachment bytes\n",
+              "options": {
+                "raw": {
+                  "language": "text"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Download Attachment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/attachments/{{attachment_id}}/download",
+            "description": "Download Attachment"
+          }
+        },
+        {
+          "name": "Presigned Download",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/attachments/{{attachment_id}}/presigned-download",
+            "description": "Presigned Download"
+          }
+        },
+        {
+          "name": "List Attachments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}/attachments",
+            "description": "List Attachments"
+          }
+        },
+        {
+          "name": "Initiate Attachment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/threads/{{thread_id}}/attachments",
+            "description": "Initiate Attachment",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filename\": \"notes.txt\",\n  \"content_type\": \"text/plain\",\n  \"size_bytes\": 24\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const id = (body.attachment && body.attachment.id) || body.id;",
+                  "if (id) pm.environment.set('attachment_id', id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Memories",
+      "item": [
+        {
+          "name": "List Memories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories?include_inactive=false&limit=100",
+            "description": "List Memories"
+          }
+        },
+        {
+          "name": "Create Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories",
+            "description": "Create Memory",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Prefer weekly CAC breakdowns by channel.\",\n  \"scope\": \"USER\",\n  \"type\": \"PREFERENCE\",\n  \"thread_id\": \"{{thread_id}}\",\n  \"pinned\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const id = body.id || (body.memory && body.memory.id);",
+                  "if (id) pm.environment.set('memory_id', id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Memory Preference",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories/preference",
+            "description": "Get Memory Preference"
+          }
+        },
+        {
+          "name": "Set Memory Preference",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories/preference",
+            "description": "Set Memory Preference",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"opted_out\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get Memory",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories/{{memory_id}}",
+            "description": "Get Memory"
+          }
+        },
+        {
+          "name": "Update Memory",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories/{{memory_id}}",
+            "description": "Update Memory",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Prefer weekly CAC breakdowns by channel and campaign.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete Memory",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories/{{memory_id}}",
+            "description": "Delete Memory"
+          }
+        },
+        {
+          "name": "Archive Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories/{{memory_id}}/archive",
+            "description": "Archive Memory"
+          }
+        },
+        {
+          "name": "Confirm Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories/{{memory_id}}/confirm",
+            "description": "Confirm Memory"
+          }
+        },
+        {
+          "name": "Move Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories/{{memory_id}}/move",
+            "description": "Move Memory",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": \"USER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Pin Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/memories/{{memory_id}}/pin?pinned=true",
+            "description": "Pin Memory"
+          }
+        },
+        {
+          "name": "List Run Memories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/runs/{{run_id}}/memories",
+            "description": "List Run Memories"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Runs",
+      "item": [
+        {
+          "name": "Cancel Run",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/runs/{{run_id}}/cancel",
+            "description": "Cancel Run"
+          }
+        },
+        {
+          "name": "List Run Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/runs/{{run_id}}/events?after_sequence=0",
+            "description": "List Run Events"
+          }
+        },
+        {
+          "name": "Stream Run Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/runs/{{run_id}}/events/stream?after_sequence=0&heartbeat_seconds=15.0",
+            "description": "Stream Run Events"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/search?q=CAC&limit=20",
+            "description": "Search"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Approvals",
+      "item": [
+        {
+          "name": "Create Approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/approvals",
+            "description": "Create Approval",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action_type\": \"budget.pause_campaign\",\n  \"action_preview\": {\n    \"campaign\": \"example\",\n    \"reason\": \"CAC spike\"\n  },\n  \"required_role\": \"analyst\",\n  \"idempotency_key\": \"{{$guid}}\",\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const id = body.id || body.approval_id;",
+                  "if (id) pm.environment.set('approval_id', id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Approval",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/approvals/{{approval_id}}",
+            "description": "Get Approval"
+          }
+        },
+        {
+          "name": "Decide Approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/approvals/{{approval_id}}/decision",
+            "description": "Decide Approval",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"APPROVED\",\n  \"reason\": \"Reviewed in dry run\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Expire Approvals",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/admin/approvals/expire",
+            "description": "Expire Approvals"
+          }
+        },
+        {
+          "name": "Backend Capabilities",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/admin/capabilities",
+            "description": "Backend Capabilities"
+          }
+        },
+        {
+          "name": "Run Diagnostics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/admin/runs/{{run_id}}/diagnostics",
+            "description": "Run Diagnostics"
+          }
+        },
+        {
+          "name": "Replay Metadata",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/admin/runs/{{run_id}}/replay?dry_run=true",
+            "description": "Replay Metadata"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Office",
+      "item": [
+        {
+          "name": "List Office Missions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/office/missions?limit=50",
+            "description": "Recent missions. Prefers the store's own listing (durable, multi-worker);\nfalls back to the in-process registry when the store cannot enumerate."
+          }
+        },
+        {
+          "name": "Office Snapshot",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/office/missions/{{mission_id}}/snapshot",
+            "description": "Office Snapshot"
+          }
+        },
+        {
+          "name": "Office Stream",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/office/missions/{{mission_id}}/stream",
+            "description": "Office Stream"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Askable queries",
+      "description": "Creative questions in the same shape as New Collection, with wait true.",
+      "item": [
+        {
+          "name": "Revenue by channel, last 7 days",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "revenue by channel for the last 7 days",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"query\": \"revenue by channel for the last 7 days\",\n    \"scope\": {\n        \"timezone\": \"Asia/Kolkata\"\n    },\n    \"mode\": \"read_only\",\n    \"execution_mode\": \"development\",\n    \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Highest refund-rate products",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "products with the highest refund rate this month",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"query\": \"products with the highest refund rate this month\",\n    \"scope\": {\n        \"timezone\": \"Asia/Kolkata\"\n    },\n    \"mode\": \"read_only\",\n    \"execution_mode\": \"development\",\n    \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Meta ads with falling CTR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "meta ads whose ctr fell week over week",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"query\": \"meta ads whose ctr fell week over week\",\n    \"scope\": {\n        \"timezone\": \"Asia/Kolkata\"\n    },\n    \"mode\": \"read_only\",\n    \"execution_mode\": \"development\",\n    \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Spend with no orders",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "campaigns that spent the most with no orders yesterday",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"query\": \"campaigns that spent the most with no orders yesterday\",\n    \"scope\": {\n        \"timezone\": \"Asia/Kolkata\"\n    },\n    \"mode\": \"read_only\",\n    \"execution_mode\": \"development\",\n    \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "New vs repeat revenue",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "new versus repeat customer revenue this month",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"query\": \"new versus repeat customer revenue this month\",\n    \"scope\": {\n        \"timezone\": \"Asia/Kolkata\"\n    },\n    \"mode\": \"read_only\",\n    \"execution_mode\": \"development\",\n    \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Discounting trend",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "discount share of gross sales over the last 14 days",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"query\": \"discount share of gross sales over the last 14 days\",\n    \"scope\": {\n        \"timezone\": \"Asia/Kolkata\"\n    },\n    \"mode\": \"read_only\",\n    \"execution_mode\": \"development\",\n    \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Weakest landing pages",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "landing pages with the weakest conversion last week",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"query\": \"landing pages with the weakest conversion last week\",\n    \"scope\": {\n        \"timezone\": \"Asia/Kolkata\"\n    },\n    \"mode\": \"read_only\",\n    \"execution_mode\": \"development\",\n    \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Contribution margin trend",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "contribution margin trend for the last 7 days",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"query\": \"contribution margin trend for the last 7 days\",\n    \"scope\": {\n        \"timezone\": \"Asia/Kolkata\"\n    },\n    \"mode\": \"read_only\",\n    \"execution_mode\": \"development\",\n    \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cities driving orders",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "cities driving the most orders this month",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"query\": \"cities driving the most orders this month\",\n    \"scope\": {\n        \"timezone\": \"Asia/Kolkata\"\n    },\n    \"mode\": \"read_only\",\n    \"execution_mode\": \"development\",\n    \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Checkout drop after add to cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/missions",
+            "description": "checkout drop-off after add to cart last week",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"query\": \"checkout drop-off after add to cart last week\",\n    \"scope\": {\n        \"timezone\": \"Asia/Kolkata\"\n    },\n    \"mode\": \"read_only\",\n    \"execution_mode\": \"development\",\n    \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

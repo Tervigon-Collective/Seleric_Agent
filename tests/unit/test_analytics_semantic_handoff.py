@@ -34,10 +34,10 @@ from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import analytics, semantic
 
 _METRIC = "metric.net_sales"
-# Cube names a grain time dimension "<view>.<dimension>.<granularity>", and
-# services/mcp_query.py::row_date matches on the ".day" suffix. A fixture
-# using a bare "report_date" key would silently exercise row_date's None
-# fallback instead of the real path — see the module note below.
+# Cube names a grain time dimension "<view>.<dimension>.<granularity>".
+# services/mcp_query.py::row_date matches that suffix (.day, .week, .month, …).
+# A fixture using a bare "report_date" key would silently exercise row_date's
+# None fallback instead of the real path — see the module note below.
 _DATE_KEY = "commerce.report_date.day"
 _DAILY_ROWS = [
     {_METRIC: 4100.0, _DATE_KEY: "2026-09-12T00:00:00.000"},
@@ -144,9 +144,9 @@ async def test_unparseable_date_column_degrades_to_window_labels_and_is_caught()
     routed to Profile B, defended against here.
 
     ``services/mcp_query.py::row_date`` identifies a bucket by matching a
-    ``.day``-suffixed column. If Cube ever returns a day-grain series whose
-    date column doesn't match (renamed view, different granularity suffix,
-    an aggregate row mixed in), ``query_metrics`` falls back to
+    granularity suffix (``.day``, ``.week``, ``.month``, …). If Cube ever
+    returns a series whose date column doesn't match (renamed view, an
+    aggregate row mixed in), ``query_metrics`` falls back to
     ``period_start``/``period_end`` for *every* row — emitting N artifacts
     that each claim grain="day" while spanning the whole window. That is
     docs/BUG_SHEET.md #14's shape multiplied by N, and B's own success path

@@ -14,8 +14,11 @@ from typing import Any
 
 import pytest
 
+from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.agent.output import ToolResult
+from seleric_swarm.agent.validation.signals import check_contradiction
+from seleric_swarm.analytics.grain import validate_grain_set
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import semantic
@@ -300,6 +303,52 @@ async def test_query_metrics_day_grain_writes_one_artifact_per_row():
     first = ctx.deps.artifact_store.get(result.artifact_ids[0])
     assert first.payload["grain"] == "day"
     assert first.payload["period_start"] == first.payload["period_end"]
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_week_grain_keeps_each_week_its_own_window():
+    # Live 2026-09-23 MS3-b45585f72d: grain=week on meta_ctr returned two
+    # Cube rows keyed ``….report_date.week``. row_date only matched ``.day``,
+    # so both artifacts inherited the full query window and the same series
+    # label. check_contradiction then treated 0.0177 and 0.0212 as one
+    # metric disagreeing with itself (>5%) and the mission failed closed
+    # as INSUFFICIENT_EVIDENCE.
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "q_week",
+                "rows": [
+                    {
+                        "meta_ad_performance.report_date.week": "2026-09-07T00:00:00.000",
+                        "meta_ctr": "0.0212091662603608",
+                    },
+                    {
+                        "meta_ad_performance.report_date.week": "2026-09-14T00:00:00.000",
+                        "meta_ctr": "0.017666988304220088",
+                    },
+                ],
+                "provenance": {"query_id": "q_week"},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="meta_ctr",
+        dimensions={},
+        grain="week",
+        period_start=datetime(2026, 9, 9, tzinfo=UTC),
+        period_end=datetime(2026, 9, 22, tzinfo=UTC),
+    )
+    assert result.success is True
+    artifacts = ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id)
+    parsed = [EvidenceArtifact.model_validate(a.payload) for a in artifacts]
+    assert [p.period_start.date().isoformat() for p in parsed] == ["2026-09-07", "2026-09-14"]
+    assert [p.period_end.date().isoformat() for p in parsed] == ["2026-09-13", "2026-09-20"]
+    assert validate_grain_set(parsed) is None
+    labels = [s["label"] for s in result.provenance.source_metadata["series"]]
+    assert labels == ["2026-09-07..2026-09-13", "2026-09-14..2026-09-20"]
+    assert not check_contradiction(artifacts).challenges
 
 
 @pytest.mark.asyncio

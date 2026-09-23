@@ -15,9 +15,10 @@ independently-attributed evidence).
 
 from __future__ import annotations
 
+import calendar
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
@@ -512,6 +513,16 @@ async def get_metric_definitions(ctx: RunContext[SelericDeps], metric_ids: list[
     )
 
 
+def _bucket_end(bucket_start: datetime, grain: str) -> datetime:
+    """Inclusive end of one Cube bucket. Day is a single day (start == end)."""
+    if grain == "week":
+        return bucket_start + timedelta(days=6)
+    if grain == "month":
+        last = calendar.monthrange(bucket_start.year, bucket_start.month)[1]
+        return bucket_start.replace(day=last)
+    return bucket_start
+
+
 def _top_n_sort(metric_id: str, order: str | None) -> list[dict[str, Any]] | None:
     """Sort spec for a top/bottom-N query: rank rows by the metric value.
 
@@ -621,7 +632,11 @@ async def query_metrics(
                 continue
             last_value = float(value)
             bucket_start = datetime.fromisoformat(bucket_date).replace(tzinfo=period_start.tzinfo) if bucket_date else period_start
-            bucket_end = bucket_start if bucket_date else period_end
+            # A parsed bucket is that grain's own window, not the query
+            # window. Day stays one inclusive day (start == end). Week is
+            # seven days and month is the calendar month — analytics grain
+            # checks reject a week labelled as a 1-day or multi-week span.
+            bucket_end = _bucket_end(bucket_start, grain) if bucket_date else period_end
             # Filters (truthy dimension values) are known up front. A breakdown
             # key (empty value, e.g. dimensions={"product_id": ""}) groups the
             # Cube query, but which group THIS row belongs to only exists in the
@@ -654,9 +669,12 @@ async def query_metrics(
                 )
             )
             artifact_ids.append(artifact.id)
-            # Label: the bucket date for a time series, else the breakdown
-            # dimension value, else the plain period.
-            if bucket_date:
+            # Label: the bucket window for a time series, else the breakdown
+            # dimension value, else the plain period. Week/month include both
+            # ends so two buckets cannot share one label.
+            if bucket_date and grain in {"week", "month"}:
+                label = f"{bucket_start.date()}..{bucket_end.date()}"
+            elif bucket_date:
                 label = bucket_date
             elif row_dimensions:
                 label = ", ".join(f"{k}={v}" for k, v in row_dimensions.items())
