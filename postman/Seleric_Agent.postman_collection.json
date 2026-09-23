@@ -1,0 +1,2671 @@
+{
+  "info": {
+    "name": "Seleric Agent",
+    "description": "All live Seleric Intelligence Swarm HTTP endpoints from /openapi.json. Base URL defaults to the local API on port 8090. Create a thread or mission first so {{thread_id}} / {{mission_id}} / {{run_id}} get populated.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8090"
+    },
+    {
+      "key": "apiKey",
+      "value": ""
+    },
+    {
+      "key": "thread_id",
+      "value": ""
+    },
+    {
+      "key": "mission_id",
+      "value": ""
+    },
+    {
+      "key": "run_id",
+      "value": ""
+    },
+    {
+      "key": "memory_id",
+      "value": ""
+    },
+    {
+      "key": "attachment_id",
+      "value": ""
+    },
+    {
+      "key": "approval_id",
+      "value": ""
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const key = pm.collectionVariables.get('apiKey') || pm.environment.get('apiKey');",
+          "if (key) {",
+          "  pm.request.headers.upsert({ key: 'X-API-Key', value: key });",
+          "  pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + key });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET Root",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [],
+              "query": []
+            },
+            "description": "Root"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Health",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ],
+              "query": []
+            },
+            "description": "Health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Readyz",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ready"
+              ],
+              "query": []
+            },
+            "description": "Dependency readiness \u2014 200 when ready, 503 when not."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Readyz",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/readyz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readyz"
+              ],
+              "query": []
+            },
+            "description": "Dependency readiness \u2014 200 when ready, 503 when not."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "LLM",
+      "item": [
+        {
+          "name": "POST Llm Ping",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/llm/ping",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "llm",
+                "ping"
+              ],
+              "query": []
+            },
+            "description": "Llm Ping",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"ping\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Missions",
+      "item": [
+        {
+          "name": "POST Create Mission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "missions"
+              ],
+              "query": []
+            },
+            "description": "Create Mission",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Why has CAC increased over the last three days?\",\n  \"scope\": {\n    \"timezone\": \"Asia/Kolkata\"\n  },\n  \"mode\": \"read_only\",\n  \"execution_mode\": \"production\",\n  \"full_diagnostic\": true,\n  \"full_prediction\": true,\n  \"full_skeptic\": true,\n  \"full_strategy\": true,\n  \"wait\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const id = json.mission_id || json.id || (json.mission && json.mission.mission_id);",
+                  "  if (id) pm.collectionVariables.set(\"mission_id\", id);",
+                  "} catch (e) {}",
+                  "",
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Get Mission",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/{{mission_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}"
+              ],
+              "query": []
+            },
+            "description": "Get Mission"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Cancel Mission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/{{mission_id}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "cancel"
+              ],
+              "query": []
+            },
+            "description": "Cancel a running async mission (cooperative / best-effort)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Get Mission Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/{{mission_id}}/events?after_seq=0&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "family",
+                  "value": "",
+                  "disabled": true,
+                  "description": "one of: artifact, claim, decomposition, leadership, mission, remediation, skeptic, task"
+                },
+                {
+                  "key": "after_seq",
+                  "value": "0",
+                  "disabled": false,
+                  "description": "return events with seq > this"
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Return structured control-plane events for a persisted mission."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Threads",
+      "item": [
+        {
+          "name": "POST Create Thread",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads"
+              ],
+              "query": []
+            },
+            "description": "Create Thread",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"CAC investigation\",\n  \"project_id\": null,\n  \"metadata\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) pm.collectionVariables.set(\"thread_id\", json.id);",
+                  "} catch (e) {}",
+                  "",
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET List Threads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "List Threads"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET List Threads Paginated",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/paginated?limit=50&include_deleted=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "paginated"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "include_deleted",
+                  "value": "false",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "List Threads Paginated"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Get Thread",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}"
+              ],
+              "query": []
+            },
+            "description": "Get Thread"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH Update Thread",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}"
+              ],
+              "query": []
+            },
+            "description": "Update Thread",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"CAC investigation (updated)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE Delete Thread",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}"
+              ],
+              "query": []
+            },
+            "description": "Delete Thread"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Archive Thread",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}/archive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}",
+                "archive"
+              ],
+              "query": []
+            },
+            "description": "Archive Thread"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Restore Thread",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}",
+                "restore"
+              ],
+              "query": []
+            },
+            "description": "Restore Thread"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET List Thread Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}/events?after_sequence=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "after_sequence",
+                  "value": "0",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "List Thread Events"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Stream Thread Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}/events/stream?after_sequence=0&heartbeat_seconds=15",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}",
+                "events",
+                "stream"
+              ],
+              "query": [
+                {
+                  "key": "after_sequence",
+                  "value": "0",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "heartbeat_seconds",
+                  "value": "15",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Stream Thread Events"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "GET List Messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}/messages?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "List Messages"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Submit Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}",
+                "messages"
+              ],
+              "query": []
+            },
+            "description": "Submit Message",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parts\": [\n    {\n      \"type\": \"TEXT\",\n      \"content\": \"Why has CAC increased over the last three days?\"\n    }\n  ],\n  \"scope\": {\n    \"timezone\": \"Asia/Kolkata\"\n  },\n  \"execution_mode\": \"production\",\n  \"attachment_ids\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json.run_id) pm.collectionVariables.set(\"run_id\", json.run_id);",
+                  "  if (json.mission_id) pm.collectionVariables.set(\"mission_id\", json.mission_id);",
+                  "  if (json.thread_id) pm.collectionVariables.set(\"thread_id\", json.thread_id);",
+                  "} catch (e) {}",
+                  "",
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET List Messages Paginated",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}/messages/paginated?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}",
+                "messages",
+                "paginated"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "List Messages Paginated"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Attachments",
+      "item": [
+        {
+          "name": "POST Initiate Attachment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}",
+                "attachments"
+              ],
+              "query": []
+            },
+            "description": "Initiate Attachment",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filename\": \"notes.txt\",\n  \"content_type\": \"text/plain\",\n  \"size_bytes\": 12\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const id = (json.attachment && json.attachment.id) || json.id || json.attachment_id;",
+                  "  if (id) pm.collectionVariables.set(\"attachment_id\", id);",
+                  "} catch (e) {}",
+                  "",
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET List Attachments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/threads/{{thread_id}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "threads",
+                "{{thread_id}}",
+                "attachments"
+              ],
+              "query": []
+            },
+            "description": "List Attachments"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT Upload Attachment Content",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/attachments/{{attachment_id}}/content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "attachments",
+                "{{attachment_id}}",
+                "content"
+              ],
+              "query": []
+            },
+            "description": "Upload Attachment Content",
+            "body": {
+              "mode": "raw",
+              "raw": "hello world\\n",
+              "options": {
+                "raw": {
+                  "language": "text"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Complete Presigned Upload",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/attachments/{{attachment_id}}/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "attachments",
+                "{{attachment_id}}",
+                "complete"
+              ],
+              "query": []
+            },
+            "description": "Complete Presigned Upload",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"checksum_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Get Attachment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/attachments/{{attachment_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "attachments",
+                "{{attachment_id}}"
+              ],
+              "query": []
+            },
+            "description": "Get Attachment"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE Delete Attachment",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/attachments/{{attachment_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "attachments",
+                "{{attachment_id}}"
+              ],
+              "query": []
+            },
+            "description": "Delete Attachment"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Download Attachment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/attachments/{{attachment_id}}/download",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "attachments",
+                "{{attachment_id}}",
+                "download"
+              ],
+              "query": []
+            },
+            "description": "Download Attachment"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Presigned Download",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/attachments/{{attachment_id}}/presigned-download",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "attachments",
+                "{{attachment_id}}",
+                "presigned-download"
+              ],
+              "query": []
+            },
+            "description": "Presigned Download"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Memories",
+      "item": [
+        {
+          "name": "GET List Memories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories?thread_id={{thread_id}}&include_inactive=false&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories"
+              ],
+              "query": [
+                {
+                  "key": "project_id",
+                  "value": "",
+                  "disabled": true,
+                  "description": ""
+                },
+                {
+                  "key": "thread_id",
+                  "value": "{{thread_id}}",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "include_inactive",
+                  "value": "false",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "List Memories"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Create Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories"
+              ],
+              "query": []
+            },
+            "description": "Create Memory",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"CAC is measured as paid media spend / new customers.\",\n  \"scope\": \"USER\",\n  \"type\": \"DEFINITION\",\n  \"confidence\": 1.0,\n  \"salience\": 0.7,\n  \"pinned\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) pm.collectionVariables.set(\"memory_id\", json.id);",
+                  "} catch (e) {}",
+                  "",
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Get Memory Preference",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/preference",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                "preference"
+              ],
+              "query": []
+            },
+            "description": "Get Memory Preference"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT Set Memory Preference",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/preference",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                "preference"
+              ],
+              "query": []
+            },
+            "description": "Set Memory Preference",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"opted_out\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Get Memory",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/{{memory_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                "{{memory_id}}"
+              ],
+              "query": []
+            },
+            "description": "Get Memory"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH Update Memory",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/{{memory_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                "{{memory_id}}"
+              ],
+              "query": []
+            },
+            "description": "Update Memory",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"CAC is paid media spend divided by new customers.\",\n  \"salience\": 0.8\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE Delete Memory",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/{{memory_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                "{{memory_id}}"
+              ],
+              "query": []
+            },
+            "description": "Delete Memory"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Pin Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/{{memory_id}}/pin?pinned=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                "{{memory_id}}",
+                "pin"
+              ],
+              "query": [
+                {
+                  "key": "pinned",
+                  "value": "true",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Pin Memory"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Confirm Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/{{memory_id}}/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                "{{memory_id}}",
+                "confirm"
+              ],
+              "query": []
+            },
+            "description": "Confirm Memory"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Move Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/{{memory_id}}/move",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                "{{memory_id}}",
+                "move"
+              ],
+              "query": []
+            },
+            "description": "Move Memory",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": \"THREAD\",\n  \"thread_id\": \"{{thread_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Archive Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/{{memory_id}}/archive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                "{{memory_id}}",
+                "archive"
+              ],
+              "query": []
+            },
+            "description": "Archive Memory"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET List Run Memories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/runs/{{run_id}}/memories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "runs",
+                "{{run_id}}",
+                "memories"
+              ],
+              "query": []
+            },
+            "description": "List Run Memories"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Runs",
+      "item": [
+        {
+          "name": "GET List Run Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/runs/{{run_id}}/events?after_sequence=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "runs",
+                "{{run_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "after_sequence",
+                  "value": "0",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "List Run Events"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Cancel Run",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/runs/{{run_id}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "runs",
+                "{{run_id}}",
+                "cancel"
+              ],
+              "query": []
+            },
+            "description": "Cancel Run"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Stream Run Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/runs/{{run_id}}/events/stream?after_sequence=0&heartbeat_seconds=15",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "runs",
+                "{{run_id}}",
+                "events",
+                "stream"
+              ],
+              "query": [
+                {
+                  "key": "after_sequence",
+                  "value": "0",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "heartbeat_seconds",
+                  "value": "15",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Stream Run Events"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "GET Search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/search?q=CAC&kinds=thread,message,memory,run&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "CAC",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "kinds",
+                  "value": "thread,message,memory,run",
+                  "disabled": false,
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Approvals",
+      "item": [
+        {
+          "name": "POST Create Approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/approvals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "approvals"
+              ],
+              "query": []
+            },
+            "description": "Create Approval",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action_type\": \"budget_reallocation\",\n  \"action_preview\": {\n    \"from\": \"Prospecting\",\n    \"to\": \"Retargeting\",\n    \"amount\": 5000\n  },\n  \"required_role\": \"admin\",\n  \"idempotency_key\": \"approval-demo-001\",\n  \"dry_run\": true,\n  \"expires_in_seconds\": 3600\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) pm.collectionVariables.set(\"approval_id\", json.id);",
+                  "} catch (e) {}",
+                  "",
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Get Approval",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/approvals/{{approval_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "approvals",
+                "{{approval_id}}"
+              ],
+              "query": []
+            },
+            "description": "Get Approval"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Decide Approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/approvals/{{approval_id}}/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "approvals",
+                "{{approval_id}}",
+                "decision"
+              ],
+              "query": []
+            },
+            "description": "Decide Approval",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"APPROVED\",\n  \"reason\": \"Looks reasonable for a dry-run preview\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "GET Run Diagnostics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/runs/{{run_id}}/diagnostics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "runs",
+                "{{run_id}}",
+                "diagnostics"
+              ],
+              "query": []
+            },
+            "description": "Run Diagnostics"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Backend Capabilities",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/capabilities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "capabilities"
+              ],
+              "query": []
+            },
+            "description": "Backend Capabilities"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Expire Approvals",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/approvals/expire",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "approvals",
+                "expire"
+              ],
+              "query": []
+            },
+            "description": "Expire Approvals"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Replay Metadata",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/runs/{{run_id}}/replay?dry_run=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "runs",
+                "{{run_id}}",
+                "replay"
+              ],
+              "query": [
+                {
+                  "key": "dry_run",
+                  "value": "true",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Replay Metadata"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Office",
+      "item": [
+        {
+          "name": "GET List Office Missions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/office/missions?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "office",
+                "missions"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false,
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Recent missions. Prefers the store's own listing (durable, multi-worker);\nfalls back to the in-process registry when the store cannot enumerate."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Office Snapshot",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/office/missions/{{mission_id}}/snapshot",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "office",
+                "missions",
+                "{{mission_id}}",
+                "snapshot"
+              ],
+              "query": []
+            },
+            "description": "Office Snapshot"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Office Stream",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/office/missions/{{mission_id}}/stream",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "office",
+                "missions",
+                "{{mission_id}}",
+                "stream"
+              ],
+              "query": []
+            },
+            "description": "Office Stream"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is successful or expected client error\", function () {",
+                  "  pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
