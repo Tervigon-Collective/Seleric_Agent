@@ -170,9 +170,10 @@ class EvidenceValidator:
 
 
 def _usage_limits(limits: ExecutionLimits) -> UsageLimits:
-    """Cap model round-trips so a lookup cannot wander through all 23 tools."""
+    """Bound one mission. Tool calls use the execution cap; model requests get
+    extra room for planning, retries, and the final answer."""
     tool_cap = max(1, limits.max_tool_calls)
-    return UsageLimits(request_limit=tool_cap + 2, tool_calls_limit=tool_cap)
+    return UsageLimits(request_limit=tool_cap + 32, tool_calls_limit=tool_cap)
 
 
 def _trunc(value: object, limit: int = 2000) -> object:

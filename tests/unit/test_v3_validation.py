@@ -180,7 +180,7 @@ def test_usage_limits_follow_tool_call_cap() -> None:
 
     limits = _usage_limits(ExecutionLimits(max_tool_calls=4))
     assert limits.tool_calls_limit == 4
-    assert limits.request_limit == 6
+    assert limits.request_limit == 36
 
 
 def test_validate_passes_causal_artifact_with_valid_classification() -> None:

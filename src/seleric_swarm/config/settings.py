@@ -144,9 +144,11 @@ class Settings(BaseSettings):
     a2a_transport: Literal["inprocess", "http", "hybrid"] = "inprocess"
     a2a_timeout_s: float = 30.0
 
-    mission_timeout_s: float = 120.0
+    mission_timeout_s: float = 600.0
     max_llm_calls: int = 6
-    max_tool_calls: int = 12
+    # Ceiling for the V3 loop. Per-intent budgets in agent/runner.py sit under
+    # this; unknown intent uses the ceiling itself.
+    max_tool_calls: int = 160
     # PydanticAI per-run retries for the V3 agent (tool ModelRetry / output
     # validation recovery). See ExecutionLimits.agent_retries.
     agent_retries: int = 2

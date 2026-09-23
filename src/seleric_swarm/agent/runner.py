@@ -96,20 +96,19 @@ _PLAN_INTENTS = frozenset(
     {"diagnostic", "causal_investigation", "simulation", "forecast", "comparison"}
 )
 
-# Per-intent tool-call ceilings — a tight budget stops a simple lookup from
-# wandering through all the tools. Unknown intent (Jev down) keeps the
-# configured ceiling, never tightening on missing signal.
-# lookup=6: the fast tier (gpt-5-mini) resolves a metric in more steps than the
-# strong model, so it needs search→resolve→query→synthesis headroom, not 4.
+# Per-intent tool-call ceilings. These sit under Settings.max_tool_calls.
+# Unknown intent (Jev down) keeps the configured ceiling, never tightening
+# on missing signal. Headroom is large on purpose: a lookup still does
+# search→resolve→query→synthesis, and a diagnostic/causal run fans out.
 _TOOL_BUDGET_BY_INTENT: dict[str, int] = {
-    "lookup": 12,
-    "aggregation": 12,
-    "trend": 12,
-    "comparison": 12,
-    "diagnostic": 20,
-    "forecast": 20,
-    "simulation": 20,
-    "causal_investigation": 20,
+    "lookup": 64,
+    "aggregation": 64,
+    "trend": 64,
+    "comparison": 80,
+    "diagnostic": 128,
+    "forecast": 128,
+    "simulation": 128,
+    "causal_investigation": 128,
 }
 
 # Simple, read-only intents cheap enough for the fast model tier.
@@ -469,7 +468,7 @@ async def run_v3_mission(
         timeout=float(getattr(runtime.settings, "jev_timeout_s", 1.0)),
     )
     intent = classification.intent
-    ceiling = int(getattr(runtime.settings, "max_tool_calls", 8))
+    ceiling = int(getattr(runtime.settings, "max_tool_calls", 160))
     deps = SelericDeps(
         mission_id=mission_id,
         as_of=as_of_dt,
@@ -482,7 +481,7 @@ async def run_v3_mission(
         artifact_store=get_v3_artifact_store(),
         limits=ExecutionLimits(
             max_tool_calls=_tool_budget(intent, ceiling),
-            max_runtime_seconds=float(getattr(runtime.settings, "mission_timeout_s", 120.0)),
+            max_runtime_seconds=float(getattr(runtime.settings, "mission_timeout_s", 600.0)),
             agent_retries=int(getattr(runtime.settings, "agent_retries", 2)),
         ),
         catalogue=catalogue,
