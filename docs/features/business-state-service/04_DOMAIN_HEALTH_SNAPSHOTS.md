@@ -35,7 +35,7 @@ that `ls`-ing JSON files can't answer) — not a hard blocker for the Sprint 3
 vertical slice.
 
 This is **not** a new metrics engine. It is a consumer of
-[`BusinessStateService`](02_SELERIC_AGENT_INTEGRATION.md) (`MetricState`,
+[`BusinessStateService`](README.md#v3-integration) (`MetricState`,
 freshness, quality flags) plus a thin **resolution layer** that turns N
 `MetricState`s into one `DomainStateSnapshot` per domain, on a schedule.
 

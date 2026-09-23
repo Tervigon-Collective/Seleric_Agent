@@ -17,7 +17,6 @@ Code lives at `src/seleric_swarm/services/business_state/`.
 | Doc | Purpose |
 |---|---|
 | [01_ARCHITECTURE.md](01_ARCHITECTURE.md) | Role, bounded context, internal shape, APIs, data ownership (from Voice Node BSS, adapted) |
-| [02_SELERIC_AGENT_INTEGRATION.md](02_SELERIC_AGENT_INTEGRATION.md) | How to plug into the swarm without Voice Node complexity |
 | [03_DEFINITIONS_TO_MAKE_FUNCTIONAL.md](03_DEFINITIONS_TO_MAKE_FUNCTIONAL.md) | Contracts, profiles, series rules, wiring, and checklist before code |
 | [04_DOMAIN_HEALTH_SNAPSHOTS.md](04_DOMAIN_HEALTH_SNAPSHOTS.md) | Per-domain health metrics, cron-resolved snapshots (JSON files for now, Postgres JSONB later), overview-query answer path |
 | [05_SPRINT_PLAN.md](05_SPRINT_PLAN.md) | Phased implementation plan, Sprint 0 → 6 |
@@ -25,19 +24,22 @@ Code lives at `src/seleric_swarm/services/business_state/`.
 
 ## Diagrams
 
-The repo-root architecture diagrams (`diagrams/*.mmd`) reflect this design:
+`diagrams/final_architecture.mmd`, `leadership_handoff.mmd`, and
+`mission_lifecycle.mmd` (swarm_v2-era diagrams this section used to
+reference) were removed in the V3 cleanup — see `diagrams/new.mmd` for the
+current target architecture and `diagrams/evidence_flow.mmd` (still
+current) for the `Business State` / `Evidence Map` path alongside the raw
+MCP → Normalizer path.
 
-- `final_architecture.mmd` — `Business State Service` + `Provider Config`
-  nodes in the Compute Plane; `DOMAIN HEALTH SNAPSHOT` subgraph (cron →
-  resolver → JSON file for now, Postgres JSONB later) feeding the
-  overview-query path.
-- `evidence_flow.mmd` — `Business State` / `Evidence Map` path alongside the
-  raw MCP → Normalizer path.
-- `leadership_handoff.mmd` — Observer's `get_metric_state` call shown in the
-  example investigation sequence.
-- `mission_lifecycle.mmd` — overview-shaped queries branch to a
-  `DomainStateSnapshot` read instead of the full Observe→...→Skeptic
-  lifecycle; Observe/Anomaly/Prediction each consult Business State.
+## V3 integration
+
+`02_SELERIC_AGENT_INTEGRATION.md` (wired to the retired swarm_v2 coordinator/
+domain/specialist structure) was removed. The real integration today: the
+V3 agent's `toolsets/analytics.py` calls into
+`services/business_state/detectors.py` (e.g. `RobustZScoreDetector`) for
+anomaly detection, consuming `MetricReading`/`AnomalyFinding` types from
+`swarm/providers/base.py`. See `docs/CURRENT_ARCHITECTURE.md`'s agent-loop
+section for how toolsets are wired onto the agent.
 
 ## One-liner
 

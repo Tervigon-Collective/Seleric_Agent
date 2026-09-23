@@ -1,6 +1,6 @@
 # 01 — Business State architecture
 
-Grounded in the Seleric Voice Node V1 blueprint, adapted for reuse as concepts. In `Seleric_Agent`, this is an **in-process module**, not a standalone microservice (see [02_SELERIC_AGENT_INTEGRATION.md](02_SELERIC_AGENT_INTEGRATION.md)).
+Grounded in the Seleric Voice Node V1 blueprint, adapted for reuse as concepts. In `Seleric_Agent`, this is an **in-process module**, not a standalone microservice (see [README.md](README.md#v3-integration)).
 
 ## 1. Role in the system
 

@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 
@@ -35,6 +35,7 @@ from seleric_swarm.toolsets import (
     experiments,
     knowledge,
     models,
+    sandbox,
     semantic,
 )
 
@@ -49,6 +50,7 @@ from seleric_swarm.toolsets import (
 TOOLS: list[Any] = [
     semantic.search_semantics,
     semantic.get_metric_definition,
+    semantic.get_metric_definitions,
     semantic.query_metrics,
     semantic.drilldown,
     analytics.compare_periods,
@@ -57,6 +59,7 @@ TOOLS: list[Any] = [
     analytics.segment_decomposition,
     analytics.funnel_decomposition,
     analytics.cohort_analysis,
+    sandbox.run_python,
     causal.estimate_effect,
     causal.refute_estimate,
     models.forecast,
@@ -71,6 +74,22 @@ TOOLS: list[Any] = [
     experiments.estimate_sample_size,
     experiments.evaluate_experiment,
 ]
+
+
+def capability_manifest() -> str:
+    """One line per registered tool (name + first docstring line).
+
+    Derived from the ``TOOLS`` list so a newly-registered tool shows up here
+    automatically — the model gets an at-a-glance capability map to plan
+    against instead of discovering tools one schema at a time.
+    """
+    lines = ["Tools available to you (call by name):"]
+    for fn in TOOLS:
+        name = getattr(fn, "__name__", str(fn))
+        doc = (getattr(fn, "__doc__", "") or "").strip()
+        summary = doc.splitlines()[0].strip() if doc else ""
+        lines.append(f"- {name}: {summary}")
+    return "\n".join(lines)
 
 
 def _stub_test_model() -> TestModel:
@@ -100,11 +119,21 @@ def _stub_test_model() -> TestModel:
 
 def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDeps, MissionResult]:
     """Construct the agent with every implemented toolset registered."""
-    return Agent(
+    agent = Agent(
         model=model or _stub_test_model(),
         deps_type=SelericDeps,
         output_type=MissionResult,
-        instructions=INSTRUCTIONS,
+        instructions=INSTRUCTIONS + "\n\n" + capability_manifest(),
         name="seleric_agent",
         tools=TOOLS,
     )
+
+    @agent.instructions
+    def _working_memory(ctx: RunContext[SelericDeps]) -> str:
+        # Zero-latency scratchpad read: the ledger rides the system prompt sent
+        # each turn — no tool call, no round-trip. Null-safe for the deps=None
+        # stub path (test_v3_agent_wiring's zero-tool run).
+        pad = getattr(ctx.deps, "scratchpad", None)
+        return pad.render() if pad is not None else ""
+
+    return agent

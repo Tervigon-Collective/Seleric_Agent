@@ -28,6 +28,7 @@ from __future__ import annotations
 from pydantic_ai import RunContext
 
 from seleric_swarm.agent.dependencies import SelericDeps
+from seleric_swarm.agent.intent import judge_relevance
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import ArtifactProvenance
 from seleric_swarm.knowledge.corpus import corpus_dir, load_corpus
@@ -87,10 +88,26 @@ async def search_knowledge(ctx: RunContext[SelericDeps], query: str) -> ToolResu
         f"{index}. {hit.document.citation()}\n   {hit.snippet()}"
         for index, hit in enumerate(hits, start=1)
     ]
+    # #5: a relevance second opinion on the top lexical hit — keyword ranking
+    # can surface a document that merely shares words. Fail-open; one Jev call,
+    # top hit only. ponytail: top-1 only, judge more hits if false positives matter.
+    relevant = await judge_relevance(
+        query,
+        hits[0].snippet(),
+        base_url=ctx.deps.jev.base_url,
+        api_key=ctx.deps.jev.api_key,
+        timeout=ctx.deps.jev.timeout,
+    )
+    warnings = (
+        ["top result may be a keyword match rather than an on-topic answer"]
+        if relevant is False
+        else []
+    )
     return ToolResult(
         success=True,
         # No artifact_ids: a document is not evidence for a numeric claim.
         summary=f"{len(hits)} document(s) matching {query!r}:\n" + "\n".join(lines),
+        warnings=warnings,
         provenance=ArtifactProvenance(
             calculation_version=_CALCULATION_VERSION,
             source_metadata={

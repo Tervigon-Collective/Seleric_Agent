@@ -1,5 +1,11 @@
 # Bug Sheet
 
+> **Archived — swarm_v2-era historical incident record.** The entries below
+> reference `lookup_v1`/`swarm_v2` code paths deleted during the V3 cleanup
+> (see `docs/CURRENT_ARCHITECTURE.md` for the current system). Kept as-is for
+> incident-history value, not maintained going forward — new bugs should be
+> tracked separately, not appended here.
+
 Bugs found during the Meta/Google/Shopify scope-trim, phased intelligence-agent
 rollout (Part B), lookup_v1 retirement, and subsequent production UAT
 (2026-09-16). Status reflects the state at time of writing, not necessarily

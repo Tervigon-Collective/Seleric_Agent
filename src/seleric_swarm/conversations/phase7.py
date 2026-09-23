@@ -25,9 +25,15 @@ VectorSearchHook = Callable[[str, str, str, int], Iterable[SearchResult]]
 QueryEmbeddingHook = Callable[[str], list[float]]
 
 
-def build_query_embedder(settings: Any) -> QueryEmbeddingHook | None:
-    """Build a synchronous embedding hook only when fully configured."""
-    model = str(getattr(settings, "search_embedding_model", "") or "").strip()
+def build_query_embedder(settings: Any, *, model_override: str | None = None) -> QueryEmbeddingHook | None:
+    """Build a synchronous embedding hook only when fully configured.
+
+    ``model_override`` lets a second embedding consumer (e.g. the catalogue
+    index) reuse this same Azure/OpenAI client-construction logic with its
+    own model id instead of ``settings.search_embedding_model`` — one client
+    factory, multiple embedding models/collections.
+    """
+    model = (model_override or str(getattr(settings, "search_embedding_model", "") or "")).strip()
     endpoint = str(getattr(settings, "azure_openai_endpoint", "") or "").strip().rstrip("/")
     api_key = str(getattr(settings, "azure_openai_api_key", "") or "").strip()
     if not (model and endpoint and api_key):

@@ -6,11 +6,14 @@ models), one instance per mission run, immutable for the run's lifetime.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
+from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
+from seleric_swarm.state.cache import MissionQueryCache
+from seleric_swarm.state.scratchpad import Scratchpad
 
 if TYPE_CHECKING:
     from seleric_swarm.state.artifacts import ArtifactStore
@@ -47,14 +50,29 @@ class ExecutionLimits:
     single-agent loop.
     """
 
-    max_tool_calls: int = 8
-    max_cube_queries: int = 6
-    max_causal_queries: int = 3
-    max_prediction_calls: int = 3
+    max_tool_calls: int = 160
+    max_cube_queries: int = 100
+    max_causal_queries: int = 40
+    max_prediction_calls: int = 40
     # Confirmed = 1 with A1 acceptance (2026-09-18). Causal widening uses
     # estimate_effect(search_breadth=...), not this counter.
     max_validation_revisions: int = 1
-    max_runtime_seconds: float = 120.0
+    max_runtime_seconds: float = 600.0
+    # PydanticAI per-run retries — how many times the model may recover from a
+    # tool ModelRetry (e.g. an unknown metric id) or an output-validation
+    # error within one mission before the run fails.
+    agent_retries: int = 2
+
+
+@dataclass(frozen=True)
+class JevConfig:
+    """Jev (openjev) endpoint for in-tool typed decisions (action risk #4,
+    knowledge relevance #5). Empty base_url/api_key ⇒ every Jev call fails open
+    to a no-op, so the tools behave exactly as before when Jev is unconfigured."""
+
+    base_url: str = ""
+    api_key: str = ""
+    timeout: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -69,3 +87,20 @@ class SelericDeps:
     mcp_client: SelericMcpClient
     artifact_store: ArtifactStore
     limits: ExecutionLimits
+    # Dedupes identical seleric-mcp fetches within this mission run (state/cache.py).
+    # One instance per SelericDeps — never shared across missions.
+    query_cache: MissionQueryCache[str, dict[str, Any]] = field(default_factory=MissionQueryCache)
+    # Per-mission mutable tool-call tallies (e.g. how many times search_semantics
+    # ran) so a tool can break a paraphrase-search loop the exact-arg query_cache
+    # can't see. One dict per SelericDeps — never shared across missions.
+    call_counts: dict[str, int] = field(default_factory=dict)
+    # Per-run working memory — an auto-maintained ledger of established facts
+    # (values a successful query_metrics returned) rendered back into the prompt
+    # each turn so the model stops re-fetching the same thing. Not evidence
+    # (rule 6). One instance per SelericDeps — never shared across missions.
+    scratchpad: Scratchpad = field(default_factory=Scratchpad)
+    # Whole live catalogue snapshot, warmed once per mission from
+    # CatalogueBootstrap. The agent resolves metric ids against this full list
+    # instead of a Qdrant top-k guess; Cube still validates the chosen id.
+    catalogue: CatalogueSnapshot = field(default_factory=CatalogueSnapshot)
+    jev: JevConfig = field(default_factory=JevConfig)

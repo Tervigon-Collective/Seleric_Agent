@@ -194,7 +194,6 @@ def check_readiness(runtime: SwarmRuntime, *, timeout_s: float | None = None) ->
         "status": "ready" if ready else "not_ready",
         "ready": ready,
         "app_env": runtime.settings.app_env,
-        "swarm_workflow": getattr(runtime.settings, "swarm_workflow", None),
         "checks": checks,
     }
 

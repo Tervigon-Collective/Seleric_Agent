@@ -67,7 +67,6 @@ from seleric_swarm.conversations.contracts import (
 from seleric_swarm.conversations.events import ActivityEventSink, InMemoryEventNotifier
 from seleric_swarm.conversations.privacy import event_for_principal
 from seleric_swarm.conversations.repositories import ConversationRepositories
-from seleric_swarm.coordinator.observability.events import observe_mission_events
 from seleric_swarm.recovery import (
     InProcessRunQueue,
     RunExecutionResult,
@@ -94,7 +93,7 @@ class SubmitMessageRequest(BaseModel):
     parts: list[MessagePart] = Field(min_length=1)
     parent_message_id: str | None = None
     scope: dict[str, Any] = Field(default_factory=dict)
-    execution_mode: str = "production"
+    execution_mode: str = "development"
     attachment_ids: list[str] = Field(default_factory=list)
 
 
@@ -1190,37 +1189,23 @@ async def _execute_submission(
         started_at=running.started_at,
     )
 
-    def persist_incremental_event(event: dict[str, Any]) -> None:
-        sink.ingest_mission_events(
-            running,
-            [event],
-            attempt_id=attempt.id,
-            exclude_event_types={
-                "run.started",
-                "run.completed",
-                "run.failed",
-                "run.cancelled",
-            },
-        )
-
-    with observe_mission_events(persist_incremental_event):
-        await run_mission_job(
-            runtime,
-            mission_id=run.mission_id or "",
-            query=query,
-            timezone=timezone,
-            as_of=as_of,
-            session_id=run.thread_id,
-            request_id=request_id,
-            full_diagnostic=full_diagnostic,
-            full_prediction=full_prediction,
-            full_skeptic=full_skeptic,
-            full_strategy=full_strategy,
-            execution_mode=execution_mode,
-            context_bundle=run.metadata.get("context_bundle")
-            if isinstance(run.metadata.get("context_bundle"), dict)
-            else None,
-        )
+    await run_mission_job(
+        runtime,
+        mission_id=run.mission_id or "",
+        query=query,
+        timezone=timezone,
+        as_of=as_of,
+        session_id=run.thread_id,
+        request_id=request_id,
+        full_diagnostic=full_diagnostic,
+        full_prediction=full_prediction,
+        full_skeptic=full_skeptic,
+        full_strategy=full_strategy,
+        execution_mode=execution_mode,
+        context_bundle=run.metadata.get("context_bundle")
+        if isinstance(run.metadata.get("context_bundle"), dict)
+        else None,
+    )
     raw = getattr(runtime.store, "get_raw", lambda _mission_id: None)(run.mission_id)
     raw = raw if isinstance(raw, dict) else {}
     context_bundle = run.metadata.get("context_bundle")
@@ -1519,7 +1504,7 @@ class SubmissionRunExecutor:
                 else None
             ),
             request_id=str(submission.get("request_id") or run.id),
-            execution_mode=str(submission.get("execution_mode") or "production"),
+            execution_mode=str(submission.get("execution_mode") or "development"),
             assistant_message_id=assistant_message_id,
             full_diagnostic=bool(submission.get("full_diagnostic", True)),
             full_prediction=bool(submission.get("full_prediction", True)),
@@ -1575,7 +1560,7 @@ async def submit_message(
     thread = _owned_thread(repositories, principal, thread_id)
     if thread.status is not ThreadStatus.ACTIVE:
         raise HTTPException(status_code=409, detail="thread is not active")
-    if body.execution_mode not in {"staging", "production"}:
+    if body.execution_mode != "development":
         raise HTTPException(status_code=400, detail="invalid execution_mode")
     if body.parent_message_id is not None:
         parent = repositories.messages.get(

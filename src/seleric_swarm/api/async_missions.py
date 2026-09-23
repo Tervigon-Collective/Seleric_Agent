@@ -213,6 +213,19 @@ async def enqueue_durable_mission(
             }
         }
     )
+    # runs.mission_id has a FK into missions(mission_id) — the placeholder row
+    # must exist before the run is inserted, or the insert violates the FK.
+    accepted = seed_running_mission(
+        runtime,
+        mission_id=mission_id,
+        query=query,
+        request_id=request_id,
+        session_id=session_id,
+        workspace_id=workspace_id,
+        owner_user_id=owner_user_id,
+        thread_id=thread.id,
+        run_id=run.id,
+    )
     with repositories.transaction() as writes:
         writes.threads.create(thread)
         writes.runs.create(run)
@@ -226,17 +239,6 @@ async def enqueue_durable_mission(
         writes.messages.create(user_message)
         writes.messages.create(assistant_message)
         writes.runs.add_outbox(run.id)
-    accepted = seed_running_mission(
-        runtime,
-        mission_id=mission_id,
-        query=query,
-        request_id=request_id,
-        session_id=session_id,
-        workspace_id=workspace_id,
-        owner_user_id=owner_user_id,
-        thread_id=thread.id,
-        run_id=run.id,
-    )
     if schedule:
         await publish_durable_mission(runtime, run.id)
     return accepted

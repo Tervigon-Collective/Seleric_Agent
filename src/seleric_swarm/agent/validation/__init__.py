@@ -41,6 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
@@ -169,32 +170,68 @@ class EvidenceValidator:
 
 
 def _usage_limits(limits: ExecutionLimits) -> UsageLimits:
-    """Cap model round-trips so a lookup cannot wander through all 23 tools."""
+    """Bound one mission. Tool calls use the execution cap; model requests get
+    extra room for planning, retries, and the final answer."""
     tool_cap = max(1, limits.max_tool_calls)
-    return UsageLimits(request_limit=tool_cap + 2, tool_calls_limit=tool_cap)
+    return UsageLimits(request_limit=tool_cap + 32, tool_calls_limit=tool_cap)
+
+
+def _trunc(value: object, limit: int = 2000) -> object:
+    """Keep step payloads debuggable but bounded; leave small dicts as-is."""
+    if isinstance(value, str):
+        return value if len(value) <= limit else value[:limit] + "…[truncated]"
+    text = str(value)
+    return value if len(text) <= limit else text[:limit] + "…[truncated]"
+
+
+def _summarize_steps(messages: list) -> list[dict]:
+    """Compact per-step trace from PydanticAI message history: every tool call
+    (with args), tool return, retry, and model text — the minute-level record
+    for debugging (e.g. which calls blew the tool-call budget)."""
+    steps: list[dict] = []
+    for msg in messages:
+        for part in getattr(msg, "parts", []):
+            kind = getattr(part, "part_kind", "")
+            if kind == "tool-call":
+                steps.append({"kind": "tool_call", "tool": part.tool_name, "args": _trunc(part.args)})
+            elif kind == "tool-return":
+                steps.append({"kind": "tool_return", "tool": part.tool_name, "result": _trunc(part.content)})
+            elif kind == "retry-prompt":
+                steps.append({"kind": "retry", "tool": getattr(part, "tool_name", None), "error": _trunc(part.content)})
+            elif kind == "thinking":
+                steps.append({"kind": "thinking", "text": _trunc(part.content)})
+            elif kind == "text" and str(part.content).strip():
+                steps.append({"kind": "model_text", "text": _trunc(part.content)})
+    for i, step in enumerate(steps, 1):
+        step["seq"] = i
+    return steps
 
 
 async def _run_agent(agent: Agent[SelericDeps, MissionResult], deps: SelericDeps, query: str) -> MissionResult:
-    try:
-        return (
-            await agent.run(
-                query,
-                deps=deps,
-                usage_limits=_usage_limits(deps.limits),
-                retries=0,
+    # capture_run_messages populates `messages` even when the run raises
+    # UsageLimitExceeded — the failing-budget case we most need to debug.
+    with capture_run_messages() as messages:
+        try:
+            result = (
+                await agent.run(
+                    query,
+                    deps=deps,
+                    usage_limits=_usage_limits(deps.limits),
+                    retries=max(1, deps.limits.agent_retries),
+                )
+            ).output
+            return result.model_copy(update={"trace": {**result.trace, "steps": _summarize_steps(messages)}})
+        except UsageLimitExceeded:
+            return MissionResult(
+                mission_id=deps.mission_id,
+                status="failed",
+                query=query,
+                as_of=deps.as_of,
+                final_response="This question took too many steps. Please retry with a more specific metric name.",
+                error_code="EXECUTION_LIMIT_EXCEEDED",
+                limitations=["EXECUTION_LIMIT_EXCEEDED"],
+                trace={"steps": _summarize_steps(messages)},
             )
-        ).output
-    except UsageLimitExceeded:
-        return MissionResult(
-            mission_id=deps.mission_id,
-            status="failed",
-            query=query,
-            as_of=deps.as_of,
-            final_response="This question took too many steps. Please retry with a more specific metric name.",
-            error_code="EXECUTION_LIMIT_EXCEEDED",
-            limitations=["EXECUTION_LIMIT_EXCEEDED"],
-            trace={},
-        )
 
 
 async def run_validated_mission(

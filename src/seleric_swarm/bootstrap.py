@@ -27,7 +27,6 @@ from seleric_swarm.observability.tracing import (
 )
 from seleric_swarm.paths import repo_root
 from seleric_swarm.persistence.postgres import build_store
-from seleric_swarm.prompts.registry import PromptRegistry
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.business_state import BusinessStateService
@@ -129,7 +128,6 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     runtime = SwarmRuntime(
         settings=settings,
         llm=MeteredLLMPort(build_llm(settings)),
-        prompts=PromptRegistry(settings.prompts_dir, settings.prompt_versions_path),
         mcp=mcp,
         metrics=metrics,
         store=build_store(

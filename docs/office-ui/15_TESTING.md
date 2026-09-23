@@ -1,5 +1,12 @@
 # Testing
 
+> Test descriptions below reference swarm_v2 event vocabulary (leadership
+> transfer, Skeptic REVISE, `mission_lead`) from when this doc was written —
+> kept for the still-accurate front-end/backend test *structure* (files,
+> counts, commands). The fixtures themselves will need updating once
+> `api/office/gateway.py` emits V3's event vocabulary instead. See
+> `docs/CURRENT_ARCHITECTURE.md`.
+
 ## Front-end (`cd office-ui && npm test`) — 20 tests, Vitest + jsdom
 
 | File | Covers |

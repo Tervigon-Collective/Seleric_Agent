@@ -19,19 +19,19 @@ mission event.
 
 ## Documents
 
-1. [`01_PRODUCT_CONCEPT.md`](01_PRODUCT_CONCEPT.md) — the idea and non-goals.
-2. [`02_REFERENCE_ARCHITECTURE.md`](02_REFERENCE_ARCHITECTURE.md) — how the pieces fit; influences.
-3. [`03_OFFICE_LAYOUT.md`](03_OFFICE_LAYOUT.md) — zones, desks, spatial rules.
-4. [`04_AGENT_STATES.md`](04_AGENT_STATES.md) — the office state machine.
-5. [`05_EVENT_PROTOCOL.md`](05_EVENT_PROTOCOL.md) — `SwarmUIEvent`, `OfficeSnapshot`, kind mapping.
-6. [`06_REALTIME_ARCHITECTURE.md`](06_REALTIME_ARCHITECTURE.md) — snapshot + stream, reconnection, dedupe.
-7. [`08_LEADERSHIP_VISUALIZATION.md`](08_LEADERSHIP_VISUALIZATION.md) — dynamic leadership + handoffs.
-8. [`09_DIAGNOSTIC_VISUALIZATION.md`](09_DIAGNOSTIC_VISUALIZATION.md) — hypotheses / causal frontier.
-9. [`10_SKEPTIC_VISUALIZATION.md`](10_SKEPTIC_VISUALIZATION.md) — REVISE → remediation loop.
-10. [`11_MISSION_LIFECYCLE.md`](11_MISSION_LIFECYCLE.md) — the primary user journey.
-11. [`12_DEMO_MODE.md`](12_DEMO_MODE.md) — the scripted CAC fixture.
-12. [`15_TESTING.md`](15_TESTING.md) — what is covered and how to run it.
-13. [`16_PRODUCTION_READINESS.md`](16_PRODUCTION_READINESS.md) — security, gaps, next steps.
+> The swarm-roster-specific docs that used to live here (product concept,
+> reference architecture, office layout, agent states, event protocol,
+> leadership/diagnostic/skeptic visualizations, mission lifecycle walkthrough,
+> demo mode) described the retired swarm_v2 agent roster and were removed
+> during the V3 cleanup. See `docs/CURRENT_ARCHITECTURE.md` for the current
+> system; the event vocabulary this UI renders will need updating for
+> whatever V3's `api/office/gateway.py` actually emits.
+
+1. [`06_REALTIME_ARCHITECTURE.md`](06_REALTIME_ARCHITECTURE.md) — snapshot + stream, reconnection, dedupe.
+2. [`13_PERFORMANCE.md`](13_PERFORMANCE.md) — canvas rendering / perf notes.
+3. [`14_ACCESSIBILITY.md`](14_ACCESSIBILITY.md) — status-encoding, reduced-motion, keyboard rules.
+4. [`15_TESTING.md`](15_TESTING.md) — what is covered and how to run it.
+5. [`16_PRODUCTION_READINESS.md`](16_PRODUCTION_READINESS.md) — security, gaps, next steps.
 
 ## Run it
 

@@ -165,6 +165,13 @@ def configure_opentelemetry(settings: Settings) -> bool:
                     OTLPSpanExporter(endpoint=endpoint, headers=_headers(headers))
                 ))
         trace.set_tracer_provider(provider)
+        # Emit PydanticAI agent/LLM/tool spans to the provider above (deep trace).
+        try:
+            from pydantic_ai import Agent
+
+            Agent.instrument_all()
+        except Exception:  # pydantic-ai optional at import time; never block OTel
+            pass
         _otel_configured = True
     except Exception:
         logging.getLogger("seleric.observability").warning(
@@ -252,52 +259,6 @@ def mission_metadata(
     if extra:
         payload.update(extra)
     return redact_mapping(payload)
-
-
-def coordinator_task_metadata(
-    *,
-    request_id: str,
-    session_id: str,
-    mission_id: str,
-    workflow_name: str = "swarm_v2",
-    workflow_version: str = "1.4.0",
-    agent_name: str,
-    agent_version: str = "1.4.0",
-    task_id: str | None = None,
-    subquestion_id: str | None = None,
-    active_specialist: str | None = None,
-    mission_lead: str | None = None,
-    remediation_round: int | None = None,
-    decomposition_id: str | None = None,
-    decomposition_version: int | None = None,
-    leadership_epoch: int | None = None,
-    synthetic: bool | None = None,
-    extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Build LangSmith metadata for a swarm_v2 task / specialist activation span."""
-    payload = mission_metadata(
-        request_id=request_id,
-        session_id=session_id,
-        mission_id=mission_id,
-        workflow_name=workflow_name,
-        workflow_version=workflow_version,
-        agent_name=agent_name,
-        agent_version=agent_version,
-        extra={
-            "task_id": task_id,
-            "subquestion_id": subquestion_id,
-            "active_specialist": active_specialist or agent_name,
-            "mission_lead": mission_lead,
-            "remediation_round": remediation_round,
-            "decomposition_id": decomposition_id,
-            "decomposition_version": decomposition_version,
-            "leadership_epoch": leadership_epoch,
-            "synthetic": synthetic,
-            **(extra or {}),
-        },
-    )
-    # Drop Nones so LangSmith metadata stays compact
-    return {k: v for k, v in payload.items() if v is not None}
 
 
 def missing_required_metadata(

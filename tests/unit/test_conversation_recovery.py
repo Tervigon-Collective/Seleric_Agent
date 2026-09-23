@@ -64,7 +64,7 @@ def _submission_runtime():
                     "query": "Why did churn increase?",
                     "timezone": "UTC",
                     "request_id": "request-recovery",
-                    "execution_mode": "production",
+                    "execution_mode": "development",
                     "assistant_message_id": assistant.id,
                 }
             },

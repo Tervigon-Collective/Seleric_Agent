@@ -31,14 +31,12 @@ def main() -> None:
     if not host or not port:
         raise SystemExit("API_HOST and API_PORT must be set in the environment (or .env)")
 
-    uvicorn.run(
-        "seleric_swarm.main:app",
-        host=host,
-        port=port,
-        reload=settings.is_dev_surface(),
-        reload_dirs=[str(ROOT / "src"), str(ROOT / "config"), str(ROOT / "prompts")],
-        reload_includes=[".env"],
-    )
+    # --reload is disabled: on this Windows + heavy-import (dowhy/statsmodels/
+    # pydantic-ai) setup, WatchFiles logs "Reloading..." but the worker never
+    # actually restarts -- it keeps serving stale code indefinitely and leaks
+    # a zombie process per attempted reload. Restart this script manually
+    # after code changes instead.
+    uvicorn.run("seleric_swarm.main:app", host=host, port=port, reload=False)
 
 
 if __name__ == "__main__":

@@ -77,10 +77,25 @@ class Settings(BaseSettings):
     # azure_openai_models is unset): model1 is primary, model2 is fallback.
     azure_openai_model1: str = ""
     azure_openai_model2: str = ""
+    # Optional faster/cheaper deployment used for simple read-only intents
+    # (lookup/aggregation/trend) — see resolve_v3_model(prefer_fast=...). Must
+    # be deployed on AZURE_OPENAI_ENDPOINT. Empty (default) = model tiering off,
+    # every mission uses the normal model chain.
+    azure_openai_fast_model: str = ""
     azure_openai_api_version: str = "2024-05-01-preview"
     # "openai_compatible" -> Azure AI Inference; "azure" -> classic Azure OpenAI.
     azure_auth_style: Literal["openai_compatible", "azure"] = "openai_compatible"
     azure_key_vault_url: str | None = None
+
+    # Optional second Azure resource (distinct endpoint + key + quota), tried
+    # after every model on the primary resource is exhausted. Unlike
+    # AZURE_OPENAI_MODELS (multiple deployments on one resource, sharing one
+    # quota), this survives an endpoint-level rate limit. Same auth style as
+    # the primary resource. Empty (default) = no second resource, unchanged
+    # single-resource fallback behavior.
+    azure_openai_endpoint_2: str = ""
+    azure_openai_api_key_2: str = ""
+    azure_openai_models_2: str = ""
 
     langsmith_tracing: bool = False
     langsmith_api_key: str = ""
@@ -102,9 +117,25 @@ class Settings(BaseSettings):
     mcp_config_path: str = "config/mcp_servers.yaml"
     seleric_mcp_url: str = ""
     seleric_mcp_token: str = ""
+    # Catalogue LTM (long-term, cross-mission) semantic index — replaces the
+    # remote catalogue_search_metrics/catalogue_resolve_term round trips in
+    # toolsets/semantic.py::search_semantics with a local Qdrant search kept
+    # in sync via scripts/sync_catalogue_to_qdrant.py. Deliberately a
+    # separate embedding model from search_embedding_model (conversation
+    # search) — different vector space, different purpose.
+    qdrant_url: str = Field(default="", validation_alias=AliasChoices("qdrant_url", "QDRANT_URL", "QDRANT_ENDPOINT"))
+    qdrant_api_key: str = ""
+    qdrant_collection: str = "seleric_catalogue"
+    qdrant_embedding_model: str = "text-embedding-3-small"
+    # When True, render the whole live catalogue (~8.6k tokens) into every
+    # mission prompt. Default False: the agent resolves via search_semantics
+    # (glossary-backed) + get_metric_definitions instead of paying the dump on
+    # every model turn. Flip on to revert to the in-prompt catalogue.
+    catalogue_in_prompt: bool = False
+    jev_base_url: str = ""
+    jev_api_key: str = ""
+    jev_timeout_s: float = 1.0
     metric_registry_path: str = "config/metric_registry.yaml"
-    prompt_versions_path: str = "config/prompt_versions.yaml"
-    prompts_dir: str = "prompts"
 
     a2a_public_base_url: str = ""
     api_host: str = ""
@@ -113,31 +144,24 @@ class Settings(BaseSettings):
     a2a_transport: Literal["inprocess", "http", "hybrid"] = "inprocess"
     a2a_timeout_s: float = 30.0
 
-    mission_timeout_s: float = 120.0
+    mission_timeout_s: float = 600.0
     max_llm_calls: int = 6
-    max_tool_calls: int = 8
-    max_agent_calls: int = 30
-    max_leadership_transfers: int = 6
-    max_coordinator_iterations: int = 12
+    # Ceiling for the V3 loop. Per-intent budgets in agent/runner.py sit under
+    # this; unknown intent uses the ceiling itself.
+    max_tool_calls: int = 160
+    # PydanticAI per-run retries for the V3 agent (tool ModelRetry / output
+    # validation recovery). See ExecutionLimits.agent_retries.
+    agent_retries: int = 2
     completion_threshold: float = 0.90
-    completion_review_threshold: float = 0.70
 
     allow_write_actions: bool = False
-    require_skeptic_for_causal: bool = True
-    require_provenance_for_numeric: bool = True
 
     # V3 refactor (docs/refactor/) — when True, conversations and
     # POST /v1/missions run Agent[SelericDeps, MissionResult] instead of
     # swarm_v2. Sprint 5: V3 is now the only mission path, default True.
     v3_agent_enabled: bool = True
 
-    workflow_name: str = "lookup_v1"
     workflow_version: str = "1.0.0"
-    # Swarm mission control plane (Coordinator V1). Only "swarm_v2" exists today —
-    # the legacy "swarm_v1" imperative workflow was removed.
-    swarm_workflow: Literal["swarm_v2"] = "swarm_v2"
-    coordinator_policies_path: str = "config/coordinator_policies.yaml"
-    max_remediation_rounds: int = 3
 
     # API security (v1.13)
     # When set, all non-probe routes require X-API-Key or Authorization: Bearer.
@@ -175,7 +199,13 @@ class Settings(BaseSettings):
         "azure_openai_models",
         "azure_openai_model1",
         "azure_openai_model2",
+        "azure_openai_endpoint_2",
+        "azure_openai_models_2",
         "seleric_mcp_url",
+        "qdrant_url",
+        "qdrant_collection",
+        "qdrant_embedding_model",
+        "jev_base_url",
         "a2a_public_base_url",
         "api_host",
         "redis_url",
@@ -194,9 +224,12 @@ class Settings(BaseSettings):
 
     @field_validator(
         "azure_openai_api_key",
+        "azure_openai_api_key_2",
         "langsmith_api_key",
         "api_key",
         "seleric_mcp_token",
+        "jev_api_key",
+        "qdrant_api_key",
     )
     @classmethod
     def no_placeholder_secrets(cls, value: str) -> str:
@@ -230,6 +263,7 @@ class Settings(BaseSettings):
             "shutdown_timeout_s": self.shutdown_timeout_s,
             "clamav_timeout_s": self.clamav_timeout_s,
             "readiness_timeout_s": self.readiness_timeout_s,
+            "jev_timeout_s": self.jev_timeout_s,
         }
         invalid = [name for name, value in positive.items() if value <= 0]
         if invalid:
