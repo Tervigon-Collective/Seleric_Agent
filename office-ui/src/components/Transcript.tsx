@@ -59,7 +59,13 @@ function UserMessage() {
 
 function RunningLine() {
   const progress = useConversationStore((state) => state.progress);
-  return <p className="running" aria-live="polite"><span className="pulse-dot" /> {progress ?? "Working on it…"}</p>;
+  const cancelRun = useConversationStore((state) => state.cancelRun);
+  return (
+    <div className="running-row">
+      <p className="running" aria-live="polite"><span className="pulse-dot" /> {progress ?? "Working on it…"}</p>
+      <button type="button" className="running-cancel" onClick={() => void cancelRun()}>Cancel</button>
+    </div>
+  );
 }
 
 function AssistantMessage() {

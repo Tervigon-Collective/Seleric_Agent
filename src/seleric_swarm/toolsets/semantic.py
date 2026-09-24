@@ -808,6 +808,32 @@ async def query_metrics(
                 retryable=False,
             )
         return _fetch_failure(f"query_metrics({metric_id})", result["error"])
+    not_found = result.get("value_not_found") or []
+    if not_found:
+        # Cube answers a filter on a value that never occurs with a 0 row; the
+        # gateway flags it so "0" is never reported as a measured count (live:
+        # channel=whatsapp → "0 orders" while 35 were attributed via utm_medium).
+        parts: list[str] = []
+        for miss in not_found:
+            where = "; ".join(
+                f"{f.get('dimension')} = {', '.join(f.get('values') or [])}"
+                for f in miss.get("found_in") or []
+            )
+            parts.append(
+                f"{', '.join(miss.get('values') or [])} is not a value of {miss.get('dimension')} "
+                f"for {metric_id}"
+                + (f"; the data records it in: {where}" if where else "; it is not recorded anywhere")
+            )
+        return ToolResult(
+            success=False,
+            summary=(
+                f"query_metrics({metric_id}): " + ". ".join(parts) + ". This is not a zero count — "
+                "re-query with a metric that supports one of those dimensions, or tell the user "
+                "the value is not recorded."
+            ),
+            error_code="VALUE_NOT_FOUND",
+            retryable=False,
+        )
     rows = result.get("rows") or []
     if not rows:
         # Zero rows on an exact NON-brand filter is ambiguous — the value may be

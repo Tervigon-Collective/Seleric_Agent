@@ -261,3 +261,43 @@ async def test_query_metrics_filters_to_any_of_several_values():
 def test_single_item_list_is_an_ordinary_filter():
     assert semantic._sanitize_dimensions({"lt_utm_medium": ["acme chat"]}) == {"lt_utm_medium": "acme chat"}
     assert semantic._sanitize_dimensions({"lt_utm_medium": []}) == {"lt_utm_medium": ""}
+
+
+class _NotFoundMcp:
+    async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+        return {
+            "rows": [{"total_orders": 0}],
+            "provenance": {"query_id": "q1", "cube_view": "orders_all_channels"},
+            "value_not_found": [
+                {
+                    "dimension": "channel",
+                    "view": "orders_all_channels",
+                    "values": ["acme chat"],
+                    "found_in": [{"dimension": "lt_utm_medium", "view": "order_attribution", "values": ["acme chat"]}],
+                }
+            ],
+        }
+
+
+async def test_a_value_the_dimension_never_holds_is_not_reported_as_zero():
+    deps = SelericDeps(
+        mission_id=_MISSION,
+        as_of=datetime(2026, 9, 25, tzinfo=UTC),
+        principal=Principal(principal_id="p1", workspace_id="ws1", user_id="u1"),
+        thread_id="t1",
+        run_id="r1",
+        trace_id="tr1",
+        context=ContextBundle(),
+        mcp_client=_NotFoundMcp(),
+        artifact_store=InMemoryArtifactStore(),
+        limits=ExecutionLimits(),
+    )
+    result = await semantic.query_metrics(
+        _Ctx(deps),  # type: ignore[arg-type]
+        metric_id="total_orders",
+        dimensions={"channel": "acme chat"},
+    )
+    assert result.success is False
+    assert result.error_code == "VALUE_NOT_FOUND"
+    assert "lt_utm_medium = acme chat" in result.summary
+    assert not deps.artifact_store.list_for_mission(_MISSION)  # no "0" evidence written
