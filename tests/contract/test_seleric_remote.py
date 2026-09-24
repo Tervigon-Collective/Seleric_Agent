@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 
@@ -190,3 +192,28 @@ async def test_stuck_connection_is_bounded_by_hard_timeout_backstop():
     monkeypatch_target.post = never_returns
     with pytest.raises(MCPUnavailableError):
         await transport.call_tool("metrics_query", {})
+
+
+def test_transport_survives_being_driven_from_successive_event_loops(monkeypatch):
+    # Live 2026-09-25: /readyz runs each probe under a fresh asyncio.run() loop;
+    # a single shared httpx client failed every other probe with
+    # "Event loop is closed". Each loop must get a client bound to itself.
+    transport = SelericMCPTransport(url="http://example.test/mcp", token="t")
+    seen_loops: list[asyncio.AbstractEventLoop] = []
+
+    async def fake_post(self, url, **kwargs):
+        seen_loops.append(asyncio.get_running_loop())
+        return httpx.Response(200, json={"ok": True}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    clients = []
+
+    async def one_call():
+        await transport._post({"jsonrpc": "2.0"})
+        clients.append(transport._loop_client())
+
+    for _ in range(3):
+        asyncio.run(one_call())
+
+    assert len(seen_loops) == 3
+    assert len({id(c) for c in clients}) == 3  # no client is reused across loops

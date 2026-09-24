@@ -28,6 +28,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         "livekit-agents${LIVEKIT_AGENTS_VERSION}" \
         livekit-plugins-silero
 
+# Office UI static bundle, served by the API itself at /ui/ (same origin, so no
+# CORS and no extra port).
+FROM node:22-bookworm-slim AS ui-builder
+WORKDIR /ui
+COPY office-ui/package.json office-ui/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY office-ui/ ./
+RUN npx tsc -b && npx vite build --base=/ui/
+
 FROM python:3.12-slim-bookworm AS runtime
 
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin seleric \
@@ -45,6 +54,7 @@ COPY contracts ./contracts
 COPY schemas ./schemas
 COPY migrations ./migrations
 COPY pyproject.toml README.md ./
+COPY --from=ui-builder /ui/dist ./office-ui/dist
 
 RUN mkdir -p /app/.data/attachments \
     && chown -R seleric:seleric /app/.data

@@ -12,6 +12,7 @@ import asyncio
 import itertools
 import json
 import os
+import weakref
 from typing import Any
 
 import httpx
@@ -82,6 +83,15 @@ class SelericMCPTransport:
             "Accept": "application/json, text/event-stream",
         }
         self._client = httpx.AsyncClient(timeout=timeout_s)
+        # httpx pools connections on the event loop that opened them. /readyz
+        # probes from a thread via asyncio.run() -- a fresh loop each time -- so
+        # sharing one client made every other probe fail with "Event loop is
+        # closed" (live 2026-09-25). The first loop to use the transport keeps
+        # `_client`; any other loop gets its own, dropped with that loop.
+        self._client_loop: asyncio.AbstractEventLoop | None = None
+        self._loop_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient] = (
+            weakref.WeakKeyDictionary()
+        )
         # httpx's own `timeout=` has been observed to not fire on a stalled
         # connection under real load (docs/BUG_SHEET.md #5: a request hung
         # 10+ minutes with the asyncio event loop genuinely idle in
@@ -95,10 +105,22 @@ class SelericMCPTransport:
         self._session_id: str | None = None
         self._init_lock = asyncio.Lock()
 
+    def _loop_client(self) -> httpx.AsyncClient:
+        loop = asyncio.get_running_loop()
+        if self._client_loop is None:
+            self._client_loop = loop
+        if loop is self._client_loop:
+            return self._client
+        client = self._loop_clients.get(loop)
+        if client is None:
+            client = httpx.AsyncClient(timeout=self._timeout_s)
+            self._loop_clients[loop] = client
+        return client
+
     async def _post(self, body: dict[str, Any]) -> httpx.Response:
         try:
             return await asyncio.wait_for(
-                self._client.post(self._url, json=body, headers=self._headers),
+                self._loop_client().post(self._url, json=body, headers=self._headers),
                 timeout=self._hard_timeout_s,
             )
         except TimeoutError as exc:

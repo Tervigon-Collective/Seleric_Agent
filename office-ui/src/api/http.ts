@@ -21,7 +21,9 @@ export class HttpClient {
 
   constructor(options: HttpClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? "";
-    this.getToken = options.getToken ?? (() => localStorage.getItem("seleric.apiKey"));
+    this.getToken = options.getToken ?? (() =>
+      (globalThis as { __SELERIC_API_KEY__?: string }).__SELERIC_API_KEY__
+      || localStorage.getItem("seleric.apiKey"));
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 

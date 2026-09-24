@@ -162,6 +162,7 @@ def _cache_key(capability: str, arguments: dict[str, Any]) -> str:
 _QUERY_CACHE_ENABLED = True
 
 LIVE_DATA_UNAVAILABLE = "live_data_unavailable"
+QUERY_LOOP_STOPPED = "query_loop_stopped"
 _MAX_DEFINITION_LOOKUPS = 4
 
 
@@ -960,6 +961,12 @@ async def query_metrics(
         dups = ctx.deps.call_counts.get(dup_key, 0) + 1
         ctx.deps.call_counts[dup_key] = dups
         if dups >= 2:
+            # The ModelRetry alone is not enough (live 2026-09-25): a model that
+            # keeps repeating it exhausts pydantic_ai's per-tool retry limit and
+            # the whole mission dies with UnexpectedModelBehavior. `prepare_tools`
+            # (agent.py) withdraws query_metrics from here on, so the next turn
+            # can only answer.
+            ctx.deps.call_counts[QUERY_LOOP_STOPPED] = 1
             raise ModelRetry(
                 "You have already fetched this exact query and have all its "
                 "values above. Do NOT call query_metrics again — call "

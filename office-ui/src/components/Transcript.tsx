@@ -5,6 +5,7 @@ import {
   ThreadPrimitive,
   type DataMessagePartProps,
 } from "@assistant-ui/react";
+import type { MessagePart } from "../api/contracts";
 import { useConversationStore } from "../stores/conversation";
 import { MessagePartRenderer } from "./MessagePartRenderer";
 import { SafeContent } from "./SafeContent";
@@ -13,9 +14,38 @@ function SelericPart({ data }: DataMessagePartProps) {
   return <MessagePartRenderer part={data} />;
 }
 
+function SelericSources({ data }: DataMessagePartProps) {
+  const sources = data as MessagePart[];
+  return (
+    <details className="message-sources">
+      <summary>Sources ({sources.length})</summary>
+      <div className="message-sources-list">
+        {sources.map((part, index) => <MessagePartRenderer key={index} part={part} />)}
+      </div>
+    </details>
+  );
+}
+
+export function formatResponseTime(ms: number): string {
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const seconds = Math.round(ms / 1000);
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function SelericResponseTime({ data }: DataMessagePartProps) {
+  const { elapsedMs } = data as { elapsedMs: number };
+  return <p className="message-response-time">Responded in {formatResponseTime(elapsedMs)}</p>;
+}
+
 const parts = {
   Text: ({ text }: { text: string }) => <SafeContent text={text} />,
-  data: { by_name: { "seleric-part": SelericPart } },
+  data: {
+    by_name: {
+      "seleric-part": SelericPart,
+      "seleric-sources": SelericSources,
+      "seleric-response-time": SelericResponseTime,
+    },
+  },
 };
 
 function UserMessage() {

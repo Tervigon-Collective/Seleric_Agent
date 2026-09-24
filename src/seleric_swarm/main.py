@@ -11,7 +11,7 @@ from uuid import uuid4
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from starlette.responses import StreamingResponse
+from starlette.responses import Response, StreamingResponse
 
 from seleric_swarm.agent.runner import run_v3_mission
 from seleric_swarm.api.async_missions import (
@@ -737,6 +737,36 @@ def get_mission_trace(mission_id: str, request: Request) -> dict[str, Any]:
         "trace": trace,
         "events": events,
     }
+
+
+# Office UI bundle (built into the image by the Dockerfile's ui-builder stage).
+# Mounted last so every API route above wins; absent in local dev, where the
+# Vite dev server serves the UI instead.
+try:
+    from fastapi.staticfiles import StaticFiles
+
+    from seleric_swarm.paths import repo_root
+
+    _ui_dist = repo_root() / "office-ui" / "dist"
+    if (_ui_dist / "index.html").is_file():
+
+        # MVP: hand the shared API key to the bundled UI so users need no setup.
+        # Anyone who can load /ui/ can therefore call /v1 — replace with real
+        # user login before this is more than an MVP.
+        @app.get("/ui/config.js", include_in_schema=False)
+        def office_ui_config() -> Response:
+            key = getattr(_settings_boot, "api_key", "") or ""
+            return Response(
+                f"window.__SELERIC_API_KEY__ = {json.dumps(key)};\n",
+                media_type="application/javascript",
+                headers={"Cache-Control": "no-store"},
+            )
+
+        app.mount("/ui", StaticFiles(directory=_ui_dist, html=True), name="office-ui")
+except Exception:  # the UI is optional — never block the core API on it
+    import logging as _logging
+
+    _logging.getLogger("seleric.api.office").warning("office UI not mounted", exc_info=True)
 
 
 def serve() -> None:

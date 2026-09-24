@@ -20,6 +20,30 @@ const messageRole = (role: Message["role"]): ThreadMessageLike["role"] => {
 const partText = (part: MessagePart) =>
   typeof part.content === "string" ? part.content : JSON.stringify(part.content);
 
+// SOURCE parts collapse into one trailing disclosure so evidence rows don't
+// crowd the answer text.
+const assistantContent = (message: Message) => {
+  const sources = message.parts.filter((part) => part.type === "SOURCE");
+  const content = message.parts
+    .filter((part) => part.type !== "SOURCE")
+    .map((part) => ({ type: "data-seleric-part" as const, data: part }));
+  const withSources = sources.length
+    ? [...content, { type: "data-seleric-sources" as const, data: sources }]
+    : content;
+  const elapsedMs = responseTimeMs(message);
+  return elapsedMs === null
+    ? withSources
+    : [...withSources, { type: "data-seleric-response-time" as const, data: { elapsedMs } }];
+};
+
+// Streaming drafts and in-flight placeholders carry no updated_at (or an empty
+// body), so only persisted, answered messages get a response time.
+const responseTimeMs = (message: Message): number | null => {
+  if (!message.updated_at || !message.parts.length) return null;
+  const elapsed = Date.parse(message.updated_at) - Date.parse(message.created_at);
+  return Number.isFinite(elapsed) && elapsed > 0 ? elapsed : null;
+};
+
 export const convertSelericMessage = (message: Message): ThreadMessageLike => {
   const role = messageRole(message.role);
   return {
@@ -28,10 +52,7 @@ export const convertSelericMessage = (message: Message): ThreadMessageLike => {
     createdAt: new Date(message.created_at),
     content: role === "system"
       ? [{ type: "text", text: message.parts.map(partText).join("\n") }]
-      : message.parts.map((part) => ({
-          type: "data-seleric-part" as const,
-          data: part,
-        })),
+      : assistantContent(message),
     ...(role === "assistant"
       ? { status: { type: "complete" as const, reason: "stop" as const } }
       : {}),

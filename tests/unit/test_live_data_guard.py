@@ -7,6 +7,7 @@ The guard is enforced in code (tool availability), not left to the prompt.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 from datetime import UTC, datetime
 
 import pytest
@@ -101,3 +102,38 @@ async def test_definition_lookups_are_capped_without_raising():
     spent = results[semantic._MAX_DEFINITION_LOOKUPS]
     assert spent is not None and spent.success is True
     assert "exhausted" in spent.summary
+
+
+class _RowsMcp:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def call(self, *, agent_id: str, capability: str, arguments: dict) -> dict:
+        self.calls += 1
+        return {"rows": [{"net_sales": "1000"}], "provenance": {}}
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_is_withdrawn_after_the_duplicate_hard_stop():
+    """Live 2026-09-25: a model repeating an identical query_metrics call hit the
+    ModelRetry hard stop until pydantic_ai's retry limit killed the mission."""
+    offered: list[set[str]] = []
+    call = {"metric_id": "net_sales", "dimensions": {}}
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        tools = {t.name for t in info.function_tools}
+        offered.append(tools)
+        if "query_metrics" in tools:
+            return ModelResponse(parts=[ToolCallPart("query_metrics", call)])
+        return ModelResponse(parts=[TextPart("done")])
+
+    agent = build_seleric_agent(model=FunctionModel(model))
+    mcp = _RowsMcp()
+    deps = dataclasses.replace(_deps(), mcp_client=mcp)
+    with contextlib.suppress(Exception):
+        await agent.run("net sales yesterday", deps=deps)
+
+    assert deps.call_counts.get(semantic.QUERY_LOOP_STOPPED) == 1
+    # fetch, nudge, hard stop — then the tool is gone instead of a 4th call.
+    assert [("query_metrics" in t) for t in offered[:4]] == [True, True, True, False]
+    assert mcp.calls == 1

@@ -6,7 +6,7 @@ B/C's Sprint 1-3 work plus ``knowledge`` and ``experiments``, which Profile C
 added in Sprint 4's additive track. That covers the 23 functions frozen in
 ``CONTRACTS.md`` §4, plus later additive tools (the python sandbox, the batch
 ``get_metric_definitions``, ``resolve_brand``, and the read-only ``ads``
-surfaces) — 30 in all. ``tests/unit/test_v3_agent_wiring.py`` holds the count
+surfaces, since withdrawn — see below) — 26 in all. ``tests/unit/test_v3_agent_wiring.py`` holds the count
 and the name set so a future toolset cannot be written and then silently left
 unregistered.
 
@@ -34,7 +34,6 @@ from seleric_swarm.agent.instructions import INSTRUCTIONS
 from seleric_swarm.agent.output import MissionResult
 from seleric_swarm.toolsets import (
     actions,
-    ads,
     analytics,
     causal,
     experiments,
@@ -43,7 +42,7 @@ from seleric_swarm.toolsets import (
     sandbox,
     semantic,
 )
-from seleric_swarm.toolsets.semantic import LIVE_DATA_UNAVAILABLE
+from seleric_swarm.toolsets.semantic import LIVE_DATA_UNAVAILABLE, QUERY_LOOP_STOPPED
 
 # Typed as `list[Any]` deliberately: pydantic_ai's own `tools` parameter
 # wants a `Sequence[Tool[SelericDeps] | ToolFuncEither[SelericDeps, ...]]`,
@@ -51,7 +50,7 @@ from seleric_swarm.toolsets.semantic import LIVE_DATA_UNAVAILABLE
 # parameter lists into that single Callable shape even though every one of
 # them is a real `RunContext[SelericDeps]`-first tool function (verified at
 # runtime — see tests/unit/test_v3_agent_wiring.py, which registers and
-# introspects all 30). Narrowing the annotation here is honest about a
+# introspects all 26). Narrowing the annotation here is honest about a
 # real typing-system limitation, not a suppression of a real bug.
 TOOLS: list[Any] = [
     semantic.search_semantics,
@@ -60,10 +59,10 @@ TOOLS: list[Any] = [
     semantic.get_metric_definitions,
     semantic.query_metrics,
     semantic.drilldown,
-    ads.query_meta_insights,
-    ads.list_meta_accounts,
-    ads.list_google_accounts,
-    ads.query_google_ads,
+    # toolsets/ads.py (Meta/Google platform APIs) is deliberately not
+    # registered: those are third-party surfaces outside the certified Cube
+    # serve views, and the gateway no longer exposes them by default. Meta ad
+    # delivery numbers stay reachable through query_metrics (meta_ad_performance).
     analytics.compare_periods,
     analytics.detect_anomalies,
     analytics.contribution_analysis,
@@ -146,15 +145,19 @@ async def _withdraw_data_tools(
     ctx: RunContext[SelericDeps], tool_defs: list[ToolDefinition]
 ) -> list[ToolDefinition]:
     """Once live data is known to be unreachable, only catalogue/knowledge tools
-    remain — the model can no longer loop on fetches that cannot succeed."""
+    remain — the model can no longer loop on fetches that cannot succeed. After
+    the duplicate-query hard stop, ``query_metrics`` alone is withdrawn so a
+    repeating model must answer instead of exhausting the tool's retries."""
     counts = getattr(ctx.deps, "call_counts", None)  # deps is None on the stub path
     if not counts:
         return tool_defs
     if counts.get(CONVERSATIONAL):
         return []
-    if not counts.get(LIVE_DATA_UNAVAILABLE):
-        return tool_defs
-    return [t for t in tool_defs if t.name in _STILL_AVAILABLE_WITHOUT_LIVE_DATA]
+    if counts.get(LIVE_DATA_UNAVAILABLE):
+        return [t for t in tool_defs if t.name in _STILL_AVAILABLE_WITHOUT_LIVE_DATA]
+    if counts.get(QUERY_LOOP_STOPPED):
+        return [t for t in tool_defs if t.name != "query_metrics"]
+    return tool_defs
 
 
 def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDeps, MissionResult]:
