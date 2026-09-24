@@ -190,7 +190,11 @@ async def test_dimension_value_equal_to_its_key_becomes_a_breakdown_not_a_dead_f
     )
     query_call = next(c for c in mcp.calls if c[0] == "seleric.metrics_query")
     assert query_call[1]["dimensions"] == ["product_title"]
-    assert query_call[1].get("filters") is None
+    # No product_title filter (key==value is a breakdown, not a dead filter); the
+    # only filter is the injected default brand.
+    assert query_call[1].get("filters") == [
+        {"dimension": "brand_id", "operator": "equals", "values": ["20"]}
+    ]
     assert result.success is True
 
 

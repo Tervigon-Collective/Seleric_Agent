@@ -14,6 +14,25 @@ _GRANULARITY_DATE_KEY = re.compile(
     r"\.(?:second|minute|hour|day|week|month|quarter|year)$"
 )
 
+# The tenant's default brand. A metrics_query with no brand filter and no brand
+# breakdown is scoped to this brand HERE, in the API arguments — the single place
+# the default lives. Previously the MCP server injected it and several services
+# hardcoded "20" of their own; both are gone in favour of this constant.
+DEFAULT_BRAND_ID = "20"
+
+# Dimension keys that name a brand filter/breakdown. If a query already scopes or
+# groups by brand, the default is NOT injected (a brand breakdown must span all
+# brands; an explicit brand filter is the caller's own choice).
+_BRAND_DIM_KEYS = frozenset({"brand_id", "brand", "brand_name"})
+
+
+def _has_brand(
+    dimensions: list[str] | None, filters: list[dict[str, Any]] | None
+) -> bool:
+    keys = {str(d).strip().lower() for d in (dimensions or [])}
+    keys |= {str(f.get("dimension", "")).strip().lower() for f in (filters or [])}
+    return bool(keys & _BRAND_DIM_KEYS)
+
 
 def row_date(row: dict[str, Any]) -> str | None:
     """Cube names a grain time dimension ``<view>.<dimension>.<granularity>``."""
@@ -59,6 +78,7 @@ def build_metrics_query_args(
     sort: list[dict[str, Any]] | None = None,
     compare_period: str | None = None,
     module: Any = ...,
+    inject_default_brand: bool = True,
 ) -> dict[str, Any]:
     arguments: dict[str, Any] = {
         "measures": [measure],
@@ -68,8 +88,13 @@ def build_metrics_query_args(
         arguments["granularity"] = grain
     if dimensions:
         arguments["dimensions"] = list(dimensions)
-    if filters:
-        arguments["filters"] = list(filters)
+    all_filters = list(filters) if filters else []
+    if inject_default_brand and not _has_brand(dimensions, filters):
+        all_filters.append(
+            {"dimension": "brand_id", "operator": "equals", "values": [DEFAULT_BRAND_ID]}
+        )
+    if all_filters:
+        arguments["filters"] = all_filters
     if limit is not None:
         arguments["limit"] = limit
     if sort:

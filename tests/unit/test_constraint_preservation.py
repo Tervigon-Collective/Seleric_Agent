@@ -45,10 +45,16 @@ class _FilterAwareMcp:
     returns one row. Lets a test assert error-then-(no)retry by inspecting the
     filters each call received."""
 
-    def __init__(self, *, bad_dim: str, error: str, metric_id: str) -> None:
+    def __init__(
+        self, *, bad_dim: str, error: str, metric_id: str, bad_value: str | None = None
+    ) -> None:
         self.bad_dim = bad_dim
         self.error = error
         self.metric_id = metric_id
+        # When set, only THIS value of bad_dim is rejected (e.g. brand 999 is
+        # unknown but the injected default brand 20 is valid). When None, any
+        # filter on bad_dim errors.
+        self.bad_value = bad_value
         self.metric_calls: list[list[dict[str, Any]]] = []
 
     async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
@@ -56,7 +62,13 @@ class _FilterAwareMcp:
             return {}
         filters = list(arguments.get("filters") or [])
         self.metric_calls.append(filters)
-        if any(f.get("dimension") == self.bad_dim for f in filters):
+        bad = [
+            f
+            for f in filters
+            if f.get("dimension") == self.bad_dim
+            and (self.bad_value is None or self.bad_value in (f.get("values") or []))
+        ]
+        if bad:
             return {"error": self.error, "rows": [], "provenance": {}}
         return {"rows": [{self.metric_id: 42}], "provenance": {"query_id": "q1", "currency": "INR"}}
 
@@ -106,7 +118,10 @@ async def test_unknown_nonbrand_dimension_is_unsupported_not_stripped():
 async def test_unknown_brand_is_dropped_but_other_filters_survive():
     # An unresolved brand is the one thing safe to drop — and only the brand.
     mcp = _FilterAwareMcp(
-        bad_dim="brand_id", error="Unknown brand: 999", metric_id="product_orders"
+        bad_dim="brand_id",
+        error="Unknown brand: 999",
+        metric_id="product_orders",
+        bad_value="999",  # the default brand 20 the retry falls back to is valid
     )
     result = await semantic.query_metrics(
         _Ctx(_semantic_deps(mcp)),
@@ -115,10 +130,11 @@ async def test_unknown_brand_is_dropped_but_other_filters_survive():
     )
     assert result.success is True
     assert len(mcp.metric_calls) == 2  # errored, retried
-    # Retry dropped ONLY the brand; the product filter was preserved.
-    retry_dims = {f["dimension"] for f in mcp.metric_calls[1]}
-    assert "brand_id" not in retry_dims
-    assert "product_title" in retry_dims
+    # Retry dropped the bad brand and fell back to the default brand (20); the
+    # product filter was preserved.
+    retry = {f["dimension"]: f["values"] for f in mcp.metric_calls[1]}
+    assert retry.get("brand_id") == ["20"]
+    assert "product_title" in retry
 
 
 # --- A3: requested-breakdown coverage ---------------------------------------

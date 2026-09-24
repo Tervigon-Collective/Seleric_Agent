@@ -7,6 +7,7 @@ from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.services.domain_health.models import DomainStateSnapshot
 from seleric_swarm.services.domain_health.resolver import DomainStateResolver
 from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
+from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID
 
 # Inventory/procurement/technical excluded -- no MCP module (04 doc).
 ALL_DOMAINS = ["commerce", "finance", "performance", "attribution", "funnel", "product", "customer", "operations"]
@@ -18,7 +19,7 @@ async def run_once(
     *,
     domains: Sequence[str] = ALL_DOMAINS,
     time_range: TimeRangeV1 | None = None,
-    brand_id: str = "20",
+    brand_id: str = DEFAULT_BRAND_ID,
 ) -> list[DomainStateSnapshot]:
     """Resolve + persist one snapshot per domain.
 

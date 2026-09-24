@@ -182,7 +182,11 @@ async def test_query_metrics_wildcard_dimension_value_becomes_a_breakdown():
     )
     sent = mcp.calls[0][1]
     assert sent.get("dimensions") == ["product_title"]  # grouped
-    assert "filters" not in sent  # not a literal filter on "*"
+    # "*" is not a literal product_title filter; the only filter is the injected
+    # default brand (no brand named, and the metric carries brand_id).
+    assert sent.get("filters") == [
+        {"dimension": "brand_id", "operator": "equals", "values": ["20"]}
+    ]
 
 
 @pytest.mark.asyncio
@@ -419,6 +423,69 @@ async def test_query_metrics_no_rows_returns_insufficient_evidence():
 
 
 @pytest.mark.asyncio
+async def test_query_metrics_zero_rows_suggests_close_dimension_values():
+    # Live Suspender-Boots: an exact product_title filter with a typo returns
+    # zero rows. Instead of a bare "no data", the tool re-queries grouped by the
+    # filtered dimension, enumerates the real values, and surfaces the near-match
+    # (stdlib difflib) — generic, no product-specific logic.
+    class _Probe:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+            del agent_id, capability
+            self.calls.append(arguments)
+            if arguments.get("dimensions"):  # the enumeration probe
+                return {
+                    "query_id": "p",
+                    "rows": [
+                        {"product_title": "Suspender Boot", "product_net_revenue": "10"},
+                        {"product_title": "Loafers", "product_net_revenue": "5"},
+                    ],
+                    "provenance": {},
+                }
+            return {"query_id": "q", "rows": [], "provenance": {}}  # exact filter: no rows
+
+    mcp = _Probe()
+    ctx = FakeRunContext(_deps(mcp))  # type: ignore[arg-type]
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="product_net_revenue",
+        dimensions={"product_title": "Suspender Boots"},
+        period_start=datetime(2026, 6, 1, tzinfo=UTC),
+        period_end=datetime(2026, 8, 31, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert result.error_code == "INSUFFICIENT_EVIDENCE"
+    assert "Suspender Boot" in result.summary
+    assert "did you mean" in result.summary.lower()
+    # The probe re-ran the SAME metric grouped by the filtered dimension.
+    assert mcp.calls[1].get("dimensions") == ["product_title"]
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_zero_rows_no_close_match_stays_plain_no_data():
+    # Genuinely absent (nothing similar exists) → no misleading suggestion.
+    class _Probe:
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+            del agent_id, capability
+            if arguments.get("dimensions"):
+                return {"query_id": "p", "rows": [{"product_title": "Loafers"}], "provenance": {}}
+            return {"query_id": "q", "rows": [], "provenance": {}}
+
+    ctx = FakeRunContext(_deps(_Probe()))  # type: ignore[arg-type]
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="product_net_revenue",
+        dimensions={"product_title": "Zzzzzzzz Widget"},
+        period_start=datetime(2026, 6, 1, tzinfo=UTC),
+        period_end=datetime(2026, 8, 31, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert "did you mean" not in result.summary.lower()
+
+
+@pytest.mark.asyncio
 async def test_query_metrics_mcp_unavailable_is_retryable():
     # call_metrics_query() (services/mcp_query.py, reused as-is) catches the
     # client exception itself and returns an {"error": ...} dict rather than
@@ -460,12 +527,26 @@ async def test_query_metrics_drops_invented_brand_placeholder():
         period_end=datetime(2026, 9, 17, tzinfo=UTC),
     )
     assert result.success is True
-    assert "filters" not in mcp.calls[0][1]
+    # The placeholder brand is dropped; the builder injects the default brand in
+    # its place, so the only filter is brand_id=20 (not "some_brand").
+    assert mcp.calls[0][1]["filters"] == [
+        {"dimension": "brand_id", "operator": "equals", "values": ["20"]}
+    ]
     assert len(mcp.calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_query_metrics_retries_unfiltered_on_unknown_brand():
+async def test_query_metrics_retries_with_default_brand_on_unknown_brand():
+    # A bad user brand is dropped and the builder re-injects the default brand
+    # (20) in its place — the retry is scoped to the default, not left unfiltered.
+    def _brand_values(arguments: dict[str, Any]) -> list[str]:
+        return [
+            v
+            for f in (arguments.get("filters") or [])
+            if f["dimension"] == "brand_id"
+            for v in f["values"]
+        ]
+
     class _BrandGate:
         def __init__(self) -> None:
             self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -473,7 +554,7 @@ async def test_query_metrics_retries_unfiltered_on_unknown_brand():
         async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
             del agent_id
             self.calls.append((capability, arguments))
-            if arguments.get("filters"):
+            if any(v != "20" for v in _brand_values(arguments)):
                 return {"error": "unknown brand 'nikee'"}
             return {"query_id": "q1", "rows": [{"total_sales": "200"}], "provenance": {}}
 
@@ -489,8 +570,8 @@ async def test_query_metrics_retries_unfiltered_on_unknown_brand():
     )
     assert result.success is True
     assert len(mcp.calls) == 2
-    assert mcp.calls[0][1]["filters"]
-    assert "filters" not in mcp.calls[1][1]
+    assert _brand_values(mcp.calls[0][1]) == ["nikee"]  # first tried the bad brand
+    assert _brand_values(mcp.calls[1][1]) == ["20"]  # retry used the default
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,7 @@ import asyncio
 import contextlib
 import importlib
 import inspect
+import logging
 import random
 import socket
 from collections.abc import Awaitable, Callable
@@ -22,6 +23,8 @@ from seleric_swarm.conversations.contracts import (
     RunStatus,
 )
 from seleric_swarm.conversations.repositories import RunRepository
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -383,7 +386,9 @@ class InProcessRunQueue:
         def _finished(done: asyncio.Task[WorkerResult]) -> None:
             self._tasks.discard(done)
             if not done.cancelled():
-                done.exception()
+                exc = done.exception()
+                if exc is not None:
+                    _log.error("inprocess_run_queue_drive_failed", exc_info=exc)
 
         task.add_done_callback(_finished)
         await asyncio.sleep(0)

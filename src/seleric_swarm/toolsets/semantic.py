@@ -16,6 +16,7 @@ independently-attributed evidence).
 from __future__ import annotations
 
 import calendar
+import difflib
 import json
 import re
 from datetime import datetime, timedelta
@@ -28,6 +29,7 @@ from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.mcp_query import (
+    _BRAND_DIM_KEYS,
     build_metrics_query_args,
     call_metrics_query,
     dimension_value,
@@ -116,12 +118,12 @@ def _sanitize_dimensions(dimensions: dict[str, str] | None) -> dict[str, str]:
     return cleaned
 
 
-# The catalogue keys that name a brand filter. Only a brand is safe to auto-drop
-# on an unresolved-value error (the MCP injects a default brand, so a bad brand
-# degrades to the default rather than failing the mission). A NON-brand filter is
-# never dropped — silently erasing a user-supplied product/return/region filter
-# answers a different question (live Suspender-Boots trace).
-_BRAND_DIM_KEYS = frozenset({"brand_id", "brand", "brand_name"})
+# Brand filter keys live in mcp_query (the arg builder that injects the default
+# brand). Only a brand is safe to auto-drop on an unresolved-value error: the
+# builder re-injects the default brand, so a bad brand degrades to the default
+# rather than failing the mission. A NON-brand filter is never dropped — silently
+# erasing a user-supplied product/return/region filter answers a different
+# question (live Suspender-Boots trace).
 
 
 def _unknown_brand_error(error: object) -> bool:
@@ -653,6 +655,50 @@ def _top_n_sort(metric_id: str, order: str | None) -> list[dict[str, Any]] | Non
     return [{"field": metric_id, "direction": order}]
 
 
+# Cap on values enumerated when disambiguating a zero-row filter. A high-card
+# dimension (thousands of SKUs) is bounded here so the probe can't blow up; the
+# close-match is still found among the top slice.
+_MAX_VALUE_PROBE = 200
+
+
+async def _suggest_close_values(
+    ctx: RunContext[SelericDeps],
+    *,
+    metric_id: str,
+    start: str,
+    end: str,
+    filters: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    """A zero-row exact filter is ambiguous: the value may be misspelled/absent
+    rather than genuinely empty (live Suspender-Boots: ``product_title=
+    "Suspender Boots"`` → 0 rows, catalogue holds "Suspender Boot"). Re-run the
+    SAME metric grouped by the filtered dimension(s) to list the values that
+    actually exist, then fuzzy-match each requested value against them.
+
+    Generic on purpose — no metric- or dimension-specific branch, no hardcoded
+    product/SKU logic: any equals-filter that returns nothing gets the same
+    "did you mean" treatment via the dimensions the metric already supports and
+    stdlib ``difflib``.
+    """
+    dims = [f["dimension"] for f in filters]
+    probe_args = build_metrics_query_args(
+        measure=metric_id, start=start, end=end, dimensions=dims, limit=_MAX_VALUE_PROBE
+    )
+    result = await _cached_metrics_query(ctx, probe_args)
+    if result.get("error"):
+        return {}
+    rows = result.get("rows") or []
+    suggestions: dict[str, list[str]] = {}
+    for f in filters:
+        dim = f["dimension"]
+        wanted = str((f.get("values") or [""])[0])
+        existing = sorted({str(dimension_value(row, dim)) for row in rows} - {"None", ""})
+        close = difflib.get_close_matches(wanted, existing, n=3, cutoff=0.6)
+        if close:
+            suggestions[dim] = close
+    return suggestions
+
+
 async def query_metrics(
     ctx: RunContext[SelericDeps],
     metric_id: str,
@@ -683,6 +729,13 @@ async def query_metrics(
         {"dimension": k, "operator": "equals", "values": [v]} for k, v in dimensions.items() if v
     ]
     sort = _top_n_sort(metric_id, order)
+    # Only scope to the default brand for metrics that actually carry a brand
+    # dimension (catalogue-driven, not a hardcoded metric list): injecting a
+    # brand filter onto a brand-less metric would make Cube reject the query.
+    # Fail-open when the snapshot is empty.
+    supports_brand = (not ctx.deps.catalogue.metrics) or bool(
+        {d.lower() for d in ctx.deps.catalogue.supported_dimensions_for(metric_id)} & _BRAND_DIM_KEYS
+    )
     args = build_metrics_query_args(
         measure=metric_id,
         start=period_start.date().isoformat(),
@@ -692,13 +745,15 @@ async def query_metrics(
         filters=filters or None,
         sort=sort,
         limit=limit,
+        inject_default_brand=supports_brand,
     )
     result = await _cached_metrics_query(ctx, args)
     if result.get("error") and _unknown_brand_error(result["error"]):
-        # Drop ONLY the brand filter (falls back to the injected default brand);
-        # keep every other filter and the breakdown. Never strip a user-supplied
-        # product/return/region filter — that silently answers a different
-        # question and still reports success (live Suspender-Boots trace).
+        # Drop ONLY the user's bad brand filter; the arg builder re-injects the
+        # default brand in its place. Keep every other filter and the breakdown.
+        # Never strip a user-supplied product/return/region filter — that
+        # silently answers a different question and still reports success (live
+        # Suspender-Boots trace).
         kept_filters = [
             f for f in filters if _normalize_dim_token(f["dimension"]) not in _BRAND_DIM_KEYS
         ]
@@ -713,6 +768,7 @@ async def query_metrics(
                 filters=filters or None,
                 sort=sort,
                 limit=limit,
+                inject_default_brand=supports_brand,
             )
             result = await _cached_metrics_query(ctx, args)
     if result.get("error"):
@@ -729,9 +785,38 @@ async def query_metrics(
         return _fetch_failure(f"query_metrics({metric_id})", result["error"])
     rows = result.get("rows") or []
     if not rows:
+        # Zero rows on an exact NON-brand filter is ambiguous — the value may be
+        # misspelled or absent, not genuinely empty. Enumerate the dimension's
+        # real values once and surface the near-matches so the model can correct
+        # the value or tell the user, instead of a bare "no data" that hides a
+        # typo (live Suspender-Boots trace). Brand filters are excluded (they
+        # already fall back to the default above).
+        # ponytail: one extra Cube query per zero-row filtered miss; cached by
+        # args so a re-issued identical query pays it only once.
+        non_brand = [
+            f for f in filters if _normalize_dim_token(f["dimension"]) not in _BRAND_DIM_KEYS
+        ]
+        hint = ""
+        if non_brand:
+            suggestions = await _suggest_close_values(
+                ctx,
+                metric_id=metric_id,
+                start=period_start.date().isoformat(),
+                end=period_end.date().isoformat(),
+                filters=non_brand,
+            )
+            if suggestions:
+                did_you_mean = "; ".join(
+                    f"{dim} ≈ {', '.join(vals)}" for dim, vals in suggestions.items()
+                )
+                hint = (
+                    f" — the requested value has no rows and may be misspelled or "
+                    f"not present. Did you mean: {did_you_mean}? Retry with an exact "
+                    f"value, or tell the user it doesn't exist."
+                )
         return ToolResult(
             success=False,
-            summary=f"no data for {metric_id} over {period_start.date()}..{period_end.date()}",
+            summary=f"no data for {metric_id} over {period_start.date()}..{period_end.date()}{hint}",
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )

@@ -15,6 +15,7 @@ from seleric_swarm.services.business_state.detectors import robust_zscore
 from seleric_swarm.services.business_state.features import classify_freshness, compute_features
 from seleric_swarm.services.business_state.profiles import ProfileLoader
 from seleric_swarm.services.business_state.series import fetch_series
+from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID
 from seleric_swarm.services.time_range import resolve_time_range
 
 if TYPE_CHECKING:
@@ -64,7 +65,7 @@ class BusinessStateService:
             )
 
         profile = self._profiles.get(request.profile_id)
-        brand_id = str(request.dimensions.get("brand_id") or "20")
+        brand_id = str(request.dimensions.get("brand_id") or DEFAULT_BRAND_ID)
         series_cfg = profile.get("series") or {}
         anomaly_cfg = profile.get("anomaly") or {}
 
