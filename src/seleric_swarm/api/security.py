@@ -32,7 +32,8 @@ def _client_key(request: Request, *, trust_x_forwarded_for: bool = False) -> str
 
 
 def _is_exempt(path: str) -> bool:
-    return path in {"/", "/health", "/readyz", "/docs", "/openapi.json", "/redoc"}
+    normalized = path.rstrip("/") or "/"
+    return normalized in {"/", "/health", "/readyz", "/docs", "/openapi.json", "/redoc", "/v1/voice/dev"}
 
 
 def _identity_header(request: Request, *names: str, default: str) -> str:

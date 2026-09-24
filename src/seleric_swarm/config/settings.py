@@ -188,6 +188,59 @@ class Settings(BaseSettings):
     trust_x_forwarded_for: bool = False
     trust_identity_headers: bool = False
 
+    # Voice agent (LiveKit) — docs/features/voice-agent/. Off by default; the
+    # token route and the voice worker are both inert until this is true.
+    voice_enabled: bool = False
+    livekit_url: str = ""
+    livekit_api_key: str = ""
+    livekit_api_secret: str = ""
+    # Room JWT lifetime. Short by design — the browser re-mints on reconnect.
+    voice_token_ttl_s: int = 900
+    # fake = no vendor calls (CI default, mirrors llm_provider="fake").
+    stt_provider: str = "fake"
+    tts_provider: str = "fake"
+    voice_llm_model: str = ""
+    voice_tts_voice: str = ""
+    voice_narration_enabled: bool = True
+    voice_narration_min_gap_s: float = 4.0
+    voice_narration_idle_hold_s: float = 20.0
+    # Voice gives up before the mission's own mission_timeout_s bound.
+    voice_mission_timeout_s: float = 180.0
+    voice_recording_enabled: bool = False
+    voice_summary_mode: Literal["deterministic", "llm"] = "deterministic"
+    # The voice worker's base URL for the Seleric API it calls back into.
+    # Accepts SELERIC_API_BASE_URL too: that is the name docker-compose.yml's
+    # voice service historically set, and a silent alias mismatch here means
+    # the worker falls back to localhost inside its own container and can
+    # never reach the api service.
+    seleric_api_url: str = Field(
+        default="http://localhost:8000",
+        validation_alias=AliasChoices(
+            "seleric_api_url", "SELERIC_API_URL", "SELERIC_API_BASE_URL"
+        ),
+    )
+
+    def missing_voice_credentials(self) -> list[str]:
+        """LiveKit settings that voice needs but does not have.
+
+        Deliberately not a model validator: Settings() is constructed by every
+        entry point (migrate, recover, the test conftest), and a voice
+        misconfiguration must not stop unrelated processes from booting. Checked
+        in validate_for_startup() and at the voice route/worker boundary.
+        """
+
+        if not self.voice_enabled:
+            return []
+        return [
+            name
+            for name, value in (
+                ("LIVEKIT_URL", self.livekit_url),
+                ("LIVEKIT_API_KEY", self.livekit_api_key),
+                ("LIVEKIT_API_SECRET", self.livekit_api_secret),
+            )
+            if not value.strip()
+        ]
+
     @field_validator("llm_fallback_model", "azure_key_vault_url", mode="before")
     @classmethod
     def empty_str_to_none(cls, value: object) -> object:
@@ -338,6 +391,28 @@ class Settings(BaseSettings):
             errors.append("a ClamAV malware scanner host is required")
         if not self.seleric_mcp_url.strip() or not self.seleric_mcp_token.strip():
             errors.append("Seleric MCP URL and token are required")
+        if self.voice_enabled:
+            missing_credentials = self.missing_voice_credentials()
+            if missing_credentials:
+                errors.append(
+                    "voice_enabled requires " + ", ".join(missing_credentials)
+                )
+            # api_key is already required above; voice depends on it, because
+            # with no key configured ApiSecurityMiddleware authenticates every
+            # caller as the default principal and a room token would be minted
+            # for an anonymous user.
+            if self.stt_provider.strip().lower() == "fake":
+                errors.append("stt_provider=fake is not allowed with voice_enabled")
+            if self.tts_provider.strip().lower() == "fake":
+                errors.append("tts_provider=fake is not allowed with voice_enabled")
+            if self.voice_recording_enabled and not any(
+                mime.strip().lower().startswith("audio/")
+                for mime in self.attachment_allowed_mime_types.split(",")
+            ):
+                errors.append(
+                    "voice_recording_enabled requires audio/* in "
+                    "attachment_allowed_mime_types"
+                )
         if errors:
             raise ValueError("Unsafe production settings: " + "; ".join(errors))
 

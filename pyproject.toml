@@ -33,6 +33,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Token minting only — small, pure-JWT. The API needs this and nothing else to
+# serve POST /v1/voice/token.
+#
+# `livekit-agents` (the worker's audio/plugin stack) is deliberately NOT declared
+# here. It depends on `openai<3`, and because uv.lock is a single universal
+# resolution, adding it downgrades `openai` 3.7.0 -> 2.54.0 for *every* install
+# including the plain API — which would silently change the stack under
+# llm/adapters. The voice worker installs it out-of-band instead; see
+# docs/features/voice-agent/02_PHASED_PLAN.md.
+voice-api = [
+  "livekit-api>=1.0",
+]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.25",
@@ -46,6 +58,7 @@ seleric-api = "seleric_swarm.main:serve"
 seleric-migrate = "seleric_swarm.persistence.migrate:main"
 seleric-recover = "seleric_swarm.recovery:main"
 seleric-conversation-schema = "seleric_swarm.conversations.schema:main"
+seleric-voice = "seleric_swarm.voice.worker:main"
 
 [tool.ruff]
 line-length = 100
@@ -64,7 +77,17 @@ ignore = ["BLE001"]
 [tool.mypy]
 # Third-party libraries that ship no type stubs / py.typed marker.
 [[tool.mypy.overrides]]
-module = ["yaml", "dowhy", "dowhy.*", "pandas", "pandas.*", "numpy", "numpy.*", "statsmodels.*"]
+module = [
+  "yaml",
+  "dowhy",
+  "dowhy.*",
+  "pandas",
+  "pandas.*",
+  "numpy",
+  "numpy.*",
+  "statsmodels.*",
+  "livekit.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
