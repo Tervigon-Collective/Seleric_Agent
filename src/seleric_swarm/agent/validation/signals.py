@@ -411,7 +411,7 @@ def check_prediction(artifacts: list[Artifact]) -> CheckOutcome:
 
 
 def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
-    """Executed evidence must cover the breakdowns the query demanded.
+    """Executed evidence must cover the breakdowns and named values the query demanded.
 
     The reconciliation gate for the silent-drop failure (live "by source"
     trace): a requested breakdown that resolved to a real catalogue dimension
@@ -426,7 +426,8 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
     mission produced no evidence at all (``check_evidence`` owns that case — a
     coverage gap on top would just double-count the same failure)."""
     breakdowns = frozenset(getattr(scope, "breakdowns", ()) or ())
-    if not breakdowns:
+    value_filters = tuple(getattr(scope, "value_filters", ()) or ())
+    if not breakdowns and not value_filters:
         return CheckOutcome(check="scope_coverage", status="NOT_APPLICABLE")
     evidence = [a for a in artifacts if a.artifact_type == "evidence"]
     if not evidence:
@@ -438,13 +439,10 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
         if parsed is not None:
             grouped.update(parsed.dimensions.keys())
 
+    gaps: list[EvidenceGap] = []
     missing = sorted(breakdowns - grouped)
-    if not missing:
-        return CheckOutcome(check="scope_coverage")
-    return CheckOutcome(
-        check="scope_coverage",
-        status="INSUFFICIENT",
-        gaps=[
+    if missing:
+        gaps.append(
             EvidenceGap(
                 description=(
                     f"the question asked for a breakdown by {missing}, but the answer's "
@@ -454,8 +452,29 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
                 blocking=True,
                 priority=8,
             )
-        ],
-    )
+        )
+    # A named value (live: "orders from whatsapp") must actually constrain the
+    # evidence — filtered or grouped by one of the dimensions the data records
+    # it in. Otherwise the answer is a total that ignores what was asked.
+    for vf in value_filters:
+        if grouped & set(vf.dimensions):
+            continue
+        gaps.append(
+            EvidenceGap(
+                description=(
+                    f"the question names '{vf.term}', which the data records as "
+                    f"{' / '.join(sorted(vf.dimensions))} = {', '.join(vf.values)}, but the "
+                    f"answer's evidence is not filtered by it — re-run filtered to those "
+                    f"values with a metric that supports that dimension, or state plainly "
+                    f"that no available metric supports it"
+                ),
+                blocking=True,
+                priority=8,
+            )
+        )
+    if not gaps:
+        return CheckOutcome(check="scope_coverage")
+    return CheckOutcome(check="scope_coverage", status="INSUFFICIENT", gaps=gaps)
 
 
 _NON_CLAIM_ARTIFACT_TYPES = frozenset({"plan"})

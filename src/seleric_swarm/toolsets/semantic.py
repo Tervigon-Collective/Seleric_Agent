@@ -99,9 +99,27 @@ def _is_self_referential_dimension_value(key: str, value: str) -> bool:
 _GROUPBY_MARKERS = frozenset({"*", "all", "any", "each", "every", "group_by", "groupby"})
 
 
-def _sanitize_dimensions(dimensions: dict[str, str] | None) -> dict[str, str]:
-    cleaned: dict[str, str] = {}
+# A dimension value is one literal, or a list of literals meaning "any of these"
+# (live: WhatsApp orders are utm_medium in {whatsapp, wa} — one value per filter
+# forced two queries and a hand-summed answer).
+DimensionValue = str | list[str]
+
+
+def _sanitize_dimensions(
+    dimensions: dict[str, DimensionValue] | None,
+) -> dict[str, DimensionValue]:
+    cleaned: dict[str, DimensionValue] = {}
     for key, raw in (dimensions or {}).items():
+        if isinstance(raw, (list, tuple)):
+            kept = [
+                str(v).strip()
+                for v in raw
+                if v is not None and str(v).strip() and not _is_placeholder_dimension_value(str(v).strip())
+            ]
+            if len(kept) > 1:
+                cleaned[str(key)] = list(dict.fromkeys(kept))
+                continue
+            raw = kept[0] if kept else None
         if raw is None:
             cleaned[str(key)] = ""
             continue
@@ -532,7 +550,7 @@ def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> None
 
 
 def _reject_incompatible_dimensions(
-    ctx: RunContext[SelericDeps], metric_id: str, dimensions: dict[str, str]
+    ctx: RunContext[SelericDeps], metric_id: str, dimensions: dict[str, DimensionValue]
 ) -> None:
     """Fail fast when *metric_id* can't carry a requested dimension, pointing at
     metrics that can (live 2026-09-22 MS3: "top returned products" tried to
@@ -703,7 +721,7 @@ async def _suggest_close_values(
 async def query_metrics(
     ctx: RunContext[SelericDeps],
     metric_id: str,
-    dimensions: dict[str, str] | None = None,
+    dimensions: dict[str, DimensionValue] | None = None,
     grain: str = "none",
     period_start: datetime | None = None,
     period_end: datetime | None = None,
@@ -714,6 +732,10 @@ async def query_metrics(
 
     ``dimensions`` / periods default empty-or-as_of so the model can look up
     "gross sale" without inventing a brand filter or a training-data year.
+
+    A dimension value filters to that value; a list filters to ANY of them
+    (e.g. ``dimensions={"<dimension>": ["<value>", "<value>"]}``); an empty
+    string breaks the result down by that dimension.
 
     For a top/bottom-N ranking, break down by the entity dimension (empty
     value, e.g. ``dimensions={"product_title": ""}``), set ``order="desc"``
@@ -727,7 +749,9 @@ async def query_metrics(
     period_start = period_start or period_end
     breakdown = [k for k, v in dimensions.items() if not v]
     filters = [
-        {"dimension": k, "operator": "equals", "values": [v]} for k, v in dimensions.items() if v
+        {"dimension": k, "operator": "equals", "values": list(v) if isinstance(v, list) else [v]}
+        for k, v in dimensions.items()
+        if v
     ]
     sort = _top_n_sort(metric_id, order)
     # Only scope to the default brand for metrics that actually carry a brand
@@ -861,7 +885,9 @@ async def query_metrics(
             # row itself — read it there (live 2026-09-21: a product_id breakdown
             # via query_metrics wrote every row with dimensions={}, making ~200
             # per-product counts indistinguishable from each other).
-            row_dimensions = {k: v for k, v in dimensions.items() if v}
+            row_dimensions = {
+                k: (",".join(v) if isinstance(v, list) else v) for k, v in dimensions.items() if v
+            }
             for key in breakdown:
                 row_dimensions[key] = str(dimension_value(row, key))
             evidence = EvidenceArtifact(

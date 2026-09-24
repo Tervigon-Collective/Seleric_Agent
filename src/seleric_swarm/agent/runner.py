@@ -32,7 +32,11 @@ from seleric_swarm.agent.intent import QueryClassification, classify_query
 from seleric_swarm.agent.model import resolve_v3_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
 from seleric_swarm.agent.plan import build_plan
-from seleric_swarm.agent.scope import RequiredScope, build_required_scope
+from seleric_swarm.agent.scope import (
+    RequiredScope,
+    build_required_scope,
+    value_filters_from_resolution,
+)
 from seleric_swarm.agent.validation import run_validated_mission
 from seleric_swarm.api.office.registry import register_mission
 from seleric_swarm.api.office.v3_adapter import v3_raw_snapshot
@@ -203,6 +207,65 @@ def _required_scope(runtime: SwarmRuntime, query: str) -> RequiredScope:
     except Exception:
         _log.warning("required_scope_failed", exc_info=True)
         return RequiredScope()
+
+
+async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[str, Any]:
+    """Map the question's words to values the data records, before the loop.
+
+    The gateway learns every dimension's live values from Cube
+    (``catalogue_resolve_values``), so "whatsapp" resolves to the utm_medium
+    values the data actually uses without anyone declaring it. Fail-open: an
+    error, timeout or a still-warming index yields no hints and the mission runs
+    exactly as before."""
+    timeout = float(getattr(runtime.settings, "value_resolve_timeout_s", 6.0))
+    try:
+        result = await asyncio.wait_for(
+            mcp.call(
+                agent_id="v3_agent",
+                capability="seleric.catalogue_resolve_values",
+                arguments={"text": query},
+            ),
+            timeout=timeout,
+        )
+    except Exception:
+        _log.warning("value_resolution_failed", exc_info=True)
+        return {}
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        return {}
+    return result
+
+
+_VALUES_MAX_TERMS = 4
+_VALUES_MAX_DIMENSIONS = 3
+_VALUES_MAX_VALUES = 5
+
+
+def _values_block(resolution: dict[str, Any]) -> str:
+    """Render value matches for the model: exact matches as what the user
+    meant, everything else as suggestions it may ignore."""
+    lines: list[str] = []
+    for term in (resolution.get("terms") or [])[:_VALUES_MAX_TERMS]:
+        parts: list[str] = []
+        for d in (term.get("dimensions") or [])[:_VALUES_MAX_DIMENSIONS]:
+            values = ", ".join(
+                f"{v.get('value')} ({v.get('match')})"
+                for v in (d.get("values") or [])[:_VALUES_MAX_VALUES]
+            )
+            metrics = ", ".join(d.get("metrics") or [])
+            parts.append(
+                f"{d.get('dimension')} = {values}"
+                + (f" [metrics with this dimension include: {metrics}]" if metrics else "")
+            )
+        if parts:
+            lines.append(f'- "{term.get("term")}" → ' + "; ".join(parts))
+    if not lines:
+        return ""
+    return (
+        "[values in the data — words in the question that match values the data "
+        "records, learned from live data]\n"
+        + "\n".join(lines)
+        + "\n\n"
+    )
 
 
 async def _catalogue_snapshot(runtime: SwarmRuntime) -> CatalogueSnapshot:
@@ -503,6 +566,13 @@ async def run_v3_mission(
         timeout=float(getattr(runtime.settings, "jev_timeout_s", 1.0)),
     )
     intent = classification.intent
+    values = await _resolve_values(runtime, mcp, query) if intent != "conversation" else {}
+    required_scope = _required_scope(runtime, query)
+    value_filters = value_filters_from_resolution(values)
+    if value_filters:
+        required_scope = RequiredScope(
+            breakdowns=required_scope.breakdowns, value_filters=value_filters
+        )
     ceiling = int(getattr(runtime.settings, "max_tool_calls", 160))
     deps = SelericDeps(
         mission_id=mission_id,
@@ -525,7 +595,7 @@ async def run_v3_mission(
             api_key=getattr(runtime.settings, "jev_api_key", ""),
             timeout=float(getattr(runtime.settings, "jev_timeout_s", 1.0)),
         ),
-        required_scope=_required_scope(runtime, query),
+        required_scope=required_scope,
     )
     # An exact alias ("ns", "mer") is a metric name however short; the classifier
     # can read it as small talk, so the alias check runs for conversation too.
@@ -584,7 +654,7 @@ async def run_v3_mission(
                     if getattr(runtime.settings, "catalogue_in_prompt", False)
                     else None,
                     plan=plan,
-                    hint=_routing_hint(classification),
+                    hint=_values_block(values) + _routing_hint(classification),
                 )
                 v3_result = await asyncio.wait_for(
                     run_validated_mission(agent, deps, prompt, on_stream=on_stream),

@@ -25,24 +25,22 @@ async def test_gateway_allowlist_and_live_seleric(runtime):
 
 
 @pytest.mark.asyncio
-async def test_newly_wired_read_capabilities_are_live(runtime):
-    """The read tools wired in the A2 amendment resolve as live capabilities
-    (routing works), and the catalogue-only ones return a usable shape without
-    external ad credentials."""
+async def test_read_capabilities_are_live_and_ad_platform_tools_are_not(runtime):
+    """Catalogue resolution capabilities route live; the third-party ad-platform
+    tools are no longer part of the agent's surface."""
     gw = runtime.mcp
+    for cap in ("seleric.catalogue_resolve_brand", "seleric.catalogue_resolve_values"):
+        assert cap in gw.capabilities
     for cap in (
-        "seleric.catalogue_resolve_brand",
         "seleric.meta_insights_query",
         "seleric.meta_accounts_list",
         "seleric.google_query_gaql",
         "seleric.google_accounts_list_accessible",
     ):
-        assert cap in gw.capabilities
+        assert cap not in gw.capabilities
     # insights_explain was removed from the adapter (dead — never called).
     assert "seleric.insights_explain" not in gw.capabilities
 
-    # catalogue_resolve_brand is Cube/catalogue-only (no ad creds) — exercise it
-    # live and expect a dict with a brand_id for the default brand.
     resolved = await gw.call(
         agent_id="v3_agent",
         capability="seleric.catalogue_resolve_brand",
@@ -51,17 +49,10 @@ async def test_newly_wired_read_capabilities_are_live(runtime):
     assert isinstance(resolved, dict)
     assert resolved.get("brand_id")
 
-    # meta_insights_query routes (the server owns scope/credential enforcement);
-    # a permission/argument error dict is an acceptable "server responded" result
-    # here — we only assert it did not blow up the transport.
-    insights = await gw.call(
+    values = await gw.call(
         agent_id="v3_agent",
-        capability="seleric.meta_insights_query",
-        arguments={
-            "account_id": "act_smoke",
-            "level": "account",
-            "fields": ["spend"],
-            "time_range": {"preset": "last_30d"},
-        },
+        capability="seleric.catalogue_resolve_values",
+        arguments={"text": "orders from whatsapp"},
     )
-    assert isinstance(insights, dict)
+    assert isinstance(values, dict)
+    assert values.get("status") in ("ok", "warming")

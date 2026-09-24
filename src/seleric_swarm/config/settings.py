@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     a2a_timeout_s: float = 30.0
 
     mission_timeout_s: float = 600.0
+    # Bound on the pre-loop catalogue_resolve_values call (agent/runner.py).
+    # Fail-open: a slow or warming value index just means no value hints.
+    value_resolve_timeout_s: float = 6.0
     max_llm_calls: int = 6
     # Ceiling for the V3 loop. Per-intent budgets in agent/runner.py sit under
     # this; unknown intent uses the ceiling itself.

@@ -41,6 +41,7 @@ TOOLS = (
     "catalogue_bootstrap",
     "catalogue_resolve_term",
     "catalogue_resolve_dimension",
+    "catalogue_resolve_values",
     "catalogue_get_metric",
     "catalogue_get_metrics",
     "catalogue_get_ontology",
@@ -51,14 +52,9 @@ TOOLS = (
     "modules_list",
     "metrics_query",
     "metrics_drilldown",
-    # Read-only ad surfaces. meta_insights_query is Cube-backed (certified
-    # meta_ad_performance, same planner as metrics_query); meta_accounts_list
-    # and the google_* tools hit the live Graph/GAQL APIs (read-only,
-    # uncertified). No write/CRUD ad tools are wired here by design.
-    "meta_insights_query",
-    "meta_accounts_list",
-    "google_accounts_list_accessible",
-    "google_query_gaql",
+    # Meta/Google ad-platform tools are not listed: they are third-party APIs
+    # outside the certified Cube serve views and the gateway no longer exposes
+    # them by default (SELERIC_MCP_ADS_TOOLS).
     "actions_list_available",
     "actions_propose",
     "actions_commit",

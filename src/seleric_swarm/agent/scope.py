@@ -29,12 +29,17 @@ dimension, so an unresolved "by June" / "made by X" never manufactures a
 constraint. Enforcing a missing breakdown is safe because you cannot answer
 "by source" with a single aggregate row.
 
-Deliberately NOT captured yet (they need catalogue *value/entity* resolution —
-the metric-resolver work, tracked with the capability audit): named-entity
-filters ("Pro Suspender Boots" → a product filter) and exclusion concepts
-("exclude exchanges"). Both are extension points on ``RequiredScope``; adding
-them must reuse ``catalogue_resolve_term`` and keep the same "only enforce what
-resolves confidently" contract, or they will produce false REVISEs.
+**Named values** (``value_filters``) — a word in the question that the data
+itself records as a value ("whatsapp" → ``lt_utm_medium``/``utm_medium`` =
+whatsapp). Resolved by the gateway's ``catalogue_resolve_values``, which learns
+every dimension's values from Cube (nothing is declared by hand). Same
+confident-only contract: only a term that is *not* catalogue vocabulary and
+matches a value *exactly* becomes a filter; partial matches (fuzzy, contained,
+abbreviations) never do — they are only shown to the model as suggestions,
+though an abbreviation found beside an exact match (``wa`` next to
+``whatsapp``) is listed as one of that filter's values.
+
+Still not captured: exclusion concepts ("exclude exchanges").
 
 Fail-open: any resolution miss drops that term. An empty ``RequiredScope`` makes
 the coverage check ``NOT_APPLICABLE`` — the mission runs exactly as before.
@@ -64,18 +69,57 @@ _STOPWORDS = frozenset(
 
 
 @dataclass(frozen=True)
+class ValueFilter:
+    """A word the user said that the data records as a value.
+
+    ``dimensions`` — every dimension holding that exact value (the same word can
+    live on several views, e.g. ``lt_utm_medium`` and ``utm_medium``); evidence
+    filtered or grouped by any one of them covers it. ``values`` — the exact
+    spellings plus same-dimension abbreviations to filter on."""
+
+    term: str
+    dimensions: frozenset[str]
+    values: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class RequiredScope:
     """Hard constraints resolved to catalogue dimension ids.
 
     ``breakdowns`` — dimension ids the user asked to break the answer down by.
-    (Extension points, not yet populated: filter dims from named entities,
-    exclusion dims.)
+    ``value_filters`` — named values the answer must be filtered to.
+    (Extension point, not yet populated: exclusion dims.)
     """
 
     breakdowns: frozenset[str] = frozenset()
+    value_filters: tuple[ValueFilter, ...] = ()
 
     def is_empty(self) -> bool:
-        return not self.breakdowns
+        return not self.breakdowns and not self.value_filters
+
+
+def value_filters_from_resolution(resolution: dict | None) -> tuple[ValueFilter, ...]:
+    """Confident value filters from a ``catalogue_resolve_values`` payload:
+    non-vocabulary terms with an exact match only."""
+    filters: list[ValueFilter] = []
+    for term in (resolution or {}).get("terms") or []:
+        if term.get("catalogue_vocabulary") or term.get("best_match") != "exact":
+            continue
+        dims: set[str] = set()
+        values: list[str] = []
+        for d in term.get("dimensions") or []:
+            matches = d.get("values") or []
+            if not any(v.get("match") == "exact" for v in matches):
+                continue
+            dims.add(str(d.get("dimension")))
+            for v in matches:
+                if v.get("match") in ("exact", "abbreviation") and v.get("value") not in values:
+                    values.append(str(v.get("value")))
+        if dims:
+            filters.append(
+                ValueFilter(term=str(term.get("term")), dimensions=frozenset(dims), values=tuple(values))
+            )
+    return tuple(filters)
 
 
 def _normalize(text: str) -> str:
@@ -164,6 +208,28 @@ def _demo() -> None:
     # empty catalogue → fail-open empty scope.
     s = build_required_scope("orders by source", alias_index=None, dimension_ids=None)
     assert s.is_empty(), s.breakdowns
+
+    # value filters: exact, non-vocabulary matches only.
+    resolution = {
+        "terms": [
+            {
+                "term": "whatsapp",
+                "catalogue_vocabulary": False,
+                "best_match": "exact",
+                "dimensions": [
+                    {"dimension": "lt_utm_medium", "values": [
+                        {"value": "whatsapp", "match": "exact"},
+                        {"value": "wa", "match": "abbreviation"},
+                    ]},
+                    {"dimension": "landing_page_path", "values": [{"value": "/?utm_medium=whatsapp", "match": "token"}]},
+                ],
+            },
+            {"term": "google", "catalogue_vocabulary": True, "best_match": "exact", "dimensions": []},
+            {"term": "month", "catalogue_vocabulary": False, "best_match": "token", "dimensions": []},
+        ]
+    }
+    vf = value_filters_from_resolution(resolution)
+    assert vf == (ValueFilter("whatsapp", frozenset({"lt_utm_medium"}), ("whatsapp", "wa")),), vf
 
     print("scope demo ok")
 
