@@ -156,12 +156,17 @@ def _user_facing_agent_failure(exc: BaseException) -> tuple[str, str]:
     no "429" in its own message, only in its wrapped sub-exceptions.
     """
     causes = _flatten_exceptions(exc)
-    if any(isinstance(c, ModelHTTPError) and c.status_code == 429 for c in causes):
+    if any(
+        (isinstance(c, ModelHTTPError) and c.status_code == 429)
+        or "429" in str(c)
+        or "ratelimit" in str(c).lower()
+        for c in causes
+    ):
         return (
             "The language model is rate-limited right now. Please retry in a moment.",
             "LLM_RATE_LIMITED",
         )
-    if any(isinstance(c, OpenAIAPITimeoutError) for c in causes):
+    if any(isinstance(c, OpenAIAPITimeoutError) or "timeout" in str(c).lower() for c in causes):
         return ("The agent timed out. Please retry.", "V3_AGENT_TIMEOUT")
     return (
         "The agent could not complete this question. Please retry.",

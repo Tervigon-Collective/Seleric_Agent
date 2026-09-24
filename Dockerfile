@@ -9,8 +9,24 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+# voice-api is small (JWT minting) and lets the API serve POST /v1/voice/token.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable
+    uv sync --frozen --no-dev --no-editable --extra voice-api
+
+# Voice worker image. livekit-agents is installed here rather than declared in
+# pyproject because it constrains openai<3 and would downgrade the shared lock
+# for every service (see the note in pyproject.toml). Build with:
+#   docker build --target voice-runtime -t seleric-voice .
+FROM builder AS voice-builder
+ARG LIVEKIT_AGENTS_VERSION=">=1.0"
+# livekit-plugins-silero is a separate package from livekit-agents itself
+# (plugins ship independently); worker.py's build_server() imports
+# livekit.plugins.silero unconditionally for VAD, so without this the worker
+# raises ModuleNotFoundError on startup and never joins a room.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python /app/.venv/bin/python \
+        "livekit-agents${LIVEKIT_AGENTS_VERSION}" \
+        livekit-plugins-silero
 
 FROM python:3.12-slim-bookworm AS runtime
 
@@ -61,3 +77,12 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/readyz || exit 1
 
 CMD ["seleric-api"]
+
+# Voice worker runtime — same app image, plus the LiveKit agent stack.
+FROM runtime AS voice-runtime
+USER root
+COPY --from=voice-builder /app/.venv /app/.venv
+USER seleric
+# Not an HTTP service; the API healthcheck does not apply.
+HEALTHCHECK NONE
+CMD ["seleric-voice"]

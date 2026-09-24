@@ -15,6 +15,14 @@ os.environ["PERSISTENCE_BACKEND"] = "memory"
 os.environ["AZURE_OPENAI_API_KEY"] = ""
 os.environ["LANGSMITH_API_KEY"] = ""
 os.environ["V3_AGENT_ENABLED"] = "true"
+# A real API_KEY in .env would make every API test require the header; tests
+# that care about auth configure the middleware explicitly.
+os.environ["API_KEY"] = ""
+# Voice is opt-in per test. Leaving a developer's live LiveKit credentials in
+# play would make the suite depend on their .env.
+os.environ["VOICE_ENABLED"] = "false"
+os.environ["STT_PROVIDER"] = "fake"
+os.environ["TTS_PROVIDER"] = "fake"
 
 import pytest
 

@@ -105,6 +105,28 @@ app.state.runtime_provider = get_runtime
 app.include_router(conversations_router)
 app.include_router(phase7_router)
 
+# Voice agent token route (docs/features/voice-agent/). Mounted unconditionally
+# so the route can answer 404 "voice is not enabled" rather than vanishing —
+# but an import failure while voice is switched ON is fatal, not a warning that
+# would leave a silent 404 in production.
+try:
+    from seleric_swarm.voice.token import router as _voice_router
+
+    # Registers GET /v1/voice/dev on the same router (dev surfaces only).
+    from seleric_swarm.voice import dev_page as _voice_dev_page  # noqa: F401
+
+    app.include_router(_voice_router)
+except Exception:
+    import logging as _logging
+
+    from seleric_swarm.config.settings import get_settings as _get_settings
+
+    if _get_settings().voice_enabled:
+        raise
+    _logging.getLogger("seleric.api.voice").warning(
+        "voice token route not mounted (voice is disabled)", exc_info=True
+    )
+
 # Read-only spatial AI-Office UI gateway (SSE snapshot + event stream).
 try:
     from fastapi.middleware.cors import CORSMiddleware

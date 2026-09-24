@@ -162,6 +162,45 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Voice agent worker (docs/features/voice-agent/). Opt-in:
+  #   docker compose --profile voice up
+  # Needs the `voice` extra in the image and real LiveKit + STT/TTS creds.
+  voice:
+    build:
+      context: .
+      # Adds livekit-agents on top of the shared app image (see Dockerfile).
+      target: voice-runtime
+    profiles: ["voice"]
+    command: ["seleric-voice"]
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      VOICE_ENABLED: ${VOICE_ENABLED:-false}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      STT_PROVIDER: ${STT_PROVIDER:-fake}
+      TTS_PROVIDER: ${TTS_PROVIDER:-fake}
+      VOICE_LLM_MODEL: ${VOICE_LLM_MODEL:-}
+      VOICE_TTS_VOICE: ${VOICE_TTS_VOICE:-}
+      VOICE_NARRATION_ENABLED: ${VOICE_NARRATION_ENABLED:-true}
+      VOICE_MISSION_TIMEOUT_S: ${VOICE_MISSION_TIMEOUT_S:-180}
+      VOICE_RECORDING_ENABLED: ${VOICE_RECORDING_ENABLED:-false}
+      # The worker calls the API as a service client and carries the real
+      # principal in identity headers (see 01_ARCHITECTURE.md §5).
+      API_KEY: ${API_KEY:-}
+      # Must be the in-network service name, not localhost — the worker runs
+      # in its own container. seleric_api_url also accepts SELERIC_API_BASE_URL
+      # for compatibility, but SELERIC_API_URL is the name settings.py binds to.
+      SELERIC_API_URL: ${SELERIC_API_URL:-http://api:8000}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   seleric_postgres:
   seleric_minio:
