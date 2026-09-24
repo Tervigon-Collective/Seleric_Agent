@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from openai import APITimeoutError as OpenAIAPITimeoutError
 from pydantic_ai.exceptions import ModelHTTPError
 
-from seleric_swarm.agent.agent import build_seleric_agent, capability_manifest
+from seleric_swarm.agent.agent import CONVERSATIONAL, build_seleric_agent, capability_manifest
 from seleric_swarm.agent.dependencies import (
     ExecutionLimits,
     JevConfig,
@@ -103,6 +103,7 @@ _PLAN_INTENTS = frozenset(
 # on missing signal. Headroom is large on purpose: a lookup still does
 # search→resolve→query→synthesis, and a diagnostic/causal run fans out.
 _TOOL_BUDGET_BY_INTENT: dict[str, int] = {
+    "conversation": 1,
     "lookup": 64,
     "aggregation": 64,
     "trend": 64,
@@ -114,7 +115,7 @@ _TOOL_BUDGET_BY_INTENT: dict[str, int] = {
 }
 
 # Simple, read-only intents cheap enough for the fast model tier.
-_FAST_MODEL_INTENTS = frozenset({"lookup", "aggregation", "trend"})
+_FAST_MODEL_INTENTS = frozenset({"conversation", "lookup", "aggregation", "trend"})
 
 
 def _should_plan(classification: QueryClassification) -> bool:
@@ -358,6 +359,14 @@ class _ToolCtx:
         self.deps = deps
 
 
+def _format_amount(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return str(value)
+    if float(value).is_integer() or abs(value) >= 100:
+        return f"{value:,.0f}"
+    return f"{value:,.4g}"
+
+
 async def _alias_lookup_result(
     deps: SelericDeps,
     *,
@@ -378,7 +387,7 @@ async def _alias_lookup_result(
     label = next(iter(definition.aliases), definition.id.removeprefix("metric."))
     unit = str(getattr(definition, "unit", "") or "").strip()
     if tool.success and value is not None:
-        amount = f"{value:,.0f}" if isinstance(value, (int, float)) else str(value)
+        amount = _format_amount(value)
         answer = f"{label}: {amount} {unit}".strip()
         status = "completed"
         error_code = None
@@ -513,7 +522,11 @@ async def run_v3_mission(
         ),
         required_scope=_required_scope(runtime, query),
     )
-    alias_def = _lookup_alias(query) if intent in (None, "lookup") else None
+    # An exact alias ("ns", "mer") is a metric name however short; the classifier
+    # can read it as small talk, so the alias check runs for conversation too.
+    alias_def = _lookup_alias(query) if intent in (None, "lookup", "conversation") else None
+    if intent == "conversation" and alias_def is None:
+        deps.call_counts[CONVERSATIONAL] = 1  # small talk: the agent gets no tools at all
     started = time.perf_counter()
     with mission_trace(
         mission_id,

@@ -358,6 +358,26 @@ def test_derived_artifact_with_no_backing_evidence_is_a_blocking_gap():
     assert any("no evidence artifacts" in r for r in outcome.reasons)
 
 
+def test_a_plan_artifact_alone_is_not_a_claim_and_does_not_fail_the_mission():
+    """Live bug: a planned mission that answered without fetching data (e.g.
+    "thanks!") carried a `plan` artifact, which was scored as a derived claim
+    with no evidence and failed closed as INSUFFICIENT_EVIDENCE."""
+    store = InMemoryArtifactStore()
+    store.put(
+        Artifact(
+            workspace_id="ws-1",
+            artifact_type="plan",
+            payload={"plan": "1. greet", "intent": "chat"},
+            classification="ui",
+            mission_id=_MISSION,
+        )
+    )
+    outcome = EvidenceValidator().score(_deps(store))
+
+    assert outcome.ok
+    assert outcome.verdict == "PASS"
+
+
 def test_contradiction_between_two_sources_for_the_same_day():
     store = InMemoryArtifactStore()
     _evidence(store, day=1, value=100.0)

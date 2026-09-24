@@ -19,7 +19,7 @@ from seleric_swarm.conversations.contracts import (
 )
 from seleric_swarm.conversations.events import ActivityEventSink, InMemoryEventNotifier
 from seleric_swarm.conversations.memory import build_in_memory_repositories
-from seleric_swarm.recovery import RunRecoveryWorker
+from seleric_swarm.recovery import InProcessRunQueue, RunRecoveryWorker
 
 
 class _RawStore:
@@ -130,6 +130,104 @@ async def test_submission_executor_completes_with_single_terminal_event(monkeypa
         if event.event_type in {"run.completed", "run.failed", "run.cancelled"}
     ]
     assert [event.event_type for event in terminal] == ["run.completed"]
+
+
+@pytest.mark.asyncio
+async def test_progress_emitted_during_a_run_is_streamed_as_activity_events(monkeypatch):
+    from seleric_swarm.agent.progress import emit_progress, has_progress_sink
+
+    runtime, repositories, run, _ = _submission_runtime()
+    registered_during_run = False
+
+    async def working(runtime_arg, *, mission_id, **_kwargs):
+        nonlocal registered_during_run
+        registered_during_run = has_progress_sink(mission_id)
+        emit_progress(mission_id, "agent.tool_started", "Fetching metric data", {"tool": "query_metrics"})
+        runtime_arg.store.payloads[mission_id] = {
+            "status": "completed",
+            "final_response": "done",
+            "events": [],
+        }
+
+    monkeypatch.setattr(conversations_api, "run_mission_job", working)
+    worker = RunRecoveryWorker(
+        repositories.runs,
+        conversations_api.build_submission_executor(runtime),
+        worker_id="recovery-worker",
+        retry_delay_s=0,
+    )
+    await worker.run_once()
+
+    events = repositories.runs.list_events(run.id)
+    progress_events = [e for e in events if e.event_type == "agent.tool_started"]
+    assert registered_during_run
+    assert [(e.summary, e.payload["tool"]) for e in progress_events] == [
+        ("Fetching metric data", "query_metrics")
+    ]
+    assert not has_progress_sink(run.mission_id or "")
+    order = [e.event_type for e in events]
+    assert order.index("agent.tool_started") < order.index("run.completed")
+
+
+def test_cancelling_a_run_finalizes_its_pending_placeholder():
+    _, repositories, run, assistant = _submission_runtime()
+
+    conversations_api._finalize_cancelled_placeholder(repositories, run)
+
+    parts = repositories.messages.get(assistant.id).parts
+    assert [(p.type, p.content) for p in parts] == [(MessagePartType.WARNING, "Run cancelled.")]
+
+
+def test_cancelling_never_overwrites_an_answered_reply():
+    _, repositories, run, assistant = _submission_runtime()
+    answered = repositories.messages.get(assistant.id).model_copy(
+        update={"parts": [MessagePart(type=MessagePartType.TEXT, content="Real answer")]}
+    )
+    repositories.messages.update(answered)
+
+    conversations_api._finalize_cancelled_placeholder(repositories, run)
+
+    assert repositories.messages.get(assistant.id).parts[0].content == "Real answer"
+
+
+@pytest.mark.asyncio
+async def test_in_process_queue_drives_a_retryable_failure_to_a_terminal_state(monkeypatch):
+    """Dev backend has no external poller: a backoff-scheduled retry must still run."""
+    runtime, repositories, run, assistant = _submission_runtime()
+    calls = 0
+
+    async def fail_then_complete(runtime_arg, *, mission_id, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            runtime_arg.store.payloads[mission_id] = {
+                "status": "failed",
+                "error_code": "V3_AGENT_FAILED",
+                "final_response": "The agent could not complete this question.",
+                "events": [],
+            }
+            return
+        runtime_arg.store.payloads[mission_id] = {
+            "status": "completed",
+            "final_response": "Second try worked",
+            "events": [],
+        }
+
+    monkeypatch.setattr(conversations_api, "run_mission_job", fail_then_complete)
+    worker = RunRecoveryWorker(
+        repositories.runs,
+        conversations_api.build_submission_executor(runtime),
+        worker_id="recovery-worker",
+        retry_delay_s=0.2,
+        retry_jitter_s=0.0,
+    )
+    queue = InProcessRunQueue(worker)
+    await queue.enqueue(run.id)
+    await queue.flush()
+
+    assert calls == 2
+    assert repositories.runs.get(run.id).status is RunStatus.COMPLETED
+    assert repositories.messages.get(assistant.id).parts[0].content == "Second try worked"
 
 
 @pytest.mark.asyncio

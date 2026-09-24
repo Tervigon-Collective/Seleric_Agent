@@ -25,9 +25,11 @@ export function MessagePartRenderer({ part }: { part: MessagePart }) {
     case "CODE": return <pre className="part-code"><code>{text(part.content)}</code></pre>;
     case "SOURCE": {
       const url = typeof value.url === "string" && /^https?:\/\//.test(value.url) ? value.url : null;
-      return <aside className="part-card source"><strong>Source</strong> {url
+      const excerpt = typeof value.excerpt === "string" && value.excerpt.trim() ? value.excerpt : null;
+      return <aside className="part-card source" title={excerpt ?? undefined}><strong>Source</strong> {url
         ? <a href={url} target="_blank" rel="noreferrer">{text(value.title ?? url)}</a>
-        : <span>{text(value.title ?? value.evidence_id ?? "Evidence")}</span>}</aside>;
+        : <span>{text(value.title ?? value.evidence_id ?? "Evidence")}</span>}
+        {excerpt && <span className="source-excerpt">· {excerpt}</span>}</aside>;
     }
     case "TOOL_CALL": return <aside className="part-card tool"><strong>Tool</strong><code>{text(value.tool)}</code><span>{text(value.status ?? "")}</span></aside>;
     case "ARTIFACT": return <button className="part-card artifact" onClick={() => showArtifact({ ...value, ...record(value.provenance) })}><strong>Artifact</strong><span>{text(value.title ?? value.artifact_id)}</span></button>;

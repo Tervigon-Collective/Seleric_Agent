@@ -171,10 +171,16 @@ def test_post_missions_uses_v3_when_enabled(monkeypatch):
 
 
 def test_rate_limit_error_is_not_dumped_to_the_user():
+    # Classification is by exception type/attributes now (agent/runner.py's
+    # own docstring: "not string content"), not by sniffing "429" out of a
+    # message -- a real ModelHTTPError(429), not a RuntimeError that merely
+    # mentions "429" in its text, is what the classifier actually matches.
+    from pydantic_ai.exceptions import ModelHTTPError
+
     from seleric_swarm.agent.runner import _user_facing_agent_failure
 
     message, code = _user_facing_agent_failure(
-        RuntimeError("ModelHTTPError: status_code: 429 RateLimitReached " + ("x" * 4000))
+        ModelHTTPError(429, "gpt-4o", body="RateLimitReached " + ("x" * 4000))
     )
     assert code == "LLM_RATE_LIMITED"
     assert "429" not in message

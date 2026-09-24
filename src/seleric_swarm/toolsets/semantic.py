@@ -159,22 +159,84 @@ def _cache_key(capability: str, arguments: dict[str, Any]) -> str:
 
 _QUERY_CACHE_ENABLED = True
 
+LIVE_DATA_UNAVAILABLE = "live_data_unavailable"
+_MAX_DEFINITION_LOOKUPS = 4
+
+
+def _definition_budget_spent(ctx: RunContext[SelericDeps]) -> ToolResult | None:
+    """A soft stop, not an error: the model has enough definitions and looping
+    on more (live: "what is CAC?" made 15+ lookups in 191s) only burns time."""
+    used = ctx.deps.call_counts.get("definition_lookups", 0) + 1
+    ctx.deps.call_counts["definition_lookups"] = used
+    if used <= _MAX_DEFINITION_LOOKUPS:
+        return None
+    return ToolResult(
+        success=True,
+        summary=(
+            "Definition lookups are exhausted for this mission. Answer now from the "
+            "definitions you already retrieved; do not call another definition tool."
+        ),
+    )
+
 
 async def _cached_metrics_query(
     ctx: RunContext[SelericDeps], arguments: dict[str, Any]
 ) -> dict[str, Any]:
-    fetch = lambda: call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=arguments)  # noqa: E731
-    if not _QUERY_CACHE_ENABLED:
-        return await fetch()
+    fetch = lambda: call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=arguments)
     key = _cache_key("seleric.metrics_query", arguments)
-    return await ctx.deps.query_cache.get_or_fetch(key, fetch)
+    if _QUERY_CACHE_ENABLED and ctx.deps.query_cache.peek(key) is not None:
+        # Already fetched this mission -- a cache hit costs no real Cube
+        # query, so it must not consume max_cube_queries (ExecutionLimits,
+        # CONTRACTS.md) either.
+        return await ctx.deps.query_cache.get_or_fetch(key, fetch)
+    verdict = ctx.deps.budget.consume("cube_queries")
+    if not verdict.ok:
+        raise ModelRetry(
+            f"Cube query budget exhausted for this mission ({verdict.reason}). "
+            "Do not fetch any more data -- write your final_response now using "
+            "the evidence you already have, and say plainly if that isn't enough."
+        )
+    result = await fetch() if not _QUERY_CACHE_ENABLED else await ctx.deps.query_cache.get_or_fetch(key, fetch)
+    if str(result.get("error") or "").startswith("NotImplementedError"):
+        # Deployment state, not a transient fault: `prepare_tools` (agent.py)
+        # withdraws every data-fetching tool for the rest of the mission so the
+        # model cannot keep probing a backend that can never answer.
+        ctx.deps.call_counts[LIVE_DATA_UNAVAILABLE] = 1
+    return result
 
 
 def _mcp_error_result(exc: Exception) -> ToolResult:
+    if isinstance(exc, NotImplementedError):
+        # "Capability not available" is deployment state, not a transient fault:
+        # retrying (or trying other metrics) can never succeed, so say so.
+        return ToolResult(
+            success=False,
+            summary=(
+                "Live metric data is not connected in this deployment (MCP capability "
+                "unavailable). Do not retry or try other metrics: answer from the "
+                "catalogue only and say plainly that the numbers could not be fetched."
+            ),
+            error_code="MCP_UNAVAILABLE",
+            retryable=False,
+        )
     return ToolResult(
         success=False,
         summary=f"{type(exc).__name__}: {exc}",
         error_code="MCP_UNAVAILABLE",
+        retryable=True,
+    )
+
+
+def _fetch_failure(what: str, error: Any) -> ToolResult:
+    """A failed Cube fetch. ``call_metrics_query`` flattens exceptions to
+    ``"<Type>: <msg>"``, so an unconfigured MCP is recognised by its type name."""
+    text = str(error)
+    if text.startswith("NotImplementedError"):
+        return _mcp_error_result(NotImplementedError(text))
+    return ToolResult(
+        success=False,
+        summary=f"{what} failed: {text}",
+        error_code="INSUFFICIENT_EVIDENCE",
         retryable=True,
     )
 
@@ -502,6 +564,8 @@ def _reject_incompatible_dimensions(
 
 async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult:
     """Fetch one metric's full catalogue definition (catalogue_get_metric)."""
+    if (spent := _definition_budget_spent(ctx)) is not None:
+        return spent
     _reject_unknown_metric(ctx, metric_id)
     try:
         result = await ctx.deps.mcp_client.call(
@@ -532,6 +596,8 @@ async def get_metric_definitions(ctx: RunContext[SelericDeps], metric_ids: list[
     single round trip. Partial success: unknown ids come back as warnings with
     the valid ones still returned; the id is never rewritten to a guess (rule 1).
     """
+    if (spent := _definition_budget_spent(ctx)) is not None:
+        return spent
     ids = [str(m).strip() for m in (metric_ids or []) if str(m).strip()]
     if not ids:
         return ToolResult(
@@ -653,15 +719,14 @@ async def query_metrics(
         # An unknown NON-brand dimension is an unsupported request, not a
         # transient failure: surface it plainly so the model reports UNSUPPORTED
         # rather than looping or quietly dropping the constraint.
-        unsupported = _unknown_dimension_error(result["error"]) and not _unknown_brand_error(
-            result["error"]
-        )
-        return ToolResult(
-            success=False,
-            summary=f"query_metrics({metric_id}) failed: {result['error']}",
-            error_code="UNSUPPORTED_QUERY" if unsupported else "INSUFFICIENT_EVIDENCE",
-            retryable=not unsupported,
-        )
+        if _unknown_dimension_error(result["error"]) and not _unknown_brand_error(result["error"]):
+            return ToolResult(
+                success=False,
+                summary=f"query_metrics({metric_id}) failed: {result['error']}",
+                error_code="UNSUPPORTED_QUERY",
+                retryable=False,
+            )
+        return _fetch_failure(f"query_metrics({metric_id})", result["error"])
     rows = result.get("rows") or []
     if not rows:
         return ToolResult(
@@ -877,11 +942,8 @@ async def drilldown(
     # re-issuing an identical parent query against Cube.
     parent = await _cached_metrics_query(ctx, parent_args)
     if parent.get("error") or not parent.get("query_id"):
-        return ToolResult(
-            success=False,
-            summary=f"drilldown({metric_id}) parent query failed: {parent.get('error') or 'no query_id'}",
-            error_code="INSUFFICIENT_EVIDENCE",
-            retryable=True,
+        return _fetch_failure(
+            f"drilldown({metric_id}) parent query", parent.get("error") or "no query_id"
         )
     # A metric spanning multiple Cube views comes back composed: the server
     # rejects the composition id and only accepts a single part_query_id (see

@@ -320,4 +320,18 @@ def test_answer_parts_attach_lookup_sources_for_ui():
     assert parts[0].type.value == "TEXT"
     assert parts[1].type.value == "SOURCE"
     assert parts[1].content["title"] == "gross sales"
-    assert parts[1].content["excerpt"] == "4789.73 for 2026-09-18"
+    assert parts[1].content["excerpt"] == "4,789.73 for 2026-09-18"
+
+
+def test_only_a_completed_run_is_a_genuine_answer():
+    """Regression: V3's failure paths (rate-limited/timeout/insufficient-
+    evidence) all populate a real, non-empty ``final_response`` -- gating
+    the answer-rendering branch on "is there a string" alone (rather than
+    also checking the run actually completed) rendered a failed mission's
+    own error text as a plain TEXT message part, indistinguishable in the
+    chat UI from a genuine answer to the user's question."""
+    from seleric_swarm.conversations.contracts import RunStatus
+
+    assert conversations_api._is_genuine_answer(RunStatus.COMPLETED) is True
+    assert conversations_api._is_genuine_answer(RunStatus.FAILED) is False
+    assert conversations_api._is_genuine_answer(RunStatus.CANCELLED) is False

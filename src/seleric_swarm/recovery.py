@@ -11,7 +11,7 @@ import random
 import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from seleric_swarm.conversations.contracts import (
@@ -325,6 +325,15 @@ class RunRecoveryWorker:
             failed += outcome == "failed"
         return WorkerResult(claimed, completed, retryable, failed)
 
+    async def has_pending_retries(self, *, limit: int = 100) -> bool:
+        # Look past every backoff: a retry still waiting out next_retry_at is
+        # pending, even though list_recoverable(now=<real now>) hides it.
+        horizon = datetime.now(UTC) + timedelta(days=1)
+        candidates = await asyncio.to_thread(
+            self._runs.list_recoverable, now=horizon, limit=limit
+        )
+        return any(c.status is RunAttemptStatus.RETRYABLE for c in candidates)
+
     async def run_forever(
         self, *, poll_interval_s: float = 5.0, limit: int = 100
     ) -> None:
@@ -346,13 +355,29 @@ class DurablePollingRunQueue:
 class InProcessRunQueue:
     """Development/test queue using the same claim and fencing worker path."""
 
+    _RETRY_POLL_S = 0.5
+    _MAX_IDLE_POLLS = 240
+
     def __init__(self, worker: RunRecoveryWorker) -> None:
         self._worker = worker
         self._tasks: set[asyncio.Task[WorkerResult]] = set()
+        self._closing = False
+
+    async def _drive(self) -> WorkerResult:
+        # A failed attempt is rescheduled for later (backoff); with no external
+        # poller, keep draining until no retry is pending so the run reaches a
+        # terminal state instead of hanging in RETRYABLE.
+        result = await self._worker.run_once()
+        for _ in range(self._MAX_IDLE_POLLS):
+            if self._closing or not await self._worker.has_pending_retries():
+                break
+            await asyncio.sleep(self._RETRY_POLL_S)
+            result = await self._worker.run_once()
+        return result
 
     async def enqueue(self, run_id: str) -> None:
         del run_id
-        task = asyncio.create_task(self._worker.run_once())
+        task = asyncio.create_task(self._drive())
         self._tasks.add(task)
 
         def _finished(done: asyncio.Task[WorkerResult]) -> None:
@@ -364,6 +389,7 @@ class InProcessRunQueue:
         await asyncio.sleep(0)
 
     async def close(self) -> None:
+        self._closing = True
         if self._tasks:
             await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
 

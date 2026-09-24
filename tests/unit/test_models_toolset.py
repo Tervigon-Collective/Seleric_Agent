@@ -44,7 +44,7 @@ class FakeRunContext:
         self.deps = deps
 
 
-def _deps(store: InMemoryArtifactStore) -> SelericDeps:
+def _deps(store: InMemoryArtifactStore, *, limits: ExecutionLimits | None = None) -> SelericDeps:
     return SelericDeps(
         mission_id=_MISSION,
         as_of=datetime(2026, 9, 20, tzinfo=UTC),
@@ -61,7 +61,7 @@ def _deps(store: InMemoryArtifactStore) -> SelericDeps:
         context=ContextBundle(),
         mcp_client=NullMcpClient(),
         artifact_store=store,
-        limits=ExecutionLimits(),
+        limits=limits or ExecutionLimits(),
     )
 
 
@@ -116,6 +116,19 @@ async def test_forecast_succeeds_for_a_metric_with_an_approved_model():
     assert payload["model_version"] == "1"  # rule 10
     assert payload["confidence_interval"] is not None  # never a bare point
     assert payload["feature_leakage_checked"] is True  # rule 20, explicit
+
+
+@pytest.mark.asyncio
+async def test_forecast_refuses_once_prediction_budget_exhausted():
+    store = InMemoryArtifactStore()
+    ids = _store_series(store)
+    ctx = FakeRunContext(_deps(store, limits=ExecutionLimits(max_prediction_calls=0)))
+
+    result = await models.forecast(ctx, ids, horizon_days=3)
+
+    assert not result.success
+    assert result.error_code == "EXECUTION_LIMIT_EXCEEDED"
+    assert "policy:execution_limit_exceeded" in result.warnings
 
 
 @pytest.mark.asyncio

@@ -20,6 +20,7 @@ interface ConversationState {
   usedMemories: MemoryItem[];
   memoryOptedOut: boolean;
   currentRunId: string | null;
+  progress: string | null;
   loadThreads: () => Promise<void>;
   createThread: () => Promise<void>;
   selectThread: (id: string) => Promise<void>;
@@ -121,6 +122,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   usedMemories: [],
   memoryOptedOut: false,
   currentRunId: null,
+  progress: null,
 
   loadThreads: async () => {
     if (get().demoMode) return;
@@ -378,7 +380,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       timeline: [],
     });
     set((s) => ({
-      submitting: true, error: null,
+      submitting: true, error: null, progress: null,
       messages: { ...s.messages, [threadId]: [...(s.messages[threadId] ?? []), optimistic] },
       threads: s.threads.map((thread) =>
         thread.id === threadId && (!thread.title || thread.title === "Untitled conversation")
@@ -495,6 +497,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (selectedThreadId) {
         subscriptions.get(selectedThreadId)?.();
         subscriptions.delete(selectedThreadId);
+        if (!demoMode && currentRunId) {
+          // The stream is closed, so pull the persisted state; otherwise the
+          // pending reply just vanishes until the next reload.
+          void conversationsApi.listMessages(selectedThreadId).then((messages) => {
+            if (get().selectedThreadId !== selectedThreadId) return;
+            set((s) => ({ messages: { ...s.messages, [selectedThreadId]: messages } }));
+          }).catch(() => undefined);
+        }
       }
     } catch (error) {
       set({ error: error instanceof Error ? error.message : "Unable to cancel run" });
@@ -666,6 +676,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       return;
     }
     useOffice.getState().ingestEvent(toOfficeEvent(event));
+    if (event.event_type.startsWith("agent.") && event.summary) {
+      set({ progress: event.summary });
+    }
     const office = useOffice.getState();
     const incomingRoute = optionalString(event.payload.route);
     const streamedAnswer = optionalString(event.payload.final_response);
@@ -746,7 +759,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       subscriptions.get(event.thread_id)?.();
       subscriptions.delete(event.thread_id);
       if (get().selectedThreadId === event.thread_id) {
-        set({ submitting: false, currentRunId: null });
+        set({ submitting: false, currentRunId: null, progress: null });
       }
     }
   },
@@ -758,6 +771,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     cancelledSubmissions.clear();
     subscriptions.forEach((stop) => stop());
     subscriptions.clear();
-    set({ threads: [], selectedThreadId: null, messages: {}, loading: false, submitting: false, uploads: {}, error: null, search: "", demoMode: false, memories: [], usedMemories: [], memoryOptedOut: false, currentRunId: null });
+    set({ threads: [], selectedThreadId: null, messages: {}, loading: false, submitting: false, uploads: {}, error: null, search: "", demoMode: false, memories: [], usedMemories: [], memoryOptedOut: false, currentRunId: null, progress: null });
   },
 }));

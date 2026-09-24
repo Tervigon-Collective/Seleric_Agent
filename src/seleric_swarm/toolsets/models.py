@@ -151,6 +151,14 @@ async def forecast(
     if refusal is not None:
         return refusal
 
+    verdict = ctx.deps.budget.consume("prediction_calls")
+    if not verdict.ok:
+        return _refuse(
+            f"prediction budget exhausted for this mission ({verdict.reason})",
+            warning=policy.WARN_EXECUTION_LIMIT_EXCEEDED,
+            error_code=verdict.error_code or "EXECUTION_LIMIT_EXCEEDED",
+        )
+
     metrics = {e.metric_id for e in evidence}
     if len(metrics) != 1:
         return _refuse(

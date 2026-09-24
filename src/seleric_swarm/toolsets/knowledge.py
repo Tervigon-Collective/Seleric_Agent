@@ -36,6 +36,7 @@ from seleric_swarm.knowledge.search import search_documents
 from seleric_swarm.toolsets import policy_config as policy
 
 _CALCULATION_VERSION = "knowledge.v1"
+_MAX_KNOWLEDGE_SEARCHES = 2
 
 
 async def search_knowledge(ctx: RunContext[SelericDeps], query: str) -> ToolResult:
@@ -58,6 +59,21 @@ async def search_knowledge(ctx: RunContext[SelericDeps], query: str) -> ToolResu
             summary="empty query",
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
+        )
+
+    # Live: "hi"/"thanks!" made 8-20 knowledge searches (105s). A second search
+    # for the same mission never finds what the first missed.
+    used = ctx.deps.call_counts.get("search_knowledge", 0) + 1
+    ctx.deps.call_counts["search_knowledge"] = used
+    if used > _MAX_KNOWLEDGE_SEARCHES:
+        return ToolResult(
+            success=True,
+            summary=(
+                "Knowledge search budget is spent for this mission. Do not search again; "
+                "answer now with what you have."
+            ),
+            warnings=[policy.WARN_EMPTY_CORPUS],
+            provenance=ArtifactProvenance(calculation_version=_CALCULATION_VERSION),
         )
 
     documents = load_corpus()
