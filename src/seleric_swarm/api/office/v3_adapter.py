@@ -84,6 +84,8 @@ def _mission_events(mission: Mission, *, has_evidence: bool) -> list[dict[str, A
                 "seq": seq,
                 "ts": mission.updated_at.isoformat().replace("+00:00", "Z"),
                 "route": "v3",
+                "final_response": mission.final_response or "",
+                "status": mission.status,
             }
         )
     return events

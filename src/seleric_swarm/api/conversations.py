@@ -1253,11 +1253,20 @@ async def _execute_submission(
                 }
             )
         )
+        evidence = raw.get("evidence")
         sink.emit(
             running,
             "answer.completed",
             id=f"event_{run.id}_{attempt.id}_answer_completed",
-            payload={"message_id": final_message.id, "mission_id": run.mission_id, "route": raw.get("route"), "query": query},
+            payload={
+                "message_id": final_message.id,
+                "mission_id": run.mission_id,
+                "route": raw.get("route"),
+                "query": query,
+                "status": str(mission_status or final_status.value).lower(),
+                "final_response": final_response,
+                "evidence": evidence if isinstance(evidence, list) else [],
+            },
         )
         summary_thread = repositories.threads.get(run.thread_id)
         if summary_thread is not None:

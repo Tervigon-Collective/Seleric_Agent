@@ -635,6 +635,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     useOffice.getState().ingestEvent(toOfficeEvent(event));
     const office = useOffice.getState();
     const incomingRoute = optionalString(event.payload.route);
+    const streamedAnswer = optionalString(event.payload.final_response);
     const terminal = ["run.completed", "run.failed", "run.cancelled"].includes(event.event_type);
     if (event.event_type === "answer.completed" || terminal || incomingRoute) {
       const route = incomingRoute ?? office.route;
@@ -653,7 +654,49 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         artifacts: office.artifacts,
         unresolvedQuestions: office.unresolvedQuestions,
         limitations: office.limitations,
+        finalResponse: streamedAnswer ?? office.finalResponse,
         timeline: [],
+      });
+    }
+    if (streamedAnswer && (event.event_type === "answer.completed" || terminal)) {
+      const evidence = Array.isArray(event.payload.evidence) ? event.payload.evidence : [];
+      const parts: Message["parts"] = [{ type: "TEXT", content: streamedAnswer }];
+      for (const row of evidence) {
+        if (!row || typeof row !== "object") continue;
+        const source = row as Record<string, unknown>;
+        const evidenceId = optionalString(source.evidence_id);
+        if (!evidenceId) continue;
+        const metric = optionalString(source.metric_or_fact) ?? "Evidence";
+        parts.push({
+          type: "SOURCE",
+          content: {
+            evidence_id: evidenceId,
+            title: metric.replace(/^metric\./, "").replaceAll("_", " "),
+            excerpt: source.value == null ? undefined : String(source.value),
+          },
+        });
+      }
+      const answer: Message = {
+        id: optionalString(event.payload.message_id) ?? `answer_${event.run_id ?? event.id}`,
+        thread_id: event.thread_id,
+        workspace_id: event.workspace_id,
+        user_id: null,
+        role: "ASSISTANT",
+        parts,
+        run_id: event.run_id,
+        parent_message_id: null,
+        created_at: event.created_at,
+      };
+      set((s) => {
+        const existing = s.messages[event.thread_id] ?? [];
+        const index = existing.findIndex((message) =>
+          message.id === answer.id
+          || (message.run_id === answer.run_id && message.role === "ASSISTANT")
+        );
+        const next = index >= 0
+          ? existing.map((message, i) => i === index ? { ...message, ...answer, parts } : message)
+          : [...existing, answer];
+        return { messages: { ...s.messages, [event.thread_id]: next }, error: null };
       });
     }
     if (event.event_type === "answer.completed" || terminal) {

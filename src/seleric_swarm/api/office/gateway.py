@@ -201,7 +201,18 @@ async def office_stream(mission_id: str, request: Request) -> StreamingResponse:
                 idle = 0.0
             status = str((cur or {}).get("status") or "")
             if status in {"completed", "prototype_completed", "failed", "cancelled", "blocked", "partial"}:
-                yield _sse("done", {"status": status, "lastSeq": last_seq})
+                final_snap = build_office_snapshot(cur, mission_id=mission_id)
+                yield _sse("snapshot", final_snap)
+                yield _sse(
+                    "done",
+                    {
+                        "status": status,
+                        "lastSeq": int(final_snap.get("lastSeq") or last_seq),
+                        "finalResponse": final_snap.get("finalResponse") or "",
+                        "evidence": (cur or {}).get("evidence") or [],
+                        "limitations": final_snap.get("limitations") or [],
+                    },
+                )
                 break
 
     return StreamingResponse(
