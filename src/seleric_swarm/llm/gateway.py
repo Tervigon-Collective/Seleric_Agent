@@ -47,19 +47,21 @@ class LLMGateway:
         self._models = sorted(models, key=lambda m: m.priority)
         self._breakers = {m.id: CircuitBreaker() for m in self._models}
 
-    def _candidates(self, request: LLMRequest) -> list[ModelSpec]:
-        return [m for m in self._models if m.supports(request) and self._breakers[m.id].allow()]
-
     async def _route(self, request: LLMRequest, call: Callable[[LLMRequest], Awaitable[R]]) -> R:
-        candidates = self._candidates(request)
-        if not candidates:
-            raise LLMError(
-                LLMErrorCode.UNAVAILABLE,
-                "No capable/healthy model available in the gateway routing table",
-                retryable=False,
-            )
         last_error: LLMError | None = None
-        for spec in candidates:
+        first_candidate: str | None = None
+        # Just-in-time candidate check: only the model about to be invoked ever
+        # consults its breaker, so a half-open probe is granted to exactly one
+        # model — the one actually called. Probing breakers for models that wind
+        # up never running (the old bulk _candidates() filter) left them stuck
+        # with _probing=True, permanently excluding them.
+        for spec in self._models:
+            if not spec.supports(request):
+                continue
+            if not self._breakers[spec.id].allow():
+                continue
+            if first_candidate is None:
+                first_candidate = spec.id
             attempt = request.model_copy(update={"model": spec.id})
             try:
                 result = await call(attempt)
@@ -75,12 +77,22 @@ class LLMGateway:
                 if not exc.retryable:
                     raise
                 continue
+            except Exception as exc:  # noqa: BLE001 - unexpected adapter error
+                # Non-LLMError must still close the probe: leaving _probing=True
+                # here wedges the breaker (no success/failure ever recorded).
+                self._breakers[spec.id].record_failure()
+                raise
             self._breakers[spec.id].record_success()
-            if spec.id != candidates[0].id:
+            if spec.id != first_candidate:
                 logger.info("llm_gateway.fallback_served model=%s", spec.id)
             return result
-        assert last_error is not None  # candidates is non-empty, so a loop always sets or returns
-        raise last_error
+        if last_error is not None:
+            raise last_error
+        raise LLMError(
+            LLMErrorCode.UNAVAILABLE,
+            "No capable/healthy model available in the gateway routing table",
+            retryable=True,
+        )
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         return await self._route(request, self._inner.complete)

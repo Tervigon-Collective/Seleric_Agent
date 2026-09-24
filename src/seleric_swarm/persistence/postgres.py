@@ -129,6 +129,31 @@ class PostgresMissionStore:
                     },
                 )
 
+            # Mirror the raw state exactly: prune mission_events rows that are no
+            # longer in the persisted event set. Without this, events that
+            # disappear between writes (e.g. a failed re-ingest with a shorter
+            # tail) linger forever and readers see events the raw never had.
+            live_seqs = [int(event.get("seq") or event_position)
+                         for event_position, event in enumerate(events, start=1)]
+            if live_seqs:
+                placeholders = ", ".join(f":s{i}" for i in range(len(live_seqs)))
+                params = {f"s{i}": seq for i, seq in enumerate(live_seqs)}
+                params["mission_id"] = result.mission_id
+                conn.execute(
+                    self._text(
+                        f"DELETE FROM mission_events WHERE mission_id=:mission_id "
+                        f"AND source_seq IS NOT NULL AND source_seq NOT IN ({placeholders})"
+                    ),
+                    params,
+                )
+            else:
+                conn.execute(
+                    self._text(
+                        "DELETE FROM mission_events WHERE mission_id=:mission_id"
+                    ),
+                    {"mission_id": result.mission_id},
+                )
+
             for evidence in result.evidence:
                 conn.execute(
                     self._text(

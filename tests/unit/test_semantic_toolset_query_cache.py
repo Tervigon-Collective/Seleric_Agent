@@ -77,11 +77,11 @@ async def test_identical_query_metrics_calls_hit_mcp_once():
 
 
 @pytest.mark.asyncio
-async def test_third_identical_query_metrics_call_hard_stops_with_model_retry():
+async def test_third_identical_query_metrics_call_withdraws_the_tool():
     # Live 2026-09-22 MS3-0bb3863a2e: the model ignored the soft nudge and
-    # called the identical query 3x. The 2nd repeat must hard-stop (ModelRetry
-    # → forces final_result) instead of handing back another "success".
-    from pydantic_ai import ModelRetry
+    # called the identical query 3x. The 2nd repeat withdraws query_metrics
+    # (not a ModelRetry — an ignored retry fails the whole mission).
+    from seleric_swarm.agent.limits import withdrawn_tools
 
     mcp = FakeMcpClient(
         {"seleric.metrics_query": {"rows": [{"units_sold": "2314"}], "provenance": {}}}
@@ -97,11 +97,12 @@ async def test_third_identical_query_metrics_call_hard_stops_with_model_retry():
     await semantic.query_metrics(ctx, **kwargs)  # fetch
     second = await semantic.query_metrics(ctx, **kwargs)  # 1st repeat → nudge
     assert second.success is True and "ALREADY FETCHED" in second.summary
-    with pytest.raises(ModelRetry):  # 2nd repeat → hard stop
-        await semantic.query_metrics(ctx, **kwargs)
+    assert "query_metrics" not in withdrawn_tools(ctx.deps)
+    third = await semantic.query_metrics(ctx, **kwargs)  # 2nd repeat → withdrawn
+    assert third.success is True and "ALREADY FETCHED" in third.summary
+    assert "query_metrics" in withdrawn_tools(ctx.deps)
     # Still only one real Cube call throughout.
     assert len([c for c in mcp.calls if c[0] == "seleric.metrics_query"]) == 1
-    assert "ALREADY FETCHED" in second.summary
 
 
 @pytest.mark.asyncio

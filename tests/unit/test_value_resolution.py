@@ -301,3 +301,48 @@ async def test_a_value_the_dimension_never_holds_is_not_reported_as_zero():
     assert result.error_code == "VALUE_NOT_FOUND"
     assert "lt_utm_medium = acme chat" in result.summary
     assert not deps.artifact_store.list_for_mission(_MISSION)  # no "0" evidence written
+
+
+def test_mission_result_accepts_empty_or_null_lists():
+    from seleric_swarm.agent.output import MissionResult
+
+    base = {"mission_id": "m", "status": "completed", "query": "q", "as_of": "2026-09-25T00:00:00Z", "final_response": "ok"}
+    assert MissionResult(**base, limitations="").limitations == []
+    assert MissionResult(**base, limitations=None).limitations == []
+    assert MissionResult(**base, limitations="one caveat").limitations == ["one caveat"]
+
+
+class _WeeklyMcp:
+    async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+        return {
+            "rows": [
+                {"product_net_revenue.week": "2026-09-14T00:00:00.000", "report_date": "2026-09-14", "product_net_revenue": 2049.18},
+                {"product_net_revenue.week": "2026-09-21T00:00:00.000", "report_date": "2026-09-21", "product_net_revenue": 10589},
+            ],
+            "provenance": {"query_id": "q1"},
+        }
+
+
+async def test_week_buckets_cut_short_by_the_period_are_labelled_partial():
+    deps = SelericDeps(
+        mission_id=_MISSION,
+        as_of=datetime(2026, 9, 25, tzinfo=UTC),
+        principal=Principal(principal_id="p1", workspace_id="ws1", user_id="u1"),
+        thread_id="t1",
+        run_id="r1",
+        trace_id="tr1",
+        context=ContextBundle(),
+        mcp_client=_WeeklyMcp(),
+        artifact_store=InMemoryArtifactStore(),
+        limits=ExecutionLimits(),
+    )
+    result = await semantic.query_metrics(
+        _Ctx(deps),  # type: ignore[arg-type]
+        metric_id="product_net_revenue",
+        grain="week",
+        period_start=datetime(2026, 9, 18, tzinfo=UTC),
+        period_end=datetime(2026, 9, 24, tzinfo=UTC),
+    )
+    assert result.success is True
+    assert "(PARTIAL week: only 2026-09-18..2026-09-20)" in result.summary
+    assert "(PARTIAL week: only 2026-09-21..2026-09-24)" in result.summary

@@ -334,6 +334,15 @@ async def run_mission_job(
         clear_cancel(mission_id, runtime)
     except Exception as exc:  # never leave a hung running mission
         if is_cancel_requested(mission_id, runtime):
+            # The mission died while a cancel was pending — persist the cancelled
+            # state before dropping the flag, or the runner is left "running"
+            # forever with no terminal write (and no UI event).
+            try:
+                raw = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
+                if not (isinstance(raw, dict) and raw.get("status") == "cancelled"):
+                    cancel_running_mission(runtime, mission_id=mission_id, request_id=request_id)
+            except (KeyError, ValueError):
+                pass
             clear_cancel(mission_id, runtime)
             return
         _log.exception("async_mission_failed", extra={"mission_id": mission_id})

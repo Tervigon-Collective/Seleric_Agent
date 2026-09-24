@@ -98,18 +98,20 @@ class AzureOpenAICompatibleAdapter:
     @staticmethod
     def _build_client(settings: Settings, api_key: str) -> Any:
         endpoint = settings.azure_openai_endpoint.rstrip("/")
-        retries = max(3, getattr(settings, "llm_max_retries", 3))
         # `*.services.ai.azure.com` is Azure AI Inference (OpenAI-compatible), which
         # does not use classic Azure "deployment name" routing. Default to the
         # OpenAI-compatible client; opt into classic Azure OpenAI when the endpoint
         # is a real `*.openai.azure.com` deployment resource.
+        # max_retries=0: this adapter owns retries via tenacity (see
+        # `complete`); the SDK's built-in retries would stack on top of them and
+        # multiply the effective attempt budget.
         if settings.azure_auth_style == "azure":
             return AsyncAzureOpenAI(
                 azure_endpoint=endpoint,
                 api_key=api_key,
                 api_version=settings.azure_openai_api_version,
                 timeout=settings.llm_timeout_s,
-                max_retries=retries,
+                max_retries=0,
             )
         base_url = endpoint if endpoint.endswith(("/v1", "/models")) else f"{endpoint}/models"
         return AsyncOpenAI(
@@ -117,7 +119,7 @@ class AzureOpenAICompatibleAdapter:
             api_key=api_key,
             timeout=settings.llm_timeout_s,
             default_query={"api-version": settings.azure_openai_api_version},
-            max_retries=retries,
+            max_retries=0,
         )
 
     @staticmethod

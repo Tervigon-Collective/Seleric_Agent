@@ -510,9 +510,13 @@ async def segment_decomposition(
         if not by_period:
             warnings.append(f"{policy.WARN_NO_DIMENSION_EVIDENCE}:{dimension}")
             continue
-        # One period per dimension here; a multi-period breakdown is
-        # contribution_analysis's job, not this one's.
-        segments = [s for period in by_period.values() for s in period]
+        if len(by_period) > 1:
+            # This tool renders ONE decomposition; pooling several periods into
+            # one series would silently average across time, which is
+            # contribution_analysis's job — refuse instead of conflating.
+            warnings.append(f"{policy.WARN_POOLED_SEGMENTS}:{dimension}")
+            continue
+        segments = list(next(iter(by_period.values())))
         result = shares(segments)
         if result is None or not result.shares:
             warnings.append(f"{policy.WARN_NO_DIMENSION_EVIDENCE}:{dimension}")

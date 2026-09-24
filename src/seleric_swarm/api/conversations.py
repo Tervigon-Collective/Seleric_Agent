@@ -933,9 +933,10 @@ def cancel_run(run_id: str, request: Request) -> dict[str, str]:
         },
         completed_at=cancelled_at,
     )
-    if not repositories.runs.cancel(
+    cancelled_event = repositories.runs.cancel(
         run_id, now=cancelled_at, terminal_event=terminal_event
-    ):
+    )
+    if cancelled_event is None:
         raise HTTPException(status_code=409, detail="run is not cancellable")
     _finalize_cancelled_placeholder(repositories, run)
     cancellation = getattr(runtime, "cancellation", None)
@@ -949,7 +950,7 @@ def cancel_run(run_id: str, request: Request) -> dict[str, str]:
             pass
     with suppress(Exception):
         _event_sink(runtime, repositories).notifier.publish(
-            run.id, terminal_event.sequence
+            run.id, cancelled_event.sequence
         )
     return {"run_id": run_id, "status": RunStatus.CANCELLED.value}
 
@@ -1164,6 +1165,27 @@ def _attempt_event(
     )
 
 
+# Error codes the recovery worker retries. INSUFFICIENT_EVIDENCE /
+# EXECUTION_LIMIT_EXCEEDED are verdicts, not transient faults: a retry re-burns
+# the whole mission (and backoff) to reach the same answer. The validator
+# already has its own bounded revision.
+_RETRYABLE_ERROR_CODES = frozenset(
+    {
+        "ASYNC_EXECUTION_FAILED",
+        "LLM_UNAVAILABLE",
+        "LLM_CLASSIFICATION_UNAVAILABLE",
+        "LLM_RATE_LIMITED",
+        "MCP_ERROR",
+        "MCP_UNAVAILABLE",
+        "MISSION_TIMEOUT",
+        "SERVICE_UNAVAILABLE",
+        "TIMEOUT",
+        "V3_AGENT_TIMEOUT",
+        "V3_AGENT_FAILED",
+    }
+)
+
+
 async def _execute_submission(
     runtime: SwarmRuntime,
     repositories: ConversationRepositories,
@@ -1336,9 +1358,18 @@ async def _execute_submission(
         )
     mission_status = raw.get("status")
     final_status = {
+        # Terminal mission statuses are stored verbatim by the mission layer. An
+        # absent/unknown status means the persistence write did not reach a
+        # recognised terminal state — do NOT fabricate COMPLETED for it: fail
+        # closed unless the mission clearly produced an answer/evidence.
         "failed": RunStatus.FAILED,
         "cancelled": RunStatus.CANCELLED,
-    }.get(str(mission_status), RunStatus.COMPLETED)
+        "completed": RunStatus.COMPLETED,
+        "partial": RunStatus.COMPLETED,
+    }.get(str(mission_status))
+    if final_status is None:
+        has_output = bool(str(raw.get("final_response") or "").strip()) or bool(raw.get("evidence"))
+        final_status = RunStatus.COMPLETED if has_output else RunStatus.FAILED
     persisted_run = repositories.runs.get(run.id)
     if persisted_run is not None and persisted_run.status is RunStatus.CANCELLED:
         final_status = RunStatus.CANCELLED
@@ -1346,6 +1377,13 @@ async def _execute_submission(
     raw_final_response = raw.get("final_response")
     final_response = raw_final_response if isinstance(raw_final_response, str) else ""
     has_response = bool(final_response.strip())
+    retryable = (
+        final_status is RunStatus.FAILED
+        and str(raw.get("error_code") or "").upper() in _RETRYABLE_ERROR_CODES
+    )
+    will_retry = (
+        retryable and attempt.retryable and attempt.attempt_number < run.max_attempts
+    )
     if has_response and _is_genuine_answer(final_status):
         placeholder = repositories.messages.get(assistant_message_id)
         if placeholder is None:
@@ -1380,6 +1418,28 @@ async def _execute_submission(
                 repositories.messages.list_for_thread(run.thread_id, limit=500),
                 mode="deterministic",
             )
+    elif will_retry:
+        # The worker will run another attempt (same rule as its fail_attempt:
+        # retryable code, retryable attempt, attempts left). Writing the failure
+        # into the transcript now showed "could not complete" while the retry
+        # was still running (live 2026-09-24 run_27159f6a). Leave the
+        # placeholder pending and tell the live stream instead. Clear any answer
+        # this attempt streamed, or the retry's deltas append to the dead draft.
+        _emit_answer_stream("reset")
+        sink.emit(
+            running,
+            "agent.retrying",
+            id=f"event_{run.id}_{attempt.id}_retrying",
+            summary=(
+                f"Retrying after an error (attempt {attempt.attempt_number + 1}"
+                f" of {run.max_attempts})…"
+            ),
+            payload={
+                "mission_id": run.mission_id,
+                "attempt_number": attempt.attempt_number,
+                "error_code": str(raw.get("error_code") or ""),
+            },
+        )
     else:
         placeholder = repositories.messages.get(assistant_message_id)
         if placeholder is not None:
@@ -1535,27 +1595,7 @@ async def _execute_submission(
         status=final_status,
         error_code=str(raw.get("error_code") or "") or None,
         error_message=str(raw.get("error_message") or "") or None,
-        retryable=(
-            final_status is RunStatus.FAILED
-            and str(raw.get("error_code") or "").upper()
-            in {
-                "ASYNC_EXECUTION_FAILED",
-                "LLM_UNAVAILABLE",
-                "LLM_CLASSIFICATION_UNAVAILABLE",
-                "LLM_RATE_LIMITED",
-                "MCP_ERROR",
-                "MCP_UNAVAILABLE",
-                "MISSION_TIMEOUT",
-                "SERVICE_UNAVAILABLE",
-                "TIMEOUT",
-                "V3_AGENT_TIMEOUT",
-                "V3_AGENT_FAILED",
-                # INSUFFICIENT_EVIDENCE / EXECUTION_LIMIT_EXCEEDED are verdicts,
-                # not transient faults: a retry re-burns the whole mission (and
-                # backoff) to reach the same answer. The validator already has
-                # its own bounded revision.
-            }
-        ),
+        retryable=retryable,
         terminal_event=_attempt_event(
             running,
             attempt,

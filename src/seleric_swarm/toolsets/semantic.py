@@ -24,6 +24,8 @@ from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
 
+from seleric_swarm.agent.limits import withdraw_tool
+
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
@@ -180,7 +182,6 @@ def _cache_key(capability: str, arguments: dict[str, Any]) -> str:
 _QUERY_CACHE_ENABLED = True
 
 LIVE_DATA_UNAVAILABLE = "live_data_unavailable"
-QUERY_LOOP_STOPPED = "query_loop_stopped"
 _MAX_DEFINITION_LOOKUPS = 4
 
 
@@ -212,11 +213,16 @@ async def _cached_metrics_query(
         return await ctx.deps.query_cache.get_or_fetch(key, fetch)
     verdict = ctx.deps.budget.consume("cube_queries")
     if not verdict.ok:
-        raise ModelRetry(
-            f"Cube query budget exhausted for this mission ({verdict.reason}). "
-            "Do not fetch any more data -- write your final_response now using "
-            "the evidence you already have, and say plainly if that isn't enough."
-        )
+        # Withdraw the fetch tools, don't ModelRetry: an ignored retry counts
+        # toward the per-tool retry limit and fails the whole mission.
+        withdraw_tool(ctx.deps, "query_metrics", "drilldown")
+        return {
+            "error": (
+                f"Cube query budget exhausted for this mission ({verdict.reason}). "
+                "Do not fetch any more data -- write your final_response now using "
+                "the evidence you already have, and say plainly if that isn't enough."
+            )
+        }
     result = await fetch() if not _QUERY_CACHE_ENABLED else await ctx.deps.query_cache.get_or_fetch(key, fetch)
     if str(result.get("error") or "").startswith("NotImplementedError"):
         # Deployment state, not a transient fault: `prepare_tools` (agent.py)
@@ -397,8 +403,27 @@ _MAX_SEARCHES = 3
 _MAX_SERIES_IN_SUMMARY = 40
 
 
+# Catalogue descriptions open with a one-sentence "what it is + when to use it";
+# echo only that so the model can tell near-identical ids apart (e.g. Meta net
+# sales on the event-date basis vs order-date) without a definitions round-trip.
+_SUMMARY_MAX_CHARS = 280
+
+
+def _summary(description: str) -> str:
+    text = " ".join((description or "").split())
+    # First sentence: a period followed by a space and an upper-case letter,
+    # so decimals ("52.7") and abbreviations inside the sentence don't cut it.
+    m = re.search(r"\.\s+(?=[A-Z])", text)
+    first = text[: m.start() + 1] if m else text
+    return first if len(first) <= _SUMMARY_MAX_CHARS else first[: _SUMMARY_MAX_CHARS - 1].rstrip() + "…"
+
+
 def _slim_match(match: dict[str, Any]) -> dict[str, Any]:
-    return {k: match[k] for k in _SHORTLIST_FIELDS if k in match}
+    slim = {k: match[k] for k in _SHORTLIST_FIELDS if k in match}
+    summary = _summary(str(match.get("description") or ""))
+    if summary:
+        slim["summary"] = summary
+    return slim
 
 
 def _norm_key(text: str) -> str:
@@ -448,13 +473,19 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
     # 11 times until the step budget tripped). The model already has candidates
     # from earlier searches; force it to execute or report no compatible metric.
     if count > _MAX_SEARCHES:
-        raise ModelRetry(
-            "SEMANTIC_RESOLUTION_LOOP: search_semantics is disabled for this "
-            "mission (budget exhausted). Do NOT call it again. Call query_metrics "
-            "with the best metric id from your earlier search results — for a "
-            "product/SKU question use a product_* metric (e.g. product_net_revenue, "
-            "product_return_revenue, returned_units). If no metric supports the "
-            "breakdown you need, call final_result stating that plainly."
+        withdraw_tool(ctx.deps, "search_semantics")
+        return ToolResult(
+            success=False,
+            summary=(
+                "SEMANTIC_RESOLUTION_LOOP: search_semantics is disabled for this "
+                "mission (budget exhausted). Call query_metrics with the best metric "
+                "id from your earlier search results — for a product/SKU question use "
+                "a product_* metric (e.g. product_net_revenue, product_return_revenue, "
+                "returned_units). If no metric supports the breakdown you need, call "
+                "final_result stating that plainly."
+            ),
+            error_code="SEMANTIC_RESOLUTION_LOOP",
+            retryable=False,
         )
     try:
         result = await ctx.deps.mcp_client.call(
@@ -944,6 +975,14 @@ async def query_metrics(
             # ends so two buckets cannot share one label.
             if bucket_date and grain in {"week", "month"}:
                 label = f"{bucket_start.date()}..{bucket_end.date()}"
+                # A week/month bucket that the requested period cuts short holds
+                # only part of that week/month (live: "last week" over 18–24 Sep
+                # returned a 21–24 Sep bucket labelled as the whole 21–27 week and
+                # was reported as "last week"). Say so in the label.
+                clip_start = max(bucket_start.date(), period_start.date())
+                clip_end = min(bucket_end.date(), period_end.date())
+                if (clip_start, clip_end) != (bucket_start.date(), bucket_end.date()):
+                    label += f" (PARTIAL {grain}: only {clip_start}..{clip_end})"
             elif bucket_date:
                 label = bucket_date
             elif row_dimensions:
@@ -1012,18 +1051,15 @@ async def query_metrics(
         dup_key = f"dup:{result_key}"
         dups = ctx.deps.call_counts.get(dup_key, 0) + 1
         ctx.deps.call_counts[dup_key] = dups
-        if dups >= 2:
-            # The ModelRetry alone is not enough (live 2026-09-25): a model that
-            # keeps repeating it exhausts pydantic_ai's per-tool retry limit and
-            # the whole mission dies with UnexpectedModelBehavior. `prepare_tools`
-            # (agent.py) withdraws query_metrics from here on, so the next turn
-            # can only answer.
-            ctx.deps.call_counts[QUERY_LOOP_STOPPED] = 1
-            raise ModelRetry(
-                "You have already fetched this exact query and have all its "
-                "values above. Do NOT call query_metrics again — call "
-                "final_result now with the values you already have."
-            )
+        # The model already fetched this exact query this mission and is
+        # re-issuing it verbatim (live 2026-09-22 MS3-0b46db4d98: a lookup
+        # re-called an identical successful query_metrics ~10x and exhausted
+        # its step budget; MS3-0bb3863a2e: 3 identical calls despite the nudge).
+        # A returned success — even a nudge — still reads as "call succeeded" and
+        # a stubborn small model calls again. So nudge once; RepeatCallGuard
+        # withdraws the tool after WITHDRAW_AFTER (3) identical calls, forcing
+        # the model to move on or answer. No ModelRetry — an ignored retry
+        # counts toward max_retries and crashes the mission.
         return prior.model_copy(
             update={
                 "summary": (

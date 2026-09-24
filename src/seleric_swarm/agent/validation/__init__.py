@@ -184,11 +184,28 @@ class EvidenceValidator:
         return ValidationOutcome(ok=True)
 
 
-def _usage_limits(limits: ExecutionLimits) -> UsageLimits:
-    """Bound one mission. Tool calls use the execution cap; model requests get
-    extra room for planning, retries, and the final answer."""
+def _usage_limits(limits: ExecutionLimits, attempts_hint: int = 1) -> UsageLimits:
+    """Bound one mission across its agent runs.
+
+    Tool calls use the execution cap; model requests get extra room for
+    planning, retries, and the final answer.
+
+    ``attempts_hint`` shares that total budget across the initial run plus each
+    REVISE revision (pydantic-ai enforces ``UsageLimits`` per individual
+    ``agent.run()``, so without this the budget would be granted fresh — and
+    the mission could do N× the intended work for N revisions). Each attempt
+    gets a ceil-share so nothing is starved; the mission's aggregate stays at
+    the configured single-run budget. Defaults to 1 for a standalone run.
+    """
+    attempts = max(1, attempts_hint)
+
+    def _share(total: int) -> int:
+        return -(-total // attempts)  # ceil division
+
     tool_cap = max(1, limits.max_tool_calls)
-    return UsageLimits(request_limit=tool_cap + 32, tool_calls_limit=tool_cap)
+    return UsageLimits(
+        request_limit=_share(tool_cap + 32), tool_calls_limit=_share(tool_cap)
+    )
 
 
 def _trunc(value: object, limit: int = 2000) -> object:
@@ -226,6 +243,7 @@ async def _run_agent_streamed(
     agent: Agent[SelericDeps, MissionResult],
     deps: SelericDeps,
     query: str,
+    budget: UsageLimits,
     on_delta: Callable[[str], None],
 ) -> MissionResult:
     """Stream the final answer's tokens as they are generated.
@@ -239,7 +257,7 @@ async def _run_agent_streamed(
     async with agent.run_stream(
         query,
         deps=deps,
-        usage_limits=_usage_limits(deps.limits),
+        usage_limits=budget,
         retries=max(1, deps.limits.agent_retries),
     ) as stream:
         emitted = 0
@@ -259,21 +277,23 @@ async def _run_agent(
     query: str,
     *,
     on_delta: Callable[[str], None] | None = None,
+    usage_limits: UsageLimits | None = None,
 ) -> MissionResult:
     # capture_run_messages populates `messages` even when the run raises
     # UsageLimitExceeded — the failing-budget case we most need to debug.
     # Only stream when something is listening: streaming changes the request path
     # (request_stream), so runs with no UI keep the plain request path.
     handler = progress_handler(deps.mission_id) if has_progress_sink(deps.mission_id) else None
+    budget = usage_limits or _usage_limits(deps.limits)
     with capture_run_messages() as messages:
         try:
             if on_delta is not None:
-                return await _run_agent_streamed(agent, deps, query, on_delta)
+                return await _run_agent_streamed(agent, deps, query, budget, on_delta)
             result = (
                 await agent.run(
                     query,
                     deps=deps,
-                    usage_limits=_usage_limits(deps.limits),
+                    usage_limits=budget,
                     retries=max(1, deps.limits.agent_retries),
                     event_stream_handler=handler,
                 )
@@ -316,7 +336,12 @@ async def run_validated_mission(
     tracker = tracker or ExecutionBudgetTracker(limits=deps.limits)
     on_delta = (lambda text: on_stream("delta", text)) if on_stream else None
 
-    result = await _run_agent(agent, deps, query, on_delta=on_delta)
+    # pydantic-ai enforces UsageLimits per agent.run(); share the mission budget
+    # across the initial run + revisions so N revisions don't multiply it.
+    attempts_total = 1 + max(0, deps.limits.max_validation_revisions)
+    mission_budget = _usage_limits(deps.limits, attempts_total)
+
+    result = await _run_agent(agent, deps, query, on_delta=on_delta, usage_limits=mission_budget)
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
     outcome = validator.validate(result, deps=deps)
@@ -359,7 +384,8 @@ async def run_validated_mission(
         revision_prompt = (
             f"{query}\n\nYour previous answer was rejected: {outcome.reason}. Revise it."
         )
-        result = await _run_agent(agent, deps, revision_prompt, on_delta=on_delta)
+        result = await _run_agent(agent, deps, revision_prompt, on_delta=on_delta,
+                              usage_limits=mission_budget)
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
         outcome = validator.validate(result, deps=deps)

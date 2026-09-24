@@ -67,3 +67,29 @@ class ExecutionBudgetTracker:
                 exhausted_key="runtime_seconds",
             )
         return _OK
+
+
+# --- per-mission tool withdrawal ------------------------------------------------
+#
+# A tool that must stop being called (a budget spent, a call the model keeps
+# repeating) is *withdrawn*: ``agent.py``'s prepare step drops it from the tool
+# list for the rest of the mission, and the tool returns a normal result saying
+# so. It never raises ``ModelRetry`` for this: a retry the model ignores counts
+# toward pydantic-ai's per-tool retry limit and kills the whole mission with
+# ``UnexpectedModelBehavior`` (live 2026-09-25: query_metrics duplicates,
+# search_semantics budget, catalogue_resolve_brand x30).
+
+WITHDRAWN_PREFIX = "withdrawn:"
+
+
+def withdraw_tool(deps: object, *names: str) -> None:
+    counts = getattr(deps, "call_counts", None)
+    if counts is None:
+        return
+    for name in names:
+        counts[f"{WITHDRAWN_PREFIX}{name}"] = 1
+
+
+def withdrawn_tools(deps: object) -> set[str]:
+    counts = getattr(deps, "call_counts", None) or {}
+    return {k[len(WITHDRAWN_PREFIX):] for k, v in counts.items() if k.startswith(WITHDRAWN_PREFIX) and v}

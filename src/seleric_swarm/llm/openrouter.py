@@ -51,12 +51,13 @@ def build_openrouter_provider(settings: Settings) -> Any:
     api_key = resolve_secret("OPENROUTER_API_KEY", settings, settings.openrouter_api_key)
     if not api_key.strip():
         raise ValueError("OPENROUTER_API_KEY is not set")
-    retries = max(3, getattr(settings, "llm_max_retries", 3))
+    # max_retries=0: wherever this provider is used, the caller/tenacity layer
+    # owns retries; the SDK's built-in retries would stack on top of them.
     client = AsyncOpenAI(
         base_url=(settings.openrouter_endpoint or "https://openrouter.ai/api/v1").rstrip("/"),
         api_key=api_key,
         timeout=settings.llm_timeout_s,
-        max_retries=retries,
+        max_retries=0,
         default_headers={"X-Title": "Seleric"},
     )
     return OpenAIProvider(openai_client=client)

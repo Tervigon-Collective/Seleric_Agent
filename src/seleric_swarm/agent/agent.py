@@ -42,7 +42,9 @@ from seleric_swarm.toolsets import (
     sandbox,
     semantic,
 )
-from seleric_swarm.toolsets.semantic import LIVE_DATA_UNAVAILABLE, QUERY_LOOP_STOPPED
+from seleric_swarm.agent.limits import withdrawn_tools
+from seleric_swarm.agent.repeat_guard import RepeatCallGuard
+from seleric_swarm.toolsets.semantic import LIVE_DATA_UNAVAILABLE
 
 # Typed as `list[Any]` deliberately: pydantic_ai's own `tools` parameter
 # wants a `Sequence[Tool[SelericDeps] | ToolFuncEither[SelericDeps, ...]]`,
@@ -145,19 +147,19 @@ async def _withdraw_data_tools(
     ctx: RunContext[SelericDeps], tool_defs: list[ToolDefinition]
 ) -> list[ToolDefinition]:
     """Once live data is known to be unreachable, only catalogue/knowledge tools
-    remain — the model can no longer loop on fetches that cannot succeed. After
-    the duplicate-query hard stop, ``query_metrics`` alone is withdrawn so a
-    repeating model must answer instead of exhausting the tool's retries."""
+    remain — the model can no longer loop on fetches that cannot succeed. Any
+    tool withdrawn during the mission (``limits.withdraw_tool``: a spent budget
+    or a repeated call) is dropped, so the model moves on or answers instead of
+    exhausting that tool's retries."""
     counts = getattr(ctx.deps, "call_counts", None)  # deps is None on the stub path
     if not counts:
         return tool_defs
     if counts.get(CONVERSATIONAL):
         return []
     if counts.get(LIVE_DATA_UNAVAILABLE):
-        return [t for t in tool_defs if t.name in _STILL_AVAILABLE_WITHOUT_LIVE_DATA]
-    if counts.get(QUERY_LOOP_STOPPED):
-        return [t for t in tool_defs if t.name != "query_metrics"]
-    return tool_defs
+        tool_defs = [t for t in tool_defs if t.name in _STILL_AVAILABLE_WITHOUT_LIVE_DATA]
+    withdrawn = withdrawn_tools(ctx.deps)
+    return [t for t in tool_defs if t.name not in withdrawn]
 
 
 def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDeps, MissionResult]:
@@ -169,7 +171,7 @@ def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDep
         instructions=INSTRUCTIONS + "\n\n" + capability_manifest(),
         name="seleric_agent",
         tools=TOOLS,
-        capabilities=[PrepareTools(_withdraw_data_tools)],
+        capabilities=[PrepareTools(_withdraw_data_tools), RepeatCallGuard()],
     )
 
     @agent.instructions

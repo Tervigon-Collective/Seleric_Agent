@@ -116,7 +116,10 @@ class _RowsMcp:
 @pytest.mark.asyncio
 async def test_query_metrics_is_withdrawn_after_the_duplicate_hard_stop():
     """Live 2026-09-25: a model repeating an identical query_metrics call hit the
-    ModelRetry hard stop until pydantic_ai's retry limit killed the mission."""
+    ModelRetry hard stop until pydantic_ai's retry limit killed the mission. The
+    general repeat guard replays the result and withdraws the tool instead."""
+    from seleric_swarm.agent.limits import withdrawn_tools
+
     offered: list[set[str]] = []
     call = {"metric_id": "net_sales", "dimensions": {}}
 
@@ -133,7 +136,42 @@ async def test_query_metrics_is_withdrawn_after_the_duplicate_hard_stop():
     with contextlib.suppress(Exception):
         await agent.run("net sales yesterday", deps=deps)
 
-    assert deps.call_counts.get(semantic.QUERY_LOOP_STOPPED) == 1
-    # fetch, nudge, hard stop — then the tool is gone instead of a 4th call.
+    assert "query_metrics" in withdrawn_tools(deps)
+    # fetch, replay, replay+withdraw — then the tool is gone instead of a 4th call.
     assert [("query_metrics" in t) for t in offered[:4]] == [True, True, True, False]
     assert mcp.calls == 1
+
+
+class _UnknownBrandMcp:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def call(self, *, agent_id: str, capability: str, arguments: dict) -> dict:
+        self.calls += 1
+        return {"kind": "unknown", "term": arguments.get("text"), "suggestions": []}
+
+
+@pytest.mark.asyncio
+async def test_any_tool_repeated_with_identical_arguments_is_replayed_then_withdrawn():
+    """Live 2026-09-25 "pawtech sales last week": catalogue_resolve_brand was
+    called ~30x with the same argument. The guard is generic — no per-tool code."""
+    from seleric_swarm.agent.limits import withdrawn_tools
+
+    offered: list[set[str]] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        tools = {t.name for t in info.function_tools}
+        offered.append(tools)
+        if "resolve_brand" in tools and len(offered) < 10:
+            return ModelResponse(parts=[ToolCallPart("resolve_brand", {"name": "pawtech"})])
+        return ModelResponse(parts=[TextPart("done")])
+
+    agent = build_seleric_agent(model=FunctionModel(model))
+    mcp = _UnknownBrandMcp()
+    deps = dataclasses.replace(_deps(), mcp_client=mcp)
+    with contextlib.suppress(Exception):
+        await agent.run("pawtech sales", deps=deps)
+
+    assert mcp.calls == 1  # executed once, replayed after
+    assert "resolve_brand" in withdrawn_tools(deps)
+    assert [("resolve_brand" in t) for t in offered[:4]] == [True, True, True, False]

@@ -130,12 +130,13 @@ async def test_query_metrics_writes_evidence_artifact_on_success():
 
 
 @pytest.mark.asyncio
-async def test_query_metrics_raises_model_retry_once_cube_query_budget_exhausted():
+async def test_query_metrics_withdraws_fetching_once_cube_query_budget_exhausted():
     """Real enforcement, not just a frozen field: ExecutionLimits.max_cube_queries
     (CONTRACTS.md) previously bounded nothing in this toolset -- a mission
     could issue unlimited real Cube queries. A fresh (uncached) query_metrics
-    call past the limit must stop the loop via ModelRetry, not silently fetch."""
-    from pydantic_ai import ModelRetry
+    call past the limit must stop the loop — by withdrawing the fetch tools and
+    failing the call, never a ModelRetry (an ignored retry fails the mission)."""
+    from seleric_swarm.agent.limits import withdrawn_tools
 
     mcp = FakeMcpClient(
         {
@@ -147,14 +148,16 @@ async def test_query_metrics_raises_model_retry_once_cube_query_budget_exhausted
         }
     )
     ctx = FakeRunContext(_deps(mcp, limits=ExecutionLimits(max_cube_queries=0)))
-    with pytest.raises(ModelRetry, match="Cube query budget exhausted"):
-        await semantic.query_metrics(
-            ctx,
-            metric_id="total_sales",
-            dimensions={},
-            period_start=datetime(2026, 9, 17, tzinfo=UTC),
-            period_end=datetime(2026, 9, 17, tzinfo=UTC),
-        )
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="total_sales",
+        dimensions={},
+        period_start=datetime(2026, 9, 17, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert "Cube query budget exhausted" in result.summary
+    assert {"query_metrics", "drilldown"} <= withdrawn_tools(ctx.deps)
     assert mcp.calls == []  # rejected before any Cube call
 
 
@@ -401,7 +404,12 @@ async def test_query_metrics_week_grain_keeps_each_week_its_own_window():
     assert [p.period_end.date().isoformat() for p in parsed] == ["2026-09-13", "2026-09-20"]
     assert validate_grain_set(parsed) is None
     labels = [s["label"] for s in result.provenance.source_metadata["series"]]
-    assert labels == ["2026-09-07..2026-09-13", "2026-09-14..2026-09-20"]
+    # The query window starts mid-week (9 Sep), so the first bucket holds only
+    # part of its week and says so; the second week lies fully inside.
+    assert labels == [
+        "2026-09-07..2026-09-13 (PARTIAL week: only 2026-09-09..2026-09-13)",
+        "2026-09-14..2026-09-20",
+    ]
     assert not check_contradiction(artifacts).challenges
 
 
@@ -623,11 +631,12 @@ async def test_search_semantics_uses_glossary_search_and_slims_shortlist():
 
 
 @pytest.mark.asyncio
-async def test_search_semantics_hard_stops_over_budget_with_model_retry():
+async def test_search_semantics_over_budget_is_withdrawn_not_retried():
     # Live 2026-09-22 MS3-53296c1a5e: the soft "STOP SEARCHING" summary was
-    # ignored 11 times until the budget tripped. Past _MAX_SEARCHES the tool
-    # must hard-stop with ModelRetry, not return another success.
-    from pydantic_ai import ModelRetry
+    # ignored 11 times. Live 2026-09-25: the ModelRetry that replaced it was
+    # ignored too, exceeded the tool's retry limit and failed the mission. Past
+    # _MAX_SEARCHES the tool is withdrawn and the call fails plainly.
+    from seleric_swarm.agent.limits import withdrawn_tools
 
     mcp = FakeMcpClient(
         {"seleric.catalogue_search_metrics": {"matches": [{"id": "product_return_revenue"}]}}
@@ -635,9 +644,10 @@ async def test_search_semantics_hard_stops_over_budget_with_model_retry():
     ctx = FakeRunContext(_deps(mcp))
     for _ in range(semantic._MAX_SEARCHES):
         assert (await semantic.search_semantics(ctx, "returns")).success is True
-    with pytest.raises(ModelRetry) as exc:
-        await semantic.search_semantics(ctx, "returns again")
-    assert "SEMANTIC_RESOLUTION_LOOP" in str(exc.value)
+    over = await semantic.search_semantics(ctx, "returns again")
+    assert over.success is False
+    assert over.error_code == "SEMANTIC_RESOLUTION_LOOP"
+    assert "search_semantics" in withdrawn_tools(ctx.deps)
 
 
 @pytest.mark.asyncio
@@ -864,3 +874,25 @@ async def test_resolve_brand_unresolved_is_insufficient_evidence():
     assert result.success is False
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
     assert result.provenance.source_metadata["candidates"] == ["20", "27"]
+
+
+def test_search_shortlist_carries_first_sentence_summary() -> None:
+    from seleric_swarm.toolsets.semantic import _slim_match
+
+    slim = _slim_match(
+        {
+            "id": "meta_attribution_net_sales",
+            "display_name": "Meta Attribution Net Sales",
+            "description": "Net sales from Meta paid ads — the default for \"Meta net sales\". "
+            "Computed on serve.channel_pnl with 52.7 style decimals.",
+            "category": "attribution",
+        }
+    )
+    assert slim["summary"] == 'Net sales from Meta paid ads — the default for "Meta net sales".'
+    assert "category" not in slim and "description" not in slim
+
+
+def test_search_shortlist_omits_summary_without_description() -> None:
+    from seleric_swarm.toolsets.semantic import _slim_match
+
+    assert "summary" not in _slim_match({"id": "x", "display_name": "X"})

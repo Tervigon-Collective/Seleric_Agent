@@ -217,7 +217,14 @@ class MemoryService:
                     for item in existing
                     if item.normalized_content == normalized
                     and item.type is candidate.type
-                    and item.status is not MemoryStatus.DELETED
+                    # Only LIVE memories can absorb an observation — a new fact
+                    # must never merge into a SUPERSEDED/ARCHIVED/DELETED tombstone.
+                    and item.status
+                    not in {
+                        MemoryStatus.SUPERSEDED,
+                        MemoryStatus.ARCHIVED,
+                        MemoryStatus.DELETED,
+                    }
                 ),
                 None,
             )
