@@ -8,10 +8,15 @@ without a live LLM.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic_ai.models import Model
 
 from seleric_swarm.agent.agent import _stub_test_model
+from seleric_swarm.agent.model_health import MODEL_HEALTH, HealthGatedChatModel
 from seleric_swarm.config.settings import Settings, configured_chat_model
+
+AGENT_LLM_TIMEOUT_S = 90.0
 
 
 def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
@@ -44,6 +49,13 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
 
     from seleric_swarm.llm.adapters.azure_openai_compatible import AzureOpenAICompatibleAdapter
 
+    # Agent calls are non-streaming and carry every tool result so far, so a
+    # reasoning model legitimately needs longer than the 30s the short helper
+    # calls (summaries, classification) use. Live: "why did CAC go up" died on a
+    # 30s read timeout mid-investigation. Longer only for the agent's clients.
+    settings = settings.model_copy(
+        update={"llm_timeout_s": max(settings.llm_timeout_s, AGENT_LLM_TIMEOUT_S)}
+    )
     adapter = AzureOpenAICompatibleAdapter(settings)
     provider = OpenAIProvider(openai_client=adapter.async_client)
     model_names = settings.resolved_models() or [model_name]
@@ -59,10 +71,17 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
         if prefer_fast and fast_model
         else None
     )
-    models = [
-        OpenAIChatModel(
-            name, provider=provider, settings=fast_settings if name == fast_model else None
+    def chat(name: str, prov: OpenAIProvider, tag: str, model_settings: Any = None) -> OpenAIChatModel:
+        return HealthGatedChatModel(
+            name,
+            provider=prov,
+            settings=model_settings,
+            health=MODEL_HEALTH,
+            health_key=f"{tag}:{name}",
         )
+
+    models: list[OpenAIChatModel] = [
+        chat(name, provider, "azure1", fast_settings if name == fast_model else None)
         for name in model_names
     ]
 
@@ -79,9 +98,7 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
         )
         adapter_2 = AzureOpenAICompatibleAdapter(settings_2)
         provider_2 = OpenAIProvider(openai_client=adapter_2.async_client)
-        models.extend(
-            OpenAIChatModel(name, provider=provider_2) for name in settings_2.resolved_models()
-        )
+        models.extend(chat(name, provider_2, "azure2") for name in settings_2.resolved_models())
 
     # Independent-provider tail fallback: after every Azure resource is
     # exhausted, fall through to OpenRouter's separate provider pool. Additive —
@@ -94,7 +111,7 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
     or_models = resolved_openrouter_models(settings)
     if or_models and settings.openrouter_api_key.strip():
         or_provider = build_openrouter_provider(settings)
-        models.extend(OpenAIChatModel(name, provider=or_provider) for name in or_models)
+        models.extend(chat(name, or_provider, "openrouter") for name in or_models)
 
     if len(models) == 1:
         return models[0]

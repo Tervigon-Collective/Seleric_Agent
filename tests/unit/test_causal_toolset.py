@@ -30,7 +30,9 @@ class FakeRunContext:
         self.deps = deps
 
 
-def _deps(store: InMemoryArtifactStore | None = None) -> SelericDeps:
+def _deps(
+    store: InMemoryArtifactStore | None = None, *, limits: ExecutionLimits | None = None
+) -> SelericDeps:
     return SelericDeps(
         mission_id="mission-causal",
         as_of=datetime(2026, 9, 18, tzinfo=UTC),
@@ -41,7 +43,7 @@ def _deps(store: InMemoryArtifactStore | None = None) -> SelericDeps:
         context=ContextBundle(),
         mcp_client=NullMcpClient(),
         artifact_store=store or InMemoryArtifactStore(),
-        limits=ExecutionLimits(),
+        limits=limits or ExecutionLimits(),
     )
 
 
@@ -196,6 +198,21 @@ def test_missing_evidence_returns_insufficient() -> None:
     assert not result.success
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
     assert result.artifact_ids == []
+
+
+def test_estimate_effect_refuses_once_causal_budget_exhausted() -> None:
+    store = InMemoryArtifactStore()
+    eids = [
+        *_series(store, "metric.spend", n=30),
+        *_series(store, "metric.net_sales", n=30),
+    ]
+    ctx = FakeRunContext(_deps(store, limits=ExecutionLimits(max_causal_queries=0)))
+    result = causal.estimate_effect(
+        ctx, eids, "metric.spend", "metric.net_sales"  # type: ignore[arg-type]
+    )
+    assert not result.success
+    assert result.error_code == "EXECUTION_LIMIT_EXCEEDED"
+    assert "policy:execution_limit_exceeded" in result.warnings
 
 
 def test_thin_history_returns_insufficient() -> None:

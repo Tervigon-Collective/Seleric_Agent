@@ -109,6 +109,9 @@ WARN_MISSING_TREATMENT_OUTCOME: str = "policy:missing_treatment_or_outcome_serie
 WARN_THIN_HISTORY: str = "policy:thin_history"
 WARN_THIN_ROWS: str = "policy:thin_observation_rows"
 WARN_MISSING_CAUSAL_ARTIFACT: str = "policy:missing_causal_artifact"
+# agent/limits.py::ExecutionBudgetTracker exhaustion (max_cube_queries/
+# max_causal_queries/max_prediction_calls) surfaced as a normal tool refusal.
+WARN_EXECUTION_LIMIT_EXCEEDED: str = "policy:execution_limit_exceeded"
 
 # Model toolset gates (Sprint 3 C).
 WARN_NO_APPROVED_MODEL: str = "policy:no_approved_model"

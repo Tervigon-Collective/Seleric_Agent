@@ -119,6 +119,16 @@ def test_validate_fails_on_unresolved_artifact_id() -> None:
     assert "ev-missing" in (outcome.reason or "")
 
 
+@pytest.mark.parametrize("text", ["placeholder", "  Placeholder. ", "TBD", "n/a", "..."])
+def test_validate_rejects_a_placeholder_answer(text: str) -> None:
+    outcome = EvidenceValidator().validate(_result(final_response=text), deps=_deps())
+    assert not outcome.ok
+
+
+def test_validate_accepts_a_short_real_answer() -> None:
+    assert EvidenceValidator().validate(_result(final_response="You're welcome!"), deps=_deps()).ok
+
+
 def test_validate_fails_on_empty_final_response_when_completed() -> None:
     validator = EvidenceValidator()
     outcome = validator.validate(_result(final_response=""), deps=_deps())
@@ -146,6 +156,44 @@ async def test_run_validated_mission_passes_through_a_valid_result() -> None:
     result = await run_validated_mission(agent, deps, "hello")
     assert result.status == "completed"
     assert result.error_code is None
+
+
+@pytest.mark.asyncio
+async def test_run_validated_mission_streams_tool_progress_when_a_sink_is_registered() -> None:
+    from seleric_swarm.agent import progress
+
+    model = TestModel(
+        custom_output_args={
+            "mission_id": "MS3-test",
+            "status": "completed",
+            "query": "hello",
+            "as_of": datetime.now(UTC),
+            "final_response": "a valid answer",
+            "evidence_ids": [],
+            "finding_ids": [],
+            "limitations": [],
+            "error_code": None,
+            "trace": {},
+        }
+    )
+    agent = Agent(model=model, deps_type=SelericDeps, output_type=MissionResult)
+
+    @agent.tool_plain
+    def search_semantics() -> str:
+        return "5 metrics"
+
+    seen: list[tuple[str, str]] = []
+    progress.set_progress_sink("MS3-test", lambda et, summary, _payload: seen.append((et, summary)))
+    try:
+        result = await run_validated_mission(agent, _deps(), "hello")
+    finally:
+        progress.clear_progress_sink("MS3-test")
+
+    assert result.status == "completed"
+    assert result.final_response == "a valid answer"
+    assert ("agent.tool_started", "Searching the metric catalogue") in seen
+    assert ("agent.tool_completed", "Searching the metric catalogue — done") in seen
+    assert seen[-1] == ("agent.answering", "Writing the answer")
 
 
 @pytest.mark.asyncio

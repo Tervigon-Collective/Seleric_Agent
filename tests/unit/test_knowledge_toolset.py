@@ -197,6 +197,20 @@ async def test_hits_are_returned_with_citations(monkeypatch, tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_knowledge_searches_are_capped_per_mission_without_erroring():
+    """Live: "thanks!" made up to 20 knowledge searches (105s)."""
+    ctx = _ctx()
+    results = [
+        await knowledge.search_knowledge(ctx, f"query {i}")
+        for i in range(knowledge._MAX_KNOWLEDGE_SEARCHES + 2)
+    ]
+    assert all("budget is spent" not in r.summary for r in results[: knowledge._MAX_KNOWLEDGE_SEARCHES])
+    stopped = results[knowledge._MAX_KNOWLEDGE_SEARCHES]
+    assert stopped.success is True
+    assert "budget is spent" in stopped.summary
+
+
+@pytest.mark.asyncio
 async def test_empty_query_refuses():
     result = await knowledge.search_knowledge(_ctx(), "   ")
     assert result.success is False

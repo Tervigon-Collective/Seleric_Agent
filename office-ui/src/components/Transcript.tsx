@@ -27,6 +27,11 @@ function UserMessage() {
   );
 }
 
+function RunningLine() {
+  const progress = useConversationStore((state) => state.progress);
+  return <p className="running" aria-live="polite"><span className="pulse-dot" /> {progress ?? "Working on it…"}</p>;
+}
+
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="message assistant" aria-label="assistant message">
@@ -36,7 +41,7 @@ function AssistantMessage() {
         <MessagePrimitive.Parts components={parts} />
         <AuiIf condition={(state) => state.thread.isRunning}>
           <MessagePrimitive.If hasContent={false}>
-            <p className="running" aria-live="polite"><span className="pulse-dot" /> Coordinating specialists…</p>
+            <RunningLine />
           </MessagePrimitive.If>
         </AuiIf>
         <AuiIf condition={(state) => !state.thread.isRunning}>
@@ -62,7 +67,7 @@ export function Transcript() {
     <ThreadPrimitive.Root className="thread-root">
       <ThreadPrimitive.Viewport className="transcript" aria-label="Conversation transcript" aria-busy={loading}>
         {!threadId && <div className="empty-state"><h1>What can Seleric help with?</h1><p>Type a message below to start a conversation.</p></div>}
-        {threadId && <ThreadPrimitive.Empty><div className="empty-state"><h1>What should we investigate?</h1><p>Ask a question and the specialist swarm will coordinate a response.</p></div></ThreadPrimitive.Empty>}
+        {threadId && <ThreadPrimitive.Empty><div className="empty-state"><h1>What should we investigate?</h1><p>Ask a question about your metrics and Seleric will investigate.</p></div></ThreadPrimitive.Empty>}
         <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage, SystemMessage }} />
         <ThreadPrimitive.ScrollToBottom aria-label="Scroll to latest message" className="scroll-latest">↓</ThreadPrimitive.ScrollToBottom>
       </ThreadPrimitive.Viewport>

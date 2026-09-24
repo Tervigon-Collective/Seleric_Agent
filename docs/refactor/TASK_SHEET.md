@@ -178,6 +178,76 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 
 ## Log
 
+- 2026-09-24: **Live-data pass in Chrome** (MCP now configured: real numbers,
+  ranked product tables, WoW comparison; 619 py + 91 UI tests green). Fixed:
+  (1) "thanks!"/"hi" looped 8-20 `search_knowledge` calls (105s) or looked up
+  a CAC figure → Jev `conversation` intent (classifier-judged, not hard-coded)
+  gives the agent zero tools; exact alias check still runs first so "ns"
+  works; `search_knowledge` capped at 2/mission; (2) OpenRouter 402/401/403 was
+  re-hit every step → 300s cooldown (`model_health`); (3) agent LLM clients get
+  a 90s read timeout (30s killed "why did CAC go up" mid-investigation);
+  (4) SOURCE chips show a formatted value/period instead of 6 identical cards;
+  (5) SafeContent pathological-input perf test. Chrome note: `captureScreenshot`
+  can time out on an occluded window even though the page is alive
+  (`get_page_text` confirms) — not an app freeze. Not re-verified in Chrome:
+  the 90s timeout fix (extension disconnected mid-run).
+
+- 2026-09-24: **Answer rendering + 13-query stress pass.** `SafeContent` was
+  paragraphs-only, so model Markdown showed as raw `##`/`**`/`|---|`. Now a
+  React-node Markdown renderer (headings, lists, GFM tables, quotes, code,
+  bold/italic, http(s)-only links; never HTML strings) with tests incl. XSS and
+  a 40-section answer. Batch of 13 queries (greetings, definitions, data,
+  2.4k-char and 4k-char inputs, emoji) exposed: with MCP down the agent kept
+  calling `query_metrics` for 100–405s (5 runs ended `run.failed`) → mission
+  flag `live_data_unavailable` + `PrepareTools` capability withdraws data tools
+  (`agent.py`); definition lookups capped at 4/mission; instructions 0.1.13
+  (reply in user's language, Markdown, definition questions need no data);
+  validator rejects placeholder answers ("placeholder" shipped live). After:
+  13/13 answered, longest 100s (4 in parallel on a rate-limited Azure).
+  Open: intermittent Azure read timeouts still trigger a (designed) retry;
+  "thanks!" once answered with an LTV refusal (model misroute, not hard-coded).
+
+- 2026-09-24: **Latency + streaming pass** ("creative" query 122s → ~16s).
+  Causes found live: (1) DeepSeek-V4-Pro 429 and gpt-5-mini 30s timeouts were
+  re-tried on *every* step because `FallbackModel` restarts from the top →
+  `agent/model_health.py` per-model cooldowns (429 45s, timeout 90s, 5xx 30s;
+  never skips when all are cooling); (2) `INSUFFICIENT_EVIDENCE` and
+  `EXECUTION_LIMIT_EXCEEDED` were marked retryable, so a deterministic verdict
+  re-ran the whole mission 3× with backoff → removed from the retryable set;
+  (3) unconfigured MCP (`NotImplementedError`) was `retryable=True`, so the
+  agent tried metric after metric → non-retryable `MCP_UNAVAILABLE` with a
+  "stop and answer" message (`semantic._fetch_failure`). Streaming: mission
+  events used to be ingested only after the run; now `agent/progress.py` +
+  `event_stream_handler` emit `agent.tool_started/completed/answering` live
+  (only when a sink is registered), the UI shows the current step in the
+  pending reply. The answer text itself is not token-streamed: it is gated by
+  the EvidenceValidator, so it is released once validated.
+  Open: local Postgres on :5433 rejects both the `.env` password and the
+  compose default (migrations not run); `.env` has no SELERIC_MCP_URL/TOKEN so
+  live data lookups fail with MCP_UNAVAILABLE.
+
+- 2026-09-24: **Live Chrome pass (chat UI)** — found + fixed: (1) dev
+  `InProcessRunQueue` ran the worker once, so a backoff-scheduled retry never
+  ran and the run hung in RETRYABLE (UI spinner forever) → now drives until no
+  retry is pending (`recovery.py`, bounded); (2) `run_checks` counted the
+  `plan` artifact as a derived claim, failing any planned mission that fetched
+  no data (e.g. "thanks!") with INSUFFICIENT_EVIDENCE → plan excluded;
+  (3) Stop left a dangling "Working…" reply → cancel endpoint finalizes it to
+  "Run cancelled." and the store refreshes the thread; (4) UI copy: dropped
+  "specialist swarm"/"Coordinating specialists"; tsconfig lib ES2022.
+  Regression tests for each. Open: LLM endpoint timing out locally, and `.env`
+  lost its SELERIC_MCP_* keys at 12:43 (25 live-MCP tests now skip).
+
+- 2026-09-24: **Execution limits enforced** — `SelericDeps.budget`
+  (`ExecutionBudgetTracker`) now consumed by `semantic._cached_metrics_query`
+  (cube_queries, cache hits free; exhaustion → `ModelRetry`),
+  `causal.estimate_effect` (causal_queries) and `models.forecast`
+  (prediction_calls) → `EXECUTION_LIMIT_EXCEEDED` +
+  `policy:execution_limit_exceeded`. Regression tests added per toolset.
+  Alias fast path intentionally skips EvidenceValidator (answer is the
+  fetched value only); its amount formatting no longer rounds rates to 0.
+  `intent._normalize_ordinal` typed with a bound TypeVar (no ignore).
+
 - 2026-09-19: **Sprint 5 executed** — swarm_v2 deleted, V3 is the only
   mission path. Plan: Claude session `elegant-singing-swing.md` (Phases
   A–F). `ModelRecord` ported to `models/service.py`; `AgentRegistry` +
@@ -884,3 +954,84 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
   the first time this session, including the previously-carried
   pre-existing live-data flake (its test file was among what Sprint 5
   deleted).
+- 2026-09-24: **Chat/conversations logic-bug pass.** Checked whether
+  `office-ui`'s chat is correctly wired end to end (`Composer`/`Transcript`
+  → `stores/conversation.ts` → `POST /v1/threads/{id}/messages` →
+  `api/conversations.py::_execute_submission` → `agent/runner.py`) and
+  found a real, user-facing bug: `_execute_submission` decided whether to
+  render the assistant's final message as a normal answer purely on "is
+  `final_response` a non-empty string" — but every V3 failure path
+  (rate-limited, timed out, insufficient evidence) also populates a
+  non-empty `final_response` with a human-readable error message. A failed
+  mission's error text was rendered as a plain `TEXT` part and fired
+  `"answer.completed"`, indistinguishable in the chat UI from a genuine
+  answer — the user would see e.g. "The agent could not complete this
+  question. Please retry." formatted exactly like a real answer to their
+  business question, with no warning styling
+  (`MessagePartRenderer.tsx`'s `WARNING` case renders with `role="alert"`
+  and different CSS; `TEXT` does not). Fixed: extracted
+  `_is_genuine_answer(final_status) -> bool` (only `RunStatus.COMPLETED`
+  counts) and gated the answer branch on it in addition to the
+  non-empty-string check; a failed/cancelled run with a message now renders
+  that message as a `WARNING` part (showing the agent's real explanation,
+  not a generic placeholder) instead of a fake plain answer. New test:
+  `tests/unit/test_phase6_memory_context.py::
+  test_only_a_completed_run_is_a_genuine_answer`.
+
+  Also found `qdrant-client` (declared in `pyproject.toml`, added by
+  concurrent Profile B catalogue-index work) wasn't installed in the venv
+  — `uv sync --extra dev` blocked every test collection. Fixed by syncing.
+
+  Also found a stale test unrelated to the above:
+  `tests/unit/test_v3_ui_connect.py::test_rate_limit_error_is_not_dumped_to_the_user`
+  asserted on a `RuntimeError` whose *string* happened to contain "429" —
+  but `agent/runner.py::_user_facing_agent_failure` was already refactored
+  (by concurrent work) to classify by real exception type
+  (`ModelHTTPError.status_code == 429`, `OpenAIAPITimeoutError`), a
+  deliberate, more-robust improvement over string-sniffing. Updated the
+  test to construct a real `ModelHTTPError(429, ...)` instead of rewriting
+  the (correct) source behavior to match a stale test.
+
+  Also fixed, from an earlier pass this session not yet logged:
+  `agent/runner.py`'s `max_runtime_seconds` was hardcoded to
+  `min(45.0, mission_timeout_s)` with no recorded rationale — this
+  session's own live-latency data (a real successful diagnostic mission
+  took 56.62s) meant that cap would kill a normal successful query with
+  `TimeoutError` before it finished. Removed the artificial ceiling; uses
+  `mission_timeout_s` (120.0s default) directly. Also ran a read-only
+  logic-bug audit of the full V3 path (`agent/limits.py`, `agent/validation/*`,
+  the 5 established toolsets, `api/v3_state.py`/`office/v3_adapter.py`/
+  `office/gateway.py`) and flagged two items for a deliberate decision
+  rather than a quick patch: (1) 3 of 5 frozen `ExecutionLimits` fields
+  (`max_cube_queries`/`max_causal_queries`/`max_prediction_calls`) are
+  never incremented anywhere — only `validation_revisions` and
+  `max_tool_calls` (via pydantic_ai's own `UsageLimits`) are truly
+  enforced; not an unbounded-loop risk today (the blanket `max_tool_calls`
+  bounds total calls transitively) but the contract overstates what's
+  enforced. (2) the alias fast path (`_alias_lookup_result`) bypasses
+  `EvidenceValidator` entirely — safe today since its own branches always
+  populate a non-empty response, but no structural safety net if that
+  function changes. Neither fixed; both need a design call, not a patch.
+
+  Full suite after all of the above: **590 passed, 0 failed, 4 skipped**.
+  `ruff check` and `mypy` clean on every file touched this pass.
+- 2026-09-24: **Follow-up sweep** (edge cases, lint, and a real type bug from
+  the newest concurrent addition). Repo-wide `ruff check --fix` cleared 8
+  new style issues from concurrent work (2 stale `noqa: E731` in
+  `toolsets/semantic.py`, import order + `dict()`-as-literal in test files)
+  — cosmetic, no behavior change. Repo-wide `mypy` then surfaced a real
+  finding: `SelericDeps.query_cache` was typed `MissionQueryCache[str,
+  dict[str, Any]]`, but the new query-dedup work in `toolsets/semantic.py`
+  (caching a repeat `query_metrics` call's whole `ToolResult` — the
+  "already fetched, don't call again" nudge/`ModelRetry` escalation) stores
+  `ToolResult` objects in that same cache under a different key prefix.
+  Not a runtime crash (Python doesn't enforce the generic at runtime, and
+  the two value shapes never collide under their distinct key prefixes),
+  but the type was actively lying about what's stored. Widened to
+  `MissionQueryCache[str, Any]` with a comment explaining the two shapes
+  it actually holds. Left one other new-file mypy note alone
+  (`agent/intent.py`'s `_normalize_ordinal` returning bare `str` instead of
+  the narrower `ComplexityLabel` Literal) — same "runtime-safe, type
+  annotation loose" category, in a file a concurrent session is actively
+  building, not touched. Full suite re-verified: 590 passed, 0 failed, 4
+  skipped. `ruff check` and `mypy` both fully clean repo-wide.

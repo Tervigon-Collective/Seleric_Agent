@@ -410,6 +410,9 @@ def check_prediction(artifacts: list[Artifact]) -> CheckOutcome:
     return out
 
 
+_NON_CLAIM_ARTIFACT_TYPES = frozenset({"plan"})
+
+
 def run_checks(deps: SelericDeps) -> tuple[list[CheckOutcome], list[EvidenceGap], ClaimType]:
     """Every V3 check over one mission's artifacts, plus the collected gaps.
 
@@ -419,7 +422,13 @@ def run_checks(deps: SelericDeps) -> tuple[list[CheckOutcome], list[EvidenceGap]
     the recompute changes nothing about the verdict -- porting it would add a
     scoring model with no consumer.
     """
-    artifacts = deps.artifact_store.list_for_mission(deps.mission_id)
+    # A plan is observability, not a claim: counting it as a derived artifact
+    # would fail every planned mission that (correctly) fetched no data.
+    artifacts = [
+        a
+        for a in deps.artifact_store.list_for_mission(deps.mission_id)
+        if a.artifact_type not in _NON_CLAIM_ARTIFACT_TYPES
+    ]
     outcomes = [
         check_evidence(artifacts),
         check_provenance(artifacts),

@@ -30,6 +30,26 @@ describe("conversation store submit", () => {
     vi.useRealTimers();
   });
 
+  it("shows the latest agent step while a run is in flight and clears it at the end", () => {
+    const event = (type: string, summary: string | null, sequence: number) => ({
+      id: `e${sequence}`, thread_id: "t1", workspace_id: "w1", run_id: "run-1", sequence,
+      event_type: type, actor_type: null, actor_id: null, title: null, summary,
+      evidence_ids: [], payload: { mission_id: "mission-1" }, metadata: {},
+      started_at: null, completed_at: null, duration_ms: null, created_at: "2026-09-24T10:00:00Z",
+    });
+    vi.spyOn(conversationsApi, "listMessages").mockResolvedValue([]);
+    const { applyRunEvent } = useConversationStore.getState();
+
+    applyRunEvent(event("agent.tool_started", "Fetching metric data", 1));
+    expect(useConversationStore.getState().progress).toBe("Fetching metric data");
+
+    applyRunEvent(event("agent.answering", "Writing the answer", 2));
+    expect(useConversationStore.getState().progress).toBe("Writing the answer");
+
+    applyRunEvent(event("run.completed", null, 3));
+    expect(useConversationStore.getState().progress).toBeNull();
+  });
+
   it("forwards live run events to the activity timeline", () => {
     useConversationStore.getState().applyRunEvent({
       id: "event-1",
@@ -206,6 +226,31 @@ describe("conversation store submit", () => {
     expect(cancel).toHaveBeenCalledWith("run-late");
     expect(useConversationStore.getState().submitting).toBe(false);
     expect(useConversationStore.getState().currentRunId).toBeNull();
+  });
+
+  it("refreshes the thread from the server after cancelling a live run", async () => {
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: "t1",
+      threads: [],
+      messages: { t1: [] },
+      submitting: true,
+      currentRunId: "run-live",
+    });
+    vi.spyOn(conversationsApi, "cancelRun").mockResolvedValue({
+      run_id: "run-live", status: "CANCELLED",
+    });
+    const persisted = [{
+      id: "a1", thread_id: "t1", workspace_id: "w", role: "ASSISTANT", run_id: "run-live",
+      parts: [{ type: "WARNING", content: "Run cancelled." }],
+      created_at: "now", updated_at: "now",
+    }] as unknown as Awaited<ReturnType<typeof conversationsApi.listMessages>>;
+    const list = vi.spyOn(conversationsApi, "listMessages").mockResolvedValue(persisted);
+
+    await useConversationStore.getState().cancelRun();
+    await vi.waitFor(() => expect(useConversationStore.getState().messages.t1).toEqual(persisted));
+
+    expect(list).toHaveBeenCalledWith("t1");
   });
 
   it("auto-creates a thread before uploading an attachment", async () => {

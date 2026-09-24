@@ -56,13 +56,13 @@ async def test_identical_query_metrics_calls_hit_mcp_once():
         {"seleric.metrics_query": {"rows": [{"units_sold": "2314"}], "provenance": {}}}
     )
     ctx = FakeRunContext(_deps(mcp))
-    kwargs = dict(
-        metric_id="units_sold",
-        dimensions={},
-        grain="none",
-        period_start=datetime(2026, 7, 1, tzinfo=UTC),
-        period_end=datetime(2026, 7, 31, tzinfo=UTC),
-    )
+    kwargs = {
+        "metric_id": "units_sold",
+        "dimensions": {},
+        "grain": "none",
+        "period_start": datetime(2026, 7, 1, tzinfo=UTC),
+        "period_end": datetime(2026, 7, 31, tzinfo=UTC),
+    }
     first = await semantic.query_metrics(ctx, **kwargs)
     second = await semantic.query_metrics(ctx, **kwargs)
 
@@ -87,13 +87,13 @@ async def test_third_identical_query_metrics_call_hard_stops_with_model_retry():
         {"seleric.metrics_query": {"rows": [{"units_sold": "2314"}], "provenance": {}}}
     )
     ctx = FakeRunContext(_deps(mcp))
-    kwargs = dict(
-        metric_id="units_sold",
-        dimensions={},
-        grain="none",
-        period_start=datetime(2026, 7, 1, tzinfo=UTC),
-        period_end=datetime(2026, 7, 31, tzinfo=UTC),
-    )
+    kwargs = {
+        "metric_id": "units_sold",
+        "dimensions": {},
+        "grain": "none",
+        "period_start": datetime(2026, 7, 1, tzinfo=UTC),
+        "period_end": datetime(2026, 7, 31, tzinfo=UTC),
+    }
     await semantic.query_metrics(ctx, **kwargs)  # fetch
     second = await semantic.query_metrics(ctx, **kwargs)  # 1st repeat → nudge
     assert second.success is True and "ALREADY FETCHED" in second.summary
@@ -167,13 +167,13 @@ async def test_repeated_breakdown_call_reuses_artifacts_not_rewrites_them():
         }
     )
     ctx = FakeRunContext(_deps(mcp))
-    kwargs = dict(
-        metric_id="product_orders",
-        dimensions={"product_title": ""},
-        grain="none",
-        period_start=datetime(2026, 8, 21, tzinfo=UTC),
-        period_end=datetime(2026, 9, 21, tzinfo=UTC),
-    )
+    kwargs = {
+        "metric_id": "product_orders",
+        "dimensions": {"product_title": ""},
+        "grain": "none",
+        "period_start": datetime(2026, 8, 21, tzinfo=UTC),
+        "period_end": datetime(2026, 9, 21, tzinfo=UTC),
+    }
     first = await semantic.query_metrics(ctx, **kwargs)
     second = await semantic.query_metrics(ctx, **kwargs)
 

@@ -16,6 +16,7 @@ from seleric_swarm.state.cache import MissionQueryCache
 from seleric_swarm.state.scratchpad import Scratchpad
 
 if TYPE_CHECKING:
+    from seleric_swarm.agent.limits import ExecutionBudgetTracker
     from seleric_swarm.state.artifacts import ArtifactStore
 
 
@@ -88,8 +89,13 @@ class SelericDeps:
     artifact_store: ArtifactStore
     limits: ExecutionLimits
     # Dedupes identical seleric-mcp fetches within this mission run (state/cache.py).
-    # One instance per SelericDeps — never shared across missions.
-    query_cache: MissionQueryCache[str, dict[str, Any]] = field(default_factory=MissionQueryCache)
+    # One instance per SelericDeps — never shared across missions. Value type
+    # is `Any`, not `dict[str, Any]`: toolsets/semantic.py caches both raw MCP
+    # response dicts (query_metric_series/drilldown) and whole `ToolResult`
+    # objects (query_metrics' repeat-call dedup) under the same cache, keyed
+    # by distinct prefixes -- narrowing this to one shape would just be wrong
+    # for the other caller, not more correct.
+    query_cache: MissionQueryCache[str, Any] = field(default_factory=MissionQueryCache)
     # Per-mission mutable tool-call tallies (e.g. how many times search_semantics
     # ran) so a tool can break a paraphrase-search loop the exact-arg query_cache
     # can't see. One dict per SelericDeps — never shared across missions.
@@ -104,3 +110,21 @@ class SelericDeps:
     # instead of a Qdrant top-k guess; Cube still validates the chosen id.
     catalogue: CatalogueSnapshot = field(default_factory=CatalogueSnapshot)
     jev: JevConfig = field(default_factory=JevConfig)
+    # Real per-mission execution-limit enforcement (agent/limits.py). Not a
+    # dataclass default_factory: ExecutionBudgetTracker needs this same
+    # instance's own `limits`, so it's built in __post_init__ instead — every
+    # existing call site (16+ tests, api/missions.py, agent/runner.py) that
+    # constructs SelericDeps without a `budget=` kwarg still gets a tracker
+    # that actually matches its own limits, not a mismatched shared default.
+    _budget: ExecutionBudgetTracker | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        if self._budget is None:
+            from seleric_swarm.agent.limits import ExecutionBudgetTracker
+
+            object.__setattr__(self, "_budget", ExecutionBudgetTracker(limits=self.limits))
+
+    @property
+    def budget(self) -> ExecutionBudgetTracker:
+        assert self._budget is not None  # set unconditionally in __post_init__
+        return self._budget

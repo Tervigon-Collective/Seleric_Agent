@@ -49,6 +49,7 @@ from seleric_swarm.agent.artifacts import CausalArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.agent.limits import ExecutionBudgetTracker
 from seleric_swarm.agent.output import MissionResult
+from seleric_swarm.agent.progress import has_progress_sink, progress_handler
 from seleric_swarm.agent.validation.signals import (
     AlternativeHypothesis,
     Challenge,
@@ -77,6 +78,9 @@ __all__ = [
     "run_validated_mission",
     "score_trust",
 ]
+
+
+_PLACEHOLDER_ANSWERS = frozenset({"placeholder", "todo", "tbd", "n/a", "na", "none", "null", "answer"})
 
 
 @dataclass
@@ -119,6 +123,13 @@ class EvidenceValidator:
         if result.status == "completed" and not result.final_response.strip():
             return ValidationOutcome(
                 ok=False, reason="completed mission has an empty final_response"
+            )
+        core = result.final_response.strip().strip(".…").lower()
+        if result.final_response.strip() and (not core or core in _PLACEHOLDER_ANSWERS):
+            # Live: a run shipped the literal answer "placeholder" to the user.
+            return ValidationOutcome(
+                ok=False,
+                reason="final_response is a placeholder, not an answer; write the real answer",
             )
 
         causal_check = self._validate_causal_classifications(deps)
@@ -210,6 +221,9 @@ def _summarize_steps(messages: list) -> list[dict]:
 async def _run_agent(agent: Agent[SelericDeps, MissionResult], deps: SelericDeps, query: str) -> MissionResult:
     # capture_run_messages populates `messages` even when the run raises
     # UsageLimitExceeded — the failing-budget case we most need to debug.
+    # Only stream when something is listening: streaming changes the request path
+    # (request_stream), so runs with no UI keep the plain request path.
+    handler = progress_handler(deps.mission_id) if has_progress_sink(deps.mission_id) else None
     with capture_run_messages() as messages:
         try:
             result = (
@@ -218,6 +232,7 @@ async def _run_agent(agent: Agent[SelericDeps, MissionResult], deps: SelericDeps
                     deps=deps,
                     usage_limits=_usage_limits(deps.limits),
                     retries=max(1, deps.limits.agent_retries),
+                    event_stream_handler=handler,
                 )
             ).output
             return result.model_copy(update={"trace": {**result.trace, "steps": _summarize_steps(messages)}})

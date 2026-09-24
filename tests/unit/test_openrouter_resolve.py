@@ -20,23 +20,23 @@ def _names(model) -> list[str]:
 
 
 def _settings(**kw) -> Settings:
-    base = dict(
-        llm_provider="azure_openai_compatible",
-        azure_openai_endpoint="https://x",
-        azure_openai_api_key="k",
-        azure_openai_models="strong-1,strong-2",
+    base = {
+        "llm_provider": "azure_openai_compatible",
+        "azure_openai_endpoint": "https://x",
+        "azure_openai_api_key": "k",
+        "azure_openai_models": "strong-1,strong-2",
         # Hermetic: ignore the developer's .env (a real ENDPOINT_2 would append
         # extra Azure models and break the exact-chain assertions below).
-        azure_openai_endpoint_2="",
-        azure_openai_api_key_2="",
-        azure_openai_models_2="",
-        azure_openai_fast_model="",
+        "azure_openai_endpoint_2": "",
+        "azure_openai_api_key_2": "",
+        "azure_openai_models_2": "",
+        "azure_openai_fast_model": "",
         # Forced empty so a developer's real OPENROUTER_* in .env (loaded into
         # os.environ by tests/conftest.py) can't leak in — init kwargs outrank
         # env in pydantic-settings. Individual tests override via kw.
-        openrouter_api_key="",
-        openrouter_models="",
-    )
+        "openrouter_api_key": "",
+        "openrouter_models": "",
+    }
     base.update(kw)
     return Settings(_env_file=None, **base)
 

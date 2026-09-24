@@ -20,6 +20,7 @@ from seleric_swarm.toolsets.policy_config import (
     DEFAULT_CAUSAL_ESTIMATOR,
     MIN_HISTORY_DAYS,
     MIN_OBSERVATION_ROWS,
+    WARN_EXECUTION_LIMIT_EXCEEDED,
     WARN_MISSING_CAUSAL_ARTIFACT,
     WARN_MISSING_TREATMENT_OUTCOME,
     WARN_NO_EVIDENCE,
@@ -165,6 +166,14 @@ def estimate_effect(
     evidence, refuse = _load_evidence(ctx, evidence_ids)
     if refuse is not None:
         return refuse
+
+    verdict = ctx.deps.budget.consume("causal_queries")
+    if not verdict.ok:
+        return _refuse(
+            f"causal estimation budget exhausted for this mission ({verdict.reason})",
+            error_code=verdict.error_code or "EXECUTION_LIMIT_EXCEEDED",
+            warnings=[WARN_EXECUTION_LIMIT_EXCEEDED],
+        )
 
     gate = _precondition_history(
         evidence, treatment=treatment, outcome=outcome, search_breadth=search_breadth

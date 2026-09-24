@@ -112,7 +112,7 @@ describe("assistant-ui Seleric adapter", () => {
     renderConversation();
 
     expect(container.querySelectorAll(".message.assistant")).toHaveLength(1);
-    expect(container.textContent).toContain("Coordinating specialists");
+    expect(container.textContent).toContain("Working on it");
     expect(container.querySelector('[aria-label="Retry response"]')).toBeNull();
   });
 });

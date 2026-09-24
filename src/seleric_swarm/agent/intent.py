@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import httpx
 
@@ -27,6 +27,7 @@ _log = logging.getLogger("seleric.agent.intent")
 ComplexityLabel = Literal["simple", "moderate", "complex"]
 
 IntentLabel = Literal[
+    "conversation",
     "lookup",
     "aggregation",
     "comparison",
@@ -64,6 +65,7 @@ RiskLabel = Literal["low", "medium", "high"]
 
 _LABELS: frozenset[str] = frozenset(
     {
+        "conversation",
         "lookup",
         "aggregation",
         "comparison",
@@ -92,6 +94,10 @@ _PERIOD_LABELS: frozenset[str] = frozenset(
 _DIRECTION_LABELS: frozenset[str] = frozenset({"increase", "decrease", "either"})
 
 _CRITERIA = {
+    "conversation": (
+        "Greeting, thanks, acknowledgement or small talk (hi, thanks, ok, bye), "
+        "or a question about the assistant itself — asks for no business data or metric"
+    ),
     "lookup": "Deterministic single-value fetch — one metric, one period",
     "aggregation": "Group/sum/rank across a dimension (e.g. top N, total by category)",
     "comparison": "Two or more periods, segments, or entities set against each other",
@@ -193,15 +199,18 @@ def _answer_value(answers: dict[str, Any], key: str) -> Any:
     return None
 
 
-def _normalize_ordinal(value: Any, levels: tuple[str, ...]) -> str | None:
+_L = TypeVar("_L", bound=str)
+
+
+def _normalize_ordinal(value: Any, levels: tuple[_L, ...]) -> _L | None:
     """Jev's `score` is a float over an ordinal array; round to the nearest
     level. Also accepts an int/str index or a label directly."""
     if isinstance(value, bool):  # bool is an int subclass — reject explicitly
         return None
     if isinstance(value, (int, float)):
         return levels[min(len(levels) - 1, max(0, round(value)))]
-    labels = {label: label for label in levels}
-    digits = {str(i): levels[i] for i in range(len(levels))}
+    labels: dict[Any, _L] = {label: label for label in levels}
+    digits: dict[Any, _L] = {str(i): levels[i] for i in range(len(levels))}
     key = value.strip().lower() if isinstance(value, str) else value
     return labels.get(key) or digits.get(key)
 
@@ -348,7 +357,7 @@ async def classify_action_risk(
     )
     if not answers:
         return None
-    return _normalize_ordinal(_answer_value(answers, "risk"), _RISK_LEVELS)  # type: ignore[return-value]
+    return _normalize_ordinal(_answer_value(answers, "risk"), _RISK_LEVELS)
 
 
 async def judge_relevance(

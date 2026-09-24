@@ -42,7 +42,7 @@ class FakeRunContext:
         self.deps = deps
 
 
-def _deps(mcp_client: FakeMcpClient) -> SelericDeps:
+def _deps(mcp_client: FakeMcpClient, *, limits: ExecutionLimits | None = None) -> SelericDeps:
     return SelericDeps(
         mission_id="mission-1",
         as_of=datetime(2026, 9, 18, tzinfo=UTC),
@@ -53,7 +53,7 @@ def _deps(mcp_client: FakeMcpClient) -> SelericDeps:
         context=ContextBundle(),
         mcp_client=mcp_client,
         artifact_store=InMemoryArtifactStore(),
-        limits=ExecutionLimits(),
+        limits=limits or ExecutionLimits(),
     )
 
 
@@ -76,6 +76,27 @@ def test_tool_result_success_true_is_permissive():
 
 
 # ---- query_metrics -----------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_mcp_is_not_retryable_and_tells_the_model_to_stop():
+    """Live bug: NotImplementedError ("capability not available") was marked
+    retryable, so the agent kept trying other metrics for minutes."""
+    mcp = FakeMcpClient(
+        {"seleric.metrics_query": NotImplementedError("MCP capability not available")}
+    )
+    result = await semantic.query_metrics(
+        FakeRunContext(_deps(mcp)),
+        metric_id="total_sales",
+        dimensions={},
+        grain="none",
+        period_start=datetime(2026, 9, 17, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert result.error_code == "MCP_UNAVAILABLE"
+    assert result.retryable is False
+    assert "Do not retry" in result.summary
 
 
 @pytest.mark.asyncio
@@ -106,6 +127,35 @@ async def test_query_metrics_writes_evidence_artifact_on_success():
     assert artifact.payload["value"] == pytest.approx(13638.0)
     assert artifact.classification == "factual"
     assert mcp.calls[0][0] == "seleric.metrics_query"
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_raises_model_retry_once_cube_query_budget_exhausted():
+    """Real enforcement, not just a frozen field: ExecutionLimits.max_cube_queries
+    (CONTRACTS.md) previously bounded nothing in this toolset -- a mission
+    could issue unlimited real Cube queries. A fresh (uncached) query_metrics
+    call past the limit must stop the loop via ModelRetry, not silently fetch."""
+    from pydantic_ai import ModelRetry
+
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "q1",
+                "rows": [{"total_sales": "1"}],
+                "provenance": {},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp, limits=ExecutionLimits(max_cube_queries=0)))
+    with pytest.raises(ModelRetry, match="Cube query budget exhausted"):
+        await semantic.query_metrics(
+            ctx,
+            metric_id="total_sales",
+            dimensions={},
+            period_start=datetime(2026, 9, 17, tzinfo=UTC),
+            period_end=datetime(2026, 9, 17, tzinfo=UTC),
+        )
+    assert mcp.calls == []  # rejected before any Cube call
 
 
 @pytest.mark.asyncio
@@ -165,14 +215,14 @@ async def test_query_metrics_top_n_sends_sort_and_limit():
 async def test_query_metrics_rejects_incompatible_dimension_with_redirect():
     # refunded_orders (order-grain) can't break down by product_title; the guard
     # must ModelRetry and name the product-grain metric that can.
+    import dataclasses
+
+    from pydantic_ai import ModelRetry
+
     from seleric_swarm.services.catalogue_bootstrap import (
         CatalogueMetricMeta,
         CatalogueSnapshot,
     )
-
-    import dataclasses
-
-    from pydantic_ai import ModelRetry
 
     mcp = FakeMcpClient({})
     snapshot = CatalogueSnapshot(
@@ -216,13 +266,13 @@ async def test_query_metrics_repeat_returns_stop_nudge_without_duplicating_evide
         }
     )
     ctx = FakeRunContext(_deps(mcp))
-    kwargs = dict(
-        metric_id="total_sales",
-        dimensions={},
-        grain="none",
-        period_start=datetime(2026, 9, 17, tzinfo=UTC),
-        period_end=datetime(2026, 9, 17, tzinfo=UTC),
-    )
+    kwargs = {
+        "metric_id": "total_sales",
+        "dimensions": {},
+        "grain": "none",
+        "period_start": datetime(2026, 9, 17, tzinfo=UTC),
+        "period_end": datetime(2026, 9, 17, tzinfo=UTC),
+    }
     first = await semantic.query_metrics(ctx, **kwargs)
     second = await semantic.query_metrics(ctx, **kwargs)
     assert second.success is True

@@ -22,8 +22,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.capabilities import PrepareTools
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import ToolDefinition
 
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.instructions import INSTRUCTIONS
@@ -38,6 +40,7 @@ from seleric_swarm.toolsets import (
     sandbox,
     semantic,
 )
+from seleric_swarm.toolsets.semantic import LIVE_DATA_UNAVAILABLE
 
 # Typed as `list[Any]` deliberately: pydantic_ai's own `tools` parameter
 # wants a `Sequence[Tool[SelericDeps] | ToolFuncEither[SelericDeps, ...]]`,
@@ -117,6 +120,35 @@ def _stub_test_model() -> TestModel:
     )
 
 
+CONVERSATIONAL = "conversational"
+
+_STILL_AVAILABLE_WITHOUT_LIVE_DATA = frozenset(
+    {
+        "search_semantics",
+        "get_metric_definition",
+        "get_metric_definitions",
+        "search_knowledge",
+        "predict_ltv",
+        "predict_propensity",
+    }
+)
+
+
+async def _withdraw_data_tools(
+    ctx: RunContext[SelericDeps], tool_defs: list[ToolDefinition]
+) -> list[ToolDefinition]:
+    """Once live data is known to be unreachable, only catalogue/knowledge tools
+    remain — the model can no longer loop on fetches that cannot succeed."""
+    counts = getattr(ctx.deps, "call_counts", None)  # deps is None on the stub path
+    if not counts:
+        return tool_defs
+    if counts.get(CONVERSATIONAL):
+        return []
+    if not counts.get(LIVE_DATA_UNAVAILABLE):
+        return tool_defs
+    return [t for t in tool_defs if t.name in _STILL_AVAILABLE_WITHOUT_LIVE_DATA]
+
+
 def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDeps, MissionResult]:
     """Construct the agent with every implemented toolset registered."""
     agent = Agent(
@@ -126,6 +158,7 @@ def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDep
         instructions=INSTRUCTIONS + "\n\n" + capability_manifest(),
         name="seleric_agent",
         tools=TOOLS,
+        capabilities=[PrepareTools(_withdraw_data_tools)],
     )
 
     @agent.instructions

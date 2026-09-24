@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from starlette.responses import RedirectResponse, StreamingResponse
 
+from seleric_swarm.agent.progress import clear_progress_sink, set_progress_sink
 from seleric_swarm.api.async_missions import (
     cancel_running_mission,
     new_mission_id,
@@ -884,6 +885,33 @@ def list_run_events(
     ]
 
 
+def _finalize_cancelled_placeholder(repositories: ConversationRepositories, run: Run) -> None:
+    """Replace a still-pending "Working…" reply so a cancelled run never leaves it dangling."""
+    submission = run.metadata.get("submission")
+    message_id = submission.get("assistant_message_id") if isinstance(submission, dict) else None
+    if not isinstance(message_id, str):
+        return
+    placeholder = repositories.messages.get(message_id)
+    if placeholder is None or any(
+        part.type is not MessagePartType.AGENT_STATUS for part in placeholder.parts
+    ):
+        return
+    repositories.messages.update(
+        placeholder.model_copy(
+            update={
+                "parts": [
+                    MessagePart(
+                        type=MessagePartType.WARNING,
+                        content="Run cancelled.",
+                        metadata={"status": "cancelled"},
+                    )
+                ],
+                "updated_at": datetime.now(UTC),
+            }
+        )
+    )
+
+
 @router.post("/runs/{run_id}/cancel")
 def cancel_run(run_id: str, request: Request) -> dict[str, str]:
     runtime = _runtime(request)
@@ -909,6 +937,7 @@ def cancel_run(run_id: str, request: Request) -> dict[str, str]:
         run_id, now=cancelled_at, terminal_event=terminal_event
     ):
         raise HTTPException(status_code=409, detail="run is not cancellable")
+    _finalize_cancelled_placeholder(repositories, run)
     cancellation = getattr(runtime, "cancellation", None)
     if cancellation is not None and run.mission_id:
         with suppress(Exception):
@@ -1042,8 +1071,8 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
         title = metric.removeprefix("metric.").replace("_", " ")
         window_raw = row.get("time_range")
         window = window_raw if isinstance(window_raw, dict) else {}
-        start = window.get("start")
-        end = window.get("end") or start
+        start = str(window["start"])[:10] if window.get("start") else None
+        end = str(window.get("end") or window.get("start") or "")[:10] or start
         if start and start == end:
             period = f" for {start}"
         elif start and end:
@@ -1051,7 +1080,16 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
         else:
             period = ""
         value = row.get("value")
-        excerpt = f"{value}{period}" if value is not None else (period.strip() or None)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            shown = value
+        else:
+            if float(value).is_integer():
+                shown = f"{value:,.0f}"
+            elif abs(value) >= 1:
+                shown = f"{value:,.2f}"
+            else:
+                shown = f"{value:.4g}"
+        excerpt = f"{shown}{period}" if value is not None else (period.strip() or None)
         parts.append(
             MessagePart(
                 type=MessagePartType.SOURCE,
@@ -1083,6 +1121,21 @@ def _artifact_classification(
 def _dispatch_route(runtime: SwarmRuntime) -> str:
     # Sprint 5: V3 is the only mission path.
     return "v3"
+
+
+def _is_genuine_answer(final_status: RunStatus) -> bool:
+    """Only a completed run's ``final_response`` is a real answer.
+
+    ``final_response`` is a non-empty string on essentially every V3
+    failure path too (rate-limited/timeout/insufficient-evidence messages
+    are real, non-empty text, not just on success) -- checking only "is
+    there a string" rendered a failed mission's error text as a plain
+    TEXT message part, indistinguishable from a genuine answer, and fired
+    "answer.completed" for it. Callers still show the agent's own message
+    on failure (better than a generic placeholder) -- just as a WARNING
+    part, not silently passed off as an answer.
+    """
+    return final_status is RunStatus.COMPLETED
 
 
 def _attempt_event(
@@ -1189,23 +1242,41 @@ async def _execute_submission(
         started_at=running.started_at,
     )
 
-    await run_mission_job(
-        runtime,
-        mission_id=run.mission_id or "",
-        query=query,
-        timezone=timezone,
-        as_of=as_of,
-        session_id=run.thread_id,
-        request_id=request_id,
-        full_diagnostic=full_diagnostic,
-        full_prediction=full_prediction,
-        full_skeptic=full_skeptic,
-        full_strategy=full_strategy,
-        execution_mode=execution_mode,
-        context_bundle=run.metadata.get("context_bundle")
-        if isinstance(run.metadata.get("context_bundle"), dict)
-        else None,
-    )
+    step = 0
+
+    def _progress(event_type: str, summary: str, payload: dict[str, Any]) -> None:
+        nonlocal step
+        step += 1
+        sink.emit(
+            running,
+            event_type,
+            id=f"event_{run.id}_{attempt.id}_progress_{step}",
+            summary=summary,
+            payload={**payload, "mission_id": run.mission_id, "route": "v3"},
+        )
+
+    progress_key = run.mission_id or ""
+    set_progress_sink(progress_key, _progress)
+    try:
+        await run_mission_job(
+            runtime,
+            mission_id=run.mission_id or "",
+            query=query,
+            timezone=timezone,
+            as_of=as_of,
+            session_id=run.thread_id,
+            request_id=request_id,
+            full_diagnostic=full_diagnostic,
+            full_prediction=full_prediction,
+            full_skeptic=full_skeptic,
+            full_strategy=full_strategy,
+            execution_mode=execution_mode,
+            context_bundle=run.metadata.get("context_bundle")
+            if isinstance(run.metadata.get("context_bundle"), dict)
+            else None,
+        )
+    finally:
+        clear_progress_sink(progress_key)
     raw = getattr(runtime.store, "get_raw", lambda _mission_id: None)(run.mission_id)
     raw = raw if isinstance(raw, dict) else {}
     context_bundle = run.metadata.get("context_bundle")
@@ -1240,8 +1311,10 @@ async def _execute_submission(
     if persisted_run is not None and persisted_run.status is RunStatus.CANCELLED:
         final_status = RunStatus.CANCELLED
     completed_at = datetime.now(UTC)
-    final_response = raw.get("final_response")
-    if isinstance(final_response, str) and final_response.strip():
+    raw_final_response = raw.get("final_response")
+    final_response = raw_final_response if isinstance(raw_final_response, str) else ""
+    has_response = bool(final_response.strip())
+    if has_response and _is_genuine_answer(final_status):
         placeholder = repositories.messages.get(assistant_message_id)
         if placeholder is None:
             raise RuntimeError("assistant placeholder is missing")
@@ -1278,17 +1351,19 @@ async def _execute_submission(
     else:
         placeholder = repositories.messages.get(assistant_message_id)
         if placeholder is not None:
+            if has_response:
+                warning_text = final_response
+            elif final_status is RunStatus.CANCELLED:
+                warning_text = "Run cancelled."
+            else:
+                warning_text = "Run failed without a response."
             repositories.messages.update(
                 placeholder.model_copy(
                     update={
                         "parts": [
                             MessagePart(
                                 type=MessagePartType.WARNING,
-                                content=(
-                                    "Run cancelled."
-                                    if final_status is RunStatus.CANCELLED
-                                    else "Run failed without a response."
-                                ),
+                                content=warning_text,
                                 metadata={"status": final_status.value.lower()},
                             )
                         ],
@@ -1443,8 +1518,10 @@ async def _execute_submission(
                 "TIMEOUT",
                 "V3_AGENT_TIMEOUT",
                 "V3_AGENT_FAILED",
-                "INSUFFICIENT_EVIDENCE",
-                "EXECUTION_LIMIT_EXCEEDED",
+                # INSUFFICIENT_EVIDENCE / EXECUTION_LIMIT_EXCEEDED are verdicts,
+                # not transient faults: a retry re-burns the whole mission (and
+                # backoff) to reach the same answer. The validator already has
+                # its own bounded revision.
             }
         ),
         terminal_event=_attempt_event(
