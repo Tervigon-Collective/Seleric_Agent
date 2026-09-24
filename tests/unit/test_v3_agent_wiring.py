@@ -1,6 +1,6 @@
 """Sprint 4 Profile A: the agent actually has every implemented toolset.
 
-This is a wiring test, not an integration test — it proves all 23 real tool
+This is a wiring test, not an integration test — it proves all 30 real tool
 functions register on ``SelericAgent`` without a schema error (the bug this
 test guards: ``RunContext[SelericDeps]`` annotations that only resolved
 under ``TYPE_CHECKING`` blew up at real tool-registration time with
@@ -15,15 +15,18 @@ from seleric_swarm.agent.agent import TOOLS, build_seleric_agent
 
 
 def test_every_frozen_function_is_registered() -> None:
-    """25 = the 23 CONTRACTS.md §4 functions, ``sandbox.run_python`` (the
-    python sandbox added on top of the frozen analytics surface), and
-    ``semantic.get_metric_definitions`` (batch of the frozen singular one).
+    """30 = the 23 CONTRACTS.md §4 functions, ``sandbox.run_python`` (the
+    python sandbox added on top of the frozen analytics surface),
+    ``semantic.get_metric_definitions`` (batch of the frozen singular one),
+    ``semantic.resolve_brand`` (brand→brand_id resolution), and the four
+    read-only ad surfaces in ``ads.py`` (query_meta_insights, list_meta_accounts,
+    list_google_accounts, query_google_ads).
 
     Counting here is what stops a toolset being written and then silently left
     unregistered — the test suite would stay green, because a tool nobody
     registers is a tool nobody tests.
     """
-    assert len(TOOLS) == 25
+    assert len(TOOLS) == 30
 
 
 def test_all_tools_register_on_the_agent() -> None:
@@ -31,10 +34,16 @@ def test_all_tools_register_on_the_agent() -> None:
     names = set(agent._function_toolset.tools.keys())
     assert names == {
         "search_semantics",
+        "resolve_brand",
         "get_metric_definition",
         "get_metric_definitions",
         "query_metrics",
         "drilldown",
+        # Read-only ad surfaces (toolsets/ads.py).
+        "query_meta_insights",
+        "list_meta_accounts",
+        "list_google_accounts",
+        "query_google_ads",
         "compare_periods",
         "detect_anomalies",
         "estimate_effect",
@@ -62,10 +71,10 @@ def test_all_tools_register_on_the_agent() -> None:
 
 
 async def test_stub_model_still_calls_zero_tools() -> None:
-    # call_tools=[] on the stub model must still hold even with 23 real
+    # call_tools=[] on the stub model must still hold even with 30 real
     # tools registered -- the 0%-traffic path stays side-effect-free.
     # "final_result" is pydantic_ai's own internal structured-output call,
-    # not one of the 15 real tools -- excluded, not counted as a tool call.
+    # not one of the real tools -- excluded, not counted as a tool call.
     agent = build_seleric_agent()
     result = await agent.run("hello")
     assert result.output.mission_id == "stub"

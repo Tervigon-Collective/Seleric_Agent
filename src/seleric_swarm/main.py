@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Any
@@ -10,6 +11,7 @@ from uuid import uuid4
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.responses import StreamingResponse
 
 from seleric_swarm.agent.runner import run_v3_mission
 from seleric_swarm.api.async_missions import (
@@ -237,6 +239,11 @@ class MissionRequest(BaseModel):
     # wait=true (default): run synchronously and return the finished mission.
     # wait=false: accept immediately (status=running); poll GET /v1/missions/{id}.
     wait: bool = True
+    # stream=true: return an SSE stream (text/event-stream) that emits the final
+    # answer token-by-token as answer.delta frames, then a terminal
+    # answer.completed frame with the full mission. Implies synchronous run
+    # (wait is ignored).
+    stream: bool = False
 
     model_config = {
         "json_schema_extra": {
@@ -337,12 +344,121 @@ async def llm_ping(req: PingRequest) -> dict[str, Any]:
     }
 
 
+def _sse_frame(event_type: str, data: dict[str, Any], seq: int) -> str:
+    payload = {**data, "type": event_type}
+    return (
+        f"id: {seq}\n"
+        f"event: {event_type}\n"
+        f"data: {json.dumps(payload, separators=(',', ':'), default=str)}\n\n"
+    )
+
+
+def _stream_mission_response(
+    runtime: SwarmRuntime,
+    *,
+    query: str,
+    timezone: str,
+    as_of: Any,
+    session_id: str,
+    request_id: str,
+    principal: Any,
+    req: MissionRequest,
+) -> StreamingResponse:
+    """Run the mission synchronously while streaming the answer over SSE.
+
+    ``run_v3_mission`` runs in a task; its ``on_stream`` callback pushes deltas
+    onto a queue the generator drains into ``answer.delta`` frames. The final
+    mission object rides the terminal ``answer.completed`` frame.
+    """
+    queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+
+    def on_stream(kind: str, text: str = "") -> None:
+        queue.put_nowait((kind, text))
+
+    async def _run() -> None:
+        try:
+            dispatched = await run_v3_mission(
+                runtime,
+                query=query,
+                timezone=timezone,
+                as_of=as_of,
+                session_id=session_id,
+                request_id=request_id,
+                full_diagnostic=req.full_diagnostic,
+                full_prediction=req.full_prediction,
+                full_skeptic=req.full_skeptic,
+                full_strategy=req.full_strategy,
+                execution_mode=req.execution_mode,
+                workspace_id=principal.workspace_id,
+                owner_user_id=principal.user_id,
+                thread_id=session_id,
+                run_id=request_id,
+                on_stream=on_stream,
+            )
+            queue.put_nowait(("__done__", dispatched))
+        except Exception as exc:  # surface as a terminal error frame, never hang
+            queue.put_nowait(("__error__", str(exc)))
+
+    async def generate() -> Any:
+        # Immediate frame so the client sees the stream open right away — if this
+        # arrives instantly but deltas don't, the transport streams fine and the
+        # model isn't streaming (e.g. TestModel fallback with no LLM configured).
+        seq = 1
+        yield _sse_frame("answer.started", {"request_id": request_id}, seq)
+        task = asyncio.create_task(_run())
+        deltas = 0
+        try:
+            while True:
+                kind, payload = await queue.get()
+                seq += 1
+                if kind == "delta":
+                    deltas += 1
+                    yield _sse_frame("answer.delta", {"delta": payload}, seq)
+                elif kind == "reset":
+                    yield _sse_frame("answer.reset", {}, seq)
+                elif kind == "__done__":
+                    import logging
+
+                    logging.getLogger("seleric.api.stream").info(
+                        "mission_stream_done request_id=%s deltas=%d", request_id, deltas
+                    )
+                    result = payload.get("result", {}) if isinstance(payload, dict) else {}
+                    yield _sse_frame(
+                        "answer.completed",
+                        {
+                            "route": payload.get("route") if isinstance(payload, dict) else None,
+                            "mission_id": result.get("mission_id"),
+                            "status": result.get("status"),
+                            "final_response": result.get("final_response"),
+                            "evidence": result.get("evidence"),
+                            "limitations": result.get("limitations"),
+                        },
+                        seq,
+                    )
+                    break
+                elif kind == "__error__":
+                    yield _sse_frame("error", {"error": str(payload)}, seq)
+                    break
+        finally:
+            await task
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/v1/missions")
 async def create_mission(
     req: MissionRequest,
     background_tasks: BackgroundTasks,
     request: Request,
-) -> dict[str, Any]:
+) -> Any:
     runtime = get_runtime()
     principal = request_principal(request)
     if req.mode != "read_only":
@@ -411,6 +527,21 @@ async def create_mission(
         )
     except Exception:  # noqa: S110 - optional telemetry must not fail mission handling
         pass
+
+    # SSE streaming path: run synchronously but stream the final answer's
+    # tokens as they are generated. Shares run_v3_mission's on_stream callback
+    # with the conversations run worker (same answer.delta/answer.reset shape).
+    if req.stream:
+        return _stream_mission_response(
+            runtime,
+            query=query,
+            timezone=timezone,
+            as_of=as_of,
+            session_id=session_id,
+            request_id=request_id,
+            principal=principal,
+            req=req,
+        )
 
     # Async accept path.
     if not req.wait:

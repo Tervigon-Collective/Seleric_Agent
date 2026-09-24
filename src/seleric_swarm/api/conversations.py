@@ -1189,6 +1189,37 @@ async def _execute_submission(
         started_at=running.started_at,
     )
 
+    def _emit_answer_stream(kind: str, text: str = "") -> None:
+        """Push the final answer to the run's SSE stream as it is generated.
+
+        Optimistic: the authoritative message is still written once the mission
+        completes (and the UI reconciles to it), so a rare REVISE that emits a
+        ``reset`` mid-stream self-heals even if a client missed the reset event.
+        """
+        if kind == "delta":
+            if not text:
+                return
+            sink.emit(
+                running,
+                "answer.delta",
+                id=f"event_{run.id}_{attempt.id}_answer_delta_{uuid4().hex[:12]}",
+                payload={
+                    "delta": text,
+                    "message_id": assistant_message_id,
+                    "mission_id": run.mission_id,
+                },
+            )
+        elif kind == "reset":
+            sink.emit(
+                running,
+                "answer.reset",
+                id=f"event_{run.id}_{attempt.id}_answer_reset_{uuid4().hex[:12]}",
+                payload={
+                    "message_id": assistant_message_id,
+                    "mission_id": run.mission_id,
+                },
+            )
+
     await run_mission_job(
         runtime,
         mission_id=run.mission_id or "",
@@ -1205,6 +1236,7 @@ async def _execute_submission(
         context_bundle=run.metadata.get("context_bundle")
         if isinstance(run.metadata.get("context_bundle"), dict)
         else None,
+        on_stream=_emit_answer_stream,
     )
     raw = getattr(runtime.store, "get_raw", lambda _mission_id: None)(run.mission_id)
     raw = raw if isinstance(raw, dict) else {}
@@ -1253,11 +1285,20 @@ async def _execute_submission(
                 }
             )
         )
+        evidence = raw.get("evidence")
         sink.emit(
             running,
             "answer.completed",
             id=f"event_{run.id}_{attempt.id}_answer_completed",
-            payload={"message_id": final_message.id, "mission_id": run.mission_id, "route": raw.get("route"), "query": query},
+            payload={
+                "message_id": final_message.id,
+                "mission_id": run.mission_id,
+                "route": raw.get("route"),
+                "query": query,
+                "status": str(mission_status or final_status.value).lower(),
+                "final_response": final_response,
+                "evidence": evidence if isinstance(evidence, list) else [],
+            },
         )
         summary_thread = repositories.threads.get(run.thread_id)
         if summary_thread is not None:

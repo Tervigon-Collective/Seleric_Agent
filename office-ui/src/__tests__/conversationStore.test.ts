@@ -262,7 +262,14 @@ describe("conversation store submit", () => {
       title: null,
       summary: null,
       evidence_ids: [],
-      payload: { mission_id: "MS-1", route: "lookup", query: "gross sale" },
+      payload: {
+        mission_id: "MS-1",
+        route: "lookup",
+        query: "gross sale",
+        final_response: "Gross sales: 1200",
+        message_id: "assistant-1",
+        evidence: [{ evidence_id: "ev-1", metric_or_fact: "metric.gross_sales", value: 1200 }],
+      },
       metadata: {},
       started_at: null,
       completed_at: null,
@@ -273,7 +280,12 @@ describe("conversation store submit", () => {
       query: "gross sale",
       route: "lookup",
       missionId: "MS-1",
+      finalResponse: "Gross sales: 1200",
     });
+    const messages = useConversationStore.getState().messages.t1;
+    expect(messages.at(-1)?.role).toBe("ASSISTANT");
+    expect(messages.at(-1)?.parts[0]).toMatchObject({ type: "TEXT", content: "Gross sales: 1200" });
+    expect(messages.at(-1)?.parts[1]?.type).toBe("SOURCE");
   });
 
   it("hydrates v3 route from run.started so Activity is not stuck on Swarm", () => {

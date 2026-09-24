@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -276,6 +277,7 @@ async def run_mission_job(
     full_strategy: bool,
     execution_mode: str,
     context_bundle: dict | None = None,
+    on_stream: Callable[[str, str], None] | None = None,
 ) -> None:
     """Background worker: execute mission and overwrite the running placeholder."""
     seeded = getattr(runtime.store, "get_raw", lambda _m: None)(mission_id)
@@ -307,6 +309,7 @@ async def run_mission_job(
                 owner_user_id=ownership.get("owner_user_id"),
                 thread_id=ownership.get("thread_id") or session_id,
                 run_id=ownership.get("run_id") or request_id,
+                on_stream=on_stream,
             )
         if is_cancel_requested(mission_id, runtime):
             # Cancel won — store.put refuses overwrite of cancelled; restore if needed.

@@ -200,3 +200,45 @@ cleanup pass (see the audit doc for detail):
   was deleted as dead code in this pass, not as a live regression, but if
   follow-up context inheritance is a wanted V3 feature it needs a real
   implementation, not a resurrection of the deleted one.
+
+### 11.1 Known constraints at the seleric-mcp seam (intentional)
+
+These are accepted design points, not defects — documented so they aren't
+rediscovered as bugs. They live on the gateway (`Base_Agent`) side; the agent
+inherits them through the shared service token.
+
+- **Single shared service token — no per-user RBAC.** The gateway authenticates
+  as one `service-token` actor with one `caller_scopes` set. A metric's
+  `access_policy.roles_allowed` (e.g. `net_profit` → exec/finance) is
+  informational only; just the scope check is enforced. There is no per-user
+  identity to authorize sensitive metrics against, and brand/tenant isolation is
+  by filter argument, not identity.
+- **Module scoping is unpinned in V3.** Sprint 5 removed per-agent module
+  pinning (`MCPGateway._build_allowlist` returns an empty module map). Calls are
+  unscoped unless the model passes `module=` explicitly; the gateway's
+  module-scoping machinery still works but nothing pins it.
+- **Freshness gate fails open on uncertainty.** The gateway blocks only
+  *positively-known-stale* views; a Cube probe error, unparseable cadence, or a
+  view with no date dimension is not blocked (so one transient hiccup can't take
+  every metric down). Enforcement is also behind a settings flag.
+- **Result store is in-process (~1h TTL) → single gateway instance.** `drilldown`
+  and `insights_explain` depend on a stored parent query. `toolsets/semantic.py`
+  re-runs the parent to sidestep the TTL, but a horizontally-scaled gateway would
+  not find a `parent_query_id` created on another instance.
+- **Loop-breaker caps.** `search_semantics` is hard-disabled after 3 searches per
+  mission and `query_metrics` walls after 2 identical repeat calls — deliberate
+  guardrails against small-model paraphrase/duplicate loops.
+- **Write path is Pipeboard-only and unverified.** The action broker registers a
+  single Pipeboard executor; direct Meta/Google Graph-API writes are not wired.
+  The Pipeboard `POST /actions/{type}` endpoint is an inherited convention never
+  confirmed against Pipeboard's real API.
+
+### 11.2 Read-only ad surfaces (CONTRACTS.md A2)
+
+`toolsets/ads.py` adds `query_meta_insights` (Cube-backed, certified —
+`meta_ad_performance` via the same planner as `metrics_query`, so it writes
+`EvidenceArtifact`s), plus `list_meta_accounts` / `list_google_accounts` /
+`query_google_ads` (live Graph/GAQL reads, returned as **uncertified** reference
+data — outside the semantic layer, freshness gate, and catalogue). No ad
+write/CRUD tools are wired. `semantic.resolve_brand` was also added so multi-brand
+questions resolve a `brand_id` instead of the model inventing one.

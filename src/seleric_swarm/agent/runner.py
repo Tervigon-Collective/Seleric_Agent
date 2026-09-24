@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -31,6 +32,7 @@ from seleric_swarm.agent.intent import QueryClassification, classify_query
 from seleric_swarm.agent.model import resolve_v3_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
 from seleric_swarm.agent.plan import build_plan
+from seleric_swarm.agent.scope import RequiredScope, build_required_scope
 from seleric_swarm.agent.validation import run_validated_mission
 from seleric_swarm.api.office.registry import register_mission
 from seleric_swarm.api.office.v3_adapter import v3_raw_snapshot
@@ -182,6 +184,24 @@ def _as_of_datetime(as_of: str | None, timezone: str = "Asia/Kolkata") -> dateti
     except ZoneInfoNotFoundError:
         tz = UTC
     return datetime(day.year, day.month, day.day, tzinfo=tz)
+
+
+def _required_scope(runtime: SwarmRuntime, query: str) -> RequiredScope:
+    """Resolve the query's requested breakdowns to catalogue dimension ids via
+    the bootstrap's alias index. Fail-open: no bootstrap / any error ⇒ empty
+    scope (the coverage check becomes NOT_APPLICABLE)."""
+    bootstrap = getattr(runtime, "bootstrap", None)
+    if bootstrap is None:
+        return RequiredScope()
+    try:
+        return build_required_scope(
+            query,
+            alias_index=bootstrap.alias_index(),
+            dimension_ids=bootstrap.dimension_ids(),
+        )
+    except Exception:
+        _log.warning("required_scope_failed", exc_info=True)
+        return RequiredScope()
 
 
 async def _catalogue_snapshot(runtime: SwarmRuntime) -> CatalogueSnapshot:
@@ -433,6 +453,7 @@ async def run_v3_mission(
     owner_user_id: str | None = None,
     thread_id: str | None = None,
     run_id: str | None = None,
+    on_stream: Callable[[str, str], None] | None = None,
     **_ignored: Any,
 ) -> dict[str, Any]:
     """Execute the V3 agent and persist for conversations + Office UI.
@@ -495,6 +516,7 @@ async def run_v3_mission(
             api_key=getattr(runtime.settings, "jev_api_key", ""),
             timeout=float(getattr(runtime.settings, "jev_timeout_s", 1.0)),
         ),
+        required_scope=_required_scope(runtime, query),
     )
     alias_def = _lookup_alias(query) if intent in (None, "lookup") else None
     started = time.perf_counter()
@@ -552,7 +574,7 @@ async def run_v3_mission(
                     hint=_routing_hint(classification),
                 )
                 v3_result = await asyncio.wait_for(
-                    run_validated_mission(agent, deps, prompt),
+                    run_validated_mission(agent, deps, prompt, on_stream=on_stream),
                     timeout=deps.limits.max_runtime_seconds,
                 )
                 result = v3_result.model_copy(
