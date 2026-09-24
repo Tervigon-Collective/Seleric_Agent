@@ -121,9 +121,12 @@ class EvidenceValidator:
         missing = [aid for aid in referenced if deps.artifact_store.get(aid) is None]
         if missing:
             return ValidationOutcome(ok=False, reason=f"unresolved artifact ids: {missing}")
-        if result.status == "completed" and not result.final_response.strip():
+        if not result.final_response.strip():
+            # Any status: live, the model returned status="running" with an empty
+            # answer via final_result, which slipped past a completed-only gate.
             return ValidationOutcome(
-                ok=False, reason="completed mission has an empty final_response"
+                ok=False,
+                reason=f"mission returned an empty final_response (status={result.status}); write the answer",
             )
         core = result.final_response.strip().strip(".…").lower()
         if result.final_response.strip() and (not core or core in _PLACEHOLDER_ANSWERS):

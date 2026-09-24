@@ -147,6 +147,13 @@ class SelericMCPTransport:
             notif = {"jsonrpc": "2.0", "method": "notifications/initialized"}
             await self._post(notif)
 
+    def _drop_session(self, stale: str) -> None:
+        # Only the session that failed: a concurrent call may already have
+        # re-initialized and installed a fresh one.
+        if self._session_id == stale:
+            self._session_id = None
+            self._headers.pop("Mcp-Session-Id", None)
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         await self._ensure_session()
         body = {
@@ -155,7 +162,20 @@ class SelericMCPTransport:
             "method": "tools/call",
             "params": {"name": name, "arguments": arguments},
         }
-        resp = await self._post_with_retry(body)
+        session = self._session_id
+        try:
+            resp = await self._post_with_retry(body)
+        except httpx.HTTPStatusError as exc:
+            # MCP streamable HTTP: a 404 on a request carrying a session id
+            # means the server no longer knows that session — it restarted or
+            # expired it — and the client must start a new one. Without this
+            # every call 404s until the agent itself restarts (live 2026-09-25:
+            # an MCP redeploy locked the running agent out entirely).
+            if exc.response.status_code != 404 or session is None:
+                raise
+            self._drop_session(session)
+            await self._ensure_session()
+            resp = await self._post_with_retry(body)
         payload = _parse_jsonrpc_response(resp)
         if "error" in payload:
             raise RuntimeError(f"seleric mcp error calling {name}: {payload['error']}")
