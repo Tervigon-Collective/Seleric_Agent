@@ -410,6 +410,54 @@ def check_prediction(artifacts: list[Artifact]) -> CheckOutcome:
     return out
 
 
+def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
+    """Executed evidence must cover the breakdowns the query demanded.
+
+    The reconciliation gate for the silent-drop failure (live "by source"
+    trace): a requested breakdown that resolved to a real catalogue dimension
+    (``RequiredScope.breakdowns``, built in the runner) must appear as a
+    grouping key on at least one evidence row. A missing one is a **blocking
+    gap → REVISE**, not a REJECT: the answer may be right in kind but does not
+    cover what was asked, so the model gets one chance to redo it (and, if the
+    breakdown is genuinely unsupported, to say so) rather than shipping a
+    different-question answer as ``completed``.
+
+    NOT_APPLICABLE when the query demanded no resolvable breakdown, or when the
+    mission produced no evidence at all (``check_evidence`` owns that case — a
+    coverage gap on top would just double-count the same failure)."""
+    breakdowns = frozenset(getattr(scope, "breakdowns", ()) or ())
+    if not breakdowns:
+        return CheckOutcome(check="scope_coverage", status="NOT_APPLICABLE")
+    evidence = [a for a in artifacts if a.artifact_type == "evidence"]
+    if not evidence:
+        return CheckOutcome(check="scope_coverage", status="NOT_APPLICABLE")
+
+    grouped: set[str] = set()
+    for artifact in evidence:
+        parsed = _payload(artifact, EvidenceArtifact)
+        if parsed is not None:
+            grouped.update(parsed.dimensions.keys())
+
+    missing = sorted(breakdowns - grouped)
+    if not missing:
+        return CheckOutcome(check="scope_coverage")
+    return CheckOutcome(
+        check="scope_coverage",
+        status="INSUFFICIENT",
+        gaps=[
+            EvidenceGap(
+                description=(
+                    f"the question asked for a breakdown by {missing}, but the answer's "
+                    f"evidence is not grouped by it — re-run grouped by that dimension, "
+                    f"or state plainly that no available metric supports that breakdown"
+                ),
+                blocking=True,
+                priority=8,
+            )
+        ],
+    )
+
+
 def run_checks(deps: SelericDeps) -> tuple[list[CheckOutcome], list[EvidenceGap], ClaimType]:
     """Every V3 check over one mission's artifacts, plus the collected gaps.
 
@@ -426,6 +474,7 @@ def run_checks(deps: SelericDeps) -> tuple[list[CheckOutcome], list[EvidenceGap]
         check_contradiction(artifacts),
         check_causal(artifacts),
         check_prediction(artifacts),
+        check_scope_coverage(artifacts, getattr(deps, "required_scope", None)),
     ]
     live = [oc for oc in outcomes if oc.status != "NOT_APPLICABLE"]
     gaps = [gap for oc in live for gap in oc.gaps]

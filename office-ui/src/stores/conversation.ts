@@ -632,6 +632,39 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       event.thread_id !== state.selectedThreadId
       || (state.currentRunId && event.run_id !== state.currentRunId)
     ) return;
+    // Live answer streaming: accumulate answer.delta into an optimistic
+    // assistant message; answer.reset clears a revised-away draft. The full
+    // message fetched on answer.completed is authoritative and replaces this.
+    // Handled before ingestEvent so per-token deltas never spam the timeline.
+    if (event.event_type === "answer.delta" || event.event_type === "answer.reset") {
+      const threadId = event.thread_id;
+      const messageId = optionalString(event.payload.message_id);
+      if (!messageId) return;
+      const reset = event.event_type === "answer.reset";
+      const delta = reset ? "" : optionalString(event.payload.delta) ?? "";
+      if (!reset && !delta) return;
+      set((s) => {
+        const list = s.messages[threadId] ?? [];
+        const existing = list.find((m) => m.id === messageId);
+        const nextText = reset ? "" : messageText(existing) + delta;
+        const streamed: Message = {
+          id: messageId,
+          thread_id: threadId,
+          workspace_id: existing?.workspace_id ?? "local",
+          user_id: null,
+          role: "ASSISTANT",
+          parts: [{ type: "TEXT", content: nextText }],
+          run_id: event.run_id ?? existing?.run_id ?? null,
+          parent_message_id: existing?.parent_message_id ?? null,
+          created_at: existing?.created_at ?? now(),
+        };
+        const nextList = existing
+          ? list.map((m) => (m.id === messageId ? streamed : m))
+          : [...list, streamed];
+        return { messages: { ...s.messages, [threadId]: nextList } };
+      });
+      return;
+    }
     useOffice.getState().ingestEvent(toOfficeEvent(event));
     const office = useOffice.getState();
     const incomingRoute = optionalString(event.payload.route);

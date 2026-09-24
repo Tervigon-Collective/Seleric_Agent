@@ -116,9 +116,22 @@ def _sanitize_dimensions(dimensions: dict[str, str] | None) -> dict[str, str]:
     return cleaned
 
 
+# The catalogue keys that name a brand filter. Only a brand is safe to auto-drop
+# on an unresolved-value error (the MCP injects a default brand, so a bad brand
+# degrades to the default rather than failing the mission). A NON-brand filter is
+# never dropped — silently erasing a user-supplied product/return/region filter
+# answers a different question (live Suspender-Boots trace).
+_BRAND_DIM_KEYS = frozenset({"brand_id", "brand", "brand_name"})
+
+
+def _unknown_brand_error(error: object) -> bool:
+    text = str(error).lower()
+    return "unknown brand" in text or "invalid brand" in text
+
+
 def _unknown_dimension_error(error: object) -> bool:
     text = str(error).lower()
-    return "unknown brand" in text or "unknown dimension" in text or "invalid brand" in text
+    return "unknown dimension" in text or _unknown_brand_error(error)
 
 
 # Single agent identity for MCPGateway allowlisting — the V3 runtime has one
@@ -393,6 +406,46 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
         )
 
 
+async def resolve_brand(ctx: RunContext[SelericDeps], name: str) -> ToolResult:
+    """Resolve a brand name/code (e.g. "Sniff Theory", "Urthend") to a
+    ``brand_id`` for use in a ``query_metrics`` filter — call this instead of
+    inventing a brand id when the user names a brand other than the default.
+
+    Returns the resolved ``brand_id`` and canonical name; a partially-loaded
+    tenant's ``scope_note`` is surfaced as a warning so a P&L answer isn't given
+    for a brand whose revenue side isn't in the warehouse. Resolution only —
+    the ``brand_id`` is passed verbatim into a ``filters`` entry
+    (``{"dimension": "brand_id", "operator": "equals", "values": [brand_id]}``),
+    never used to rewrite a ``metric_id`` (rule 1)."""
+    try:
+        result = await ctx.deps.mcp_client.call(
+            agent_id=_AGENT_ID,
+            capability="seleric.catalogue_resolve_brand",
+            arguments={"text": name},
+        )
+    except Exception as exc:
+        return _mcp_error_result(exc)
+    result = dict(result or {})
+    brand_id = result.get("brand_id")
+    if not brand_id:
+        # Ambiguous/unknown: hand the model whatever the server offered
+        # (candidates/suggestions) so it can disambiguate, never a guess.
+        return ToolResult(
+            success=False,
+            summary=f"could not resolve a brand from '{name}'",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+            provenance=ArtifactProvenance(source_metadata=result),
+        )
+    warnings = [str(result["scope_note"])] if result.get("scope_note") else []
+    return ToolResult(
+        success=True,
+        summary=f"{name} -> brand_id={brand_id} ({result.get('name') or ''})".strip(),
+        warnings=warnings,
+        provenance=ArtifactProvenance(source_metadata=result),
+    )
+
+
 def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> None:
     """Raise ``ModelRetry`` with candidate ids when *metric_id* isn't in the
     warmed catalogue snapshot. Validation only — never rewrites the id to a
@@ -575,25 +628,39 @@ async def query_metrics(
         limit=limit,
     )
     result = await _cached_metrics_query(ctx, args)
-    if result.get("error") and filters and _unknown_dimension_error(result["error"]):
-        dimensions = {}
-        breakdown = []
-        filters = []
-        args = build_metrics_query_args(
-            measure=metric_id,
-            start=period_start.date().isoformat(),
-            end=period_end.date().isoformat(),
-            grain=None if grain == "none" else grain,
-            sort=sort,
-            limit=limit,
-        )
-        result = await _cached_metrics_query(ctx, args)
+    if result.get("error") and _unknown_brand_error(result["error"]):
+        # Drop ONLY the brand filter (falls back to the injected default brand);
+        # keep every other filter and the breakdown. Never strip a user-supplied
+        # product/return/region filter — that silently answers a different
+        # question and still reports success (live Suspender-Boots trace).
+        kept_filters = [
+            f for f in filters if _normalize_dim_token(f["dimension"]) not in _BRAND_DIM_KEYS
+        ]
+        if len(kept_filters) != len(filters):
+            filters = kept_filters
+            args = build_metrics_query_args(
+                measure=metric_id,
+                start=period_start.date().isoformat(),
+                end=period_end.date().isoformat(),
+                grain=None if grain == "none" else grain,
+                dimensions=breakdown or None,
+                filters=filters or None,
+                sort=sort,
+                limit=limit,
+            )
+            result = await _cached_metrics_query(ctx, args)
     if result.get("error"):
+        # An unknown NON-brand dimension is an unsupported request, not a
+        # transient failure: surface it plainly so the model reports UNSUPPORTED
+        # rather than looping or quietly dropping the constraint.
+        unsupported = _unknown_dimension_error(result["error"]) and not _unknown_brand_error(
+            result["error"]
+        )
         return ToolResult(
             success=False,
             summary=f"query_metrics({metric_id}) failed: {result['error']}",
-            error_code="INSUFFICIENT_EVIDENCE",
-            retryable=True,
+            error_code="UNSUPPORTED_QUERY" if unsupported else "INSUFFICIENT_EVIDENCE",
+            retryable=not unsupported,
         )
     rows = result.get("rows") or []
     if not rows:
@@ -760,6 +827,30 @@ async def query_metrics(
     return await ctx.deps.query_cache.get_or_fetch(result_key, _write_evidence)
 
 
+def _resolve_drilldown_parent_id(
+    parent: dict[str, Any], metric_id: str
+) -> tuple[str | None, str | None]:
+    """Pick the query id to drill into. A single-view parent → its ``query_id``.
+    A composed multi-view parent → the sole part id if there is exactly one,
+    else ``(None, reason)`` so the caller refuses instead of sending the
+    composition id (which the server rejects). ``composed``/``part_query_ids``
+    live either top-level or under ``provenance``."""
+    prov = parent.get("provenance") or {}
+    composed = bool(parent.get("composed") or prov.get("composed"))
+    if not composed:
+        return parent.get("query_id"), None
+    part_ids = parent.get("part_query_ids") or prov.get("part_query_ids") or [
+        p.get("query_id") for p in (parent.get("parts") or []) if p.get("query_id")
+    ]
+    part_ids = [pid for pid in part_ids if pid]
+    if len(part_ids) == 1:
+        return part_ids[0], None
+    return None, (
+        f"'{metric_id}' spans multiple Cube views, so it can't be drilled down as one "
+        f"query. Pick a single-view metric for the '{metric_id}' concept and retry."
+    )
+
+
 async def drilldown(
     ctx: RunContext[SelericDeps],
     metric_id: str,
@@ -792,7 +883,20 @@ async def drilldown(
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=True,
         )
-    drilldown_args = {"parent_query_id": parent["query_id"], "target_dimensions": [dimension]}
+    # A metric spanning multiple Cube views comes back composed: the server
+    # rejects the composition id and only accepts a single part_query_id (see
+    # server.py metrics_drilldown/insights_explain). Resolve to the one part, or
+    # refuse clearly rather than sending the composition id and surfacing a raw
+    # server rejection.
+    parent_query_id, multi_view_reason = _resolve_drilldown_parent_id(parent, metric_id)
+    if parent_query_id is None:
+        return ToolResult(
+            success=False,
+            summary=multi_view_reason or f"drilldown({metric_id}) parent has no usable query id",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+        )
+    drilldown_args = {"parent_query_id": parent_query_id, "target_dimensions": [dimension]}
     fetch_drilldown = lambda: ctx.deps.mcp_client.call(  # noqa: E731
         agent_id=_AGENT_ID, capability="seleric.metrics_drilldown", arguments=drilldown_args
     )

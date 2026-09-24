@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
+import os
 from typing import Any
 
 import httpx
@@ -45,10 +46,18 @@ TOOLS = (
     "catalogue_related_metrics",
     "catalogue_list_dimensions",
     "catalogue_list_brands",
+    "catalogue_resolve_brand",
     "modules_list",
     "metrics_query",
     "metrics_drilldown",
-    "insights_explain",
+    # Read-only ad surfaces. meta_insights_query is Cube-backed (certified
+    # meta_ad_performance, same planner as metrics_query); meta_accounts_list
+    # and the google_* tools hit the live Graph/GAQL APIs (read-only,
+    # uncertified). No write/CRUD ad tools are wired here by design.
+    "meta_insights_query",
+    "meta_accounts_list",
+    "google_accounts_list_accessible",
+    "google_query_gaql",
     "actions_list_available",
     "actions_propose",
     "actions_commit",
@@ -216,6 +225,20 @@ class RemoteToolServer:
         return await self._transport.call_tool(self._tool_name, arguments)
 
 
+def _timeout_from_env(default: float = 30.0) -> float:
+    """Per-call MCP timeout (seconds), overridable via ``SELERIC_MCP_TIMEOUT``.
+    A stalled or malformed value falls back to the default; the +10s asyncio
+    hard-timeout backstop in SelericMCPTransport tracks whatever this returns."""
+    raw = os.environ.get("SELERIC_MCP_TIMEOUT", "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 def build_seleric_servers(*, url: str, token: str, capability_prefix: str = "seleric") -> list[RemoteToolServer]:
-    transport = SelericMCPTransport(url=url, token=token)
+    transport = SelericMCPTransport(url=url, token=token, timeout_s=_timeout_from_env())
     return [RemoteToolServer(transport, tool, capability_prefix) for tool in TOOLS]

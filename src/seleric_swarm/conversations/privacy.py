@@ -35,6 +35,7 @@ _PUBLIC_EVENT_FIELDS = frozenset(
         "claim_id",
         "confidence",
         "decision",
+        "delta",
         "description",
         "duration_ms",
         "error",

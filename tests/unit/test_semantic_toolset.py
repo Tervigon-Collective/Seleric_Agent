@@ -639,3 +639,97 @@ async def test_drilldown_parent_query_failure_is_insufficient_evidence():
     )
     assert result.success is False
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
+
+
+@pytest.mark.asyncio
+async def test_drilldown_composed_multiview_parent_refuses_clearly():
+    # A metric spanning >1 Cube view returns composed=true; the server rejects
+    # the composition id. The wrapper must refuse with a clear message and never
+    # send the composition id to metrics_drilldown.
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "composition-1",
+                "rows": [{"total_sales_all_channels": "100"}],
+                "composed": True,
+                "provenance": {"composed": True, "part_query_ids": ["partA", "partB"]},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.drilldown(
+        ctx,
+        metric_id="total_sales_all_channels",
+        dimension="shipping_region",
+        period_start=datetime(2026, 9, 17, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert result.error_code == "INSUFFICIENT_EVIDENCE"
+    assert "multiple Cube views" in result.summary
+    assert not any(c[0] == "seleric.metrics_drilldown" for c in mcp.calls)
+
+
+@pytest.mark.asyncio
+async def test_drilldown_composed_single_part_uses_that_part_id():
+    # A composed parent with exactly one part is drillable — drill on the part id,
+    # not the composition id.
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "composition-1",
+                "rows": [{"total_sales": "100"}],
+                "composed": True,
+                "provenance": {"composed": True, "part_query_ids": ["only-part"]},
+            },
+            "seleric.metrics_drilldown": {
+                "rows": [{"shipping_region": "KA", "total_sales": "100"}],
+                "provenance": {},
+            },
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.drilldown(
+        ctx,
+        metric_id="total_sales",
+        dimension="shipping_region",
+        period_start=datetime(2026, 9, 17, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert result.success is True
+    drilldown_call = next(c for c in mcp.calls if c[0] == "seleric.metrics_drilldown")
+    assert drilldown_call[1]["parent_query_id"] == "only-part"
+
+
+# ---- resolve_brand -------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resolve_brand_returns_brand_id_and_surfaces_scope_note():
+    mcp = FakeMcpClient(
+        {
+            "seleric.catalogue_resolve_brand": {
+                "brand_id": "27",
+                "name": "Sniff Theory",
+                "scope_note": "Revenue side only partially loaded in serve.",
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.resolve_brand(ctx, "sniff theory")
+    assert result.success is True
+    assert "27" in result.summary
+    assert any("partially loaded" in w for w in result.warnings)
+    assert mcp.calls[0] == ("seleric.catalogue_resolve_brand", {"text": "sniff theory"})
+
+
+@pytest.mark.asyncio
+async def test_resolve_brand_unresolved_is_insufficient_evidence():
+    mcp = FakeMcpClient(
+        {"seleric.catalogue_resolve_brand": {"status": "ambiguous", "candidates": ["20", "27"]}}
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.resolve_brand(ctx, "the dog one")
+    assert result.success is False
+    assert result.error_code == "INSUFFICIENT_EVIDENCE"
+    assert result.provenance.source_metadata["candidates"] == ["20", "27"]

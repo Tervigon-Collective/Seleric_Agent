@@ -38,6 +38,7 @@ joint decision.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -207,11 +208,50 @@ def _summarize_steps(messages: list) -> list[dict]:
     return steps
 
 
-async def _run_agent(agent: Agent[SelericDeps, MissionResult], deps: SelericDeps, query: str) -> MissionResult:
+async def _run_agent_streamed(
+    agent: Agent[SelericDeps, MissionResult],
+    deps: SelericDeps,
+    query: str,
+    on_delta: Callable[[str], None],
+) -> MissionResult:
+    """Stream the final answer's tokens as they are generated.
+
+    ``run_stream`` runs the full agent graph — all the tool calls — internally
+    and only yields once the model starts emitting the final ``MissionResult``.
+    We diff the ``final_response`` field across the partially-validated outputs
+    and push each new suffix to ``on_delta``; everything else (evidence, status,
+    trace) is read from the fully-validated output at the end, unchanged.
+    """
+    async with agent.run_stream(
+        query,
+        deps=deps,
+        usage_limits=_usage_limits(deps.limits),
+        retries=max(1, deps.limits.agent_retries),
+    ) as stream:
+        emitted = 0
+        async for partial in stream.stream_output(debounce_by=0.05):
+            text = getattr(partial, "final_response", None) or ""
+            if len(text) > emitted:
+                on_delta(text[emitted:])
+                emitted = len(text)
+        result = await stream.get_output()
+        steps = _summarize_steps(stream.all_messages())
+    return result.model_copy(update={"trace": {**result.trace, "steps": steps}})
+
+
+async def _run_agent(
+    agent: Agent[SelericDeps, MissionResult],
+    deps: SelericDeps,
+    query: str,
+    *,
+    on_delta: Callable[[str], None] | None = None,
+) -> MissionResult:
     # capture_run_messages populates `messages` even when the run raises
     # UsageLimitExceeded — the failing-budget case we most need to debug.
     with capture_run_messages() as messages:
         try:
+            if on_delta is not None:
+                return await _run_agent_streamed(agent, deps, query, on_delta)
             result = (
                 await agent.run(
                     query,
@@ -241,17 +281,24 @@ async def run_validated_mission(
     *,
     validator: EvidenceValidator | None = None,
     tracker: ExecutionBudgetTracker | None = None,
+    on_stream: Callable[[str, str], None] | None = None,
 ) -> MissionResult:
     """Run the agent once; on a REVISE, revise up to the bounded limit.
 
     ``deps.limits.max_validation_revisions`` is tracked through
     ``ExecutionBudgetTracker`` like every other execution limit, not a separate
     ad hoc counter. A REJECT verdict short-circuits without spending one.
+
+    ``on_stream(kind, text)`` — when supplied — streams the final answer live:
+    ``("delta", suffix)`` for each new chunk, ``("reset", "")`` when a REVISE
+    scraps the streamed-but-rejected answer so the caller can clear it before
+    the revised answer streams in.
     """
     validator = validator or EvidenceValidator()
     tracker = tracker or ExecutionBudgetTracker(limits=deps.limits)
+    on_delta = (lambda text: on_stream("delta", text)) if on_stream else None
 
-    result = await _run_agent(agent, deps, query)
+    result = await _run_agent(agent, deps, query, on_delta=on_delta)
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
     outcome = validator.validate(result, deps=deps)
@@ -281,10 +328,14 @@ async def run_validated_mission(
                     "limitations": ["INSUFFICIENT_EVIDENCE"],
                 }
             )
+        if on_stream is not None:
+            # The streamed-but-rejected answer is now stale; tell the caller to
+            # clear it before the revised answer streams in over the top.
+            on_stream("reset", "")
         revision_prompt = (
             f"{query}\n\nYour previous answer was rejected: {outcome.reason}. Revise it."
         )
-        result = await _run_agent(agent, deps, revision_prompt)
+        result = await _run_agent(agent, deps, revision_prompt, on_delta=on_delta)
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
         outcome = validator.validate(result, deps=deps)
