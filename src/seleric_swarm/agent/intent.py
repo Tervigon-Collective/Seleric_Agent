@@ -263,11 +263,16 @@ async def _post_jev(
     error / missing config — every caller is fail-open on ``None``."""
     if not base_url or not api_key:
         return None
+    # Accept either the host ("https://jevmodel.org") or the full endpoint
+    # ("https://jevmodel.org/v1/systemone") as JEV_BASE_URL — don't double the
+    # path when it's already present.
+    root = base_url.rstrip("/")
+    url = root if root.endswith("/v1/systemone") else f"{root}/v1/systemone"
     payload = {"model": "openjev", "state": state, "questions": questions}
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
-                f"{base_url.rstrip('/')}/v1/systemone",
+                url,
                 json=payload,
                 headers={"Authorization": f"Bearer {api_key}"},
             )
