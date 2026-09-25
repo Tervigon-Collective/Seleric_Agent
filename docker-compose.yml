@@ -89,12 +89,24 @@ services:
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
       AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
+      AZURE_OPENAI_FAST_MODEL: ${AZURE_OPENAI_FAST_MODEL:-}
+      AZURE_OPENAI_STRONG_REASONING_EFFORT: ${AZURE_OPENAI_STRONG_REASONING_EFFORT:-}
       AZURE_OPENAI_ENDPOINT_2: ${AZURE_OPENAI_ENDPOINT_2:-}
       AZURE_OPENAI_API_KEY_2: ${AZURE_OPENAI_API_KEY_2:-}
       AZURE_OPENAI_MODELS_2: ${AZURE_OPENAI_MODELS_2:-}
       SELERIC_MCP_URL: ${SELERIC_MCP_URL:-}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
+      JEV_BASE_URL: ${JEV_BASE_URL:-}
+      JEV_API_KEY: ${JEV_API_KEY:-}
+      JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}
+      AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-240}
+    # Join the external laya_default network so JEV/Laya is reachable as
+    # http://laya-serve:8000 (its 127.0.0.1 host port is not reachable from
+    # containers). `default` is kept so postgres/redis/minio/etc. still resolve.
+    networks:
+      - default
+      - laya_default
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,12 +163,24 @@ services:
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
       AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
+      AZURE_OPENAI_FAST_MODEL: ${AZURE_OPENAI_FAST_MODEL:-}
+      AZURE_OPENAI_STRONG_REASONING_EFFORT: ${AZURE_OPENAI_STRONG_REASONING_EFFORT:-}
       AZURE_OPENAI_ENDPOINT_2: ${AZURE_OPENAI_ENDPOINT_2:-}
       AZURE_OPENAI_API_KEY_2: ${AZURE_OPENAI_API_KEY_2:-}
       AZURE_OPENAI_MODELS_2: ${AZURE_OPENAI_MODELS_2:-}
       SELERIC_MCP_URL: ${SELERIC_MCP_URL:-}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
+      JEV_BASE_URL: ${JEV_BASE_URL:-}
+      JEV_API_KEY: ${JEV_API_KEY:-}
+      JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}
+      AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-240}
+    # Join the external laya_default network so JEV/Laya is reachable as
+    # http://laya-serve:8000 (its 127.0.0.1 host port is not reachable from
+    # containers). `default` is kept so postgres/redis/minio/etc. still resolve.
+    networks:
+      - default
+      - laya_default
     depends_on:
       api:
         condition: service_healthy
@@ -204,3 +228,10 @@ services:
 volumes:
   seleric_postgres:
   seleric_minio:
+
+networks:
+  default:
+  # The Laya/JEV compose stack's network, joined so api/recovery can reach it
+  # as http://laya-serve:8000. Must already exist (docker compose up in laya/).
+  laya_default:
+    external: true
