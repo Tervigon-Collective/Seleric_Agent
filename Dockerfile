@@ -49,7 +49,6 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY src ./src
 COPY config ./config
-COPY prompts ./prompts
 COPY contracts ./contracts
 COPY schemas ./schemas
 COPY migrations ./migrations
