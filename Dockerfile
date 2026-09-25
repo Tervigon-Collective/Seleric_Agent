@@ -26,7 +26,9 @@ ARG LIVEKIT_AGENTS_VERSION=">=1.0"
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python /app/.venv/bin/python \
         "livekit-agents${LIVEKIT_AGENTS_VERSION}" \
-        livekit-plugins-silero
+        livekit-plugins-silero \
+        livekit-plugins-openai \
+        livekit-plugins-azure
 
 # Office UI static bundle, served by the API itself at /ui/ (same origin, so no
 # CORS and no extra port).

@@ -201,8 +201,23 @@ class Settings(BaseSettings):
     voice_token_ttl_s: int = 900
     # fake = no vendor calls (CI default, mirrors llm_provider="fake").
     stt_provider: str = "fake"
+    # "multi" = Deepgram Nova-3 code-switching (Hindi/English mixed speech); a
+    # fixed code such as "en" or "hi" is cheaper to get right if users stay in one.
+    voice_stt_language: str = "multi"
+    # Azure Speech (STT_PROVIDER=azure / TTS_PROVIDER=azure). Azure STT needs an
+    # explicit candidate set rather than "multi"; comma-separated BCP-47 codes.
+    azure_speech_key: str = ""
+    azure_speech_region: str = ""
+    voice_stt_languages: str = "en-IN,hi-IN"
+    # "azure" reuses AZURE_OPENAI_ENDPOINT/API_KEY for the voice LLM (Foundry's
+    # OpenAI-compatible /openai/v1 route), so no second secret is needed.
+    voice_llm_provider: str = ""
     tts_provider: str = "fake"
     voice_llm_model: str = ""
+    # Optional OpenAI-compatible endpoint for the voice LLM (Groq, Gemini, Azure,
+    # local). Empty = route VOICE_LLM_MODEL through LiveKit's inference gateway.
+    voice_llm_base_url: str = ""
+    voice_llm_api_key: str = ""
     voice_tts_voice: str = ""
     voice_narration_enabled: bool = True
     voice_narration_min_gap_s: float = 4.0
