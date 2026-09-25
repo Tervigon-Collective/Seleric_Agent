@@ -147,7 +147,7 @@ def test_build_required_scope_extracts_resolvable_breakdown():
     scope = build_required_scope(
         "orders by source last 5 days", alias_index=_ALIASES, dimension_ids=_DIMS
     )
-    assert scope.breakdowns == frozenset({"source_name"})
+    assert scope.breakdowns == frozenset({frozenset({"source_name"})})
 
 
 def _evidence_artifact(store: InMemoryArtifactStore, *, day: int, dimensions: dict[str, str]) -> None:
@@ -203,6 +203,30 @@ def test_scope_coverage_satisfied_when_grouped():
     )
     assert out.status == "OK"
     assert not out.gaps
+
+
+def test_ambiguous_breakdown_sibling_satisfies_coverage():
+    # L4 regression: "by channel" resolves to a candidate set {channel,
+    # lt_channel}; grouping by the sibling lt_channel must satisfy coverage,
+    # not force a REVISE loop.
+    store = InMemoryArtifactStore()
+    for d in range(1, 6):
+        _evidence_artifact(store, day=d, dimensions={"lt_channel": "ig_feed"})
+    scope = RequiredScope(breakdowns=frozenset({frozenset({"channel", "lt_channel"})}))
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
+    assert out.status == "OK"
+    assert not out.gaps
+
+
+def test_ambiguous_breakdown_requires_at_least_one_candidate():
+    # Grouping by nothing still fails, even with an ambiguous candidate set.
+    store = InMemoryArtifactStore()
+    for d in range(1, 6):
+        _evidence_artifact(store, day=d, dimensions={})
+    scope = RequiredScope(breakdowns=frozenset({frozenset({"channel", "lt_channel"})}))
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
+    assert out.status == "INSUFFICIENT"
+    assert out.gaps and out.gaps[0].blocking
 
 
 def _validation_deps(store: InMemoryArtifactStore, scope: RequiredScope) -> SelericDeps:

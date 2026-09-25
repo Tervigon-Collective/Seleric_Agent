@@ -101,6 +101,7 @@ services:
       JEV_API_KEY: ${JEV_API_KEY:-}
       JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}
       AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-240}
+      MISSION_TIMEOUT_S: ${MISSION_TIMEOUT_S:-420}
     # Join the external laya_default network so JEV/Laya is reachable as
     # http://laya-serve:8000 (its 127.0.0.1 host port is not reachable from
     # containers). `default` is kept so postgres/redis/minio/etc. still resolve.
@@ -175,6 +176,7 @@ services:
       JEV_API_KEY: ${JEV_API_KEY:-}
       JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}
       AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-240}
+      MISSION_TIMEOUT_S: ${MISSION_TIMEOUT_S:-420}
     # Join the external laya_default network so JEV/Laya is reachable as
     # http://laya-serve:8000 (its 127.0.0.1 host port is not reachable from
     # containers). `default` is kept so postgres/redis/minio/etc. still resolve.

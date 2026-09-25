@@ -414,18 +414,26 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
     """Executed evidence must cover the breakdowns and named values the query demanded.
 
     The reconciliation gate for the silent-drop failure (live "by source"
-    trace): a requested breakdown that resolved to a real catalogue dimension
-    (``RequiredScope.breakdowns``, built in the runner) must appear as a
-    grouping key on at least one evidence row. A missing one is a **blocking
-    gap → REVISE**, not a REJECT: the answer may be right in kind but does not
-    cover what was asked, so the model gets one chance to redo it (and, if the
-    breakdown is genuinely unsupported, to say so) rather than shipping a
+    trace): each requested breakdown is a **candidate set** of catalogue
+    dimensions sharing that grain language (``RequiredScope.breakdowns``, built
+    in the runner). Coverage needs at least one candidate grouped on an evidence
+    row — so grouping by a valid sibling (``lt_channel`` where the resolver named
+    ``channel``) passes, while grouping by nothing still fails. A miss is a
+    **blocking gap → REVISE**, not a REJECT: the answer may be right in kind but
+    does not cover what was asked, so the model gets one chance to redo it (and,
+    if the breakdown is genuinely unsupported, to say so) rather than shipping a
     different-question answer as ``completed``.
 
     NOT_APPLICABLE when the query demanded no resolvable breakdown, or when the
     mission produced no evidence at all (``check_evidence`` owns that case — a
     coverage gap on top would just double-count the same failure)."""
-    breakdowns = frozenset(getattr(scope, "breakdowns", ()) or ())
+    # Each element is a candidate set; tolerate a bare dimension id (legacy /
+    # defensive) by treating it as a one-candidate set rather than iterating it
+    # into characters.
+    breakdowns = [
+        frozenset([cs]) if isinstance(cs, str) else frozenset(cs)
+        for cs in (getattr(scope, "breakdowns", ()) or ())
+    ]
     value_filters = tuple(getattr(scope, "value_filters", ()) or ())
     if not breakdowns and not value_filters:
         return CheckOutcome(check="scope_coverage", status="NOT_APPLICABLE")
@@ -440,14 +448,16 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
             grouped.update(parsed.dimensions.keys())
 
     gaps: list[EvidenceGap] = []
-    missing = sorted(breakdowns - grouped)
-    if missing:
+    for candidates in breakdowns:
+        if candidates & grouped:
+            continue
+        options = " or ".join(sorted(candidates))
         gaps.append(
             EvidenceGap(
                 description=(
-                    f"the question asked for a breakdown by {missing}, but the answer's "
-                    f"evidence is not grouped by it — re-run grouped by that dimension, "
-                    f"or state plainly that no available metric supports that breakdown"
+                    f"the question asked for a breakdown by {options}, but the answer's "
+                    f"evidence is not grouped by any of them — re-run grouped by one of those "
+                    f"dimensions, or state plainly that no available metric supports that breakdown"
                 ),
                 blocking=True,
                 priority=8,

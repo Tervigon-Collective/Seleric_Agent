@@ -86,12 +86,18 @@ class ValueFilter:
 class RequiredScope:
     """Hard constraints resolved to catalogue dimension ids.
 
-    ``breakdowns`` — dimension ids the user asked to break the answer down by.
+    ``breakdowns`` — one **candidate set** per requested breakdown term. A grain
+    word is often ambiguous in the catalogue ("channel" → ``channel`` /
+    ``lt_channel`` / ``acquisition_channel``, all real dimensions), so a term
+    resolves to the *set* of dimensions that share its grain language rather than
+    one arbitrarily-picked id. Coverage is satisfied when the answer groups by
+    **any** id in each set — the guard still catches "no grouping at all", but no
+    longer forces a REVISE when the model chose a valid sibling dimension.
     ``value_filters`` — named values the answer must be filtered to.
     (Extension point, not yet populated: exclusion dims.)
     """
 
-    breakdowns: frozenset[str] = frozenset()
+    breakdowns: frozenset[frozenset[str]] = frozenset()
     value_filters: tuple[ValueFilter, ...] = ()
 
     def is_empty(self) -> bool:
@@ -126,28 +132,46 @@ def _normalize(text: str) -> str:
     return text.strip().lower().replace("-", " ").replace("_", " ")
 
 
-def _resolve_dimension(
+def _resolve_dimension_candidates(
     term: str, alias_index: dict[str, str], dimension_ids: frozenset[str]
-) -> str | None:
-    """Map a business term to a catalogue dimension id, or None. Confident
-    matches only — an alias hit or an exact id; never a fuzzy guess (a wrong
-    dimension here forces a needless REVISE)."""
+) -> frozenset[str]:
+    """Every catalogue dimension whose grain language matches *term*.
+
+    A term maps to a dimension when it is that dimension's id or an alias
+    (exact), or when the term's words are all tokens of a dimension id or one of
+    its aliases — e.g. "channel" is a token of ``lt_channel`` and
+    ``acquisition_channel``. This mirrors the ambiguity the catalogue's own
+    dimension resolver reports (``channel`` vs ``lt_channel``); it is derived
+    entirely from the catalogue's ids/aliases, with no per-term hardcoding.
+
+    Returning the *set* (not one arbitrary pick) is deliberate: it only ever
+    widens what coverage accepts, so it can relax a false REVISE but never
+    manufacture a new failure — a query that grouped by nothing still matches
+    no candidate."""
     key = _normalize(term)
     if not key:
-        return None
-    if key in alias_index:  # alias / display token → dimension id
-        return alias_index[key]
+        return frozenset()
+    cands: set[str] = set()
     as_id = key.replace(" ", "_")
     if as_id in dimension_ids:
-        return as_id
-    return None
+        cands.add(as_id)
+    if key in alias_index:
+        cands.add(alias_index[key])
+    key_tokens = set(key.split())
+    for dim in dimension_ids:
+        if key_tokens <= set(_normalize(dim).split()):
+            cands.add(dim)
+    for alias_key, dim in alias_index.items():
+        if key_tokens <= set(alias_key.split()):
+            cands.add(dim)
+    return frozenset(cands)
 
 
-def _candidate_terms(query: str) -> list[str]:
-    """Every breakdown capture, expanded to its longest→shortest leading
-    n-grams (stopping at a stopword) so resolution can try the fullest phrase
-    first, then fall back to the head noun."""
-    terms: list[str] = []
+def _candidate_term_groups(query: str) -> list[list[str]]:
+    """Per breakdown capture, its longest→shortest leading n-grams (stopping at
+    a stopword) so resolution can try the fullest phrase first, then fall back to
+    the head noun. One list per ``by <...>`` phrase in the query."""
+    groups: list[list[str]] = []
     for match in _BREAKDOWN_RE.finditer(query):
         words = match.group(1).split()
         kept: list[str] = []
@@ -155,10 +179,10 @@ def _candidate_terms(query: str) -> list[str]:
             if _normalize(w) in _STOPWORDS:
                 break
             kept.append(w)
-        # longest first: ["source","name"] -> "source name", then "source"
-        for n in range(len(kept), 0, -1):
-            terms.append(" ".join(kept[:n]))
-    return terms
+        ngrams = [" ".join(kept[:n]) for n in range(len(kept), 0, -1)]
+        if ngrams:
+            groups.append(ngrams)
+    return groups
 
 
 def build_required_scope(
@@ -167,7 +191,13 @@ def build_required_scope(
     alias_index: dict[str, str] | None,
     dimension_ids: frozenset[str] | set[str] | None,
 ) -> RequiredScope:
-    """Resolve a query's requested breakdowns to catalogue dimension ids.
+    """Resolve a query's requested breakdowns to catalogue dimension candidate sets.
+
+    Each ``by <term>`` phrase becomes one candidate set (the dimensions sharing
+    that grain language); the answer must group by any id in each set. The
+    longest n-gram that resolves to at least one dimension wins per phrase, so
+    "source name" is preferred over "source" but an unresolved "June" adds
+    nothing.
 
     ``alias_index`` / ``dimension_ids`` come from the catalogue bootstrap
     (``CatalogueBootstrap.alias_index()`` / ``dimension_ids()``). Both empty →
@@ -176,11 +206,13 @@ def build_required_scope(
     dims = frozenset(dimension_ids or ())
     if not aliases and not dims:
         return RequiredScope()
-    resolved: set[str] = set()
-    for term in _candidate_terms(query):
-        dim = _resolve_dimension(term, aliases, dims)
-        if dim:
-            resolved.add(dim)
+    resolved: set[frozenset[str]] = set()
+    for ngrams in _candidate_term_groups(query):
+        for term in ngrams:
+            cands = _resolve_dimension_candidates(term, aliases, dims)
+            if cands:
+                resolved.add(cands)
+                break
     return RequiredScope(breakdowns=frozenset(resolved))
 
 
@@ -189,13 +221,19 @@ def _demo() -> None:
     aliases = {"source": "source_name", "order source": "source_name", "vendor": "vendor"}
     dims = frozenset({"source_name", "vendor", "lt_platform"})
 
-    # "by <dim>" resolves; trailing time words are stripped.
+    # "by <dim>" resolves to a single-candidate set; trailing time words stripped.
     s = build_required_scope("orders by source last 5 days", alias_index=aliases, dimension_ids=dims)
-    assert s.breakdowns == frozenset({"source_name"}), s.breakdowns
+    assert s.breakdowns == frozenset({frozenset({"source_name"})}), s.breakdowns
 
     # exact dimension id via "per".
     s = build_required_scope("revenue per lt_platform", alias_index=aliases, dimension_ids=dims)
-    assert s.breakdowns == frozenset({"lt_platform"}), s.breakdowns
+    assert s.breakdowns == frozenset({frozenset({"lt_platform"})}), s.breakdowns
+
+    # Ambiguous grain: "channel" collects every sibling dimension, so an answer
+    # grouped by any one of them satisfies coverage (the L4 fix).
+    channel_dims = frozenset({"channel", "lt_channel", "acquisition_channel", "vendor"})
+    s = build_required_scope("net revenue by channel", alias_index={}, dimension_ids=channel_dims)
+    assert s.breakdowns == frozenset({frozenset({"channel", "lt_channel", "acquisition_channel"})}), s.breakdowns
 
     # unresolved "by" target manufactures nothing (precision safeguard).
     s = build_required_scope("orders by June 2026", alias_index=aliases, dimension_ids=dims)
