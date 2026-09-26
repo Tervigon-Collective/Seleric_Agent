@@ -48,6 +48,23 @@ def test_agent_is_told_to_switch_metrics_for_entity_level_breakdowns_it_cant_sup
     assert "not necessarily identical" in lowered
 
 
+def test_agent_labels_per_unit_figures_by_their_denominator():
+    """Stress-test L9 (P3): a per-order average was labeled "LTV per customer".
+    The label must match the denominator — orders are not customers."""
+    lowered = INSTRUCTIONS.lower()
+    assert "per order" in lowered and "per customer" in lowered
+    assert "do not relabel orders as customers" in lowered
+
+
+def test_agent_ranks_profitability_by_net_profit_not_contribution_margin():
+    """Stress-test L8 (P3): Meta was called the "best" channel on contribution
+    margin while it had the most-negative net profit. CM is pre-advertising, so
+    it must not decide "best", and it must be labeled as pre-advertising."""
+    collapsed = " ".join(INSTRUCTIONS.lower().split())
+    assert "pre-advertising" in collapsed
+    assert "rank by net profit, not contribution margin" in collapsed
+
+
 def test_agent_is_told_to_batch_independent_metric_fetches_in_one_turn():
     """Live incident (2026-09-21): a question needing three independent
     metrics (no metric derived from another) fetched them one per turn,

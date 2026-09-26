@@ -29,6 +29,7 @@ from pydantic_ai import RunContext
 
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.intent import judge_relevance
+from seleric_swarm.agent.limits import withdraw_tool
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import ArtifactProvenance
 from seleric_swarm.knowledge.corpus import corpus_dir, load_corpus
@@ -78,13 +79,18 @@ async def search_knowledge(ctx: RunContext[SelericDeps], query: str) -> ToolResu
 
     documents = load_corpus()
     if not documents:
+        # An empty corpus is a deployment/data state, not a query problem: a
+        # second search can never find what was never loaded (live L12: 3
+        # searches after the first said "corpus is empty"). Withdraw the tool so
+        # the model cannot re-search — same rule as an unavailable MCP capability.
+        withdraw_tool(ctx.deps, "search_knowledge")
         return ToolResult(
             success=True,
             summary=(
                 f"the knowledge corpus is empty — no documents have been loaded into "
                 f"{policy.KNOWLEDGE_CORPUS_DIRNAME}/. This is not a failed search; there "
-                f"is nothing written down yet. Do not substitute a metric value for a "
-                f"document (rule 12)."
+                f"is nothing written down yet. Do not search again or substitute a metric "
+                f"value for a document (rule 12)."
             ),
             warnings=[policy.WARN_EMPTY_CORPUS],
             provenance=ArtifactProvenance(calculation_version=_CALCULATION_VERSION),

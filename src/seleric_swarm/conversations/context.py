@@ -195,7 +195,20 @@ class MemoryService:
         self.repositories = repositories
 
     def ingest_candidates(self, candidates: Iterable[MemoryItem]) -> list[MemoryItem]:
+        """Ingest extracted memory candidates, deduplicating and resolving conflicts.
+
+        Auto-confirmation policy:
+        - THREAD-scoped memories are auto-confirmed to ACTIVE on creation.
+          They are ephemeral (scoped to one conversation), carry no cross-user
+          risk, and are useless if they never reach the agent's context window.
+        - USER-scoped memories (preferences, global constraints) keep
+          requires_confirmation=True because they persist across sessions and
+          can affect future unrelated conversations — explicit consent is warranted.
+        - Conflicting items always go to PENDING_CONSENT regardless of scope
+          because a contradiction requires human resolution.
+        """
         created: list[MemoryItem] = []
+        now = datetime.now(UTC)
         for candidate in candidates:
             if self.repositories.memories.get_preference(
                 candidate.workspace_id, candidate.owner_user_id
@@ -261,18 +274,31 @@ class MemoryService:
                             "source_message_ids": merged_message_ids,
                             "source_evidence_ids": merged_evidence_ids,
                             "provenance": duplicate_provenance,
-                            "updated_at": datetime.now(UTC),
+                            "updated_at": now,
                         }
                     )
                 )
                 continue
             conflict = next((item for item in existing if memories_contradict(item, candidate)), None)
             if conflict:
+                # Contradictions always require explicit confirmation — never auto-confirm.
                 candidate = candidate.model_copy(
                     update={
                         "status": MemoryStatus.PENDING_CONSENT,
                         "supersedes_id": conflict.id,
                         "provenance": {**candidate.provenance, "contradicts_id": conflict.id},
+                    }
+                )
+            elif candidate.scope is MemoryScope.THREAD:
+                # Thread-scoped, non-conflicting memories are auto-confirmed.
+                # MemoryItem.validate_scope_and_consent requires consented_at when
+                # status=ACTIVE — always set both together.
+                candidate = candidate.model_copy(
+                    update={
+                        "status": MemoryStatus.ACTIVE,
+                        "requires_confirmation": False,
+                        "consented_at": now,
+                        "updated_at": now,
                     }
                 )
             created.append(self.repositories.memories.create(candidate))
@@ -368,11 +394,11 @@ class ContextBuilder:
         repositories: ConversationRepositories,
         *,
         vector_scorer: Callable[[str, list[MemoryItem]], dict[str, float]] | None = None,
-        total_characters: int = 12000,
-        message_characters: int = 5000,
-        summary_characters: int = 2500,
-        memory_characters: int = 3000,
-        artifact_characters: int = 1500,
+        total_characters: int = 10_000,
+        message_characters: int = 3_500,
+        summary_characters: int = 1_200,
+        memory_characters: int = 2_500,
+        artifact_characters: int = 1_500,
         total_tokens: int | None = None,
     ) -> None:
         self.repositories = repositories
@@ -380,8 +406,14 @@ class ContextBuilder:
         self.total_characters = total_characters
         self.total_tokens = total_tokens or max(1, total_characters // 3)
         self.source_budgets = {
+            # Raw message text is now a secondary signal — TurnRecord carries
+            # the grounding load for follow-ups, so we can afford a tighter
+            # message budget without losing conversational accuracy.
             "messages": message_characters,
+            # Thread summary is a fallback for threads with no TurnRecord.
             "summary": summary_characters,
+            # Memories: 5 items × 200 chars each — sufficient for preferences
+            # and constraints without crowding out the TurnRecord slot.
             "memories": memory_characters,
             "artifacts": artifact_characters,
         }
@@ -434,7 +466,11 @@ class ContextBuilder:
         memories = [
             item
             for item in candidates
-            if (
+            # Only ACTIVE memories are injected into context. PENDING_CONSENT,
+            # ARCHIVED, SUPERSEDED, and DELETED items must never reach the
+            # agent prompt — they are either unconfirmed or invalidated.
+            if item.status is MemoryStatus.ACTIVE
+            and (
                 item.scope is MemoryScope.USER
                 or (
                     item.scope in {MemoryScope.PROJECT, MemoryScope.EPISODIC}

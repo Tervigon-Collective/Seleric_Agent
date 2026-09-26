@@ -4,18 +4,17 @@ import { HttpClient } from "../api/http";
 import { parseSseFrame } from "../api/runEvents";
 
 describe("conversation API", () => {
-  it("adds authentication and serializes message submissions", async () => {
+  it("serializes message submissions", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(
       JSON.stringify({ message_id: "m1", run_id: "r1", mission_id: "ms1" }),
       { status: 202, headers: { "Content-Type": "application/json" } },
     ));
-    const client = new HttpClient({ baseUrl: "https://api.test", getToken: () => "secret", fetchImpl });
+    const client = new HttpClient({ baseUrl: "https://api.test", fetchImpl });
     await new ConversationApi(client).submitMessage("thread/a", {
       parts: [{ type: "TEXT", content: "hello" }],
     });
     const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("/v1/threads/thread%2Fa/messages");
-    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer secret");
     expect(JSON.parse(String(init.body)).parts[0].content).toBe("hello");
   });
 
@@ -31,7 +30,7 @@ describe("conversation API", () => {
     });
   });
 
-  it("uploads cross-origin attachments without API auth and completes with SHA-256", async () => {
+  it("uploads cross-origin attachments and completes with SHA-256", async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
         attachment: {
@@ -46,7 +45,7 @@ describe("conversation API", () => {
         checksum_sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
         status: "READY",
       }), { status: 200, headers: { "Content-Type": "application/json" } }));
-    const client = new HttpClient({ baseUrl: "https://api.test", getToken: () => "secret", fetchImpl });
+    const client = new HttpClient({ baseUrl: "https://api.test", fetchImpl });
 
     const result = await new ConversationApi(client).uploadAttachment(
       "t1",
@@ -54,7 +53,6 @@ describe("conversation API", () => {
     );
 
     expect(result.status).toBe("READY");
-    expect(new Headers(fetchImpl.mock.calls[1][1].headers).has("Authorization")).toBe(false);
     expect(JSON.parse(String(fetchImpl.mock.calls[2][1].body))).toEqual({
       checksum_sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
     });

@@ -258,6 +258,41 @@ async def test_query_metrics_rejects_incompatible_dimension_with_redirect():
 
 
 @pytest.mark.asyncio
+async def test_query_metrics_rejects_fabricated_metric_without_calling_cube():
+    # Live L12: the agent guessed inventory_turnover_by_warehouse /
+    # inventory_on_hand_value_by_warehouse (not modelled at all). With no close
+    # catalogue id, the old guard fell through to Cube, whose error is
+    # retryable, so the agent looped guessing more fake ids. An unknown id with
+    # no near-match must fail fast and non-retryably, before any Cube call.
+    import dataclasses
+
+    from seleric_swarm.services.catalogue_bootstrap import (
+        CatalogueMetricMeta,
+        CatalogueSnapshot,
+    )
+
+    mcp = FakeMcpClient({})
+    snapshot = CatalogueSnapshot(
+        metrics=(
+            CatalogueMetricMeta(id="net_sales", supported_dimensions=["brand_id"]),
+            CatalogueMetricMeta(id="total_ad_spend", supported_dimensions=["brand_id"]),
+        )
+    )
+    deps = dataclasses.replace(_deps(mcp), catalogue=snapshot)
+    ctx = FakeRunContext(deps)
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="inventory_turnover_by_warehouse",
+        period_start=datetime(2026, 6, 1, tzinfo=UTC),
+        period_end=datetime(2026, 6, 30, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert result.retryable is False  # no loop: not a transient failure
+    assert result.error_code == "UNSUPPORTED_QUERY"
+    assert len(mcp.calls) == 0  # rejected before any Cube call
+
+
+@pytest.mark.asyncio
 async def test_query_metrics_repeat_returns_stop_nudge_without_duplicating_evidence():
     # Live 2026-09-22 (MS3-0b46db4d98): a lookup re-issued an identical
     # successful query_metrics ~10x and blew its step budget without answering.
@@ -681,6 +716,24 @@ async def test_search_semantics_falls_back_to_local_index_when_mcp_down(monkeypa
     assert any("stale" in w for w in result.warnings)
 
 
+@pytest.mark.asyncio
+async def test_search_semantics_stops_after_repeated_empty_results():
+    # Live L12: 4 empty searches for un-modelled inventory metrics until the
+    # budget tripped. After the 2nd empty result the tool is withdrawn and the
+    # model told to conclude "not available" — one rephrase tolerated, no thrash.
+    from seleric_swarm.agent.limits import withdrawn_tools
+
+    mcp = FakeMcpClient({"seleric.catalogue_search_metrics": {"matches": []}})
+    ctx = FakeRunContext(_deps(mcp))
+    first = await semantic.search_semantics(ctx, "inventory turnover by warehouse")
+    assert first.success is True
+    assert "search_semantics" not in withdrawn_tools(ctx.deps)  # one rephrase allowed
+    second = await semantic.search_semantics(ctx, "on hand inventory value")
+    assert second.success is True
+    assert "not available" in second.summary
+    assert "search_semantics" in withdrawn_tools(ctx.deps)
+
+
 # ---- get_metric_definitions (batch) --------------------------------------------------
 
 
@@ -712,6 +765,42 @@ async def test_get_metric_definitions_empty_ids_is_insufficient_evidence():
     result = await semantic.get_metric_definitions(ctx, [])
     assert result.success is False
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
+
+
+@pytest.mark.asyncio
+async def test_metric_definition_is_cached_per_mission():
+    # Live L3: get_metric_definition(gross_sales) fetched 3x. A repeat must be
+    # served from the per-mission cache — one MCP call, and the lookup budget is
+    # not spent again (so the 2nd call is free, not counted toward the cap).
+    mcp = FakeMcpClient({"seleric.catalogue_get_metric": {"id": "gross_sales", "unit": "INR"}})
+    ctx = FakeRunContext(_deps(mcp))
+    first = await semantic.get_metric_definition(ctx, "gross_sales")
+    second = await semantic.get_metric_definition(ctx, "gross_sales")
+    assert first.success and second.success
+    assert "already fetched" in second.summary
+    assert len(mcp.calls) == 1  # 2nd served from cache, no second Cube/MCP call
+    assert ctx.deps.call_counts.get("definition_lookups") == 1  # cache hit spends no budget
+
+
+@pytest.mark.asyncio
+async def test_definition_cache_is_shared_across_singular_and_batch():
+    # Live L10: definitions re-fetched after already having them. A metric
+    # pulled by the batch tool must not be re-fetched by the singular tool
+    # (RepeatCallGuard can't see the singular↔batch overlap — different args).
+    mcp = FakeMcpClient(
+        {
+            "seleric.catalogue_get_metrics": {
+                "metrics": {"gross_sales": {"id": "gross_sales"}, "net_sales": {"id": "net_sales"}},
+                "errors": {},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    await semantic.get_metric_definitions(ctx, ["gross_sales", "net_sales"])
+    result = await semantic.get_metric_definition(ctx, "gross_sales")
+    assert result.success and "already fetched" in result.summary
+    # Only the batch hit MCP; the singular call was served from the shared cache.
+    assert [c[0] for c in mcp.calls] == ["seleric.catalogue_get_metrics"]
 
 
 # A short-lived "declared alias" overlay (``ns``/``np``/``adsp`` -> catalogue

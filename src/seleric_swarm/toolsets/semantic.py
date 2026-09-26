@@ -185,6 +185,16 @@ LIVE_DATA_UNAVAILABLE = "live_data_unavailable"
 _MAX_DEFINITION_LOOKUPS = 4
 
 
+def _definition_cache_key(metric_id: str) -> str:
+    """Per-mission cache slot for one metric's definition, shared by the
+    singular and batch definition tools so a metric fetched by either is never
+    re-fetched by the other, and repeats cost no MCP call or lookup budget.
+    RepeatCallGuard only dedups byte-identical args, so it misses the
+    singular↔batch overlap (live L3/L10: definitions re-fetched after querying).
+    Namespaced off the ``metrics_query`` keys that share ``query_cache``."""
+    return f"metric_definition:{metric_id}"
+
+
 def _definition_budget_spent(ctx: RunContext[SelericDeps]) -> ToolResult | None:
     """A soft stop, not an error: the model has enough definitions and looping
     on more (live: "what is CAC?" made 15+ lookups in 191s) only burns time."""
@@ -397,6 +407,33 @@ _SHORTLIST_FIELDS = ("id", "display_name", "view", "supported_dimensions", "matc
 # the paraphrase-search loop (SEARCH-01) that exact-arg caching can't catch.
 _MAX_SEARCHES = 3
 
+# After this many *empty* searches (no catalogue match), the concept is almost
+# certainly not modelled — stop before the full _MAX_SEARCHES budget so the
+# model concludes "not available" instead of paraphrasing into the wall (live
+# L12: 4 empty searches for un-modelled inventory metrics). One empty is
+# tolerated: a rephrase can still land the right term.
+_MAX_EMPTY_SEARCHES = 2
+
+
+def _empty_search_verdict(ctx: RunContext[SelericDeps]) -> ToolResult | None:
+    """Withdraw search_semantics once repeated searches keep coming back empty,
+    so an un-modelled concept ends in a decisive "not available" rather than
+    burning the paraphrase budget. Returns ``None`` while empties are tolerated."""
+    empties = ctx.deps.call_counts.get("search_semantics_empty", 0) + 1
+    ctx.deps.call_counts["search_semantics_empty"] = empties
+    if empties < _MAX_EMPTY_SEARCHES:
+        return None
+    withdraw_tool(ctx.deps, "search_semantics")
+    return ToolResult(
+        success=True,
+        summary=(
+            "No catalogue metric matches this concept after repeated searches — it is "
+            "not modelled. search_semantics is now disabled for this mission: do not "
+            "search again; tell the user this data is not available."
+        ),
+        provenance=ArtifactProvenance(source_metadata={"matches": []}),
+    )
+
 # Cap the per-row values echoed into the tool summary. Top-N already limits
 # rows; this bounds a large ungrouped breakdown. Every row still lands in
 # evidence + source_metadata["series"]; the summary just shows the first N.
@@ -495,6 +532,8 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
         )
         hoisted = _hoist_exact(query, list((result or {}).get("matches") or []), ctx.deps.catalogue)
         matches = [_slim_match(m) for m in hoisted][:_SEARCH_SHORTLIST]
+        if not matches and (verdict := _empty_search_verdict(ctx)) is not None:
+            return verdict
         warnings = [] if matches else [f"no catalogue match for '{query}'"]
         return ToolResult(
             success=True,
@@ -509,6 +548,8 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
             matches = catalogue_index.search(query, kind="metric")
         except Exception as exc:
             return _mcp_error_result(exc)
+        if not matches and (verdict := _empty_search_verdict(ctx)) is not None:
+            return verdict
         warnings = [] if matches else [f"no catalogue match for '{query}'"]
         if any(m.get("stale") for m in matches):
             warnings.append("catalogue index may be stale; rerun scripts/sync_catalogue_to_qdrant.py")
@@ -560,23 +601,40 @@ async def resolve_brand(ctx: RunContext[SelericDeps], name: str) -> ToolResult:
     )
 
 
-def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> None:
-    """Raise ``ModelRetry`` with candidate ids when *metric_id* isn't in the
-    warmed catalogue snapshot. Validation only — never rewrites the id to a
-    guess (rule 1 / the no-alias-table warning in this module's docstring):
-    it hands the model the closest catalogue ids and lets it re-pick. Skipped
-    when the snapshot is empty (fail-open) or the id is present.
+def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult | None:
+    """Gate an id against the warmed catalogue snapshot before any Cube call.
+    Validation only — never rewrites the id to a guess (rule 1 / the
+    no-alias-table warning in this module's docstring).
+
+    * id present, or snapshot empty (fail-open) → ``None`` (proceed).
+    * absent but close ids exist → ``ModelRetry`` listing them: the model can
+      fix it in-context by picking a real id.
+    * absent with nothing close → the concept is not modelled. Return a
+      non-retryable failure so the model reports it / searches, instead of
+      falling through to Cube — whose error is retryable, so the model looped
+      guessing more non-existent ids (live L12: inventory_turnover_by_warehouse
+      → inventory_on_hand_value_by_warehouse). A ModelRetry here would be wrong:
+      there is no real id to re-pick, so an ignored retry just burns the budget.
     """
     catalogue = ctx.deps.catalogue
     if not catalogue.metrics or catalogue.has_metric(metric_id):
-        return
+        return None
     candidates = catalogue.closest_metric_ids(metric_id)
-    if not candidates:
-        return
-    raise ModelRetry(
-        f"'{metric_id}' is not a catalogue metric id. Closest ids: "
-        f"{', '.join(candidates)}. Pick the exact id from the [catalogue] "
-        f"listing and retry."
+    if candidates:
+        raise ModelRetry(
+            f"'{metric_id}' is not a catalogue metric id. Closest ids: "
+            f"{', '.join(candidates)}. Pick the exact id from the [catalogue] "
+            f"listing and retry."
+        )
+    return ToolResult(
+        success=False,
+        summary=(
+            f"'{metric_id}' is not a catalogue metric and no similar metric exists — "
+            f"this concept is not modelled. Confirm with search_semantics if unsure; "
+            f"otherwise tell the user it is not available. Do not guess another id."
+        ),
+        error_code="UNSUPPORTED_QUERY",
+        retryable=False,
     )
 
 
@@ -616,9 +674,19 @@ def _reject_incompatible_dimensions(
 
 async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult:
     """Fetch one metric's full catalogue definition (catalogue_get_metric)."""
+    key = _definition_cache_key(metric_id)
+    if (cached := ctx.deps.query_cache.peek(key)) is not None:
+        # Already fetched this mission (here or via get_metric_definitions): a
+        # cache hit costs no MCP call and must not spend the lookup budget.
+        return ToolResult(
+            success=True,
+            summary=f"definition for {metric_id} (already fetched this mission)",
+            provenance=ArtifactProvenance(source_metadata={"definition": cached}),
+        )
     if (spent := _definition_budget_spent(ctx)) is not None:
         return spent
-    _reject_unknown_metric(ctx, metric_id)
+    if (unknown := _reject_unknown_metric(ctx, metric_id)) is not None:
+        return unknown
     try:
         result = await ctx.deps.mcp_client.call(
             agent_id=_AGENT_ID, capability="seleric.catalogue_get_metric", arguments={"metric_id": metric_id}
@@ -632,6 +700,7 @@ async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) ->
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )
+    ctx.deps.query_cache.set(key, result)
     return ToolResult(
         success=True,
         summary=f"definition for {metric_id}",
@@ -648,8 +717,6 @@ async def get_metric_definitions(ctx: RunContext[SelericDeps], metric_ids: list[
     single round trip. Partial success: unknown ids come back as warnings with
     the valid ones still returned; the id is never rewritten to a guess (rule 1).
     """
-    if (spent := _definition_budget_spent(ctx)) is not None:
-        return spent
     ids = [str(m).strip() for m in (metric_ids or []) if str(m).strip()]
     if not ids:
         return ToolResult(
@@ -658,16 +725,27 @@ async def get_metric_definitions(ctx: RunContext[SelericDeps], metric_ids: list[
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )
-    try:
-        result = await ctx.deps.mcp_client.call(
-            agent_id=_AGENT_ID,
-            capability="seleric.catalogue_get_metrics",
-            arguments={"metric_ids": ids},
-        )
-    except Exception as exc:
-        return _mcp_error_result(exc)
-    definitions = (result or {}).get("metrics") or {}
-    errors = (result or {}).get("errors") or {}
+    cache = ctx.deps.query_cache
+    definitions = {mid: d for mid in ids if (d := cache.peek(_definition_cache_key(mid))) is not None}
+    missing = [mid for mid in ids if mid not in definitions]
+    errors: dict[str, Any] = {}
+    if missing:
+        # Only unfetched ids cost a lookup; an all-cached batch is free.
+        if (spent := _definition_budget_spent(ctx)) is not None:
+            return _definitions_result(definitions, errors) if definitions else spent
+        try:
+            result = await ctx.deps.mcp_client.call(
+                agent_id=_AGENT_ID,
+                capability="seleric.catalogue_get_metrics",
+                arguments={"metric_ids": missing},
+            )
+        except Exception as exc:
+            return _mcp_error_result(exc)
+        fetched = (result or {}).get("metrics") or {}
+        errors = (result or {}).get("errors") or {}
+        for mid, definition in fetched.items():
+            cache.set(_definition_cache_key(mid), definition)
+        definitions = {**definitions, **fetched}
     if not definitions:
         return ToolResult(
             success=False,
@@ -675,6 +753,10 @@ async def get_metric_definitions(ctx: RunContext[SelericDeps], metric_ids: list[
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )
+    return _definitions_result(definitions, errors)
+
+
+def _definitions_result(definitions: dict[str, Any], errors: dict[str, Any]) -> ToolResult:
     warnings = [f"unknown metric id '{mid}'" for mid in errors]
     return ToolResult(
         success=True,
@@ -773,7 +855,8 @@ async def query_metrics(
     (top/most/highest) or ``"asc"`` (bottom/least/lowest), and ``limit=N``.
     That is one call — do not fetch every row and sort client-side.
     """
-    _reject_unknown_metric(ctx, metric_id)
+    if (unknown := _reject_unknown_metric(ctx, metric_id)) is not None:
+        return unknown
     dimensions = _sanitize_dimensions(dimensions)
     _reject_incompatible_dimensions(ctx, metric_id, dimensions)
     period_end = period_end or ctx.deps.as_of
@@ -1051,15 +1134,13 @@ async def query_metrics(
         dup_key = f"dup:{result_key}"
         dups = ctx.deps.call_counts.get(dup_key, 0) + 1
         ctx.deps.call_counts[dup_key] = dups
-        # The model already fetched this exact query this mission and is
-        # re-issuing it verbatim (live 2026-09-22 MS3-0b46db4d98: a lookup
-        # re-called an identical successful query_metrics ~10x and exhausted
-        # its step budget; MS3-0bb3863a2e: 3 identical calls despite the nudge).
-        # A returned success — even a nudge — still reads as "call succeeded" and
-        # a stubborn small model calls again. So nudge once; RepeatCallGuard
-        # withdraws the tool after WITHDRAW_AFTER (3) identical calls, forcing
-        # the model to move on or answer. No ModelRetry — an ignored retry
-        # counts toward max_retries and crashes the mission.
+        # Nudge on every repeat; withdraw the tool on the 2nd+ duplicate so
+        # a model that ignores the nudge cannot loop indefinitely.
+        # RepeatCallGuard also withdraws via wrap_tool_execute at WITHDRAW_AFTER
+        # (3 identical calls) — this path handles direct callers (e.g. tests)
+        # that bypass the capability wrapper.
+        if dups >= 2:
+            withdraw_tool(ctx.deps, "query_metrics")
         return prior.model_copy(
             update={
                 "summary": (

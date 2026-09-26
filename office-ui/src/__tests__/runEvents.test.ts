@@ -18,7 +18,7 @@ describe("run event reconnection", () => {
       stop();
       throw new DOMException("aborted", "AbortError");
     });
-    const client = new HttpClient({ fetchImpl, getToken: () => "key" });
+    const client = new HttpClient({ fetchImpl });
     const events: number[] = [];
     stop = subscribeToRunEvents("r1", { onEvent: (event) => events.push(event.sequence) }, { client });
     await vi.advanceTimersByTimeAsync(600);

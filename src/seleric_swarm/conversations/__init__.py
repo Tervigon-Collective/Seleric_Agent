@@ -26,6 +26,7 @@ from seleric_swarm.conversations.contracts import (
     ThreadParticipant,
     ThreadStatus,
     ThreadSummary,
+    TurnRecord,
 )
 from seleric_swarm.conversations.event_mapping_v1 import (
     CANONICAL_EVENT_TYPES,
@@ -81,6 +82,7 @@ __all__ = [
     "ThreadParticipant",
     "ThreadStatus",
     "ThreadSummary",
+    "TurnRecord",
     "build_event_notifier",
     "can_view_event",
     "event_for_principal",

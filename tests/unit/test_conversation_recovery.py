@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -19,7 +20,11 @@ from seleric_swarm.conversations.contracts import (
 )
 from seleric_swarm.conversations.events import ActivityEventSink, InMemoryEventNotifier
 from seleric_swarm.conversations.memory import build_in_memory_repositories
-from seleric_swarm.recovery import InProcessRunQueue, RunRecoveryWorker
+from seleric_swarm.recovery import (
+    InProcessRunQueue,
+    RunExecutionResult,
+    RunRecoveryWorker,
+)
 
 
 class _RawStore:
@@ -228,6 +233,100 @@ async def test_in_process_queue_drives_a_retryable_failure_to_a_terminal_state(m
     assert calls == 2
     assert repositories.runs.get(run.id).status is RunStatus.COMPLETED
     assert repositories.messages.get(assistant.id).parts[0].content == "Second try worked"
+
+
+def _seed_retryable_runs(repositories, n: int) -> None:
+    thread = repositories.threads.create(Thread(workspace_id="w", owner_user_id="u"))
+    for i in range(n):
+        run = repositories.runs.create(
+            Run(
+                thread_id=thread.id,
+                workspace_id="w",
+                requested_by_user_id="u",
+                mission_id=f"mission-{i}",
+                current_attempt=1,
+                max_attempts=1,
+            )
+        )
+        repositories.runs.add_attempt(
+            RunAttempt(run_id=run.id, attempt_number=1, status=RunAttemptStatus.RETRYABLE)
+        )
+
+
+def _concurrency_probe():
+    """Executor that records the peak number of overlapping executions."""
+    state = {"live": 0, "peak": 0}
+
+    async def executor(run, attempt):
+        state["live"] += 1
+        state["peak"] = max(state["peak"], state["live"])
+        await asyncio.sleep(0.05)
+        state["live"] -= 1
+        return RunExecutionResult(status=RunStatus.COMPLETED)
+
+    return executor, state
+
+
+@pytest.mark.asyncio
+async def test_run_once_executes_claimed_missions_concurrently():
+    # Latency #5: a burst of submissions ran strictly serially (live: L4 waited
+    # 106s behind the others). With max_concurrency>1 the claimed missions overlap.
+    repositories = build_in_memory_repositories()
+    _seed_retryable_runs(repositories, 3)
+    executor, state = _concurrency_probe()
+    worker = RunRecoveryWorker(
+        repositories.runs, executor, worker_id="w1", retry_delay_s=0, max_concurrency=3
+    )
+    result = await worker.run_once()
+    assert result.claimed == 3 and result.completed == 3
+    assert state["peak"] == 3  # all three overlapped, not run one-at-a-time
+
+
+@pytest.mark.asyncio
+async def test_run_once_serial_by_default():
+    # Default max_concurrency=1 preserves the original one-at-a-time behavior.
+    repositories = build_in_memory_repositories()
+    _seed_retryable_runs(repositories, 3)
+    executor, state = _concurrency_probe()
+    worker = RunRecoveryWorker(repositories.runs, executor, worker_id="w1", retry_delay_s=0)
+    result = await worker.run_once()
+    assert result.claimed == 3
+    assert state["peak"] == 1  # never more than one at a time
+
+
+@pytest.mark.asyncio
+async def test_insufficient_evidence_verdict_is_not_retried(monkeypatch):
+    """P0-1 (L4 "net revenue by channel", 3× re-run / 21.7 min): a verdict code
+    like INSUFFICIENT_EVIDENCE is deterministic — re-running the whole mission
+    re-burns it to the identical answer. It must fail closed on the first
+    attempt even though max_attempts leaves room, unlike a transient code."""
+    runtime, repositories, run, assistant = _submission_runtime()
+    calls = 0
+
+    async def fail_insufficient(runtime_arg, *, mission_id, **_kwargs):
+        nonlocal calls
+        calls += 1
+        runtime_arg.store.payloads[mission_id] = {
+            "status": "failed",
+            "error_code": "INSUFFICIENT_EVIDENCE",
+            "final_response": "Net revenue by channel: …",
+            "events": [],
+        }
+
+    monkeypatch.setattr(conversations_api, "run_mission_job", fail_insufficient)
+    worker = RunRecoveryWorker(
+        repositories.runs,
+        conversations_api.build_submission_executor(runtime),
+        worker_id="recovery-worker",
+        retry_delay_s=0.0,
+        retry_jitter_s=0.0,
+    )
+    queue = InProcessRunQueue(worker)
+    await queue.enqueue(run.id)
+    await queue.flush()
+
+    assert calls == 1  # no whole-mission re-run despite attempts remaining
+    assert repositories.runs.get(run.id).status is RunStatus.FAILED
 
 
 @pytest.mark.asyncio
