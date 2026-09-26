@@ -65,6 +65,21 @@ def test_agent_ranks_profitability_by_net_profit_not_contribution_margin():
     assert "rank by net profit, not contribution margin" in collapsed
 
 
+def test_agent_ranks_superlative_comparisons_with_ordered_query_not_drilldown_python():
+    """Live incident (2026-09-26): "compare the top product Aug'26 vs Aug'25"
+    ran drilldown (one evidence row per product, ~180 rows/period) then tried
+    run_python to pick the max. The model had to transcribe hundreds of opaque
+    artifact ids into the sandbox, dropped a trailing char off several, and got
+    INSUFFICIENT_EVIDENCE — a wasted round and most of the 72s. query_metrics
+    already supports order+limit; a superlative-across-periods question is just
+    a top-N query per period. Phrased generically (no product/metric/period
+    names) so it generalizes."""
+    lowered = INSTRUCTIONS.lower()
+    assert "superlative entity is still a top-n query" in lowered
+    assert "do not ``drilldown`` every row and then pick the max/min in" in lowered
+    assert "never for a ranking or selection" in lowered
+
+
 def test_agent_is_told_to_batch_independent_metric_fetches_in_one_turn():
     """Live incident (2026-09-21): a question needing three independent
     metrics (no metric derived from another) fetched them one per turn,
