@@ -309,3 +309,38 @@ async def test_idle_hold_lines_are_varied_and_capped(monkeypatch: pytest.MonkeyP
 
     idle = [line for line in session.said if line in worker.IDLE_LINES]
     assert idle == list(worker.IDLE_LINES)
+
+
+def test_spoken_summary_keeps_the_whole_answer_without_thread_pointers() -> None:
+    text = "## Sales\n- **North** up 12%\n- South down 3%\n\n| Region | Value |\n|---|---|\n| East | 40 |\n" + "More detail here. " * 40
+
+    spoken = worker.format_spoken_summary(text)
+
+    assert spoken.startswith("Sales. North up 12%. South down 3%. Region, Value. East, 40.")
+    assert spoken.count("More detail here.") == 40
+    assert "thread" not in spoken.lower() and "|" not in spoken
+
+
+def test_split_spoken_chunks_keeps_every_sentence() -> None:
+    text = " ".join(f"Sentence number {i}." for i in range(60))
+
+    chunks = worker.split_spoken_chunks(text, max_chars=100)
+
+    assert len(chunks) > 1 and all(len(c) <= 100 for c in chunks)
+    assert " ".join(chunks) == text
+
+
+async def test_timed_out_run_is_remembered_and_check_speaks_the_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _Client([])
+    runner, session = _runner(client, monkeypatch, voice_mission_timeout_s=0.0)
+
+    runner.submit("how are sales?")
+    await _drain(runner)
+    assert session.said == [TIMEOUT_LINE] and "thread" not in TIMEOUT_LINE.lower()
+
+    client.messages = [{"role": "ASSISTANT", "run_id": "run_1", "parts": [{"type": "TEXT", "content": "Sales rose 12%."}]}]
+    assert "Checking" in runner.check()
+    await asyncio.sleep(0.05)
+
+    assert session.said[-1] == "Sales rose 12%."
+    assert runner.check() == "Nothing to check."

@@ -235,7 +235,7 @@ services:
       AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:-}
       AZURE_SPEECH_REGION: ${AZURE_SPEECH_REGION:-}
       VOICE_NARRATION_ENABLED: ${VOICE_NARRATION_ENABLED:-true}
-      VOICE_MISSION_TIMEOUT_S: ${VOICE_MISSION_TIMEOUT_S:-180}
+      VOICE_MISSION_TIMEOUT_S: ${VOICE_MISSION_TIMEOUT_S:-600}
       VOICE_RECORDING_ENABLED: ${VOICE_RECORDING_ENABLED:-false}
       # The worker calls the API as a service client and carries the real
       # principal in identity headers (see 01_ARCHITECTURE.md §5).

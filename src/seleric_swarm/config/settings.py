@@ -222,8 +222,9 @@ class Settings(BaseSettings):
     voice_narration_enabled: bool = True
     voice_narration_min_gap_s: float = 4.0
     voice_narration_idle_hold_s: float = 20.0
-    # Voice gives up before the mission's own mission_timeout_s bound.
-    voice_mission_timeout_s: float = 180.0
+    # Voice follows a run this long before saying it is still going; a
+    # timed-out run can still be fetched with the check_seleric tool.
+    voice_mission_timeout_s: float = 600.0
     voice_recording_enabled: bool = False
     voice_summary_mode: Literal["deterministic", "llm"] = "deterministic"
     # The voice worker's base URL for the Seleric API it calls back into.
