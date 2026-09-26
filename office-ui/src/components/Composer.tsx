@@ -3,6 +3,35 @@ import {
   AttachmentPrimitive,
   ComposerPrimitive,
 } from "@assistant-ui/react";
+import { useVoiceStore, type VoiceStatus } from "../stores/voice";
+
+const VOICE_LABEL: Record<VoiceStatus, string> = {
+  idle: "Talk to Seleric",
+  connecting: "Connecting voice…",
+  listening: "Voice conversation active",
+  speaking: "Voice conversation active",
+  error: "Voice unavailable — click to retry",
+};
+
+function VoiceControls() {
+  const status = useVoiceStore((s) => s.status);
+  const error = useVoiceStore((s) => s.error);
+  const start = useVoiceStore((s) => s.start);
+  const live = status === "listening" || status === "speaking";
+  return (
+    <div className="voice-controls">
+      {status === "error" && error && <span className="voice-status" role="alert">{error}</span>}
+      <button
+        type="button"
+        className={`voice-btn ${status}`}
+        aria-label={VOICE_LABEL[status]}
+        title={VOICE_LABEL[status]}
+        disabled={status === "connecting" || live}
+        onClick={() => void start()}
+      >🎙</button>
+    </div>
+  );
+}
 
 export function Composer() {
   return (
@@ -30,6 +59,7 @@ export function Composer() {
           )}
         </ComposerPrimitive.Attachments>
       </div>
+      <VoiceControls />
       <small>Enter to send · Shift+Enter for a new line</small>
     </ComposerPrimitive.Root>
   );

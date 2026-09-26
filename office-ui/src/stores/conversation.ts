@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { conversationsApi, conversationScope } from "../api/conversations";
 import type { ActivityEvent, MemoryItem, Message, Thread } from "../api/contracts";
 import { ApiError } from "../api/http";
-import { subscribeToRunEvents } from "../api/runEvents";
+import { subscribeToRunEvents, subscribeToThreadEvents } from "../api/runEvents";
 import { useOffice } from "../store";
 import type { SwarmUIEvent } from "../types";
 
@@ -21,6 +21,11 @@ interface ConversationState {
   memoryOptedOut: boolean;
   currentRunId: string | null;
   progress: string | null;
+  /** Words being spoken by voice that have no persisted user message yet. */
+  voicePending: string | null;
+  setVoicePending: (text: string | null) => void;
+  followThread: (threadId: string) => Promise<void>;
+  stopFollowingThread: () => void;
   loadThreads: () => Promise<void>;
   createThread: () => Promise<void>;
   selectThread: (id: string) => Promise<void>;
@@ -66,6 +71,12 @@ const DEMO_MEMORY: MemoryItem = {
 };
 
 const subscriptions = new Map<string, () => void>();
+const TERMINAL_EVENTS = ["run.completed", "run.failed", "run.cancelled"];
+let threadFollow: { threadId: string; stop: () => void; runId: string | null } | null = null;
+const stopThreadFollow = () => {
+  threadFollow?.stop();
+  threadFollow = null;
+};
 let demoSubmission = 0;
 let selectionGeneration = 0;
 let submissionGeneration = 0;
@@ -123,6 +134,46 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   memoryOptedOut: false,
   currentRunId: null,
   progress: null,
+  voicePending: null,
+
+  setVoicePending: (voicePending) => set({ voicePending }),
+
+  // Watches the whole thread so runs started outside this UI (voice) show up
+  // live. Runs this UI submits itself keep their own stream; the follower only
+  // adopts a run while nothing is in flight, then forwards it to applyRunEvent.
+  followThread: async (threadId) => {
+    stopThreadFollow();
+    if (get().demoMode) return;
+    let afterSequence = 0;
+    try {
+      const existing = await conversationsApi.listThreadEvents(threadId);
+      afterSequence = Math.max(0, ...existing.map((event) => event.thread_sequence ?? 0));
+    } catch { /* fall back to the full replay guard below */ }
+    if (get().selectedThreadId !== threadId) return;
+    const follow = { threadId, runId: null as string | null, stop: () => {} };
+    follow.stop = subscribeToThreadEvents(threadId, {
+      onEvent: (event) => {
+        const state = get();
+        if (state.selectedThreadId !== threadId || !event.run_id) return;
+        if (event.run_id !== follow.runId) {
+          if (state.submitting || TERMINAL_EVENTS.includes(event.event_type)) return;
+          follow.runId = event.run_id;
+          set({ currentRunId: event.run_id, submitting: true, progress: null, error: null });
+          void conversationsApi.listMessages(threadId).then((messages) => {
+            if (get().selectedThreadId !== threadId) return;
+            set((s) => ({ messages: { ...s.messages, [threadId]: messages }, voicePending: null }));
+          }).catch(() => undefined);
+        }
+        get().applyRunEvent(event);
+      },
+    }, { afterSequence });
+    threadFollow = follow;
+  },
+
+  stopFollowingThread: () => {
+    stopThreadFollow();
+    set({ voicePending: null });
+  },
 
   loadThreads: async () => {
     if (get().demoMode) return;
@@ -173,6 +224,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   selectThread: async (id) => {
+    if (threadFollow && threadFollow.threadId !== id) stopThreadFollow();
     const generation = ++selectionGeneration;
     subscriptions.forEach((stop) => stop());
     subscriptions.clear();
@@ -827,12 +879,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   reset: () => {
+    stopThreadFollow();
     demoSubmission += 1;
     selectionGeneration += 1;
     submissionGeneration += 1;
     cancelledSubmissions.clear();
     subscriptions.forEach((stop) => stop());
     subscriptions.clear();
-    set({ threads: [], selectedThreadId: null, messages: {}, loading: false, submitting: false, uploads: {}, error: null, search: "", demoMode: false, memories: [], usedMemories: [], memoryOptedOut: false, currentRunId: null, progress: null });
+    set({ threads: [], selectedThreadId: null, messages: {}, loading: false, submitting: false, uploads: {}, error: null, search: "", demoMode: false, memories: [], usedMemories: [], memoryOptedOut: false, currentRunId: null, progress: null, voicePending: null });
   },
 }));

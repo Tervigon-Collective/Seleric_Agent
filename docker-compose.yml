@@ -108,6 +108,11 @@ services:
       SELERIC_MCP_URL: ${SELERIC_MCP_URL:-}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
+      # POST /v1/voice/token (the browser's room join) is served by this service.
+      VOICE_ENABLED: ${VOICE_ENABLED:-false}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       JEV_BASE_URL: ${JEV_BASE_URL:-}
       JEV_API_KEY: ${JEV_API_KEY:-}
       JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}

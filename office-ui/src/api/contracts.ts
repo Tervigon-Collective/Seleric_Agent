@@ -88,6 +88,8 @@ export interface ActivityEvent {
   workspace_id: string;
   run_id: string | null;
   sequence: number;
+  /** Position in the thread-wide event log; the cursor of the thread stream. */
+  thread_sequence?: number;
   event_type: string;
   actor_type: string | null;
   actor_id: string | null;

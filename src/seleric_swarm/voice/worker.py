@@ -582,7 +582,7 @@ class VoiceTurnRunner:
             logger.warning(f"run cancel failed for {run_id}: {err}")
 
     async def _run(self, query: str) -> None:
-        self._broadcast(f"Submitting query to Seleric: {query}")
+        self._broadcast(f"Submitting query to Seleric: {query}", speaker="Status")
         run_id: str | None = None
         try:
             run_id = await self._submit(query)

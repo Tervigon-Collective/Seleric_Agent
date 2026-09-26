@@ -36,11 +36,34 @@ const wait = (ms: number, signal: AbortSignal) =>
     }, { once: true });
   });
 
-/** Fetch-based SSE supports auth headers, unlike EventSource. */
+export interface StreamOptions {
+  afterSequence?: number;
+  client?: HttpClient;
+  signal?: AbortSignal;
+}
+
 export function subscribeToRunEvents(
   runId: string,
   handlers: RunEventHandlers,
-  options: { afterSequence?: number; client?: HttpClient; signal?: AbortSignal } = {},
+  options: StreamOptions = {},
+): () => void {
+  return subscribeToStream(`/v1/runs/${encodeURIComponent(runId)}/events/stream`, handlers, options);
+}
+
+/** Every event of a thread, including runs started elsewhere (e.g. by voice). */
+export function subscribeToThreadEvents(
+  threadId: string,
+  handlers: RunEventHandlers,
+  options: StreamOptions = {},
+): () => void {
+  return subscribeToStream(`/v1/threads/${encodeURIComponent(threadId)}/events/stream`, handlers, options);
+}
+
+/** Fetch-based SSE supports auth headers, unlike EventSource. */
+function subscribeToStream(
+  path: string,
+  handlers: RunEventHandlers,
+  options: StreamOptions,
 ): () => void {
   const controller = new AbortController();
   const external = options.signal;
@@ -54,7 +77,7 @@ export function subscribeToRunEvents(
       handlers.onState?.(cursor ? "reconnecting" : "connecting");
       try {
         const response = await client.fetchImpl(
-          `${client.baseUrl}/v1/runs/${encodeURIComponent(runId)}/events/stream?after_sequence=${cursor}`,
+          `${client.baseUrl}${path}?after_sequence=${cursor}`,
           {
             headers: client.headers({ Accept: "text/event-stream", "Last-Event-ID": String(cursor) }),
             signal: controller.signal,

@@ -154,6 +154,41 @@ button { color: inherit; }
 .composer small { position: absolute; bottom: 5px; left: 12px; color: var(--text-dim); font-size: 9px; }
 .send-btn { position: absolute; right: 10px; bottom: 10px; width: 30px; height: 30px; border: 0; border-radius: 8px; background: var(--text); color: var(--panel); font-size: 18px; cursor: pointer; }
 .send-btn:disabled { opacity: .3; cursor: default; }
+.voice-controls { position: absolute; right: 48px; bottom: 10px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); }
+.voice-btn { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer; font-size: 15px; }
+.voice-btn:disabled { opacity: .5; cursor: default; }
+.voice-btn.error { border-color: var(--st-failed); }
+.voice-status { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message.user.pending { opacity: .65; }
+/* Full-screen voice assistant */
+.voice-screen { --level: 0; --hue: 210; position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 28px 20px 24px; color: #e9eef7; background: radial-gradient(120% 90% at 50% 35%, hsl(var(--hue) 45% 16%) 0%, #0a0e14 70%); animation: voice-in .3s ease-out; }
+.voice-screen.speaking { --hue: 265; } .voice-screen.thinking { --hue: 190; } .voice-screen.muted { --hue: 220; filter: saturate(.4); }
+.voice-close { align-self: flex-end; width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(255,255,255,.08); color: inherit; font-size: 15px; cursor: pointer; }
+.voice-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; width: min(640px, 100%); }
+.voice-orb { position: relative; width: 190px; height: 190px; transform: scale(calc(1 + var(--level) * .35)); transition: transform .08s linear; }
+.voice-orb .core { position: absolute; inset: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, hsl(calc(var(--hue) + 30) 90% 75%), hsl(var(--hue) 80% 52%) 55%, hsl(calc(var(--hue) - 20) 85% 32%)); box-shadow: 0 0 calc(40px + var(--level) * 90px) hsl(var(--hue) 90% 55% / .65); animation: orb-breathe 4s ease-in-out infinite; }
+.voice-orb .ring { position: absolute; inset: 8px; border-radius: 50%; border: 1.5px solid hsl(var(--hue) 90% 70% / .45); opacity: 0; animation: orb-ring 3.2s ease-out infinite; }
+.voice-orb .r2 { animation-delay: 1.05s; } .voice-orb .r3 { animation-delay: 2.1s; }
+.voice-screen.thinking .core { animation: orb-think 1.6s ease-in-out infinite; }
+.voice-screen.thinking .ring { animation-duration: 1.6s; }
+.voice-screen.speaking .core { animation-duration: 1.4s; }
+.voice-screen.muted .ring, .voice-screen.connecting .ring { animation: none; }
+.voice-phase { margin: 0; font-size: 15px; letter-spacing: .04em; color: rgba(233,238,247,.75); min-height: 22px; text-align: center; }
+.voice-captions { width: 100%; min-height: 110px; max-height: 32vh; overflow-y: auto; text-align: center; display: flex; flex-direction: column; gap: 10px; }
+.voice-captions p { margin: 0; line-height: 1.45; }
+.cap-user { font-size: 15px; color: rgba(233,238,247,.55); }
+.cap-assistant { font-size: 20px; color: #fff; }
+.voice-actions { display: flex; gap: 28px; }
+.voice-action { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 64px; height: 64px; justify-content: center; border-radius: 50%; border: 0; background: rgba(255,255,255,.1); color: inherit; font-size: 22px; cursor: pointer; }
+.voice-action span { font-size: 10px; letter-spacing: .05em; }
+.voice-action.on { background: rgba(255,255,255,.9); color: #111; }
+.voice-action.end { background: #e5484d; }
+.voice-hint { margin-top: 14px; color: rgba(233,238,247,.4); font-size: 11px; }
+@keyframes voice-in { from { opacity: 0; transform: scale(1.02); } }
+@keyframes orb-breathe { 50% { transform: scale(1.06); } }
+@keyframes orb-think { 0%,100% { transform: scale(.94); filter: hue-rotate(0); } 50% { transform: scale(1.08); filter: hue-rotate(40deg); } }
+@keyframes orb-ring { 0% { transform: scale(.9); opacity: .6; } 100% { transform: scale(1.7); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .voice-orb .ring, .voice-orb .core { animation: none; } }
 .cancel-btn { background: var(--st-failed); color: white; font-size: 11px; }
 .scroll-latest { position: sticky; left: calc(100% - 32px); bottom: 8px; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--text); cursor: pointer; }
 

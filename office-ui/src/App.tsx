@@ -4,6 +4,7 @@ import { DetailPanel } from "./components/DetailPanel";
 import { OfficeWorkspace } from "./components/OfficeWorkspace";
 import { ThreadSidebar } from "./components/ThreadSidebar";
 import { Transcript } from "./components/Transcript";
+import { VoiceOverlay } from "./components/VoiceOverlay";
 import { CommandSearch } from "./components/CommandSearch";
 import { AdminDiagnostics } from "./components/AdminDiagnostics";
 import { SelericAssistantRuntimeProvider } from "./providers/SelericAssistantRuntime";
@@ -130,6 +131,7 @@ export default function App() {
         {detailsOpen && <DetailPanel />}
       </main>
       <CommandSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <VoiceOverlay />
       <AdminDiagnostics open={diagnosticsOpen} onClose={() => setDiagnosticsOpen(false)} />
     </div>
   );

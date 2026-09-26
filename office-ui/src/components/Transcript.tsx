@@ -96,6 +96,17 @@ function SystemMessage() {
   </MessagePrimitive.Root>;
 }
 
+function VoicePendingMessage() {
+  const text = useConversationStore((state) => state.voicePending);
+  if (!text) return null;
+  return (
+    <div className="message user pending" aria-label="user message (speaking)" aria-live="polite">
+      <div className="message-avatar" aria-hidden="true">Y</div>
+      <div className="message-body"><header>You · voice</header><p>{text}</p></div>
+    </div>
+  );
+}
+
 export function Transcript() {
   const threadId = useConversationStore((state) => state.selectedThreadId);
   const loading = useConversationStore((state) => state.loading);
@@ -105,6 +116,7 @@ export function Transcript() {
         {!threadId && <div className="empty-state"><h1>What can Seleric help with?</h1><p>Type a message below to start a conversation.</p></div>}
         {threadId && <ThreadPrimitive.Empty><div className="empty-state"><h1>What should we investigate?</h1><p>Ask a question about your metrics and Seleric will investigate.</p></div></ThreadPrimitive.Empty>}
         <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage, SystemMessage }} />
+        <VoicePendingMessage />
         <ThreadPrimitive.ScrollToBottom aria-label="Scroll to latest message" className="scroll-latest">↓</ThreadPrimitive.ScrollToBottom>
       </ThreadPrimitive.Viewport>
     </ThreadPrimitive.Root>

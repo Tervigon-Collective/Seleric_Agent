@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { HttpClient } from "../api/http";
-import { subscribeToRunEvents } from "../api/runEvents";
+import { subscribeToRunEvents, subscribeToThreadEvents } from "../api/runEvents";
 
 describe("run event reconnection", () => {
   it("resumes with after_sequence and Last-Event-ID", async () => {
@@ -25,6 +25,23 @@ describe("run event reconnection", () => {
     expect(events).toEqual([4]);
     expect(String(calls[1][0])).toContain("after_sequence=4");
     expect(new Headers(calls[1][1]?.headers).get("Last-Event-ID")).toBe("4");
+    vi.useRealTimers();
+  });
+});
+
+describe("thread event stream", () => {
+  it("subscribes to the thread stream from the given cursor", async () => {
+    vi.useFakeTimers();
+    const urls: string[] = [];
+    let stop = () => {};
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      stop();
+      throw new DOMException("aborted", "AbortError");
+    });
+    stop = subscribeToThreadEvents("t1", { onEvent: () => {} }, { client: new HttpClient({ fetchImpl }), afterSequence: 7 });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(urls[0]).toBe("/v1/threads/t1/events/stream?after_sequence=7");
     vi.useRealTimers();
   });
 });
