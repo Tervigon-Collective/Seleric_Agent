@@ -16,7 +16,7 @@ from seleric_swarm.agent.agent import _stub_test_model
 from seleric_swarm.agent.model_health import MODEL_HEALTH, HealthGatedChatModel
 from seleric_swarm.config.settings import Settings, configured_chat_model
 
-AGENT_LLM_TIMEOUT_S = 90.0
+AGENT_LLM_TIMEOUT_S = 45.0  # measured: a hung call costs its full timeout, so not longer
 
 
 def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
@@ -66,11 +66,16 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
     # Lean settings (minimal reasoning, bounded output) only on the fast deployment
     # so a lookup doesn't pay unbounded thinking. Strong fallbacks keep provider
     # defaults — an unsupported reasoning_effort can't break the reliability chain.
-    fast_settings = (
-        OpenAIChatModelSettings(openai_reasoning_effort="minimal", max_tokens=2048)
-        if prefer_fast and fast_model
-        else None
-    )
+    # The fast deployment also serves as the fallback for complex missions. At its
+    # default reasoning effort every step of a ~16-step investigation spent 700-4500
+    # hidden reasoning tokens (8-18s/step, ~200s total, measured live), so it always
+    # runs at low effort; the tight output cap stays fast-path-only.
+    if not fast_model:
+        fast_settings = None
+    elif prefer_fast:
+        fast_settings = OpenAIChatModelSettings(openai_reasoning_effort="minimal", max_tokens=2048)
+    else:
+        fast_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
     def chat(name: str, prov: OpenAIProvider, tag: str, model_settings: Any = None) -> OpenAIChatModel:
         return HealthGatedChatModel(
             name,
