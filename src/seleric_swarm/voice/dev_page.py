@@ -20,7 +20,7 @@ _PAGE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Seleric Voice — transport check</title>
+<title>Seleric Voice — dev console</title>
 <style>
   :root { color-scheme: dark; --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e;
           --accent:#2f81f7; --ok:#3fb950; --err:#f85149; --panel:#161b22; }
@@ -33,6 +33,8 @@ _PAGE = """<!doctype html>
   button { background:var(--accent); color:#fff; border:0; border-radius:6px;
            padding:10px 18px; font-size:15px; cursor:pointer; }
   button[disabled] { opacity:.5; cursor:not-allowed; }
+  button.muted { background:var(--err); }
+  #muteBtn { margin-left:8px; }
   label { display:block; font-size:13px; color:var(--muted); margin:16px 0 4px; }
   input { width:100%; box-sizing:border-box; background:var(--panel);
           border:1px solid #30363d; border-radius:6px; color:var(--fg);
@@ -54,14 +56,15 @@ _PAGE = """<!doctype html>
 </head>
 <body>
 <main>
-  <h1>Seleric Voice — transport check</h1>
-  <p class="sub">Phase 0. The agent echoes whatever you say. No mission is run.</p>
+  <h1>Seleric Voice — dev console</h1>
+  <p class="sub">Talk to the voice agent. Business questions are sent to Seleric as real missions; small talk is answered directly.</p>
 
   <label for="key">API key (<code>API_KEY</code> from your .env)</label>
   <input id="key" type="password" placeholder="required" autocomplete="off">
 
   <div id="status"><span id="badge" class="badge"></span><span id="statusText">Idle.</span></div>
   <button id="go">Connect and talk</button>
+  <button id="muteBtn" disabled>Mute mic</button>
 
   <label style="margin-top:16px;">Microphone Input Level (VU Meter)</label>
   <div style="background:var(--panel); border:1px solid #30363d; border-radius:6px; height:10px; width:100%; overflow:hidden; margin-bottom:16px;">
@@ -85,11 +88,27 @@ const transcriptBox = document.getElementById('transcriptBox');
 const micMeter = document.getElementById('micMeter');
 const logEl = document.getElementById('log');
 const btn = document.getElementById('go');
+const muteBtn = document.getElementById('muteBtn');
+let activeRoom = null;
+let meterStream = null;
+let micOn = true;
 
 const log = (m) => {
   logEl.textContent += `${new Date().toLocaleTimeString()}  ${m}\n`;
   logEl.scrollTop = logEl.scrollHeight;
 };
+const setMicOn = async (on) => {
+  if (!activeRoom) return;
+  await activeRoom.localParticipant.setMicrophoneEnabled(on);
+  if (meterStream) meterStream.getAudioTracks().forEach((t) => { t.enabled = on; });
+  micOn = on;
+  muteBtn.textContent = on ? 'Mute mic' : 'Unmute mic';
+  muteBtn.classList.toggle('muted', !on);
+  if (!on) micMeter.style.width = '0%';
+  log(on ? 'mic unmuted' : 'mic muted');
+};
+muteBtn.addEventListener('click', () => setMicOn(!micOn).catch((e) => log(`mute error ${e}`)));
+
 const setStatus = (m, state = '') => {
   statusText.textContent = m;
   badge.className = 'badge ' + state;
@@ -134,7 +153,7 @@ btn.addEventListener('click', async () => {
     const res = await fetch('/v1/voice/token', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': key },
-      body: JSON.stringify({ title: 'Voice transport check' }),
+      body: JSON.stringify({ title: 'Voice dev session' }),
     });
     if (!res.ok) {
       throw new Error(`token request failed: ${res.status} ${await res.text()}`);
@@ -152,6 +171,8 @@ btn.addEventListener('click', async () => {
       .on(RoomEvent.Disconnected, (r) => {
         setStatus(`Disconnected (${r ?? 'unknown'}).`, '');
         btn.disabled = false;
+        muteBtn.disabled = true;
+        activeRoom = null;
       })
       .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
         const agentSpeaking = speakers.some(p => p.identity.startsWith('agent-'));
@@ -184,11 +205,18 @@ btn.addEventListener('click', async () => {
     setStatus('Connecting to LiveKit…');
     await rtcRoom.connect(url, token);
     await rtcRoom.localParticipant.setMicrophoneEnabled(true);
+    activeRoom = rtcRoom;
+    micOn = true;
+    muteBtn.disabled = false;
+    muteBtn.textContent = 'Mute mic';
+    muteBtn.classList.remove('muted');
     log('microphone published');
 
     // Live Web Audio VU Meter
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      meterStream = stream;
+      stream.getAudioTracks().forEach((t) => { t.enabled = micOn; });
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();

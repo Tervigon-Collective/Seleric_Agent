@@ -69,7 +69,14 @@ turn latency turns out to be the top complaint.
 
 ## 3. Narration — what makes a 60-second wait tolerable
 
-> **Prerequisite, verified in code.** Narration as designed does not work
+> **Update 2026-09-25 — implemented.** `voice/worker.py` now narrates from
+> `agent.tool_started` / `agent.answering` events on the run SSE stream
+> (`narration_line`, `VoiceTurnRunner`), speaks only `summary`, and speaks a
+> fixed refusal for any `run.failed` (never the unvalidated text). The voice LLM
+> (`ask_seleric` / `cancel_seleric` tools, `VOICE_INSTRUCTIONS`) and semantic turn
+> detection are in. The note below describes the earlier state.
+>
+> **Prerequisite, verified in code (historical).** Narration as designed does not work
 > today, because **there is nothing to narrate while the mission runs.**
 > `api/conversations.py` emits `run.started`, then `await run_mission_job(...)`
 > runs to completion, and only *then* does `sink.ingest_mission_events(...)`

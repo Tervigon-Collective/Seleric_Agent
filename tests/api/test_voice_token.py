@@ -291,7 +291,7 @@ def test_dev_page_is_accessible_without_api_key_header(client: TestClient) -> No
     """The HTML page loads in browser without pre-request headers so the user can enter the key in the UI."""
     response = client.get("/v1/voice/dev")
     assert response.status_code == 200
-    assert "Seleric Voice — transport check" in response.text
+    assert "Seleric Voice — dev console" in response.text
 
 
 def test_format_spoken_summary_cleans_markdown() -> None:
