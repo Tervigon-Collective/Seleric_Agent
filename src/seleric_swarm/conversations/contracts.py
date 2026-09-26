@@ -489,6 +489,44 @@ class ThreadSummary(ContractModel):
     created_at: datetime = Field(default_factory=_utc_now)
 
 
+class TurnRecord(ContractModel):
+    """Machine-readable record of one completed agent turn.
+
+    Stored as a 'ui' Artifact with artifact_type='turn_record', this is
+    the primary grounding source for follow-up resolution — not raw message text.
+
+    Only fields with actual values are written; None/empty fields are omitted
+    from prompt injection so the context block stays compact.
+
+    Content policy — what MUST appear here:
+      - metric_labels: human-readable metric names ("Net Sales", "MER")
+      - entities: named brands, channels, segments, SKUs mentioned/returned
+      - top_items: top-N ranked item names from the answer
+      - period / grain: the time window and bucket size answered
+    Content policy — what MUST NEVER appear here:
+      - Internal metric IDs (e.g. "metric.shopify_net_sales_v2")
+      - Raw artifact or mission IDs
+      - Numbers without associated labels
+      - Full Markdown prose or table text
+    """
+
+    # What was asked
+    query: str
+    intent: str | None = None
+    period: str | None = None           # e.g. "last_30d", "today", "this_month"
+    grain: str | None = None            # e.g. "day", "week", "month"
+
+    # What was answered — machine-readable facts the next turn can cite
+    metric_labels: list[str] = Field(default_factory=list)   # human-readable labels only
+    entities: list[str] = Field(default_factory=list)         # brands, channels, segments
+    top_items: list[str] = Field(default_factory=list)        # top-N SKUs/products/campaigns
+
+    # Provenance
+    evidence_ids: list[str] = Field(default_factory=list)
+    mission_id: str | None = None
+    as_of: str | None = None            # ISO date string e.g. "2026-09-26"
+
+
 class MemoryItem(ContractModel):
     id: str = Field(default_factory=lambda: _id("memory"))
     workspace_id: str

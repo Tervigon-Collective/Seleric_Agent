@@ -306,6 +306,27 @@ async def test_metric_present_in_only_one_period_is_skipped_not_zero_filled():
 
 
 @pytest.mark.asyncio
+async def test_compare_periods_unequal_windows_teaches_the_recovery_path():
+    # Live L3: comparing a 31-day month against a 25-day partial month failed,
+    # and the agent retried the identical call instead of normalizing. The
+    # refusal must be non-retryable and name the recovery (equal windows or
+    # daily-average), not just state the constraint.
+    store = InMemoryArtifactStore()
+    ids = [
+        _put_evidence(store, grain="none", start="2026-08-01", end="2026-08-31", value=90000.0),
+        _put_evidence(store, grain="none", start="2026-09-01", end="2026-09-25", value=70000.0),
+    ]
+    ctx = FakeRunContext(_deps(store))
+
+    result = await analytics.compare_periods(ctx, ids)
+
+    assert result.success is False
+    assert result.error_code == "EVIDENCE_GRAIN_MISMATCH"
+    assert result.retryable is False  # recovery needs new evidence, not a repeat
+    assert "daily average" in result.summary and "same number of days" in result.summary
+
+
+@pytest.mark.asyncio
 async def test_compare_periods_needs_exactly_two_periods():
     store = InMemoryArtifactStore()
     ids = _daily(store, {"2026-09-12": 1.0, "2026-09-13": 2.0, "2026-09-14": 3.0})

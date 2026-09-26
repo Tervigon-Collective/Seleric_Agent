@@ -173,12 +173,14 @@ class RunRecoveryWorker:
         heartbeat_s: float = 15.0,
         retry_delay_s: float = 5.0,
         retry_jitter_s: float = 1.0,
+        max_concurrency: int = 1,
     ) -> None:
         self._runs = runs
         self._executor = executor
         self._worker_id = worker_id
         self._lease_s = lease_s
         self._heartbeat_s = min(max(0.1, heartbeat_s), max(0.1, lease_s / 2))
+        self._max_concurrency = max(1, max_concurrency)
         self._recovery = RunRecoveryService(
             runs,
             retry_delay_s=retry_delay_s,
@@ -297,13 +299,21 @@ class RunRecoveryWorker:
         await asyncio.to_thread(
             self._recovery.recover_expired, now=scan_moment, limit=limit
         )
-        claimed = completed = retryable = failed = 0
+        claimed = 0
         candidates = await asyncio.to_thread(
             self._runs.list_recoverable, now=scan_moment, limit=limit
         )
+        # Run up to _max_concurrency missions at once instead of strictly serially
+        # (live: a burst of 12 submissions made L4 wait 106s behind the others).
+        # The slot is acquired BEFORE the claim so a claimed attempt never sits
+        # un-heartbeated waiting for a slot — its lease would expire and it would
+        # be reclaimed. _execute starts the attempt's heartbeat the moment it runs.
+        slots = asyncio.Semaphore(self._max_concurrency)
+        tasks: set[asyncio.Task[str]] = set()
         for candidate in candidates:
             if candidate.status is not RunAttemptStatus.RETRYABLE:
                 continue
+            await slots.acquire()
             claim_moment = now or datetime.now(UTC)
             run = await asyncio.to_thread(self._runs.get, candidate.run_id)
             if (
@@ -311,6 +321,7 @@ class RunRecoveryWorker:
                 or run.status is RunStatus.CANCELLED
                 or (run.next_retry_at is not None and run.next_retry_at > claim_moment)
             ):
+                slots.release()
                 continue
             attempt = await asyncio.to_thread(
                 self._runs.claim,
@@ -320,13 +331,25 @@ class RunRecoveryWorker:
                 now=claim_moment,
             )
             if attempt is None:
+                slots.release()
                 continue
             claimed += 1
-            outcome = await self._execute(run, attempt)
-            completed += outcome == "completed"
-            retryable += outcome == "retryable"
-            failed += outcome == "failed"
-        return WorkerResult(claimed, completed, retryable, failed)
+            tasks.add(asyncio.create_task(self._execute_with_slot(slots, run, attempt)))
+        outcomes = await asyncio.gather(*tasks) if tasks else []
+        return WorkerResult(
+            claimed,
+            sum(o == "completed" for o in outcomes),
+            sum(o == "retryable" for o in outcomes),
+            sum(o == "failed" for o in outcomes),
+        )
+
+    async def _execute_with_slot(
+        self, slots: asyncio.Semaphore, run: Run, attempt: RunAttempt
+    ) -> str:
+        try:
+            return await self._execute(run, attempt)
+        finally:
+            slots.release()
 
     async def has_pending_retries(self, *, limit: int = 100) -> bool:
         # Look past every backoff: a retry still waiting out next_retry_at is
@@ -423,6 +446,7 @@ def build_run_queue(
             heartbeat_s=runtime.settings.run_heartbeat_s,
             retry_delay_s=runtime.settings.run_retry_delay_s,
             retry_jitter_s=runtime.settings.run_retry_jitter_s,
+            max_concurrency=runtime.settings.run_max_concurrency,
         )
     )
 
@@ -472,6 +496,7 @@ async def _main() -> None:
             heartbeat_s=runtime.settings.run_heartbeat_s,
             retry_delay_s=runtime.settings.run_retry_delay_s,
             retry_jitter_s=runtime.settings.run_retry_jitter_s,
+            max_concurrency=runtime.settings.run_max_concurrency,
         )
     try:
         if args.once:

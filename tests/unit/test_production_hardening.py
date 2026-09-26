@@ -93,7 +93,13 @@ def test_production_requires_minio_scanner_and_external_provider() -> None:
 )
 def test_settings_reject_invalid_runtime_limits(field: str, value: int, message: str) -> None:
     with pytest.raises(ValidationError, match=message):
-        Settings(_env_file=None, **{field: value})
+        # Pin run_lease_s=30 explicitly (unless the test is validating run_lease_s
+        # itself) so that even when the developer's .env exports RUN_LEASE_S=300
+        # into the OS environment (loaded by conftest), pydantic-settings doesn't
+        # silently make heartbeat_s=60 < lease_s=300 valid.
+        # With lease_s=30 the constraint heartbeat(60) >= lease(30) fires.
+        extra = {} if field == "run_lease_s" else {"run_lease_s": 30}
+        Settings(_env_file=None, **extra, **{field: value})
 
 
 def test_readiness_degrades_when_database_probe_fails() -> None:

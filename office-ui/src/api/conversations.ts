@@ -108,13 +108,7 @@ export class ConversationApi {
     const url = /^https?:\/\//.test(initiated.upload.url)
       ? initiated.upload.url
       : `${this.http.baseUrl}${initiated.upload.url}`;
-    const apiOrigin = new URL(this.http.baseUrl || location.origin, location.origin).origin;
-    const uploadOrigin = new URL(url, location.origin).origin;
     const headers = new Headers({ "Content-Type": file.type || "application/octet-stream" });
-    if (uploadOrigin === apiOrigin) {
-      const authorization = this.http.headers().get("Authorization");
-      if (authorization) headers.set("Authorization", authorization);
-    }
     const response = await this.http.fetchImpl(url, {
       method: initiated.upload.method,
       headers,

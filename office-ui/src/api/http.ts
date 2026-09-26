@@ -10,24 +10,20 @@ export class ApiError extends Error {
 
 export interface HttpClientOptions {
   baseUrl?: string;
-  getToken?: () => string | null;
   fetchImpl?: typeof fetch;
 }
 
 export class HttpClient {
   readonly baseUrl: string;
-  private readonly getToken: () => string | null;
   readonly fetchImpl: typeof fetch;
 
   constructor(options: HttpClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? "";
-    this.getToken = options.getToken ?? (() => null);
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   headers(extra?: HeadersInit): Headers {
-    const headers = new Headers(extra);
-    return headers;
+    return new Headers(extra);
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {

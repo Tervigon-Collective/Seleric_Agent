@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     run_lease_s: float = 60.0
     run_heartbeat_s: float = 15.0
     run_max_attempts: int = 3
+    # How many claimed missions one worker executes at once. >1 stops a burst of
+    # submissions from running strictly serially (live: L4 waited 106s behind
+    # others). Kept conservative — missions share the Azure Foundry quota, so a
+    # high fan-out just trades queue wait for 429s.
+    run_max_concurrency: int = 4
     run_retry_delay_s: float = 5.0
     run_retry_jitter_s: float = 1.0
     shutdown_timeout_s: float = 10.0

@@ -2,10 +2,10 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // The Seleric API (FastAPI) local port. Override with SELERIC_API_URL.
-// Default 8090 — 8080 is often taken by other local services on this machine.
+// Default 8091 — matches API_PUBLISH_PORT in repo .env (8090 is often taken).
 const API =
   (globalThis as { process?: { env?: { SELERIC_API_URL?: string } } }).process?.env
-    ?.SELERIC_API_URL ?? "http://127.0.0.1:8090";
+    ?.SELERIC_API_URL ?? "http://127.0.0.1:8091";
 
 export default defineConfig({
   plugins: [react()],

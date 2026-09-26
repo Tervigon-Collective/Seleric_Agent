@@ -223,6 +223,22 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
             kind="absolute", start=anchor.replace(month=1, day=1).isoformat(), end=anchor.isoformat(),
             relative_token="this_year",
         )
+    # Bare "last month/week/year" (no N, no comparison verb) = the *previous
+    # complete* calendar period, not the current one to date. Without this the
+    # LLM resolved it itself and drifted — "last month" read as August in one
+    # mission and September (this month) in another (live L1 vs L7).
+    if re.search(r"\blast\s+month\b", lower):
+        prev = _sub_months(anchor, 1)
+        start, end = _month_range(prev.year, prev.month)
+        return TimeRangeV1(kind="absolute", start=start, end=end, relative_token="last_month")
+    if re.search(r"\blast\s+week\b", lower):
+        this_monday = anchor - timedelta(days=anchor.weekday())
+        start = this_monday - timedelta(weeks=1)
+        end = this_monday - timedelta(days=1)
+        return TimeRangeV1(kind="absolute", start=start.isoformat(), end=end.isoformat(), relative_token="last_week")
+    if re.search(r"\blast\s+year\b", lower):
+        y = anchor.year - 1
+        return TimeRangeV1(kind="absolute", start=date(y, 1, 1).isoformat(), end=date(y, 12, 31).isoformat(), relative_token="last_year")
     return None
 
 
@@ -297,6 +313,18 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
                 kind="absolute", start=anchor.replace(month=1, day=1).isoformat(), end=anchor.isoformat(),
                 relative_token=token,
             )
+        if token == "last_month":
+            prev = _sub_months(anchor, 1)
+            start, end = _month_range(prev.year, prev.month)
+            return TimeRangeV1(kind="absolute", start=start, end=end, relative_token=token)
+        if token == "last_week":
+            this_monday = anchor - timedelta(days=anchor.weekday())
+            start = this_monday - timedelta(weeks=1)
+            end = this_monday - timedelta(days=1)
+            return TimeRangeV1(kind="absolute", start=start.isoformat(), end=end.isoformat(), relative_token=token)
+        if token == "last_year":
+            y = anchor.year - 1
+            return TimeRangeV1(kind="absolute", start=date(y, 1, 1).isoformat(), end=date(y, 12, 31).isoformat(), relative_token=token)
         raise ValueError(f"unrecognized relative_token: {token!r}")
     if time_range.kind == "comparison":
         token = time_range.relative_token

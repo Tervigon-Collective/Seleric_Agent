@@ -252,6 +252,40 @@ def test_resolve_time_range_last_nd_capped():
     assert resolved.start == expected
 
 
+# Bare "last month/week/year" = previous complete period (L1-vs-L7 drift fix)
+@pytest.mark.parametrize(
+    "query,as_of,expected_start,expected_end,token",
+    [
+        # as_of in September → "last month" is the full previous month (August),
+        # never September-to-date (the L7 misresolution).
+        ("net revenue last month", "2026-09-25", "2026-08-01", "2026-08-31", "last_month"),
+        # January anchor wraps the year correctly.
+        ("orders last month", "2026-01-10", "2025-12-01", "2025-12-31", "last_month"),
+        # previous complete ISO week (Mon–Sun) before this week's Monday.
+        ("sessions last week", "2026-09-25", "2026-09-14", "2026-09-20", "last_week"),
+        ("profit last year", "2026-09-25", "2025-01-01", "2025-12-31", "last_year"),
+    ],
+)
+def test_window_from_query_bare_last_period(query, as_of, expected_start, expected_end, token):
+    window = window_from_query(query, "Asia/Kolkata", as_of)
+    assert window is not None
+    assert window.kind == "absolute"
+    assert (window.start, window.end, window.relative_token) == (expected_start, expected_end, token)
+
+
+def test_bare_last_month_is_not_a_comparison_without_a_verb():
+    # "why did revenue drop vs last month" has a comparison verb → period-over-
+    # period; but a bare "revenue last month" must be a single window, not a cmp.
+    window = window_from_query("revenue last month", "Asia/Kolkata", "2026-09-25")
+    assert window is not None and window.kind == "absolute" and window.start_b is None
+
+
+def test_resolve_time_range_bare_last_period_tokens():
+    tr = TimeRangeV1(kind="relative", start=None, end=None, relative_token="last_month")
+    resolved = resolve_time_range(tr, "Asia/Kolkata", "2026-09-25")
+    assert (resolved.kind, resolved.start, resolved.end) == ("absolute", "2026-08-01", "2026-08-31")
+
+
 # Priority: months phrase beats days when both would match separately
 def test_months_phrase_beats_days_phrase():
     window = window_from_query(

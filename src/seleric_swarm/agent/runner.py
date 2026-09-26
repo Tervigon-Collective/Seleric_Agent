@@ -54,12 +54,13 @@ from seleric_swarm.conversations.contracts import (
     ContextBundle,
     Principal,
     PrincipalAuthMethod,
+    TurnRecord,
 )
 from seleric_swarm.observability.traces import mission_trace
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
-from seleric_swarm.services.time_range import as_of_date
+from seleric_swarm.services.time_range import as_of_date, window_from_query
 from seleric_swarm.state.missions import Mission
 from seleric_swarm.toolsets.semantic import query_metrics
 
@@ -302,6 +303,27 @@ def _store_plan_artifact(deps: SelericDeps, *, plan: str, intent: str | None) ->
         _log.warning("plan_artifact_store_failed", exc_info=True)
 
 
+def _resolved_window_line(query: str, timezone: str, as_of: str) -> str:
+    """Resolve a relative time phrase to concrete dates once, deterministically,
+    so the agent uses a fixed window instead of resolving "last month" itself —
+    which drifted (live L1 read it as the previous full month, L7 as the current
+    partial month). Only relative phrases are pinned; explicit dates in the
+    question don't drift, and an unresolved phrase adds nothing (fail-open)."""
+    try:
+        window = window_from_query(query, timezone, as_of)
+    except Exception:
+        return ""
+    if window is None or not window.relative_token or not window.start:
+        return ""
+    if window.kind == "comparison" and window.start_b and window.end_b:
+        return (
+            f"'{window.relative_token.replace('_', ' ')}' resolves to "
+            f"{window.start}..{window.end} vs {window.start_b}..{window.end_b}. "
+        )
+    span = window.start if window.end in (None, window.start) else f"{window.start} through {window.end}"
+    return f"'{window.relative_token.replace('_', ' ')}' resolves to {span}. "
+
+
 def _routing_hint(classification: QueryClassification) -> str:
     """Render the Jev per-query signals as an advisory hint. Only signals that
     carry information are shown (a ``none``/``either``/``False`` answer is noise).
@@ -326,35 +348,168 @@ def _routing_hint(classification: QueryClassification) -> str:
     )
 
 
-def _mission_prompt(
-    query: str,
-    as_of_dt: datetime,
-    timezone: str,
-    context: ContextBundle | None = None,
-    catalogue: CatalogueSnapshot | None = None,
-    plan: str | None = None,
-    hint: str = "",
-) -> str:
-    as_of_day = as_of_dt.date()
-    yesterday = as_of_day.fromordinal(as_of_day.toordinal() - 1)
-    thread = _thread_context_block(context)
-    catalogue_block = ""
-    if catalogue is not None:
-        rendered = catalogue.render()
-        if rendered:
-            catalogue_block = f"[catalogue]\n{rendered}\n\n"
-    plan_block = f"[plan]\n{plan}\n\n" if plan else ""
-    return (
-        f"{thread}{catalogue_block}{plan_block}{hint}{query}\n\n"
-        f"[system: mission as_of={as_of_day.isoformat()} timezone={timezone}. "
-        f"'today' is {as_of_day.isoformat()}. "
-        f"'yesterday' is {yesterday.isoformat()}. "
-        f"Use only this calendar; do not invent another year from training data. "
-        f"Use thread context for follow-ups; do not treat this as a brand-new chat.]"
+# ── Context rendering constants ────────────────────────────────────────────────
+# Follow-up turns get more history; non-follow-ups only need recent context.
+_MAX_TURNS_FOLLOWUP = 6       # (user + assistant) pairs for follow-up queries
+_MAX_TURNS_DEFAULT = 3        # (user + assistant) pairs for standalone queries
+# Tiered character limits per turn — the most recent assistant answer is the
+# most likely reference point for a follow-up, so it gets the largest budget.
+_CHARS_LAST_ASSISTANT = 800   # last Seleric response (most grounding-critical)
+_CHARS_OLDER_ASSISTANT = 180  # older Seleric responses (reference only)
+_CHARS_USER_TURN = 300        # any user message
+_MAX_MEMORIES = 5             # max active memories injected
+_CHARS_PER_MEMORY = 200       # char limit per memory item
+_MAX_ENTITIES_FROM_RECORD = 8 # max entity names from TurnRecord in the prompt
+
+
+def _parse_named_entities(text: str) -> list[str]:
+    """Extract named entity strings from Markdown bullet/table output.
+
+    Only captures text in bullet lines ("- Name:") or table cells ("| Name |").
+    Returns at most 15 items, deduplicated, never empty strings.
+    Labels that are obviously column headers or footer lines are excluded.
+
+    This is conservative by design: false positives (adding noise to context)
+    are more harmful than false negatives (missing an entity).
+    """
+    import re
+    _BULLET = re.compile(r"^[-*]\s+([^:\n|]{2,40}):", re.MULTILINE)
+    _TABLE = re.compile(r"\|\s*([^|\n]{2,40?})\s*\|", re.MULTILINE)
+    # Patterns that indicate a footer/header row — skip these
+    _SKIP = re.compile(
+        r"^(period|currency|data|metric|total|---|\.{3})",
+        re.IGNORECASE,
     )
+    found: list[str] = []
+    for m in _BULLET.finditer(text):
+        name = m.group(1).strip()
+        if name and not _SKIP.match(name):
+            found.append(name)
+    for m in _TABLE.finditer(text):
+        name = m.group(1).strip()
+        if name and not name.startswith(("-", "=", " ")) and not _SKIP.match(name):
+            found.append(name)
+    # Deduplicate while preserving order
+    return list(dict.fromkeys(found))[:15]
+
+
+def _render_turn_record(record: dict[str, Any]) -> str:
+    """Render a TurnRecord payload as a single compact labelled line.
+
+    Format: "Prior answer: <intent> | period=<p> | grain=<g> | entities=[e1, e2] | metrics=[m1]"
+    Only non-empty, non-'none' fields are included. The result is injected at
+    the very top of [thread context] — before memories and raw turns — so the
+    agent reads it first (primacy effect).
+    """
+    parts: list[str] = []
+    if record.get("intent"):
+        parts.append(record["intent"])
+    period = record.get("period")
+    if period and period != "none":
+        parts.append(f"period={period}")
+    grain = record.get("grain")
+    if grain and grain != "none":
+        parts.append(f"grain={grain}")
+    entities = (record.get("entities") or [])[:_MAX_ENTITIES_FROM_RECORD]
+    if entities:
+        parts.append(f"entities=[{', '.join(entities)}]")
+    # Use human-readable labels; never expose internal metric IDs
+    labels = (record.get("metric_labels") or record.get("top_items") or [])[:4]
+    if labels:
+        parts.append(f"metrics=[{', '.join(labels)}]")
+    as_of = record.get("as_of")
+    if as_of:
+        parts.append(f"as_of={as_of}")
+    return "Prior answer: " + " | ".join(parts) if parts else ""
+
+
+def _thread_context_block(
+    bundle: ContextBundle | None,
+    *,
+    is_followup: bool = False,
+    prior_turn_record: dict[str, Any] | None = None,
+) -> str:
+    """Compose the [thread context] block from structured, labelled sources.
+
+    Injection order (primacy → recency, most important first):
+      1. Prior answer TurnRecord — structured facts from the last turn.
+         This is the primary grounding source for follow-up resolution.
+         Never use raw prose from the last assistant message for this purpose.
+      2. Active memories (PREFERENCE, CONSTRAINT, DEFINITION) — per-user or
+         per-thread facts the agent must respect across all answers.
+      3. Recent turns — last N (user, Seleric) pairs. Tiered char limits:
+         - Last Seleric response: _CHARS_LAST_ASSISTANT (most referenced)
+         - Older Seleric responses: _CHARS_OLDER_ASSISTANT (reference only)
+         - Any user message: _CHARS_USER_TURN
+      4. Thread summary — fallback only when there are no recent turns and
+         no TurnRecord. Raw summary prose is a weak signal; prefer structured
+         sources whenever available.
+
+    Content policy — what must NEVER appear in the returned string:
+      - Internal artifact IDs, mission IDs, run IDs
+      - Raw tool call JSON or Cube response bodies
+      - Internal metric IDs (e.g. "metric.shopify_ns_v2")
+      - Numbers without an associated metric label
+      - Full Markdown tables (entity names only, not the table itself)
+    """
+    if bundle is None:
+        return ""
+
+    lines: list[str] = []
+    max_turns = _MAX_TURNS_FOLLOWUP if is_followup else _MAX_TURNS_DEFAULT
+
+    # ── 1. Prior TurnRecord (highest-priority grounding signal) ──────────────
+    if prior_turn_record:
+        rendered = _render_turn_record(prior_turn_record)
+        if rendered:
+            lines.append(rendered)
+
+    # ── 2. Active memories (preferences, constraints, definitions) ─────────
+    for mem in bundle.memories[:_MAX_MEMORIES]:
+        content = mem.content if isinstance(mem.content, str) else str(mem.content)
+        text = content.strip()[:_CHARS_PER_MEMORY]
+        if not text:
+            continue
+        kind = getattr(mem.type, "value", str(mem.type))
+        lines.append(f"Memory ({kind}): {text}")
+
+    # ── 3. Recent turns — tiered character budgets ─────────────────────
+    raw_messages = bundle.recent_messages[-(max_turns * 2):]
+    turns: list[str] = []
+    n = len(raw_messages)
+    for i, raw in enumerate(raw_messages):
+        message = raw if isinstance(raw, dict) else {}
+        text = _part_text(message)
+        if not text:
+            continue
+        role_str = str(message.get("role") or "").upper()
+        who = "User" if role_str == "USER" else "Seleric"
+        is_last_assistant = (who == "Seleric" and i == n - 1)
+        if is_last_assistant:
+            char_limit = _CHARS_LAST_ASSISTANT
+        elif who == "User":
+            char_limit = _CHARS_USER_TURN
+        else:
+            char_limit = _CHARS_OLDER_ASSISTANT
+        turns.append(f"{who}: {text[:char_limit]}")
+
+    if turns:
+        lines.append("Recent turns:")
+        lines.extend(turns)
+
+    # ── 4. Summary fallback (only when no turns and no TurnRecord) ────────
+    if not turns and not prior_turn_record:
+        summary_text = bundle.latest_summary.summary.strip() if bundle.latest_summary else ""
+        if summary_text:
+            lines.append(f"Summary: {summary_text[:600]}")
+
+    if not lines:
+        return ""
+    return "[thread context]\n" + "\n".join(lines) + "\n\n"
 
 
 def _part_text(message: dict[str, Any]) -> str:
+    """Extract concatenated text content from a Message dict's parts list."""
     chunks: list[str] = []
     for part in message.get("parts") or []:
         if not isinstance(part, dict):
@@ -367,38 +522,51 @@ def _part_text(message: dict[str, Any]) -> str:
     return "\n".join(chunks)
 
 
-def _thread_context_block(bundle: ContextBundle | None) -> str:
-    """Prior turns / summary / memories already stored by conversations."""
-    if bundle is None:
-        return ""
-    lines: list[str] = []
-    summary = bundle.latest_summary.summary.strip() if bundle.latest_summary else ""
-    if summary:
-        lines.append(f"Summary: {summary[:500]}")
-    for mem in bundle.memories[:6]:
-        content = mem.content if isinstance(mem.content, str) else str(mem.content)
-        text = content.strip()
-        if not text:
-            continue
-        kind = getattr(mem.type, "value", mem.type)
-        lines.append(f"Memory ({kind}): {text[:240]}")
-    turns: list[str] = []
-    for raw in bundle.recent_messages[-8:]:
-        message = raw if isinstance(raw, dict) else {}
-        text = _part_text(message)
-        if not text:
-            continue
-        who = "User" if str(message.get("role") or "").upper() == "USER" else "Seleric"
-        turns.append(f"{who}: {text[:400]}")
-    if turns:
-        lines.append("Recent turns:")
-        lines.extend(turns)
-    if not lines:
-        return ""
-    return "[thread context]\n" + "\n".join(lines) + "\n\n"
+def _mission_prompt(
+    query: str,
+    as_of_dt: datetime,
+    timezone: str,
+    context: ContextBundle | None = None,
+    catalogue: CatalogueSnapshot | None = None,
+    plan: str | None = None,
+    hint: str = "",
+    is_followup: bool = False,
+    prior_turn_record: dict[str, Any] | None = None,
+) -> str:
+    """Assemble the full user-turn prompt for one mission.
+
+    The [thread context] block is placed first so the model reads prior-answer
+    grounding before anything else (primacy effect). For follow-up queries,
+    this block leads with a structured 'Prior answer:' line from the last
+    TurnRecord, not raw prose from the previous assistant message.
+    """
+    as_of_day = as_of_dt.date()
+    yesterday = as_of_day.fromordinal(as_of_day.toordinal() - 1)
+    window_line = _resolved_window_line(query, timezone, as_of_day.isoformat())
+    thread = _thread_context_block(
+        context,
+        is_followup=is_followup,
+        prior_turn_record=prior_turn_record,
+    )
+    catalogue_block = ""
+    if catalogue is not None:
+        rendered = catalogue.render()
+        if rendered:
+            catalogue_block = f"[catalogue]\n{rendered}\n\n"
+    plan_block = f"[plan]\n{plan}\n\n" if plan else ""
+    return (
+        f"{thread}{catalogue_block}{plan_block}{hint}{query}\n\n"
+        f"[system: mission as_of={as_of_day.isoformat()} timezone={timezone}. "
+        f"'today' is {as_of_day.isoformat()}. "
+        f"'yesterday' is {yesterday.isoformat()}. "
+        f"{window_line}"
+        f"Use only this calendar; do not invent another year from training data. "
+        f"Use thread context for follow-ups; do not treat this as a brand-new chat.]"
+    )
 
 
 def _context_bundle(raw: dict[str, Any] | None) -> ContextBundle:
+
     if not raw:
         return ContextBundle()
     try:
@@ -511,7 +679,87 @@ def _to_lookup(
     )
 
 
+def _latest_turn_record(
+    artifact_store: Any,
+    *,
+    thread_id: str,
+) -> dict[str, Any] | None:
+    """Return the most recent 'turn_record' artifact payload for the given thread.
+
+    Iterates artifacts newest-first using list_for_context. Returns the payload
+    dict of the first turn_record found, or None if none exists or on any error.
+    Callers must be prepared for None (graceful degradation to raw-message context).
+    """
+    list_fn = getattr(artifact_store, "list_for_context", None)
+    if not callable(list_fn):
+        return None
+    try:
+        for artifact in list_fn("", thread_id):
+            if getattr(artifact, "artifact_type", None) == "turn_record":
+                payload = getattr(artifact, "payload", None)
+                if isinstance(payload, dict):
+                    return payload
+    except Exception:
+        _log.warning("latest_turn_record_list_failed", exc_info=True)
+    return None
+
+
+def _write_turn_record(
+    *,
+    result: V3MissionResult,
+    classification: QueryClassification,
+    artifact_store: Any,
+    thread_id: str,
+    workspace_id: str,
+    mission_id: str,
+    as_of_dt: datetime,
+) -> None:
+    """Persist a TurnRecord artifact so the next turn can use it for grounding.
+
+    Only writes for completed/partial missions with analytical intent.
+    Conversation (small-talk) turns are skipped — they carry no metric facts.
+    Any storage failure is logged and swallowed; a missing TurnRecord causes
+    graceful degradation, not a mission failure.
+
+    Content policy enforced here:
+      - metric_labels: populated from entity names in the final response
+      - entities: named items extracted from Markdown output (bullets/tables)
+      - No internal IDs, no raw numbers, no full prose text
+    """
+    if result.status not in {"completed", "partial"}:
+        return
+    if classification.intent == "conversation":
+        return
+    try:
+        entities = _parse_named_entities(result.final_response or "")
+        record = {
+            "query": result.query if isinstance(result.query, str) else str(result.query),
+            "intent": classification.intent,
+            "period": classification.period,
+            "grain": classification.grain,
+            "entities": entities[:10],
+            "metric_labels": [],   # populated by future label-extraction pass
+            "top_items": entities[:5],
+            "evidence_ids": (result.evidence_ids or [])[:8],
+            "mission_id": mission_id,
+            "as_of": as_of_dt.date().isoformat(),
+        }
+        artifact_store.put(
+            Artifact(
+                workspace_id=workspace_id,
+                artifact_type="turn_record",
+                payload={k: v for k, v in record.items() if v is not None and v != [] and v != ""},
+                classification="ui",
+                mission_id=mission_id,
+                thread_id=thread_id,
+            )
+        )
+    except Exception:
+        _log.warning("turn_record_write_failed", exc_info=True)
+
+
 async def run_v3_mission(
+
     runtime: SwarmRuntime,
     *,
     query: str,
@@ -598,8 +846,10 @@ async def run_v3_mission(
         required_scope=required_scope,
     )
     # An exact alias ("ns", "mer") is a metric name however short; the classifier
-    # can read it as small talk, so the alias check runs for conversation too.
-    alias_def = _lookup_alias(query) if intent in (None, "lookup", "conversation") else None
+    # can read it as small talk or trend (live: Jev classifies "ns" as "trend"),
+    # so the alias check runs for every intent. A verified YAML alias always takes
+    # the deterministic Cube path; no model needed.
+    alias_def = _lookup_alias(query)
     if intent == "conversation" and alias_def is None:
         deps.call_counts[CONVERSATIONAL] = 1  # small talk: the agent gets no tools at all
     started = time.perf_counter()
@@ -641,6 +891,21 @@ async def run_v3_mission(
                 )
                 if plan:
                     _store_plan_artifact(deps, plan=plan, intent=intent)
+                # Detect follow-up and load the last turn's grounding record.
+                # When Jev flags depends_on_prior=True, we load the most recent
+                # TurnRecord for this thread and inject it at the top of the
+                # [thread context] block as a structured 'Prior answer:' line.
+                # This gives the agent entity names, period, and metric labels
+                # without forcing it to re-parse truncated prose from prior turns.
+                is_followup = classification.depends_on_prior is True
+                prior_turn_record: dict[str, Any] | None = None
+                if is_followup:
+                    try:
+                        prior_turn_record = _latest_turn_record(
+                            get_v3_artifact_store(), thread_id=thread_id
+                        )
+                    except Exception:
+                        _log.warning("prior_turn_record_load_failed", exc_info=True)
                 # Only pay the ~8.6k-token full-catalogue dump when explicitly
                 # enabled; otherwise the agent resolves via search_semantics +
                 # get_metric_definitions. The snapshot still rides in deps for
@@ -655,6 +920,8 @@ async def run_v3_mission(
                     else None,
                     plan=plan,
                     hint=_values_block(values) + _routing_hint(classification),
+                    is_followup=is_followup,
+                    prior_turn_record=prior_turn_record,
                 )
                 v3_result = await asyncio.wait_for(
                     run_validated_mission(agent, deps, prompt, on_stream=on_stream),
@@ -725,6 +992,21 @@ async def run_v3_mission(
         final_response=result.final_response,
         error_code=result.error_code,
     )
+
+    # Write a TurnRecord artifact for grounding future follow-ups.
+    # This runs after v3_store.finish so a storage failure never blocks the
+    # mission result. It is non-fatal: a missing TurnRecord degrades gracefully
+    # to the old raw-message context path (no crash, no user-visible error).
+    _write_turn_record(
+        result=result,
+        classification=classification,
+        artifact_store=get_v3_artifact_store(),
+        thread_id=thread_id,
+        workspace_id=workspace_id,
+        mission_id=mission_id,
+        as_of_dt=as_of_dt,
+    )
+
     raw = v3_raw_snapshot(mission_id) or {}
     evidence_views = [
         EvidenceView.model_validate(row)

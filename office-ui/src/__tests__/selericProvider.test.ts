@@ -3,7 +3,7 @@ import { HttpClient } from "../api/http";
 import { SelericEventProvider } from "../providers/seleric";
 
 describe("Seleric office provider", () => {
-  it("authenticates list, snapshot, and fetch-based SSE requests", async () => {
+  it("loads list, snapshot, and fetch-based SSE requests", async () => {
     const stream = [
       'event: snapshot\ndata: {"missionId":"m1","query":"q","agents":[]}\n\n',
       'event: event\ndata: {"eventId":"e1","seq":1,"timestamp":"now","missionId":"m1","eventType":"started","summary":"Started"}\n\n',
@@ -22,7 +22,7 @@ describe("Seleric office provider", () => {
           controller.close();
         },
       }), { status: 200 }));
-    const client = new HttpClient({ baseUrl: "https://api.test", getToken: () => "key", fetchImpl });
+    const client = new HttpClient({ baseUrl: "https://api.test", fetchImpl });
     const provider = new SelericEventProvider({ client });
 
     await provider.listMissions();
@@ -38,8 +38,6 @@ describe("Seleric office provider", () => {
     });
 
     expect(received).toEqual(["snapshot", "event", "complete"]);
-    for (const call of fetchImpl.mock.calls) {
-      expect(new Headers(call[1]?.headers).get("Authorization")).toBe("Bearer key");
-    }
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 });

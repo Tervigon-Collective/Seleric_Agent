@@ -160,7 +160,16 @@ async def compare_periods(ctx: RunContext[SelericDeps], evidence_ids: list[str])
 
     mismatch = validate_grain_set(evidence)
     if mismatch is not None:
-        return _refuse(mismatch, error_code="EVIDENCE_GRAIN_MISMATCH")
+        # Teach the recovery path instead of leaving the model to retry the same
+        # ids (live L3: it re-called compare_periods on a 25-day vs 31-day pair
+        # instead of normalizing). Non-retryable — recovery needs different
+        # evidence, so the fix is a new fetch, not a repeat of this call.
+        return _refuse(
+            f"{mismatch}. To compare these, re-fetch both periods over the same number "
+            f"of days (e.g. the first N days of each), or fetch each period as a "
+            f"daily-grain series and compare their daily averages.",
+            error_code="EVIDENCE_GRAIN_MISMATCH",
+        )
 
     periods = list(dict.fromkeys((e.period_start, e.period_end) for e in evidence))
     if len(periods) != 2:

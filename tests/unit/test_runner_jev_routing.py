@@ -109,3 +109,18 @@ def test_prefer_fast_is_noop_without_fast_model() -> None:
     names = _names(resolve_v3_model(_settings(""), prefer_fast=True))
     assert "fast-mini" not in names
     assert names[0] == "strong-1"
+
+
+# --- deterministic relative-date pin (P2 "last month" drift) -----------------
+
+def test_resolved_window_line_pins_bare_last_month() -> None:
+    # Live L1-vs-L7: "last month" drifted between the previous full month and
+    # the current partial one. The runner now pins it in the system block.
+    line = runner._resolved_window_line("net revenue last month", "Asia/Kolkata", "2026-09-25")
+    assert "last month" in line
+    assert "2026-08-01 through 2026-08-31" in line
+
+
+def test_resolved_window_line_empty_when_no_relative_phrase() -> None:
+    # No relative phrase → nothing pinned (fail-open; explicit dates don't drift).
+    assert runner._resolved_window_line("what is net revenue", "Asia/Kolkata", "2026-09-25") == ""

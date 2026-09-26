@@ -172,6 +172,18 @@ async def test_empty_corpus_succeeds_and_says_so(monkeypatch, tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_empty_corpus_withdraws_the_tool_so_it_is_not_re_searched(monkeypatch):
+    """Live L12: 3 searches after the first said "corpus is empty". An empty
+    corpus can never yield a hit on retry, so the first miss withdraws the tool."""
+    from seleric_swarm.agent.limits import withdrawn_tools
+
+    monkeypatch.setattr(knowledge, "load_corpus", list)
+    ctx = _ctx()
+    await knowledge.search_knowledge(ctx, "checkout")
+    assert "search_knowledge" in withdrawn_tools(ctx.deps)
+
+
+@pytest.mark.asyncio
 async def test_no_match_is_distinguishable_from_an_empty_corpus(monkeypatch, tmp_path: Path):
     """These tell an operator very different things: "nobody has written
     anything down" vs "we have docs, none are about this"."""
