@@ -21,16 +21,12 @@ export class HttpClient {
 
   constructor(options: HttpClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? "";
-    this.getToken = options.getToken ?? (() =>
-      (globalThis as { __SELERIC_API_KEY__?: string }).__SELERIC_API_KEY__
-      || localStorage.getItem("seleric.apiKey"));
+    this.getToken = options.getToken ?? (() => null);
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   headers(extra?: HeadersInit): Headers {
     const headers = new Headers(extra);
-    const token = this.getToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
     return headers;
   }
 

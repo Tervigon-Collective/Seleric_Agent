@@ -178,6 +178,16 @@ Sprint definitions: `SPRINT_PLAN.md`. Profile briefs: `01_PROFILE_RUNTIME.md`,
 
 ## Log
 
+- 2026-09-24: **Why is it slow (measured per LLM call).** "why did CAC go up"
+  = ~16-27 sequential LLM steps; data tools are ~1s each, the LLM is the
+  time. gpt-5-mini at default reasoning effort spent 700-4500 hidden tokens
+  per step (8-18s) → 346s; now `reasoning_effort=low` on the fast deployment
+  for every path (fallback for complex) → ~250 tok/step, ~4.5s → 177s.
+  DeepSeek-V4-Pro hangs (one call ran the full timeout) and 429s repeatedly;
+  agent read timeout 90s→45s (a hung call costs its whole timeout).
+  Remaining: step count itself (~25 calls) and Azure 429s; a retry after a
+  late failure restarts the mission from scratch (wasteful, unchanged).
+
 - 2026-09-24: **Live-data pass in Chrome** (MCP now configured: real numbers,
   ranked product tables, WoW comparison; 619 py + 91 UI tests green). Fixed:
   (1) "thanks!"/"hi" looped 8-20 `search_knowledge` calls (105s) or looked up

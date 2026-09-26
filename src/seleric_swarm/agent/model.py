@@ -17,11 +17,12 @@ from seleric_swarm.agent.agent import _stub_test_model
 from seleric_swarm.agent.model_health import MODEL_HEALTH, HealthGatedChatModel
 from seleric_swarm.config.settings import Settings, configured_chat_model
 
-# Read timeout (httpx) for the agent's model client. Reasoning models
-# (DeepSeek-V4-Pro, gpt-5-mini) can "think" silently for well over a minute
-# before streaming a token, so 90s tripped httpx.ReadTimeout mid-mission and
-# failed every retry. Env-tunable; must stay under mission_timeout_s (600).
-AGENT_LLM_TIMEOUT_S = float(os.getenv("AGENT_LLM_TIMEOUT_S", "240"))
+# Read timeout (httpx) for the agent's model client. A hung call costs its
+# full timeout (measured), so the default stays short. Reasoning models
+# (DeepSeek-V4-Pro, gpt-5-mini) can think silently longer than that and trip
+# ReadTimeout; raise AGENT_LLM_TIMEOUT_S when they do. Must stay under
+# mission_timeout_s (600).
+AGENT_LLM_TIMEOUT_S = float(os.getenv("AGENT_LLM_TIMEOUT_S", "45"))
 
 
 def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
@@ -71,12 +72,17 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
     # Lean settings (minimal reasoning, bounded output) only on the fast deployment
     # so a lookup doesn't pay unbounded thinking. Strong fallbacks keep provider
     # defaults — an unsupported reasoning_effort can't break the reliability chain.
-    fast_settings = (
-        OpenAIChatModelSettings(openai_reasoning_effort="minimal", max_tokens=2048)
-        if prefer_fast and fast_model
-        else None
-    )
-    # #4: optionally dial down the strong models' reasoning effort (env-tunable,
+    # The fast deployment also serves as the fallback for complex missions. At its
+    # default reasoning effort every step of a ~16-step investigation spent 700-4500
+    # hidden reasoning tokens (8-18s/step, ~200s total, measured live), so it always
+    # runs at low effort; the tight output cap stays fast-path-only.
+    if not fast_model:
+        fast_settings = None
+    elif prefer_fast:
+        fast_settings = OpenAIChatModelSettings(openai_reasoning_effort="minimal", max_tokens=2048)
+    else:
+        fast_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
+    # Optionally dial down the strong models' reasoning effort (env-tunable,
     # e.g. "low"/"medium"). DeepSeek-V4-Pro accepts reasoning_effort; unset leaves
     # the provider default so this can't regress reasoning quality or break the
     # fallback chain unless explicitly opted in.
