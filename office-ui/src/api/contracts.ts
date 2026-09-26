@@ -65,6 +65,8 @@ export interface Message {
   run_id: string | null;
   parent_message_id: string | null;
   created_at: string;
+  /** Set when the run writes the final answer; minus created_at = response time. */
+  updated_at?: string;
 }
 
 export interface SubmitMessageRequest {

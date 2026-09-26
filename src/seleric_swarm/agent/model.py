@@ -8,6 +8,7 @@ without a live LLM.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from pydantic_ai.models import Model
@@ -16,7 +17,12 @@ from seleric_swarm.agent.agent import _stub_test_model
 from seleric_swarm.agent.model_health import MODEL_HEALTH, HealthGatedChatModel
 from seleric_swarm.config.settings import Settings, configured_chat_model
 
-AGENT_LLM_TIMEOUT_S = 45.0  # measured: a hung call costs its full timeout, so not longer
+# Read timeout (httpx) for the agent's model client. A hung call costs its
+# full timeout (measured), so the default stays short. Reasoning models
+# (DeepSeek-V4-Pro, gpt-5-mini) can think silently longer than that and trip
+# ReadTimeout; raise AGENT_LLM_TIMEOUT_S when they do. Must stay under
+# mission_timeout_s (600).
+AGENT_LLM_TIMEOUT_S = float(os.getenv("AGENT_LLM_TIMEOUT_S", "45"))
 
 
 def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
@@ -76,6 +82,16 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
         fast_settings = OpenAIChatModelSettings(openai_reasoning_effort="minimal", max_tokens=2048)
     else:
         fast_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
+    # Optionally dial down the strong models' reasoning effort (env-tunable,
+    # e.g. "low"/"medium"). DeepSeek-V4-Pro accepts reasoning_effort; unset leaves
+    # the provider default so this can't regress reasoning quality or break the
+    # fallback chain unless explicitly opted in.
+    strong_effort = os.getenv("AZURE_OPENAI_STRONG_REASONING_EFFORT", "").strip()
+    strong_settings = (
+        OpenAIChatModelSettings(openai_reasoning_effort=strong_effort)
+        if strong_effort
+        else None
+    )
     def chat(name: str, prov: OpenAIProvider, tag: str, model_settings: Any = None) -> OpenAIChatModel:
         return HealthGatedChatModel(
             name,
@@ -86,7 +102,7 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
         )
 
     models: list[OpenAIChatModel] = [
-        chat(name, provider, "azure1", fast_settings if name == fast_model else None)
+        chat(name, provider, "azure1", fast_settings if name == fast_model else strong_settings)
         for name in model_names
     ]
 

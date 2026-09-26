@@ -16,6 +16,7 @@ independently-attributed evidence).
 from __future__ import annotations
 
 import calendar
+import difflib
 import json
 import re
 from datetime import datetime, timedelta
@@ -23,11 +24,14 @@ from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
 
+from seleric_swarm.agent.limits import withdraw_tool
+
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.mcp_query import (
+    _BRAND_DIM_KEYS,
     build_metrics_query_args,
     call_metrics_query,
     dimension_value,
@@ -97,9 +101,27 @@ def _is_self_referential_dimension_value(key: str, value: str) -> bool:
 _GROUPBY_MARKERS = frozenset({"*", "all", "any", "each", "every", "group_by", "groupby"})
 
 
-def _sanitize_dimensions(dimensions: dict[str, str] | None) -> dict[str, str]:
-    cleaned: dict[str, str] = {}
+# A dimension value is one literal, or a list of literals meaning "any of these"
+# (live: WhatsApp orders are utm_medium in {whatsapp, wa} — one value per filter
+# forced two queries and a hand-summed answer).
+DimensionValue = str | list[str]
+
+
+def _sanitize_dimensions(
+    dimensions: dict[str, DimensionValue] | None,
+) -> dict[str, DimensionValue]:
+    cleaned: dict[str, DimensionValue] = {}
     for key, raw in (dimensions or {}).items():
+        if isinstance(raw, (list, tuple)):
+            kept = [
+                str(v).strip()
+                for v in raw
+                if v is not None and str(v).strip() and not _is_placeholder_dimension_value(str(v).strip())
+            ]
+            if len(kept) > 1:
+                cleaned[str(key)] = list(dict.fromkeys(kept))
+                continue
+            raw = kept[0] if kept else None
         if raw is None:
             cleaned[str(key)] = ""
             continue
@@ -116,9 +138,22 @@ def _sanitize_dimensions(dimensions: dict[str, str] | None) -> dict[str, str]:
     return cleaned
 
 
+# Brand filter keys live in mcp_query (the arg builder that injects the default
+# brand). Only a brand is safe to auto-drop on an unresolved-value error: the
+# builder re-injects the default brand, so a bad brand degrades to the default
+# rather than failing the mission. A NON-brand filter is never dropped — silently
+# erasing a user-supplied product/return/region filter answers a different
+# question (live Suspender-Boots trace).
+
+
+def _unknown_brand_error(error: object) -> bool:
+    text = str(error).lower()
+    return "unknown brand" in text or "invalid brand" in text
+
+
 def _unknown_dimension_error(error: object) -> bool:
     text = str(error).lower()
-    return "unknown brand" in text or "unknown dimension" in text or "invalid brand" in text
+    return "unknown dimension" in text or _unknown_brand_error(error)
 
 
 # Single agent identity for MCPGateway allowlisting — the V3 runtime has one
@@ -178,11 +213,16 @@ async def _cached_metrics_query(
         return await ctx.deps.query_cache.get_or_fetch(key, fetch)
     verdict = ctx.deps.budget.consume("cube_queries")
     if not verdict.ok:
-        raise ModelRetry(
-            f"Cube query budget exhausted for this mission ({verdict.reason}). "
-            "Do not fetch any more data -- write your final_response now using "
-            "the evidence you already have, and say plainly if that isn't enough."
-        )
+        # Withdraw the fetch tools, don't ModelRetry: an ignored retry counts
+        # toward the per-tool retry limit and fails the whole mission.
+        withdraw_tool(ctx.deps, "query_metrics", "drilldown")
+        return {
+            "error": (
+                f"Cube query budget exhausted for this mission ({verdict.reason}). "
+                "Do not fetch any more data -- write your final_response now using "
+                "the evidence you already have, and say plainly if that isn't enough."
+            )
+        }
     result = await fetch() if not _QUERY_CACHE_ENABLED else await ctx.deps.query_cache.get_or_fetch(key, fetch)
     if str(result.get("error") or "").startswith("NotImplementedError"):
         # Deployment state, not a transient fault: `prepare_tools` (agent.py)
@@ -363,8 +403,27 @@ _MAX_SEARCHES = 3
 _MAX_SERIES_IN_SUMMARY = 40
 
 
+# Catalogue descriptions open with a one-sentence "what it is + when to use it";
+# echo only that so the model can tell near-identical ids apart (e.g. Meta net
+# sales on the event-date basis vs order-date) without a definitions round-trip.
+_SUMMARY_MAX_CHARS = 280
+
+
+def _summary(description: str) -> str:
+    text = " ".join((description or "").split())
+    # First sentence: a period followed by a space and an upper-case letter,
+    # so decimals ("52.7") and abbreviations inside the sentence don't cut it.
+    m = re.search(r"\.\s+(?=[A-Z])", text)
+    first = text[: m.start() + 1] if m else text
+    return first if len(first) <= _SUMMARY_MAX_CHARS else first[: _SUMMARY_MAX_CHARS - 1].rstrip() + "…"
+
+
 def _slim_match(match: dict[str, Any]) -> dict[str, Any]:
-    return {k: match[k] for k in _SHORTLIST_FIELDS if k in match}
+    slim = {k: match[k] for k in _SHORTLIST_FIELDS if k in match}
+    summary = _summary(str(match.get("description") or ""))
+    if summary:
+        slim["summary"] = summary
+    return slim
 
 
 def _norm_key(text: str) -> str:
@@ -414,13 +473,19 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
     # 11 times until the step budget tripped). The model already has candidates
     # from earlier searches; force it to execute or report no compatible metric.
     if count > _MAX_SEARCHES:
-        raise ModelRetry(
-            "SEMANTIC_RESOLUTION_LOOP: search_semantics is disabled for this "
-            "mission (budget exhausted). Do NOT call it again. Call query_metrics "
-            "with the best metric id from your earlier search results — for a "
-            "product/SKU question use a product_* metric (e.g. product_net_revenue, "
-            "product_return_revenue, returned_units). If no metric supports the "
-            "breakdown you need, call final_result stating that plainly."
+        withdraw_tool(ctx.deps, "search_semantics")
+        return ToolResult(
+            success=False,
+            summary=(
+                "SEMANTIC_RESOLUTION_LOOP: search_semantics is disabled for this "
+                "mission (budget exhausted). Call query_metrics with the best metric "
+                "id from your earlier search results — for a product/SKU question use "
+                "a product_* metric (e.g. product_net_revenue, product_return_revenue, "
+                "returned_units). If no metric supports the breakdown you need, call "
+                "final_result stating that plainly."
+            ),
+            error_code="SEMANTIC_RESOLUTION_LOOP",
+            retryable=False,
         )
     try:
         result = await ctx.deps.mcp_client.call(
@@ -455,6 +520,46 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
         )
 
 
+async def resolve_brand(ctx: RunContext[SelericDeps], name: str) -> ToolResult:
+    """Resolve a brand name/code (e.g. "Sniff Theory", "Urthend") to a
+    ``brand_id`` for use in a ``query_metrics`` filter — call this instead of
+    inventing a brand id when the user names a brand other than the default.
+
+    Returns the resolved ``brand_id`` and canonical name; a partially-loaded
+    tenant's ``scope_note`` is surfaced as a warning so a P&L answer isn't given
+    for a brand whose revenue side isn't in the warehouse. Resolution only —
+    the ``brand_id`` is passed verbatim into a ``filters`` entry
+    (``{"dimension": "brand_id", "operator": "equals", "values": [brand_id]}``),
+    never used to rewrite a ``metric_id`` (rule 1)."""
+    try:
+        result = await ctx.deps.mcp_client.call(
+            agent_id=_AGENT_ID,
+            capability="seleric.catalogue_resolve_brand",
+            arguments={"text": name},
+        )
+    except Exception as exc:
+        return _mcp_error_result(exc)
+    result = dict(result or {})
+    brand_id = result.get("brand_id")
+    if not brand_id:
+        # Ambiguous/unknown: hand the model whatever the server offered
+        # (candidates/suggestions) so it can disambiguate, never a guess.
+        return ToolResult(
+            success=False,
+            summary=f"could not resolve a brand from '{name}'",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+            provenance=ArtifactProvenance(source_metadata=result),
+        )
+    warnings = [str(result["scope_note"])] if result.get("scope_note") else []
+    return ToolResult(
+        success=True,
+        summary=f"{name} -> brand_id={brand_id} ({result.get('name') or ''})".strip(),
+        warnings=warnings,
+        provenance=ArtifactProvenance(source_metadata=result),
+    )
+
+
 def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> None:
     """Raise ``ModelRetry`` with candidate ids when *metric_id* isn't in the
     warmed catalogue snapshot. Validation only — never rewrites the id to a
@@ -476,7 +581,7 @@ def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> None
 
 
 def _reject_incompatible_dimensions(
-    ctx: RunContext[SelericDeps], metric_id: str, dimensions: dict[str, str]
+    ctx: RunContext[SelericDeps], metric_id: str, dimensions: dict[str, DimensionValue]
 ) -> None:
     """Fail fast when *metric_id* can't carry a requested dimension, pointing at
     metrics that can (live 2026-09-22 MS3: "top returned products" tried to
@@ -600,10 +705,54 @@ def _top_n_sort(metric_id: str, order: str | None) -> list[dict[str, Any]] | Non
     return [{"field": metric_id, "direction": order}]
 
 
+# Cap on values enumerated when disambiguating a zero-row filter. A high-card
+# dimension (thousands of SKUs) is bounded here so the probe can't blow up; the
+# close-match is still found among the top slice.
+_MAX_VALUE_PROBE = 200
+
+
+async def _suggest_close_values(
+    ctx: RunContext[SelericDeps],
+    *,
+    metric_id: str,
+    start: str,
+    end: str,
+    filters: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    """A zero-row exact filter is ambiguous: the value may be misspelled/absent
+    rather than genuinely empty (live Suspender-Boots: ``product_title=
+    "Suspender Boots"`` → 0 rows, catalogue holds "Suspender Boot"). Re-run the
+    SAME metric grouped by the filtered dimension(s) to list the values that
+    actually exist, then fuzzy-match each requested value against them.
+
+    Generic on purpose — no metric- or dimension-specific branch, no hardcoded
+    product/SKU logic: any equals-filter that returns nothing gets the same
+    "did you mean" treatment via the dimensions the metric already supports and
+    stdlib ``difflib``.
+    """
+    dims = [f["dimension"] for f in filters]
+    probe_args = build_metrics_query_args(
+        measure=metric_id, start=start, end=end, dimensions=dims, limit=_MAX_VALUE_PROBE
+    )
+    result = await _cached_metrics_query(ctx, probe_args)
+    if result.get("error"):
+        return {}
+    rows = result.get("rows") or []
+    suggestions: dict[str, list[str]] = {}
+    for f in filters:
+        dim = f["dimension"]
+        wanted = str((f.get("values") or [""])[0])
+        existing = sorted({str(dimension_value(row, dim)) for row in rows} - {"None", ""})
+        close = difflib.get_close_matches(wanted, existing, n=3, cutoff=0.6)
+        if close:
+            suggestions[dim] = close
+    return suggestions
+
+
 async def query_metrics(
     ctx: RunContext[SelericDeps],
     metric_id: str,
-    dimensions: dict[str, str] | None = None,
+    dimensions: dict[str, DimensionValue] | None = None,
     grain: str = "none",
     period_start: datetime | None = None,
     period_end: datetime | None = None,
@@ -614,6 +763,10 @@ async def query_metrics(
 
     ``dimensions`` / periods default empty-or-as_of so the model can look up
     "gross sale" without inventing a brand filter or a training-data year.
+
+    A dimension value filters to that value; a list filters to ANY of them
+    (e.g. ``dimensions={"<dimension>": ["<value>", "<value>"]}``); an empty
+    string breaks the result down by that dimension.
 
     For a top/bottom-N ranking, break down by the entity dimension (empty
     value, e.g. ``dimensions={"product_title": ""}``), set ``order="desc"``
@@ -627,9 +780,18 @@ async def query_metrics(
     period_start = period_start or period_end
     breakdown = [k for k, v in dimensions.items() if not v]
     filters = [
-        {"dimension": k, "operator": "equals", "values": [v]} for k, v in dimensions.items() if v
+        {"dimension": k, "operator": "equals", "values": list(v) if isinstance(v, list) else [v]}
+        for k, v in dimensions.items()
+        if v
     ]
     sort = _top_n_sort(metric_id, order)
+    # Only scope to the default brand for metrics that actually carry a brand
+    # dimension (catalogue-driven, not a hardcoded metric list): injecting a
+    # brand filter onto a brand-less metric would make Cube reject the query.
+    # Fail-open when the snapshot is empty.
+    supports_brand = (not ctx.deps.catalogue.metrics) or bool(
+        {d.lower() for d in ctx.deps.catalogue.supported_dimensions_for(metric_id)} & _BRAND_DIM_KEYS
+    )
     args = build_metrics_query_args(
         measure=metric_id,
         start=period_start.date().isoformat(),
@@ -639,28 +801,104 @@ async def query_metrics(
         filters=filters or None,
         sort=sort,
         limit=limit,
+        inject_default_brand=supports_brand,
     )
     result = await _cached_metrics_query(ctx, args)
-    if result.get("error") and filters and _unknown_dimension_error(result["error"]):
-        dimensions = {}
-        breakdown = []
-        filters = []
-        args = build_metrics_query_args(
-            measure=metric_id,
-            start=period_start.date().isoformat(),
-            end=period_end.date().isoformat(),
-            grain=None if grain == "none" else grain,
-            sort=sort,
-            limit=limit,
-        )
-        result = await _cached_metrics_query(ctx, args)
+    if result.get("error") and _unknown_brand_error(result["error"]):
+        # Drop ONLY the user's bad brand filter; the arg builder re-injects the
+        # default brand in its place. Keep every other filter and the breakdown.
+        # Never strip a user-supplied product/return/region filter — that
+        # silently answers a different question and still reports success (live
+        # Suspender-Boots trace).
+        kept_filters = [
+            f for f in filters if _normalize_dim_token(f["dimension"]) not in _BRAND_DIM_KEYS
+        ]
+        if len(kept_filters) != len(filters):
+            filters = kept_filters
+            args = build_metrics_query_args(
+                measure=metric_id,
+                start=period_start.date().isoformat(),
+                end=period_end.date().isoformat(),
+                grain=None if grain == "none" else grain,
+                dimensions=breakdown or None,
+                filters=filters or None,
+                sort=sort,
+                limit=limit,
+                inject_default_brand=supports_brand,
+            )
+            result = await _cached_metrics_query(ctx, args)
     if result.get("error"):
+        # An unknown NON-brand dimension is an unsupported request, not a
+        # transient failure: surface it plainly so the model reports UNSUPPORTED
+        # rather than looping or quietly dropping the constraint.
+        if _unknown_dimension_error(result["error"]) and not _unknown_brand_error(result["error"]):
+            return ToolResult(
+                success=False,
+                summary=f"query_metrics({metric_id}) failed: {result['error']}",
+                error_code="UNSUPPORTED_QUERY",
+                retryable=False,
+            )
         return _fetch_failure(f"query_metrics({metric_id})", result["error"])
-    rows = result.get("rows") or []
-    if not rows:
+    not_found = result.get("value_not_found") or []
+    if not_found:
+        # Cube answers a filter on a value that never occurs with a 0 row; the
+        # gateway flags it so "0" is never reported as a measured count (live:
+        # channel=whatsapp → "0 orders" while 35 were attributed via utm_medium).
+        parts: list[str] = []
+        for miss in not_found:
+            where = "; ".join(
+                f"{f.get('dimension')} = {', '.join(f.get('values') or [])}"
+                for f in miss.get("found_in") or []
+            )
+            parts.append(
+                f"{', '.join(miss.get('values') or [])} is not a value of {miss.get('dimension')} "
+                f"for {metric_id}"
+                + (f"; the data records it in: {where}" if where else "; it is not recorded anywhere")
+            )
         return ToolResult(
             success=False,
-            summary=f"no data for {metric_id} over {period_start.date()}..{period_end.date()}",
+            summary=(
+                f"query_metrics({metric_id}): " + ". ".join(parts) + ". This is not a zero count — "
+                "re-query with a metric that supports one of those dimensions, or tell the user "
+                "the value is not recorded."
+            ),
+            error_code="VALUE_NOT_FOUND",
+            retryable=False,
+        )
+    rows = result.get("rows") or []
+    if not rows:
+        # Zero rows on an exact NON-brand filter is ambiguous — the value may be
+        # misspelled or absent, not genuinely empty. Enumerate the dimension's
+        # real values once and surface the near-matches so the model can correct
+        # the value or tell the user, instead of a bare "no data" that hides a
+        # typo (live Suspender-Boots trace). Brand filters are excluded (they
+        # already fall back to the default above).
+        # ponytail: one extra Cube query per zero-row filtered miss; cached by
+        # args so a re-issued identical query pays it only once.
+        non_brand = [
+            f for f in filters if _normalize_dim_token(f["dimension"]) not in _BRAND_DIM_KEYS
+        ]
+        hint = ""
+        if non_brand:
+            suggestions = await _suggest_close_values(
+                ctx,
+                metric_id=metric_id,
+                start=period_start.date().isoformat(),
+                end=period_end.date().isoformat(),
+                filters=non_brand,
+            )
+            if suggestions:
+                did_you_mean = "; ".join(
+                    f"{dim} ≈ {', '.join(vals)}" for dim, vals in suggestions.items()
+                )
+                hint = (
+                    f" — the requested value has no rows and may be misspelled or "
+                    f"not present. Did you mean: {did_you_mean}? Retry with an exact "
+                    f"value, or tell the user it doesn't exist."
+                )
+        return ToolResult(
+            success=False,
+            summary=f"no data for {metric_id} over {period_start.date()}..{period_end.date()}{hint}",
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )
@@ -704,7 +942,9 @@ async def query_metrics(
             # row itself — read it there (live 2026-09-21: a product_id breakdown
             # via query_metrics wrote every row with dimensions={}, making ~200
             # per-product counts indistinguishable from each other).
-            row_dimensions = {k: v for k, v in dimensions.items() if v}
+            row_dimensions = {
+                k: (",".join(v) if isinstance(v, list) else v) for k, v in dimensions.items() if v
+            }
             for key in breakdown:
                 row_dimensions[key] = str(dimension_value(row, key))
             evidence = EvidenceArtifact(
@@ -735,6 +975,14 @@ async def query_metrics(
             # ends so two buckets cannot share one label.
             if bucket_date and grain in {"week", "month"}:
                 label = f"{bucket_start.date()}..{bucket_end.date()}"
+                # A week/month bucket that the requested period cuts short holds
+                # only part of that week/month (live: "last week" over 18–24 Sep
+                # returned a 21–24 Sep bucket labelled as the whole 21–27 week and
+                # was reported as "last week"). Say so in the label.
+                clip_start = max(bucket_start.date(), period_start.date())
+                clip_end = min(bucket_end.date(), period_end.date())
+                if (clip_start, clip_end) != (bucket_start.date(), bucket_end.date()):
+                    label += f" (PARTIAL {grain}: only {clip_start}..{clip_end})"
             elif bucket_date:
                 label = bucket_date
             elif row_dimensions:
@@ -803,12 +1051,15 @@ async def query_metrics(
         dup_key = f"dup:{result_key}"
         dups = ctx.deps.call_counts.get(dup_key, 0) + 1
         ctx.deps.call_counts[dup_key] = dups
-        if dups >= 2:
-            raise ModelRetry(
-                "You have already fetched this exact query and have all its "
-                "values above. Do NOT call query_metrics again — call "
-                "final_result now with the values you already have."
-            )
+        # The model already fetched this exact query this mission and is
+        # re-issuing it verbatim (live 2026-09-22 MS3-0b46db4d98: a lookup
+        # re-called an identical successful query_metrics ~10x and exhausted
+        # its step budget; MS3-0bb3863a2e: 3 identical calls despite the nudge).
+        # A returned success — even a nudge — still reads as "call succeeded" and
+        # a stubborn small model calls again. So nudge once; RepeatCallGuard
+        # withdraws the tool after WITHDRAW_AFTER (3) identical calls, forcing
+        # the model to move on or answer. No ModelRetry — an ignored retry
+        # counts toward max_retries and crashes the mission.
         return prior.model_copy(
             update={
                 "summary": (
@@ -819,6 +1070,30 @@ async def query_metrics(
             }
         )
     return await ctx.deps.query_cache.get_or_fetch(result_key, _write_evidence)
+
+
+def _resolve_drilldown_parent_id(
+    parent: dict[str, Any], metric_id: str
+) -> tuple[str | None, str | None]:
+    """Pick the query id to drill into. A single-view parent → its ``query_id``.
+    A composed multi-view parent → the sole part id if there is exactly one,
+    else ``(None, reason)`` so the caller refuses instead of sending the
+    composition id (which the server rejects). ``composed``/``part_query_ids``
+    live either top-level or under ``provenance``."""
+    prov = parent.get("provenance") or {}
+    composed = bool(parent.get("composed") or prov.get("composed"))
+    if not composed:
+        return parent.get("query_id"), None
+    part_ids = parent.get("part_query_ids") or prov.get("part_query_ids") or [
+        p.get("query_id") for p in (parent.get("parts") or []) if p.get("query_id")
+    ]
+    part_ids = [pid for pid in part_ids if pid]
+    if len(part_ids) == 1:
+        return part_ids[0], None
+    return None, (
+        f"'{metric_id}' spans multiple Cube views, so it can't be drilled down as one "
+        f"query. Pick a single-view metric for the '{metric_id}' concept and retry."
+    )
 
 
 async def drilldown(
@@ -850,8 +1125,21 @@ async def drilldown(
         return _fetch_failure(
             f"drilldown({metric_id}) parent query", parent.get("error") or "no query_id"
         )
-    drilldown_args = {"parent_query_id": parent["query_id"], "target_dimensions": [dimension]}
-    fetch_drilldown = lambda: ctx.deps.mcp_client.call(
+    # A metric spanning multiple Cube views comes back composed: the server
+    # rejects the composition id and only accepts a single part_query_id (see
+    # server.py metrics_drilldown/insights_explain). Resolve to the one part, or
+    # refuse clearly rather than sending the composition id and surfacing a raw
+    # server rejection.
+    parent_query_id, multi_view_reason = _resolve_drilldown_parent_id(parent, metric_id)
+    if parent_query_id is None:
+        return ToolResult(
+            success=False,
+            summary=multi_view_reason or f"drilldown({metric_id}) parent has no usable query id",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+        )
+    drilldown_args = {"parent_query_id": parent_query_id, "target_dimensions": [dimension]}
+    fetch_drilldown = lambda: ctx.deps.mcp_client.call(  # noqa: E731
         agent_id=_AGENT_ID, capability="seleric.metrics_drilldown", arguments=drilldown_args
     )
     try:

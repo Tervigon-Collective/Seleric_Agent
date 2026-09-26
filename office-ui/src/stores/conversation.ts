@@ -239,7 +239,55 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         limitations: [],
         timeline,
       });
-      set((s) => ({ messages: { ...s.messages, [id]: messages }, loading: false }));
+      // Restore in-flight run state so the Cancel button (driven by
+      // `submitting` -> `isRunning`) survives a page refresh. Without this,
+      // a refresh drops `submitting`/`currentRunId` (in-memory only) and the
+      // "Working on it…" row + composer Cancel never render even though the
+      // backend run is still going.
+      const stillRunning = Boolean(latestRunId && !terminal);
+      if (stillRunning && latestRunId) {
+        const runId = latestRunId;
+        const lastProgress = [...runEvents].reverse().find(
+          (event) => event.event_type.startsWith("agent.") && event.summary,
+        )?.summary ?? null;
+        subscriptions.get(id)?.();
+        subscriptions.set(id, subscribeToRunEvents(runId, {
+          onEvent: (event) => {
+            const state = get();
+            if (state.selectedThreadId === id && state.currentRunId === runId) {
+              state.applyRunEvent(event);
+            }
+          },
+          onError: () => {
+            if (get().selectedThreadId === id && get().currentRunId === runId) {
+              set({ error: "Event stream interrupted; reconnecting…" });
+            }
+          },
+          onState: (state) => {
+            if (
+              state === "closed"
+              && get().submitting
+              && get().selectedThreadId === id
+              && get().currentRunId === runId
+            ) {
+              set({
+                submitting: false,
+                currentRunId: null,
+                error: "Run updates stopped before completion. You can send another prompt.",
+              });
+            }
+          },
+        }));
+        set((s) => ({
+          messages: { ...s.messages, [id]: messages },
+          loading: false,
+          submitting: true,
+          currentRunId: runId,
+          progress: lastProgress,
+        }));
+      } else {
+        set((s) => ({ messages: { ...s.messages, [id]: messages }, loading: false, submitting: false, currentRunId: null, progress: null }));
+      }
     } catch (error) {
       if (generation === selectionGeneration && get().selectedThreadId === id) {
         if (error instanceof ApiError && error.status === 404) {
@@ -490,7 +538,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!get().submitting) return;
     const generation = submissionGeneration;
     if (!currentRunId) cancelledSubmissions.add(generation);
-    set({ submitting: false, currentRunId: null });
+    set({ submitting: false, currentRunId: null, progress: null });
     try {
       if (!demoMode && currentRunId) await conversationsApi.cancelRun(currentRunId);
       demoSubmission += 1;
@@ -507,6 +555,20 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         }
       }
     } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        // The run already reached a terminal state server-side (it just
+        // finished between render and click, or state was restored stale
+        // after a refresh). Cancel is effectively satisfied: sync the
+        // persisted messages instead of flashing "run is not cancellable".
+        if (selectedThreadId && !demoMode) {
+          void conversationsApi.listMessages(selectedThreadId).then((messages) => {
+            if (get().selectedThreadId !== selectedThreadId) return;
+            set((s) => ({ messages: { ...s.messages, [selectedThreadId]: messages } }));
+          }).catch(() => undefined);
+        }
+        set({ progress: null, error: null });
+        return;
+      }
       set({ error: error instanceof Error ? error.message : "Unable to cancel run" });
     }
   },
@@ -642,6 +704,39 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       event.thread_id !== state.selectedThreadId
       || (state.currentRunId && event.run_id !== state.currentRunId)
     ) return;
+    // Live answer streaming: accumulate answer.delta into an optimistic
+    // assistant message; answer.reset clears a revised-away draft. The full
+    // message fetched on answer.completed is authoritative and replaces this.
+    // Handled before ingestEvent so per-token deltas never spam the timeline.
+    if (event.event_type === "answer.delta" || event.event_type === "answer.reset") {
+      const threadId = event.thread_id;
+      const messageId = optionalString(event.payload.message_id);
+      if (!messageId) return;
+      const reset = event.event_type === "answer.reset";
+      const delta = reset ? "" : optionalString(event.payload.delta) ?? "";
+      if (!reset && !delta) return;
+      set((s) => {
+        const list = s.messages[threadId] ?? [];
+        const existing = list.find((m) => m.id === messageId);
+        const nextText = reset ? "" : messageText(existing) + delta;
+        const streamed: Message = {
+          id: messageId,
+          thread_id: threadId,
+          workspace_id: existing?.workspace_id ?? "local",
+          user_id: null,
+          role: "ASSISTANT",
+          parts: [{ type: "TEXT", content: nextText }],
+          run_id: event.run_id ?? existing?.run_id ?? null,
+          parent_message_id: existing?.parent_message_id ?? null,
+          created_at: existing?.created_at ?? now(),
+        };
+        const nextList = existing
+          ? list.map((m) => (m.id === messageId ? streamed : m))
+          : [...list, streamed];
+        return { messages: { ...s.messages, [threadId]: nextList } };
+      });
+      return;
+    }
     useOffice.getState().ingestEvent(toOfficeEvent(event));
     if (event.event_type.startsWith("agent.") && event.summary) {
       set({ progress: event.summary });

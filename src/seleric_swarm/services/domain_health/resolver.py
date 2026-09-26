@@ -14,6 +14,7 @@ from seleric_swarm.services.domain_health.models import (
     DomainStatus,
     ResolvedMetric,
 )
+from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID
 from seleric_swarm.services.time_range import resolve_time_range
 
 if TYPE_CHECKING:
@@ -118,7 +119,7 @@ class DomainStateResolver:
         domain: str,
         *,
         time_range: TimeRangeV1,
-        brand_id: str = "20",
+        brand_id: str = DEFAULT_BRAND_ID,
         store: SnapshotStore | None = None,
     ) -> DomainStateSnapshot:
         block = self._profiles.get(domain)

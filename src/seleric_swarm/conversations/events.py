@@ -240,8 +240,8 @@ class ActivityEventSink:
     ) -> list[ActivityEvent]:
         appended: list[ActivityEvent] = []
         excluded = exclude_event_types or set()
-        for source in events:
-            mapped = map_mission_event(source, run, attempt_id=attempt_id)
+        for ordinal, source in enumerate(events, start=1):
+            mapped = map_mission_event(source, run, attempt_id=attempt_id, ordinal=ordinal)
             if mapped is not None and mapped.event_type not in excluded:
                 appended.append(self.append(mapped))
         return appended

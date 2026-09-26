@@ -102,6 +102,9 @@ class AzureOpenAICompatibleAdapter:
         # does not use classic Azure "deployment name" routing. Default to the
         # OpenAI-compatible client; opt into classic Azure OpenAI when the endpoint
         # is a real `*.openai.azure.com` deployment resource.
+        # max_retries=0: this adapter owns retries via tenacity (see
+        # `complete`); the SDK's built-in retries would stack on top of them and
+        # multiply the effective attempt budget.
         if settings.azure_auth_style == "azure":
             return AsyncAzureOpenAI(
                 azure_endpoint=endpoint,

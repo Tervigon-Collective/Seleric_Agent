@@ -130,12 +130,13 @@ async def test_query_metrics_writes_evidence_artifact_on_success():
 
 
 @pytest.mark.asyncio
-async def test_query_metrics_raises_model_retry_once_cube_query_budget_exhausted():
+async def test_query_metrics_withdraws_fetching_once_cube_query_budget_exhausted():
     """Real enforcement, not just a frozen field: ExecutionLimits.max_cube_queries
     (CONTRACTS.md) previously bounded nothing in this toolset -- a mission
     could issue unlimited real Cube queries. A fresh (uncached) query_metrics
-    call past the limit must stop the loop via ModelRetry, not silently fetch."""
-    from pydantic_ai import ModelRetry
+    call past the limit must stop the loop — by withdrawing the fetch tools and
+    failing the call, never a ModelRetry (an ignored retry fails the mission)."""
+    from seleric_swarm.agent.limits import withdrawn_tools
 
     mcp = FakeMcpClient(
         {
@@ -147,14 +148,16 @@ async def test_query_metrics_raises_model_retry_once_cube_query_budget_exhausted
         }
     )
     ctx = FakeRunContext(_deps(mcp, limits=ExecutionLimits(max_cube_queries=0)))
-    with pytest.raises(ModelRetry, match="Cube query budget exhausted"):
-        await semantic.query_metrics(
-            ctx,
-            metric_id="total_sales",
-            dimensions={},
-            period_start=datetime(2026, 9, 17, tzinfo=UTC),
-            period_end=datetime(2026, 9, 17, tzinfo=UTC),
-        )
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="total_sales",
+        dimensions={},
+        period_start=datetime(2026, 9, 17, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert "Cube query budget exhausted" in result.summary
+    assert {"query_metrics", "drilldown"} <= withdrawn_tools(ctx.deps)
     assert mcp.calls == []  # rejected before any Cube call
 
 
@@ -182,7 +185,11 @@ async def test_query_metrics_wildcard_dimension_value_becomes_a_breakdown():
     )
     sent = mcp.calls[0][1]
     assert sent.get("dimensions") == ["product_title"]  # grouped
-    assert "filters" not in sent  # not a literal filter on "*"
+    # "*" is not a literal product_title filter; the only filter is the injected
+    # default brand (no brand named, and the metric carries brand_id).
+    assert sent.get("filters") == [
+        {"dimension": "brand_id", "operator": "equals", "values": ["20"]}
+    ]
 
 
 @pytest.mark.asyncio
@@ -397,7 +404,12 @@ async def test_query_metrics_week_grain_keeps_each_week_its_own_window():
     assert [p.period_end.date().isoformat() for p in parsed] == ["2026-09-13", "2026-09-20"]
     assert validate_grain_set(parsed) is None
     labels = [s["label"] for s in result.provenance.source_metadata["series"]]
-    assert labels == ["2026-09-07..2026-09-13", "2026-09-14..2026-09-20"]
+    # The query window starts mid-week (9 Sep), so the first bucket holds only
+    # part of its week and says so; the second week lies fully inside.
+    assert labels == [
+        "2026-09-07..2026-09-13 (PARTIAL week: only 2026-09-09..2026-09-13)",
+        "2026-09-14..2026-09-20",
+    ]
     assert not check_contradiction(artifacts).challenges
 
 
@@ -416,6 +428,69 @@ async def test_query_metrics_no_rows_returns_insufficient_evidence():
     assert result.success is False
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
     assert result.artifact_ids == []
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_zero_rows_suggests_close_dimension_values():
+    # Live Suspender-Boots: an exact product_title filter with a typo returns
+    # zero rows. Instead of a bare "no data", the tool re-queries grouped by the
+    # filtered dimension, enumerates the real values, and surfaces the near-match
+    # (stdlib difflib) — generic, no product-specific logic.
+    class _Probe:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+            del agent_id, capability
+            self.calls.append(arguments)
+            if arguments.get("dimensions"):  # the enumeration probe
+                return {
+                    "query_id": "p",
+                    "rows": [
+                        {"product_title": "Suspender Boot", "product_net_revenue": "10"},
+                        {"product_title": "Loafers", "product_net_revenue": "5"},
+                    ],
+                    "provenance": {},
+                }
+            return {"query_id": "q", "rows": [], "provenance": {}}  # exact filter: no rows
+
+    mcp = _Probe()
+    ctx = FakeRunContext(_deps(mcp))  # type: ignore[arg-type]
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="product_net_revenue",
+        dimensions={"product_title": "Suspender Boots"},
+        period_start=datetime(2026, 6, 1, tzinfo=UTC),
+        period_end=datetime(2026, 8, 31, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert result.error_code == "INSUFFICIENT_EVIDENCE"
+    assert "Suspender Boot" in result.summary
+    assert "did you mean" in result.summary.lower()
+    # The probe re-ran the SAME metric grouped by the filtered dimension.
+    assert mcp.calls[1].get("dimensions") == ["product_title"]
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_zero_rows_no_close_match_stays_plain_no_data():
+    # Genuinely absent (nothing similar exists) → no misleading suggestion.
+    class _Probe:
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+            del agent_id, capability
+            if arguments.get("dimensions"):
+                return {"query_id": "p", "rows": [{"product_title": "Loafers"}], "provenance": {}}
+            return {"query_id": "q", "rows": [], "provenance": {}}
+
+    ctx = FakeRunContext(_deps(_Probe()))  # type: ignore[arg-type]
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="product_net_revenue",
+        dimensions={"product_title": "Zzzzzzzz Widget"},
+        period_start=datetime(2026, 6, 1, tzinfo=UTC),
+        period_end=datetime(2026, 8, 31, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert "did you mean" not in result.summary.lower()
 
 
 @pytest.mark.asyncio
@@ -460,12 +535,26 @@ async def test_query_metrics_drops_invented_brand_placeholder():
         period_end=datetime(2026, 9, 17, tzinfo=UTC),
     )
     assert result.success is True
-    assert "filters" not in mcp.calls[0][1]
+    # The placeholder brand is dropped; the builder injects the default brand in
+    # its place, so the only filter is brand_id=20 (not "some_brand").
+    assert mcp.calls[0][1]["filters"] == [
+        {"dimension": "brand_id", "operator": "equals", "values": ["20"]}
+    ]
     assert len(mcp.calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_query_metrics_retries_unfiltered_on_unknown_brand():
+async def test_query_metrics_retries_with_default_brand_on_unknown_brand():
+    # A bad user brand is dropped and the builder re-injects the default brand
+    # (20) in its place — the retry is scoped to the default, not left unfiltered.
+    def _brand_values(arguments: dict[str, Any]) -> list[str]:
+        return [
+            v
+            for f in (arguments.get("filters") or [])
+            if f["dimension"] == "brand_id"
+            for v in f["values"]
+        ]
+
     class _BrandGate:
         def __init__(self) -> None:
             self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -473,7 +562,7 @@ async def test_query_metrics_retries_unfiltered_on_unknown_brand():
         async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
             del agent_id
             self.calls.append((capability, arguments))
-            if arguments.get("filters"):
+            if any(v != "20" for v in _brand_values(arguments)):
                 return {"error": "unknown brand 'nikee'"}
             return {"query_id": "q1", "rows": [{"total_sales": "200"}], "provenance": {}}
 
@@ -489,8 +578,8 @@ async def test_query_metrics_retries_unfiltered_on_unknown_brand():
     )
     assert result.success is True
     assert len(mcp.calls) == 2
-    assert mcp.calls[0][1]["filters"]
-    assert "filters" not in mcp.calls[1][1]
+    assert _brand_values(mcp.calls[0][1]) == ["nikee"]  # first tried the bad brand
+    assert _brand_values(mcp.calls[1][1]) == ["20"]  # retry used the default
 
 
 @pytest.mark.asyncio
@@ -542,11 +631,12 @@ async def test_search_semantics_uses_glossary_search_and_slims_shortlist():
 
 
 @pytest.mark.asyncio
-async def test_search_semantics_hard_stops_over_budget_with_model_retry():
+async def test_search_semantics_over_budget_is_withdrawn_not_retried():
     # Live 2026-09-22 MS3-53296c1a5e: the soft "STOP SEARCHING" summary was
-    # ignored 11 times until the budget tripped. Past _MAX_SEARCHES the tool
-    # must hard-stop with ModelRetry, not return another success.
-    from pydantic_ai import ModelRetry
+    # ignored 11 times. Live 2026-09-25: the ModelRetry that replaced it was
+    # ignored too, exceeded the tool's retry limit and failed the mission. Past
+    # _MAX_SEARCHES the tool is withdrawn and the call fails plainly.
+    from seleric_swarm.agent.limits import withdrawn_tools
 
     mcp = FakeMcpClient(
         {"seleric.catalogue_search_metrics": {"matches": [{"id": "product_return_revenue"}]}}
@@ -554,9 +644,10 @@ async def test_search_semantics_hard_stops_over_budget_with_model_retry():
     ctx = FakeRunContext(_deps(mcp))
     for _ in range(semantic._MAX_SEARCHES):
         assert (await semantic.search_semantics(ctx, "returns")).success is True
-    with pytest.raises(ModelRetry) as exc:
-        await semantic.search_semantics(ctx, "returns again")
-    assert "SEMANTIC_RESOLUTION_LOOP" in str(exc.value)
+    over = await semantic.search_semantics(ctx, "returns again")
+    assert over.success is False
+    assert over.error_code == "SEMANTIC_RESOLUTION_LOOP"
+    assert "search_semantics" in withdrawn_tools(ctx.deps)
 
 
 @pytest.mark.asyncio
@@ -689,3 +780,119 @@ async def test_drilldown_parent_query_failure_is_insufficient_evidence():
     )
     assert result.success is False
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
+
+
+@pytest.mark.asyncio
+async def test_drilldown_composed_multiview_parent_refuses_clearly():
+    # A metric spanning >1 Cube view returns composed=true; the server rejects
+    # the composition id. The wrapper must refuse with a clear message and never
+    # send the composition id to metrics_drilldown.
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "composition-1",
+                "rows": [{"total_sales_all_channels": "100"}],
+                "composed": True,
+                "provenance": {"composed": True, "part_query_ids": ["partA", "partB"]},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.drilldown(
+        ctx,
+        metric_id="total_sales_all_channels",
+        dimension="shipping_region",
+        period_start=datetime(2026, 9, 17, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert result.error_code == "INSUFFICIENT_EVIDENCE"
+    assert "multiple Cube views" in result.summary
+    assert not any(c[0] == "seleric.metrics_drilldown" for c in mcp.calls)
+
+
+@pytest.mark.asyncio
+async def test_drilldown_composed_single_part_uses_that_part_id():
+    # A composed parent with exactly one part is drillable — drill on the part id,
+    # not the composition id.
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "query_id": "composition-1",
+                "rows": [{"total_sales": "100"}],
+                "composed": True,
+                "provenance": {"composed": True, "part_query_ids": ["only-part"]},
+            },
+            "seleric.metrics_drilldown": {
+                "rows": [{"shipping_region": "KA", "total_sales": "100"}],
+                "provenance": {},
+            },
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.drilldown(
+        ctx,
+        metric_id="total_sales",
+        dimension="shipping_region",
+        period_start=datetime(2026, 9, 17, tzinfo=UTC),
+        period_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert result.success is True
+    drilldown_call = next(c for c in mcp.calls if c[0] == "seleric.metrics_drilldown")
+    assert drilldown_call[1]["parent_query_id"] == "only-part"
+
+
+# ---- resolve_brand -------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resolve_brand_returns_brand_id_and_surfaces_scope_note():
+    mcp = FakeMcpClient(
+        {
+            "seleric.catalogue_resolve_brand": {
+                "brand_id": "27",
+                "name": "Sniff Theory",
+                "scope_note": "Revenue side only partially loaded in serve.",
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.resolve_brand(ctx, "sniff theory")
+    assert result.success is True
+    assert "27" in result.summary
+    assert any("partially loaded" in w for w in result.warnings)
+    assert mcp.calls[0] == ("seleric.catalogue_resolve_brand", {"text": "sniff theory"})
+
+
+@pytest.mark.asyncio
+async def test_resolve_brand_unresolved_is_insufficient_evidence():
+    mcp = FakeMcpClient(
+        {"seleric.catalogue_resolve_brand": {"status": "ambiguous", "candidates": ["20", "27"]}}
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.resolve_brand(ctx, "the dog one")
+    assert result.success is False
+    assert result.error_code == "INSUFFICIENT_EVIDENCE"
+    assert result.provenance.source_metadata["candidates"] == ["20", "27"]
+
+
+def test_search_shortlist_carries_first_sentence_summary() -> None:
+    from seleric_swarm.toolsets.semantic import _slim_match
+
+    slim = _slim_match(
+        {
+            "id": "meta_attribution_net_sales",
+            "display_name": "Meta Attribution Net Sales",
+            "description": "Net sales from Meta paid ads — the default for \"Meta net sales\". "
+            "Computed on serve.channel_pnl with 52.7 style decimals.",
+            "category": "attribution",
+        }
+    )
+    assert slim["summary"] == 'Net sales from Meta paid ads — the default for "Meta net sales".'
+    assert "category" not in slim and "description" not in slim
+
+
+def test_search_shortlist_omits_summary_without_description() -> None:
+    from seleric_swarm.toolsets.semantic import _slim_match
+
+    assert "summary" not in _slim_match({"id": "x", "display_name": "X"})

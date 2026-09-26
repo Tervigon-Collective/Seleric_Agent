@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 
@@ -190,3 +192,78 @@ async def test_stuck_connection_is_bounded_by_hard_timeout_backstop():
     monkeypatch_target.post = never_returns
     with pytest.raises(MCPUnavailableError):
         await transport.call_tool("metrics_query", {})
+
+
+def test_transport_survives_being_driven_from_successive_event_loops(monkeypatch):
+    # Live 2026-09-25: /readyz runs each probe under a fresh asyncio.run() loop;
+    # a single shared httpx client failed every other probe with
+    # "Event loop is closed". Each loop must get a client bound to itself.
+    transport = SelericMCPTransport(url="http://example.test/mcp", token="t")
+    seen_loops: list[asyncio.AbstractEventLoop] = []
+
+    async def fake_post(self, url, **kwargs):
+        seen_loops.append(asyncio.get_running_loop())
+        return httpx.Response(200, json={"ok": True}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    clients = []
+
+    async def one_call():
+        await transport._post({"jsonrpc": "2.0"})
+        clients.append(transport._loop_client())
+
+    for _ in range(3):
+        asyncio.run(one_call())
+
+    assert len(seen_loops) == 3
+    assert len({id(c) for c in clients}) == 3  # no client is reused across loops
+
+
+@pytest.mark.asyncio
+async def test_transport_starts_a_new_session_when_the_server_forgot_it(monkeypatch):
+    # Live 2026-09-25: the MCP was redeployed under a running agent; the new
+    # process 404'd the old session id on every call until the agent restarted.
+    transport = SelericMCPTransport(url="https://example.invalid/mcp", token="t")
+    sessions = iter(["sess-old", "sess-new"])
+    seen: list[tuple[str, str | None]] = []
+    live_session: dict[str, str | None] = {"id": None}
+
+    async def fake_post(url, *, json, headers):
+        method = json.get("method")
+        sent = headers.get("Mcp-Session-Id")
+        seen.append((method, sent))
+        if method == "initialize":
+            live_session["id"] = next(sessions)
+            return _resp(200, headers={"mcp-session-id": live_session["id"]}, json={"jsonrpc": "2.0", "result": {}})
+        if method == "notifications/initialized":
+            return _resp(202)
+        if sent != live_session["id"] or sent == "sess-old":
+            live_session["id"] = None if sent == "sess-old" else live_session["id"]
+            return _resp(404, json={"error": "session not found"})
+        return _resp(200, json={"jsonrpc": "2.0", "result": {"content": [{"type": "text", "text": '{"ok": true}'}]}})
+
+    monkeypatch.setattr(transport._client, "post", fake_post)
+    assert await transport.call_tool("catalogue_list_metrics", {}) == {"ok": True}
+    assert [m for m, _ in seen] == [
+        "initialize", "notifications/initialized", "tools/call",   # old session → 404
+        "initialize", "notifications/initialized", "tools/call",   # new session → ok
+    ]
+    assert seen[-1] == ("tools/call", "sess-new")
+
+
+@pytest.mark.asyncio
+async def test_a_404_without_a_session_is_still_an_error(monkeypatch):
+    transport = SelericMCPTransport(url="https://example.invalid/mcp", token="t")
+    transport._session_id = None
+
+    async def no_session(self):
+        return None
+
+    monkeypatch.setattr(SelericMCPTransport, "_ensure_session", no_session)
+
+    async def fake_post(url, *, json, headers):
+        return _resp(404, json={"error": "no such endpoint"})
+
+    monkeypatch.setattr(transport._client, "post", fake_post)
+    with pytest.raises(httpx.HTTPStatusError):
+        await transport.call_tool("catalogue_list_metrics", {})

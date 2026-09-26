@@ -965,8 +965,15 @@ class PostgresRunRepository(_PostgresRepository):
         *,
         now: datetime | None = None,
         terminal_event: ActivityEvent | None = None,
-    ) -> bool:
+    ) -> ActivityEvent | None:
+        """Mark the run (and its running/retryable attempts) cancelled.
+
+        Returns the persisted ``terminal_event`` — with its real sequence and
+        thread_sequence computed inside the same transaction — so callers can
+        publish/wait on the correct position; None when the run was already
+        terminal (not cancellable)."""
         moment = now or datetime.now(UTC)
+        persisted: ActivityEvent | None = None
         with self.engine.begin() as conn:
             result = conn.execute(
                 text(
@@ -1023,6 +1030,21 @@ class PostgresRunRepository(_PostgresRepository):
                             "event_json": _json(event.model_dump(mode="json")),
                         },
                     )
+                    inserted = conn.execute(
+                        text(
+                            """SELECT sequence, thread_sequence FROM run_events
+                            WHERE id=:id"""
+                        ),
+                        {"id": event.id},
+                    ).mappings().first()
+                    if inserted is not None:
+                        event = event.model_copy(
+                            update={
+                                "sequence": int(inserted["sequence"]),
+                                "thread_sequence": int(inserted["thread_sequence"]),
+                            }
+                        )
+                        persisted = event
                 conn.execute(
                     text(
                         """UPDATE submission_outbox
@@ -1032,7 +1054,7 @@ class PostgresRunRepository(_PostgresRepository):
                     ),
                     {"run_id": run_id, "now": moment},
                 )
-        return bool(result.rowcount)
+        return persisted
 
     def list_recoverable(
         self, *, now: datetime | None = None, limit: int = 100

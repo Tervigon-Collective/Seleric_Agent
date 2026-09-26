@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Any
@@ -10,6 +11,7 @@ from uuid import uuid4
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.responses import Response, StreamingResponse
 
 from seleric_swarm.agent.runner import run_v3_mission
 from seleric_swarm.api.async_missions import (
@@ -60,6 +62,28 @@ async def _close_component(component: object | None, method: str = "close") -> N
         await result
 
 
+async def _warmup(runtime: Any) -> None:
+    """Fire-and-forget: warm Laya/JEV once at boot so the first real query
+    doesn't eat its model cold-start (first call can take >12s). Laya is shared
+    server-side, so warming from the api process also benefits the recovery
+    worker. Never raises — a warmup failure must not affect startup."""
+    try:
+        from seleric_swarm.agent.intent import classify_query
+
+        s = runtime.settings
+        base = getattr(s, "jev_base_url", "")
+        if not base:
+            return
+        await classify_query(
+            "warmup",
+            base_url=base,
+            api_key=getattr(s, "jev_api_key", ""),
+            timeout=float(getattr(s, "jev_timeout_s", 20.0)),
+        )
+    except Exception:  # noqa: S110 - warmup is best-effort
+        pass
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global _runtime
@@ -69,6 +93,7 @@ async def lifespan(_app: FastAPI):
     checkpoint_setup = getattr(checkpoint_provider, "setup", None)
     if checkpoint_setup is not None:
         await checkpoint_setup()
+    asyncio.create_task(_warmup(_runtime))
     try:
         yield
     finally:
@@ -104,6 +129,28 @@ app = FastAPI(
 app.state.runtime_provider = get_runtime
 app.include_router(conversations_router)
 app.include_router(phase7_router)
+
+# Voice agent token route (docs/features/voice-agent/). Mounted unconditionally
+# so the route can answer 404 "voice is not enabled" rather than vanishing —
+# but an import failure while voice is switched ON is fatal, not a warning that
+# would leave a silent 404 in production.
+try:
+    from seleric_swarm.voice.token import router as _voice_router
+
+    # Registers GET /v1/voice/dev on the same router (dev surfaces only).
+    from seleric_swarm.voice import dev_page as _voice_dev_page  # noqa: F401
+
+    app.include_router(_voice_router)
+except Exception:
+    import logging as _logging
+
+    from seleric_swarm.config.settings import get_settings as _get_settings
+
+    if _get_settings().voice_enabled:
+        raise
+    _logging.getLogger("seleric.api.voice").warning(
+        "voice token route not mounted (voice is disabled)", exc_info=True
+    )
 
 # Read-only spatial AI-Office UI gateway (SSE snapshot + event stream).
 try:
@@ -215,6 +262,11 @@ class MissionRequest(BaseModel):
     # wait=true (default): run synchronously and return the finished mission.
     # wait=false: accept immediately (status=running); poll GET /v1/missions/{id}.
     wait: bool = True
+    # stream=true: return an SSE stream (text/event-stream) that emits the final
+    # answer token-by-token as answer.delta frames, then a terminal
+    # answer.completed frame with the full mission. Implies synchronous run
+    # (wait is ignored).
+    stream: bool = False
 
     model_config = {
         "json_schema_extra": {
@@ -315,12 +367,121 @@ async def llm_ping(req: PingRequest) -> dict[str, Any]:
     }
 
 
+def _sse_frame(event_type: str, data: dict[str, Any], seq: int) -> str:
+    payload = {**data, "type": event_type}
+    return (
+        f"id: {seq}\n"
+        f"event: {event_type}\n"
+        f"data: {json.dumps(payload, separators=(',', ':'), default=str)}\n\n"
+    )
+
+
+def _stream_mission_response(
+    runtime: SwarmRuntime,
+    *,
+    query: str,
+    timezone: str,
+    as_of: Any,
+    session_id: str,
+    request_id: str,
+    principal: Any,
+    req: MissionRequest,
+) -> StreamingResponse:
+    """Run the mission synchronously while streaming the answer over SSE.
+
+    ``run_v3_mission`` runs in a task; its ``on_stream`` callback pushes deltas
+    onto a queue the generator drains into ``answer.delta`` frames. The final
+    mission object rides the terminal ``answer.completed`` frame.
+    """
+    queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+
+    def on_stream(kind: str, text: str = "") -> None:
+        queue.put_nowait((kind, text))
+
+    async def _run() -> None:
+        try:
+            dispatched = await run_v3_mission(
+                runtime,
+                query=query,
+                timezone=timezone,
+                as_of=as_of,
+                session_id=session_id,
+                request_id=request_id,
+                full_diagnostic=req.full_diagnostic,
+                full_prediction=req.full_prediction,
+                full_skeptic=req.full_skeptic,
+                full_strategy=req.full_strategy,
+                execution_mode=req.execution_mode,
+                workspace_id=principal.workspace_id,
+                owner_user_id=principal.user_id,
+                thread_id=session_id,
+                run_id=request_id,
+                on_stream=on_stream,
+            )
+            queue.put_nowait(("__done__", dispatched))
+        except Exception as exc:  # surface as a terminal error frame, never hang
+            queue.put_nowait(("__error__", str(exc)))
+
+    async def generate() -> Any:
+        # Immediate frame so the client sees the stream open right away — if this
+        # arrives instantly but deltas don't, the transport streams fine and the
+        # model isn't streaming (e.g. TestModel fallback with no LLM configured).
+        seq = 1
+        yield _sse_frame("answer.started", {"request_id": request_id}, seq)
+        task = asyncio.create_task(_run())
+        deltas = 0
+        try:
+            while True:
+                kind, payload = await queue.get()
+                seq += 1
+                if kind == "delta":
+                    deltas += 1
+                    yield _sse_frame("answer.delta", {"delta": payload}, seq)
+                elif kind == "reset":
+                    yield _sse_frame("answer.reset", {}, seq)
+                elif kind == "__done__":
+                    import logging
+
+                    logging.getLogger("seleric.api.stream").info(
+                        "mission_stream_done request_id=%s deltas=%d", request_id, deltas
+                    )
+                    result = payload.get("result", {}) if isinstance(payload, dict) else {}
+                    yield _sse_frame(
+                        "answer.completed",
+                        {
+                            "route": payload.get("route") if isinstance(payload, dict) else None,
+                            "mission_id": result.get("mission_id"),
+                            "status": result.get("status"),
+                            "final_response": result.get("final_response"),
+                            "evidence": result.get("evidence"),
+                            "limitations": result.get("limitations"),
+                        },
+                        seq,
+                    )
+                    break
+                elif kind == "__error__":
+                    yield _sse_frame("error", {"error": str(payload)}, seq)
+                    break
+        finally:
+            await task
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/v1/missions")
 async def create_mission(
     req: MissionRequest,
     background_tasks: BackgroundTasks,
     request: Request,
-) -> dict[str, Any]:
+) -> Any:
     runtime = get_runtime()
     principal = request_principal(request)
     if req.mode != "read_only":
@@ -389,6 +550,21 @@ async def create_mission(
         )
     except Exception:  # noqa: S110 - optional telemetry must not fail mission handling
         pass
+
+    # SSE streaming path: run synchronously but stream the final answer's
+    # tokens as they are generated. Shares run_v3_mission's on_stream callback
+    # with the conversations run worker (same answer.delta/answer.reset shape).
+    if req.stream:
+        return _stream_mission_response(
+            runtime,
+            query=query,
+            timezone=timezone,
+            as_of=as_of,
+            session_id=session_id,
+            request_id=request_id,
+            principal=principal,
+            req=req,
+        )
 
     # Async accept path.
     if not req.wait:
@@ -584,6 +760,36 @@ def get_mission_trace(mission_id: str, request: Request) -> dict[str, Any]:
         "trace": trace,
         "events": events,
     }
+
+
+# Office UI bundle (built into the image by the Dockerfile's ui-builder stage).
+# Mounted last so every API route above wins; absent in local dev, where the
+# Vite dev server serves the UI instead.
+try:
+    from fastapi.staticfiles import StaticFiles
+
+    from seleric_swarm.paths import repo_root
+
+    _ui_dist = repo_root() / "office-ui" / "dist"
+    if (_ui_dist / "index.html").is_file():
+
+        # MVP: hand the shared API key to the bundled UI so users need no setup.
+        # Anyone who can load /ui/ can therefore call /v1 — replace with real
+        # user login before this is more than an MVP.
+        @app.get("/ui/config.js", include_in_schema=False)
+        def office_ui_config() -> Response:
+            key = getattr(_settings_boot, "api_key", "") or ""
+            return Response(
+                f"window.__SELERIC_API_KEY__ = {json.dumps(key)};\n",
+                media_type="application/javascript",
+                headers={"Cache-Control": "no-store"},
+            )
+
+        app.mount("/ui", StaticFiles(directory=_ui_dist, html=True), name="office-ui")
+except Exception:  # the UI is optional — never block the core API on it
+    import logging as _logging
+
+    _logging.getLogger("seleric.api.office").warning("office UI not mounted", exc_info=True)
 
 
 def serve() -> None:

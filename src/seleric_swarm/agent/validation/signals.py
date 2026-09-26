@@ -410,6 +410,83 @@ def check_prediction(artifacts: list[Artifact]) -> CheckOutcome:
     return out
 
 
+def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
+    """Executed evidence must cover the breakdowns and named values the query demanded.
+
+    The reconciliation gate for the silent-drop failure (live "by source"
+    trace): each requested breakdown is a **candidate set** of catalogue
+    dimensions sharing that grain language (``RequiredScope.breakdowns``, built
+    in the runner). Coverage needs at least one candidate grouped on an evidence
+    row — so grouping by a valid sibling (``lt_channel`` where the resolver named
+    ``channel``) passes, while grouping by nothing still fails. A miss is a
+    **blocking gap → REVISE**, not a REJECT: the answer may be right in kind but
+    does not cover what was asked, so the model gets one chance to redo it (and,
+    if the breakdown is genuinely unsupported, to say so) rather than shipping a
+    different-question answer as ``completed``.
+
+    NOT_APPLICABLE when the query demanded no resolvable breakdown, or when the
+    mission produced no evidence at all (``check_evidence`` owns that case — a
+    coverage gap on top would just double-count the same failure)."""
+    # Each element is a candidate set; tolerate a bare dimension id (legacy /
+    # defensive) by treating it as a one-candidate set rather than iterating it
+    # into characters.
+    breakdowns = [
+        frozenset([cs]) if isinstance(cs, str) else frozenset(cs)
+        for cs in (getattr(scope, "breakdowns", ()) or ())
+    ]
+    value_filters = tuple(getattr(scope, "value_filters", ()) or ())
+    if not breakdowns and not value_filters:
+        return CheckOutcome(check="scope_coverage", status="NOT_APPLICABLE")
+    evidence = [a for a in artifacts if a.artifact_type == "evidence"]
+    if not evidence:
+        return CheckOutcome(check="scope_coverage", status="NOT_APPLICABLE")
+
+    grouped: set[str] = set()
+    for artifact in evidence:
+        parsed = _payload(artifact, EvidenceArtifact)
+        if parsed is not None:
+            grouped.update(parsed.dimensions.keys())
+
+    gaps: list[EvidenceGap] = []
+    for candidates in breakdowns:
+        if candidates & grouped:
+            continue
+        options = " or ".join(sorted(candidates))
+        gaps.append(
+            EvidenceGap(
+                description=(
+                    f"the question asked for a breakdown by {options}, but the answer's "
+                    f"evidence is not grouped by any of them — re-run grouped by one of those "
+                    f"dimensions, or state plainly that no available metric supports that breakdown"
+                ),
+                blocking=True,
+                priority=8,
+            )
+        )
+    # A named value (live: "orders from whatsapp") must actually constrain the
+    # evidence — filtered or grouped by one of the dimensions the data records
+    # it in. Otherwise the answer is a total that ignores what was asked.
+    for vf in value_filters:
+        if grouped & set(vf.dimensions):
+            continue
+        gaps.append(
+            EvidenceGap(
+                description=(
+                    f"the question names '{vf.term}', which the data records as "
+                    f"{' / '.join(sorted(vf.dimensions))} = {', '.join(vf.values)}, but the "
+                    f"answer's evidence is not filtered by it — re-run filtered to those "
+                    f"values with a metric that supports that dimension, or state plainly "
+                    f"that no available metric supports it"
+                ),
+                blocking=True,
+                priority=8,
+            )
+        )
+    if not gaps:
+        return CheckOutcome(check="scope_coverage")
+    return CheckOutcome(check="scope_coverage", status="INSUFFICIENT", gaps=gaps)
+
+
 _NON_CLAIM_ARTIFACT_TYPES = frozenset({"plan"})
 
 
@@ -435,6 +512,7 @@ def run_checks(deps: SelericDeps) -> tuple[list[CheckOutcome], list[EvidenceGap]
         check_contradiction(artifacts),
         check_causal(artifacts),
         check_prediction(artifacts),
+        check_scope_coverage(artifacts, getattr(deps, "required_scope", None)),
     ]
     live = [oc for oc in outcomes if oc.status != "NOT_APPLICABLE"]
     gaps = [gap for oc in live for gap in oc.gaps]

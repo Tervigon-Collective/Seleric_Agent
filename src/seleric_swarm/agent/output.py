@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from seleric_swarm.conversations.contracts import ArtifactProvenance
 
@@ -66,3 +66,15 @@ class MissionResult(BaseModel):
     limitations: list[str] = Field(default_factory=list)
     error_code: str | None = None
     trace: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("evidence_ids", "finding_ids", "limitations", mode="before")
+    @classmethod
+    def _empty_means_none(cls, value: Any) -> Any:
+        # Models regularly send "" or null for "none" (live: limitations="" and
+        # limitations=None each cost a final_result retry, and under streaming —
+        # which cannot retry output validation — failed the whole mission).
+        if value is None or value == "":
+            return []
+        if isinstance(value, str):
+            return [value]
+        return value

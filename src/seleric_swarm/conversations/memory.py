@@ -645,12 +645,17 @@ class InMemoryRunRepository:
         *,
         now: datetime | None = None,
         terminal_event: ActivityEvent | None = None,
-    ) -> bool:
+    ) -> ActivityEvent | None:
+        """Mark the run (and its running/retryable attempts) cancelled.
+
+        Returns the persisted ``terminal_event`` — with its real sequence and
+        thread_sequence — so callers can publish/wait on the correct position;
+        None when the run was already terminal (not cancellable)."""
         moment = now or datetime.now(UTC)
         with self._lock:
             run = self._items.get(run_id)
             if run is None or run.status in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}:
-                return False
+                return None
             self._items[run_id] = run.model_copy(
                 update={
                     "status": RunStatus.CANCELLED,
@@ -671,9 +676,13 @@ class InMemoryRunRepository:
                             "version": attempt.version + 1,
                         }
                     )
+            persisted: ActivityEvent | None = None
             if terminal_event is not None:
                 events = self._events.setdefault(run_id, [])
-                if not any(item.id == terminal_event.id for item in events):
+                existing = next((item for item in events if item.id == terminal_event.id), None)
+                if existing is not None:
+                    persisted = existing
+                else:
                     terminal_event = terminal_event.model_copy(
                         update={
                             "sequence": (events[-1].sequence if events else 0) + 1,
@@ -691,9 +700,11 @@ class InMemoryRunRepository:
                         }
                     )
                     events.append(terminal_event)
+                    persisted = terminal_event
             if run_id in self._outbox:
                 self._outbox[run_id] = True
-            return True
+            # No terminal event requested (internal cancel) — still succeeded.
+            return persisted
 
     def list_recoverable(
         self, *, now: datetime | None = None, limit: int = 100

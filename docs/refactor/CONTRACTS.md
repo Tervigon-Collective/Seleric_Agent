@@ -391,6 +391,33 @@ cohorts would remove the guard for counts too. Callers fetch equal-length
 windows; pinned in
 `tests/unit/test_analytics_breakdowns.py::test_unequal_calendar_months_are_refused_for_cohorts_too`.
 
+### A2 — Additive read-only surfaces beyond the frozen 23 — PROPOSED (post-Sprint 5)
+
+Filed 2026-09-24. The frozen §4 baseline is 23 functions; additive tools that
+don't change any frozen signature have been registered outside §4 before
+(`sandbox.run_python`, `semantic.get_metric_definitions`) and tracked only by
+`tests/unit/test_v3_agent_wiring.py`. Following that precedent, this amendment
+records five more additive **read-only** tools without editing frozen §4:
+
+| Tool | Module | Notes |
+|---|---|---|
+| `resolve_brand(ctx, name)` | `toolsets/semantic.py` | Wraps gateway `catalogue_resolve_brand`; returns a `brand_id` for a `query_metrics` filter. Resolution only — never rewrites a `metric_id` (rule 1). |
+| `query_meta_insights(ctx, account_id, fields, period_start, period_end, level="account", grain="none", limit=None)` | `toolsets/ads.py` | Cube-backed (gateway `meta_insights_query` runs the same planner over certified `meta_ad_performance`). Writes `EvidenceArtifact`s per (row × measure) — same certified tier as `query_metrics`. |
+| `list_meta_accounts(ctx, brand_id=None, account_id=None, limit=100)` | `toolsets/ads.py` | Live GET /me/adaccounts. Reference data in `source_metadata`, no artifact. |
+| `list_google_accounts(ctx, brand_id=None, customer_id=None)` | `toolsets/ads.py` | Live ListAccessibleCustomers. Reference data. |
+| `query_google_ads(ctx, customer_id, query, page_size=1000, brand_id=None)` | `toolsets/ads.py` | Live read-only SELECT GAQL. **Uncertified** (outside the semantic layer) — rows in `source_metadata` with a live-data warning, never presented as certified metric evidence. |
+
+Deliberately **not** wired: any `meta_*`/`google_*` write/CRUD tool. Also removed
+`insights_explain` from the MCP adapter's tool list (`servers/seleric_remote.py`) —
+it was never called by any toolset; `analytics.py` is the single implementation of
+period-delta/anomaly reasoning by design. The `EvidenceArtifact` "Profile B is the
+only writer" note (§3) is widened to include `toolsets/ads.py::query_meta_insights`,
+which writes the same certified evidence from the same Cube planner output.
+
+Needs A/B/C sign-off like any registered-surface change; recorded here so it is not
+rediscovered. Count now 30 (23 frozen + `run_python` + `get_metric_definitions` +
+the 5 above); pinned in `tests/unit/test_v3_agent_wiring.py`.
+
 ### Joint decisions recorded with A1 acceptance (A + C, Sprint 2)
 
 1. **`max_validation_revisions = 1` confirmed.** Causal escalation is
@@ -428,3 +455,7 @@ windows; pinned in
   other four exist. Applied in code and in §4's text; needs A/B sign-off like
   any frozen-shape change. Also records the deliberate limitation that the
   equal-spans rule refuses unequal calendar months for `cohort_analysis`.
+- 2026-09-24: **A2 proposed** — five additive read-only tools (`resolve_brand`
+  + four `ads.py` surfaces) registered outside frozen §4, and `insights_explain`
+  removed from the MCP adapter's tool list (dead — never called). Tool count
+  25 → 30, pinned in `tests/unit/test_v3_agent_wiring.py`. Needs A/B/C sign-off.

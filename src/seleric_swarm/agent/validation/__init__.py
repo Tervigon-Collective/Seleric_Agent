@@ -38,6 +38,7 @@ joint decision.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -120,9 +121,12 @@ class EvidenceValidator:
         missing = [aid for aid in referenced if deps.artifact_store.get(aid) is None]
         if missing:
             return ValidationOutcome(ok=False, reason=f"unresolved artifact ids: {missing}")
-        if result.status == "completed" and not result.final_response.strip():
+        if not result.final_response.strip():
+            # Any status: live, the model returned status="running" with an empty
+            # answer via final_result, which slipped past a completed-only gate.
             return ValidationOutcome(
-                ok=False, reason="completed mission has an empty final_response"
+                ok=False,
+                reason=f"mission returned an empty final_response (status={result.status}); write the answer",
             )
         core = result.final_response.strip().strip(".…").lower()
         if result.final_response.strip() and (not core or core in _PLACEHOLDER_ANSWERS):
@@ -180,11 +184,28 @@ class EvidenceValidator:
         return ValidationOutcome(ok=True)
 
 
-def _usage_limits(limits: ExecutionLimits) -> UsageLimits:
-    """Bound one mission. Tool calls use the execution cap; model requests get
-    extra room for planning, retries, and the final answer."""
+def _usage_limits(limits: ExecutionLimits, attempts_hint: int = 1) -> UsageLimits:
+    """Bound one mission across its agent runs.
+
+    Tool calls use the execution cap; model requests get extra room for
+    planning, retries, and the final answer.
+
+    ``attempts_hint`` shares that total budget across the initial run plus each
+    REVISE revision (pydantic-ai enforces ``UsageLimits`` per individual
+    ``agent.run()``, so without this the budget would be granted fresh — and
+    the mission could do N× the intended work for N revisions). Each attempt
+    gets a ceil-share so nothing is starved; the mission's aggregate stays at
+    the configured single-run budget. Defaults to 1 for a standalone run.
+    """
+    attempts = max(1, attempts_hint)
+
+    def _share(total: int) -> int:
+        return -(-total // attempts)  # ceil division
+
     tool_cap = max(1, limits.max_tool_calls)
-    return UsageLimits(request_limit=tool_cap + 32, tool_calls_limit=tool_cap)
+    return UsageLimits(
+        request_limit=_share(tool_cap + 32), tool_calls_limit=_share(tool_cap)
+    )
 
 
 def _trunc(value: object, limit: int = 2000) -> object:
@@ -218,19 +239,61 @@ def _summarize_steps(messages: list) -> list[dict]:
     return steps
 
 
-async def _run_agent(agent: Agent[SelericDeps, MissionResult], deps: SelericDeps, query: str) -> MissionResult:
+async def _run_agent_streamed(
+    agent: Agent[SelericDeps, MissionResult],
+    deps: SelericDeps,
+    query: str,
+    budget: UsageLimits,
+    on_delta: Callable[[str], None],
+) -> MissionResult:
+    """Stream the final answer's tokens as they are generated.
+
+    ``run_stream`` runs the full agent graph — all the tool calls — internally
+    and only yields once the model starts emitting the final ``MissionResult``.
+    We diff the ``final_response`` field across the partially-validated outputs
+    and push each new suffix to ``on_delta``; everything else (evidence, status,
+    trace) is read from the fully-validated output at the end, unchanged.
+    """
+    async with agent.run_stream(
+        query,
+        deps=deps,
+        usage_limits=budget,
+        retries=max(1, deps.limits.agent_retries),
+    ) as stream:
+        emitted = 0
+        async for partial in stream.stream_output(debounce_by=0.05):
+            text = getattr(partial, "final_response", None) or ""
+            if len(text) > emitted:
+                on_delta(text[emitted:])
+                emitted = len(text)
+        result = await stream.get_output()
+        steps = _summarize_steps(stream.all_messages())
+    return result.model_copy(update={"trace": {**result.trace, "steps": steps}})
+
+
+async def _run_agent(
+    agent: Agent[SelericDeps, MissionResult],
+    deps: SelericDeps,
+    query: str,
+    *,
+    on_delta: Callable[[str], None] | None = None,
+    usage_limits: UsageLimits | None = None,
+) -> MissionResult:
     # capture_run_messages populates `messages` even when the run raises
     # UsageLimitExceeded — the failing-budget case we most need to debug.
     # Only stream when something is listening: streaming changes the request path
     # (request_stream), so runs with no UI keep the plain request path.
     handler = progress_handler(deps.mission_id) if has_progress_sink(deps.mission_id) else None
+    budget = usage_limits or _usage_limits(deps.limits)
     with capture_run_messages() as messages:
         try:
+            if on_delta is not None:
+                return await _run_agent_streamed(agent, deps, query, budget, on_delta)
             result = (
                 await agent.run(
                     query,
                     deps=deps,
-                    usage_limits=_usage_limits(deps.limits),
+                    usage_limits=budget,
                     retries=max(1, deps.limits.agent_retries),
                     event_stream_handler=handler,
                 )
@@ -256,17 +319,29 @@ async def run_validated_mission(
     *,
     validator: EvidenceValidator | None = None,
     tracker: ExecutionBudgetTracker | None = None,
+    on_stream: Callable[[str, str], None] | None = None,
 ) -> MissionResult:
     """Run the agent once; on a REVISE, revise up to the bounded limit.
 
     ``deps.limits.max_validation_revisions`` is tracked through
     ``ExecutionBudgetTracker`` like every other execution limit, not a separate
     ad hoc counter. A REJECT verdict short-circuits without spending one.
+
+    ``on_stream(kind, text)`` — when supplied — streams the final answer live:
+    ``("delta", suffix)`` for each new chunk, ``("reset", "")`` when a REVISE
+    scraps the streamed-but-rejected answer so the caller can clear it before
+    the revised answer streams in.
     """
     validator = validator or EvidenceValidator()
     tracker = tracker or ExecutionBudgetTracker(limits=deps.limits)
+    on_delta = (lambda text: on_stream("delta", text)) if on_stream else None
 
-    result = await _run_agent(agent, deps, query)
+    # pydantic-ai enforces UsageLimits per agent.run(); share the mission budget
+    # across the initial run + revisions so N revisions don't multiply it.
+    attempts_total = 1 + max(0, deps.limits.max_validation_revisions)
+    mission_budget = _usage_limits(deps.limits, attempts_total)
+
+    result = await _run_agent(agent, deps, query, on_delta=on_delta, usage_limits=mission_budget)
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
     outcome = validator.validate(result, deps=deps)
@@ -274,32 +349,43 @@ async def run_validated_mission(
         if outcome.rejected:
             # Terminal: the evidence contradicts the claim. Re-prompting spends
             # a revision to get the same rejection.
+            resp = (
+                result.final_response.strip()
+                if (result.final_response and result.final_response.strip())
+                else "I could not back this answer with live metric evidence. Please retry."
+            )
             return result.model_copy(
                 update={
                     "status": "failed",
                     "error_code": "INSUFFICIENT_EVIDENCE",
-                    "final_response": (
-                        "I could not back this answer with live metric evidence. Please retry."
-                    ),
+                    "final_response": resp,
                     "limitations": ["INSUFFICIENT_EVIDENCE"],
                 }
             )
         verdict = tracker.consume("validation_revisions")
         if not verdict.ok:
+            resp = (
+                result.final_response.strip()
+                if (result.final_response and result.final_response.strip())
+                else "I could not back this answer with live metric evidence. Please retry."
+            )
             return result.model_copy(
                 update={
                     "status": "failed",
                     "error_code": "INSUFFICIENT_EVIDENCE",
-                    "final_response": (
-                        "I could not back this answer with live metric evidence. Please retry."
-                    ),
+                    "final_response": resp,
                     "limitations": ["INSUFFICIENT_EVIDENCE"],
                 }
             )
+        if on_stream is not None:
+            # The streamed-but-rejected answer is now stale; tell the caller to
+            # clear it before the revised answer streams in over the top.
+            on_stream("reset", "")
         revision_prompt = (
             f"{query}\n\nYour previous answer was rejected: {outcome.reason}. Revise it."
         )
-        result = await _run_agent(agent, deps, revision_prompt)
+        result = await _run_agent(agent, deps, revision_prompt, on_delta=on_delta,
+                              usage_limits=mission_budget)
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
         outcome = validator.validate(result, deps=deps)

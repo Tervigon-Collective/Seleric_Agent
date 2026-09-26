@@ -158,9 +158,20 @@ def _safe_payload(source: dict[str, Any], kind: str) -> dict[str, Any]:
 
 
 def map_mission_event(
-    event: dict[str, Any], run: Run, *, attempt_id: str = "legacy"
+    event: dict[str, Any],
+    run: Run,
+    *,
+    attempt_id: str = "legacy",
+    ordinal: int | None = None,
 ) -> ActivityEvent | None:
-    """Map one legacy event without forwarding private reasoning fields."""
+    """Map one legacy event without forwarding private reasoning fields.
+
+    ``ordinal`` is the 1-based position in the source event list. Two legacy
+    events with identical ``(seq|0, kind)`` previously collided into the same
+    public id (dropping one on ingestion); the ordinal disambiguates events
+    that carry no timestamp sequence without breaking re-ingest idempotency
+    when a source seq actually exists.
+    """
 
     kind = str(event.get("kind") or event.get("legacy_kind") or "").strip().lower()
     event_type = event_type_for_mission_kind(kind)
@@ -169,10 +180,18 @@ def map_mission_event(
     created_at = event.get("ts")
     if not isinstance(created_at, (str, datetime)):
         created_at = run.created_at
+    try:
+        seq_part = int(event.get("seq") or 0)
+    except (TypeError, ValueError):
+        seq_part = 0
+    if seq_part > 0:
+        seq_discriminator = f"seq{seq_part}"
+    else:
+        seq_discriminator = f"p{int(ordinal or 0)}"
     return ActivityEvent(
         id=(
             f"event_mission_{run.id}_{attempt_id}_"
-            f"{int(event.get('seq') or 0)}_{kind}"
+            f"{seq_discriminator}_{kind}"
         ),
         thread_id=run.thread_id,
         workspace_id=run.workspace_id,

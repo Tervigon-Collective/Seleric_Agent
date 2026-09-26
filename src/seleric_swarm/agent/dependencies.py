@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
+from seleric_swarm.agent.scope import RequiredScope
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 from seleric_swarm.state.cache import MissionQueryCache
@@ -110,6 +111,11 @@ class SelericDeps:
     # instead of a Qdrant top-k guess; Cube still validates the chosen id.
     catalogue: CatalogueSnapshot = field(default_factory=CatalogueSnapshot)
     jev: JevConfig = field(default_factory=JevConfig)
+    # Hard constraints the query demanded (requested breakdowns resolved to
+    # catalogue dimension ids), captured once in the runner. Read by
+    # validation/signals.py::check_scope_coverage to prove the executed evidence
+    # covers what was asked. Default-empty ⇒ the check is NOT_APPLICABLE.
+    required_scope: RequiredScope = field(default_factory=RequiredScope)
     # Real per-mission execution-limit enforcement (agent/limits.py). Not a
     # dataclass default_factory: ExecutionBudgetTracker needs this same
     # instance's own `limits`, so it's built in __post_init__ instead — every

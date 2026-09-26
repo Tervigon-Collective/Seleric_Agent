@@ -17,7 +17,7 @@ export function Composer() {
         <ComposerPrimitive.Send className="send-btn" aria-label="Send message">↑</ComposerPrimitive.Send>
       </AuiIf>
       <AuiIf condition={(state) => state.thread.isRunning}>
-        <ComposerPrimitive.Cancel className="send-btn cancel-btn" aria-label="Cancel run">■</ComposerPrimitive.Cancel>
+        <ComposerPrimitive.Cancel className="send-btn cancel-btn" aria-label="Cancel run" title="Cancel run">■</ComposerPrimitive.Cancel>
       </AuiIf>
       <div className="upload-list" aria-live="polite">
         <ComposerPrimitive.Attachments>

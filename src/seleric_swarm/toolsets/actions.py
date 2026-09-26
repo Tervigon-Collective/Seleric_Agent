@@ -1,9 +1,18 @@
 """ActionToolset: guarded writes through the live Seleric MCP action broker.
 
-The remote broker owns payload validation, business rules, Meta/Google Ads
-execution, its write kill switch, audit records, and 24-hour payload
-idempotency. This adapter owns the frozen v3 tool contract and deliberately
-keeps the broker's short-lived confirmation token out of model-visible output.
+The remote broker owns payload validation, business rules, execution via its
+registered executor(s), its write kill switch, audit records, and 24-hour
+payload idempotency. This adapter owns the frozen v3 tool contract and
+deliberately keeps the broker's short-lived confirmation token out of
+model-visible output.
+
+NOTE: the gateway currently registers a single executor — Pipeboard
+(``Base_Agent/.../gateway/server.py``: ``executors={"pipeboard": ...}``) —
+NOT direct Meta/Google Ads Graph-API writes. The Pipeboard
+``POST /actions/{type}`` endpoint is an inherited convention that has never
+been verified against Pipeboard's real API (pre-existing known risk); a
+commit reaches that surface. Direct ad-platform management tools
+(``meta_*``/``google_*`` writes) are deliberately not wired to this agent.
 
 ``commit_action`` is only called after the user explicitly confirms the
 sanitized preview. There is no separate ``confirm`` tool in the frozen

@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
+import os
+import weakref
 from typing import Any
 
 import httpx
@@ -39,16 +41,20 @@ TOOLS = (
     "catalogue_bootstrap",
     "catalogue_resolve_term",
     "catalogue_resolve_dimension",
+    "catalogue_resolve_values",
     "catalogue_get_metric",
     "catalogue_get_metrics",
     "catalogue_get_ontology",
     "catalogue_related_metrics",
     "catalogue_list_dimensions",
     "catalogue_list_brands",
+    "catalogue_resolve_brand",
     "modules_list",
     "metrics_query",
     "metrics_drilldown",
-    "insights_explain",
+    # Meta/Google ad-platform tools are not listed: they are third-party APIs
+    # outside the certified Cube serve views and the gateway no longer exposes
+    # them by default (SELERIC_MCP_ADS_TOOLS).
     "actions_list_available",
     "actions_propose",
     "actions_commit",
@@ -73,6 +79,15 @@ class SelericMCPTransport:
             "Accept": "application/json, text/event-stream",
         }
         self._client = httpx.AsyncClient(timeout=timeout_s)
+        # httpx pools connections on the event loop that opened them. /readyz
+        # probes from a thread via asyncio.run() -- a fresh loop each time -- so
+        # sharing one client made every other probe fail with "Event loop is
+        # closed" (live 2026-09-25). The first loop to use the transport keeps
+        # `_client`; any other loop gets its own, dropped with that loop.
+        self._client_loop: asyncio.AbstractEventLoop | None = None
+        self._loop_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient] = (
+            weakref.WeakKeyDictionary()
+        )
         # httpx's own `timeout=` has been observed to not fire on a stalled
         # connection under real load (docs/BUG_SHEET.md #5: a request hung
         # 10+ minutes with the asyncio event loop genuinely idle in
@@ -86,10 +101,22 @@ class SelericMCPTransport:
         self._session_id: str | None = None
         self._init_lock = asyncio.Lock()
 
+    def _loop_client(self) -> httpx.AsyncClient:
+        loop = asyncio.get_running_loop()
+        if self._client_loop is None:
+            self._client_loop = loop
+        if loop is self._client_loop:
+            return self._client
+        client = self._loop_clients.get(loop)
+        if client is None:
+            client = httpx.AsyncClient(timeout=self._timeout_s)
+            self._loop_clients[loop] = client
+        return client
+
     async def _post(self, body: dict[str, Any]) -> httpx.Response:
         try:
             return await asyncio.wait_for(
-                self._client.post(self._url, json=body, headers=self._headers),
+                self._loop_client().post(self._url, json=body, headers=self._headers),
                 timeout=self._hard_timeout_s,
             )
         except TimeoutError as exc:
@@ -120,6 +147,13 @@ class SelericMCPTransport:
             notif = {"jsonrpc": "2.0", "method": "notifications/initialized"}
             await self._post(notif)
 
+    def _drop_session(self, stale: str) -> None:
+        # Only the session that failed: a concurrent call may already have
+        # re-initialized and installed a fresh one.
+        if self._session_id == stale:
+            self._session_id = None
+            self._headers.pop("Mcp-Session-Id", None)
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         await self._ensure_session()
         body = {
@@ -128,7 +162,20 @@ class SelericMCPTransport:
             "method": "tools/call",
             "params": {"name": name, "arguments": arguments},
         }
-        resp = await self._post_with_retry(body)
+        session = self._session_id
+        try:
+            resp = await self._post_with_retry(body)
+        except httpx.HTTPStatusError as exc:
+            # MCP streamable HTTP: a 404 on a request carrying a session id
+            # means the server no longer knows that session — it restarted or
+            # expired it — and the client must start a new one. Without this
+            # every call 404s until the agent itself restarts (live 2026-09-25:
+            # an MCP redeploy locked the running agent out entirely).
+            if exc.response.status_code != 404 or session is None:
+                raise
+            self._drop_session(session)
+            await self._ensure_session()
+            resp = await self._post_with_retry(body)
         payload = _parse_jsonrpc_response(resp)
         if "error" in payload:
             raise RuntimeError(f"seleric mcp error calling {name}: {payload['error']}")
@@ -216,6 +263,20 @@ class RemoteToolServer:
         return await self._transport.call_tool(self._tool_name, arguments)
 
 
+def _timeout_from_env(default: float = 30.0) -> float:
+    """Per-call MCP timeout (seconds), overridable via ``SELERIC_MCP_TIMEOUT``.
+    A stalled or malformed value falls back to the default; the +10s asyncio
+    hard-timeout backstop in SelericMCPTransport tracks whatever this returns."""
+    raw = os.environ.get("SELERIC_MCP_TIMEOUT", "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 def build_seleric_servers(*, url: str, token: str, capability_prefix: str = "seleric") -> list[RemoteToolServer]:
-    transport = SelericMCPTransport(url=url, token=token)
+    transport = SelericMCPTransport(url=url, token=token, timeout_s=_timeout_from_env())
     return [RemoteToolServer(transport, tool, capability_prefix) for tool in TOOLS]

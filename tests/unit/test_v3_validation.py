@@ -135,6 +135,15 @@ def test_validate_fails_on_empty_final_response_when_completed() -> None:
     assert not outcome.ok
 
 
+@pytest.mark.parametrize("status", ["running", "partial", "failed"])
+def test_validate_fails_on_empty_final_response_for_any_status(status: str) -> None:
+    outcome = EvidenceValidator().validate(
+        _result(status=status, final_response="  "), deps=_deps()
+    )
+    assert not outcome.ok
+    assert "empty final_response" in (outcome.reason or "")
+
+
 @pytest.mark.asyncio
 async def test_run_validated_mission_passes_through_a_valid_result() -> None:
     model = TestModel(

@@ -3,8 +3,10 @@
 Sprint 4 (``docs/refactor/01_PROFILE_RUNTIME.md``/``SPRINT_PLAN.md``): **all
 seven** frozen toolset surfaces are now registered — the five from Profile
 B/C's Sprint 1-3 work plus ``knowledge`` and ``experiments``, which Profile C
-added in Sprint 4's additive track. That is all 23 functions frozen in
-``CONTRACTS.md`` §4; ``tests/unit/test_v3_agent_wiring.py`` holds the count
+added in Sprint 4's additive track. That covers the 23 functions frozen in
+``CONTRACTS.md`` §4, plus later additive tools (the python sandbox, the batch
+``get_metric_definitions``, ``resolve_brand``, and the read-only ``ads``
+surfaces, since withdrawn — see below) — 26 in all. ``tests/unit/test_v3_agent_wiring.py`` holds the count
 and the name set so a future toolset cannot be written and then silently left
 unregistered.
 
@@ -40,22 +42,29 @@ from seleric_swarm.toolsets import (
     sandbox,
     semantic,
 )
+from seleric_swarm.agent.limits import withdrawn_tools
+from seleric_swarm.agent.repeat_guard import RepeatCallGuard
 from seleric_swarm.toolsets.semantic import LIVE_DATA_UNAVAILABLE
 
 # Typed as `list[Any]` deliberately: pydantic_ai's own `tools` parameter
 # wants a `Sequence[Tool[SelericDeps] | ToolFuncEither[SelericDeps, ...]]`,
-# and mypy cannot unify 15 tool functions with genuinely different
+# and mypy cannot unify tool functions with genuinely different
 # parameter lists into that single Callable shape even though every one of
 # them is a real `RunContext[SelericDeps]`-first tool function (verified at
 # runtime — see tests/unit/test_v3_agent_wiring.py, which registers and
-# introspects all 23). Narrowing the annotation here is honest about a
+# introspects all 26). Narrowing the annotation here is honest about a
 # real typing-system limitation, not a suppression of a real bug.
 TOOLS: list[Any] = [
     semantic.search_semantics,
+    semantic.resolve_brand,
     semantic.get_metric_definition,
     semantic.get_metric_definitions,
     semantic.query_metrics,
     semantic.drilldown,
+    # toolsets/ads.py (Meta/Google platform APIs) is deliberately not
+    # registered: those are third-party surfaces outside the certified Cube
+    # serve views, and the gateway no longer exposes them by default. Meta ad
+    # delivery numbers stay reachable through query_metrics (meta_ad_performance).
     analytics.compare_periods,
     analytics.detect_anomalies,
     analytics.contribution_analysis,
@@ -99,7 +108,7 @@ def _stub_test_model() -> TestModel:
     # TestModel's default arbitrary-data generator doesn't respect datetime
     # field constraints (produces "a" for `as_of`, failing validation) — a
     # fixed custom output is what makes a *stub* agent, not a flaky one.
-    # call_tools=[] additionally means none of the 23 real tools registered
+    # call_tools=[] additionally means none of the real tools registered
     # below get invoked against whatever (possibly fake) deps a 0%-traffic
     # caller supplies — tools ARE registered (Sprint 4), just not exercised
     # by this particular model.
@@ -138,15 +147,19 @@ async def _withdraw_data_tools(
     ctx: RunContext[SelericDeps], tool_defs: list[ToolDefinition]
 ) -> list[ToolDefinition]:
     """Once live data is known to be unreachable, only catalogue/knowledge tools
-    remain — the model can no longer loop on fetches that cannot succeed."""
+    remain — the model can no longer loop on fetches that cannot succeed. Any
+    tool withdrawn during the mission (``limits.withdraw_tool``: a spent budget
+    or a repeated call) is dropped, so the model moves on or answers instead of
+    exhausting that tool's retries."""
     counts = getattr(ctx.deps, "call_counts", None)  # deps is None on the stub path
     if not counts:
         return tool_defs
     if counts.get(CONVERSATIONAL):
         return []
-    if not counts.get(LIVE_DATA_UNAVAILABLE):
-        return tool_defs
-    return [t for t in tool_defs if t.name in _STILL_AVAILABLE_WITHOUT_LIVE_DATA]
+    if counts.get(LIVE_DATA_UNAVAILABLE):
+        tool_defs = [t for t in tool_defs if t.name in _STILL_AVAILABLE_WITHOUT_LIVE_DATA]
+    withdrawn = withdrawn_tools(ctx.deps)
+    return [t for t in tool_defs if t.name not in withdrawn]
 
 
 def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDeps, MissionResult]:
@@ -158,7 +171,7 @@ def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDep
         instructions=INSTRUCTIONS + "\n\n" + capability_manifest(),
         name="seleric_agent",
         tools=TOOLS,
-        capabilities=[PrepareTools(_withdraw_data_tools)],
+        capabilities=[PrepareTools(_withdraw_data_tools), RepeatCallGuard()],
     )
 
     @agent.instructions

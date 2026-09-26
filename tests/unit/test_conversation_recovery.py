@@ -325,3 +325,66 @@ async def test_submission_failure_uses_terminal_fenced_cas(monkeypatch):
         if event.event_type in {"run.completed", "run.failed", "run.cancelled"}
     ]
     assert terminal == ["run.failed"]
+
+
+def _always_fail(runtime_arg, *, mission_id, **_kwargs):
+    runtime_arg.store.payloads[mission_id] = {
+        "status": "failed",
+        "error_code": "V3_AGENT_FAILED",
+        "final_response": "The agent could not complete this question. Please retry.",
+        "events": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_failed_attempt_with_retry_left_keeps_placeholder_pending(monkeypatch):
+    # Live 2026-09-24 run_27159f6a: attempt 1 wrote "could not complete" into the
+    # transcript while attempt 2 was still running.
+    runtime, repositories, run, assistant = _submission_runtime()
+
+    async def fail(runtime_arg, **kwargs):
+        _always_fail(runtime_arg, **kwargs)
+
+    monkeypatch.setattr(conversations_api, "run_mission_job", fail)
+    worker = RunRecoveryWorker(
+        repositories.runs,
+        conversations_api.build_submission_executor(runtime),
+        worker_id="recovery-worker",
+        retry_delay_s=0,
+        retry_jitter_s=0.0,
+    )
+    await worker.run_once()
+
+    assert repositories.runs.get(run.id).status is not RunStatus.FAILED
+    parts = repositories.messages.get(assistant.id).parts
+    assert all(part.type.value != "WARNING" for part in parts)
+    events = repositories.runs.list_events(run.id)
+    retrying = [e for e in events if e.event_type == "agent.retrying"]
+    assert retrying and "attempt 2 of" in (retrying[0].summary or "")
+    # Any partially streamed answer from the failed attempt is cleared.
+    resets = [e for e in events if e.event_type == "answer.reset"]
+    assert resets and resets[0].payload["message_id"] == assistant.id
+
+
+@pytest.mark.asyncio
+async def test_last_failed_attempt_writes_the_warning(monkeypatch):
+    runtime, repositories, run, assistant = _submission_runtime()
+
+    async def fail(runtime_arg, **kwargs):
+        _always_fail(runtime_arg, **kwargs)
+
+    monkeypatch.setattr(conversations_api, "run_mission_job", fail)
+    worker = RunRecoveryWorker(
+        repositories.runs,
+        conversations_api.build_submission_executor(runtime),
+        worker_id="recovery-worker",
+        retry_delay_s=0,
+        retry_jitter_s=0.0,
+    )
+    for _ in range(run.max_attempts):
+        await worker.run_once()
+
+    assert repositories.runs.get(run.id).status is RunStatus.FAILED
+    parts = repositories.messages.get(assistant.id).parts
+    assert parts[0].type.value == "WARNING"
+    assert "could not complete" in str(parts[0].content)
