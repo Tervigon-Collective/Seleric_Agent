@@ -171,7 +171,8 @@ trends, causes, comparisons or forecasts, call ask_seleric with the user's compl
 in their own words, resolving references from this conversation (e.g. "and last month?" becomes \
 the full question), then say one brief sentence that you are looking into it. Never state, \
 estimate or guess a number or business fact yourself. The answer is spoken automatically when \
-it is ready, so do not repeat or invent it. If the question is missing a metric or a time \
+it is ready, in full, so do not repeat or invent it and never tell the user to check a thread. \
+If the user asks whether a slow question has finished, call check_seleric. If the question is missing a metric or a time \
 period, ask one short clarifying question first.
 
 Greetings, small talk and clarifying questions you may answer directly. If the user says \
@@ -304,46 +305,61 @@ def build_voice_agent(runner: "VoiceTurnRunner") -> Any:
         """Stop the question Seleric is currently working on."""
         return "Cancelled." if runner.cancel() else "Nothing was running."
 
+    async def check_seleric() -> str:
+        """Check on a Seleric question that took too long; reads the answer out if ready."""
+        return runner.check()
+
     return Agent(
         instructions=VOICE_INSTRUCTIONS,
-        tools=[function_tool(ask_seleric), function_tool(cancel_seleric)],
+        tools=[function_tool(ask_seleric), function_tool(cancel_seleric), function_tool(check_seleric)],
     )
 
 
-def format_spoken_summary(text: str, max_chars: int = 350) -> str:
+def format_spoken_summary(text: str) -> str:
     """Format an assistant markdown response for natural spoken TTS output.
 
-    Removes markdown formatting syntax (headers, bolding, table bars) and trims
-    length so spoken responses remain punchy and clear, pointing the user to
-    the thread transcript for full data breakdown.
+    Strips markdown syntax (headers, emphasis, links, code, table bars) and
+    turns list items and table rows into separate sentences so TTS pauses
+    between them. The whole answer is kept; ``split_spoken_chunks`` handles
+    length by speaking it in pieces.
     """
     import re
 
-    cleaned = text
-    # Remove code blocks
-    cleaned = re.sub(r"```[\s\S]*?```", "", cleaned)
-    # Remove markdown headers
-    cleaned = re.sub(r"#+\s*", "", cleaned)
-    # Remove bold/italic markers
-    cleaned = re.sub(r"[*_]{1,3}", "", cleaned)
-    # Remove links [text](url) -> text
-    cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", cleaned)
-    # Remove table separators
-    cleaned = re.sub(r"\|[-:\s|]+\|", "", cleaned)
-    cleaned = re.sub(r"\|", " ", cleaned)
-    # Collapse whitespace
-    cleaned = " ".join(cleaned.split())
+    cleaned = re.sub(r"```[\s\S]*?```", "", text)
+    lines: list[str] = []
+    for raw in cleaned.splitlines():
+        line = raw.strip()
+        if not line or (re.fullmatch(r"[|\s:\-]+", line) and "-" in line):
+            continue  # blank line or table separator row
+        line = re.sub(r"^#+\s*", "", line)
+        line = re.sub(r"^(?:[-*+]|\d+[.)])\s+", "", line)
+        line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)
+        line = re.sub(r"[*_`]{1,3}", "", line)
+        line = ", ".join(cell.strip() for cell in line.strip("|").split("|") if cell.strip())
+        if line:
+            lines.append(line if line[-1] in ".!?:\u0964" else line + ".")
+    cleaned = " ".join(" ".join(lines).split())
 
     if not cleaned:
-        return "Seleric completed the analysis. Please check your thread for details."
-
-    if len(cleaned) > max_chars:
-        trimmed = cleaned[:max_chars].rsplit(".", 1)[0]
-        if not trimmed:
-            trimmed = cleaned[:max_chars]
-        return f"{trimmed}. Full evidence breakdown is available in your thread."
-
+        return "Seleric finished, but I don't have anything to read out."
     return cleaned
+
+
+def split_spoken_chunks(text: str, max_chars: int = 300) -> list[str]:
+    """Group sentences into chunks of about ``max_chars`` so TTS starts fast."""
+    import re
+
+    chunks: list[str] = []
+    current = ""
+    for sentence in re.split(r"(?<=[.!?\u0964])\s+", text):
+        if current and len(current) + 1 + len(sentence) > max_chars:
+            chunks.append(current)
+            current = sentence
+        else:
+            current = f"{current} {sentence}".strip()
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 _voice_http_client: Any = None
@@ -365,14 +381,17 @@ def _get_voice_client() -> Any:
 # refusal and an infrastructure failure (e.g. a rate-limited model).
 REFUSAL_LINE = (
     "I wasn't able to complete that one, so I won't guess. "
-    "Please try again in a moment, or check your thread for details."
+    "Please try again in a moment."
 )
 IDLE_LINES = (
     "Still working on it.",
     "This one needs a bit more digging.",
     "Almost there, thanks for waiting.",
 )
-TIMEOUT_LINE = "That's taking longer than expected. I'll leave it running, so check your thread later."
+TIMEOUT_LINE = (
+    "This is still running and taking longer than usual. "
+    "Ask me to check on it in a moment and I'll read it out."
+)
 GONE_LINE = "This conversation is no longer available. Please disconnect and reconnect, then ask again."
 SUBMIT_FAILED_LINE = "Sorry, I couldn't send that to Seleric. Please try again."
 ERROR_LINE = "Sorry, something went wrong on my side. Please try again."
@@ -478,6 +497,7 @@ class VoiceTurnRunner:
         self._ctx = ctx
         self._task: asyncio.Task[Any] | None = None
         self._run_id: str | None = None
+        self._pending_run_id: str | None = None  # timed out unfinished; check() can still fetch it
 
         api_url = str(getattr(settings, "seleric_api_url", "http://127.0.0.1:8000")).rstrip("/")
         self._api_url = api_url.replace("localhost", "127.0.0.1")
@@ -507,14 +527,15 @@ class VoiceTurnRunner:
         except Exception as err:
             logger.warning(f"Failed to publish transcript data message: {err}")
 
-    def _say(self, text: str) -> None:
+    def _say(self, text: str, broadcast: bool = True) -> None:
         try:
             self._session.say(text)
         except Exception as err:
             if "closing" in str(err).lower() or "closed" in str(err).lower():
                 return
             logger.warning(f"session.say error: {err}")
-        self._broadcast(text)
+        if broadcast:
+            self._broadcast(text)
 
     # -- lifecycle ------------------------------------------------------
 
@@ -526,6 +547,7 @@ class VoiceTurnRunner:
             if previous_run:
                 _track_task(self._cancel_run(previous_run))
         self._run_id = None
+        self._pending_run_id = None
         self._task = _track_task(self._run(query))
 
     def cancel(self) -> bool:
@@ -538,6 +560,16 @@ class VoiceTurnRunner:
             _track_task(self._cancel_run(run_id))
         self._run_id = None
         return True
+
+    def check(self) -> str:
+        """Result for the ``check_seleric`` tool: read out a timed-out run's answer if ready."""
+        if self._task is not None and not self._task.done():
+            return "Still running. Tell the user in one short sentence that it is still in progress."
+        run_id = self._pending_run_id
+        if not run_id:
+            return "Nothing to check."
+        _track_task(self._speak_answer(run_id, fallback=TIMEOUT_LINE))
+        return "Checking now. Say nothing more; the result will be spoken."
 
     async def _cancel_run(self, run_id: str) -> None:
         try:
@@ -640,9 +672,12 @@ class VoiceTurnRunner:
         elif errored:
             self._say(ERROR_LINE)
         else:
-            self._say(TIMEOUT_LINE)
+            # Out of time. The run may have finished just now; otherwise keep
+            # its id so the user can ask again.
+            self._pending_run_id = run_id
+            await self._speak_answer(run_id, fallback=TIMEOUT_LINE)
 
-    async def _speak_answer(self, run_id: str) -> None:
+    async def _speak_answer(self, run_id: str, fallback: str = ERROR_LINE) -> None:
         """Speak the validated final answer of a *completed* run."""
         client = _get_voice_client()
         url = f"{self._api_url}/v1/threads/{self._principal.thread_id}/messages"
@@ -663,10 +698,15 @@ class VoiceTurnRunner:
                 for part in msg.get("parts", []):
                     content = str(part.get("content") or "").strip()
                     if str(part.get("type") or "").upper() == "TEXT" and content and content != "Working…":
-                        self._say(format_spoken_summary(content))
+                        if self._pending_run_id == run_id:
+                            self._pending_run_id = None
+                        spoken = format_spoken_summary(content)
+                        self._broadcast(spoken)
+                        for chunk in split_spoken_chunks(spoken):
+                            self._say(chunk, broadcast=False)
                         return
-        logger.error(f"completed run {run_id} had no readable answer message")
-        self._say(ERROR_LINE)
+        logger.error(f"run {run_id} had no readable answer message")
+        self._say(fallback)
 
 
 def _import_plugins() -> None:

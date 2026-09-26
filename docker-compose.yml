@@ -29,7 +29,11 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    # minio/minio is no longer pullable from Docker Hub/Quay; bitnamilegacy keeps
+    # the last public build. Entrypoint bypasses the bitnami wrapper script.
+    image: bitnamilegacy/minio:latest
+    user: "0:0"  # bitnami runs as uid 1001; the fresh named volume is root-owned
+    entrypoint: ["minio"]
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
@@ -94,6 +98,13 @@ services:
       AZURE_OPENAI_ENDPOINT_2: ${AZURE_OPENAI_ENDPOINT_2:-}
       AZURE_OPENAI_API_KEY_2: ${AZURE_OPENAI_API_KEY_2:-}
       AZURE_OPENAI_MODELS_2: ${AZURE_OPENAI_MODELS_2:-}
+      OPENROUTER_ENDPOINT: ${OPENROUTER_ENDPOINT:-https://openrouter.ai/api/v1}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODELS: ${OPENROUTER_MODELS:-}
+      QDRANT_URL: ${QDRANT_ENDPOINT:-}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      QDRANT_EMBEDDING_MODEL: ${QDRANT_EMBEDDING_MODEL:-text-embedding-3-small}
+      V3_AGENT_ENABLED: ${V3_AGENT_ENABLED:-true}
       SELERIC_MCP_URL: ${SELERIC_MCP_URL:-}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
@@ -169,6 +180,13 @@ services:
       AZURE_OPENAI_ENDPOINT_2: ${AZURE_OPENAI_ENDPOINT_2:-}
       AZURE_OPENAI_API_KEY_2: ${AZURE_OPENAI_API_KEY_2:-}
       AZURE_OPENAI_MODELS_2: ${AZURE_OPENAI_MODELS_2:-}
+      OPENROUTER_ENDPOINT: ${OPENROUTER_ENDPOINT:-https://openrouter.ai/api/v1}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODELS: ${OPENROUTER_MODELS:-}
+      QDRANT_URL: ${QDRANT_ENDPOINT:-}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      QDRANT_EMBEDDING_MODEL: ${QDRANT_EMBEDDING_MODEL:-text-embedding-3-small}
+      V3_AGENT_ENABLED: ${V3_AGENT_ENABLED:-true}
       SELERIC_MCP_URL: ${SELERIC_MCP_URL:-}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
@@ -212,8 +230,12 @@ services:
       TTS_PROVIDER: ${TTS_PROVIDER:-fake}
       VOICE_LLM_MODEL: ${VOICE_LLM_MODEL:-}
       VOICE_TTS_VOICE: ${VOICE_TTS_VOICE:-}
+      VOICE_STT_LANGUAGES: ${VOICE_STT_LANGUAGES:-en-IN,hi-IN}
+      VOICE_LLM_PROVIDER: ${VOICE_LLM_PROVIDER:-}
+      AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:-}
+      AZURE_SPEECH_REGION: ${AZURE_SPEECH_REGION:-}
       VOICE_NARRATION_ENABLED: ${VOICE_NARRATION_ENABLED:-true}
-      VOICE_MISSION_TIMEOUT_S: ${VOICE_MISSION_TIMEOUT_S:-180}
+      VOICE_MISSION_TIMEOUT_S: ${VOICE_MISSION_TIMEOUT_S:-600}
       VOICE_RECORDING_ENABLED: ${VOICE_RECORDING_ENABLED:-false}
       # The worker calls the API as a service client and carries the real
       # principal in identity headers (see 01_ARCHITECTURE.md §5).
