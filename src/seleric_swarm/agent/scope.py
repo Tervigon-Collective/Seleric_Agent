@@ -94,14 +94,17 @@ class RequiredScope:
     **any** id in each set — the guard still catches "no grouping at all", but no
     longer forces a REVISE when the model chose a valid sibling dimension.
     ``value_filters`` — named values the answer must be filtered to.
+    ``temporal_grain`` — the time grain the query requests (day/week/month/quarter/year).
+       Evidence at a finer grain can satisfy a coarser grain request via aggregation.
     (Extension point, not yet populated: exclusion dims.)
     """
 
     breakdowns: frozenset[frozenset[str]] = frozenset()
     value_filters: tuple[ValueFilter, ...] = ()
+    temporal_grain: str | None = None
 
     def is_empty(self) -> bool:
-        return not self.breakdowns and not self.value_filters
+        return not self.breakdowns and not self.value_filters and not self.temporal_grain
 
 
 def value_filters_from_resolution(resolution: dict | None) -> tuple[ValueFilter, ...]:
@@ -190,8 +193,9 @@ def build_required_scope(
     *,
     alias_index: dict[str, str] | None,
     dimension_ids: frozenset[str] | set[str] | None,
+    temporal_grain: str | None = None,
 ) -> RequiredScope:
-    """Resolve a query's requested breakdowns to catalogue dimension candidate sets.
+    """Resolve a query's requested breakdowns to catalogue dimension ids.
 
     Each ``by <term>`` phrase becomes one candidate set (the dimensions sharing
     that grain language); the answer must group by any id in each set. The
@@ -201,10 +205,13 @@ def build_required_scope(
 
     ``alias_index`` / ``dimension_ids`` come from the catalogue bootstrap
     (``CatalogueBootstrap.alias_index()`` / ``dimension_ids()``). Both empty →
-    an empty scope (fail-open: the coverage check becomes NOT_APPLICABLE)."""
+    an empty scope (fail-open: the coverage check becomes NOT_APPLICABLE).
+
+    ``temporal_grain`` — the time grain the query requests (day/week/month/quarter/year).
+       Evidence at a finer grain can satisfy a coarser grain request via aggregation."""
     aliases = alias_index or {}
     dims = frozenset(dimension_ids or ())
-    if not aliases and not dims:
+    if not aliases and not dims and not temporal_grain:
         return RequiredScope()
     resolved: set[frozenset[str]] = set()
     for ngrams in _candidate_term_groups(query):
@@ -213,7 +220,7 @@ def build_required_scope(
             if cands:
                 resolved.add(cands)
                 break
-    return RequiredScope(breakdowns=frozenset(resolved))
+    return RequiredScope(breakdowns=frozenset(resolved), temporal_grain=temporal_grain)
 
 
 def _demo() -> None:

@@ -1,0 +1,187 @@
+"""Answer grounding: the numbers in ``final_response`` must come from evidence.
+
+Two questions, answered from the mission's own artifacts only:
+
+1. **Per-period coverage** (drives REVISE). Every period the answer cites
+   evidence for must show up in the answer as at least one number drawn from
+   that period's evidence. The live failure this catches: evidence for both
+   compared months existed, the answer printed "No data available" for one.
+2. **Ungrounded numbers** (reported, never a verdict on their own). Numbers in
+   the answer that match no evidence value or finding metric are listed in the
+   reason so the revision can fix or drop them.
+
+Numbers are found by scanning characters (digits, grouping commas, one decimal
+point) — no patterns, no unit words. A displayed number matches a source value
+when it equals the value at some power-of-ten display scale (percent, thousand,
+lakh, million, crore) within the rounding its own printed precision implies.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from typing import TYPE_CHECKING
+
+from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
+from seleric_swarm.agent.validation.signals import CheckOutcome, EvidenceGap
+
+if TYPE_CHECKING:
+    from seleric_swarm.agent.output import MissionResult
+    from seleric_swarm.conversations.contracts import Artifact
+
+# Display scales a number may be printed at: ratio as percent (10^-2) up to crore (10^7).
+_SCALE_EXPONENTS = (-2, 0, 3, 5, 6, 7)
+# Relative slack on top of print-precision rounding (currency rounding, FX display).
+_RELATIVE_TOLERANCE = 0.005
+
+
+@dataclass(frozen=True)
+class AnswerNumber:
+    text: str
+    value: float
+    decimals: int
+
+
+def scan_numbers(text: str) -> list[AnswerNumber]:
+    """Numbers in ``text``: digit runs with grouping commas and at most one
+    decimal point. A run glued to a preceding letter (``Q3``, ``SKU12``) is an
+    identifier, not a quantity, and is skipped."""
+    out: list[AnswerNumber] = []
+    i, n = 0, len(text)
+    while i < n:
+        if not text[i].isdigit():
+            i += 1
+            continue
+        if i > 0 and (text[i - 1].isalpha() or text[i - 1] == "_"):
+            while i < n and (text[i].isalnum() or text[i] == "_"):
+                i += 1
+            continue
+        start = i
+        digits: list[str] = []
+        decimals = -1
+        while i < n:
+            ch = text[i]
+            nxt = text[i + 1] if i + 1 < n else ""
+            if ch.isdigit():
+                digits.append(ch)
+                if decimals >= 0:
+                    decimals += 1
+            elif ch == "," and nxt.isdigit() and decimals < 0:
+                pass
+            elif ch == "." and nxt.isdigit() and decimals < 0:
+                digits.append(".")
+                decimals = 0
+            else:
+                break
+            i += 1
+        raw = text[start:i]
+        try:
+            out.append(AnswerNumber(raw, float("".join(digits)), max(decimals, 0)))
+        except ValueError:
+            continue
+    return out
+
+
+def _matches(num: AnswerNumber, source: float) -> bool:
+    target = abs(source)
+    shown = num.value
+    half_unit = 0.5 * 10 ** (-num.decimals)
+    for exp in _SCALE_EXPONENTS:
+        scale = 10**exp
+        tol = half_unit * scale + _RELATIVE_TOLERANCE * target
+        if abs(shown * scale - target) <= tol:
+            return True
+    return False
+
+
+def _period(ev: EvidenceArtifact) -> tuple[date, date]:
+    return ev.period_start.date(), ev.period_end.date()
+
+
+def _date_parts(periods: set[tuple[date, date]]) -> set[float]:
+    parts: set[float] = set()
+    for start, end in periods:
+        for d in (start, end):
+            parts.update({float(d.year), float(d.month), float(d.day)})
+    return parts
+
+
+def check_answer_grounding(artifacts: list[Artifact], result: MissionResult | None) -> CheckOutcome:
+    if result is None or not (result.final_response or "").strip():
+        return CheckOutcome(check="answer_grounding", status="NOT_APPLICABLE")
+
+    evidence: dict[str, EvidenceArtifact] = {}
+    findings: dict[str, Finding] = {}
+    for a in artifacts:
+        try:
+            if a.artifact_type == "evidence":
+                evidence[a.id] = EvidenceArtifact.model_validate(a.payload)
+            elif a.artifact_type == "finding":
+                findings[a.id] = Finding.model_validate(a.payload)
+        except Exception:
+            continue
+
+    cited_findings = [fid for fid in result.finding_ids if fid in findings]
+    cited = {eid for eid in result.evidence_ids if eid in evidence}
+    for fid in cited_findings:
+        cited.update(eid for eid in findings[fid].evidence_ids if eid in evidence)
+    if not cited and not cited_findings:
+        cited = set(evidence)
+        cited_findings = list(findings)
+    if not cited:
+        return CheckOutcome(check="answer_grounding", status="NOT_APPLICABLE")
+
+    numbers = scan_numbers(result.final_response)
+
+    # Per period: the evidence values, plus metrics of findings computed over
+    # that period alone (a cross-period finding cannot vouch for either period).
+    # Only period-total evidence (grain "none") is a per-period claim; a time
+    # series is legitimately summarised as a trend, not reported point by point.
+    all_sources: list[float] = []
+    period_values: dict[tuple[date, date], list[float]] = {}
+    for eid in cited:
+        ev = evidence[eid]
+        if ev.value is None:
+            continue
+        all_sources.append(float(ev.value))
+        if ev.grain == "none":
+            period_values.setdefault(_period(ev), []).append(float(ev.value))
+    for fid in cited_findings:
+        f = findings[fid]
+        vals = list(f.metrics.values())
+        all_sources += vals
+        periods = {_period(evidence[e]) for e in f.evidence_ids if e in evidence}
+        if len(periods) == 1 and next(iter(periods)) in period_values:
+            period_values[next(iter(periods))].extend(vals)
+
+    uncovered = [
+        p for p, vals in sorted(period_values.items())
+        if not any(_matches(num, v) for num in numbers for v in vals)
+    ]
+    date_parts = _date_parts({_period(evidence[e]) for e in cited})
+    ungrounded = [
+        num.text for num in numbers
+        if not any(_matches(num, v) for v in all_sources)
+        and not (num.decimals == 0 and num.value in date_parts)
+    ]
+
+    out = CheckOutcome(check="answer_grounding")
+    if uncovered:
+        spans = ", ".join(f"{s}..{e}" if s != e else f"{s}" for s, e in uncovered)
+        detail = (
+            f"the answer cites evidence for {spans} but shows no value from it — report "
+            f"the values the evidence holds for that period (or drop that period's evidence "
+            f"if it is not part of the answer)"
+        )
+        if ungrounded:
+            detail += f"; numbers in the answer not found in any evidence: {', '.join(ungrounded)}"
+        out.status = "INSUFFICIENT"
+        out.gaps.append(EvidenceGap(description=detail, blocking=True, priority=8))
+    elif ungrounded:
+        out.gaps.append(
+            EvidenceGap(
+                description=f"numbers in the answer not found in any evidence: {', '.join(ungrounded)}",
+                priority=3,
+            )
+        )
+    return out

@@ -47,14 +47,14 @@ def test_should_plan(classification, expected) -> None:
 @pytest.mark.parametrize(
     "intent,ceiling,expected",
     [
-        ("lookup", 160, 64),
-        ("aggregation", 160, 64),
-        ("comparison", 160, 80),
-        ("causal_investigation", 160, 128),
+        ("lookup", 300, 100),
+        ("aggregation", 300, 100),
+        ("comparison", 300, 150),
+        ("causal_investigation", 300, 250),
         ("causal_investigation", 8, 8),  # never above the configured ceiling
         ("lookup", 3, 3),  # ceiling below the per-intent budget wins
-        (None, 160, 160),  # unknown intent → no tightening
-        ("unknown_label", 160, 160),
+        (None, 300, 300),  # unknown intent → no tightening
+        ("unknown_label", 300, 300),
     ],
 )
 def test_tool_budget(intent, ceiling, expected) -> None:

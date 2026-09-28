@@ -41,15 +41,15 @@ cd office-ui && npm install && npm run dev      # http://localhost:5173  (?demo=
 
 # 2. against the live swarm
 #    terminal A – API
-API_HOST=127.0.0.1 API_PORT=8080 seleric-api    # or: uvicorn seleric_swarm.main:app --port 8080
-#    terminal B – UI (proxies /v1 -> :8080)
-cd office-ui && SELERIC_API_URL=http://127.0.0.1:8080 npm run dev
+API_HOST=127.0.0.1 API_PORT=8090 seleric-api    # or: uvicorn seleric_swarm.main:app --port 8090
+#    terminal B – UI (proxies /v1 -> :8090)
+cd office-ui && SELERIC_API_URL=http://127.0.0.1:8090 npm run dev
 #    open http://localhost:5173/?mission=<mission_id>  and pick "Live swarm"
 ```
 
 ## Tests
 
 ```bash
-cd office-ui && npm test                                   # 20 front-end tests
-python -m pytest tests/api/test_office_normalize.py tests/api/test_office_gateway.py
+cd office-ui && npm test                                   # runs the full front-end suite (Vitest + jsdom)
+python -m pytest tests/api/test_office_normalize.py tests/api/test_office_gateway.py tests/api/test_office_v3_adapter.py
 ```

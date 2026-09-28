@@ -1,6 +1,6 @@
 # 04 — Domain Health Snapshots (resolved business state, per domain)
 
-**Status:** design / pre-implementation — no code in this doc.
+**Status:** implemented (`services/domain_health/`) — this doc is the design it was built from.
 
 **Validated against live `seleric-mcp` data on 2026-09-14** — see
 [06_DATA_VALIDATION_FINDINGS.md](06_DATA_VALIDATION_FINDINGS.md) for the raw

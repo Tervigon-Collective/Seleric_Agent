@@ -32,19 +32,26 @@
    in-process registry, so it works across workers / after restart. Test:
    `test_office_gateway.py::test_missions_list_prefers_store_list_missions`.
 2. **Multi-mission view** — `MissionMinimap` overlay lists every mission the gateway
-   knows with a status pip + current lead; click / Enter switches the office; the list
-   auto-refreshes every 10 s. Hidden when there is only one.
+   knows with a status pip + current lead (a roster-era field: for V3 missions
+   `v3_adapter.py` reports a `coordinator` stand-in, since V3 has no leadership
+   handoff); click / Enter switches the office; the list auto-refreshes every 10 s.
+   Hidden when there is only one.
 3. **Sub-agent / parallel-task fan-out** (brief §30) — the snapshot derives
-   `parallelTasks` by grouping planned `tasks[]` per assigned agent (only when >1 is in
-   flight); the canvas orbits helper blips around that desk and the inspector lists
-   them. Test: `test_office_normalize.py::test_snapshot_parallel_tasks_group_by_agent`.
+   `parallelTasks` by grouping planned `tasks[]` per assigned agent/session (only
+   when >1 is in flight); the canvas orbits helper blips around that desk and the
+   inspector lists them. Test:
+   `test_office_normalize.py::test_snapshot_parallel_tasks_group_by_agent`. Legacy
+   swarm_v2 path: it reads `raw["tasks"]`, which the V3 adapter does not emit, so it
+   only lights up for old persisted records.
 4. **LangSmith deep link** — snapshot passes `trace.{requestId,sessionId}` through and
    builds a project-scoped `traceUrl` when `langsmith_project` (+ optional
    `langsmith_org`) is set; shown in the Debug panel.
-5. **A2A evidence exchange** — `evidence_requested` / `evidence_received` mapped
-   end-to-end (normalizer → store → state machine → travelling-document link to the
-   Evidence Archive). Not fabricated: the path lights up only when the backend emits
-   the events. Test: `test_office_normalize.py::test_evidence_a2a_events_normalize`.
+5. **A2A evidence exchange** (legacy swarm_v2 vocabulary) — `evidence_requested` /
+   `evidence_received` mapped end-to-end (normalizer → store → state machine →
+   travelling-document link to the Evidence Archive). The A2A protocol itself was
+   deleted with the swarm; these kinds are kept only for backward-compat normalization
+   of old persisted records, and the path lights up only when such events are present.
+   Test: `test_office_normalize.py::test_evidence_a2a_events_normalize`.
 6. **Keyboard navigation** — `[` / `]` cycle the selected agent, `Esc` clears; minimap
    rows are keyboard-activatable. jsdom a11y smoke test in `src/__tests__/overlays.test.tsx`.
 
@@ -66,8 +73,8 @@
 cd office-ui && npm install && npm run dev
 
 # live
-API_HOST=127.0.0.1 API_PORT=8080 seleric-api
-cd office-ui && SELERIC_API_URL=http://127.0.0.1:8080 npm run dev
+API_HOST=127.0.0.1 API_PORT=8090 seleric-api
+cd office-ui && SELERIC_API_URL=http://127.0.0.1:8090 npm run dev
 
 # tests
 cd office-ui && npm test && npm run build

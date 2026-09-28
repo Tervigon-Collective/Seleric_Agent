@@ -1,7 +1,8 @@
-# Voice Agent (LiveKit) — planning
+# Voice Agent (LiveKit) — built, partially verified
 
-**Status:** planning only. No code exists yet. Nothing in this folder has been
-built or verified against a running deployment.
+**Status:** built, partially verified (voice worker, token issuance, dev page
+shipped 2026-09-24..26; phased plan in progress — item-by-item state in
+[02_PHASED_PLAN.md](02_PHASED_PLAN.md), Phase 0 status).
 
 **Goal:** speak a business question to Seleric and hear the answer, without
 weakening the evidence/provenance guarantees that make the text answer

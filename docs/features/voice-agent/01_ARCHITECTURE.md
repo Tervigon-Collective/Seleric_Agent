@@ -1,6 +1,8 @@
 # Voice Agent — Architecture
 
-**Status:** proposed. Verified against the repo as of 2026-09-24; the LiveKit
+**Status:** built, partially verified (see the Phase 0 status in
+[02_PHASED_PLAN.md](02_PHASED_PLAN.md)). Verified against the repo as of
+2026-09-24; the LiveKit
 API surface in §11 was verified against `livekit/agents` upstream on the same
 date.
 

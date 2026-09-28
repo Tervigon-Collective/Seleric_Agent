@@ -1,6 +1,6 @@
 # 05 — Phased implementation plan (sprints)
 
-**Status:** planning only — no code written against this plan yet.
+**Status:** executed — Sprints 0–5 done (see README); Sprint 6 optional, not started.
 
 Scope: get [`BusinessStateService`](01_ARCHITECTURE.md) from "designed" to
 "implemented," then layer [Domain Health Snapshots](04_DOMAIN_HEALTH_SNAPSHOTS.md)

@@ -43,8 +43,25 @@ from pydantic import BaseModel
 from seleric_swarm.agent.artifacts import CausalArtifact, EvidenceArtifact, PredictionArtifact
 from seleric_swarm.toolsets import policy_config as policy
 
+# Temporal grain hierarchy: finer grain can satisfy coarser grain requests
+# via valid aggregation (sum for additive metrics, avg for rates, etc.)
+TEMPORAL_HIERARCHY: dict[str, list[str]] = {
+    "day": ["week", "month", "quarter", "year"],
+    "week": ["month", "quarter", "year"],
+    "month": ["quarter", "year"],
+    "quarter": ["year"],
+}
+
+
+def _grain_satisfies(requested: str, available: str) -> bool:
+    """Return True if available grain can satisfy requested grain via aggregation."""
+    if requested == available:
+        return True
+    return requested in TEMPORAL_HIERARCHY.get(available, [])
+
 if TYPE_CHECKING:
     from seleric_swarm.agent.dependencies import SelericDeps
+    from seleric_swarm.agent.output import MissionResult
     from seleric_swarm.conversations.contracts import Artifact
 
 Severity = Literal["info", "warning", "blocking"]
@@ -424,6 +441,10 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
     if the breakdown is genuinely unsupported, to say so) rather than shipping a
     different-question answer as ``completed``.
 
+    Temporal grain coverage: if the query requests a coarser grain (e.g., quarter)
+    but evidence exists at a finer grain (e.g., month), the finer grain satisfies
+    the request via valid aggregation (sum for additive metrics).
+
     NOT_APPLICABLE when the query demanded no resolvable breakdown, or when the
     mission produced no evidence at all (``check_evidence`` owns that case — a
     coverage gap on top would just double-count the same failure)."""
@@ -435,17 +456,31 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
         for cs in (getattr(scope, "breakdowns", ()) or ())
     ]
     value_filters = tuple(getattr(scope, "value_filters", ()) or ())
-    if not breakdowns and not value_filters:
+    requested_grain = getattr(scope, "temporal_grain", None)
+    if not breakdowns and not value_filters and not requested_grain:
         return CheckOutcome(check="scope_coverage", status="NOT_APPLICABLE")
     evidence = [a for a in artifacts if a.artifact_type == "evidence"]
     if not evidence:
         return CheckOutcome(check="scope_coverage", status="NOT_APPLICABLE")
 
     grouped: set[str] = set()
+    filtered: set[str] = set()
+    available_grains: set[str] = set()
     for artifact in evidence:
         parsed = _payload(artifact, EvidenceArtifact)
         if parsed is not None:
             grouped.update(parsed.dimensions.keys())
+            if parsed.grain and parsed.grain != "none":
+                available_grains.add(parsed.grain)
+        # A named value is covered by *filtering* just as well as grouping (a
+        # brand/source scope is applied as a Cube filter, which lands in
+        # provenance, not in the row's grouped dimensions). Without this a
+        # correctly-filtered answer — incl. the auto-applied workspace brand —
+        # was scored as uncovered and failed closed (live MS3-0648c0208b:
+        # brand_id filtered, dimensions={}, mission killed with a full answer).
+        for applied in artifact.provenance.source_metadata.get("filters_applied") or []:
+            if isinstance(applied, dict) and (dim := applied.get("dimension")):
+                filtered.add(str(dim))
 
     gaps: list[EvidenceGap] = []
     for candidates in breakdowns:
@@ -467,7 +502,7 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
     # evidence — filtered or grouped by one of the dimensions the data records
     # it in. Otherwise the answer is a total that ignores what was asked.
     for vf in value_filters:
-        if grouped & set(vf.dimensions):
+        if (grouped | filtered) & set(vf.dimensions):
             continue
         gaps.append(
             EvidenceGap(
@@ -482,6 +517,23 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
                 priority=8,
             )
         )
+    # Temporal grain coverage: check if available evidence grain satisfies requested grain
+    if requested_grain and requested_grain != "none":
+        grain_satisfied = any(_grain_satisfies(requested_grain, ag) for ag in available_grains)
+        if not grain_satisfied:
+            gaps.append(
+                EvidenceGap(
+                    description=(
+                        f"the question asked for {requested_grain} grain, but the answer's "
+                        f"evidence is at {', '.join(sorted(available_grains)) or 'unknown'} grain — "
+                        f"re-run with a metric that supports {requested_grain} or a finer grain "
+                        f"that can be aggregated up, or state plainly that no available metric supports it"
+                    ),
+                    blocking=True,
+                    priority=8,
+                )
+            )
+
     if not gaps:
         return CheckOutcome(check="scope_coverage")
     return CheckOutcome(check="scope_coverage", status="INSUFFICIENT", gaps=gaps)
@@ -490,8 +542,13 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
 _NON_CLAIM_ARTIFACT_TYPES = frozenset({"plan"})
 
 
-def run_checks(deps: SelericDeps) -> tuple[list[CheckOutcome], list[EvidenceGap], ClaimType]:
+def run_checks(
+    deps: SelericDeps, result: MissionResult | None = None
+) -> tuple[list[CheckOutcome], list[EvidenceGap], ClaimType]:
     """Every V3 check over one mission's artifacts, plus the collected gaps.
+
+    ``result`` (the answer under review) enables the answer-grounding check;
+    without it only the artifact checks run.
 
     Gap priority is *not* recomputed the way
     ``agents/skeptic/evidence_gaps.py::collect_gaps`` does (EIG/impact/cost).
@@ -499,6 +556,8 @@ def run_checks(deps: SelericDeps) -> tuple[list[CheckOutcome], list[EvidenceGap]
     the recompute changes nothing about the verdict -- porting it would add a
     scoring model with no consumer.
     """
+    from seleric_swarm.agent.validation.grounding import check_answer_grounding
+
     # A plan is observability, not a claim: counting it as a derived artifact
     # would fail every planned mission that (correctly) fetched no data.
     artifacts = [
@@ -513,6 +572,7 @@ def run_checks(deps: SelericDeps) -> tuple[list[CheckOutcome], list[EvidenceGap]
         check_causal(artifacts),
         check_prediction(artifacts),
         check_scope_coverage(artifacts, getattr(deps, "required_scope", None)),
+        check_answer_grounding(artifacts, result),
     ]
     live = [oc for oc in outcomes if oc.status != "NOT_APPLICABLE"]
     gaps = [gap for oc in live for gap in oc.gaps]

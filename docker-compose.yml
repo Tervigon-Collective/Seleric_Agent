@@ -105,7 +105,8 @@ services:
       QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       QDRANT_EMBEDDING_MODEL: ${QDRANT_EMBEDDING_MODEL:-text-embedding-3-small}
       V3_AGENT_ENABLED: ${V3_AGENT_ENABLED:-true}
-      SELERIC_MCP_URL: ${SELERIC_MCP_URL:-}
+      # In-network URL wins; host SELERIC_MCP_URL (127.0.0.1) is unreachable here.
+      SELERIC_MCP_URL: ${COMPOSE_SELERIC_MCP_URL:-${SELERIC_MCP_URL:-}}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
       # POST /v1/voice/token (the browser's room join) is served by this service.
@@ -124,6 +125,7 @@ services:
     networks:
       - default
       - laya_default
+      - seleric-mcp_default
     depends_on:
       postgres:
         condition: service_healthy
@@ -192,7 +194,7 @@ services:
       QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       QDRANT_EMBEDDING_MODEL: ${QDRANT_EMBEDDING_MODEL:-text-embedding-3-small}
       V3_AGENT_ENABLED: ${V3_AGENT_ENABLED:-true}
-      SELERIC_MCP_URL: ${SELERIC_MCP_URL:-}
+      SELERIC_MCP_URL: ${COMPOSE_SELERIC_MCP_URL:-${SELERIC_MCP_URL:-}}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
       JEV_BASE_URL: ${JEV_BASE_URL:-}
@@ -206,6 +208,7 @@ services:
     networks:
       - default
       - laya_default
+      - seleric-mcp_default
     depends_on:
       api:
         condition: service_healthy
@@ -263,4 +266,8 @@ networks:
   # The Laya/JEV compose stack's network, joined so api/recovery can reach it
   # as http://laya-serve:8000. Must already exist (docker compose up in laya/).
   laya_default:
+    external: true
+  # The local seleric-mcp stack's network, reachable as http://mcp:8765/mcp.
+  # Must already exist (docker compose up in seleric-mcp/).
+  seleric-mcp_default:
     external: true

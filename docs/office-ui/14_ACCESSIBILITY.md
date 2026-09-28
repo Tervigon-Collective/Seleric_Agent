@@ -2,11 +2,11 @@
 
 ## Status is never colour-only
 
-Every agent status is conveyed by **four** redundant channels:
+Every agent/session status item is conveyed by **four** redundant channels:
 
 1. ring colour (design token),
 2. animation (`think`, `review`, `wait`, `blocked`, `celebrate`, `walk`, `sit_type`),
-3. a role glyph on the nameplate,
+3. a glyph on the nameplate,
 4. a `!` badge for `waiting` / `failed`,
 
 plus the hover card and inspector spell the status out in words.
@@ -25,8 +25,8 @@ The DOM overlays (top bar, mission board, hover card, inspector, timeline, debug
 semantic HTML: real `<button>` / `<select>` elements, visible focus styles inherited
 from the UA plus token colours, `aria-label` on the canvas and the inspector. Timeline
 rows are clickable and select the agent. The canvas itself is pointer-driven (pan /
-zoom / hover / click) — a keyboard agent-cycle ( `[` / `]` to move selection through
-`agentOrder`) is a small future addition.
+zoom / hover / click); the keyboard agent-cycle ( `[` / `]` moves selection through
+`agentOrder`, `Esc` clears — `OfficeCanvas`) is implemented.
 
 ## Contrast & theme
 

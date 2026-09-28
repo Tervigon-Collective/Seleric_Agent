@@ -16,6 +16,7 @@ from seleric_swarm.conversations.contracts import (
     ActivityEvent,
     Artifact,
     Attachment,
+    EpisodicEvent,
     MemoryItem,
     MemoryPreference,
     Message,
@@ -1674,6 +1675,114 @@ class PostgresThreadSummaryRepository(_PostgresRepository):
         return ThreadSummary.model_validate(row) if row else None
 
 
+class PostgresEpisodicEventRepository(_PostgresRepository):
+    @staticmethod
+    def _params(event: EpisodicEvent) -> dict[str, Any]:
+        values = event.model_dump()
+        values.update(
+            event_type=event.event_type.value,
+            entities=_json(event.entities),
+            details=_json(event.details),
+        )
+        return values
+
+    def create(self, event: EpisodicEvent) -> EpisodicEvent:
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """INSERT INTO episodic_events
+                    (id, workspace_id, owner_user_id, project_id, thread_id, run_id, event_type,
+                     summary, entities, details, supersedes_id, superseded_by_id,
+                     created_at, updated_at)
+                    VALUES (:id, :workspace_id, :owner_user_id, :project_id, :thread_id, :run_id,
+                     :event_type, :summary, CAST(:entities AS JSONB), CAST(:details AS JSONB),
+                     :supersedes_id, :superseded_by_id, :created_at, :updated_at)
+                    ON CONFLICT (id) DO NOTHING"""
+                ),
+                self._params(event),
+            )
+        return self.get(event.id, event.workspace_id, event.owner_user_id) or event
+
+    def get(
+        self, event_id: str, workspace_id: str, owner_user_id: str
+    ) -> EpisodicEvent | None:
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """SELECT * FROM episodic_events WHERE id=:id
+                    AND workspace_id=:workspace_id AND owner_user_id=:owner_user_id"""
+                ),
+                {"id": event_id, "workspace_id": workspace_id, "owner_user_id": owner_user_id},
+            ).mappings().first()
+        return EpisodicEvent.model_validate(_row_for(EpisodicEvent, row)) if row else None
+
+    def list(
+        self,
+        workspace_id: str,
+        owner_user_id: str,
+        *,
+        project_id: str | None = None,
+        thread_id: str | None = None,
+        run_id: str | None = None,
+        event_type: str | None = None,
+        limit: int = 100,
+    ) -> builtins.list[EpisodicEvent]:
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """SELECT * FROM episodic_events WHERE workspace_id=:workspace_id
+                    AND owner_user_id=:owner_user_id
+                    AND (CAST(:project_id AS TEXT) IS NULL
+                         OR project_id IS NULL OR project_id=:project_id)
+                    AND (CAST(:thread_id AS TEXT) IS NULL
+                         OR thread_id IS NULL OR thread_id=:thread_id)
+                    AND (CAST(:run_id AS TEXT) IS NULL
+                         OR run_id IS NULL OR run_id=:run_id)
+                    AND (CAST(:event_type AS TEXT) IS NULL OR event_type=:event_type)
+                    ORDER BY created_at DESC LIMIT :limit"""
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "owner_user_id": owner_user_id,
+                    "project_id": project_id,
+                    "thread_id": thread_id,
+                    "run_id": run_id,
+                    "event_type": event_type,
+                    "limit": max(1, limit),
+                },
+            ).mappings().all()
+        return [EpisodicEvent.model_validate(_row_for(EpisodicEvent, row)) for row in rows]
+
+    def update(self, event: EpisodicEvent) -> EpisodicEvent:
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    """UPDATE episodic_events SET project_id=:project_id, thread_id=:thread_id,
+                    run_id=:run_id, event_type=:event_type, summary=:summary,
+                    entities=CAST(:entities AS JSONB), details=CAST(:details AS JSONB),
+                    supersedes_id=:supersedes_id, superseded_by_id=:superseded_by_id,
+                    updated_at=:updated_at
+                    WHERE id=:id AND workspace_id=:workspace_id
+                    AND owner_user_id=:owner_user_id"""
+                ),
+                self._params(event),
+            )
+        if not result.rowcount:
+            raise KeyError(event.id)
+        return event
+
+    def delete(self, event_id: str, workspace_id: str, owner_user_id: str) -> bool:
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                text(
+                    """DELETE FROM episodic_events WHERE id=:id
+                    AND workspace_id=:workspace_id AND owner_user_id=:owner_user_id"""
+                ),
+                {"id": event_id, "workspace_id": workspace_id, "owner_user_id": owner_user_id},
+            )
+        return bool(result.rowcount)
+
+
 def build_conversation_repositories(
     backend: str,
     database_url: str,
@@ -1703,6 +1812,7 @@ def build_conversation_repositories(
             attachments=PostgresAttachmentRepository(database),
             memories=PostgresMemoryRepository(database),
             thread_summaries=PostgresThreadSummaryRepository(database),
+            episodic_events=PostgresEpisodicEventRepository(database),
             search=PostgresSearchRepository(database, query_embedder=query_embedder),  # type: ignore[arg-type]
             approvals=PostgresApprovalRepository(database),  # type: ignore[arg-type]
             unit_of_work=unit_of_work if not transactional else None,

@@ -1,6 +1,9 @@
 # Testing `POST /v1/missions` with curl / Postman
 
-Default port: **8000** (uvicorn default; Docker exposes 8000).
+Default port: **8000** for bare local uvicorn. Docker-compose publishes the
+container's 8000 on host **8090** by default (`${API_PUBLISH_PORT:-8090}:8000`,
+matching QUICKSTART) — use `http://127.0.0.1:8090` in the URLs below when
+running under compose.
 
 Auth: `x-api-key: <key>` (or `Authorization: Bearer <key>`). If no `api_key` is
 configured in settings, auth is open — drop the header.
@@ -59,7 +62,8 @@ There is **no `trace=true` request flag** — tracing is always on. Two layers:
   exactly which calls blew the tool-call budget. No flag needed.
 - **`trace.events`** — mission-lifecycle timeline. Families: `mission`,
   `decomposition`, `task`, `artifact`, `leadership`, `claim`, `skeptic`,
-  `remediation`.
+  `remediation`. Note: live V3 runs write only the `mission` family — the
+  others are legacy and appear only on old swarm_v2-era persisted records.
 
 Example `trace.steps` entry:
 

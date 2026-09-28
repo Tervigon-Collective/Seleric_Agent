@@ -56,10 +56,15 @@ class MissionResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    mission_id: str
+    # mission_id / query / as_of are runner-owned: they are unconditionally
+    # overwritten in runner.py (run_v3_mission model_copy) before the result is
+    # stored or returned. Kept optional here so the model is not forced to
+    # fabricate throwaway values (live: "m_001") — which wastes output tokens
+    # and, when omitted/empty, cost a final_result validation retry.
+    mission_id: str = ""
     status: MissionStatus
-    query: str
-    as_of: datetime
+    query: str = ""
+    as_of: datetime | None = None
     final_response: str
     evidence_ids: list[str] = Field(default_factory=list)
     finding_ids: list[str] = Field(default_factory=list)

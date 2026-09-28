@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck eval eval-llm validate ci dev docker-build docker-up docker-down migrate office-ui-test
+.PHONY: install test lint typecheck eval validate ci dev docker-build docker-up docker-down migrate office-ui-test
 
 install:
 	uv sync --extra dev
@@ -18,13 +18,11 @@ typecheck:
 validate:
 	uv run python scripts/validate_repo.py
 
-# Deterministic eval: FakeLLM, no network, runs in CI.
+# Deterministic eval: golden-dataset gate, no network, runs in CI.
+# (The old `seleric_swarm.eval` CLI package was deleted in the V3 refactor;
+# eval/suites/lookup_v1.yaml is orphaned swarm-era config.)
 eval:
-	uv run python -m seleric_swarm.eval lookup_v1
-
-# Opt-in live eval against Azure Llama + LLM-as-judge faithfulness. Never in CI.
-eval-llm:
-	uv run python -m seleric_swarm.eval lookup_v1 --live-llm --judge
+	uv run pytest tests/unit/test_v3_golden_dataset.py -q
 
 office-ui-test:
 	npm --prefix office-ui test

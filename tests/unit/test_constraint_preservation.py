@@ -22,7 +22,7 @@ import pytest
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
-from seleric_swarm.agent.scope import RequiredScope, build_required_scope
+from seleric_swarm.agent.scope import RequiredScope, ValueFilter, build_required_scope
 from seleric_swarm.agent.validation import EvidenceValidator
 from seleric_swarm.agent.validation.signals import check_scope_coverage
 from seleric_swarm.conversations.contracts import (
@@ -190,6 +190,63 @@ def test_scope_coverage_missing_breakdown_blocks():
     out = check_scope_coverage(
         store.list_for_mission(_MISSION), RequiredScope(breakdowns=frozenset({"source_name"}))
     )
+    assert out.status == "INSUFFICIENT"
+    assert out.gaps and out.gaps[0].blocking
+
+
+def _filtered_evidence(store: InMemoryArtifactStore, *, day: int, dimension: str, value: str) -> None:
+    """Evidence with an applied Cube filter (not a grouping) — how a named value
+    or workspace brand scope actually lands: in provenance, dimensions stay {}."""
+    stamp = datetime(2026, 9, day, tzinfo=UTC)
+    payload = EvidenceArtifact(
+        metric_id="total_ad_spend",
+        dimensions={},
+        grain="month",
+        as_of=datetime.now(UTC),
+        period_start=stamp,
+        period_end=stamp,
+        value=1000.0 + day,
+        source_query={"measure": "total_ad_spend"},
+    )
+    store.put(
+        Artifact(
+            workspace_id="ws1",
+            artifact_type="evidence",
+            payload=payload.model_dump(mode="json"),
+            classification="factual",
+            evidence_ids=[f"raw:total_ad_spend:{day}"],
+            provenance=ArtifactProvenance(
+                query_version="q1",
+                source_metadata={"filters_applied": [{"dimension": dimension, "operator": "equals", "values": [value]}]},
+            ),
+            mission_id=_MISSION,
+        )
+    )
+
+
+def test_value_filter_satisfied_by_applied_filter_not_grouping():
+    # MS3-0648c0208b regression: a value filter (brand_id=20) applied as a Cube
+    # filter leaves dimensions={}, but the constraint IS covered. Judging it by
+    # grouping keys alone killed a complete, correctly-filtered answer.
+    store = InMemoryArtifactStore()
+    for d in range(1, 6):
+        _filtered_evidence(store, day=d, dimension="brand_id", value="20")
+    scope = RequiredScope(
+        value_filters=(ValueFilter(term="acme", dimensions=frozenset({"brand_id"}), values=("20",)),)
+    )
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
+    assert out.status == "OK", out.gaps
+    assert not out.gaps
+
+
+def test_value_filter_still_blocks_when_neither_filtered_nor_grouped():
+    store = InMemoryArtifactStore()
+    for d in range(1, 6):
+        _evidence_artifact(store, day=d, dimensions={})  # no filter, no grouping
+    scope = RequiredScope(
+        value_filters=(ValueFilter(term="acme", dimensions=frozenset({"brand_id"}), values=("20",)),)
+    )
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
     assert out.status == "INSUFFICIENT"
     assert out.gaps and out.gaps[0].blocking
 

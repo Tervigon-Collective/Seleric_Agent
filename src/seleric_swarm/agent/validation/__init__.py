@@ -1,13 +1,15 @@
 """``EvidenceValidator`` — structural gate + the Skeptic's two-signal content checks.
 
-Sprint 2 shipped the orchestration: the bounded 1-revision retry loop
+Sprint 2 shipped the orchestration: the bounded revision retry loop
 (non-negotiable rule 11, ``ExecutionLimits.max_validation_revisions``) plus
 structural checks. Sprint 3 (this) adds the content half — ``score_trust`` and
-``decide_verdict`` ported from ``agents/skeptic/scoring/`` — completing Profile
-C's half of the validator.
+``decide_verdict`` ported from ``agents/skeptic/scoring/`` (swarm_v2, since
+deleted) — completing Profile C's half of the validator.
 
 Joint decision recorded with A1 acceptance (2026-09-18): keep
-``max_validation_revisions = 1``. Causal escalation is ``search_breadth`` on
+``max_validation_revisions = 1`` — later revised: the live default is now
+**2** (one revision pass; see ``agent/dependencies.py``), raised to allow a
+revision for scope/evidence gaps. Causal escalation is ``search_breadth`` on
 ``estimate_effect`` (A1.1), not this counter — widening a causal search does not
 consume a validation revision. Skeptic → validator is a **change in kind**
 (cross-agent adversarial challenge becomes in-context self-review), not a
@@ -141,15 +143,19 @@ class EvidenceValidator:
             return causal_check
 
         # -- content checks: the two signals (Sprint 3) ------------------
-        return self.score(deps, alternatives=alternatives or [])
+        return self.score(deps, alternatives=alternatives or [], result=result)
 
     def score(
-        self, deps: SelericDeps, *, alternatives: list[AlternativeHypothesis] | None = None
+        self,
+        deps: SelericDeps,
+        *,
+        alternatives: list[AlternativeHypothesis] | None = None,
+        result: MissionResult | None = None,
     ) -> ValidationOutcome:
         """Run the checks and both signals. Separated from ``validate`` so the
         two-signal behavior can be exercised without a ``MissionResult``."""
         alternatives = alternatives or []
-        outcomes, gaps, claim_type = run_checks(deps)
+        outcomes, gaps, claim_type = run_checks(deps, result)
         if not outcomes:
             # Nothing to check: the mission produced no durable artifacts, so
             # there is no claim for the two signals to reason about. Scoring it
@@ -312,6 +318,33 @@ async def _run_agent(
             )
 
 
+def _validation_trace(outcome: ValidationOutcome, deps: SelericDeps) -> dict:
+    """Diagnostics for a failed/partial validation so the response explains
+    itself (D3): the verdict, the human reason, the trust score, and the
+    resolved RequiredScope that drove a coverage gap. Without this a mission
+    that failed on scope surfaced only ``INSUFFICIENT_EVIDENCE`` — undiagnosable
+    from one request_id."""
+    scope = getattr(deps, "required_scope", None)
+    scope_repr = None
+    if scope is not None and not scope.is_empty():
+        scope_repr = {
+            "breakdowns": [sorted(cs) for cs in scope.breakdowns],
+            "value_filters": [
+                {"term": vf.term, "dimensions": sorted(vf.dimensions), "values": list(vf.values)}
+                for vf in scope.value_filters
+            ],
+            "temporal_grain": getattr(scope, "temporal_grain", None),
+        }
+    return {
+        "validation": {
+            "verdict": outcome.verdict,
+            "reason": outcome.reason,
+            "trust_score": outcome.trust_score,
+            "required_scope": scope_repr,
+        }
+    }
+
+
 async def run_validated_mission(
     agent: Agent[SelericDeps, MissionResult],
     deps: SelericDeps,
@@ -359,7 +392,8 @@ async def run_validated_mission(
                     "status": "failed",
                     "error_code": "INSUFFICIENT_EVIDENCE",
                     "final_response": resp,
-                    "limitations": ["INSUFFICIENT_EVIDENCE"],
+                    "limitations": ["INSUFFICIENT_EVIDENCE", *([outcome.reason] if outcome.reason else [])],
+                    "trace": {**result.trace, **_validation_trace(outcome, deps)},
                 }
             )
         verdict = tracker.consume("validation_revisions")
@@ -369,12 +403,27 @@ async def run_validated_mission(
                 if (result.final_response and result.final_response.strip())
                 else "I could not back this answer with live metric evidence. Please retry."
             )
+            # If the agent produced a substantive answer with evidence, mark as partial
+            # rather than failed. The user got a real answer — failing the mission
+            # breaks UI trust and telemetry when validation revisions are exhausted
+            # on a scope gap that the agent cannot fix without new data.
+            has_substantive_answer = (
+                result.final_response
+                and result.final_response.strip()
+                and result.evidence_ids
+                and result.final_response.strip().lower() not in _PLACEHOLDER_ANSWERS
+            )
+            base_limitation = "VALIDATION_REVISIONS_EXHAUSTED" if has_substantive_answer else "INSUFFICIENT_EVIDENCE"
             return result.model_copy(
                 update={
-                    "status": "failed",
-                    "error_code": "INSUFFICIENT_EVIDENCE",
+                    "status": "partial" if has_substantive_answer else "failed",
+                    "error_code": None if has_substantive_answer else "INSUFFICIENT_EVIDENCE",
                     "final_response": resp,
-                    "limitations": ["INSUFFICIENT_EVIDENCE"],
+                    # Name the unresolved scope part alongside the code, so a
+                    # partial answer states what it does not cover (never merge
+                    # evidence with an unresolved scope difference silently).
+                    "limitations": [base_limitation, *([outcome.reason] if outcome.reason else [])],
+                    "trace": {**result.trace, **_validation_trace(outcome, deps)},
                 }
             )
         if on_stream is not None:
@@ -389,4 +438,14 @@ async def run_validated_mission(
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
         outcome = validator.validate(result, deps=deps)
-    return result
+
+    # Attach validation telemetry to trace for observability
+    validation_trace = {
+        "verdict": outcome.verdict,
+        "trust_score": outcome.trust_score,
+        "trust_label": outcome.trust_label,
+        "reasons": outcome.reasons,
+        "revisions_used": getattr(tracker, "validation_revisions", 0),
+    }
+    existing_trace = result.trace or {}
+    return result.model_copy(update={"trace": {**existing_trace, "validation": validation_trace}})

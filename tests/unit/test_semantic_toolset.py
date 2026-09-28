@@ -9,6 +9,7 @@ anywhere in the call path (that's the whole point of this profile).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -854,6 +855,136 @@ async def test_drilldown_writes_one_artifact_per_row():
     drilldown_call = next(c for c in mcp.calls if c[0] == "seleric.metrics_drilldown")
     assert drilldown_call[1]["parent_query_id"] == "q1"
     assert drilldown_call[1]["target_dimensions"] == ["shipping_region"]
+
+
+@pytest.mark.asyncio
+async def test_drilldown_forwards_order_and_limit_to_parent_and_lists_values():
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {"query_id": "q1", "rows": [{"net_sales": "100"}], "provenance": {}},
+            "seleric.metrics_drilldown": {
+                "rows": [
+                    {"shipping_region": "KA", "net_sales": "60"},
+                    {"shipping_region": "MH", "net_sales": "40"},
+                    {"shipping_region": "GA", "net_sales": "0"},
+                ],
+                "provenance": {},
+            },
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.drilldown(
+        ctx,
+        metric_id="net_sales",
+        dimension="shipping_region",
+        period_start=datetime(2026, 8, 1, tzinfo=UTC),
+        period_end=datetime(2026, 8, 31, tzinfo=UTC),
+        order="desc",
+        limit=3,
+    )
+    assert result.success is True
+    parent_call = next(c for c in mcp.calls if c[0] == "seleric.metrics_query")
+    assert parent_call[1]["limit"] == 3
+    assert parent_call[1]["sort"] == [{"field": "net_sales", "direction": "desc"}]
+    assert len(result.artifact_ids) == 2  # zero-activity row dropped from a ranking
+    assert "shipping_region=KA -> 60" in result.summary
+    assert "shipping_region=MH -> 40" in result.summary
+    assert "2026-08-01..2026-08-31" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_drilldown_unranked_keeps_zero_rows():
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {"query_id": "q1", "rows": [{"net_sales": "60"}], "provenance": {}},
+            "seleric.metrics_drilldown": {
+                "rows": [
+                    {"shipping_region": "KA", "net_sales": "60"},
+                    {"shipping_region": "GA", "net_sales": "0"},
+                ],
+                "provenance": {},
+            },
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.drilldown(
+        ctx,
+        metric_id="net_sales",
+        dimension="shipping_region",
+        period_start=datetime(2026, 8, 1, tzinfo=UTC),
+        period_end=datetime(2026, 8, 31, tzinfo=UTC),
+    )
+    assert len(result.artifact_ids) == 2
+
+
+@pytest.mark.asyncio
+async def test_drilldown_groups_by_declared_stable_key():
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {"query_id": "q1", "rows": [{"units": "9"}], "provenance": {}},
+            "seleric.metrics_drilldown": {
+                "rows": [
+                    {"item_key": "k1", "item_label": "Same Name", "units": "5"},
+                    {"item_key": "k2", "item_label": "Same Name", "units": "4"},
+                ],
+                "provenance": {},
+            },
+        }
+    )
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(CatalogueMetricMeta(id="units", supported_dimensions=["item_key", "item_label"]),),
+            dimensions=("item_key", "item_label"),
+            stable_keys=(("item_label", "item_key"),),
+        ),
+    )
+    ctx = FakeRunContext(deps)
+    result = await semantic.drilldown(
+        ctx,
+        metric_id="units",
+        dimension="item_label",
+        period_start=datetime(2026, 8, 1, tzinfo=UTC),
+        period_end=datetime(2026, 8, 31, tzinfo=UTC),
+    )
+    drill = next(c for c in mcp.calls if c[0] == "seleric.metrics_drilldown")
+    assert drill[1]["target_dimensions"] == ["item_key", "item_label"]
+    dims = [ctx.deps.artifact_store.get(a).payload["dimensions"] for a in result.artifact_ids]
+    assert {d["item_key"] for d in dims} == {"k1", "k2"}
+    assert "item_key=k1, item_label=Same Name -> 5" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_drilldown_skips_stable_key_the_metric_does_not_support():
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {"query_id": "q1", "rows": [{"units": "9"}], "provenance": {}},
+            "seleric.metrics_drilldown": {
+                "rows": [{"item_label": "A", "units": "9"}],
+                "provenance": {},
+            },
+        }
+    )
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(CatalogueMetricMeta(id="units", supported_dimensions=["item_label"]),),
+            stable_keys=(("item_label", "item_key"),),
+        ),
+    )
+    await semantic.drilldown(
+        FakeRunContext(deps),
+        metric_id="units",
+        dimension="item_label",
+        period_start=datetime(2026, 8, 1, tzinfo=UTC),
+        period_end=datetime(2026, 8, 31, tzinfo=UTC),
+    )
+    drill = next(c for c in mcp.calls if c[0] == "seleric.metrics_drilldown")
+    assert drill[1]["target_dimensions"] == ["item_label"]
 
 
 @pytest.mark.asyncio

@@ -1,9 +1,16 @@
 # Business State Service (thin layer for Seleric_Agent)
 
+> **Staleness banner:** docs 03/04/05 in this folder reference swarm_v2
+> modules (`coordinator/`, `swarm/specialists/`, `config/agent_registry.yaml`,
+> `tests/coordinator/`) that no longer exist in `src/` — this folder is
+> partially superseded. See `docs/CURRENT_ARCHITECTURE.md` for the as-built
+> architecture.
+
 **Status:** in progress — Sprints 0–5 done and live-verified (contracts,
 facade MVP, anomaly detector, pluggable provider config, Domain Health
-Snapshots for all 8 buildable domains + a cron-less scheduler entry point,
-and the Coordinator overview answer path). Sprint 6 (hardening: caching,
+Snapshots for all 8 buildable domains + a cron-less scheduler entry point;
+the Coordinator overview answer path this originally fed was deleted with
+swarm_v2). Sprint 6 (hardening: caching,
 per-domain profile overrides, multi-brand) is optional and not started. See
 [05_SPRINT_PLAN.md](05_SPRINT_PLAN.md) for what's actually built vs. still
 planned.

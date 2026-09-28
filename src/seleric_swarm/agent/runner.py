@@ -110,14 +110,14 @@ _PLAN_INTENTS = frozenset(
 # search→resolve→query→synthesis, and a diagnostic/causal run fans out.
 _TOOL_BUDGET_BY_INTENT: dict[str, int] = {
     "conversation": 1,
-    "lookup": 64,
-    "aggregation": 64,
-    "trend": 64,
-    "comparison": 80,
-    "diagnostic": 128,
-    "forecast": 128,
-    "simulation": 128,
-    "causal_investigation": 128,
+    "lookup": 100,
+    "aggregation": 100,
+    "trend": 100,
+    "comparison": 150,
+    "diagnostic": 250,
+    "forecast": 250,
+    "simulation": 250,
+    "causal_investigation": 250,
 }
 
 # Simple, read-only intents cheap enough for the fast model tier.
@@ -224,7 +224,9 @@ def _as_of_datetime(as_of: str | None, timezone: str = "Asia/Kolkata") -> dateti
     return datetime(day.year, day.month, day.day, tzinfo=tz)
 
 
-def _required_scope(runtime: SwarmRuntime, query: str) -> RequiredScope:
+def _required_scope(
+    runtime: SwarmRuntime, query: str, temporal_grain: str | None = None
+) -> RequiredScope:
     """Resolve the query's requested breakdowns to catalogue dimension ids via
     the bootstrap's alias index. Fail-open: no bootstrap / any error ⇒ empty
     scope (the coverage check becomes NOT_APPLICABLE)."""
@@ -236,6 +238,7 @@ def _required_scope(runtime: SwarmRuntime, query: str) -> RequiredScope:
             query,
             alias_index=bootstrap.alias_index(),
             dimension_ids=bootstrap.dimension_ids(),
+            temporal_grain=temporal_grain,
         )
     except Exception:
         _log.warning("required_scope_failed", exc_info=True)
@@ -1004,7 +1007,7 @@ async def run_v3_mission(
     )
     intent = classification.intent
     values = await _resolve_values(runtime, mcp, query) if intent != "conversation" else {}
-    required_scope = _required_scope(runtime, query)
+    required_scope = _required_scope(runtime, query, temporal_grain=classification.grain)
     value_filters = value_filters_from_resolution(values)
     if value_filters:
         required_scope = RequiredScope(

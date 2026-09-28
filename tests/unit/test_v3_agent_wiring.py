@@ -18,7 +18,8 @@ def test_every_frozen_function_is_registered() -> None:
     """26 = the 23 CONTRACTS.md §4 functions, ``sandbox.run_python`` (the
     python sandbox added on top of the frozen analytics surface),
     ``semantic.get_metric_definitions`` (batch of the frozen singular one) and
-    ``semantic.resolve_brand`` (brand→brand_id resolution). The read-only ad
+    ``semantic.resolve_brand`` (brand→brand_id resolution) and
+    ``semantic.resolve_concept`` (business concept→metric id). The read-only ad
     surfaces in ``ads.py`` are deliberately unregistered (third-party APIs,
     not certified Cube views).
 
@@ -26,7 +27,7 @@ def test_every_frozen_function_is_registered() -> None:
     unregistered — the test suite would stay green, because a tool nobody
     registers is a tool nobody tests.
     """
-    assert len(TOOLS) == 26
+    assert len(TOOLS) == 27
 
 
 def test_all_tools_register_on_the_agent() -> None:
@@ -35,6 +36,7 @@ def test_all_tools_register_on_the_agent() -> None:
     assert names == {
         "search_semantics",
         "resolve_brand",
+        "resolve_concept",
         "get_metric_definition",
         "get_metric_definitions",
         "query_metrics",

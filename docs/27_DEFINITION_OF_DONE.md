@@ -3,7 +3,7 @@
 A feature/agent is production-ready only when:
 
 - input/output schemas are versioned,
-- capability is registered,
+- capability is exposed as a registered tool in a toolset (or covered by a test),
 - tool/data permissions are explicit,
 - unit and contract tests exist,
 - observability fields are emitted,
@@ -15,8 +15,8 @@ A feature/agent is production-ready only when:
 
 A mission is complete only when:
 
-- requested subquestions have terminal states,
+- mission run steps reach terminal states,
 - required claims pass provenance policy,
-- skeptic requirements pass or unresolved limitations are stated,
+- the EvidenceValidator gate passes or unresolved limitations are stated,
 - final output references evidence/artifacts,
 - audit trail is persisted.

@@ -9,7 +9,7 @@ Prompts should specify:
 - which artifacts it accepts,
 - which tools/services it may invoke,
 - what evidence class its outputs require,
-- when to hand off,
+- when to escalate to the validation gate / when to stop searching,
 - failure behavior.
 
 ## Do not put business truth in prompts
@@ -18,7 +18,7 @@ Metric definitions, model metadata, causal graphs and permissions live in regist
 
 ## Hypothesis generation
 
-Diagnostic prompts may generate multiple candidate explanations. They must explicitly mark them as hypotheses until evidence/tests promote or reject them.
+Hypothesis generation via the causal toolset (`estimate_effect` in `toolsets/causal.py`) may produce multiple candidate explanations. They must explicitly mark them as hypotheses until evidence/tests promote or reject them.
 
 ## Context policy
 

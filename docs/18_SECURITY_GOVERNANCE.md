@@ -19,7 +19,7 @@ Capability access should be granted to agent identity + mission scope, not merel
 
 ## A2A
 
-Authenticate agents, validate Agent Cards/config, require TLS in production and log handoff identity.
+A2A (Agent Cards, handoffs) was removed with swarm_v2 — cross-agent handoffs no longer exist. The equivalent controls today: API-key auth on all non-probe routes (`api/security.py`), mission workspace/owner scoping (`api/mission_access.py`), and single service-token auth at the MCP gateway.
 
 ## MCP
 

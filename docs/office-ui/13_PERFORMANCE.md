@@ -16,8 +16,9 @@ Target: fluid scene with 15–30 agents, many events, hover cards, inspector, an
 ## State
 
 - Zustand store; DOM overlays subscribe to **narrow selectors** (e.g. `s => s.board`)
-  so a `leadership_transferred` event re-renders only the header/board/inspector, not
-  the timeline list.
+  so a board-scoped event (e.g. a `leadership_transferred` — legacy swarm_v2
+  vocabulary, still normalized from old persisted records but never emitted by V3)
+  re-renders only the header/board/inspector, not the timeline list.
 - `ingestEvent` is O(agents) — a shallow map copy + one `switch`. `seenSeq` lookup is
   O(1); duplicates return immediately.
 - `timeline` is re-sorted on insert (small N; missions are tens–hundreds of events).

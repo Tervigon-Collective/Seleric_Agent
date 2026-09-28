@@ -34,7 +34,8 @@ Apply schema migrations from the host (or let the `api` service run
 seleric-migrate --database-url postgresql+psycopg://seleric:seleric@127.0.0.1:5433/seleric_swarm
 ```
 
-Full deployable stack (API + Postgres + Redis):
+Full deployable stack (API + Postgres + Redis + MinIO + ClamAV + recovery
+worker; voice behind the `voice` profile):
 
 ```bash
 docker compose up -d --build
@@ -112,19 +113,13 @@ uv run uvicorn seleric_swarm.main:app --reload
 uv run python scripts/validate_repo.py
 ```
 
-## 8. First implementation milestone
+## 8. Where to go next
 
-Do not begin with every agent. Implement this slice:
+The system is a single PydanticAI agent loop (there is no multi-agent
+pipeline to assemble). To understand or extend it:
 
-```text
-User
-  -> Coordinator
-  -> Performance or Commerce or Funnel domain lead
-  -> Observer
-  -> MCP
-  -> Evidence Ledger
-  -> Skeptic fact check
-  -> Response
-```
-
-After this is reliable, add Anomaly, then Diagnostic/DoWhy, then Prediction, then Strategy.
+1. Read `docs/CURRENT_ARCHITECTURE.md` — mission lifecycle, API surface,
+   agent loop, toolsets, evidence/provenance, storage, observability.
+2. The target architecture diagram is `diagrams/new.mmd`.
+3. New capabilities belong in a toolset (`src/seleric_swarm/toolsets/`)
+   or a deterministic service, not in a new "agent".

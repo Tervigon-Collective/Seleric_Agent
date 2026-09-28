@@ -23,7 +23,7 @@ Create a business intelligence system that can decompose ambiguous business ques
 1. Reduce hallucination by grounding every material claim.
 2. Use ML/statistics for quantitative detection and prediction.
 3. Use causal inference for causal questions instead of narrative-only reasoning.
-4. Allow domain leadership to move as the causal frontier moves.
+4. Keep the analysis frontier moving as the causal picture sharpens.
 5. Keep agent interfaces explicit and testable.
 6. Separate orchestration from computation.
 7. Make every mission replayable and auditable.
@@ -33,15 +33,15 @@ Create a business intelligence system that can decompose ambiguous business ques
 A mission is successful when the system can show:
 
 - what it was asked,
-- which tasks were created,
-- which agents participated,
+- which investigation steps ran,
+- which tools were called,
 - what evidence was retrieved,
 - how metrics were calculated,
 - which hypotheses were tested,
 - which models were used,
-- what the skeptic challenged,
+- what the evidence validator challenged,
 - what remains uncertain,
-- and why the final answer was allowed through the completion gate.
+- and why the final answer passed the validation gate.
 
 ## Initial operating mode
 

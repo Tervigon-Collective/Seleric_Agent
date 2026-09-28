@@ -24,6 +24,7 @@ from __future__ import annotations
 import builtins as _builtins
 import contextlib
 import io
+import json
 import os
 import threading
 import traceback
@@ -38,6 +39,10 @@ from seleric_swarm.paths import repo_root
 from seleric_swarm.toolsets.analytics import _load_evidence, _provenance, _write_finding
 
 _DEFAULT_TIMEOUT_S = 10.0
+# Inline size of the serialized result/stdout returned to the model. Larger
+# output is written in full to WORKDIR and referenced, never silently cut.
+_DEFAULT_RESULT_CHARS = 20_000
+_DEFAULT_MAX_METRICS = 500
 
 # stdlib modules the sandbox may import; numpy/pandas added only if installed.
 _ALLOWED_IMPORTS: set[str] = {
@@ -68,6 +73,21 @@ def _timeout_s() -> float:
         return float(os.environ.get("SELERIC_SANDBOX_TIMEOUT_S", _DEFAULT_TIMEOUT_S))
     except (TypeError, ValueError):
         return _DEFAULT_TIMEOUT_S
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _result_chars() -> int:
+    return _env_int("SELERIC_SANDBOX_RESULT_CHARS", _DEFAULT_RESULT_CHARS)
+
+
+def _max_metrics() -> int:
+    return _env_int("SELERIC_SANDBOX_MAX_METRICS", _DEFAULT_MAX_METRICS)
 
 
 def _enabled() -> bool:
@@ -117,8 +137,10 @@ async def run_python(
       - ``WORKDIR``: str path to a per-mission dir; write intermediate files
         there (they persist for later steps). Use ``open(os.path.join(...))``.
       - stdlib math/statistics/json/collections (+ numpy/pandas if available).
-    Set a ``result`` variable to the value(s) you computed — numeric entries of
-    a ``result`` dict are recorded on the Finding. Blocked: network, arbitrary
+    Set a ``result`` variable to the value(s) you computed — it is returned in
+    full (very large output is saved to WORKDIR and referenced), and every
+    numeric leaf, nested or not, is recorded on the Finding keyed by its path
+    (e.g. ``aug.top[0].revenue``). Blocked: network, arbitrary
     imports, eval/exec/open outside WORKDIR.
 
     Returns a Finding artifact id. On a code error you get the traceback back
@@ -194,22 +216,21 @@ async def run_python(
             "a file under WORKDIR, then retry."
         )
 
-    metrics: dict[str, float] = {}
-    if isinstance(result, dict):
-        for key, val in result.items():
-            if isinstance(val, bool):
-                continue
-            if isinstance(val, (int, float)):
-                metrics[str(key)] = float(val)
+    metrics = _flatten_numbers(result, limit=_max_metrics())
 
     printed = stdout.getvalue().strip()
     statement_bits = [purpose.strip() or "sandbox computation"]
+    spilled: list[str] = []
     if result is not None:
-        statement_bits.append(f"result={_truncate(result)}")
+        text, spill = _inline_or_spill(_serialize(result), workdir, "result", "json")
+        statement_bits.append(f"result={text}")
+        spilled += [spill] if spill else []
     if new_files:
         statement_bits.append(f"files={', '.join(new_files)}")
     if printed:
-        statement_bits.append(f"stdout={_truncate(printed)}")
+        text, spill = _inline_or_spill(printed, workdir, "stdout", "txt")
+        statement_bits.append(f"stdout={text}")
+        spilled += [spill] if spill else []
     statement = " | ".join(statement_bits)
 
     finding_id = _write_finding(
@@ -221,6 +242,10 @@ async def run_python(
     )
 
     warnings = [f"wrote {len(new_files)} file(s) to {workdir}"] if new_files else []
+    warnings += [
+        f"output exceeded {_result_chars()} chars; full text in {name} under WORKDIR"
+        for name in spilled
+    ]
     return ToolResult(
         success=True,
         artifact_ids=[finding_id],
@@ -230,9 +255,43 @@ async def run_python(
     )
 
 
-def _truncate(value: Any, limit: int = 400) -> str:
-    text = str(value)
-    return text if len(text) <= limit else text[:limit] + "…"
+def _serialize(value: Any) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _inline_or_spill(text: str, workdir: Path, stem: str, ext: str) -> tuple[str, str | None]:
+    """Return ``text`` inline when it fits; otherwise write it in full under
+    WORKDIR and return a head plus the file name, so nothing is lost."""
+    cap = _result_chars()
+    if len(text) <= cap:
+        return text, None
+    n = sum(1 for _ in workdir.glob(f"{stem}_*.{ext}")) + 1
+    name = f"{stem}_{n}.{ext}"
+    (workdir / name).write_text(text, encoding="utf-8")
+    return f"{text[:cap]}… [truncated; full output in WORKDIR/{name}]", name
+
+
+def _flatten_numbers(value: Any, *, limit: int, prefix: str = "") -> dict[str, float]:
+    """Every numeric leaf of ``value`` keyed by its path (``a.b[0].c``)."""
+    out: dict[str, float] = {}
+
+    def walk(v: Any, path: str) -> None:
+        if len(out) >= limit or isinstance(v, bool):
+            return
+        if isinstance(v, (int, float)):
+            out[path or "result"] = float(v)
+        elif isinstance(v, dict):
+            for k, child in v.items():
+                walk(child, f"{path}.{k}" if path else str(k))
+        elif isinstance(v, (list, tuple)):
+            for i, child in enumerate(v):
+                walk(child, f"{path}[{i}]")
+
+    walk(value, prefix)
+    return out
 
 
 class _WorkdirOs:

@@ -66,6 +66,12 @@ class CatalogueSnapshot:
 
     metrics: tuple[CatalogueMetricMeta, ...] = ()
     dimensions: tuple[str, ...] = ()
+    # (label dimension, stable key dimension) pairs declared by the catalogue.
+    stable_keys: tuple[tuple[str, str], ...] = ()
+
+    def stable_key_for(self, dimension: str) -> str | None:
+        """The dimension that identifies the entity ``dimension`` labels, if declared."""
+        return dict(self.stable_keys).get(dimension)
 
     def metric_ids(self) -> frozenset[str]:
         return frozenset(m.id for m in self.metrics)
@@ -140,7 +146,10 @@ class CatalogueSnapshot:
             label = meta.label or meta.id
             lines.append(f"- {meta.id}: {label}{suffix}")
         if self.dimensions:
-            lines.append("Dimensions: " + ", ".join(sorted(self.dimensions)))
+            keys = dict(self.stable_keys)
+            lines.append("Dimensions: " + ", ".join(
+                f"{d} (key: {keys[d]})" if d in keys else d for d in sorted(self.dimensions)
+            ))
         return "\n".join(lines)
 
 
@@ -176,6 +185,7 @@ class CatalogueBootstrap:
         self._ttl = ttl_seconds
         self._cache: dict[str, CatalogueMetricMeta] = {}
         self._dimension_aliases: dict[str, list[str]] = {}
+        self._stable_keys: dict[str, str] = {}
         self._grain_defaults: dict[str, Any] = {}
         self._warmed_at: float | None = None
 
@@ -239,6 +249,7 @@ class CatalogueBootstrap:
         return CatalogueSnapshot(
             metrics=tuple(self.entries()),
             dimensions=tuple(sorted(self.dimension_ids())),
+            stable_keys=tuple(sorted(self._stable_keys.items())),
         )
 
     def unresolvable(self, candidate_ids: list[str]) -> list[str]:
@@ -293,12 +304,15 @@ class CatalogueBootstrap:
             )
         dims = payload.get("dimensions") or []
         self._dimension_aliases = {}
+        self._stable_keys = {}
         for dim in dims:
             if not isinstance(dim, dict):
                 continue
             did = str(dim.get("id") or "")
             if did:
                 self._dimension_aliases[did] = [str(a) for a in (dim.get("aliases") or [])]
+                if dim.get("stable_key"):
+                    self._stable_keys[did] = str(dim["stable_key"])
         defaults = payload.get("grain_defaults") or {}
         self._grain_defaults = dict(defaults) if isinstance(defaults, dict) else {}
         return len(self._cache)

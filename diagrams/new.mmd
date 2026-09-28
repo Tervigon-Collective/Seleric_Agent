@@ -11,12 +11,12 @@ flowchart TB
 
     subgraph CONTROL["Mission Runtime"]
         MS["Mission Service"]
-        TEMP["Temporal<br/>Durable Execution"]
+        RUNQ["Run Queue<br/>Lease + Heartbeat<br/>seleric-recover worker"]
         MSTORE["Mission Store"]
         EVENTS["Mission Events<br/>SSE / WebSocket"]
 
         MS --> MSTORE
-        MS -. durable missions .-> TEMP
+        MS -. durable missions .-> RUNQ
     end
 
     API --> MS
@@ -39,7 +39,7 @@ flowchart TB
     end
 
     MS --> AGENT
-    TEMP -. durable execution .-> AGENT
+    RUNQ -. claimed via lease .-> AGENT
 
     %% =====================================
     %% CAPABILITIES
@@ -53,6 +53,7 @@ flowchart TB
         KNOWLEDGE["Business Knowledge"]
         EXP["Experimentation"]
         ACTIONS["Controlled Actions"]
+        SANDBOX["Python Sandbox"]
     end
 
     TOOLSETS --> SEM
@@ -62,6 +63,7 @@ flowchart TB
     TOOLSETS --> KNOWLEDGE
     TOOLSETS --> EXP
     TOOLSETS --> ACTIONS
+    TOOLSETS --> SANDBOX
 
     %% =====================================
     %% SELERIC MCP — proposed Cube MCP architecture

@@ -4,7 +4,7 @@
 
 ## LangSmith experiment
 
-<!-- Required when changing pinned prompt versions (`config/prompt_versions.yaml` or `prompts/**`). -->
+<!-- Required when changing agent prompts (`src/seleric_swarm/agent/instructions.py`, `INSTRUCTIONS_VERSION`). -->
 
 - Experiment URL / id:
 - Baseline compared:
@@ -13,5 +13,5 @@
 ## Test plan
 
 - [ ] `uv run pytest -q`
-- [ ] `uv run python -m seleric_swarm.eval.cli lookup_v1` if prompts or lookup workflow changed
+- [ ] `uv run pytest tests/unit/test_v3_golden_dataset.py -q` if prompts or the agent loop changed
 - [ ] No credentials in logs or committed files

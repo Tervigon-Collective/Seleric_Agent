@@ -1,11 +1,11 @@
 # Seleric Agent — Current Architecture (V3)
 
-**As of 2026-09-21.** This is the as-built reference for the system that's
+**As of 2026-09-28.** This is the as-built reference for the system that's
 actually running: a single `PydanticAI Agent[SelericDeps, MissionResult]`
 loop over Cube, mediated by `seleric-mcp`. It replaces the old LangGraph
 "swarm_v2" multi-agent design (Coordinator, domain agents, five intelligence
 specialists, Blackboard, LeadershipManager, A2A protocol), which has been
-fully deleted from `src/` — see the migration pointer in §1.
+deleted from `src/` — see the migration pointer in §1.
 
 For the migration's own planning history (sprint-by-sprint execution log,
 profile briefs, open decisions), see `docs/refactor/` — that folder remains
@@ -16,6 +16,9 @@ describes *what exists today*.
 
 - **Target design:** `diagrams/new.mmd` — `Agent → Toolset → Seleric MCP
   Gateway → CubeClient → Cube`. The LLM never calls Cube/ClickHouse directly.
+  (The diagram was corrected 2026-09-28: a `Temporal` durable-execution node
+  was removed — Temporal was never adopted; durable missions run on the
+  lease/heartbeat run queue in `api/async_missions.py` + `recovery.py`.)
 - **Migration source of truth:** `docs/refactor/00_OVERVIEW.md`,
   `01_PROFILE_RUNTIME.md`, `02_PROFILE_SEMANTIC_MCP.md`,
   `03_PROFILE_CAPABILITIES.md`, `SPRINT_PLAN.md`, `TASK_SHEET.md`.
@@ -24,6 +27,15 @@ describes *what exists today*.
   Strategy/Skeptic), the Blackboard, LeadershipManager, and the A2A protocol
   are all deleted. A single agent now decides every tool call; there are no
   agent-to-agent handoffs, no `mission_lead`/`active_specialist` state.
+- **Residue in the tree (cleanup candidates, not live code):** no swarm_v2
+  module is *tracked* in git anymore, but the working tree still contains
+  dead package husks — `src/seleric_swarm/coordinator/` and
+  `src/seleric_swarm/prompts/` hold only stale `__pycache__/` (no `.py`
+  files), `src/seleric_swarm/ml/` is an empty package, and `.gitignore`
+  still carries a `!src/seleric_swarm/coordinator/artifacts/` negation for a
+  directory that no longer exists. One swarm-era module *is* live:
+  `swarm/providers/base.py`, imported by
+  `services/business_state/detectors.py`.
 - **Historical decision records:** `docs/ADR/ADR-001*`/`ADR-002*` document
   the now-reversed specialist/domain-axis and LangGraph/A2A decisions
   (superseded, see their headers). `docs/ADR/ADR-003*` (evidence-first
@@ -47,6 +59,11 @@ router) is the primary production entry point: threads/messages/runs with
 durable queueing, memory, and attachments. `_dispatch_route()` is hardcoded
 to `"v3"` — there is no live classification gate routing to anything else.
 
+A secondary surface: the **voice agent** (`src/seleric_swarm/voice/` —
+LiveKit-based `token.py`/`worker.py`/`dev_page.py`, router mounted in
+`main.py`, compose `voice` service behind the `voice` profile) submits
+missions through the same conversation path.
+
 A mission's `route` field is one of `v3` (created today), or a historical
 `swarm`/`pending`/`failed`/`lookup` value on an old persisted record — the
 old values are read-only compatibility, not a live creation path.
@@ -61,8 +78,10 @@ old values are read-only compatibility, not a live creation path.
   toolset.
 - `agent/dependencies.py` — `SelericDeps`, `ExecutionLimits`, `NullMcpClient`.
 - `agent/model.py::resolve_v3_model`, `agent/validation/__init__.py::run_validated_mission`
-  (the `EvidenceValidator` gate — bounded to one revision,
-  `max_validation_revisions = 1`).
+  (the `EvidenceValidator` gate — bounded by
+  `max_validation_revisions = 2`, i.e. one revision pass beyond the initial
+  run; see `agent/dependencies.py` — note the module docstring in
+  `agent/validation/__init__.py` still says 1 and is stale).
 - Toolsets (`src/seleric_swarm/toolsets/`): `semantic.py` (metric/dimension
   resolution + `query_metrics`/`drilldown` against the live catalogue —
   Cube is the only authority for business metrics), `analytics.py`
@@ -70,9 +89,21 @@ old values are read-only compatibility, not a live creation path.
   fetches independently), `causal.py` (DoWhy-backed causal estimation +
   refutation), `models.py` (forecasting), `actions.py` (Meta write actions
   only, gated by the propose→confirm→commit flow — Google Ads action
-  execution is explicitly out of scope), `knowledge.py`, `experiments.py`.
+  execution is explicitly out of scope), `knowledge.py`, `experiments.py`,
+  `sandbox.py` (registered Python-execution tool, `sandbox.run_python`).
+  Helper modules that are *not* tool surfaces: `catalogue_index.py`,
+  `policy_config.py`, `ads.py` (defined but deliberately unregistered —
+  see §11.2).
+- Backing service packages (toolsets are thin adapters over these):
+  `analytics/`, `knowledge/`, `experiments/`, `models/`, `causal/`,
+  `services/` (catalogue bootstrap, evidence, ontology, claim gate, numeric
+  audit, business-state, domain-health), `llm/` (provider factory/gateway,
+  metering, circuit breaker, OpenRouter), `protocols/mcp/gateway.py`
+  (`MCPGateway`).
 - Every agent loop is bounded (`max_tool_calls`, `max_llm_calls`, etc. in
-  `config/settings.py`) and the bound is enforced, not a no-op.
+  `config/settings.py`) and the bound is enforced, not a no-op. Repeat/
+  paraphrase loops are additionally walled by `agent/repeat_guard.py` and
+  the per-tool call caps noted in §11.1.
 
 ## 4. Evidence, provenance & causal validation
 
@@ -103,27 +134,33 @@ Key points as implemented in V3:
   artifact scaffolding (`Mission`, `ArtifactStore`), used by the still-
   unmounted `api/missions.py` stub and `api/v3_state.py`'s Office UI
   snapshot fallback.
-- `src/seleric_swarm/conversations/` (~5,000 lines) — the conversation/
+- `src/seleric_swarm/conversations/` (~7,300 lines) — the conversation/
   memory/artifact platform: threads, messages, runs with lease-based durable
-  execution, consent-based memory (`MemoryService`), blob storage
-  (`conversations/blobs.py` — Postgres in production despite `MinioBlobStore`
-  also existing in code; confirm with a deployment owner before treating
-  MinIO as load-bearing).
-- `src/seleric_swarm/conversations/phase7.py` — `ApprovalRequest`/
-  `RollbackRecord`: the propose → validate → preview → confirm → commit →
-  audit flow for write actions.
+  execution, consent-based memory (`MemoryService`, plus episodic tracking in
+  `conversations/memory_manager.py`), blob storage
+  (`conversations/blobs.py` — backends are `local` or `minio` only
+  (`config/settings.py::blob_backend`); **production requires MinIO**
+  (settings validation rejects any other value), local-fs is the dev
+  default. There is no Postgres blob backend.)
+- `src/seleric_swarm/conversations/phase7.py` — the propose → validate →
+  preview → confirm → commit → audit flow for write actions. The
+  `ApprovalRequest`/`RollbackRecord` types themselves live in
+  `conversations/contracts.py`; `phase7.py` hosts the in-memory/Postgres
+  approval repositories and the flow logic.
 
 ## 6. Observability & tracing
 
 - The live V3 event stream is `conversations/events.py::ActivityEventSink`
   (thread/run `ActivityEvent`s, persisted via `append_event`). The only
   surviving piece of the old swarm control-plane observability is
-  `coordinator/observability/events.py::canonical_kind` — a
-  backward-compat alias map used by `conversations/event_mapping_v1.py`
-  to normalize kinds on old persisted records. The `observe_mission_events`/
-  `notify_mission_event` observer plane and the swarm event vocabulary
-  (leadership/skeptic/specialist/remediation constants) were deleted as
-  dead no-op plumbing — nothing emitted through them in V3.
+  `conversations/event_mapping_v1.py::canonical_kind` — a backward-compat
+  alias map (moved out of the deleted `coordinator/observability/events.py`)
+  used to normalize kinds on old persisted records. The
+  `observe_mission_events`/`notify_mission_event` observer plane and the
+  swarm event vocabulary (leadership/skeptic/specialist/remediation
+  constants) were deleted as dead no-op plumbing — nothing emitted through
+  them in V3. (Note: `src/seleric_swarm/coordinator/` may still exist in a
+  working tree as `__pycache__`-only residue; it contains no source.)
 - `src/seleric_swarm/observability/traces.py::mission_trace` — wraps each
   agent run; `observability/tracing.py` configures OpenTelemetry/LangSmith
   export (`configure_opentelemetry`, `instrument_fastapi`).
@@ -138,7 +175,8 @@ Full policy: `docs/18_SECURITY_GOVERNANCE.md` (unchanged, era-agnostic
 principles — least privilege, audit, secrets handling). As implemented:
 
 - `src/seleric_swarm/api/security.py::ApiSecurityMiddleware` — API key /
-  rate limiting, applied to all non-probe routes.
+  rate limiting, applied to all non-probe routes (exempts `/health`-style
+  probes, the whole `/ui/*` static bundle, and `/v1/voice/dev`).
 - `src/seleric_swarm/api/mission_access.py::require_mission_access` —
   workspace/owner scoping on every mission read.
 - Write actions always go through `conversations/phase7.py`'s approval flow
@@ -158,10 +196,12 @@ whatever vocabulary V3 actually emits (see `docs/office-ui/00_OVERVIEW.md`).
 
 ## 9. Deployment & operations
 
-- `docker-compose.yml` / `Makefile` — local Postgres on host port 5433 by
-  default; `seleric-migrate` / `make migrate` for schema; `seleric-recover`
-  runs the durable-queue recovery worker
-  (`seleric_swarm.api.conversations:build_submission_executor`).
+- `docker-compose.yml` / `Makefile` — services: `api`, `postgres` (host
+  port 5433 by default), `redis`, `minio`, `clamav`, `recovery` (the
+  durable-queue worker — its *command* is the `seleric-recover` console
+  script), and `voice` (profile-gated). `seleric-migrate` / `make migrate`
+  for schema; the recovery worker runs
+  `seleric_swarm.api.conversations:build_submission_executor`.
 - `config/settings.py` (`Settings`) — all runtime configuration; see the
   file directly for the current field list (several old-pipeline-only
   fields were removed in this cleanup — see the audit doc,
@@ -174,11 +214,16 @@ whatever vocabulary V3 actually emits (see `docs/office-ui/00_OVERVIEW.md`).
 - `tests/contract/` — interface-shape tests against the live MCP gateway
   (`tests/contract/test_mcp_gateway.py`).
 - `tests/integration/` — real-backend tests (e.g. blob storage).
+- `tests/api/`, `tests/fixtures/` — route-level tests and shared fixtures.
+- The old `tests/replay/` and `tests/adversarial/` suites were deleted in
+  the V3 refactor (only stale `__pycache__/` may remain locally). The
+  eval harness lives in `src/seleric_swarm/evals/`: the golden-dataset
+  loader is covered by `tests/unit/test_v3_golden_dataset.py`;
+  `evals/parity.py` currently has no live test consumer.
 - Every new agent/tool/model contract needs both a unit test and a contract
-  test; replay tests cover cross-capability scenarios (one capability's
-  output feeding another); missing/stale/conflicting-data paths and prompt
-  injection carried in tool-returned text are explicitly tested, not just
-  the happy path. Full bar: `.cursor/rules/04-testing-observability.mdc`.
+  test; missing/stale/conflicting-data paths and prompt injection carried
+  in tool-returned text are explicitly tested, not just the happy path.
+  Full bar: `.cursor/rules/04-testing-observability.mdc`.
 
 ## 11. Open items carried forward
 
@@ -235,10 +280,15 @@ inherits them through the shared service token.
 
 ### 11.2 Read-only ad surfaces (CONTRACTS.md A2)
 
-`toolsets/ads.py` adds `query_meta_insights` (Cube-backed, certified —
+`toolsets/ads.py` defines `query_meta_insights` (Cube-backed, certified —
 `meta_ad_performance` via the same planner as `metrics_query`, so it writes
 `EvidenceArtifact`s), plus `list_meta_accounts` / `list_google_accounts` /
-`query_google_ads` (live Graph/GAQL reads, returned as **uncertified** reference
-data — outside the semantic layer, freshness gate, and catalogue). No ad
-write/CRUD tools are wired. `semantic.resolve_brand` was also added so multi-brand
-questions resolve a `brand_id` instead of the model inventing one.
+`query_google_ads` (live Graph/GAQL reads, uncertified reference data —
+outside the semantic layer, freshness gate, and catalogue). **As of
+2026-09-28 these tools are deliberately NOT registered on the agent**
+(`agent/agent.py::TOOLS` carries an explicit comment): third-party ad API
+surfaces were pulled back from the model, and Meta ad delivery numbers stay
+reachable through `query_metrics` (`meta_ad_performance`). No ad write/CRUD
+tools are wired either. `semantic.resolve_brand` is registered so
+multi-brand questions resolve a `brand_id` instead of the model inventing
+one.

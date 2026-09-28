@@ -3,11 +3,11 @@
 > Test descriptions below reference swarm_v2 event vocabulary (leadership
 > transfer, Skeptic REVISE, `mission_lead`) from when this doc was written —
 > kept for the still-accurate front-end/backend test *structure* (files,
-> counts, commands). The fixtures themselves will need updating once
+> commands). The fixtures themselves will need updating once
 > `api/office/gateway.py` emits V3's event vocabulary instead. See
 > `docs/CURRENT_ARCHITECTURE.md`.
 
-## Front-end (`cd office-ui && npm test`) — 20 tests, Vitest + jsdom
+## Front-end (`cd office-ui && npm test`) — Vitest + jsdom (18 files under `src/__tests__/`)
 
 | File | Covers |
 | --- | --- |
@@ -15,12 +15,13 @@
 | `src/__tests__/store.test.ts` | snapshot hydration, duplicate event dedupe, out-of-order ordering, snapshot re-emit merge, completion status, leadership ring follow |
 | `src/__tests__/demoScenario.test.ts` | fixture completeness, two-handoff sequence, full replay → completed mission, unique seqs |
 
-## Backend (`python -m pytest tests/api/test_office_*.py`) — 13 tests
+## Backend (`python -m pytest tests/api/test_office_*.py`) — 21 tests
 
 | File | Covers |
 | --- | --- |
 | `test_office_normalize.py` | event stream shape & order, `after_seq` incrementality, leadership from/to agent mapping, full roster in snapshot, lead ring follows `mission_lead`, board + stage on completion, running mission keeps active agents, handoffs from history, empty-mission safety |
 | `test_office_gateway.py` | `/missions` list, `/snapshot` derivation + 404, SSE stream emits `snapshot` first then `done` on a terminal mission |
+| `test_office_v3_adapter.py` | V3 mission appears in the office `/missions` list, its snapshot renders, unknown mission id still 404s |
 
 ## Typecheck / build
 

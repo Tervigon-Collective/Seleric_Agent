@@ -1,6 +1,7 @@
 # Voice Agent — Phased Plan
 
-**Status:** proposed, nothing built. Each phase has a Definition of Done gate
+**Status:** built, partially verified (2026-09-24) — see the Phase 0 status
+below; plan in progress. Each phase has a Definition of Done gate
 derived from `docs/27_DEFINITION_OF_DONE.md`. Do not start a phase until the
 previous phase's gate passes.
 

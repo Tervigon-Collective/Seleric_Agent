@@ -52,18 +52,17 @@ class ExecutionLimits:
     single-agent loop.
     """
 
-    max_tool_calls: int = 160
-    max_cube_queries: int = 100
-    max_causal_queries: int = 40
-    max_prediction_calls: int = 40
-    # Confirmed = 1 with A1 acceptance (2026-09-18). Causal widening uses
-    # estimate_effect(search_breadth=...), not this counter.
-    max_validation_revisions: int = 1
-    max_runtime_seconds: float = 600.0
+    max_tool_calls: int = 300
+    max_cube_queries: int = 200
+    max_causal_queries: int = 80
+    max_prediction_calls: int = 80
+    # Increased from 1 to 2 to allow one revision for scope/evidence gaps.
+    max_validation_revisions: int = 2
+    max_runtime_seconds: float = 900.0
     # PydanticAI per-run retries — how many times the model may recover from a
     # tool ModelRetry (e.g. an unknown metric id) or an output-validation
     # error within one mission before the run fails.
-    agent_retries: int = 2
+    agent_retries: int = 3
 
 
 @dataclass(frozen=True)

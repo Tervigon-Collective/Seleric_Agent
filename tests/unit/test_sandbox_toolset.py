@@ -174,6 +174,52 @@ async def test_disabled_by_env(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_result_is_not_truncated_and_nested_numbers_are_recorded(tmp_path, monkeypatch) -> None:
+    """Live failure: a two-period ranking came back cut at 400 chars, so the
+    second period vanished and the answer said "no data" for it."""
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    ctx = FakeRunContext(_deps(store, mission_id="mission-full"))
+    monkeypatch.setattr(sandbox, "repo_root", lambda: tmp_path)
+    code = (
+        "result = {p: [{'name': 'item-%d-with-a-long-descriptive-label' % i, 'revenue': 1000 + i}"
+        " for i in range(15)] for p in ('first', 'second')}"
+    )
+    result = await sandbox.run_python(ctx, code, [eid])
+    assert result.success is True
+    assert "item-14-with-a-long-descriptive-label" in result.summary
+    assert '"second"' in result.summary
+    metrics = store.get(result.artifact_ids[0]).payload["metrics"]
+    assert metrics["second[14].revenue"] == 1014.0
+    assert metrics["first[0].revenue"] == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_oversized_result_spills_to_workdir(tmp_path, monkeypatch) -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    ctx = FakeRunContext(_deps(store, mission_id="mission-spill"))
+    monkeypatch.setattr(sandbox, "repo_root", lambda: tmp_path)
+    monkeypatch.setenv("SELERIC_SANDBOX_RESULT_CHARS", "50")
+    result = await sandbox.run_python(ctx, "result = list(range(500))", [eid])
+    assert result.success is True
+    spill = tmp_path / ".data" / "sandbox" / "mission-spill" / "result_1.json"
+    assert spill.exists()
+    assert "499" in spill.read_text(encoding="utf-8")
+    assert "result_1.json" in result.summary
+    assert any("result_1.json" in w for w in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_scalar_result_is_recorded_as_metric() -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store, value=7.0)
+    ctx = FakeRunContext(_deps(store))
+    result = await sandbox.run_python(ctx, "result = evidence[0]['value'] * 2", [eid])
+    assert store.get(result.artifact_ids[0]).payload["metrics"] == {"result": 14.0}
+
+
+@pytest.mark.asyncio
 async def test_writes_files_to_workdir(tmp_path, monkeypatch) -> None:
     store = InMemoryArtifactStore()
     eid = _put_evidence(store)
