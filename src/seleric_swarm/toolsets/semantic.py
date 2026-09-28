@@ -266,10 +266,40 @@ def _mcp_error_result(exc: Exception) -> ToolResult:
 
 def _fetch_failure(what: str, error: Any) -> ToolResult:
     """A failed Cube fetch. ``call_metrics_query`` flattens exceptions to
-    ``"<Type>: <msg>"``, so an unconfigured MCP is recognised by its type name."""
+    ``"<Type>: <msg>"``, so an unconfigured MCP is recognised by its type name.
+
+    Deterministic failures (a query-shape the warehouse can't run, or invalid
+    arguments) are marked NON-retryable so the repeat guard does not re-execute a
+    call that can never succeed (live: a weekly-grain ROAS 500'd on a Cube memory
+    limit and was retried 3x). The model must change the call, not replay it."""
     text = str(error)
     if text.startswith("NotImplementedError"):
         return _mcp_error_result(NotImplementedError(text))
+    low = text.lower()
+    # memory/complexity limit: the query shape is too large — a coarser grain or
+    # shorter period is the fix, never an unchanged retry.
+    if "memory limit" in low or "memory_limit" in low or "too many" in low or "max_memory" in low:
+        return ToolResult(
+            success=False,
+            summary=(
+                f"{what} failed — the warehouse hit a size/memory limit on this query shape. "
+                "Do NOT retry unchanged: use a coarser grain (e.g. month instead of week) or a "
+                "shorter period, or fetch the period total (grain=none)."
+            ),
+            error_code="UNSUPPORTED_QUERY",
+            retryable=False,
+        )
+    # invalid arguments (grain/enum/validation): deterministic — correct the call.
+    if "validationerror" in low or "literal_error" in low or "input should be" in low or "granularity" in low:
+        return ToolResult(
+            success=False,
+            summary=(
+                f"{what} failed — invalid argument(s): {text}. Correct the call to a supported "
+                "value; do NOT replay the same arguments."
+            ),
+            error_code="UNSUPPORTED_QUERY",
+            retryable=False,
+        )
     return ToolResult(
         success=False,
         summary=f"{what} failed: {text}",
@@ -597,6 +627,73 @@ async def resolve_brand(ctx: RunContext[SelericDeps], name: str) -> ToolResult:
         success=True,
         summary=f"{name} -> brand_id={brand_id} ({result.get('name') or ''})".strip(),
         warnings=warnings,
+        provenance=ArtifactProvenance(source_metadata=result),
+    )
+
+
+async def resolve_concept(
+    ctx: RunContext[SelericDeps],
+    concept: str,
+    axes: dict[str, str] | None = None,
+) -> ToolResult:
+    """Deterministically map a business concept to exactly ONE catalogue metric id.
+    Prefer this over ``search_semantics`` for a specific metric: pass the concept in
+    the user's own words (natural language, not a metric id) plus any axes their
+    phrasing implies. The catalogue owns the axis vocabulary and defaults, so you
+    never hard-code axis values; unspecified axes take their disclosed default.
+
+    Returns the resolved ``metric_id`` (feed straight to ``query_metrics``), the
+    ``axes`` applied and which were defaulted, and any ``filter`` the concept binds
+    (pass it through to ``query_metrics`` unchanged). A draft target is flagged; an
+    unsupported axis combination returns a reason plus nearest metrics (never a wrong
+    sibling); an unmodelled concept returns suggestions. On unsupported/unknown, fall
+    back to ``search_semantics``. Resolution only — the id is validated by Cube on
+    query."""
+    try:
+        result = await ctx.deps.mcp_client.call(
+            agent_id=_AGENT_ID,
+            capability="seleric.catalogue_resolve_concept",
+            arguments={"text": concept, "axes": axes or {}},
+        )
+    except Exception as exc:
+        return _mcp_error_result(exc)
+    result = dict(result or {})
+    kind = result.get("kind")
+    if kind == "resolved_concept":
+        mid = result.get("metric_id")
+        warnings: list[str] = []
+        if result.get("defaults_applied"):
+            warnings.append("defaults applied: " + ", ".join(result["defaults_applied"]))
+        if result.get("draft"):
+            warnings.append(f"'{mid}' is a draft metric" + (f": {result['note']}" if result.get("note") else ""))
+        if result.get("used_fallback") and result.get("note"):
+            warnings.append(str(result["note"]))
+        if result.get("disambiguation"):
+            warnings.append(str(result["disambiguation"]))
+        axes_str = ", ".join(f"{k}={v}" for k, v in (result.get("axes") or {}).items())
+        return ToolResult(
+            success=True,
+            summary=f"{concept} -> {mid}" + (f" ({axes_str})" if axes_str else ""),
+            warnings=warnings,
+            provenance=ArtifactProvenance(source_metadata=result),
+        )
+    if kind == "unsupported_concept":
+        nearest = ", ".join(result.get("nearest_metrics") or [])
+        return ToolResult(
+            success=False,
+            summary=f"'{concept}' unsupported at those axes: {result.get('reason', '')}"
+            + (f" — nearest: {nearest}" if nearest else "") + ". Try search_semantics.",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+            provenance=ArtifactProvenance(source_metadata=result),
+        )
+    sugg = ", ".join(result.get("suggestions") or [])
+    return ToolResult(
+        success=False,
+        summary=f"no concept matched '{concept}'"
+        + (f" — did you mean: {sugg}?" if sugg else "") + " Use search_semantics.",
+        error_code="INSUFFICIENT_EVIDENCE",
+        retryable=False,
         provenance=ArtifactProvenance(source_metadata=result),
     )
 

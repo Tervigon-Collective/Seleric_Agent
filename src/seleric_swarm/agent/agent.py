@@ -55,6 +55,7 @@ from seleric_swarm.toolsets.semantic import LIVE_DATA_UNAVAILABLE
 # introspects all 26). Narrowing the annotation here is honest about a
 # real typing-system limitation, not a suppression of a real bug.
 TOOLS: list[Any] = [
+    semantic.resolve_concept,
     semantic.search_semantics,
     semantic.resolve_brand,
     semantic.get_metric_definition,
@@ -133,6 +134,7 @@ CONVERSATIONAL = "conversational"
 
 _STILL_AVAILABLE_WITHOUT_LIVE_DATA = frozenset(
     {
+        "resolve_concept",
         "search_semantics",
         "get_metric_definition",
         "get_metric_definitions",

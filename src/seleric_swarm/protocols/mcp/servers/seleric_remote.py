@@ -39,6 +39,7 @@ TOOLS = (
     "catalogue_search_metrics",
     "catalogue_list_metrics",
     "catalogue_bootstrap",
+    "catalogue_resolve_concept",
     "catalogue_resolve_term",
     "catalogue_resolve_dimension",
     "catalogue_resolve_values",
