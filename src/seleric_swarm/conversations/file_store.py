@@ -13,7 +13,6 @@ from seleric_swarm.conversations.contracts import (
     ApprovalRequest,
     Artifact,
     Attachment,
-    EpisodicEvent,
     MemoryItem,
     MemoryPreference,
     Message,
@@ -207,7 +206,6 @@ def build_file_repositories(
         attachments=_SavingProxy(inner.attachments, save, deferring),  # type: ignore[arg-type]
         memories=_SavingProxy(inner.memories, save, deferring),  # type: ignore[arg-type]
         thread_summaries=_SavingProxy(inner.thread_summaries, save, deferring),  # type: ignore[arg-type]
-        episodic_events=_SavingProxy(inner.episodic_events, save, deferring),  # type: ignore[arg-type]
         search=inner.search,
         approvals=_SavingProxy(inner.approvals, save, deferring),  # type: ignore[arg-type]
         unit_of_work=unit_of_work,

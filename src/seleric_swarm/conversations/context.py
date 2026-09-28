@@ -18,11 +18,9 @@ from seleric_swarm.conversations.contracts import (
     MemoryType,
     Message,
     MessagePartType,
-    MessageRole,
     Thread,
     ThreadSummary,
 )
-from seleric_swarm.conversations.memory_manager import MemoryManager
 from seleric_swarm.conversations.repositories import ConversationRepositories
 
 _SPACE = re.compile(r"\s+")
@@ -50,20 +48,6 @@ _CANDIDATES: tuple[tuple[re.Pattern[str], MemoryType], ...] = (
             re.IGNORECASE,
         ),
         MemoryType.DECISION,
-    ),
-    (
-        re.compile(
-            r"\b(?:the\s+(?:root\s+cause|issue|problem)\s+is|because\s+of|due\s+to)\b",
-            re.IGNORECASE,
-        ),
-        MemoryType.FACT,
-    ),
-    (
-        re.compile(
-            r"\b(?:next\s+(?:step|action)|should\s+we|recommend|suggest)\b",
-            re.IGNORECASE,
-        ),
-        MemoryType.INSTRUCTION,
     ),
 )
 
@@ -152,72 +136,43 @@ class ThreadSummaryService:
 
 
 class MemoryCandidateExtractor:
-    """Extracts durable statements from USER, ASSISTANT, and TOOL messages."""
-
-    def __init__(self, memory_manager: MemoryManager | None = None) -> None:
-        self.memory_manager = memory_manager
+    """Conservatively extracts only explicit durable user statements."""
 
     def extract(
         self,
         message: Message,
         thread: Thread,
     ) -> list[MemoryItem]:
-        role = message.role.value
-        text = _text(message)
-        if not text or len(text) < 8:
+        if message.role.value != "USER":
             return []
-
-        if self.memory_manager:
-            decision = self.memory_manager.should_store(message, role)
-            if not decision.should_store:
-                return []
-
         candidates: list[MemoryItem] = []
-        for sentence in _SENTENCE.split(text):
+        for sentence in _SENTENCE.split(_text(message)):
             sentence = sentence.strip()
-            if len(sentence) < 8:
-                continue
             matched = next(
                 ((pattern, memory_type) for pattern, memory_type in _CANDIDATES if pattern.search(sentence)),
                 None,
             )
-            if not matched:
+            if not matched or len(sentence) < 8:
                 continue
             pattern, memory_type = matched
             match = pattern.search(sentence)
             key = normalize_memory_content(sentence[(match.end() if match else 0) :])[:160]
-
-            if role == "USER":
-                scope = MemoryScope.USER if memory_type is MemoryType.PREFERENCE else MemoryScope.THREAD
-                confidence = 0.9
-                provenance = {"extractor": "phase6-explicit-v1", "verbatim": True, "role": "user"}
-            elif role == "ASSISTANT":
-                scope = MemoryScope.THREAD
-                confidence = 0.8
-                provenance = {"extractor": "phase6-explicit-v1", "verbatim": True, "role": "assistant"}
-            elif role == "TOOL":
-                scope = MemoryScope.THREAD
-                confidence = 0.85
-                provenance = {"extractor": "phase6-explicit-v1", "verbatim": True, "role": "tool"}
-            else:
-                continue
-
             candidates.append(
                 MemoryItem(
                     workspace_id=thread.workspace_id,
                     owner_user_id=thread.owner_user_id,
                     project_id=thread.project_id,
                     thread_id=thread.id,
-                    scope=scope,
+                    scope=MemoryScope.USER if memory_type is MemoryType.PREFERENCE else MemoryScope.THREAD,
                     type=memory_type,
                     content=sentence,
                     normalized_content=normalize_memory_content(sentence),
                     structured_data={"subject_key": key},
-                    provenance=provenance,
-                    confidence=confidence,
+                    provenance={"extractor": "phase6-explicit-v1", "verbatim": True},
+                    confidence=0.9,
                     source_message_id=message.id,
                     source_message_ids=[message.id],
-                    requires_confirmation=(scope == MemoryScope.USER),
+                    requires_confirmation=True,
                 )
             )
         return candidates
@@ -236,13 +191,8 @@ def memories_contradict(left: MemoryItem, right: MemoryItem) -> bool:
 
 
 class MemoryService:
-    def __init__(
-        self,
-        repositories: ConversationRepositories,
-        memory_manager: MemoryManager | None = None,
-    ) -> None:
+    def __init__(self, repositories: ConversationRepositories) -> None:
         self.repositories = repositories
-        self.memory_manager = memory_manager
 
     def ingest_candidates(self, candidates: Iterable[MemoryItem]) -> list[MemoryItem]:
         """Ingest extracted memory candidates, deduplicating and resolving conflicts.
@@ -352,15 +302,6 @@ class MemoryService:
                     }
                 )
             created.append(self.repositories.memories.create(candidate))
-
-        # Enforce limits after ingestion
-        if self.memory_manager:
-            for candidate in created:
-                self.memory_manager.enforce_limits(
-                    candidate.workspace_id,
-                    candidate.owner_user_id,
-                    scope=candidate.scope,
-                )
         return created
 
     def confirm(self, memory: MemoryItem) -> MemoryItem:
@@ -459,7 +400,6 @@ class ContextBuilder:
         memory_characters: int = 2_500,
         artifact_characters: int = 1_500,
         total_tokens: int | None = None,
-        memory_manager: MemoryManager | None = None,
     ) -> None:
         self.repositories = repositories
         self.vector_scorer = vector_scorer
@@ -477,7 +417,6 @@ class ContextBuilder:
             "memories": memory_characters,
             "artifacts": artifact_characters,
         }
-        self.memory_manager = memory_manager
 
     @staticmethod
     def _score(query: str, memory: MemoryItem, now: datetime) -> float:
@@ -517,37 +456,30 @@ class ContextBuilder:
         summary = self.repositories.thread_summaries.latest(
             thread.id, thread.workspace_id, thread.owner_user_id
         )
-        if self.memory_manager:
-            memories = self.memory_manager.get_candidates_for_context(
-                thread.workspace_id,
-                thread.owner_user_id,
-                project_id=thread.project_id,
-                thread_id=thread.id,
-                query=query,
-                limit=20,
-            )
-        else:
-            candidates = [] if preference.opted_out else self.repositories.memories.list(
-                thread.workspace_id,
-                thread.owner_user_id,
-                project_id=thread.project_id,
-                thread_id=thread.id,
-                limit=500,
-            )
-            memories = [
-                item
-                for item in candidates
-                if item.status is MemoryStatus.ACTIVE
-                and (
-                    item.scope is MemoryScope.USER
-                    or (
-                        item.scope in {MemoryScope.PROJECT, MemoryScope.EPISODIC}
-                        and thread.project_id is not None
-                        and item.project_id == thread.project_id
-                    )
-                    or (item.scope is MemoryScope.THREAD and item.thread_id == thread.id)
+        candidates = [] if preference.opted_out else self.repositories.memories.list(
+            thread.workspace_id,
+            thread.owner_user_id,
+            project_id=thread.project_id,
+            thread_id=thread.id,
+            limit=500,
+        )
+        memories = [
+            item
+            for item in candidates
+            # Only ACTIVE memories are injected into context. PENDING_CONSENT,
+            # ARCHIVED, SUPERSEDED, and DELETED items must never reach the
+            # agent prompt — they are either unconfirmed or invalidated.
+            if item.status is MemoryStatus.ACTIVE
+            and (
+                item.scope is MemoryScope.USER
+                or (
+                    item.scope in {MemoryScope.PROJECT, MemoryScope.EPISODIC}
+                    and thread.project_id is not None
+                    and item.project_id == thread.project_id
                 )
-            ]
+                or (item.scope is MemoryScope.THREAD and item.thread_id == thread.id)
+            )
+        ]
         deduplicated: dict[tuple[MemoryType, str], MemoryItem] = {}
         for item in memories:
             key = (item.type, item.normalized_content or normalize_memory_content(item.content))
