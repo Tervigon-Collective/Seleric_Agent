@@ -39,6 +39,7 @@ from seleric_swarm.conversations.context import (
     ThreadSummaryService,
     normalize_memory_content,
 )
+from seleric_swarm.conversations.memory_manager import MemoryManager
 from seleric_swarm.conversations.contracts import (
     ActivityEvent,
     Artifact,
@@ -544,7 +545,8 @@ def confirm_memory(memory_id: str, request: Request) -> MemoryItem:
     principal = _authenticated_principal(request)
     repositories = _repositories(_runtime(request))
     memory = _owned_memory(repositories, principal, memory_id)
-    return MemoryService(repositories).confirm(memory)
+    memory_manager = MemoryManager(repositories)
+    return MemoryService(repositories, memory_manager=memory_manager).confirm(memory)
 
 
 @router.post("/memories/{memory_id}/move")
@@ -1750,7 +1752,8 @@ async def submit_message(
             raise HTTPException(status_code=409, detail="attachment is already associated")
         attachments.append(attachment)
 
-    context_bundle = ContextBuilder(repositories).build(
+    memory_manager = MemoryManager(repositories)
+    context_bundle = ContextBuilder(repositories, memory_manager=memory_manager).build(
         thread,
         query=query,
         workspace_config=(
@@ -1888,8 +1891,9 @@ async def submit_message(
                 "input": {"query": query, "context_bundle": bundle_data},
             },
         )
-    MemoryService(repositories).ingest_candidates(
-        MemoryCandidateExtractor().extract(message, thread)
+    memory_manager = MemoryManager(repositories)
+    MemoryService(repositories, memory_manager=memory_manager).ingest_candidates(
+        MemoryCandidateExtractor(memory_manager=memory_manager).extract(message, thread)
     )
     _event_sink(runtime, repositories).emit(
         run,

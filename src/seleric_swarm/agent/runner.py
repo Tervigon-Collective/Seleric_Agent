@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -180,6 +181,37 @@ def _user_facing_agent_failure(exc: BaseException) -> tuple[str, str]:
         "The agent could not complete this question. Please retry.",
         "V3_AGENT_FAILED",
     )
+
+
+# "Tool 'query_metrics' exceeded max retries count of 2" — pydantic-ai exposes
+# neither the tool name nor the count as attributes (only in the message), so
+# parse them out. This is the signature of a tool that burned its retry budget.
+_TOOL_RETRY_RE = re.compile(r"Tool '([^']+)' exceeded max retries count of (\d+)")
+
+
+def _failure_diagnostics(exc: BaseException) -> dict[str, Any]:
+    """Structured, log-safe failure metadata so a failed mission is locatable
+    from its request_id (P1). Codes only — no provider bodies or stack traces
+    (those stay in the ``exc_info`` log). The chained cause string (e.g. the
+    anti-loop guard's ModelRetry that exhausted the budget) is returned under
+    ``cause_detail`` for the *log* extra only; callers keep it out of the
+    user-facing trace.
+
+    tool_call_id is intentionally absent: it isn't carried on the exception
+    object, and threading it up would need a tool-manager hook — not worth it
+    for a diagnostic. ponytail: add the hook only if a repeat incident needs
+    the exact call id, not just the tool name.
+    """
+    diag: dict[str, Any] = {"stage": "agent_run", "exception_type": type(exc).__name__}
+    cause = exc.__cause__ or exc.__context__
+    if cause is not None:
+        diag["cause_type"] = type(cause).__name__
+        diag["cause_detail"] = str(cause)[:300]
+    if m := _TOOL_RETRY_RE.search(str(exc)):
+        diag["failing_tool"] = m.group(1)
+        diag["retry_count"] = int(m.group(2))
+        diag["cause_code"] = "TOOL_MAX_RETRIES_EXCEEDED"
+    return diag
 
 
 def _as_of_datetime(as_of: str | None, timezone: str = "Asia/Kolkata") -> datetime:
@@ -431,16 +463,17 @@ def _thread_context_block(
 ) -> str:
     """Compose the [thread context] block from structured, labelled sources.
 
-    Injection order (primacy → recency, most important first):
-      1. Prior answer TurnRecord — structured facts from the last turn.
+    Injection order (primacy + recency, avoiding "lost in the middle"):
+      1. Prior answer TurnRecord — structured facts from the last turn (PRIMACY).
          This is the primary grounding source for follow-up resolution.
          Never use raw prose from the last assistant message for this purpose.
-      2. Active memories (PREFERENCE, CONSTRAINT, DEFINITION) — per-user or
-         per-thread facts the agent must respect across all answers.
-      3. Recent turns — last N (user, Seleric) pairs. Tiered char limits:
+      2. Recent turns — last N (user, Seleric) pairs. Tiered char limits:
          - Last Seleric response: _CHARS_LAST_ASSISTANT (most referenced)
          - Older Seleric responses: _CHARS_OLDER_ASSISTANT (reference only)
          - Any user message: _CHARS_USER_TURN
+      3. Active memories (PREFERENCE, CONSTRAINT, DEFINITION) — per-user or
+         per-thread facts the agent must respect across all answers (RECENCY).
+         Placed at END so model attends to them just before user message.
       4. Thread summary — fallback only when there are no recent turns and
          no TurnRecord. Raw summary prose is a weak signal; prefer structured
          sources whenever available.
@@ -458,22 +491,13 @@ def _thread_context_block(
     lines: list[str] = []
     max_turns = _MAX_TURNS_FOLLOWUP if is_followup else _MAX_TURNS_DEFAULT
 
-    # ── 1. Prior TurnRecord (highest-priority grounding signal) ──────────────
+    # ── 1. Prior TurnRecord (primacy position — highest attention) ──────────────
     if prior_turn_record:
         rendered = _render_turn_record(prior_turn_record)
         if rendered:
             lines.append(rendered)
 
-    # ── 2. Active memories (preferences, constraints, definitions) ─────────
-    for mem in bundle.memories[:_MAX_MEMORIES]:
-        content = mem.content if isinstance(mem.content, str) else str(mem.content)
-        text = content.strip()[:_CHARS_PER_MEMORY]
-        if not text:
-            continue
-        kind = getattr(mem.type, "value", str(mem.type))
-        lines.append(f"Memory ({kind}): {text}")
-
-    # ── 3. Recent turns — tiered character budgets ─────────────────────
+    # ── 2. Recent turns — tiered character budgets ─────────────────────
     raw_messages = bundle.recent_messages[-(max_turns * 2):]
     turns: list[str] = []
     n = len(raw_messages)
@@ -496,6 +520,15 @@ def _thread_context_block(
     if turns:
         lines.append("Recent turns:")
         lines.extend(turns)
+
+    # ── 3. Active memories (recency position — just before user message) ──────
+    for mem in bundle.memories[:_MAX_MEMORIES]:
+        content = mem.content if isinstance(mem.content, str) else str(mem.content)
+        text = content.strip()[:_CHARS_PER_MEMORY]
+        if not text:
+            continue
+        kind = getattr(mem.type, "value", str(mem.type))
+        lines.append(f"Memory ({kind}): {text}")
 
     # ── 4. Summary fallback (only when no turns and no TurnRecord) ────────
     if not turns and not prior_turn_record:
@@ -714,6 +747,149 @@ def _write_turn_record(
     mission_id: str,
     as_of_dt: datetime,
 ) -> None:
+    """Persist a TurnRecord artifact so the next turn can use it for grounding."""
+    if result.status not in {"completed", "partial"}:
+        return
+    if classification.intent == "conversation":
+        return
+    try:
+        entities = _parse_named_entities(result.final_response or "")
+        metric_labels: list[str] = []
+        top_items: list[str] = []
+        for eid in (result.evidence_ids or [])[:8]:
+            artifact = artifact_store.get(eid)
+            if artifact and artifact.classification in {"factual", "derived"}:
+                payload = artifact.payload
+                if isinstance(payload, dict):
+                    if "value" in payload:
+                        label = payload.get("label") or artifact.artifact_type
+                        unit = payload.get("unit", "")
+                        metric_labels.append(f"{label}: {_format_amount(payload['value'])} {unit}".strip())
+                    if "top_items" in payload and isinstance(payload["top_items"], list):
+                        top_items.extend(payload["top_items"][:5])
+        record = {
+            "query": result.query if isinstance(result.query, str) else str(result.query),
+            "intent": classification.intent,
+            "period": classification.period,
+            "grain": classification.grain,
+            "entities": entities[:10],
+            "metric_labels": metric_labels[:8],
+            "top_items": list(dict.fromkeys(top_items))[:8],
+            "evidence_ids": (result.evidence_ids or [])[:8],
+            "mission_id": mission_id,
+            "as_of": as_of_dt.date().isoformat(),
+        }
+        artifact_store.put(
+            Artifact(
+                workspace_id=workspace_id,
+                artifact_type="turn_record",
+                payload={k: v for k, v in record.items() if v is not None and v != [] and v != ""},
+                classification="ui",
+                mission_id=mission_id,
+                thread_id=thread_id,
+            )
+        )
+    except Exception:
+        _log.warning("turn_record_write_failed", exc_info=True)
+
+
+def _write_working_memory_checkpoint(
+    *,
+    deps: SelericDeps,
+    artifact_store: Any,
+    thread_id: str,
+    workspace_id: str,
+    mission_id: str,
+    plan: str | None = None,
+) -> None:
+    """Persist working memory checkpoint (scratchpad + plan) for cross-turn resume."""
+    try:
+        scratchpad_render = deps.scratchpad.render()
+        if not scratchpad_render and not plan:
+            return
+        checkpoint = {
+            "scratchpad": scratchpad_render,
+            "plan": plan,
+            "mission_id": mission_id,
+            "thread_id": thread_id,
+        }
+        artifact_store.put(
+            Artifact(
+                workspace_id=workspace_id,
+                artifact_type="working_memory_checkpoint",
+                payload={k: v for k, v in checkpoint.items() if v},
+                classification="ui",
+                mission_id=mission_id,
+                thread_id=thread_id,
+            )
+        )
+    except Exception:
+        _log.warning("working_memory_checkpoint_write_failed", exc_info=True)
+
+
+def _load_working_memory_checkpoint(
+    *,
+    artifact_store: Any,
+    thread_id: str,
+) -> tuple[str | None, str | None]:
+    """Load latest working memory checkpoint for thread. Returns (scratchpad_render, plan)."""
+    list_fn = getattr(artifact_store, "list_for_context", None)
+    if not callable(list_fn):
+        return None, None
+    try:
+        for artifact in list_fn("", thread_id):
+            if getattr(artifact, "artifact_type", None) == "working_memory_checkpoint":
+                payload = getattr(artifact, "payload", None)
+                if isinstance(payload, dict):
+                    return payload.get("scratchpad"), payload.get("plan")
+    except Exception:
+        _log.warning("working_memory_checkpoint_load_failed", exc_info=True)
+    return None, None
+
+
+def _write_episodic_event(
+    *,
+    repositories: Any,
+    workspace_id: str,
+    owner_user_id: str,
+    thread_id: str,
+    run_id: str,
+    mission_id: str,
+    event_type: str,
+    summary: str,
+    entities: list[str] | None = None,
+    details: dict[str, Any] | None = None,
+    project_id: str | None = None,
+) -> None:
+    """Persist an episodic event for decision/outcome tracking."""
+    try:
+        from seleric_swarm.conversations.contracts import EpisodicEvent, EpisodicEventType
+        event = EpisodicEvent(
+            workspace_id=workspace_id,
+            owner_user_id=owner_user_id,
+            project_id=project_id,
+            thread_id=thread_id,
+            run_id=run_id,
+            event_type=EpisodicEventType(event_type),
+            summary=summary,
+            entities=entities or [],
+            details=details or {},
+        )
+        repositories.episodic_events.create(event)
+    except Exception:
+        _log.warning("episodic_event_write_failed", exc_info=True)
+
+
+def _write_turn_record(
+    *,
+    result: V3MissionResult,
+    classification: QueryClassification,
+    artifact_store: Any,
+    thread_id: str,
+    workspace_id: str,
+    mission_id: str,
+    as_of_dt: datetime,
+) -> None:
     """Persist a TurnRecord artifact so the next turn can use it for grounding.
 
     Only writes for completed/partial missions with analytical intent.
@@ -732,14 +908,27 @@ def _write_turn_record(
         return
     try:
         entities = _parse_named_entities(result.final_response or "")
+        metric_labels: list[str] = []
+        top_items: list[str] = []
+        for eid in (result.evidence_ids or [])[:8]:
+            artifact = artifact_store.get(eid)
+            if artifact and artifact.classification in {"factual", "derived"}:
+                payload = artifact.payload
+                if isinstance(payload, dict):
+                    if "value" in payload:
+                        label = payload.get("label") or artifact.artifact_type
+                        unit = payload.get("unit", "")
+                        metric_labels.append(f"{label}: {_format_amount(payload['value'])} {unit}".strip())
+                    if "top_items" in payload and isinstance(payload["top_items"], list):
+                        top_items.extend(payload["top_items"][:5])
         record = {
             "query": result.query if isinstance(result.query, str) else str(result.query),
             "intent": classification.intent,
             "period": classification.period,
             "grain": classification.grain,
             "entities": entities[:10],
-            "metric_labels": [],   # populated by future label-extraction pass
-            "top_items": entities[:5],
+            "metric_labels": metric_labels[:8],
+            "top_items": list(dict.fromkeys(top_items))[:8],
             "evidence_ids": (result.evidence_ids or [])[:8],
             "mission_id": mission_id,
             "as_of": as_of_dt.date().isoformat(),
@@ -862,6 +1051,7 @@ async def run_v3_mission(
         needs_write=classification.needs_write,
     ):
         try:
+            plan: str | None = None
             if alias_def is not None:
                 result = await _alias_lookup_result(
                     deps,
@@ -899,13 +1089,23 @@ async def run_v3_mission(
                 # without forcing it to re-parse truncated prose from prior turns.
                 is_followup = classification.depends_on_prior is True
                 prior_turn_record: dict[str, Any] | None = None
+                checkpoint_scratchpad: str | None = None
+                checkpoint_plan: str | None = None
                 if is_followup:
                     try:
                         prior_turn_record = _latest_turn_record(
                             get_v3_artifact_store(), thread_id=thread_id
                         )
+                        checkpoint_scratchpad, checkpoint_plan = _load_working_memory_checkpoint(
+                            get_v3_artifact_store(), thread_id=thread_id
+                        )
                     except Exception:
                         _log.warning("prior_turn_record_load_failed", exc_info=True)
+                if checkpoint_scratchpad:
+                    deps.scratchpad._notes = [
+                        line[2:].strip() for line in checkpoint_scratchpad.split("\n")
+                        if line.startswith("- ")
+                    ]
                 # Only pay the ~8.6k-token full-catalogue dump when explicitly
                 # enabled; otherwise the agent resolves via search_semantics +
                 # get_metric_definitions. The snapshot still rides in deps for
@@ -965,11 +1165,22 @@ async def run_v3_mission(
             )
         except Exception as exc:
             message, error_code = _user_facing_agent_failure(exc)
+            diagnostics = _failure_diagnostics(exc)
             _log.warning(
                 "v3_agent_failed",
                 exc_info=True,
-                extra={"mission_id": mission_id, "error_code": error_code, "intent": intent},
+                extra={
+                    "mission_id": mission_id,
+                    "request_id": request_id,
+                    "error_code": error_code,
+                    "intent": intent,
+                    **diagnostics,
+                },
             )
+            # User-facing trace gets the structured codes but not the free-form
+            # cause_detail (which may carry a provider body) — that stays in the
+            # log above, findable by request_id.
+            safe_diagnostics = {k: v for k, v in diagnostics.items() if k != "cause_detail"}
             result = V3MissionResult(
                 mission_id=mission_id,
                 status="failed",
@@ -983,6 +1194,7 @@ async def run_v3_mission(
                     "session_id": thread_id,
                     "elapsed_seconds": round(time.perf_counter() - started, 3),
                     "intent": intent,
+                    **safe_diagnostics,
                 },
             )
 
@@ -1006,6 +1218,37 @@ async def run_v3_mission(
         mission_id=mission_id,
         as_of_dt=as_of_dt,
     )
+    _write_working_memory_checkpoint(
+        deps=deps,
+        artifact_store=get_v3_artifact_store(),
+        thread_id=thread_id,
+        workspace_id=workspace_id,
+        mission_id=mission_id,
+        plan=plan,
+    )
+
+    # Write episodic event for decision/outcome tracking
+    if result.status in {"completed", "partial", "failed"}:
+        event_type = "OUTCOME" if result.status in {"completed", "partial"} else "ERROR"
+        entities = _parse_named_entities(result.final_response or "")
+        _write_episodic_event(
+            repositories=runtime.conversations,
+            workspace_id=workspace_id,
+            owner_user_id=owner_user_id,
+            thread_id=thread_id,
+            run_id=run_id,
+            mission_id=mission_id,
+            event_type=event_type,
+            summary=result.final_response[:500] if result.final_response else "No response",
+            entities=entities[:10],
+            details={
+                "intent": classification.intent,
+                "period": classification.period,
+                "grain": classification.grain,
+                "evidence_ids": result.evidence_ids or [],
+                "error_code": result.error_code,
+            },
+        )
 
     raw = v3_raw_snapshot(mission_id) or {}
     evidence_views = [

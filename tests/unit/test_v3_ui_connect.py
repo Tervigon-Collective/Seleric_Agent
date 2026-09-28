@@ -25,6 +25,7 @@ def _clean_v3_state():
 
 
 def _runtime() -> SimpleNamespace:
+    from seleric_swarm.conversations.memory import build_in_memory_repositories
     return SimpleNamespace(
         settings=Settings(
             llm_provider="fake",
@@ -35,6 +36,7 @@ def _runtime() -> SimpleNamespace:
         ),
         mcp=NullMcpClient(),
         store=InMemoryMissionStore(),
+        conversations=build_in_memory_repositories(),
     )
 
 
