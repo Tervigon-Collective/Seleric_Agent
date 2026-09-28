@@ -316,16 +316,139 @@ def build_voice_agent(runner: "VoiceTurnRunner") -> Any:
     )
 
 
-def format_spoken_summary(text: str) -> str:
-    """Format an assistant markdown response for natural spoken TTS output.
+_ORDINAL_WORDS = {
+    1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth",
+    6: "sixth", 7: "seventh", 8: "eighth", 9: "ninth", 10: "tenth",
+    11: "eleventh", 12: "twelfth", 13: "thirteenth", 14: "fourteenth", 15: "fifteenth",
+    16: "sixteenth", 17: "seventeenth", 18: "eighteenth", 19: "nineteenth", 20: "twentieth",
+    21: "twenty-first", 22: "twenty-second", 23: "twenty-third", 24: "twenty-fourth",
+    25: "twenty-fifth", 26: "twenty-sixth", 27: "twenty-seventh", 28: "twenty-eighth",
+    29: "twenty-ninth", 30: "thirtieth", 31: "thirty-first",
+}
 
-    Strips markdown syntax (headers, emphasis, links, code, table bars) and
-    turns list items and table rows into separate sentences so TTS pauses
-    between them. The whole answer is kept; ``split_spoken_chunks`` handles
-    length by speaking it in pieces.
+
+def _spoken_date(year: str, month: str, day: str) -> str:
+    import datetime
+
+    month_name = datetime.date(int(year), int(month), 1).strftime("%B")
+    return f"{month_name} {_ORDINAL_WORDS[int(day)]}"
+
+
+def _rupees_to_indian_words(amount: int) -> str:
+    """Render a rupee amount using Indian lakh/crore grouping instead of digits."""
+    crore, remainder = divmod(amount, 10_000_000)
+    lakh, remainder = divmod(remainder, 100_000)
+    thousand, remainder = divmod(remainder, 1000)
+    parts = []
+    if crore:
+        parts.append(f"{crore} crore")
+    if lakh:
+        parts.append(f"{lakh} lakh")
+    if thousand:
+        parts.append(f"{thousand} thousand")
+    if remainder or not parts:
+        parts.append(str(remainder))
+    return " ".join(parts) + " rupees"
+
+
+def _normalize_for_speech(text: str) -> str:
+    """Convert machine-formatted analytics text into speakable language.
+
+    TTS reads ISO dates, comma-heavy rupee figures and report metadata
+    literally (digit by digit, symbol by symbol), which is what makes a
+    voice answer sound robotic. This rewrites those spans in place, before
+    the table/markdown stripping below runs, so converted values still get
+    picked up when a table row is turned into a sentence.
     """
     import re
 
+    # "Period: <range> · Currency: <ccy> · Data as of <date>." -> one aside.
+    def _footer(m: "re.Match[str]") -> str:
+        date = m.group("date")
+        date_m = re.match(r"(\d{4})-(\d{2})-(\d{2})", date)
+        spoken = _spoken_date(*date_m.groups()) if date_m else date.strip()
+        return f"This is based on data through {spoken}."
+
+    text = re.sub(
+        r"Period:\s*[^·\n]+?\s*·\s*Currency:\s*\S+\s*·\s*Data as of\s*(?P<date>[^\n.]+)\.?",
+        _footer,
+        text,
+    )
+
+    # "2026-09-01..2026-09-28" -> "September first to September twenty-eighth"
+    def _date_range(m: "re.Match[str]") -> str:
+        y1, mo1, d1, y2, mo2, d2 = m.groups()
+        return f"{_spoken_date(y1, mo1, d1)} to {_spoken_date(y2, mo2, d2)}"
+
+    text = re.sub(
+        r"\b(\d{4})-(\d{2})-(\d{2})\.\.(\d{4})-(\d{2})-(\d{2})\b", _date_range, text
+    )
+
+    # Any ISO date left standalone, e.g. "Data as of 2026-09-28".
+    text = re.sub(
+        r"\b(\d{4})-(\d{2})-(\d{2})\b",
+        lambda m: _spoken_date(*m.groups()),
+        text,
+    )
+
+    # "-₹805,381" / "−₹1,722,486" / "₹416,307" / "₹17L" / "₹28L+" -> lakh/crore
+    # words, with "a loss of" for a negative profit/margin figure, "down by"
+    # for any other negative delta, and "up by" for an explicit "+" delta.
+    # The abbreviated L/Cr/K suffix (e.g. "17L" for 17 lakh) is expanded and
+    # consumed here too, so it never survives to glue onto "rupees" below.
+    _SUFFIX_MULTIPLIERS = {
+        "crore": 10_000_000, "cr": 10_000_000,
+        "million": 1_000_000, "mn": 1_000_000, "m": 1_000_000,
+        "lakh": 100_000, "lac": 100_000, "l": 100_000,
+        "thousand": 1_000, "k": 1_000,
+    }
+
+    def _rupees(m: "re.Match[str]") -> str:
+        sign = m.group("sign")
+        try:
+            amount = float(m.group("num").replace(",", ""))
+        except ValueError:
+            return m.group(0)
+        suffix = (m.group("suffix") or "").strip().lower()
+        if suffix:
+            amount *= _SUFFIX_MULTIPLIERS[suffix]
+        words = _rupees_to_indian_words(int(amount))
+        approx = m.group("approx")
+        if approx:
+            words += " or more" if approx == "+" else " or less"
+        if not sign:
+            return words
+        context = text[max(0, m.start() - 60) : m.start()].lower()
+        is_profit_figure = any(k in context for k in ("profit", "margin", "loss"))
+        if sign == "+":
+            return f"{'a profit of' if is_profit_figure else 'up by'} {words}"
+        return f"{'a loss of' if is_profit_figure else 'down by'} {words}"
+
+    text = re.sub(
+        r"(?P<sign>[+−-])?₹\s?(?P<num>[\d,]+(?:\.\d+)?)"
+        r"(?P<suffix>\s?(?:crore|million|thousand|lakh|mn|lac|cr|l|k|m)(?![a-zA-Z]))?"
+        r"(?P<approx>[+-])?",
+        _rupees,
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    return text
+
+
+def format_spoken_summary(text: str) -> str:
+    """Format an assistant markdown response for natural spoken TTS output.
+
+    Normalizes machine-formatted values (ISO dates, rupee figures, report
+    metadata — see ``_normalize_for_speech``), strips markdown syntax
+    (headers, emphasis, links, code, table bars), and turns list items and
+    table rows into separate sentences so TTS pauses between them. The whole
+    answer is kept; ``split_spoken_chunks`` handles length by speaking it in
+    pieces.
+    """
+    import re
+
+    text = _normalize_for_speech(text)
     cleaned = re.sub(r"```[\s\S]*?```", "", text)
     lines: list[str] = []
     for raw in cleaned.splitlines():

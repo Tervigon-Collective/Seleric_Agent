@@ -321,6 +321,53 @@ def test_spoken_summary_keeps_the_whole_answer_without_thread_pointers() -> None
     assert "thread" not in spoken.lower() and "|" not in spoken
 
 
+def test_spoken_summary_speaks_dates_and_rupees_instead_of_reading_symbols() -> None:
+    text = (
+        "This month (2026-09-01..2026-09-28) sales are ₹416,307 vs ₹2,608,133 last month, "
+        "net profit worsened to −₹1,722,486 from −₹805,381.\n"
+        "Period: 2026-09-01..2026-09-28 · Currency: INR · Data as of 2026-09-28."
+    )
+
+    spoken = worker.format_spoken_summary(text)
+
+    assert "2026-09" not in spoken
+    assert "₹" not in spoken and "−" not in spoken
+    assert "September first to September twenty-eighth" in spoken
+    assert "4 lakh 16 thousand 307 rupees" in spoken
+    assert "26 lakh 8 thousand 133 rupees" in spoken
+    assert "a loss of 17 lakh 22 thousand 486 rupees" in spoken
+    assert "This is based on data through September twenty-eighth." in spoken
+
+
+def test_spoken_summary_expands_abbreviated_lakh_crore_suffixes() -> None:
+    text = (
+        "September has plunged to a -₹17L loss so far. "
+        "Sales are barely ₹4L across 28 days vs ₹28L+ in August. "
+        "Sales changed by +₹943191 in July and ₹2Cr in the best quarter."
+    )
+
+    spoken = worker.format_spoken_summary(text)
+
+    assert "L " not in spoken and "L." not in spoken and "rupeesL" not in spoken
+    assert "down by 17 lakh rupees" in spoken
+    assert "4 lakh rupees" in spoken
+    assert "28 lakh rupees or more" in spoken
+    assert "up by 9 lakh 43 thousand 191 rupees" in spoken
+    assert "2 crore rupees" in spoken
+    assert "+" not in spoken and "₹" not in spoken
+
+
+def test_spoken_summary_expands_abbreviated_million_suffix() -> None:
+    text = "Net sales collapsed (₹416K vs ₹2M in August), driving the loss to −₹1M."
+
+    spoken = worker.format_spoken_summary(text)
+
+    assert "rupeesM" not in spoken and "M " not in spoken and "M." not in spoken
+    assert "4 lakh 16 thousand rupees" in spoken
+    assert "20 lakh rupees" in spoken
+    assert "a loss of 10 lakh rupees" in spoken
+
+
 def test_split_spoken_chunks_keeps_every_sentence() -> None:
     text = " ".join(f"Sentence number {i}." for i in range(60))
 
