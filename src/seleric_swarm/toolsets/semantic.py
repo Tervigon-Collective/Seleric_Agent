@@ -777,13 +777,19 @@ def _reject_unsupported_breakdown_shape(
     order: str | None,
     limit: int | None,
     row_count: int,
-) -> None:
+) -> ToolResult | None:
     """Refuse two breakdown shapes a single Cube query answers wrong, steering to the
     executions that answer them right. Structure-driven, not keyword/metric-driven:
     keys on a NON-TIME breakdown dim (catalogue is_time separates a legitimate time
     series from a category), whether a time grain is crossed in, and the summary cap.
     Fail-open when the snapshot is empty (is_time can't be trusted) or there is no
     categorical breakdown to guard.
+
+    Returns a failed ToolResult (never raises ModelRetry): the correct fix — a per-bucket
+    fan-out — is a multi-step action the model may not satisfy on the first retry, and a
+    raised ModelRetry that exhausts the retry budget becomes an UnexpectedModelBehavior
+    crash (surfaces as V3_AGENT_FAILED). A graceful failure delivers the same guidance
+    without burning retries toward a hard failure; matches _reject_unknown_metric's idiom.
 
     Case B — per-group top-N via a global limit (live MS3-a50cf03a1a): a categorical
     breakdown crossed with a time grain PLUS a limit cannot mean "top-N per bucket" —
@@ -796,21 +802,27 @@ def _reject_unsupported_breakdown_shape(
     a month, named no product). Steer to order/limit, or a per-bucket fan-out."""
     catalogue = ctx.deps.catalogue
     if not catalogue.metrics:
-        return  # empty snapshot: can't trust is_time — let it through
+        return None  # empty snapshot: can't trust is_time — let it through
     cat_dims = [k for k in breakdown if not catalogue.is_time_dimension(k)]
     if not cat_dims:
-        return  # a pure time series (grain-only / date breakdown) — nothing to guard
+        return None  # a pure time series (grain-only / date breakdown) — nothing to guard
     dims = ", ".join(cat_dims)
     time_crossed = grain != "none" or any(catalogue.is_time_dimension(k) for k in breakdown)
     bucket = grain if grain != "none" else "period"
 
     if time_crossed and limit is not None:
-        raise ModelRetry(
-            f"'{metric_id}' broken down by '{dims}' at {bucket} grain with limit={limit} "
-            f"cannot give the top per {bucket}: Cube applies the limit to the whole "
-            f"result, not within each {bucket}, so it silently drops buckets. For the top "
-            f"per {bucket}, issue one ranked query per bucket (a per-period filter) or use "
-            f"run_python over the evidence. For an overall leaderboard instead, drop the grain."
+        return ToolResult(
+            success=False,
+            summary=(
+                f"query_metrics({metric_id}): breaking '{metric_id}' down by '{dims}' at "
+                f"{bucket} grain with limit={limit} cannot give the top per {bucket} — Cube "
+                f"applies the limit to the whole result, not within each {bucket}, so it "
+                f"silently drops buckets. For the top per {bucket}, issue one ranked query "
+                f"per bucket (a per-period filter) or use run_python over the evidence. For "
+                f"an overall leaderboard instead, drop the grain."
+            ),
+            error_code="UNSUPPORTED_QUERY",
+            retryable=False,
         )
 
     if order is None and limit is None and row_count > _MAX_SERIES_IN_SUMMARY:
@@ -820,12 +832,18 @@ def _reject_unsupported_breakdown_shape(
             if time_crossed
             else ""
         )
-        raise ModelRetry(
-            f"The '{dims}' breakdown of '{metric_id}' returned {row_count} groups — too "
-            f"many to report directly, and you did not rank them. Either rank it: set "
-            f"order='desc' (top) or 'asc' (bottom) and limit=K for a leaderboard.{per_bucket} "
-            f"Re-issue a ranked, bounded query — do not sort or aggregate the rows by hand."
+        return ToolResult(
+            success=False,
+            summary=(
+                f"query_metrics({metric_id}): the '{dims}' breakdown returned {row_count} "
+                f"groups — too many to report directly, and it is not ranked. Rank it: set "
+                f"order='desc' (top) or 'asc' (bottom) and limit=K for a leaderboard.{per_bucket} "
+                f"Re-issue a ranked, bounded query — do not sort or aggregate the rows by hand."
+            ),
+            error_code="UNSUPPORTED_QUERY",
+            retryable=False,
         )
+    return None
 
 
 async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult:
@@ -1160,9 +1178,12 @@ async def query_metrics(
             retryable=False,
         )
     # Before persisting: refuse breakdown shapes a single query answers wrong (a large
-    # unranked dump, or a per-group top-N expressed as a global limit). Raises ModelRetry
-    # (no artifacts written) with guidance toward the correct execution.
-    _reject_unsupported_breakdown_shape(ctx, metric_id, breakdown, grain, order, limit, len(rows))
+    # unranked dump, or a per-group top-N expressed as a global limit) with a graceful
+    # failed result — no artifacts written, no ModelRetry (which could exhaust into a crash).
+    if (blocked := _reject_unsupported_breakdown_shape(
+        ctx, metric_id, breakdown, grain, order, limit, len(rows)
+    )) is not None:
+        return blocked
     provenance = ArtifactProvenance(
         query_version=str(result.get("provenance", {}).get("query_id") or ""),
         source_metadata=result.get("provenance") or {},

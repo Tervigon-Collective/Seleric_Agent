@@ -379,7 +379,6 @@ async def test_large_unranked_breakdown_is_blocked_not_dumped():
     rows the model then hand-ranked (dropped a month, named no product). A large,
     unranked categorical breakdown must be refused with guidance, and NO artifacts
     written — not silently dumped for hand-processing."""
-    from pydantic_ai import ModelRetry
     from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 
     rows = [
@@ -396,17 +395,17 @@ async def test_large_unranked_breakdown_is_blocked_not_dumped():
         ),
     )
     ctx = FakeRunContext(deps)
-    with pytest.raises(ModelRetry) as exc:
-        await semantic.query_metrics(
-            ctx,
-            metric_id="returned_units",
-            dimensions={"product_title": ""},
-            grain="month",
-            period_start=datetime(2026, 6, 1, tzinfo=UTC),
-            period_end=datetime(2026, 6, 30, tzinfo=UTC),
-        )
-    assert "product_title" in str(exc.value)
-    assert "order=" in str(exc.value)  # steered to the ranked shape
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="returned_units",
+        dimensions={"product_title": ""},
+        grain="month",
+        period_start=datetime(2026, 6, 1, tzinfo=UTC),
+        period_end=datetime(2026, 6, 30, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert "product_title" in result.summary
+    assert "order=" in result.summary  # steered to the ranked shape
     # nothing persisted on the blocked path
     assert not ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id)
 
@@ -417,7 +416,6 @@ async def test_per_group_topn_via_global_limit_is_blocked():
     month grain + limit=5. Cube's limit is global, so it returned the 5 biggest cells
     overall and silently dropped May/June. A categorical breakdown crossed with a grain
     AND a limit must be refused and steered to a per-bucket fan-out."""
-    from pydantic_ai import ModelRetry
     from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 
     rows = [
@@ -434,18 +432,19 @@ async def test_per_group_topn_via_global_limit_is_blocked():
         ),
     )
     ctx = FakeRunContext(deps)
-    with pytest.raises(ModelRetry) as exc:
-        await semantic.query_metrics(
-            ctx,
-            metric_id="refund_lines",
-            dimensions={"product_title": ""},
-            grain="month",
-            period_start=datetime(2026, 5, 29, tzinfo=UTC),
-            period_end=datetime(2026, 9, 29, tzinfo=UTC),
-            order="desc",
-            limit=5,
-        )
-    assert "per month" in str(exc.value)  # names the bucket, steers to per-bucket
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="refund_lines",
+        dimensions={"product_title": ""},
+        grain="month",
+        period_start=datetime(2026, 5, 29, tzinfo=UTC),
+        period_end=datetime(2026, 9, 29, tzinfo=UTC),
+        order="desc",
+        limit=5,
+    )
+    # graceful failed result (never a raised ModelRetry that could exhaust into a crash)
+    assert result.success is False
+    assert "per month" in result.summary  # names the bucket, steers to per-bucket
     assert not ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id)
 
 

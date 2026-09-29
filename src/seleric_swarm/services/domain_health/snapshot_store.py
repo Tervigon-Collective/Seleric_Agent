@@ -27,8 +27,17 @@ class SnapshotStore:
     docs/features/business-state-service/04_DOMAIN_HEALTH_SNAPSHOTS.md).
     """
 
-    def __init__(self, base_dir: str | Path = "var/domain_health_snapshots") -> None:
-        path = Path(base_dir)
+    def __init__(self, base_dir: str | Path | None = None) -> None:
+        # Deployments where repo_root() is read-only (e.g. /app/var in a container)
+        # made every save() raise PermissionError — the refresh loop then failed each
+        # cycle and no snapshot ever persisted, silently disabling business-state
+        # priming. The base dir is env-configurable so ops can point writer and reader
+        # (same env, so both resolve identically) at a writable volume; the default is
+        # unchanged for local/dev. Explicit base_dir arg still wins for tests.
+        raw = base_dir if base_dir is not None else os.getenv(
+            "SELERIC_DOMAIN_HEALTH_DIR", "var/domain_health_snapshots"
+        )
+        path = Path(raw)
         self._base = path if path.is_absolute() else repo_root() / path
 
     def save(self, snapshot: DomainStateSnapshot) -> Path:
