@@ -319,6 +319,23 @@ def _store_plan_artifact(deps: SelericDeps, *, plan: str, intent: str | None) ->
         _log.warning("plan_artifact_store_failed", exc_info=True)
 
 
+def _resolved_window(query: str, timezone: str, as_of: str):
+    """The single absolute period the question names, or None.
+
+    Only a single absolute span is returned: a comparison legitimately spans two
+    ranges, and a question naming no relative period has nothing to pin.
+    """
+    try:
+        window = window_from_query(query, timezone, as_of)
+    except Exception:
+        return None
+    if window is None or window.kind != "absolute":
+        return None
+    if not window.relative_token or not window.start or not window.end:
+        return None
+    return window
+
+
 def _resolved_window_line(query: str, timezone: str, as_of: str) -> str:
     """Resolve a relative time phrase to concrete dates once, deterministically,
     so the agent uses a fixed window instead of resolving "last month" itself —
@@ -952,6 +969,7 @@ async def run_v3_mission(
         ),
         catalogue=catalogue,
         metrics=getattr(runtime, "metrics", None),
+        resolved_window=_resolved_window(query, timezone, as_of_dt.date().isoformat()),
         jev=JevConfig(
             base_url=getattr(runtime.settings, "jev_base_url", ""),
             api_key=getattr(runtime.settings, "jev_api_key", ""),

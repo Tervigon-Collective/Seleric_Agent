@@ -710,6 +710,46 @@ async def resolve_concept(
     )
 
 
+def _pin_to_resolved_window(
+    ctx: RunContext[SelericDeps],
+    period_start: datetime | None,
+    period_end: datetime | None,
+) -> tuple[datetime, datetime, str] | None:
+    """Hold the caller to the period the question named.
+
+    ``services/time_range.py`` resolves a relative phrase to exact dates once,
+    deterministically, precisely because the model drifts when it does the
+    arithmetic itself — live, "last month" was fetched as 2026-08-01..08-30,
+    dropping a real day of data and shifting every figure derived from it. That
+    resolution reached the model only as a sentence in the prompt, which it is
+    free to ignore, and it did.
+
+    The correction is applied rather than refused. Refusing was tried first and
+    is worse: the model re-issued the same dates until the mission timed out,
+    then answered from a drilldown whose range it had inherited earlier — so the
+    wrong window survived anyway, having burned the whole budget. A resolver
+    that exists to be authoritative should not be arguable. The override is
+    reported in ``warnings`` so it stays visible rather than silent.
+
+    Fail-open when the question named no relative period, or when the caller
+    already asked for exactly that period.
+    """
+    window = ctx.deps.resolved_window
+    if window is None or period_start is None or period_end is None:
+        return None
+    asked = (period_start.date().isoformat(), period_end.date().isoformat())
+    if asked == (window.start, window.end):
+        return None
+    token = (window.relative_token or "").replace("_", " ")
+    tz = period_start.tzinfo
+    return (
+        datetime.fromisoformat(window.start).replace(tzinfo=tz),
+        datetime.fromisoformat(window.end).replace(tzinfo=tz),
+        f"'{token}' is {window.start}..{window.end}; this call asked for "
+        f"{asked[0]}..{asked[1]} and was corrected to the period the question names",
+    )
+
+
 def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult | None:
     """Gate an id against the warmed catalogue snapshot before any Cube call.
     Validation only — never rewrites the id to a guess (rule 1 / the
@@ -1050,6 +1090,15 @@ async def query_metrics(
         return unknown
     dimensions = _sanitize_dimensions(dimensions)
     _reject_incompatible_dimensions(ctx, metric_id, dimensions)
+    window_note: str | None = None
+    if (pinned := _pin_to_resolved_window(ctx, period_start, period_end)) is not None:
+        period_start, period_end, window_note = pinned
+    window = ctx.deps.resolved_window
+    if window is not None and period_start is None and period_end is None:
+        # The question named a period; use it rather than collapsing to as_of,
+        # which is today and therefore still empty while the day is in flight.
+        period_start = datetime.fromisoformat(window.start).replace(tzinfo=ctx.deps.as_of.tzinfo)
+        period_end = datetime.fromisoformat(window.end).replace(tzinfo=ctx.deps.as_of.tzinfo)
     period_end = period_end or ctx.deps.as_of
     period_start = period_start or period_end
     breakdown = [k for k, v in dimensions.items() if not v]
@@ -1326,7 +1375,7 @@ async def query_metrics(
             artifact_ids=artifact_ids,
             summary=summary,
             provenance=prov,
-            warnings=list(result.get("warnings") or []),
+            warnings=[*(result.get("warnings") or []), *([window_note] if window_note else [])],
         )
 
     # A cache HIT above means the same fetch already ran this mission — but

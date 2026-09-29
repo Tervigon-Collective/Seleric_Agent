@@ -139,6 +139,14 @@ def check_answer_grounding(artifacts: list[Artifact], result: MissionResult | No
     # series is legitimately summarised as a trend, not reported point by point.
     all_sources: list[float] = []
     period_values: dict[tuple[date, date], list[float]] = {}
+    # Per metric, for the same reason the period bucket exists. ``all_sources``
+    # is metric-agnostic, so a number is "grounded" as long as SOME metric
+    # happens to hold that value — which is how a column of one metric's values
+    # reprinted under another metric's heading passes: a ROAS of 2.33 grounds a
+    # conversion rate shown as 2.3308%. Requiring each cited metric to show at
+    # least one of its OWN values catches that, because the metric whose column
+    # was overwritten contributes nothing to the answer.
+    metric_values: dict[str, list[float]] = {}
     for eid in cited:
         ev = evidence[eid]
         if ev.value is None:
@@ -146,6 +154,7 @@ def check_answer_grounding(artifacts: list[Artifact], result: MissionResult | No
         all_sources.append(float(ev.value))
         if ev.grain == "none":
             period_values.setdefault(_period(ev), []).append(float(ev.value))
+            metric_values.setdefault(ev.metric_id, []).append(float(ev.value))
     for fid in cited_findings:
         f = findings[fid]
         vals = list(f.metrics.values())
@@ -156,6 +165,10 @@ def check_answer_grounding(artifacts: list[Artifact], result: MissionResult | No
 
     uncovered = [
         p for p, vals in sorted(period_values.items())
+        if not any(_matches(num, v) for num in numbers for v in vals)
+    ]
+    silent_metrics = [
+        mid for mid, vals in sorted(metric_values.items())
         if not any(_matches(num, v) for num in numbers for v in vals)
     ]
     date_parts = _date_parts({_period(evidence[e]) for e in cited})
@@ -177,6 +190,20 @@ def check_answer_grounding(artifacts: list[Artifact], result: MissionResult | No
             detail += f"; numbers in the answer not found in any evidence: {', '.join(ungrounded)}"
         out.status = "INSUFFICIENT"
         out.gaps.append(EvidenceGap(description=detail, blocking=True, priority=8))
+    elif silent_metrics:
+        out.status = "INSUFFICIENT"
+        out.gaps.append(
+            EvidenceGap(
+                description=(
+                    f"the answer cites evidence for {', '.join(silent_metrics)} but shows no "
+                    f"value from it — report that metric's own values, or drop its evidence "
+                    f"and say the figure is unavailable rather than showing another metric's "
+                    f"number in its place"
+                ),
+                blocking=True,
+                priority=8,
+            )
+        )
     elif ungrounded:
         out.gaps.append(
             EvidenceGap(

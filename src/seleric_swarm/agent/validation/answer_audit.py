@@ -31,9 +31,12 @@ _NUMBER = re.compile(r"[-+]?\d[\d,]*(?:\.\d+)?")
 _ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _TABLE_DELIM = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
 
-# A claim that a number is the aggregate of the rows shown.
+# A claim that a number is the aggregate of the rows shown. ``total\w*`` covers
+# both spellings deliberately: a live answer wrote "totaled" (one l) and an
+# earlier pattern that listed only "totalled" let a wrong total straight
+# through.
 _TOTAL_WORD = re.compile(
-    r"\b(total(?:s|led|ling)?|sum(?:med|s)?|combined|altogether|aggregate|overall)\b",
+    r"\b(total\w*|sums?|summed|summing|combined|altogether|aggregate|overall)\b",
     re.IGNORECASE,
 )
 
@@ -118,22 +121,35 @@ def _table_columns(text: str) -> list[list[float]]:
     return columns
 
 
-def _claim_on(line: str) -> float | None:
-    """The figure a total-bearing line is asserting, at its stated magnitude.
+def _precision_tolerance(token: str, scale: int) -> float:
+    """Half the smallest unit the claim actually represents.
+
+    A relative tolerance cannot work here: 0.5% of an 8-million total is 40,000,
+    wide enough to accept a sum that is genuinely wrong. What a rounded figure
+    legitimately hides is half its last digit — "105.91 L" hides 500, while
+    "11,943,010" hides 0.5.
+    """
+    decimals = len(token.partition(".")[2])
+    return 0.5 * (10 ** -decimals) * scale
+
+
+def _claim_on(line: str) -> tuple[float, float] | None:
+    """The figure a total-bearing line asserts, with its rounding tolerance.
 
     The largest number on the line, so "9,146,009 (sum of last 3 months)" is
     read as the total and the "3" as the period count it is.
     """
-    best: float | None = None
+    best: tuple[float, float] | None = None
     consumed: list[tuple[int, int]] = []
     for match in _SUFFIXED.finditer(line):
         value = _to_float(match.group(1))
         if value is None:
             continue
         consumed.append(match.span())
-        scaled = value * _SUFFIX_SCALE[match.group(2).lower()]
-        if best is None or abs(scaled) > abs(best):
-            best = scaled
+        scale = _SUFFIX_SCALE[match.group(2).lower()]
+        candidate = (value * scale, _precision_tolerance(match.group(1), scale))
+        if best is None or abs(candidate[0]) > abs(best[0]):
+            best = candidate
     stripped = _ISO_DATE.sub(" ", line)
     for match in _NUMBER.finditer(stripped):
         if any(start <= match.start() < end for start, end in consumed):
@@ -141,17 +157,19 @@ def _claim_on(line: str) -> float | None:
         value = _to_float(match.group(0))
         if value is None:
             continue
-        if best is None or abs(value) > abs(best):
-            best = value
+        candidate = (value, _precision_tolerance(match.group(0), 1))
+        if best is None or abs(candidate[0]) > abs(best[0]):
+            best = candidate
     return best
 
 
-def _reconciles(claim: float, values: list[float]) -> bool:
+def _reconciles(claim: float, tolerance: float, values: list[float]) -> bool:
     """True if ``claim`` equals the sum of some subset of ``values``.
 
     Subsets, not just the full sum, because "total excluding partial months"
-    is a legitimate answer. Rounding-tolerant so a rounded headline counts.
-    The claim arrives already at its stated magnitude, so no scale is guessed.
+    is a legitimate answer. The claim arrives already at its stated magnitude
+    with the tolerance its own rounding implies, so no scale is guessed and no
+    proportional slack is granted.
     """
     if not values:
         return True
@@ -160,13 +178,8 @@ def _reconciles(claim: float, values: list[float]) -> bool:
         for size in range(1, len(values) + 1):
             for subset in combinations(values, size):
                 candidates.add(sum(subset))
-    target_claim = abs(claim)
-    for candidate in candidates:
-        target = abs(candidate)
-        tolerance = max(target * 0.005, 1.0)
-        if abs(target_claim - target) <= tolerance:
-            return True
-    return False
+    slack = max(tolerance, 0.01)
+    return any(abs(abs(claim) - abs(candidate)) <= slack for candidate in candidates)
 
 
 def total_mismatch(text: str) -> str | None:
@@ -181,10 +194,11 @@ def total_mismatch(text: str) -> str | None:
     for line in text.splitlines():
         if "|" in line or not _TOTAL_WORD.search(line):
             continue
-        claim = _claim_on(line)
-        if claim is None or claim == 0:
+        claimed = _claim_on(line)
+        if claimed is None or claimed[0] == 0:
             continue
-        if any(_reconciles(claim, column) for column in columns):
+        claim, tolerance = claimed
+        if any(_reconciles(claim, tolerance, column) for column in columns):
             continue
         sums = ", ".join(f"{sum(c):,.2f}" for c in columns)
         return (

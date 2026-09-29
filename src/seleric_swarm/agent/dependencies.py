@@ -18,6 +18,7 @@ from seleric_swarm.state.scratchpad import Scratchpad
 
 if TYPE_CHECKING:
     from seleric_swarm.agent.limits import ExecutionBudgetTracker
+    from seleric_swarm.contracts.lookup import TimeRangeV1
     from seleric_swarm.services.metrics import MetricRegistry
     from seleric_swarm.state.artifacts import ArtifactStore
 
@@ -120,6 +121,13 @@ class SelericDeps:
     # both through `canonical_id` first — see analytics/funnel.py. None leaves
     # every spelling distinct, so production paths must pass the real registry.
     metrics: MetricRegistry | None = None
+    # The period the question actually names, resolved once by
+    # services/time_range.py. It reached the agent only as a sentence in the
+    # prompt, which the model is free to override — and did, reading "last
+    # month" as a 30-day span and silently dropping Aug 31. Carried here so the
+    # fetch path can hold a caller to the window the question asked for.
+    # ``None`` when the question names no relative period: nothing to enforce.
+    resolved_window: TimeRangeV1 | None = None
     jev: JevConfig = field(default_factory=JevConfig)
     # Hard constraints the query demanded (requested breakdowns resolved to
     # catalogue dimension ids), captured once in the runner. Read by

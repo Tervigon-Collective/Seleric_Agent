@@ -31,10 +31,19 @@ _MONTH_YEAR = re.compile(
 # relative period → whether this is a full calendar-period comparison
 # (period A = the current period to date, period B = the matching prior
 # period) rather than a single point 7/30/365 days back.
+# A bare "last month" is NOT one of these. It is an explicit period the handlers
+# below already resolve to that whole calendar month, and treating it as a
+# period-over-period comparison whenever _COMPARISON_VERB appears anywhere in the
+# sentence silently rewrites the window the user asked for: "for last month, how
+# did this channel compare to the site average" is a channel-vs-site comparison,
+# not a month-vs-month one, and it resolved to "September to date vs Aug 1-30",
+# dropping Aug 31. So the period must be *bound* to the comparison — an idiom
+# (month over month), both periods named, or a preposition joining them.
+_VS = r"(?:vs\.?|versus|against|compared?\s+(?:to|with))\s+"
 _RELATIVE_COMPARE = (
-    (re.compile(r"\b(week[\s-]*over[\s-]*week|wow|this week\b.*\blast week|last week)\b", re.IGNORECASE), "week"),
-    (re.compile(r"\b(month[\s-]*over[\s-]*month|mom|this month\b.*\blast month|last month)\b", re.IGNORECASE), "month"),
-    (re.compile(r"\b(year[\s-]*over[\s-]*year|yoy|this year\b.*\blast year|last year)\b", re.IGNORECASE), "year"),
+    (re.compile(rf"\b(week[\s-]*over[\s-]*week|wow|this week\b.*\blast week|{_VS}last week)\b", re.IGNORECASE), "week"),
+    (re.compile(rf"\b(month[\s-]*over[\s-]*month|mom|this month\b.*\blast month|{_VS}last month)\b", re.IGNORECASE), "month"),
+    (re.compile(rf"\b(year[\s-]*over[\s-]*year|yoy|this year\b.*\blast year|{_VS}last year)\b", re.IGNORECASE), "year"),
 )
 
 

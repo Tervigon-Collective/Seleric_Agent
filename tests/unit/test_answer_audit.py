@@ -87,3 +87,35 @@ def test_plain_business_prose_leaks_nothing():
 def test_single_word_ids_are_not_matched_against_ordinary_vocabulary():
     """A bare id like "revenue" would collide with business language."""
     assert leaked_metric_ids("Revenue grew this month.", {"revenue", "roas"}) == []
+
+
+_TABLE_B = """
+| Period | Payment amount (INR) |
+| --- | ---: |
+| 2026-06 (PARTIAL) | 1,318,894.20 |
+| 2026-07 | 3,200,573.30 |
+| 2026-08 | 3,518,883.77 |
+| 2026-09 (PARTIAL) | 3,907,157.70 |
+"""
+
+
+@pytest.mark.parametrize("word", ["totaled", "totalled", "totals", "summed", "combined"])
+def test_total_claims_are_recognised_in_either_spelling(word):
+    """Live 2026-09-30: an answer wrote "totaled" (one l) and an earlier
+    pattern listing only "totalled" let a wrong total through unchecked."""
+    assert total_mismatch(f"Sales {word} INR 8,054,508 here.\n{_TABLE_B}") is not None
+
+
+def test_tolerance_is_precision_based_not_proportional():
+    """Live 2026-09-30: 8,054,508 sat within 0.5% of the 8,038,351.27 subset
+    (a 40,191 window), so a proportional tolerance accepted a wrong total.
+    A figure written to the rupee may only hide half a rupee."""
+    assert total_mismatch(f"Sales totaled INR 8,054,508.\n{_TABLE_B}") is not None
+    # The genuine subset, stated exactly, still reconciles.
+    assert total_mismatch(f"Sales totaled INR 8,038,351.27.\n{_TABLE_B}") is None
+
+
+def test_a_rounded_magnitude_in_prose_still_reconciles():
+    """"~3.91M" is a legitimate rounding of 3,907,157.70 — half of its last
+    represented unit is 5,000, which covers the 2,842 gap."""
+    assert total_mismatch(f"Receipts rose to ~3.91M INR in the summed window.\n{_TABLE_B}") is None
