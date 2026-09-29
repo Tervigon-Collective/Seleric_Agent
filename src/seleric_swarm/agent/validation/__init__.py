@@ -61,7 +61,9 @@ from seleric_swarm.agent.validation.signals import (
     run_checks,
 )
 from seleric_swarm.agent.validation.trust import TrustResult, score_trust
+from seleric_swarm.agent.validation.answer_audit import leaked_metric_ids, total_mismatch
 from seleric_swarm.agent.validation.verdict import decide_verdict
+from seleric_swarm.api.status import is_terminal_status
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -110,6 +112,24 @@ class ValidationOutcome:
         return self.verdict == "REJECT"
 
 
+def _evidence_metric_ids(result: MissionResult, deps: SelericDeps) -> set[str]:
+    """Metric ids this run actually touched, for the prose-leak check.
+
+    Read from the artifacts the answer cites rather than the whole catalogue:
+    the check only needs the handful of ids the model had in front of it, and
+    a catalogue-wide scan would risk matching ordinary words.
+    """
+    ids: set[str] = set()
+    for aid in [*result.evidence_ids, *result.finding_ids]:
+        artifact = deps.artifact_store.get(aid)
+        payload = getattr(artifact, "payload", None)
+        if isinstance(payload, dict):
+            metric_id = payload.get("metric_id")
+            if isinstance(metric_id, str) and metric_id.strip():
+                ids.add(metric_id.strip())
+    return ids
+
+
 class EvidenceValidator:
     def validate(
         self,
@@ -130,12 +150,46 @@ class EvidenceValidator:
                 ok=False,
                 reason=f"mission returned an empty final_response (status={result.status}); write the answer",
             )
+        if not is_terminal_status(result.status):
+            # final_result is the TERMINAL output tool: the first call ends the
+            # mission. Live, the model used it as a narration channel —
+            # status="running" with "Let me pull the funnel data for the last 3
+            # months." — and the loop stopped before a single metric tool ran,
+            # shipping the preamble as the answer. A non-terminal status is the
+            # model's own statement that it is not done, so treat it as REVISE
+            # (retryable) and send it back to finish the work.
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    f"final_result was called with status={result.status!r}, which is not a "
+                    "terminal state, so the answer is a preamble rather than a result. "
+                    "final_result ENDS the mission: do the remaining tool work first, then "
+                    "call it exactly once with completed/partial/failed and the real answer"
+                ),
+            )
         core = result.final_response.strip().strip(".…").lower()
         if result.final_response.strip() and (not core or core in _PLACEHOLDER_ANSWERS):
             # Live: a run shipped the literal answer "placeholder" to the user.
             return ValidationOutcome(
                 ok=False,
                 reason="final_response is a placeholder, not an answer; write the real answer",
+            )
+
+        # -- deterministic prose audits (see validation/answer_audit) --------
+        # The response contract forbids both of these in plain words; live runs
+        # on v0.1.24 shipped them anyway. Checked, not asserted.
+        arithmetic = total_mismatch(result.final_response)
+        if arithmetic:
+            return ValidationOutcome(ok=False, reason=arithmetic)
+        leaked = leaked_metric_ids(result.final_response, _evidence_metric_ids(result, deps))
+        if leaked:
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    f"final_response exposes internal metric id(s): {', '.join(leaked)}. "
+                    "Describe the metric in plain business language instead; ids belong in "
+                    "evidence_ids, never in the prose"
+                ),
             )
 
         causal_check = self._validate_causal_classifications(deps)

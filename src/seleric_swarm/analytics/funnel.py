@@ -1,35 +1,43 @@
 """Funnel step conversion and drop-off — behind ``funnel_decomposition``.
 
-Why this is simple arithmetic rather than a join
-------------------------------------------------
-``policy_config.FUNNEL_STEPS`` is deliberately restricted to metrics that
-share one denominator. Verified in ``config/metric_registry.yaml:148-215``:
-``pdp_view_rate``, ``atc_rate``, ``checkout_rate`` and ``purchase_cvr`` are all
-``X_sessions / sessions``, and ``metric.sessions`` is ``count(sessions)``.
+Why this holds no list of steps
+-------------------------------
+A funnel is whatever the caller measured, so naming its stages here would fix
+in the harness a fact the catalogue owns — and would be wrong the moment a
+funnel gains a stage, or the question is about a funnel other than the website
+one. Membership and order are derived instead:
 
-Because every rate is anchored on the same base, the survival rate between two
-consecutive steps is just ``rate[i+1] / rate[i]`` — no re-fetching, no joining
+* the catalogue types each metric (``aggregation``); the count is the base
+  stage, the shares of it are the steps,
+* a share is bounded by its base, so a later stage is a subset of an earlier
+  one and can never carry the larger rate — sorting the rates descending *is*
+  the funnel order.
+
+Because every step divides by that one base, the survival rate between two
+consecutive stages is just ``rate[i+1] / rate[i]`` — no re-fetching, no joining
 two metrics on different date axes. That last point matters: the live
 catalogue returns a ``CROSS_AXIS_RATIO_UNSUPPORTED`` warning for exactly that
 kind of client-side division (``docs/features/business-state-service/
 06_DATA_VALIDATION_FINDINGS.md``), which is why this module divides two
-*already-session-anchored rates* rather than two raw counts.
+*already-anchored rates* rather than two raw counts.
 
-``metric.sessions`` enters as an implicit rate of 1.0 — 100% of sessions are
-sessions. Adding a metric with a different denominator would make every
-conversion downstream of it meaningless, so ``ordered_steps`` refuses to place
-anything not in ``FUNNEL_STEPS``.
+The base enters as an implicit rate of 1.0 — 100% of it reached itself. A
+reading that merely shares the denominator without being a share of it is
+reported rather than placed; see ``_classify``.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from itertools import pairwise
 from typing import Any, NamedTuple
 
-from seleric_swarm.toolsets import policy_config as policy
-
-#: The base step is a count, not a rate; it is 100% of itself by definition.
-_BASE_STEP = policy.FUNNEL_STEPS[0]
+#: Is this metric id a ratio (a survival rate) rather than a count?
+#:
+#: Answered from the catalogue's own ``aggregation`` field, never from the id's
+#: spelling: the caller passes a lookup backed by the live catalogue. ``None``
+#: means the catalogue does not carry the metric, so it cannot be placed.
+RatioLookup = Callable[[str], bool | None]
 
 
 class StepReading(NamedTuple):
@@ -58,39 +66,89 @@ class Transition(NamedTuple):
     drop_off: float
 
 
-def ordered_steps(readings: list[StepReading]) -> list[Step]:
-    """Place readings onto the declared funnel, in order, dropping unknowns.
+def _partition(
+    readings: list[StepReading], is_ratio: RatioLookup
+) -> tuple[StepReading | None, list[tuple[float, StepReading]], list[StepReading]]:
+    """Split readings into the base stage, the shares of it, and the rest.
 
-    Unrecognized metric ids are dropped rather than appended — a metric with a
-    different denominator cannot be positioned on a session-anchored funnel,
-    and guessing its position from its name is the heuristic this codebase
-    deleted. The caller warns about what was dropped.
+    A share cannot exceed 100% of its base, so a ratio measuring above 1.0 is
+    something else that merely divides by the same denominator — an average
+    depth, a cost per unit — and positioning it would invent a conversion above
+    100%. A funnel also has exactly one base: where several counts are supplied
+    the widest is it, and the others are no more placeable than an untyped id,
+    because nothing says which stage they belong to. Everything not placed is
+    returned so the caller can name it rather than drop it silently.
     """
-    by_metric = {r.metric_id: r for r in readings if r.value is not None}
-    out: list[Step] = []
-    for position, metric_id in enumerate(policy.FUNNEL_STEPS):
-        reading = by_metric.get(metric_id)
-        if reading is None:
-            continue
-        raw = float(reading.value)  # type: ignore[arg-type]
-        rate = 1.0 if metric_id == _BASE_STEP else raw
-        out.append(
-            Step(metric_id=metric_id, position=position, rate=rate, raw=raw, ref=reading.ref)
+    counts: list[StepReading] = []
+    steps: list[tuple[float, StepReading]] = []
+    unplaceable: list[StepReading] = []
+    for r in readings:
+        ratio = None if r.value is None else is_ratio(r.metric_id)
+        if ratio is None:
+            unplaceable.append(r)
+        elif ratio is False:
+            counts.append(r)
+        elif 0.0 <= float(r.value) <= 1.0:
+            steps.append((float(r.value), r))
+        else:
+            unplaceable.append(r)
+
+    base: StepReading | None = None
+    if counts:
+        counts.sort(key=lambda r: float(r.value), reverse=True)  # type: ignore[arg-type]
+        base, *surplus = counts
+        unplaceable.extend(surplus)
+    steps.sort(key=lambda pair: pair[0], reverse=True)
+    return base, steps, unplaceable
+
+
+def ordered_steps(readings: list[StepReading], is_ratio: RatioLookup) -> list[Step]:
+    """Order the supplied readings into a funnel, widest stage first.
+
+    There is no declared step list. A funnel is whatever the caller measured,
+    and its order is a property of the numbers: every step is a share of one
+    common base, so a later stage is a subset of an earlier one and its rate is
+    never the larger. Sorting the rates descending therefore *is* the funnel
+    order, and it stays correct when the funnel changes shape or when this runs
+    over a funnel that is not the website one at all.
+
+    The base stage is the reading the catalogue types as a count rather than a
+    ratio: it is 100% of itself, so it enters at rate 1.0 and leads. A reading
+    the catalogue does not carry cannot be typed, so it is left out rather than
+    guessed at — ``unplaceable_steps`` names those for the caller's warnings.
+    """
+    base, placed, _ = _partition(readings, is_ratio)
+    ordered: list[tuple[float, StepReading]] = (
+        [(1.0, base), *placed] if base is not None else placed
+    )
+    return [
+        Step(
+            metric_id=r.metric_id,
+            position=position,
+            rate=rate,
+            raw=float(r.value),  # type: ignore[arg-type]
+            ref=r.ref,
         )
-    return out
+        for position, (rate, r) in enumerate(ordered)
+    ]
 
 
-def unknown_steps(readings: list[StepReading]) -> list[str]:
-    """Metric ids that are not part of the declared funnel."""
-    known = set(policy.FUNNEL_STEPS)
-    return sorted({r.metric_id for r in readings if r.metric_id not in known})
+def unplaceable_steps(readings: list[StepReading], is_ratio: RatioLookup) -> list[str]:
+    """Readings that could not be positioned, for the caller's warnings.
+
+    Either the catalogue does not carry the metric (so its kind is unknown), it
+    divides by the base without being a share of it, or it is a second count
+    competing to be the base stage.
+    """
+    _, _, unplaceable = _partition(readings, is_ratio)
+    return sorted({r.metric_id for r in unplaceable})
 
 
 def transitions(steps: list[Step]) -> list[Transition]:
     """Conversion and drop-off between each consecutive pair of present steps.
 
     "Consecutive" means consecutive among the steps actually supplied, not
-    adjacent in ``FUNNEL_STEPS`` — a funnel measured at sessions → checkout
+    adjacent in the full funnel — a funnel measured at sessions → checkout
     with the middle steps missing still yields one honest transition, it just
     spans more of the funnel. ``from_step``/``to_step`` name which, so the
     reader is never misled about what was skipped.

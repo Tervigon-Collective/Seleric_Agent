@@ -153,6 +153,15 @@ async def run_python(
             error_code="SANDBOX_DISABLED",
         )
 
+    verdict = ctx.deps.budget.consume("python_calls")
+    if not verdict.ok:
+        return ToolResult(
+            success=False,
+            summary=f"python sandbox budget exhausted for this mission ({verdict.reason})",
+            error_code="EXECUTION_LIMIT_EXCEEDED",
+            retryable=False,
+        )
+
     evidence, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal

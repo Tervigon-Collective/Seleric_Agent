@@ -122,51 +122,13 @@ WARN_INVALID_HORIZON: str = "policy:invalid_horizon"
 
 # ---- Sprint 4 C: breakdowns, knowledge, experiments -------------------------
 
-# Funnel step order, declared rather than inferred.
-#
-# There is no declarative funnel ordering anywhere in this repo: no `step`/
-# `order` key in config/metric_registry.yaml, nothing in
-# config/diagnostic_ontology.yaml (that file is causal-graph wiring), and
-# agents/domains/funnel.py is a 24-line stub. So it is written out here.
-#
-# These five are chosen because they share ONE denominator. Verified in
-# config/metric_registry.yaml:148-215 — every rate is session-anchored:
-#
-#   metric.sessions        formula: count(sessions)            <- absolute base
-#   metric.pdp_view_rate   formula: pdp_sessions / sessions
-#   metric.atc_rate        formula: atc_sessions / sessions
-#   metric.checkout_rate   formula: checkout_sessions / sessions
-#   metric.purchase_cvr    formula: purchased_sessions / sessions
-#
-# That common denominator is what makes step-to-step conversion well defined:
-# the survival rate between consecutive steps is rate[i+1] / rate[i], and
-# `metric.sessions` enters as an implicit rate of 1.0. Mixing in a metric with
-# a different denominator would silently produce meaningless conversions, so
-# do not add one without reworking analytics/funnel.py.
-#
-# Deriving this order at runtime by parsing `formula` strings would
-# reintroduce exactly the name/keyword heuristic layer Profile B deleted in
-# Sprint 3 (docs/BUG_SHEET.md #8), and `.formula` degrades to the bare metric
-# id on catalogue-bound entries anyway. If the funnel changes, change this list.
-FUNNEL_STEPS: tuple[str, ...] = (
-    "metric.sessions",
-    "metric.pdp_view_rate",
-    "metric.atc_rate",
-    "metric.checkout_rate",
-    "metric.purchase_cvr",
-)
+# Funnel membership and order are NOT declared here.
+# A funnel's stages belong to the catalogue, which types each metric as a
+# count or a ratio; analytics/funnel.py derives the base stage and the step
+# order from that typing plus the measured rates. Listing metric ids here
+# would pin one funnel's shape into the harness and silently exclude any
+# other funnel the catalogue grows.
 
-# Caution for anyone extending FUNNEL_STEPS. Two real traps:
-#   * `metric.atc_to_purchase_rate` is MISNAMED — its formula is
-#     `purchased_sessions / checkout_sessions` and its catalogue id is
-#     `session_checkout_to_purchase_rate`. The name says ATC, the math says
-#     checkout. Trust the formula, not the id.
-#   * `metric.session_atc_to_checkout_rate` is `checkout_sessions /
-#     atc_sessions` — ATC-anchored, not session-anchored. Adding it here would
-#     break the shared-denominator property above.
-
-# Shares below this are folded into an explicit "other" bucket rather than
-# listed individually — a 200-row channel breakdown is not a finding.
 MIN_SEGMENT_SHARE: float = 0.01
 MAX_SEGMENTS_REPORTED: int = 20
 

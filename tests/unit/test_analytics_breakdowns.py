@@ -20,7 +20,16 @@ from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.analytics.breakdown import Segment, contributions, shares
 from seleric_swarm.analytics.cohort import CohortReading, cohort_spread
-from seleric_swarm.analytics.funnel import StepReading, ordered_steps, transitions
+from seleric_swarm.analytics.funnel import (
+    StepReading,
+    ordered_steps,
+    transitions,
+    unplaceable_steps,
+)
+from seleric_swarm.services.catalogue_bootstrap import (
+    CatalogueMetricMeta,
+    CatalogueSnapshot,
+)
 from seleric_swarm.conversations.contracts import (
     Artifact,
     ArtifactProvenance,
@@ -40,8 +49,38 @@ class FakeRunContext:
         self.deps = deps
 
 
-def _deps(store: InMemoryArtifactStore) -> SelericDeps:
+#: Production-shaped funnel evidence: catalogue ids, typed the way the live
+#: catalogue types them (``aggregation``), never the registry's ``metric.*``
+#: spelling — that namespace never reaches an artifact.
+_FUNNEL_TYPES = {
+    "web_sessions": "additive",
+    "session_pdp_rate": "ratio",
+    "session_atc_rate": "ratio",
+    "session_conversion_rate": "ratio",
+    "session_avg_page_depth": "ratio",
+    "cac": "additive",
+}
+
+
+def _catalogue(types: dict[str, str] | None = None) -> CatalogueSnapshot:
+    return CatalogueSnapshot(
+        metrics=tuple(
+            CatalogueMetricMeta(id=mid, raw={"aggregation": agg})
+            for mid, agg in (types if types is not None else _FUNNEL_TYPES).items()
+        )
+    )
+
+
+def _is_ratio(types: dict[str, str] | None = None):
+    table = types if types is not None else _FUNNEL_TYPES
+    return lambda mid: (table[mid] == "ratio") if mid in table else None
+
+
+def _deps(
+    store: InMemoryArtifactStore, catalogue: CatalogueSnapshot | None = None
+) -> SelericDeps:
     return SelericDeps(
+        catalogue=catalogue if catalogue is not None else _catalogue(),
         mission_id=_MISSION,
         as_of=datetime(2026, 9, 19, tzinfo=UTC),
         principal=Principal(
@@ -272,57 +311,94 @@ async def test_segment_decomposition_refuses_pooled_rows():
 # ---- funnel -----------------------------------------------------------------
 
 
-def test_funnel_places_steps_in_declared_order_not_input_order():
+def test_funnel_order_comes_from_the_rates_not_the_input_order():
+    """Order is a property of the numbers, not a list in the harness: a later
+    stage is a subset of an earlier one, so it can never carry the larger rate."""
     readings = [
-        StepReading("metric.purchase_cvr", 0.02),
-        StepReading("metric.sessions", 1000.0),
-        StepReading("metric.atc_rate", 0.10),
+        StepReading("session_conversion_rate", 0.02),
+        StepReading("web_sessions", 1000.0),
+        StepReading("session_atc_rate", 0.10),
     ]
-    assert [s.metric_id for s in ordered_steps(readings)] == [
-        "metric.sessions",
-        "metric.atc_rate",
-        "metric.purchase_cvr",
+    assert [s.metric_id for s in ordered_steps(readings, _is_ratio())] == [
+        "web_sessions",
+        "session_atc_rate",
+        "session_conversion_rate",
     ]
 
 
-def test_sessions_enters_as_an_implicit_rate_of_one():
-    """The base step is a count, not a rate; 100% of sessions are sessions.
+def test_the_count_metric_enters_as_an_implicit_rate_of_one():
+    """The base stage is a count, not a rate; 100% of it reached itself.
     Without this the first conversion would be nonsense (0.10 / 1000)."""
-    steps = ordered_steps([StepReading("metric.sessions", 1000.0), StepReading("metric.atc_rate", 0.10)])
+    steps = ordered_steps(
+        [StepReading("web_sessions", 1000.0), StepReading("session_atc_rate", 0.10)],
+        _is_ratio(),
+    )
     assert steps[0].rate == 1.0
     assert steps[0].raw == 1000.0
     assert transitions(steps)[0].conversion == pytest.approx(0.10)
 
 
-def test_conversion_is_the_ratio_of_two_session_anchored_rates():
-    """Every FUNNEL_STEPS rate shares the `sessions` denominator, so survival
-    between steps is rate[i+1]/rate[i] -- no cross-axis division."""
+def test_conversion_is_the_ratio_of_two_rates_on_one_base():
+    """Every step divides by the same base, so survival between stages is
+    rate[i+1]/rate[i] -- no cross-axis division."""
     steps = ordered_steps(
-        [StepReading("metric.atc_rate", 0.10), StepReading("metric.purchase_cvr", 0.02)]
+        [
+            StepReading("session_atc_rate", 0.10),
+            StepReading("session_conversion_rate", 0.02),
+        ],
+        _is_ratio(),
     )
     move = transitions(steps)[0]
     assert move.conversion == pytest.approx(0.2)
     assert move.drop_off == pytest.approx(0.8)
 
 
-def test_unknown_metrics_are_dropped_not_guessed_into_position():
-    """Positioning an unrecognized metric by name is the heuristic Profile B
-    deleted; a metric with a different denominator would also silently break
-    every downstream conversion."""
+def test_a_metric_the_catalogue_does_not_carry_is_not_positioned():
+    """Positioning an unknown metric by name is the heuristic Profile B
+    deleted; its denominator could differ and break every conversion."""
+    readings = [StepReading("web_sessions", 1000.0), StepReading("mystery_rate", 0.5)]
+    steps = ordered_steps(readings, _is_ratio())
+    assert [s.metric_id for s in steps] == ["web_sessions"]
+    assert unplaceable_steps(readings, _is_ratio()) == ["mystery_rate"]
+
+
+def test_a_ratio_above_one_is_not_a_share_so_it_is_not_positioned():
+    """avg page depth divides by sessions but is not a share of them; placing
+    it would invent a conversion above 100%."""
+    readings = [
+        StepReading("web_sessions", 1000.0),
+        StepReading("session_avg_page_depth", 3.4),
+        StepReading("session_atc_rate", 0.10),
+    ]
+    steps = ordered_steps(readings, _is_ratio())
+    assert [s.metric_id for s in steps] == ["web_sessions", "session_atc_rate"]
+    assert unplaceable_steps(readings, _is_ratio()) == ["session_avg_page_depth"]
+    assert all(m.conversion <= 1.0 for m in transitions(steps))
+
+
+def test_the_funnel_is_not_specific_to_the_website_one():
+    """Any base-plus-shares set the catalogue can express decomposes here."""
+    types = {"impressions": "additive", "click_rate": "ratio", "install_rate": "ratio"}
     steps = ordered_steps(
-        [StepReading("metric.sessions", 1000.0), StepReading("metric.cac", 42.0)]
+        [
+            StepReading("install_rate", 0.01),
+            StepReading("impressions", 50_000.0),
+            StepReading("click_rate", 0.04),
+        ],
+        _is_ratio(types),
     )
-    assert [s.metric_id for s in steps] == ["metric.sessions"]
+    assert [s.metric_id for s in steps] == ["impressions", "click_rate", "install_rate"]
+    assert transitions(steps)[1].conversion == pytest.approx(0.25)
 
 
 @pytest.mark.asyncio
 async def test_funnel_decomposition_finds_the_worst_drop_off():
     store = InMemoryArtifactStore()
     ids = [
-        _put(store, metric="metric.sessions", value=1000.0),
-        _put(store, metric="metric.pdp_view_rate", value=0.50),
-        _put(store, metric="metric.atc_rate", value=0.10),
-        _put(store, metric="metric.purchase_cvr", value=0.02),
+        _put(store, metric="web_sessions", value=1000.0),
+        _put(store, metric="session_pdp_rate", value=0.50),
+        _put(store, metric="session_atc_rate", value=0.10),
+        _put(store, metric="session_conversion_rate", value=0.02),
     ]
     result = await analytics.funnel_decomposition(FakeRunContext(_deps(store)), ids)
 
@@ -333,28 +409,28 @@ async def test_funnel_decomposition_finds_the_worst_drop_off():
 
 
 @pytest.mark.asyncio
-async def test_funnel_refuses_a_single_step_and_names_the_declared_funnel():
+async def test_funnel_refuses_a_single_stage_and_says_what_to_supply():
     store = InMemoryArtifactStore()
-    ids = [_put(store, metric="metric.sessions", value=1000.0)]
+    ids = [_put(store, metric="web_sessions", value=1000.0)]
     result = await analytics.funnel_decomposition(FakeRunContext(_deps(store)), ids)
 
     assert result.success is False
     assert policy.WARN_NO_FUNNEL_STEPS in result.warnings
-    assert "metric.sessions" in result.summary
+    assert "base stage" in result.summary
 
 
 @pytest.mark.asyncio
-async def test_funnel_warns_about_metrics_outside_the_declared_funnel():
+async def test_funnel_warns_about_readings_it_could_not_position():
     store = InMemoryArtifactStore()
     ids = [
-        _put(store, metric="metric.sessions", value=1000.0),
-        _put(store, metric="metric.atc_rate", value=0.10),
-        _put(store, metric="metric.cac", value=42.0),
+        _put(store, metric="web_sessions", value=1000.0),
+        _put(store, metric="session_atc_rate", value=0.10),
+        _put(store, metric="cac", value=42.0),
     ]
     result = await analytics.funnel_decomposition(FakeRunContext(_deps(store)), ids)
 
     assert result.success
-    assert any("metric.cac" in w for w in result.warnings)
+    assert any("cac" in w for w in result.warnings)
 
 
 # ---- cohort -----------------------------------------------------------------

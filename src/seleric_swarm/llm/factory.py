@@ -31,9 +31,13 @@ def build_llm(settings: Settings) -> LLMPort:
 
         from seleric_swarm.llm.gateway import LLMGateway
 
-        models = [ModelSpec(id=settings.primary_model(), priority=0)]
+        # Primary model gets full timeout, fallbacks get shorter timeout for faster failover
+        primary_timeout = settings.llm_timeout_s
+        fallback_timeout = min(15.0, settings.llm_timeout_s)
+        models = [ModelSpec(id=settings.primary_model(), priority=0, timeout_s=primary_timeout)]
         models += [
-            ModelSpec(id=model_id, priority=index + 1) for index, model_id in enumerate(fallback_ids)
+            ModelSpec(id=model_id, priority=index + 1, timeout_s=fallback_timeout)
+            for index, model_id in enumerate(fallback_ids)
         ]
         return LLMGateway(adapter, models)
     raise ValueError(f"Unknown LLM_PROVIDER={settings.llm_provider}")

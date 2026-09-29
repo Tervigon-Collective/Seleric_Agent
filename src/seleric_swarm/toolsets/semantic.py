@@ -182,7 +182,7 @@ def _cache_key(capability: str, arguments: dict[str, Any]) -> str:
 _QUERY_CACHE_ENABLED = True
 
 LIVE_DATA_UNAVAILABLE = "live_data_unavailable"
-_MAX_DEFINITION_LOOKUPS = 4
+_MAX_DEFINITION_LOOKUPS = 8
 
 
 def _definition_cache_key(metric_id: str) -> str:
@@ -214,6 +214,7 @@ def _definition_budget_spent(ctx: RunContext[SelericDeps]) -> ToolResult | None:
 async def _cached_metrics_query(
     ctx: RunContext[SelericDeps], arguments: dict[str, Any]
 ) -> dict[str, Any]:
+    import asyncio
     fetch = lambda: call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=arguments)
     key = _cache_key("seleric.metrics_query", arguments)
     if _QUERY_CACHE_ENABLED and ctx.deps.query_cache.peek(key) is not None:
@@ -233,7 +234,18 @@ async def _cached_metrics_query(
                 "the evidence you already have, and say plainly if that isn't enough."
             )
         }
-    result = await fetch() if not _QUERY_CACHE_ENABLED else await ctx.deps.query_cache.get_or_fetch(key, fetch)
+    mcp_timeout = float(getattr(ctx.deps.limits, "mcp_call_timeout_s", 15.0))
+    try:
+        result = await asyncio.wait_for(
+            fetch() if not _QUERY_CACHE_ENABLED else ctx.deps.query_cache.get_or_fetch(key, fetch),
+            timeout=mcp_timeout,
+        )
+    except asyncio.TimeoutError:
+        return {
+            "error": f"MCP call timed out after {mcp_timeout}s",
+            "rows": [],
+            "provenance": {},
+        }
     if str(result.get("error") or "").startswith("NotImplementedError"):
         # Deployment state, not a transient fault: `prepare_tools` (agent.py)
         # withdraws every data-fetching tool for the rest of the mission so the
@@ -435,7 +447,7 @@ _SHORTLIST_FIELDS = ("id", "display_name", "view", "supported_dimensions", "matc
 # After this many searches in one mission, search_semantics stops returning a
 # fresh-looking result and forces the model to commit — a mechanical breaker for
 # the paraphrase-search loop (SEARCH-01) that exact-arg caching can't catch.
-_MAX_SEARCHES = 3
+_MAX_SEARCHES = 5
 
 # After this many *empty* searches (no catalogue match), the concept is almost
 # certainly not modelled — stop before the full _MAX_SEARCHES budget so the

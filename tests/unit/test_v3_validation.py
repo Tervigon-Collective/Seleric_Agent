@@ -300,3 +300,85 @@ def test_validate_fails_causal_artifact_with_legacy_classification() -> None:
     outcome = EvidenceValidator().validate(_result(), deps=deps)
     assert not outcome.ok
     assert "evidence_classification" in (outcome.reason or "")
+
+
+def test_validate_rejects_non_terminal_status_preamble() -> None:
+    """Regression: thread_1ff5b4c9c74e45f9b1e0c234461e9008.
+
+    The coordinator called final_result — the TERMINAL output tool — with
+    status="running" and the preamble "Let me pull the funnel data for the last
+    3 months." The loop ended before a single metric tool ran and the preamble
+    shipped as the answer, while the run was reported COMPLETED.
+    """
+    outcome = EvidenceValidator().validate(
+        _result(
+            status="running",
+            final_response="Let me pull the funnel data for the last 3 months.",
+        ),
+        deps=_deps(),
+    )
+    assert not outcome.ok
+    # REVISE, not REJECT: the model gets sent back to finish the work.
+    assert not outcome.rejected
+    assert "terminal" in (outcome.reason or "").lower()
+
+
+def test_validate_still_accepts_terminal_statuses() -> None:
+    for status in ("completed", "partial", "failed"):
+        outcome = EvidenceValidator().validate(
+            _result(status=status, final_response="Conversion was 2.1% in Q3."),
+            deps=_deps(),
+        )
+        assert outcome.ok, f"{status} should pass the terminal-status gate"
+
+
+def test_validate_rejects_a_total_that_contradicts_its_own_table() -> None:
+    """Live 2026-09-29: the answer led with INR 9,146,009 above a table whose
+    rows summed to 11,943,009.97. Prompt rules alone did not prevent it."""
+    answer = (
+        "Total collected: INR 9,146,009 (sum of last 3 months).\n\n"
+        "| Period | Payment (INR) |\n| --- | ---: |\n"
+        "| 2026-06 | 1,318,894.20 |\n| 2026-07 | 3,200,573.30 |\n"
+        "| 2026-08 | 3,518,883.77 |\n| 2026-09 | 3,904,658.70 |\n"
+    )
+    outcome = EvidenceValidator().validate(_result(final_response=answer), deps=_deps())
+    assert not outcome.ok
+    assert not outcome.rejected  # REVISE: the agent gets a chance to recompute
+    assert "9,146,009" in (outcome.reason or "")
+
+
+def test_validate_accepts_a_table_whose_total_reconciles() -> None:
+    answer = (
+        "Total collected: INR 11,943,010 (sum of last 3 months).\n\n"
+        "| Period | Payment (INR) |\n| --- | ---: |\n"
+        "| 2026-06 | 1,318,894.20 |\n| 2026-07 | 3,200,573.30 |\n"
+        "| 2026-08 | 3,518,883.77 |\n| 2026-09 | 3,904,658.70 |\n"
+    )
+    assert EvidenceValidator().validate(_result(final_response=answer), deps=_deps()).ok
+
+
+def test_validate_rejects_a_leaked_metric_id_in_the_prose() -> None:
+    """Live 2026-09-29: an answer closed with "use net_sales_all_channels when
+    you need P&L net sales", exposing an internal id the contract forbids."""
+    store = InMemoryArtifactStore()
+    ids = _seed_daily_evidence(store, "MS3-test")
+    outcome = EvidenceValidator().validate(
+        _result(
+            final_response="Net sales were 105 — use metric.net_sales for the P&L view.",
+            evidence_ids=ids,
+        ),
+        deps=_deps(artifact_store=store),
+    )
+    assert not outcome.ok
+    assert not outcome.rejected
+    assert "metric.net_sales" in (outcome.reason or "")
+
+
+def test_validate_accepts_the_same_answer_in_plain_business_language() -> None:
+    store = InMemoryArtifactStore()
+    ids = _seed_daily_evidence(store, "MS3-test")
+    outcome = EvidenceValidator().validate(
+        _result(final_response="Net sales were 105 across all channels.", evidence_ids=ids),
+        deps=_deps(artifact_store=store),
+    )
+    assert outcome.ok

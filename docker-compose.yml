@@ -63,6 +63,11 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # /app is root-owned and the container runs as uid 10001, so the default
+      # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
+      # /app/var and every snapshot save raised PermissionError. Point writer and
+      # reader at /app/.data, which the Dockerfile creates and chowns to seleric.
+      SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
       API_HOST: 0.0.0.0
       API_PORT: 8000
       LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
@@ -154,6 +159,11 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # /app is root-owned and the container runs as uid 10001, so the default
+      # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
+      # /app/var and every snapshot save raised PermissionError. Point writer and
+      # reader at /app/.data, which the Dockerfile creates and chowns to seleric.
+      SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
       LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
       PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
       # In-network URL only. Do not reuse host DATABASE_URL from .env (that
@@ -228,6 +238,11 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # /app is root-owned and the container runs as uid 10001, so the default
+      # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
+      # /app/var and every snapshot save raised PermissionError. Point writer and
+      # reader at /app/.data, which the Dockerfile creates and chowns to seleric.
+      SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
       PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}

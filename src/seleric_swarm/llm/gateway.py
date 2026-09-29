@@ -62,7 +62,7 @@ class LLMGateway:
                 continue
             if first_candidate is None:
                 first_candidate = spec.id
-            attempt = request.model_copy(update={"model": spec.id})
+            attempt = request.model_copy(update={"model": spec.id, "timeout_s": spec.timeout_s or request.timeout_s})
             try:
                 result = await call(attempt)
             except LLMError as exc:

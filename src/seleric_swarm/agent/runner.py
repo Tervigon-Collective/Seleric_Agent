@@ -31,6 +31,7 @@ from seleric_swarm.agent.dependencies import (
     SelericDeps,
 )
 from seleric_swarm.agent.intent import QueryClassification, classify_query
+from seleric_swarm.api.status import is_terminal_status
 from seleric_swarm.agent.model import resolve_v3_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
 from seleric_swarm.agent.plan import build_plan
@@ -215,6 +216,9 @@ def _required_scope(
         return RequiredScope()
 
 
+# Per-process cache for value resolution (query -> result)
+_VALUE_RESOLUTION_CACHE: dict[str, dict[str, Any]] = {}
+
 async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[str, Any]:
     """Map the question's words to values the data records, before the loop.
 
@@ -223,6 +227,11 @@ async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[s
     values the data actually uses without anyone declaring it. Fail-open: an
     error, timeout or a still-warming index yields no hints and the mission runs
     exactly as before."""
+    # Check cache first
+    cache_key = query.strip().lower()
+    if cache_key in _VALUE_RESOLUTION_CACHE:
+        return _VALUE_RESOLUTION_CACHE[cache_key]
+    
     timeout = float(getattr(runtime.settings, "value_resolve_timeout_s", 6.0))
     try:
         result = await asyncio.wait_for(
@@ -238,6 +247,8 @@ async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[s
         return {}
     if not isinstance(result, dict) or result.get("status") != "ok":
         return {}
+    # Cache the result
+    _VALUE_RESOLUTION_CACHE[cache_key] = result
     return result
 
 
@@ -592,6 +603,15 @@ def _principal(*, workspace_id: str, user_id: str) -> Principal:
 
 
 def _lookup_status(status: str) -> str:
+    """Map a MissionResult status onto the stored mission status.
+
+    Only reached from ``_to_lookup`` on the terminal persistence path, so a
+    non-terminal status must not survive: live, a ``final_result`` call with
+    status="running" was written verbatim and left the missions row stuck at
+    'running' forever while the run reported COMPLETED.
+    """
+    if not is_terminal_status(status):
+        return "partial"
     return status if status in _LOOKUP_STATUSES else "partial"
 
 
@@ -800,7 +820,7 @@ def _write_turn_record(
     graceful degradation, not a mission failure.
 
     Content policy enforced here:
-      - metric_labels: populated from entity names in the final response
+      - metric_labels: human-readable labels from evidence artifacts
       - entities: named items extracted from Markdown output (bullets/tables)
       - No internal IDs, no raw numbers, no full prose text
     """
@@ -810,13 +830,28 @@ def _write_turn_record(
         return
     try:
         entities = _parse_named_entities(result.final_response or "")
+        # Extract metric labels from evidence artifacts for follow-up grounding
+        metric_labels: list[str] = []
+        for eid in (result.evidence_ids or [])[:8]:
+            artifact = artifact_store.get(eid)
+            if artifact and artifact.artifact_type == "evidence":
+                try:
+                    from seleric_swarm.agent.artifacts import EvidenceArtifact
+                    evidence = EvidenceArtifact.model_validate(artifact.payload)
+                    if evidence.metric_id:
+                        # Use the metric_id as label (could be enhanced with display_name from catalogue)
+                        label = evidence.metric_id.removeprefix("metric.").replace("_", " ")
+                        if label not in metric_labels:
+                            metric_labels.append(label)
+                except Exception:
+                    pass
         record = {
             "query": result.query if isinstance(result.query, str) else str(result.query),
             "intent": classification.intent,
             "period": classification.period,
             "grain": classification.grain,
             "entities": entities[:10],
-            "metric_labels": [],   # populated by future label-extraction pass
+            "metric_labels": metric_labels[:10],
             "top_items": entities[:5],
             "evidence_ids": (result.evidence_ids or [])[:8],
             "mission_id": mission_id,
@@ -889,7 +924,7 @@ async def run_v3_mission(
         query,
         base_url=getattr(runtime.settings, "jev_base_url", ""),
         api_key=getattr(runtime.settings, "jev_api_key", ""),
-        timeout=float(getattr(runtime.settings, "jev_timeout_s", 1.0)),
+        timeout=float(getattr(runtime.settings, "jev_timeout_s", 5.0)),
     )
     intent = classification.intent
     values = await _resolve_values(runtime, mcp, query) if intent != "conversation" else {}
@@ -916,6 +951,7 @@ async def run_v3_mission(
             agent_retries=int(getattr(runtime.settings, "agent_retries", 2)),
         ),
         catalogue=catalogue,
+        metrics=getattr(runtime, "metrics", None),
         jev=JevConfig(
             base_url=getattr(runtime.settings, "jev_base_url", ""),
             api_key=getattr(runtime.settings, "jev_api_key", ""),

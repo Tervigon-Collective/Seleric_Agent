@@ -48,6 +48,12 @@ class ToolResult(BaseModel):
         return self
 
 
+# "running" is NOT a legal terminal state — it is kept in the Literal only so a
+# mid-work call still PARSES. Removing it would make pydantic reject the call at
+# schema level, and output validation cannot retry under streaming (see
+# _empty_means_none below), which would fail the whole mission. Instead the
+# EvidenceValidator gates it and sends the model back through the revision loop,
+# which re-runs the agent and works under streaming too.
 MissionStatus = Literal["running", "completed", "partial", "failed"]
 
 
@@ -62,7 +68,14 @@ class MissionResult(BaseModel):
     # fabricate throwaway values (live: "m_001") — which wastes output tokens
     # and, when omitted/empty, cost a final_result validation retry.
     mission_id: str = ""
-    status: MissionStatus
+    status: MissionStatus = Field(
+        description=(
+            "Terminal state of the mission: 'completed' when every requested outcome is "
+            "fulfilled, 'partial' when the answer is useful but incomplete, 'failed' when "
+            "no requested result is usable. Calling this tool ENDS the mission, so never "
+            "report 'running' — finish the tool work first."
+        ),
+    )
     query: str = ""
     as_of: datetime | None = None
     final_response: str

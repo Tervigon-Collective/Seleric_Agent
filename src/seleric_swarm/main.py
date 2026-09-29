@@ -85,6 +85,17 @@ async def _warmup(runtime: Any) -> None:
         pass
 
 
+async def _warmup_catalogue(runtime: Any) -> None:
+    """Fire-and-forget: warm the catalogue bootstrap at startup so the first
+    mission doesn't pay the cold-start MCP call. Never raises."""
+    try:
+        bootstrap = getattr(runtime, "bootstrap", None)
+        if bootstrap is not None:
+            await bootstrap.refresh_if_stale()
+    except Exception:  # noqa: S110 - warmup is best-effort
+        pass
+
+
 async def _business_state_refresh_loop(runtime: Any) -> None:
     """Keep the business-state ready store fresh in-process (hourly by default).
 
@@ -128,6 +139,7 @@ async def lifespan(_app: FastAPI):
     if checkpoint_setup is not None:
         await checkpoint_setup()
     asyncio.create_task(_warmup(_runtime))
+    asyncio.create_task(_warmup_catalogue(_runtime))
     asyncio.create_task(_business_state_refresh_loop(_runtime))
     try:
         yield

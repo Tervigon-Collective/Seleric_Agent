@@ -27,6 +27,7 @@ structured refusal rather than a number it cannot stand behind — see
 from __future__ import annotations
 
 from datetime import datetime
+from collections.abc import Callable
 from typing import Literal, cast
 
 from pydantic_ai import RunContext
@@ -50,6 +51,30 @@ from seleric_swarm.toolsets import policy_config as policy
 # implementation in src/; it refuses explicitly instead of quietly running a
 # different detector than the caller asked for.
 _ZSCORE_METHODS = frozenset({"robust_zscore", "mad"})
+
+
+def _ratio_lookup(ctx: RunContext[SelericDeps]) -> funnel_math.RatioLookup:
+    """Type a metric as a rate or a count, from the catalogue's ``aggregation``.
+
+    The catalogue is the only authority on what a metric *is*, so a funnel's
+    base stage and its steps are read off it rather than named here. A metric
+    the snapshot does not carry returns ``None`` — unknown, and left unplaced
+    instead of guessed at. Ids are canonicalised first because evidence is
+    stamped with whichever spelling it was fetched under.
+    """
+    snapshot = ctx.deps.catalogue
+    canonical = ctx.deps.canonical_metric_id
+
+    def is_ratio(metric_id: str) -> bool | None:
+        for candidate in (metric_id, canonical(metric_id)):
+            for meta in snapshot.metrics:
+                if meta.id != candidate:
+                    continue
+                aggregation = str(meta.raw.get("aggregation") or "").strip().lower()
+                return aggregation == "ratio" if aggregation else None
+        return None
+
+    return is_ratio
 
 
 def _provenance(evidence_ids: list[str]) -> ArtifactProvenance:
@@ -125,7 +150,9 @@ def _write_finding(
 
 
 def _group_by_series(
-    evidence: list[EvidenceArtifact], evidence_ids: list[str]
+    evidence: list[EvidenceArtifact],
+    evidence_ids: list[str],
+    canonical: Callable[[str], str] = lambda metric_id: metric_id,
 ) -> dict[tuple[str, tuple[tuple[str, str], ...]], list[tuple[str, EvidenceArtifact]]]:
     """Split a mixed evidence set into one series per (metric, dimension slice).
 
@@ -135,7 +162,10 @@ def _group_by_series(
     """
     grouped: dict[tuple[str, tuple[tuple[str, str], ...]], list[tuple[str, EvidenceArtifact]]] = {}
     for aid, item in zip(evidence_ids, evidence, strict=True):
-        key = (item.metric_id, tuple(sorted(item.dimensions.items())))
+        # Canonical id, not the stamped one: the same series fetched under two
+        # spellings must land in one group, or each half is scored against half
+        # its own history.
+        key = (canonical(item.metric_id), tuple(sorted(item.dimensions.items())))
         grouped.setdefault(key, []).append((aid, item))
     return grouped
 
@@ -258,7 +288,7 @@ async def detect_anomalies(
     if mismatch is not None:
         return _refuse(mismatch, error_code="EVIDENCE_GRAIN_MISMATCH")
 
-    grouped = _group_by_series(evidence, list(evidence_ids))
+    grouped = _group_by_series(evidence, list(evidence_ids), ctx.deps.canonical_metric_id)
     artifact_ids: list[str] = []
     warnings: list[str] = []
 
@@ -571,16 +601,18 @@ async def segment_decomposition(
 async def funnel_decomposition(
     ctx: RunContext[SelericDeps], evidence_ids: list[str]
 ) -> ToolResult:
-    """Step-to-step conversion and drop-off across the website funnel.
+    """Step-to-step conversion and drop-off across a funnel.
 
-    Steps and their order come from ``policy_config.FUNNEL_STEPS``, which is
-    declared rather than inferred — see that constant's comment for why
-    parsing ``formula`` strings to order them would be a regression.
+    Supply one count metric for the base stage plus the catalogue rate metrics
+    that divide by it, at one grain. Membership and order are derived, not
+    declared: the catalogue types each metric, and because every step is a
+    share of the same base, sorting the rates descending is the stage order.
+    Conversion between consecutive stages is ``rate[i+1] / rate[i]``, so no
+    cross-axis division is involved.
 
-    Every step in that list is session-anchored (``X_sessions / sessions``),
-    so conversion between consecutive steps is ``rate[i+1] / rate[i]`` and no
-    cross-axis division is involved. Metric ids outside the declared funnel
-    are dropped and named in ``warnings``, never positioned by guesswork.
+    Any funnel the catalogue can express works here, not only the website one.
+    A reading that divides by the base without being a share of it — an average
+    depth, a cost per unit — is named in ``warnings`` rather than positioned.
     """
     evidence, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
@@ -594,19 +626,21 @@ async def funnel_decomposition(
         funnel_math.StepReading(metric_id=item.metric_id, value=item.value, ref=aid)
         for aid, item in zip(evidence_ids, evidence, strict=True)
     ]
-    steps = funnel_math.ordered_steps(readings)
+    is_ratio = _ratio_lookup(ctx)
+    steps = funnel_math.ordered_steps(readings, is_ratio)
     warnings: list[str] = []
 
-    unknown = funnel_math.unknown_steps(readings)
-    if unknown:
-        warnings.append(f"{policy.WARN_UNKNOWN_FUNNEL_STEP}:{','.join(unknown)}")
+    unplaceable = funnel_math.unplaceable_steps(readings, is_ratio)
+    if unplaceable:
+        warnings.append(f"{policy.WARN_UNKNOWN_FUNNEL_STEP}:{','.join(unplaceable)}")
 
     if len(steps) < 2:
         return ToolResult(
             success=False,
             summary=(
-                f"{len(steps)} recognized funnel step(s); need at least 2 to measure a "
-                f"conversion. Declared funnel: {', '.join(policy.FUNNEL_STEPS)}"
+                f"{len(steps)} placeable funnel stage(s); need at least 2 to measure a "
+                "conversion. Supply one count metric for the base stage plus the "
+                "catalogue rate metrics that divide by it."
             ),
             error_code="INSUFFICIENT_EVIDENCE",
             warnings=[policy.WARN_NO_FUNNEL_STEPS, *warnings],

@@ -7,6 +7,7 @@ Frozen signatures: ``docs/refactor/CONTRACTS.md`` §4. Non-negotiable rules
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Literal
 
 from pydantic_ai import RunContext
@@ -95,6 +96,7 @@ def _precondition_history(
     treatment: str,
     outcome: str,
     search_breadth: SearchBreadth,
+    canonical: Callable[[str], str] = lambda metric_id: metric_id,
 ) -> ToolResult | None:
     """Base sufficiency gate — enough rows/span to estimate at all.
 
@@ -103,9 +105,13 @@ def _precondition_history(
     it does not refuse evidence that would have passed at breadth 0.
     """
     del search_breadth  # used only by estimate_from_evidence widening
+    # Group on the canonical id: treatment/outcome are named by the caller while
+    # each artifact carries the id it was fetched under, so one series split
+    # across two spellings reads as a missing series and refuses valid evidence.
     by_metric: dict[str, list[EvidenceArtifact]] = {}
     for e in evidence:
-        by_metric.setdefault(e.metric_id, []).append(e)
+        by_metric.setdefault(canonical(e.metric_id), []).append(e)
+    treatment, outcome = canonical(treatment), canonical(outcome)
 
     if treatment not in by_metric or outcome not in by_metric:
         return _refuse(
@@ -176,7 +182,11 @@ def estimate_effect(
         )
 
     gate = _precondition_history(
-        evidence, treatment=treatment, outcome=outcome, search_breadth=search_breadth
+        evidence,
+        treatment=treatment,
+        outcome=outcome,
+        search_breadth=search_breadth,
+        canonical=ctx.deps.canonical_metric_id,
     )
     if gate is not None:
         return gate

@@ -159,7 +159,9 @@ async def forecast(
             error_code=verdict.error_code or "EXECUTION_LIMIT_EXCEEDED",
         )
 
-    metrics = {e.metric_id for e in evidence}
+    # Canonical ids: one metric's history fetched under two spellings is still
+    # one metric, and must not be refused as a mixed-target set.
+    metrics = {ctx.deps.canonical_metric_id(e.metric_id) for e in evidence}
     if len(metrics) != 1:
         return _refuse(
             f"forecast needs one metric's history, got {sorted(metrics)}",

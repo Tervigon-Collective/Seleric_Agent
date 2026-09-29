@@ -92,3 +92,106 @@ def test_agent_is_told_to_batch_independent_metric_fetches_in_one_turn():
     lowered = INSTRUCTIONS.lower()
     assert "issue those" in lowered
     assert "run in" in lowered and "parallel" in lowered
+
+
+def test_response_format_contract_is_present():
+    """Regression (2026-09-28): commit 9712837 rewrote INSTRUCTIONS from 262 to
+    157 lines and deleted the whole USER-FACING RESPONSE FORMAT block, so
+    answers stopped rendering tables and started leaking internal fields."""
+    assert "USER-FACING RESPONSE FORMAT" in INSTRUCTIONS
+    lowered = INSTRUCTIONS.lower()
+    assert "lead with the answer" in lowered
+    assert "markdown table" in lowered
+    assert "no data available" in lowered
+
+
+def test_series_must_render_as_a_table_not_label_value_lines():
+    """Live sample: a 7-day series shipped as bare "date: value" lines instead
+    of a table, which is unreadable in chat."""
+    lowered = INSTRUCTIONS.lower()
+    assert 'never emit a bare' in lowered
+    assert '"label: value" lines for a series' in lowered
+
+
+def test_answer_must_interpret_not_just_list_numbers():
+    lowered = INSTRUCTIONS.lower()
+    assert "say what the numbers mean, not only what they are" in lowered
+    assert "flag it as needing verification" in lowered
+
+
+def test_figures_must_be_internally_consistent_in_one_scale():
+    """Live sample: the lead sentence carried a magnitude ten times smaller
+    than the sum of the table printed directly beneath it."""
+    lowered = INSTRUCTIONS.lower()
+    assert "keep every figure in one scale and one unit" in lowered
+    assert "a total must equal the sum of the rows you printed" in lowered
+
+
+def test_internal_field_dump_is_forbidden_in_the_answer():
+    """Live sample: the answer ended with literal "Evidence IDs:" and
+    "Limitations:" blocks exposing artifact ids and internal metric names."""
+    lowered = INSTRUCTIONS.lower()
+    assert "do not append a trailing section of internal fields" in lowered
+    assert '"evidence ids"' in lowered
+    assert '"coverage"' in lowered
+    assert "never narrate how you obtained the number" in lowered
+
+
+def test_incomplete_periods_must_be_marked_and_not_trended_as_growth():
+    """Live sample: a 3-month total summed two partial months with two full
+    ones, and the rising month-over-month series ended on a still-running
+    month presented as if it were complete."""
+    lowered = INSTRUCTIONS.lower()
+    assert "an incomplete period is not comparable to a complete one" in lowered
+    assert "mark it in the" in lowered and "row label itself" in lowered
+    assert "do not present a total that mixes partial and full periods" in lowered
+
+
+def test_output_contract_is_anchored_at_the_end_of_the_prompt():
+    """Live 2026-09-29: the full USER-FACING RESPONSE FORMAT block sat ~7k
+    characters from the end of the composed prompt, behind the capability
+    manifest, and the fast model tier ignored it — shipping bullet lists,
+    "Scope:" lines and trailing "Evidence IDs"/"Notes" blocks. The compressed
+    contract is registered last so it lands next to generation."""
+    from seleric_swarm.agent.instructions import OUTPUT_CONTRACT
+
+    lowered = OUTPUT_CONTRACT.lower()
+    assert "markdown table" in lowered
+    assert "delimiter row" in lowered
+    assert "nothing" in lowered and "may follow them" in lowered
+    for banned in ("scope", "notes", "coverage", "limitations", "evidence\n  ids"):
+        assert banned in lowered, banned
+
+
+def test_output_contract_is_registered_after_every_other_instruction():
+    """Position is the whole point — a new @agent.instructions registered after
+    it would push the contract away from the end again."""
+    import inspect
+
+    from seleric_swarm.agent import agent as agent_mod
+
+    source = inspect.getsource(agent_mod.build_seleric_agent)
+    decorated = [
+        line for line in source.splitlines() if line.strip().startswith("def _")
+    ]
+    assert decorated, "expected at least one dynamic instructions function"
+    assert "_output_contract" in decorated[-1], (
+        f"_output_contract must be registered last, found: {decorated}"
+    )
+
+
+def test_only_one_answer_format_authority_exists():
+    """Live 2026-09-29: section 6 carried a second, weaker format spec ("keep
+    simple lookups to a short answer") that licensed the bullet lists the
+    response-format contract forbids. Two models obeyed the weaker one."""
+    lowered = INSTRUCTIONS.lower()
+    assert "keep simple lookups to a short answer" not in lowered
+    assert "governed solely by user-facing response format" in lowered
+
+
+def test_limitations_and_evidence_ids_are_named_as_structured_fields():
+    """Live 2026-09-29: "Populate limitations..." read as an instruction to
+    write a Limitations section into the answer text."""
+    lowered = INSTRUCTIONS.lower()
+    assert "these are\n  tool arguments, not text" in lowered
+    assert "never restate either one inside final_response" in lowered

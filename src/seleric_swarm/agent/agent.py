@@ -30,7 +30,7 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 
 from seleric_swarm.agent.dependencies import SelericDeps
-from seleric_swarm.agent.instructions import INSTRUCTIONS
+from seleric_swarm.agent.instructions import INSTRUCTIONS, OUTPUT_CONTRACT
 from seleric_swarm.agent.output import MissionResult
 from seleric_swarm.toolsets import (
     actions,
@@ -183,5 +183,12 @@ def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDep
         # stub path (test_v3_agent_wiring's zero-tool run).
         pad = getattr(ctx.deps, "scratchpad", None)
         return pad.render() if pad is not None else ""
+
+    @agent.instructions
+    def _output_contract(ctx: RunContext[SelericDeps]) -> str:
+        # Registered last so it lands at the very end of the composed prompt,
+        # after the capability manifest and the scratchpad. Position is the
+        # point: the same rules 7k characters earlier were being ignored.
+        return OUTPUT_CONTRACT
 
     return agent

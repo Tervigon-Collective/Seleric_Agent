@@ -28,7 +28,13 @@ _PLAN_INSTRUCTIONS = (
     "catalogue, write a short ordered plan (2-5 numbered steps) naming which "
     "tool to call at each step and the exact catalogue metric id(s) to use. "
     "Resolve every metric id against the catalogue — never invent one. Do not "
-    "answer the question or produce any numbers; output only the plan."
+    "answer the question or produce any numbers; output only the plan.\n\n"
+    "FUNNEL ANALYSIS RULE: If the question asks for funnel insights, "
+    "conversion funnel, or step-to-step drop-off, resolve against the "
+    "catalogue one count metric for the base stage plus the rate metrics that "
+    "divide by it, on the same view and grain, and fetch them in one query. "
+    "Pass those evidence ids to `funnel_decomposition`, which derives the "
+    "stage order itself."
 )
 
 

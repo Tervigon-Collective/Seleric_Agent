@@ -27,7 +27,7 @@ class BudgetVerdict:
 _OK = BudgetVerdict(ok=True)
 
 # Counter attribute name -> the ExecutionLimits field that bounds it.
-_COUNTERS = ("tool_calls", "cube_queries", "causal_queries", "prediction_calls", "validation_revisions")
+_COUNTERS = ("tool_calls", "cube_queries", "causal_queries", "prediction_calls", "validation_revisions", "python_calls")
 
 
 @dataclass
@@ -40,6 +40,7 @@ class ExecutionBudgetTracker:
     causal_queries: int = 0
     prediction_calls: int = 0
     validation_revisions: int = 0
+    python_calls: int = 0
     _started_at: float = field(default_factory=time.monotonic, repr=False)
 
     def consume(self, key: str, *, amount: int = 1) -> BudgetVerdict:
