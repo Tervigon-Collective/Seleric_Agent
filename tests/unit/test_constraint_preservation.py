@@ -150,12 +150,14 @@ def test_build_required_scope_extracts_resolvable_breakdown():
     assert scope.breakdowns == frozenset({frozenset({"source_name"})})
 
 
-def _evidence_artifact(store: InMemoryArtifactStore, *, day: int, dimensions: dict[str, str]) -> None:
+def _evidence_artifact(
+    store: InMemoryArtifactStore, *, day: int, dimensions: dict[str, str], grain: str = "day"
+) -> None:
     stamp = datetime(2026, 9, day, tzinfo=UTC)
     payload = EvidenceArtifact(
         metric_id="attributed_orders",
         dimensions=dimensions,
-        grain="day",
+        grain=grain,  # type: ignore[arg-type]
         as_of=datetime.now(UTC),
         period_start=stamp,
         period_end=stamp,
@@ -281,6 +283,33 @@ def test_ambiguous_breakdown_requires_at_least_one_candidate():
     for d in range(1, 6):
         _evidence_artifact(store, day=d, dimensions={})
     scope = RequiredScope(breakdowns=frozenset({frozenset({"channel", "lt_channel"})}))
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
+    assert out.status == "INSUFFICIENT"
+    assert out.gaps and out.gaps[0].blocking
+
+
+def test_period_total_satisfies_grain_request():
+    # MS3-a794c66a66 regression: "gross sales last week vs this month" fetches two
+    # period totals (grain="none"). The window IS a week, so a single total is the
+    # correct answer — it must NOT be flagged as a "week grain" gap, else the
+    # revision loop is unsatisfiable and a correct answer ships as partial.
+    store = InMemoryArtifactStore()
+    _evidence_artifact(store, day=1, dimensions={}, grain="none")
+    _evidence_artifact(store, day=2, dimensions={}, grain="none")
+    scope = RequiredScope(temporal_grain="week")
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
+    assert out.status == "OK", out.gaps
+    assert not out.gaps
+
+
+def test_genuine_grain_mismatch_still_blocks():
+    # The check must still fire when bucketed evidence exists at the wrong grain:
+    # a day-grain question answered only with month buckets cannot be aggregated
+    # down, so it is a real coverage gap.
+    store = InMemoryArtifactStore()
+    for d in range(1, 4):
+        _evidence_artifact(store, day=d, dimensions={}, grain="month")
+    scope = RequiredScope(temporal_grain="day")
     out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
     assert out.status == "INSUFFICIENT"
     assert out.gaps and out.gaps[0].blocking

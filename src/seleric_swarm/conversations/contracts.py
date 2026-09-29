@@ -580,6 +580,40 @@ class MemoryPreference(ContractModel):
     updated_at: datetime = Field(default_factory=_utc_now)
 
 
+class EpisodicEventType(StrEnum):
+    """What kind of thing happened. Members MUST match the DB CHECK constraint
+    in migrations/012_episodic_events.sql — adding one here requires the same
+    change there. StrEnum so persistence can store/read `.value`."""
+
+    DECISION = "DECISION"
+    ATTEMPT = "ATTEMPT"
+    OUTCOME = "OUTCOME"
+    ERROR = "ERROR"
+    RETRY = "RETRY"
+    ROLLBACK = "ROLLBACK"
+
+
+class EpisodicEvent(ContractModel):
+    """One timestamped thing that happened in a workspace's history (a query,
+    decision, outcome, ...). Persisted to the `episodic_events` table; `entities`
+    and `details` are JSONB. Supersession chain mirrors MemoryItem."""
+
+    id: str = Field(default_factory=lambda: _id("episode"))
+    workspace_id: str
+    owner_user_id: str
+    project_id: str | None = None
+    thread_id: str | None = None
+    run_id: str | None = None
+    event_type: EpisodicEventType
+    summary: str
+    entities: list[Any] = Field(default_factory=list)
+    details: dict[str, Any] = Field(default_factory=dict)
+    supersedes_id: str | None = None
+    superseded_by_id: str | None = None
+    created_at: datetime = Field(default_factory=_utc_now)
+    updated_at: datetime = Field(default_factory=_utc_now)
+
+
 class ContextBundle(ContractModel):
     permissions: dict[str, bool] = Field(default_factory=dict)
     workspace_config: dict[str, Any] = Field(default_factory=dict)

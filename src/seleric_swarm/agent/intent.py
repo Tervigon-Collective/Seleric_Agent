@@ -125,9 +125,9 @@ _WRITE_CRITERIA = {
 
 _GRAIN_CRITERIA = {
     "day": "Day-by-day — daily values, a single day, or a day-over-day comparison",
-    "week": "Weekly buckets",
-    "month": "Monthly buckets",
-    "none": "No time bucketing — a single total or a non-time-series answer",
+    "week": "Weekly buckets / week-over-week series — NOT a single 'last week' total (that is none)",
+    "month": "Monthly buckets / month-over-month series — NOT a single 'this month' total (that is none)",
+    "none": "No time bucketing — a single total (incl. 'last week' or 'this month' as one number) or a non-time-series answer",
 }
 
 _PERIOD_CRITERIA = {

@@ -202,34 +202,63 @@ These are the **10 metrics** that should always be in the ready store for instan
 
 ## Implementation Plan
 
+> **Execution decision (2026-09-29):** the existing `domain_health` subsystem
+> already *is* the ready store — `DomainStateResolver` (fetch → features →
+> anomaly → snapshot), `SnapshotStore`, and `scheduler.run_once()` cover the
+> proposed `BusinessStateRefresher`/`BusinessStateSnapshotStore`/
+> `BusinessStateSnapshot`. Rather than clone a parallel stack, Phases 1–3 were
+> executed by **extending domain_health**. `config/business_state_kpis.yaml`
+> was NOT created; the KPIs live in the existing `config/domain_health_profiles.yaml`
+> (the resolver is generic over it).
+
 ### Phase 1: Foundation
 
-- [ ] Extend `SnapshotStore` → `BusinessStateSnapshotStore` (Postgres JSONB)
-- [ ] Define `BusinessStateSnapshot` Pydantic model (extends `DomainStateSnapshot`)
-- [ ] Add `BusinessStateRefresher` service (`services/business_state/refresh.py`)
-  - Fetches all 60+ metrics via MCP in parallel
-  - Computes features (reuse `features.py`)
-  - Detects anomalies (reuse `detectors.py`)
-  - Writes snapshot per `as_of` date
-  - **Refresh schedule**: Hourly for all metrics that have data available in Cube
+- [x] Snapshot store — reused `SnapshotStore` (JSON per (domain, as_of); its own
+      doc defers Postgres JSONB to a single-file rewrite, no caller change).
+- [x] Snapshot model — reused `DomainStateSnapshot`; `ResolvedMetric` extended
+      with `rolling_std_7d` + `anomaly` block.
+- [x] Refresher — reused `DomainStateResolver` + `scheduler.run_once()`.
+      Anomalies now surfaced per metric via `anomaly: true` in profile (reuses
+      `detectors.py`, no extra MCP call — just widens the window).
+- [x] **Refresh schedule → hourly**: in-process loop in the api lifespan
+      (`main._business_state_refresh_loop`, `BUSINESS_STATE_REFRESH_INTERVAL_S`,
+      default 3600). Writer and reader share one filesystem — no new service or
+      volume. Standalone `python -m ...scheduler` still works for OS-cron setups.
+- [x] **One-year real backfill**: `scripts/backfill_business_state.py` fetches
+      each metric's real daily series once and assembles 366 daily snapshots per
+      domain + `business` (reuses `compute_features`/`robust_zscore`). Run once
+      per environment against live MCP to seed history.
 
 ### Phase 2: KPI Curation & Config
 
-- [ ] Create `config/business_state_kpis.yaml` with:
-  - All 60+ KPIs above organized by domain
-  - Feature specs per metric (which of the 5 features to compute)
-  - Headline metric list (top 10)
-  - Refresh schedule per domain (hourly/daily)
-- [ ] Update `business_state_profiles.yaml` to include all KPIs
+- [x] All 69 KPIs organized by domain in `config/domain_health_profiles.yaml`,
+      with per-metric feature specs and the 10-metric `headline_metrics` list.
+      (No separate `business_state_kpis.yaml` — reused existing config.)
+- [x] Cross-domain headline (top-10) snapshot assembled post-resolve into a
+      `business` pseudo-domain snapshot (`build_headline_snapshot`, no re-fetch).
 
 ### Phase 3: Fast-Path API
 
-- [ ] Add `/v1/business-state` endpoint (bypasses agent loop)
-- [ ] Implement `BusinessStateFormatter` (`services/business_state/formatter.py`)
-  - Selects relevant metrics from snapshot based on question
-  - Calls fast-tier LLM with structured context
-- [ ] Add intent check in `run_v3_mission()` for `HIGH_LEVEL_LOOKUP`
-- [ ] Fallback to agent loop if snapshot stale/missing
+- [x] `POST /v1/business-state` endpoint (`api/business_state.py`) — reads the
+      `business` snapshot, bypasses the agent loop.
+- [x] `format_business_state` (`services/business_state/formatter.py`) — one
+      fast-tier LLM call over the structured snapshot.
+- [x] Silent fallback to `run_v3_mission` when the snapshot is missing/stale
+      (>2h) or UNAVAILABLE.
+- [x] **Intent gate in `run_v3_mission()`**: a conservative phrase gate
+      (`_is_high_level_business_query`, kill-switch `BUSINESS_STATE_FAST_PATH=0`)
+      routes broad "how's the business" queries through the snapshot; anything
+      specific/long/aliased skips it. Stale/missing/LLM-error → silent fallback
+      to the agent loop. Verified live end-to-end.
+- [x] **Numeric integrity**: formatter output runs through
+      `numeric_audit.unaudited_numbers` against the snapshot's own values; on any
+      unbacked number (or empty reasoning-model output) it retries once, then
+      falls back to a deterministic, auditable summary — the fast path never
+      returns a fabricated figure.
+- [x] **Adapter fix (root cause)**: `AzureOpenAICompatibleAdapter` now learns
+      per-model param quirks from the API's 400s (reasoning models want
+      `max_completion_tokens`, reject custom `temperature`) — the first real
+      `LLMPort.complete` prod caller (this formatter) would otherwise 400.
 
 ### Phase 4: Advanced Features
 

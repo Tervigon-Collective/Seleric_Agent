@@ -20,6 +20,7 @@ from seleric_swarm.api.async_missions import (
     new_mission_id,
     publish_durable_mission,
 )
+from seleric_swarm.api.business_state import router as business_state_router
 from seleric_swarm.api.conversations import router as conversations_router
 from seleric_swarm.api.mission_access import request_principal, require_mission_access
 from seleric_swarm.api.phase7 import router as phase7_router
@@ -84,6 +85,39 @@ async def _warmup(runtime: Any) -> None:
         pass
 
 
+async def _business_state_refresh_loop(runtime: Any) -> None:
+    """Keep the business-state ready store fresh in-process (hourly by default).
+
+    The fast path reads the local ``SnapshotStore`` from this same process, so
+    refreshing here means writer and reader share one filesystem -- no new
+    service, no cross-container volume. Never raises: one failed refresh logs
+    and the loop retries next interval. Disable with
+    BUSINESS_STATE_REFRESH_ENABLED=0; tune BUSINESS_STATE_REFRESH_INTERVAL_S.
+    """
+    import logging as _logging
+    import os as _os
+
+    if _os.getenv("BUSINESS_STATE_REFRESH_ENABLED", "1").strip() in {"0", "false", "no"}:
+        return
+    if getattr(runtime, "business_state", None) is None:
+        return
+    interval = float(_os.getenv("BUSINESS_STATE_REFRESH_INTERVAL_S", "3600") or 3600)
+    from seleric_swarm.services.domain_health.resolver import DomainStateResolver
+    from seleric_swarm.services.domain_health.scheduler import run_once
+    from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
+
+    resolver = DomainStateResolver(runtime.business_state)
+    store = SnapshotStore()
+    log = _logging.getLogger("seleric.business_state.refresh")
+    while True:
+        try:
+            snapshots = await run_once(resolver, store)
+            log.info("business_state_refreshed domains=%d", len(snapshots))
+        except Exception:  # noqa: BLE001 - a refresh failure must never kill the loop
+            log.warning("business_state_refresh_failed", exc_info=True)
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global _runtime
@@ -94,6 +128,7 @@ async def lifespan(_app: FastAPI):
     if checkpoint_setup is not None:
         await checkpoint_setup()
     asyncio.create_task(_warmup(_runtime))
+    asyncio.create_task(_business_state_refresh_loop(_runtime))
     try:
         yield
     finally:
@@ -129,6 +164,7 @@ app = FastAPI(
 app.state.runtime_provider = get_runtime
 app.include_router(conversations_router)
 app.include_router(phase7_router)
+app.include_router(business_state_router)
 
 # Voice agent token route (docs/features/voice-agent/). Mounted unconditionally
 # so the route can answer 404 "voice is not enabled" rather than vanishing —

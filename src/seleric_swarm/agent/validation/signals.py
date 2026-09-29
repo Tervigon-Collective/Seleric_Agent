@@ -517,8 +517,13 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
                 priority=8,
             )
         )
-    # Temporal grain coverage: check if available evidence grain satisfies requested grain
-    if requested_grain and requested_grain != "none":
+    # Temporal grain coverage: only a real time-series mismatch is a gap. Evidence
+    # exists at a bucket grain (available_grains non-empty) but none satisfies the
+    # request. A period total (grain="none", so available_grains empty) is the
+    # correct answer to a single-window question ("last week vs this month") and
+    # must NOT be flagged — else the revision loop is unsatisfiable (live
+    # MS3-a794c66a66: correct week/month totals killed as "unknown grain").
+    if requested_grain and requested_grain != "none" and available_grains:
         grain_satisfied = any(_grain_satisfies(requested_grain, ag) for ag in available_grains)
         if not grain_satisfied:
             gaps.append(

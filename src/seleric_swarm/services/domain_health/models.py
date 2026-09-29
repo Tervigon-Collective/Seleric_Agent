@@ -16,8 +16,12 @@ class ResolvedMetric(BaseModel):
     value: float | None = None
     period_delta_pct: float | None = None
     rolling_mean_7d: float | None = None
+    rolling_std_7d: float | None = None
     direction_bad: Literal["up", "down"] | None = None
     freshness: Freshness = "UNKNOWN"
+    # Robust z-score block (detectors.py) when the profile entry sets
+    # `anomaly: true`; None otherwise. Powers the ready-store fast path.
+    anomaly: dict[str, Any] | None = None
     quality_flags: list[QualityFlag] = Field(default_factory=list)
 
 

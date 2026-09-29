@@ -25,6 +25,9 @@ _ALLOWLIST: dict[str, str] = {
     "llm/adapters/fake.py": "test fake adapter",
     "agents/prediction/reasoning.py": "LLMPort wrapper behind ReasoningModel protocol",
     "agents/skeptic/reasoning.py": "LLMPort wrapper behind ReasoningModel protocol",
+    # Audited: output runs through numeric_audit.unaudited_numbers against the
+    # snapshot's values (retry + deterministic fallback on any unbacked number).
+    "services/business_state/formatter.py": "audited via unaudited_numbers, deterministic fallback",
     # Not final_response: dev-only endpoint, gated by is_dev_surface().
     "main.py": "/v1/llm/ping dev-surface echo, never reaches a mission response",
     # Not final_response: offline eval tooling, not the production answer path.

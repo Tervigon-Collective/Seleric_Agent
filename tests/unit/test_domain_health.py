@@ -9,7 +9,12 @@ import pytest
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import FeatureValue, MetricState
 from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles, DomainStateResolver
-from seleric_swarm.services.domain_health.scheduler import ALL_DOMAINS, run_once
+from seleric_swarm.services.domain_health.scheduler import (
+    ALL_DOMAINS,
+    HEADLINE_DOMAIN,
+    build_headline_snapshot,
+    run_once,
+)
 from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
 
 TIME_RANGE = TimeRangeV1(kind="absolute", start="2026-09-01", end="2026-09-07")
@@ -38,7 +43,9 @@ class _FakeBusinessState:
 
     async def get_metric_state(self, request):
         self.requests.append(request)
-        return self._states[request.metric_id]
+        # Default OK state for any metric not explicitly configured, so tests
+        # stay resilient as domain_health_profiles.yaml grows (KPI expansion).
+        return self._states.get(request.metric_id) or _state(request.metric_id, 1.0)
 
 
 COMMERCE_STATES = {
@@ -59,7 +66,8 @@ async def test_resolve_commerce_snapshot_flags_net_sales_drop():
     assert snapshot.domain == "commerce"
     assert snapshot.brand_id == "20"
     assert snapshot.status == "OK"
-    assert {m.metric_id for m in snapshot.metrics} == set(COMMERCE_STATES)
+    commerce_ids = {e["metric_id"] for e in DomainHealthProfiles().get("commerce")["metrics"]}
+    assert {m.metric_id for m in snapshot.metrics} == commerce_ids
     assert snapshot.headline_signals == [
         "net_sales_drop: metric.net_sales period_delta_pct -18.0% below threshold -15.0%"
     ]
@@ -176,6 +184,24 @@ async def test_scheduler_run_once_resolves_and_saves_every_domain(tmp_path):
 
     snapshots = await run_once(resolver, store, time_range=TIME_RANGE)
 
-    assert {s.domain for s in snapshots} == set(ALL_DOMAINS)
+    # Every resolvable domain plus the assembled cross-domain headline snapshot.
+    assert {s.domain for s in snapshots} == {*ALL_DOMAINS, HEADLINE_DOMAIN}
     for domain in ALL_DOMAINS:
         assert store.get_latest(domain) is not None
+    assert store.get_latest(HEADLINE_DOMAIN) is not None
+
+
+@pytest.mark.asyncio
+async def test_build_headline_snapshot_picks_headline_metrics_in_order():
+    resolver = DomainStateResolver(_FakeBusinessState(ALL_METRIC_STATES))
+    snapshots = [await resolver.resolve(d, time_range=TIME_RANGE) for d in ALL_DOMAINS]
+    headline_ids = DomainHealthProfiles().headline_metrics()
+
+    headline = build_headline_snapshot(snapshots, headline_ids)
+
+    assert headline.domain == HEADLINE_DOMAIN
+    # Only headline metrics that were actually resolved, in config order.
+    assert [m.metric_id for m in headline.metrics] == [
+        mid for mid in headline_ids if mid in {m.metric_id for s in snapshots for m in s.metrics}
+    ]
+    assert len(headline.metrics) == len(headline_ids)

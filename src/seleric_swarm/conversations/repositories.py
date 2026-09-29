@@ -14,6 +14,7 @@ from seleric_swarm.conversations.contracts import (
     ApprovalRequest,
     Artifact,
     Attachment,
+    EpisodicEvent,
     MemoryItem,
     MemoryPreference,
     Message,
@@ -259,6 +260,26 @@ class ApprovalRepository(Protocol):
     def list_due(self, now: datetime) -> list[ApprovalRequest]: ...
 
 
+class EpisodicEventRepository(Protocol):
+    def create(self, event: EpisodicEvent) -> EpisodicEvent: ...
+    def get(
+        self, event_id: str, workspace_id: str, owner_user_id: str
+    ) -> EpisodicEvent | None: ...
+    def list(
+        self,
+        workspace_id: str,
+        owner_user_id: str,
+        *,
+        project_id: str | None = None,
+        thread_id: str | None = None,
+        run_id: str | None = None,
+        event_type: str | None = None,
+        limit: int = 100,
+    ) -> list[EpisodicEvent]: ...
+    def update(self, event: EpisodicEvent) -> EpisodicEvent: ...
+    def delete(self, event_id: str, workspace_id: str, owner_user_id: str) -> bool: ...
+
+
 class UnitOfWorkFactory(Protocol):
     def __call__(self) -> AbstractContextManager[ConversationRepositories]: ...
 
@@ -274,6 +295,9 @@ class ConversationRepositories:
     thread_summaries: ThreadSummaryRepository
     search: SearchRepository
     approvals: ApprovalRepository
+    # Optional: only the postgres backend wires this today; nothing reads it yet.
+    # None-default so the file/in-memory builders construct without it.
+    episodic_events: EpisodicEventRepository | None = None
     unit_of_work: UnitOfWorkFactory | None = None
 
     def transaction(self) -> AbstractContextManager[ConversationRepositories]:

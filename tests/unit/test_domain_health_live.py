@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
-from seleric_swarm.services.domain_health.resolver import DomainStateResolver
+from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles, DomainStateResolver
 from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
 
 
@@ -29,12 +29,8 @@ async def test_resolve_commerce_snapshot_live(runtime, tmp_path):
     assert snapshot.domain == "commerce"
     assert snapshot.brand_id == "20"
     assert snapshot.status in {"OK", "DEGRADED", "UNAVAILABLE"}
-    assert {m.metric_id for m in snapshot.metrics} == {
-        "metric.net_sales",
-        "metric.gross_sales",
-        "metric.orders",
-        "metric.returns_cancels",
-    }
+    expected_ids = {e["metric_id"] for e in DomainHealthProfiles().get("commerce")["metrics"]}
+    assert {m.metric_id for m in snapshot.metrics} == expected_ids
     # net_sales and orders both request period_delta_pct -- real 7d history
     # should resolve it, not go sparse.
     by_metric = {m.metric_id: m for m in snapshot.metrics}

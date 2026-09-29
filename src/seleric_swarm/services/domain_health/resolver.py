@@ -34,12 +34,16 @@ class DomainHealthProfiles:
             path = repo_root() / path
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         self._domains: dict[str, Any] = data.get("domains") or {}
+        self._headline: list[str] = data.get("headline_metrics") or []
 
     def get(self, domain: str) -> dict[str, Any]:
         block = self._domains.get(domain)
         if block is None:
             raise KeyError(f"Unknown domain_health domain: {domain}")
         return block
+
+    def headline_metrics(self) -> list[str]:
+        return list(self._headline)
 
 
 def _feature_value(state: Any, feature_id: str) -> float | None:
@@ -142,9 +146,16 @@ class DomainStateResolver:
             metric_id = entry["metric_id"]
             windowed_point = entry.get("feature_class") == "windowed_point"
             feature_ids = entry.get("features") or []
+            # `anomaly: true` opts a metric into the robust z-score block
+            # (detectors.py). Not for windowed_point metrics -- they have no
+            # daily series for the detector to score. Widens the fetch window
+            # to the anomaly profile's history (28d) but adds no extra MCP call.
+            wants_anomaly = bool(entry.get("anomaly")) and not windowed_point
             need: list[StateNeed] = ["actual"]
             if feature_ids and not windowed_point:
                 need.append("features")
+            if wants_anomaly:
+                need.append("anomaly")
             request = StateRequest(
                 metric_id=metric_id,
                 time_range=time_range,
@@ -164,9 +175,11 @@ class DomainStateResolver:
                     state.actual, previous_by_metric.get(metric_id, ResolvedMetric(metric_id=metric_id)).value
                 )
                 rolling_mean_7d = None
+                rolling_std_7d = None
             else:
                 period_delta_pct = _feature_value(state, "period_delta_pct")
                 rolling_mean_7d = _feature_value(state, "rolling_mean_7d")
+                rolling_std_7d = _feature_value(state, "rolling_std_7d")
 
             resolved.append(
                 ResolvedMetric(
@@ -174,8 +187,10 @@ class DomainStateResolver:
                     value=state.actual,
                     period_delta_pct=period_delta_pct,
                     rolling_mean_7d=rolling_mean_7d,
+                    rolling_std_7d=rolling_std_7d,
                     direction_bad=state.direction_bad,
                     freshness=state.freshness,
+                    anomaly=state.anomaly if wants_anomaly else None,
                     quality_flags=state.quality_flags,
                 )
             )

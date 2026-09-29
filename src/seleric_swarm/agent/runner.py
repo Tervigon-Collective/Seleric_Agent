@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -652,6 +654,79 @@ async def _alias_lookup_result(
     )
 
 
+# Broad "how's the business" overviews the ready-store fast path can answer from
+# a pre-computed snapshot. Kept deliberately narrow (whole-question overviews, no
+# specific metric) so a targeted lookup never gets hijacked onto the 10-metric
+# headline snapshot. Stale/missing snapshot -> None -> normal agent loop.
+_HIGH_LEVEL_PHRASES = (
+    "how's the business",
+    "how is the business",
+    "how's business",
+    "how is business",
+    "how are we doing",
+    "how are we performing",
+    "how's it going",
+    "how's the company",
+    "state of the business",
+    "business overview",
+    "business health",
+    "overall performance",
+    "give me an overview",
+    "how are things",
+)
+
+
+def _is_high_level_business_query(query: str) -> bool:
+    if os.getenv("BUSINESS_STATE_FAST_PATH", "1").strip() in {"0", "false", "no"}:
+        return False
+    norm = re.sub(r"[^a-z0-9\s']", " ", (query or "").lower())
+    norm = re.sub(r"\s+", " ", norm).strip()
+    if not norm or len(norm.split()) > 8:
+        return False
+    return any(phrase in norm for phrase in _HIGH_LEVEL_PHRASES)
+
+
+async def _business_state_fast_answer(
+    runtime: SwarmRuntime,
+    *,
+    deps: SelericDeps,
+    query: str,
+    request_id: str,
+    thread_id: str,
+    intent: str | None,
+) -> V3MissionResult | None:
+    """Answer a high-level query from the ready-store snapshot in one LLM call.
+    Returns None (→ fall back to the agent loop) when the snapshot is missing,
+    UNAVAILABLE, or stale."""
+    from seleric_swarm.services.business_state.formatter import format_business_state, is_stale
+    from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
+
+    try:
+        snapshot = await SnapshotStore().aget_latest("business")
+        if snapshot is None or snapshot.status == "UNAVAILABLE" or is_stale(snapshot):
+            return None
+        answer = await format_business_state(
+            runtime, question=query, snapshot=snapshot, request_id=request_id, session_id=thread_id
+        )
+    except Exception:
+        _log.warning("business_state_fast_path_failed", exc_info=True)
+        return None
+    return V3MissionResult(
+        mission_id=deps.mission_id,
+        status="completed",
+        query=query,
+        as_of=deps.as_of,
+        final_response=answer,
+        trace={
+            "request_id": request_id,
+            "session_id": thread_id,
+            "lookup": "business_state_fast_path",
+            "intent": intent,
+            "as_of": snapshot.as_of,
+        },
+    )
+
+
 def _to_lookup(
     result: V3MissionResult,
     *,
@@ -865,7 +940,17 @@ async def run_v3_mission(
         needs_write=classification.needs_write,
     ):
         try:
-            if alias_def is not None:
+            fast_result = (
+                await _business_state_fast_answer(
+                    runtime, deps=deps, query=query, request_id=request_id,
+                    thread_id=thread_id, intent=intent,
+                )
+                if alias_def is None and _is_high_level_business_query(query)
+                else None
+            )
+            if fast_result is not None:
+                result = fast_result
+            elif alias_def is not None:
                 result = await _alias_lookup_result(
                     deps,
                     query=query,
