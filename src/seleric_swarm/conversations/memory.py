@@ -16,7 +16,6 @@ from seleric_swarm.conversations.contracts import (
     Attachment,
     AttachmentScanStatus,
     AttachmentStatus,
-    EpisodicEvent,
     MemoryItem,
     MemoryPreference,
     MemoryStatus,
@@ -1063,78 +1062,6 @@ class InMemoryThreadSummaryRepository:
         return max(matches, key=lambda item: item.created_at) if matches else None
 
 
-class InMemoryEpisodicEventRepository:
-    def __init__(self) -> None:
-        self._items: dict[str, EpisodicEvent] = {}
-        self._lock = RLock()
-
-    def create(self, event: EpisodicEvent) -> EpisodicEvent:
-        with self._lock:
-            self._items.setdefault(event.id, event)
-            return self._items[event.id]
-
-    def get(
-        self, event_id: str, workspace_id: str, owner_user_id: str
-    ) -> EpisodicEvent | None:
-        with self._lock:
-            item = self._items.get(event_id)
-            if (
-                item is None
-                or item.workspace_id != workspace_id
-                or item.owner_user_id != owner_user_id
-            ):
-                return None
-            return item
-
-    def list(
-        self,
-        workspace_id: str,
-        owner_user_id: str,
-        *,
-        project_id: str | None = None,
-        thread_id: str | None = None,
-        run_id: str | None = None,
-        event_type: str | None = None,
-        limit: int = 100,
-    ) -> list[EpisodicEvent]:
-        with self._lock:
-            items = [
-                item
-                for item in self._items.values()
-                if item.workspace_id == workspace_id
-                and item.owner_user_id == owner_user_id
-                and (project_id is None or item.project_id in {None, project_id})
-                and (thread_id is None or item.thread_id in {None, thread_id})
-                and (run_id is None or item.run_id in {None, run_id})
-                and (event_type is None or item.event_type.value == event_type)
-            ]
-        return sorted(items, key=lambda item: item.created_at, reverse=True)[: max(1, limit)]
-
-    def update(self, event: EpisodicEvent) -> EpisodicEvent:
-        with self._lock:
-            existing = self._items.get(event.id)
-            if (
-                existing is None
-                or existing.workspace_id != event.workspace_id
-                or existing.owner_user_id != event.owner_user_id
-            ):
-                raise KeyError(event.id)
-            self._items[event.id] = event
-            return event
-
-    def delete(self, event_id: str, workspace_id: str, owner_user_id: str) -> bool:
-        with self._lock:
-            item = self._items.get(event_id)
-            if (
-                item is None
-                or item.workspace_id != workspace_id
-                or item.owner_user_id != owner_user_id
-            ):
-                return False
-            del self._items[event_id]
-            return True
-
-
 def build_in_memory_repositories(
     *, query_embedder: QueryEmbeddingHook | None = None
 ) -> ConversationRepositories:
@@ -1144,12 +1071,11 @@ def build_in_memory_repositories(
     artifacts = InMemoryArtifactRepository()
     memories = InMemoryMemoryRepository()
     attachments = InMemoryAttachmentRepository()
-    episodic_events = InMemoryEpisodicEventRepository()
     repositories: ConversationRepositories
 
     @contextmanager
     def unit_of_work():
-        mutable = [threads, messages, runs, artifacts, attachments, memories, episodic_events]
+        mutable = [threads, messages, runs, artifacts, attachments, memories]
         snapshots = [
             copy.deepcopy(
                 {
@@ -1182,7 +1108,6 @@ def build_in_memory_repositories(
         attachments=attachments,
         memories=memories,
         thread_summaries=InMemoryThreadSummaryRepository(),
-        episodic_events=episodic_events,
         search=InMemorySearchRepository(
             threads,
             messages,

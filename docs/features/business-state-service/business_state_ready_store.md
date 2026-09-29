@@ -202,7 +202,7 @@ These are the **10 metrics** that should always be in the ready store for instan
 
 ## Implementation Plan
 
-### Phase 1: Foundation (Week 1)
+### Phase 1: Foundation
 
 - [ ] Extend `SnapshotStore` → `BusinessStateSnapshotStore` (Postgres JSONB)
 - [ ] Define `BusinessStateSnapshot` Pydantic model (extends `DomainStateSnapshot`)
@@ -213,7 +213,7 @@ These are the **10 metrics** that should always be in the ready store for instan
   - Writes snapshot per `as_of` date
   - **Refresh schedule**: Hourly for all metrics that have data available in Cube
 
-### Phase 2: KPI Curation & Config (Week 1)
+### Phase 2: KPI Curation & Config
 
 - [ ] Create `config/business_state_kpis.yaml` with:
   - All 60+ KPIs above organized by domain
@@ -222,7 +222,7 @@ These are the **10 metrics** that should always be in the ready store for instan
   - Refresh schedule per domain (hourly/daily)
 - [ ] Update `business_state_profiles.yaml` to include all KPIs
 
-### Phase 3: Fast-Path API (Week 2)
+### Phase 3: Fast-Path API
 
 - [ ] Add `/v1/business-state` endpoint (bypasses agent loop)
 - [ ] Implement `BusinessStateFormatter` (`services/business_state/formatter.py`)
@@ -231,7 +231,7 @@ These are the **10 metrics** that should always be in the ready store for instan
 - [ ] Add intent check in `run_v3_mission()` for `HIGH_LEVEL_LOOKUP`
 - [ ] Fallback to agent loop if snapshot stale/missing
 
-### Phase 4: Advanced Features (Week 2-3)
+### Phase 4: Advanced Features
 
 - [ ] Top Movers computation (biggest `period_delta_pct`)
 - [ ] Active Anomalies aggregation (all `is_anomaly=true`)
@@ -239,7 +239,7 @@ These are the **10 metrics** that should always be in the ready store for instan
 - [ ] Pre-computed text summary for each domain
 - [ ] Incremental refresh (only changed metrics)
 
-### Phase 5: Observability & Polish (Week 3)
+### Phase 5: Observability & Polish
 
 - [ ] Freshness SLA monitoring (alert if snapshot > 2h stale)
 - [ ] Refresh duration metrics

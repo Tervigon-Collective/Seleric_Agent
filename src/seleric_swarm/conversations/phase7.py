@@ -125,113 +125,17 @@ class InMemorySearchRepository:
         self.memories = memories
         self.vector_hook = vector_hook
         self.query_embedder = query_embedder
-        self._embeddings: dict[str, list[float]] = {}
-        self._embedder_lock = RLock()
-
-    def _embed_and_store(self, kind: str, document_id: str, content: str) -> bool:
-        if not self.query_embedder:
-            return False
-        try:
-            embedding = self.query_embedder(content)
-            with self._embedder_lock:
-                self._embeddings[f"{kind}:{document_id}"] = embedding
-            return True
-        except Exception:
-            return False
 
     def populate_embedding(self, kind: str, document_id: str, content: str) -> bool:
         """Invoke the configured population hook; in-memory indexes own storage."""
-        return self._embed_and_store(kind, document_id, content)
-
-    def _vector_search(
-        self,
-        query: str,
-        workspace_id: str,
-        owner_user_id: str,
-        *,
-        kinds: set[str] | None = None,
-        limit: int = 20,
-    ) -> list[SearchResult]:
+        del kind, document_id
         if not self.query_embedder:
-            return []
+            return False
         try:
-            query_vec = self.query_embedder(query)
+            self.query_embedder(content)
+            return True
         except Exception:
-            return []
-        if not query_vec:
-            return []
-        # Collect candidates with embeddings
-        candidates: list[tuple[SearchResult, float]] = []
-        allowed = kinds or {"thread", "message", "memory", "artifact", "run"}
-        for key, embedding in self._embeddings.items():
-            kind, doc_id = key.split(":", 1)
-            if kind not in allowed:
-                continue
-            # Cosine similarity
-            dot = sum(a * b for a, b in zip(query_vec, embedding))
-            norm_q = sum(a * a for a in query_vec) ** 0.5
-            norm_e = sum(b * b for b in embedding) ** 0.5
-            if norm_q == 0 or norm_e == 0:
-                continue
-            score = dot / (norm_q * norm_e)
-            if score < 0.3:  # threshold
-                continue
-            # Fetch the actual SearchResult from found items (authorized check)
-            # We'll reconstruct minimal SearchResult
-            if kind == "memory":
-                memory = self.memories.get(doc_id, workspace_id, owner_user_id)
-                if memory:
-                    candidates.append((
-                        SearchResult(
-                            id=memory.id, kind="memory", title=memory.type.value.title(),
-                            snippet=memory.normalized_content or _text(memory.content),
-                            thread_id=memory.thread_id, run_id=memory.source_run_id,
-                            created_at=memory.updated_at,
-                            metadata={"status": memory.status.value, "provenance": memory.provenance},
-                        ),
-                        score
-                    ))
-            elif kind == "thread":
-                thread = self.threads.get(doc_id, workspace_id, owner_user_id)
-                if thread:
-                    candidates.append((
-                        SearchResult(
-                            id=thread.id, kind="thread", title=thread.title or "Untitled thread",
-                            snippet=_text(thread.metadata), thread_id=thread.id,
-                            created_at=thread.updated_at,
-                        ),
-                        score
-                    ))
-            elif kind == "message":
-                message = self.messages.get(doc_id, workspace_id)
-                if message and message.thread_id in {t.id for t in self.threads.list_for_owner(workspace_id, owner_user_id, limit=1000)}:
-                    candidates.append((
-                        SearchResult(
-                            id=message.id, kind="message", title=f"{message.role.value.title()} message",
-                            snippet=" ".join(_text(p.content) for p in message.parts),
-                            thread_id=message.thread_id, run_id=message.run_id,
-                            created_at=message.created_at,
-                        ),
-                        score
-                    ))
-            elif kind in {"artifact", "report"}:
-                artifacts = self.artifacts.list_for_context(workspace_id, doc_id)
-                for artifact in artifacts:
-                    if artifact.id == doc_id:
-                        result_kind = "report" if artifact.artifact_type == "report" else "artifact"
-                        if result_kind in allowed:
-                            candidates.append((
-                                SearchResult(
-                                    id=artifact.id, kind=result_kind,
-                                    title=str(artifact.payload.get("title") or artifact.artifact_type),
-                                    snippet=_text(artifact.payload), thread_id=artifact.thread_id, run_id=artifact.run_id,
-                                    created_at=artifact.created_at,
-                                    metadata={"artifact_type": artifact.artifact_type},
-                                ),
-                                score
-                            ))
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        return [item for item, _ in candidates[:limit]]
+            return False
 
     def search(
         self,
@@ -317,9 +221,13 @@ class InMemorySearchRepository:
             except Exception:
                 vector = None
         del vector  # In-memory hooks own their similarity implementation.
-        vectors = self._vector_search(
-            query, workspace_id, owner_user_id, kinds=allowed, limit=limit * 3
+        vectors = (
+            list(self.vector_hook(query, workspace_id, owner_user_id, limit * 3))
+            if self.vector_hook
+            else []
         )
+        authorized = {(item.kind, item.id) for item in found}
+        vectors = [item for item in vectors if (item.kind, item.id) in authorized]
         with operation_span(
             "retrieval",
             "hybrid_search",

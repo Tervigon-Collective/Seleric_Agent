@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import time
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.exc import OperationalError
 
 from seleric_swarm.config.settings import get_settings
 from seleric_swarm.paths import repo_root
@@ -19,7 +21,7 @@ def run_migrations(database_url: str, migrations_dir: Path | None = None) -> lis
     directory = migrations_dir or repo_root() / "migrations"
     engine = create_engine(database_url, pool_pre_ping=True)
     applied: list[str] = []
-    with engine.connect() as conn:
+    with _connect_with_retry(engine) as conn:
         conn.execute(text("SELECT pg_advisory_lock(hashtext('seleric-schema-migrations'))"))
         conn.commit()
         try:
@@ -31,6 +33,22 @@ def run_migrations(database_url: str, migrations_dir: Path | None = None) -> lis
             conn.commit()
     engine.dispose()
     return applied
+
+
+def _connect_with_retry(
+    engine: Engine, attempts: int = 30, delay_s: float = 2.0
+) -> Connection:
+    # Docker daemon restarts ignore depends_on, so Postgres may still be in
+    # "the database system is starting up" when this runs.
+    for attempt in range(1, attempts + 1):
+        try:
+            return engine.connect()
+        except OperationalError:
+            if attempt == attempts:
+                raise
+            print(f"database not ready (attempt {attempt}/{attempts}); retrying", flush=True)
+            time.sleep(delay_s)
+    raise AssertionError("unreachable")
 
 
 def _run_locked(conn: Connection, directory: Path, applied: list[str]) -> None:

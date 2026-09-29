@@ -166,39 +166,6 @@ class ApprovalStatus(StrEnum):
     ROLLED_BACK = "ROLLED_BACK"
 
 
-class EpisodicEventType(StrEnum):
-    DECISION = "DECISION"
-    ATTEMPT = "ATTEMPT"
-    OUTCOME = "OUTCOME"
-    ERROR = "ERROR"
-    RETRY = "RETRY"
-    ROLLBACK = "ROLLBACK"
-
-
-class EpisodicEvent(ContractModel):
-    """Structured episodic memory for decisions, attempts, and outcomes.
-
-    Unlike MemoryItem (which stores facts/preferences), EpisodicEvent captures
-    what happened, what was tried, and what resulted — enabling "what happened
-    last time" queries and preventing repeated failed attempts.
-    """
-
-    id: str = Field(default_factory=lambda: _id("episode"))
-    workspace_id: str
-    owner_user_id: str
-    project_id: str | None = None
-    thread_id: str | None = None
-    run_id: str | None = None
-    event_type: EpisodicEventType
-    summary: str
-    entities: list[str] = Field(default_factory=list)
-    details: dict[str, Any] = Field(default_factory=dict)
-    supersedes_id: str | None = None
-    superseded_by_id: str | None = None
-    created_at: datetime = Field(default_factory=_utc_now)
-    updated_at: datetime = Field(default_factory=_utc_now)
-
-
 class Thread(ContractModel):
     id: str = Field(default_factory=lambda: _id("thread"))
     workspace_id: str

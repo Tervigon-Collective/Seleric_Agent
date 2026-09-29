@@ -14,7 +14,6 @@ from seleric_swarm.conversations.contracts import (
     ApprovalRequest,
     Artifact,
     Attachment,
-    EpisodicEvent,
     MemoryItem,
     MemoryPreference,
     Message,
@@ -223,26 +222,6 @@ class ThreadSummaryRepository(Protocol):
     ) -> ThreadSummary | None: ...
 
 
-class EpisodicEventRepository(Protocol):
-    def create(self, event: EpisodicEvent) -> EpisodicEvent: ...
-    def get(
-        self, event_id: str, workspace_id: str, owner_user_id: str
-    ) -> EpisodicEvent | None: ...
-    def list(
-        self,
-        workspace_id: str,
-        owner_user_id: str,
-        *,
-        project_id: str | None = None,
-        thread_id: str | None = None,
-        run_id: str | None = None,
-        event_type: str | None = None,
-        limit: int = 100,
-    ) -> list[EpisodicEvent]: ...
-    def update(self, event: EpisodicEvent) -> EpisodicEvent: ...
-    def delete(self, event_id: str, workspace_id: str, owner_user_id: str) -> bool: ...
-
-
 class SearchRepository(Protocol):
     def search(
         self,
@@ -293,7 +272,6 @@ class ConversationRepositories:
     attachments: AttachmentRepository
     memories: MemoryRepository
     thread_summaries: ThreadSummaryRepository
-    episodic_events: EpisodicEventRepository
     search: SearchRepository
     approvals: ApprovalRepository
     unit_of_work: UnitOfWorkFactory | None = None
