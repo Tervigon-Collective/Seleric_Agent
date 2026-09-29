@@ -32,13 +32,13 @@ If the evidence cannot support a forecast, this refuses — it does not guess.
 from __future__ import annotations
 
 import math
-import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
 
+from seleric_swarm.models.backends import get_backend
 from seleric_swarm.paths import repo_root
 from seleric_swarm.toolsets import policy_config as policy
 
@@ -46,11 +46,6 @@ if TYPE_CHECKING:
     from seleric_swarm.agent.artifacts import EvidenceArtifact
 
 MODEL_VERSION = "1"
-# Trend estimation needs materially more than a couple of points before it
-# stops being noise amplification; below this we smooth the level only.
-_MIN_POINTS_FOR_TREND = 10
-# ~95% two-sided normal interval.
-_Z_95 = 1.96
 
 
 @dataclass
@@ -79,6 +74,7 @@ def forecast_series(
     *,
     horizon_days: int,
     model_id: str,
+    backend: str = "holt",
 ) -> ForecastResult:
     """Point forecast + interval ``horizon_days`` ahead of the last observation.
 
@@ -101,17 +97,16 @@ def forecast_series(
             warning=policy.WARN_THIN_HISTORY,
         )
 
-    point, fitted, method = _fit_and_forecast(values, horizon_days)
+    raw = get_backend(backend).forecast(values, horizon_days, season_length=7)
+    if not all(math.isfinite(x) for x in (raw.point, raw.lower, raw.upper)):
+        raise ForecastUnavailable(
+            "model produced a non-finite forecast", warning=policy.WARN_MODEL_FIT_FAILED
+        )
+    point = raw.point
+    method = raw.method
+    low, high = round(raw.lower, 6), round(raw.upper, 6)
 
-    residuals = [actual - pred for actual, pred in zip(values, fitted, strict=True)]
-    # Population stdev: these are the model's own in-sample errors, not a sample
-    # drawn from a wider set.
-    sigma = statistics.pstdev(residuals) if len(residuals) > 1 else 0.0
-    half_width = _Z_95 * sigma * math.sqrt(horizon_days)
-
-    low, high = round(point - half_width, 6), round(point + half_width, 6)
-
-    warnings: list[str] = []
+    warnings: list[str] = list(raw.warnings)
     if low == high:
         # An interval that collapses to a point reads as certainty. It happens
         # when the model fits the history almost exactly — a perfectly linear
@@ -136,39 +131,6 @@ def forecast_series(
     )
 
 
-def _fit_and_forecast(values: list[float], horizon_days: int) -> tuple[float, list[float], str]:
-    """Returns (point forecast, in-sample fitted values, method name)."""
-    try:
-        from statsmodels.tsa.holtwinters import ExponentialSmoothing
-    except ImportError as exc:  # pragma: no cover - declared dependency
-        raise ForecastUnavailable(
-            f"statsmodels unavailable: {exc}", warning=policy.WARN_MODEL_UNAVAILABLE
-        ) from exc
-
-    use_trend = len(values) >= _MIN_POINTS_FOR_TREND
-    method = "holt_linear_trend" if use_trend else "simple_exponential_smoothing"
-    try:
-        model = ExponentialSmoothing(
-            values,
-            trend="add" if use_trend else None,
-            seasonal=None,
-            initialization_method="estimated",
-        )
-        fit = model.fit(optimized=True)
-        point = float(fit.forecast(horizon_days)[-1])
-        fitted = [float(v) for v in fit.fittedvalues]
-    except Exception as exc:
-        raise ForecastUnavailable(
-            f"exponential smoothing failed to fit: {exc}", warning=policy.WARN_MODEL_FIT_FAILED
-        ) from exc
-
-    if not math.isfinite(point):
-        raise ForecastUnavailable(
-            "model produced a non-finite forecast", warning=policy.WARN_MODEL_FIT_FAILED
-        )
-    return point, fitted, method
-
-
 # --------------------------------------------------------------------------- #
 # Model registry — ported from agents/skeptic/registries.py +
 # agents/skeptic/services/model_registry.py (Sprint 5: V3-owned, no longer a
@@ -188,6 +150,8 @@ class ModelRecord:
     supports_seasonality: bool = False
     last_validated_at: str | None = None
     backtest_available: bool = False
+    backend: str = "holt"
+    fallback: str | None = None
 
 
 class InMemoryModelRegistry:
@@ -231,6 +195,8 @@ class YamlModelRegistry(InMemoryModelRegistry):
                     minimum_history_days=int(applic.get("minimum_history_days", 0)),
                     supports_seasonality=bool(applic.get("supports_seasonality", False)),
                     last_validated_at=item.get("last_validated_at"),
+                    backend=str(item.get("backend") or "holt"),
+                    fallback=(str(item["fallback"]) if item.get("fallback") else None),
                     backtest_available=bool(
                         item.get("backtest_available")
                         or (item.get("validation") or {}).get("metric")

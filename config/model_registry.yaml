@@ -100,6 +100,84 @@ models:
     drift_policy: warn
     fallback: null
 
+  # --- Candidate backends (NOT approved) -----------------------------------
+  # Seasonal AutoETS via statsforecast (optional `forecast-stats` extra). These
+  # stay `candidate` -- and therefore refused by toolsets/models.py -- until
+  # scripts/backtest_forecasters.py shows they beat the Holt baseline above
+  # (go/no-go rule: docs/features/forecasting/README.md). Promotion is a human
+  # edit: set status: approved, last_validated_at, and the backtest metrics.
+  - id: forecast.net_sales.daily.ets
+    version: "1"
+    type: forecast
+    status: candidate
+    owner: profile_c
+    target: metric.net_sales
+    backend: statsforecast
+    forecast_horizon_days: 14
+    backtest_available: false
+    validation:
+      metric: rolling_origin_mase
+      method: auto_ets_weekly_seasonality
+    applicability:
+      minimum_history_days: 21
+      supports_seasonality: true
+    drift_policy: warn
+    fallback: forecast.net_sales.daily
+
+  - id: forecast.orders.daily.ets
+    version: "1"
+    type: forecast
+    status: candidate
+    owner: profile_c
+    target: metric.orders
+    backend: statsforecast
+    forecast_horizon_days: 14
+    backtest_available: false
+    validation:
+      metric: rolling_origin_mase
+      method: auto_ets_weekly_seasonality
+    applicability:
+      minimum_history_days: 21
+      supports_seasonality: true
+    drift_policy: warn
+    fallback: forecast.orders.daily
+
+  - id: forecast.sessions.daily.ets
+    version: "1"
+    type: forecast
+    status: candidate
+    owner: profile_c
+    target: metric.sessions
+    backend: statsforecast
+    forecast_horizon_days: 14
+    backtest_available: false
+    validation:
+      metric: rolling_origin_mase
+      method: auto_ets_weekly_seasonality
+    applicability:
+      minimum_history_days: 21
+      supports_seasonality: true
+    drift_policy: warn
+    fallback: forecast.sessions.daily
+
+  - id: forecast.spend.daily.ets
+    version: "1"
+    type: forecast
+    status: candidate
+    owner: profile_c
+    target: metric.spend
+    backend: statsforecast
+    forecast_horizon_days: 14
+    backtest_available: false
+    validation:
+      metric: rolling_origin_mase
+      method: auto_ets_weekly_seasonality
+    applicability:
+      minimum_history_days: 21
+      supports_seasonality: true
+    drift_policy: warn
+    fallback: forecast.spend.daily
+
   # LTV and propensity are deliberately absent, not forgotten.
   #
   # Both need a labelled training set and a feature store; this repo has

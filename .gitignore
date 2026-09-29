@@ -21,3 +21,4 @@ coverage/
 
 # domain_health scheduler output (runtime state, not source)
 var/domain_health_snapshots/
+history.csv

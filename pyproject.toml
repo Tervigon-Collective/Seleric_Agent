@@ -45,6 +45,14 @@ dependencies = [
 voice-api = [
   "livekit-api>=1.0",
 ]
+# Optional forecast backends (see models/backends/, config/model_registry.yaml
+# `backend:`). Kept OUT of core dependencies: uv.lock is one universal
+# resolution, and torch (foundation models) would bloat every API/voice image.
+# A foundation-model extra (timesfm/chronos) is added only if the backtest in
+# docs/features/forecasting/ says they win.
+forecast-stats = [
+  "statsforecast>=2.0",
+]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.25",
@@ -86,6 +94,8 @@ module = [
   "numpy",
   "numpy.*",
   "statsmodels.*",
+  "statsforecast",
+  "statsforecast.*",
   "livekit.*",
 ]
 ignore_missing_imports = true

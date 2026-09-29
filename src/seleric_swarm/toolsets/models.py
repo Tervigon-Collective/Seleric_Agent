@@ -97,6 +97,16 @@ def _approved_model_for(target: str, *, model_type: str) -> ModelRecord | None:
     return None
 
 
+def _fallback_record(record: ModelRecord) -> ModelRecord | None:
+    """The record's ``fallback`` model id, only if it is itself approved for the same target."""
+    if not record.fallback:
+        return None
+    fb = _registry().get(record.fallback)  # type: ignore[attr-defined]
+    if fb is None or fb.status != "approved" or fb.target != record.target:
+        return None
+    return fb
+
+
 def _write_prediction(
     ctx: RunContext[SelericDeps],
     *,
@@ -188,10 +198,30 @@ async def forecast(
             warning=policy.WARN_THIN_HISTORY,
         )
 
+    fallback_note: str | None = None
     try:
-        result = forecast_series(evidence, horizon_days=horizon_days, model_id=record.model_id)
+        result = forecast_series(
+            evidence,
+            horizon_days=horizon_days,
+            model_id=record.model_id,
+            backend=record.backend,
+        )
     except ForecastUnavailable as exc:
-        return _refuse(str(exc), warning=exc.warning)
+        fallback = _fallback_record(record) if exc.warning == policy.WARN_MODEL_UNAVAILABLE else None
+        if fallback is None:
+            return _refuse(str(exc), warning=exc.warning)
+        try:
+            result = forecast_series(
+                evidence,
+                horizon_days=horizon_days,
+                model_id=fallback.model_id,
+                backend=fallback.backend,
+            )
+        except ForecastUnavailable as fb_exc:
+            return _refuse(str(fb_exc), warning=fb_exc.warning)
+        # The artifact must name the model that actually produced the number.
+        record = fallback
+        fallback_note = f"{exc}; served by fallback model {fallback.model_id}"
 
     artifact_id = _write_prediction(
         ctx,
@@ -213,7 +243,7 @@ async def forecast(
             evidence_ids=list(evidence_ids),
             model_version=f"{record.model_id}@{record.version}",
         ),
-        warnings=result.warnings,
+        warnings=[*result.warnings, *([fallback_note] if fallback_note else [])],
     )
 
 
