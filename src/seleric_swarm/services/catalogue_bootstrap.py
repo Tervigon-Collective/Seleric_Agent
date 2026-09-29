@@ -68,10 +68,17 @@ class CatalogueSnapshot:
     dimensions: tuple[str, ...] = ()
     # (label dimension, stable key dimension) pairs declared by the catalogue.
     stable_keys: tuple[tuple[str, str], ...] = ()
+    # Dimension ids the catalogue marks ``is_time`` (order_date, refund_date, …):
+    # the time axis Cube buckets via granularity, never a categorical group-by.
+    time_dimensions: frozenset[str] = frozenset()
 
     def stable_key_for(self, dimension: str) -> str | None:
         """The dimension that identifies the entity ``dimension`` labels, if declared."""
         return dict(self.stable_keys).get(dimension)
+
+    def is_time_dimension(self, dimension: str) -> bool:
+        """True if the catalogue declares *dimension* as a time axis (is_time)."""
+        return dimension in self.time_dimensions
 
     def metric_ids(self) -> frozenset[str]:
         return frozenset(m.id for m in self.metrics)
@@ -186,6 +193,7 @@ class CatalogueBootstrap:
         self._cache: dict[str, CatalogueMetricMeta] = {}
         self._dimension_aliases: dict[str, list[str]] = {}
         self._stable_keys: dict[str, str] = {}
+        self._time_dimensions: set[str] = set()
         self._grain_defaults: dict[str, Any] = {}
         self._warmed_at: float | None = None
 
@@ -250,6 +258,7 @@ class CatalogueBootstrap:
             metrics=tuple(self.entries()),
             dimensions=tuple(sorted(self.dimension_ids())),
             stable_keys=tuple(sorted(self._stable_keys.items())),
+            time_dimensions=frozenset(self._time_dimensions),
         )
 
     def unresolvable(self, candidate_ids: list[str]) -> list[str]:
@@ -305,6 +314,7 @@ class CatalogueBootstrap:
         dims = payload.get("dimensions") or []
         self._dimension_aliases = {}
         self._stable_keys = {}
+        self._time_dimensions = set()
         for dim in dims:
             if not isinstance(dim, dict):
                 continue
@@ -313,6 +323,8 @@ class CatalogueBootstrap:
                 self._dimension_aliases[did] = [str(a) for a in (dim.get("aliases") or [])]
                 if dim.get("stable_key"):
                     self._stable_keys[did] = str(dim["stable_key"])
+                if dim.get("is_time"):
+                    self._time_dimensions.add(did)
         defaults = payload.get("grain_defaults") or {}
         self._grain_defaults = dict(defaults) if isinstance(defaults, dict) else {}
         return len(self._cache)

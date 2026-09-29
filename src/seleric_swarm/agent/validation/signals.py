@@ -427,7 +427,7 @@ def check_prediction(artifacts: list[Artifact]) -> CheckOutcome:
     return out
 
 
-def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
+def check_scope_coverage(artifacts: list[Artifact], scope: Any, catalogue: Any = None) -> CheckOutcome:
     """Executed evidence must cover the breakdowns and named values the query demanded.
 
     The reconciliation gate for the silent-drop failure (live "by source"
@@ -466,10 +466,13 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
     grouped: set[str] = set()
     filtered: set[str] = set()
     available_grains: set[str] = set()
+    answer_metric_ids: set[str] = set()
     for artifact in evidence:
         parsed = _payload(artifact, EvidenceArtifact)
         if parsed is not None:
             grouped.update(parsed.dimensions.keys())
+            if parsed.metric_id:
+                answer_metric_ids.add(parsed.metric_id)
             if parsed.grain and parsed.grain != "none":
                 available_grains.add(parsed.grain)
         # A named value is covered by *filtering* just as well as grouping (a
@@ -482,20 +485,47 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
             if isinstance(applied, dict) and (dim := applied.get("dimension")):
                 filtered.add(str(dim))
 
+    def _answer_metric_can_group(dims: frozenset[str]) -> bool:
+        """Catalogue-driven: does a metric ACTUALLY USED in the answer support one
+        of these breakdown dims? If yes and it wasn't grouped, that's the silent-
+        drop bug (blocking). If the chosen metric can't carry the dim, no revision
+        of THIS answer can — other metrics that list the dim measure a different
+        thing (net sales has no hour/session axis; hourly lives on ad metrics,
+        session_day_of_week on web metrics), so switching would answer a different
+        question. Unknown/empty catalogue -> assume yes (fail-closed: keep guard)."""
+        supported_for = getattr(catalogue, "supported_dimensions_for", None)
+        if not getattr(catalogue, "metrics", None) or supported_for is None or not answer_metric_ids:
+            return True
+        for mid in answer_metric_ids:
+            if dims & set(supported_for(mid)):
+                return True
+        return False
+
     gaps: list[EvidenceGap] = []
     for candidates in breakdowns:
         if candidates & grouped:
             continue
         options = " or ".join(sorted(candidates))
+        # A breakdown NO queryable metric supports is genuinely unanswerable: no
+        # revision can ever group by it, so a blocking gap only loops the mission
+        # to VALIDATION_REVISIONS_EXHAUSTED on an otherwise-correct answer (live
+        # MS3-dc65868b71: "net sales by hour_of_day/session_day_of_week" — the
+        # agent correctly said the metric can't, but the guard killed it). Keep it
+        # blocking only when some metric CAN carry it (the silent-drop case).
+        answerable = _answer_metric_can_group(candidates)
         gaps.append(
             EvidenceGap(
                 description=(
                     f"the question asked for a breakdown by {options}, but the answer's "
-                    f"evidence is not grouped by any of them — re-run grouped by one of those "
-                    f"dimensions, or state plainly that no available metric supports that breakdown"
+                    f"evidence is not grouped by any of them — "
+                    + (
+                        "re-run grouped by one of those dimensions"
+                        if answerable
+                        else "no available metric supports that breakdown; state that plainly"
+                    )
                 ),
-                blocking=True,
-                priority=8,
+                blocking=answerable,
+                priority=8 if answerable else 3,
             )
         )
     # A named value (live: "orders from whatsapp") must actually constrain the
@@ -541,7 +571,11 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any) -> CheckOutcome:
 
     if not gaps:
         return CheckOutcome(check="scope_coverage")
-    return CheckOutcome(check="scope_coverage", status="INSUFFICIENT", gaps=gaps)
+    # Only a blocking gap makes coverage INSUFFICIENT (drives REVISE). Informational
+    # gaps (e.g. an unanswerable breakdown) still surface in the reason but must not
+    # loop the mission to exhaustion on a correct "unsupported" answer.
+    status = "INSUFFICIENT" if any(g.blocking for g in gaps) else "OK"
+    return CheckOutcome(check="scope_coverage", status=status, gaps=gaps)
 
 
 _NON_CLAIM_ARTIFACT_TYPES = frozenset({"plan"})
@@ -576,7 +610,9 @@ def run_checks(
         check_contradiction(artifacts),
         check_causal(artifacts),
         check_prediction(artifacts),
-        check_scope_coverage(artifacts, getattr(deps, "required_scope", None)),
+        check_scope_coverage(
+            artifacts, getattr(deps, "required_scope", None), getattr(deps, "catalogue", None)
+        ),
         check_answer_grounding(artifacts, result),
     ]
     live = [oc for oc in outcomes if oc.status != "NOT_APPLICABLE"]

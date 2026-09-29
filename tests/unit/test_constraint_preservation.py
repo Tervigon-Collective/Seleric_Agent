@@ -288,6 +288,56 @@ def test_ambiguous_breakdown_requires_at_least_one_candidate():
     assert out.gaps and out.gaps[0].blocking
 
 
+def _catalogue(dim_to_metrics: dict[str, list[str]]):
+    """Minimal snapshot where each metric lists the dims that map to it."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    metric_dims: dict[str, set[str]] = {}
+    for dim, mids in dim_to_metrics.items():
+        for mid in mids:
+            metric_dims.setdefault(mid, set()).add(dim)
+    metrics = tuple(
+        CatalogueMetricMeta(id=mid, supported_dimensions=sorted(dims))
+        for mid, dims in metric_dims.items()
+    )
+    return CatalogueSnapshot(metrics=metrics, dimensions=tuple(dim_to_metrics))
+
+
+def test_unsupported_breakdown_is_not_blocking():
+    # MS3-dc65868b71 regression: "net sales by hour_of_day/session_day_of_week" —
+    # no queryable metric carries those dims, so no revision can ever group by them.
+    # The gap must be informational (non-blocking), not a REVISE loop to exhaustion.
+    store = InMemoryArtifactStore()
+    for d in range(1, 6):
+        _evidence_artifact(store, day=d, dimensions={}, grain="day")
+    scope = RequiredScope(breakdowns=frozenset({frozenset({"hour_of_day", "session_day_of_week"})}))
+    # The answer's metric (attributed_orders) supports report_date, not hour/session-day;
+    # the dims exist on OTHER metrics (ad/web), but those measure a different thing.
+    cat = _catalogue({
+        "report_date": ["attributed_orders"],
+        "hour_of_day": ["meta_clicks_hourly"],
+        "session_day_of_week": ["session_add_to_carts"],
+    })
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, cat)
+    assert out.status == "OK", out.gaps
+    assert out.gaps and out.gaps[0].blocking is False
+
+
+def test_supported_but_dropped_breakdown_still_blocks():
+    # Protection intact: a breakdown a metric DOES support, but the answer isn't
+    # grouped by it, is the silent-drop bug — still blocking.
+    store = InMemoryArtifactStore()
+    for d in range(1, 6):
+        _evidence_artifact(store, day=d, dimensions={})
+    scope = RequiredScope(breakdowns=frozenset({frozenset({"source_name"})}))
+    # The answer's own metric (attributed_orders) DOES support source_name but the
+    # evidence isn't grouped by it — the silent-drop bug, still blocking.
+    cat = _catalogue({"source_name": ["attributed_orders"], "report_date": ["attributed_orders"]})
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, cat)
+    assert out.status == "INSUFFICIENT"
+    assert out.gaps and out.gaps[0].blocking is True
+
+
 def test_period_total_satisfies_grain_request():
     # MS3-a794c66a66 regression: "gross sales last week vs this month" fetches two
     # period totals (grain="none"). The window IS a week, so a single total is the

@@ -20,6 +20,7 @@ suite.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -234,6 +235,281 @@ async def test_query_metrics_breakdown_attaches_each_rows_own_dimension_value():
     payloads = [ctx.deps.artifact_store.get(aid).payload for aid in result.artifact_ids]
     dims_seen = {p["dimensions"].get("product_id") for p in payloads}
     assert dims_seen == {"8240181837913", "8123760607321"}
+
+
+# ---- Live MS3-99ad433e18: a time-axis breakdown defeated grain=month ----
+
+
+@pytest.mark.asyncio
+async def test_time_dimension_breakdown_folds_into_grain_not_a_raw_groupby():
+    """Live incident: ``dimensions={"refund_date": ""}`` + ``grain="month"`` sent
+    the raw date column to Cube as a group-by, which overrode the granularity and
+    returned one row per day (146 rows) — the model then hand-summed them into
+    wrong monthly totals. A catalogue is_time dimension is the time axis: it must
+    drive `granularity`, never a categorical group-by."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    mcp = FakeMcpClient(
+        {"seleric.metrics_query": {"rows": [{"refund_count.month": "2026-04-01", "refund_count": "56"}], "provenance": {}}}
+    )
+    from dataclasses import replace
+    deps = replace(_deps(mcp), catalogue=CatalogueSnapshot(
+        metrics=(CatalogueMetricMeta(id="refund_count", view="refund_events",
+                                     supported_dimensions=["refund_date"]),),
+        dimensions=("refund_date",),
+        time_dimensions=frozenset({"refund_date"}),
+    ))
+    ctx = FakeRunContext(deps)
+    await semantic.query_metrics(
+        ctx,
+        metric_id="refund_count",
+        dimensions={"refund_date": ""},
+        grain="month",
+        period_start=datetime(2026, 3, 29, tzinfo=UTC),
+        period_end=datetime(2026, 9, 29, tzinfo=UTC),
+    )
+    query_call = next(c for c in mcp.calls if c[0] == "seleric.metrics_query")
+    assert query_call[1]["granularity"] == "month"
+    # the raw date dimension must NOT be sent as a group-by
+    assert "refund_date" not in (query_call[1].get("dimensions") or [])
+
+
+@pytest.mark.asyncio
+async def test_time_dimension_breakdown_with_no_grain_defaults_to_day():
+    """``dimensions={"refund_date": ""}`` with no grain means "a series over
+    time" — resolve it to grain=day, not a raw date group-by (which has no
+    granularity suffix and can't be date-labelled)."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    mcp = FakeMcpClient(
+        {"seleric.metrics_query": {"rows": [{"refund_count.day": "2026-04-01", "refund_count": "1"}], "provenance": {}}}
+    )
+    from dataclasses import replace
+    deps = replace(_deps(mcp), catalogue=CatalogueSnapshot(
+        metrics=(CatalogueMetricMeta(id="refund_count", view="refund_events",
+                                     supported_dimensions=["refund_date"]),),
+        time_dimensions=frozenset({"refund_date"}),
+    ))
+    ctx = FakeRunContext(deps)
+    await semantic.query_metrics(
+        ctx,
+        metric_id="refund_count",
+        dimensions={"refund_date": ""},
+        grain="none",
+        period_start=datetime(2026, 4, 1, tzinfo=UTC),
+        period_end=datetime(2026, 4, 30, tzinfo=UTC),
+    )
+    query_call = next(c for c in mcp.calls if c[0] == "seleric.metrics_query")
+    assert query_call[1]["granularity"] == "day"
+    assert "refund_date" not in (query_call[1].get("dimensions") or [])
+
+
+@pytest.mark.asyncio
+async def test_drilldown_routes_to_a_supporting_metric_instead_of_a_doomed_drill():
+    """Live MS3-99ad433e18 part 2: drilling refund_count (view refund_events) by
+    product_title returned "no rows" and the model deferred. The dimension isn't
+    on the metric's view — route to a metric whose view supports it, before any
+    query, naming the redirect."""
+    from dataclasses import replace
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    mcp = FakeMcpClient({"seleric.metrics_query": {"query_id": "q1", "rows": [{"refund_count": "5"}]}})
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(
+                CatalogueMetricMeta(id="refund_count", view="refund_events",
+                                    supported_dimensions=["refund_date", "order_status"]),
+                CatalogueMetricMeta(id="product_refund_count", view="return_lifecycle",
+                                    supported_dimensions=["product_title", "sku"]),
+            ),
+        ),
+    )
+    ctx = FakeRunContext(deps)
+    result = await semantic.drilldown(
+        ctx,
+        metric_id="refund_count",
+        dimension="product_title",
+        period_start=datetime(2026, 7, 1, tzinfo=UTC),
+        period_end=datetime(2026, 9, 29, tzinfo=UTC),
+    )
+    assert result.success is False
+    assert result.error_code == "UNSUPPORTED_QUERY"
+    assert "product_refund_count" in result.summary
+    # it must NOT have fired the parent query for a drill it knew would fail
+    assert not any(c[0] == "seleric.metrics_query" for c in mcp.calls)
+
+
+@pytest.mark.asyncio
+async def test_breakdown_plus_grain_summary_keeps_the_category_label():
+    """Live MS3-848d29f41a: returned_units by product_title at month grain labelled
+    every summary row by the month alone, dropping product_title — the model then
+    reported "product with 119 returned units" with no name. The summary the model
+    reads must carry the category value, not just the time bucket."""
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {
+                "rows": [
+                    {"returned_units.month": "2026-06-01", "product_title": "Pawveralls Suspender Boots", "returned_units": "119"},
+                    {"returned_units.month": "2026-06-01", "product_title": "WildTrail Boots", "returned_units": "8"},
+                ],
+                "provenance": {},
+            }
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="returned_units",
+        dimensions={"product_title": ""},
+        grain="month",
+        period_start=datetime(2026, 6, 1, tzinfo=UTC),
+        period_end=datetime(2026, 6, 30, tzinfo=UTC),
+    )
+    assert result.success is True
+    assert "Pawveralls Suspender Boots" in result.summary
+    assert "119" in result.summary
+    # the month bucket is still present alongside the category
+    assert "2026-06" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_large_unranked_breakdown_is_blocked_not_dumped():
+    """Live MS3-848d29f41a: returned_units by product_title x month came back as 817
+    rows the model then hand-ranked (dropped a month, named no product). A large,
+    unranked categorical breakdown must be refused with guidance, and NO artifacts
+    written — not silently dumped for hand-processing."""
+    from pydantic_ai import ModelRetry
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    rows = [
+        {"returned_units.month": "2026-06-01", "product_title": f"Product {i}", "returned_units": str(i)}
+        for i in range(semantic._MAX_SERIES_IN_SUMMARY + 5)
+    ]
+    mcp = FakeMcpClient({"seleric.metrics_query": {"rows": rows, "provenance": {}}})
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(CatalogueMetricMeta(id="returned_units", view="product_performance",
+                                         supported_dimensions=["product_title", "order_date"]),),
+            time_dimensions=frozenset({"order_date"}),
+        ),
+    )
+    ctx = FakeRunContext(deps)
+    with pytest.raises(ModelRetry) as exc:
+        await semantic.query_metrics(
+            ctx,
+            metric_id="returned_units",
+            dimensions={"product_title": ""},
+            grain="month",
+            period_start=datetime(2026, 6, 1, tzinfo=UTC),
+            period_end=datetime(2026, 6, 30, tzinfo=UTC),
+        )
+    assert "product_title" in str(exc.value)
+    assert "order=" in str(exc.value)  # steered to the ranked shape
+    # nothing persisted on the blocked path
+    assert not ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id)
+
+
+@pytest.mark.asyncio
+async def test_per_group_topn_via_global_limit_is_blocked():
+    """Live MS3-a50cf03a1a: 'most returned product per month' issued as breakdown x
+    month grain + limit=5. Cube's limit is global, so it returned the 5 biggest cells
+    overall and silently dropped May/June. A categorical breakdown crossed with a grain
+    AND a limit must be refused and steered to a per-bucket fan-out."""
+    from pydantic_ai import ModelRetry
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    rows = [
+        {"refund_lines.month": "2026-08-01", "product_title": f"Product {i}", "refund_lines": str(i)}
+        for i in range(5)
+    ]
+    mcp = FakeMcpClient({"seleric.metrics_query": {"rows": rows, "provenance": {}}})
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(CatalogueMetricMeta(id="refund_lines", view="return_lifecycle",
+                                         supported_dimensions=["product_title", "refund_date"]),),
+            time_dimensions=frozenset({"refund_date"}),
+        ),
+    )
+    ctx = FakeRunContext(deps)
+    with pytest.raises(ModelRetry) as exc:
+        await semantic.query_metrics(
+            ctx,
+            metric_id="refund_lines",
+            dimensions={"product_title": ""},
+            grain="month",
+            period_start=datetime(2026, 5, 29, tzinfo=UTC),
+            period_end=datetime(2026, 9, 29, tzinfo=UTC),
+            order="desc",
+            limit=5,
+        )
+    assert "per month" in str(exc.value)  # names the bucket, steers to per-bucket
+    assert not ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id)
+
+
+@pytest.mark.asyncio
+async def test_ranked_breakdown_is_allowed():
+    """The same breakdown WITH order+limit is the correct shape — never blocked."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    rows = [
+        {"product_title": f"Product {i}", "returned_units": str(i)}
+        for i in range(semantic._MAX_SERIES_IN_SUMMARY + 5)
+    ]
+    mcp = FakeMcpClient({"seleric.metrics_query": {"rows": rows, "provenance": {}}})
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(CatalogueMetricMeta(id="returned_units", view="product_performance",
+                                         supported_dimensions=["product_title", "order_date"]),),
+            time_dimensions=frozenset({"order_date"}),
+        ),
+    )
+    ctx = FakeRunContext(deps)
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="returned_units",
+        dimensions={"product_title": ""},
+        grain="none",
+        period_start=datetime(2026, 6, 1, tzinfo=UTC),
+        period_end=datetime(2026, 6, 30, tzinfo=UTC),
+        order="desc",
+        limit=5,
+    )
+    assert result.success is True
+
+
+@pytest.mark.asyncio
+async def test_long_pure_time_series_is_not_blocked():
+    """A grain-only time series is legitimately long (365 daily rows) and has no
+    categorical breakdown — the guard must key on the non-time breakdown, not raw count."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    rows = [
+        {"net_sales.day": f"2026-{(i % 12) + 1:02d}-01", "net_sales": str(i)}
+        for i in range(semantic._MAX_SERIES_IN_SUMMARY + 5)
+    ]
+    mcp = FakeMcpClient({"seleric.metrics_query": {"rows": rows, "provenance": {}}})
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(CatalogueMetricMeta(id="net_sales", view="canonical_pnl",
+                                         supported_dimensions=["report_date"]),),
+            time_dimensions=frozenset({"report_date"}),
+        ),
+    )
+    ctx = FakeRunContext(deps)
+    result = await semantic.query_metrics(
+        ctx,
+        metric_id="net_sales",
+        dimensions={},
+        grain="day",
+        period_start=datetime(2026, 1, 1, tzinfo=UTC),
+        period_end=datetime(2026, 12, 31, tzinfo=UTC),
+    )
+    assert result.success is True
 
 
 # ---- Bug #2: metric-ID canonicalization inconsistency ----

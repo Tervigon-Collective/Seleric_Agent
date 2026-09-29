@@ -769,6 +769,65 @@ def _reject_incompatible_dimensions(
         )
 
 
+def _reject_unsupported_breakdown_shape(
+    ctx: RunContext[SelericDeps],
+    metric_id: str,
+    breakdown: list[str],
+    grain: str,
+    order: str | None,
+    limit: int | None,
+    row_count: int,
+) -> None:
+    """Refuse two breakdown shapes a single Cube query answers wrong, steering to the
+    executions that answer them right. Structure-driven, not keyword/metric-driven:
+    keys on a NON-TIME breakdown dim (catalogue is_time separates a legitimate time
+    series from a category), whether a time grain is crossed in, and the summary cap.
+    Fail-open when the snapshot is empty (is_time can't be trusted) or there is no
+    categorical breakdown to guard.
+
+    Case B — per-group top-N via a global limit (live MS3-a50cf03a1a): a categorical
+    breakdown crossed with a time grain PLUS a limit cannot mean "top-N per bucket" —
+    Cube applies the limit to the whole (category x bucket) grid and silently drops
+    buckets (that trace's per-month query returned the 5 biggest cells overall; May and
+    June vanished and were mis-narrated as "no returns"). Fires regardless of row count.
+
+    Case A — large unranked dump (live MS3-848d29f41a): a categorical breakdown with no
+    ranking and more rows than the model can read, which it would then hand-rank (dropped
+    a month, named no product). Steer to order/limit, or a per-bucket fan-out."""
+    catalogue = ctx.deps.catalogue
+    if not catalogue.metrics:
+        return  # empty snapshot: can't trust is_time — let it through
+    cat_dims = [k for k in breakdown if not catalogue.is_time_dimension(k)]
+    if not cat_dims:
+        return  # a pure time series (grain-only / date breakdown) — nothing to guard
+    dims = ", ".join(cat_dims)
+    time_crossed = grain != "none" or any(catalogue.is_time_dimension(k) for k in breakdown)
+    bucket = grain if grain != "none" else "period"
+
+    if time_crossed and limit is not None:
+        raise ModelRetry(
+            f"'{metric_id}' broken down by '{dims}' at {bucket} grain with limit={limit} "
+            f"cannot give the top per {bucket}: Cube applies the limit to the whole "
+            f"result, not within each {bucket}, so it silently drops buckets. For the top "
+            f"per {bucket}, issue one ranked query per bucket (a per-period filter) or use "
+            f"run_python over the evidence. For an overall leaderboard instead, drop the grain."
+        )
+
+    if order is None and limit is None and row_count > _MAX_SERIES_IN_SUMMARY:
+        per_bucket = (
+            f" For the top per {bucket}, issue one ranked query per bucket "
+            f"(a per-period filter) or use run_python over the evidence."
+            if time_crossed
+            else ""
+        )
+        raise ModelRetry(
+            f"The '{dims}' breakdown of '{metric_id}' returned {row_count} groups — too "
+            f"many to report directly, and you did not rank them. Either rank it: set "
+            f"order='desc' (top) or 'asc' (bottom) and limit=K for a leaderboard.{per_bucket} "
+            f"Re-issue a ranked, bounded query — do not sort or aggregate the rows by hand."
+        )
+
+
 async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult:
     """Fetch one metric's full catalogue definition (catalogue_get_metric)."""
     key = _definition_cache_key(metric_id)
@@ -947,6 +1006,11 @@ async def query_metrics(
     (e.g. ``dimensions={"<dimension>": ["<value>", "<value>"]}``); an empty
     string breaks the result down by that dimension.
 
+    For a time series (monthly/weekly/daily trend) set ``grain`` — do NOT pass
+    the date dimension (``refund_date``/``report_date``/…) as a breakdown; that
+    is the time axis and ``grain`` already buckets it. Never sum a returned
+    series by hand; re-query at the grain you need and report the tool's rows.
+
     For a top/bottom-N ranking, break down by the entity dimension (empty
     value, e.g. ``dimensions={"product_title": ""}``), set ``order="desc"``
     (top/most/highest) or ``"asc"`` (bottom/least/lowest), and ``limit=N``.
@@ -959,6 +1023,19 @@ async def query_metrics(
     period_end = period_end or ctx.deps.as_of
     period_start = period_start or period_end
     breakdown = [k for k, v in dimensions.items() if not v]
+    # A time-axis dimension (catalogue is_time: order_date, refund_date, …)
+    # requested as a breakdown is NOT a categorical group-by. Cube buckets time
+    # via `granularity`; sending the raw date dimension as a group-by instead
+    # yields one row per raw day AND overrides `grain` (live MS3-99ad433e18:
+    # grain=month + refund_date breakdown -> 146 daily rows the model then
+    # hand-summed into wrong monthly totals; the raw dim also has no granularity
+    # suffix, so row_date() can't label it). Fold it into the grain: honor an
+    # explicit grain, else default to day. Catalogue-driven, not name-matched;
+    # empty snapshot -> no-op (fail-open, Cube stays authority).
+    if date_breakdown := [k for k in breakdown if ctx.deps.catalogue.is_time_dimension(k)]:
+        breakdown = [k for k in breakdown if k not in date_breakdown]
+        if grain == "none":
+            grain = "day"
     filters = [
         {"dimension": k, "operator": "equals", "values": list(v) if isinstance(v, list) else [v]}
         for k, v in dimensions.items()
@@ -1082,6 +1159,10 @@ async def query_metrics(
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )
+    # Before persisting: refuse breakdown shapes a single query answers wrong (a large
+    # unranked dump, or a per-group top-N expressed as a global limit). Raises ModelRetry
+    # (no artifacts written) with guidance toward the correct execution.
+    _reject_unsupported_breakdown_shape(ctx, metric_id, breakdown, grain, order, limit, len(rows))
     provenance = ArtifactProvenance(
         query_version=str(result.get("provenance", {}).get("query_id") or ""),
         source_metadata=result.get("provenance") or {},
@@ -1150,25 +1231,32 @@ async def query_metrics(
                 )
             )
             artifact_ids.append(artifact.id)
-            # Label: the bucket window for a time series, else the breakdown
-            # dimension value, else the plain period. Week/month include both
-            # ends so two buckets cannot share one label.
+            # Label: the time bucket AND the breakdown dimension values, both when
+            # present. A breakdown+grain query (live MS3-848d29f41a: returned_units
+            # by product_title at month grain) previously labelled every row by the
+            # month alone, dropping product_title from the summary the model reads —
+            # so it reported "product with 119 returned units" with no name, though
+            # the name was on the artifact. The time dim is already the bucket, so
+            # drop is_time dims from the categorical part (catalogue-driven, no
+            # name-matching). Week/month include both ends so buckets can't collide.
+            time_label = ""
             if bucket_date and grain in {"week", "month"}:
-                label = f"{bucket_start.date()}..{bucket_end.date()}"
-                # A week/month bucket that the requested period cuts short holds
-                # only part of that week/month (live: "last week" over 18–24 Sep
-                # returned a 21–24 Sep bucket labelled as the whole 21–27 week and
-                # was reported as "last week"). Say so in the label.
+                time_label = f"{bucket_start.date()}..{bucket_end.date()}"
+                # A week/month bucket the requested period cuts short holds only
+                # part of that week/month (live: "last week" over 18–24 Sep returned
+                # a 21–24 Sep bucket labelled as the whole 21–27 week). Say so.
                 clip_start = max(bucket_start.date(), period_start.date())
                 clip_end = min(bucket_end.date(), period_end.date())
                 if (clip_start, clip_end) != (bucket_start.date(), bucket_end.date()):
-                    label += f" (PARTIAL {grain}: only {clip_start}..{clip_end})"
+                    time_label += f" (PARTIAL {grain}: only {clip_start}..{clip_end})"
             elif bucket_date:
-                label = bucket_date
-            elif row_dimensions:
-                label = ", ".join(f"{k}={v}" for k, v in row_dimensions.items())
-            else:
-                label = f"{bucket_start.date()}..{bucket_end.date()}"
+                time_label = bucket_date
+            dim_label = ", ".join(
+                f"{k}={v}"
+                for k, v in row_dimensions.items()
+                if not ctx.deps.catalogue.is_time_dimension(k)
+            )
+            label = " | ".join(p for p in (time_label, dim_label) if p) or f"{bucket_start.date()}..{bucket_end.date()}"
             series.append({"label": label, "value": last_value})
         if not artifact_ids:
             return ToolResult(
@@ -1290,6 +1378,21 @@ async def drilldown(
     contract; that's orchestration of the live two-call API, not a new
     heuristic.
     """
+    # Route before a doomed drill: a metric can only break down by a dimension
+    # its own Cube view carries. Drilling refund_count (view refund_events) by
+    # product_title returned "no rows" and the model deferred to a follow-up
+    # (live MS3-99ad433e18) — instead, name the metric(s) whose view DOES support
+    # it. Catalogue-driven; empty snapshot -> no guard (fail-open, Cube decides).
+    supported = ctx.deps.catalogue.supported_dimensions_for(metric_id)
+    if supported and dimension not in supported:
+        alts = ctx.deps.catalogue.metrics_supporting_dimension(dimension)
+        redirect = f"; use one of: {', '.join(alts)}" if alts else "; no available metric supports it"
+        return ToolResult(
+            success=False,
+            summary=f"{metric_id} does not support a breakdown by {dimension}{redirect}",
+            error_code="UNSUPPORTED_QUERY",
+            retryable=False,
+        )
     parent_args = build_metrics_query_args(
         measure=metric_id,
         start=period_start.date().isoformat(),
