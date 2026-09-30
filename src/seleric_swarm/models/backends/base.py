@@ -20,6 +20,9 @@ class BackendForecast:
     upper: float
     method: str
     warnings: list[str] = field(default_factory=list)
+    # Evidence about the method itself (e.g. per-candidate backtest MAE) that
+    # travels with the number so a reader can see why this method was used.
+    diagnostics: dict[str, object] = field(default_factory=dict)
 
 
 class Forecaster(Protocol):

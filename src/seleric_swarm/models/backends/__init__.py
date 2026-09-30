@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from seleric_swarm.models.backends.auto import AutoBackend
 from seleric_swarm.models.backends.base import BackendForecast, Forecaster
 from seleric_swarm.models.backends.conformal import ConformalBackend
 from seleric_swarm.models.backends.holt import HoltBackend
@@ -13,6 +14,7 @@ _BACKENDS: dict[str, Forecaster] = {
     "statsforecast": StatsforecastBackend(),
     "seasonal_naive": SeasonalNaiveBackend(),
 }
+_BACKENDS["auto"] = AutoBackend(_BACKENDS)
 
 
 def get_backend(name: str) -> Forecaster:

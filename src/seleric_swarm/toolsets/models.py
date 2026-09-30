@@ -44,6 +44,7 @@ from seleric_swarm.models.service import (
 from seleric_swarm.toolsets import policy_config as policy
 
 _registry_cache: dict[str, object] = {}
+_WILDCARD_TARGET = "*"
 
 
 def _registry():
@@ -91,9 +92,13 @@ def _load_evidence(
 
 
 def _approved_model_for(target: str, *, model_type: str) -> ModelRecord | None:
-    for record in _registry().for_target(target):  # type: ignore[attr-defined]
-        if record.status == "approved" and record.model_type == model_type:
-            return record
+    # An exact per-metric entry always wins; the wildcard ("*") generic model is
+    # only the fallback for metrics that have no dedicated, individually
+    # back-tested model.
+    for wanted in (target, _WILDCARD_TARGET):
+        for record in _registry().for_target(wanted):  # type: ignore[attr-defined]
+            if record.status == "approved" and record.model_type == model_type:
+                return record
     return None
 
 
@@ -102,9 +107,18 @@ def _fallback_record(record: ModelRecord) -> ModelRecord | None:
     if not record.fallback:
         return None
     fb = _registry().get(record.fallback)  # type: ignore[attr-defined]
-    if fb is None or fb.status != "approved" or fb.target != record.target:
+    if fb is None or fb.status != "approved" or fb.target not in (record.target, _WILDCARD_TARGET):
         return None
     return fb
+
+
+def _diagnostics_note(diagnostics: dict[str, object]) -> str:
+    if not diagnostics:
+        return ""
+    return (
+        f"; method chosen by backtest ({diagnostics.get('selected')}, "
+        f"MAE {diagnostics.get('backtest_mae')}, {diagnostics.get('origins')} origins)"
+    )
 
 
 def _write_prediction(
@@ -115,6 +129,7 @@ def _write_prediction(
     value: float,
     interval: tuple[float, float] | None,
     evidence_ids: list[str],
+    diagnostics: dict[str, object] | None = None,
 ) -> str:
     prediction = PredictionArtifact(
         model_id=record.model_id,
@@ -127,6 +142,7 @@ def _write_prediction(
         # nothing from the target period — the series ends before the horizon
         # begins. Asserted from how the evidence is assembled, not assumed.
         feature_leakage_checked=True,
+        method_diagnostics=diagnostics or None,
     )
     artifact = ctx.deps.artifact_store.put(
         Artifact(
@@ -230,6 +246,7 @@ async def forecast(
         value=result.value,
         interval=result.interval,
         evidence_ids=evidence_ids,
+        diagnostics=result.diagnostics,
     )
     return ToolResult(
         success=True,
@@ -238,6 +255,7 @@ async def forecast(
             f"{target} forecast +{horizon_days}d: {result.value:.6g} "
             f"[{result.interval[0]:.6g}, {result.interval[1]:.6g}] "
             f"({result.method}, {result.history_points} history points)"
+            + _diagnostics_note(result.diagnostics)
         ),
         provenance=ArtifactProvenance(
             evidence_ids=list(evidence_ids),

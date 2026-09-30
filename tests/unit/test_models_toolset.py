@@ -70,7 +70,7 @@ def _ev(day: int, value: float | None, *, metric: str = _APPROVED_METRIC) -> Evi
     return EvidenceArtifact(
         metric_id=metric,
         grain="day",
-        as_of=datetime(2026, 9, 20, tzinfo=UTC),
+        as_of=datetime(2027, 1, 1, tzinfo=UTC),
         period_start=stamp,
         period_end=stamp,
         value=value,
@@ -132,9 +132,9 @@ async def test_forecast_refuses_once_prediction_budget_exhausted():
 
 
 @pytest.mark.asyncio
-async def test_forecast_refuses_a_metric_with_no_approved_model():
-    """The registry gate. metric.cpm is a real catalogue id with no registered
-    model — the answer is a refusal, not a number from a generic fallback."""
+async def test_unbacked_metric_with_thin_history_is_refused_by_the_generic_model():
+    """metric.cpm has no dedicated model, so the wildcard generic model applies --
+    and it refuses on history too short to backtest rather than guessing."""
     store = InMemoryArtifactStore()
     ids = _store_series(store, metric=_UNBACKED_METRIC)
     ctx = FakeRunContext(_deps(store))
@@ -143,8 +143,42 @@ async def test_forecast_refuses_a_metric_with_no_approved_model():
 
     assert result.success is False
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
-    assert "policy:no_approved_model" in result.warnings
+    assert "policy:thin_history" in result.warnings
     assert result.artifact_ids == []
+
+
+@pytest.mark.asyncio
+async def test_unbacked_metric_with_enough_history_gets_a_backtested_generic_forecast():
+    store = InMemoryArtifactStore()
+    ids = _store_series(store, days=60, metric=_UNBACKED_METRIC)
+    ctx = FakeRunContext(_deps(store))
+
+    result = await models.forecast(ctx, ids, horizon_days=3)
+
+    assert result.success, result.summary
+    payload = store.get(result.artifact_ids[0]).payload
+    assert payload["model_id"] == "forecast.generic.daily"
+    assert payload["confidence_interval"] is not None
+    diag = payload["method_diagnostics"]
+    assert diag["selected"] in diag["backtest_mae"]
+    assert "seasonal_naive" in diag["backtest_mae"]  # the benchmark is always scored
+
+
+@pytest.mark.asyncio
+async def test_exact_metric_entry_wins_over_the_generic_model():
+    store = InMemoryArtifactStore()
+    ids = _store_series(store, days=60)
+    result = await models.forecast(FakeRunContext(_deps(store)), ids, horizon_days=3)
+    assert store.get(result.artifact_ids[0]).payload["model_id"] == "forecast.net_sales.daily"
+
+
+@pytest.mark.asyncio
+async def test_generic_model_refuses_a_constant_series():
+    store = InMemoryArtifactStore()
+    ids = _store_series(store, days=60, metric=_UNBACKED_METRIC, slope=0.0)
+    result = await models.forecast(FakeRunContext(_deps(store)), ids, horizon_days=3)
+    assert result.success is False
+    assert "policy:thin_history" in result.warnings
 
 
 @pytest.mark.asyncio

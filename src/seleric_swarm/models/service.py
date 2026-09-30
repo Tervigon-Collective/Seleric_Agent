@@ -32,6 +32,7 @@ If the evidence cannot support a forecast, this refuses — it does not guess.
 from __future__ import annotations
 
 import math
+import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -46,6 +47,12 @@ if TYPE_CHECKING:
     from seleric_swarm.agent.artifacts import EvidenceArtifact
 
 MODEL_VERSION = "1"
+# Points further than this many robust sigmas (1.4826 * MAD) from the series median
+# are treated as data errors, not signal: a -1M "net sales" day in the source would
+# otherwise be fitted straight into the trend (seen on real data, 2026-09-28).
+OUTLIER_ROBUST_SIGMAS = 8.0
+# Intermittent demand needs a different method family; refuse rather than mis-forecast.
+MAX_ZERO_SHARE = 0.4
 
 
 @dataclass
@@ -58,6 +65,7 @@ class ForecastResult:
     history_points: int
     method: str
     warnings: list[str] = field(default_factory=list)
+    diagnostics: dict[str, object] = field(default_factory=dict)
 
 
 class ForecastUnavailable(Exception):
@@ -67,6 +75,29 @@ class ForecastUnavailable(Exception):
     def __init__(self, message: str, *, warning: str) -> None:
         super().__init__(message)
         self.warning = warning
+
+
+def _replace_outliers(values: list[float]) -> tuple[list[float], int]:
+    """Replace points beyond ``OUTLIER_ROBUST_SIGMAS`` robust sigmas of the median.
+
+    Replacement is the (already cleaned) value 7 days earlier -- the same weekday --
+    or the median when there is no such point. Clamping to the limit is not enough:
+    on a wide series the limit can itself be far from any real observation.
+    """
+    if len(values) < 8:
+        return values, 0
+    med = statistics.median(values)
+    mad = statistics.median(abs(v - med) for v in values)
+    if mad == 0:
+        return values, 0
+    limit = OUTLIER_ROBUST_SIGMAS * 1.4826 * mad
+    out = list(values)
+    replaced = 0
+    for i, v in enumerate(values):
+        if abs(v - med) > limit:
+            out[i] = out[i - 7] if i >= 7 else med
+            replaced += 1
+    return out, replaced
 
 
 def forecast_series(
@@ -85,15 +116,45 @@ def forecast_series(
             f"horizon_days must be >= 1, got {horizon_days}", warning=policy.WARN_INVALID_HORIZON
         )
 
-    ordered = sorted(
-        (e for e in evidence if e.value is not None), key=lambda e: e.period_start
-    )
+    warnings: list[str] = []
+    usable = [e for e in evidence if e.value is not None]
+    # A period that has not finished yet (its day is the evidence's as_of day or
+    # later) is a partial total, not an observation: forecasting from it biases the
+    # level low. Drop it and say so.
+    complete = [e for e in usable if e.period_start.date() < e.as_of.date()]
+    if len(complete) < len(usable):
+        warnings.append(
+            f"excluded {len(usable) - len(complete)} in-progress period(s) at or after the "
+            "as-of date"
+        )
+    ordered = sorted(complete, key=lambda e: e.period_start)
     values = [float(e.value) for e in ordered]  # type: ignore[arg-type]
 
     if len(values) < policy.MIN_OBSERVATION_ROWS:
         raise ForecastUnavailable(
             f"{len(values)} usable point(s); forecasting needs at least "
             f"{policy.MIN_OBSERVATION_ROWS}",
+            warning=policy.WARN_THIN_HISTORY,
+        )
+
+    values, clipped = _replace_outliers(values)
+    if clipped:
+        warnings.append(
+            f"{clipped} extreme point(s) (> {OUTLIER_ROBUST_SIGMAS:g} robust sigma from the "
+            "median) were replaced by the prior same-weekday value before fitting; the source "
+            "history likely contains data errors"
+        )
+
+    if len(set(values)) < 2:
+        raise ForecastUnavailable(
+            "history is constant; there is no variation to forecast from",
+            warning=policy.WARN_THIN_HISTORY,
+        )
+    zero_share = sum(1 for v in values if v == 0) / len(values)
+    if backend == "auto" and zero_share > MAX_ZERO_SHARE:
+        raise ForecastUnavailable(
+            f"{zero_share:.0%} of history points are zero; intermittent series are not "
+            "supported by the generic forecaster",
             warning=policy.WARN_THIN_HISTORY,
         )
 
@@ -104,9 +165,16 @@ def forecast_series(
         )
     point = raw.point
     method = raw.method
-    low, high = round(raw.lower, 6), round(raw.upper, 6)
+    low, high = raw.lower, raw.upper
 
-    warnings: list[str] = list(raw.warnings)
+    non_negative = min(values) >= 0
+    if non_negative and (low < 0 or point < 0):
+        # Counts, sums and rates that have never been negative cannot be negative.
+        point, low, high = max(point, 0.0), max(low, 0.0), max(high, 0.0)
+        warnings.append("lower bound clamped at 0: the metric has never been negative")
+
+    warnings.extend(raw.warnings)
+    low, high = round(low, 6), round(high, 6)
     if low == high:
         # An interval that collapses to a point reads as certainty. It happens
         # when the model fits the history almost exactly — a perfectly linear
@@ -128,6 +196,7 @@ def forecast_series(
         history_points=len(values),
         method=method,
         warnings=warnings,
+        diagnostics=dict(raw.diagnostics),
     )
 
 

@@ -26,7 +26,7 @@ def _series(n: int = 40) -> list[EvidenceArtifact]:
             EvidenceArtifact(
                 metric_id="metric.net_sales",
                 grain="day",
-                as_of=datetime(2026, 9, 20, tzinfo=UTC),
+                as_of=datetime(2027, 1, 1, tzinfo=UTC),
                 period_start=stamp,
                 period_end=stamp,
                 value=100.0 + i * 0.5 + weekly + (i % 3),
@@ -146,3 +146,39 @@ def test_conformal_wrapper_declines_to_calibrate_on_short_history():
 def test_unknown_inner_backend_with_conformal_suffix_refuses():
     with pytest.raises(ForecastUnavailable):
         get_backend("nope+conformal")
+
+
+def _with_values(values, as_of=datetime(2027, 1, 1, tzinfo=UTC)):
+    out = []
+    for i, v in enumerate(values):
+        stamp = datetime(2026, 8, 1, tzinfo=UTC) + timedelta(days=i)
+        out.append(
+            EvidenceArtifact(
+                metric_id="metric.net_sales", grain="day", as_of=as_of, period_start=stamp,
+                period_end=stamp, value=v, source_query={"measure": "metric.net_sales"},
+            )
+        )
+    return out
+
+
+def test_extreme_outlier_is_replaced_not_fitted():
+    base = [100.0 + (i % 7) * 5 + i * 0.2 for i in range(50)]
+    dirty = [*base[:-2], -1_020_876.0, base[-1]]  # the real 2026-09-28 net_sales glitch
+    result = forecast_series(_with_values(dirty), horizon_days=7, model_id="m")
+    assert any("replaced by the prior same-weekday" in w for w in result.warnings)
+    assert result.value > 0
+    assert abs(result.value - forecast_series(_with_values(base), horizon_days=7, model_id="m").value) < 60
+
+
+def test_in_progress_period_is_excluded():
+    vals = [100.0 + (i % 7) for i in range(40)]
+    as_of = datetime(2026, 8, 1, tzinfo=UTC) + timedelta(days=39)  # last point is 'today'
+    result = forecast_series(_with_values(vals, as_of=as_of), horizon_days=3, model_id="m")
+    assert result.history_points == 39
+    assert any("in-progress" in w for w in result.warnings)
+
+
+def test_never_negative_metric_is_not_forecast_below_zero():
+    vals = [max(0.0, 5.0 - i * 0.3) + (i % 3) * 0.1 for i in range(40)]  # decaying towards 0
+    result = forecast_series(_with_values(vals), horizon_days=14, model_id="m")
+    assert result.interval[0] >= 0 and result.value >= 0

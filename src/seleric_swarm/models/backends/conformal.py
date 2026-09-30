@@ -23,6 +23,40 @@ MIN_ERRORS = 8
 COVERAGE = 0.95
 
 
+def rolling_errors(
+    backend: Forecaster,
+    values: list[float],
+    horizon_days: int,
+    *,
+    season_length: int | None,
+    max_origins: int,
+) -> list[float]:
+    """Absolute errors of ``backend`` at ``horizon_days`` over the latest origins.
+
+    Each origin trains on ``values[:cut]`` only, so nothing from the target
+    period leaks into its own forecast. Origins the backend refuses are skipped.
+    """
+    from seleric_swarm.models.service import ForecastUnavailable
+
+    last_cut = len(values) - horizon_days  # origin whose target is the final point
+    first_cut = max(MIN_TRAIN, last_cut - (max_origins - 1))
+    errors: list[float] = []
+    for cut in range(first_cut, last_cut + 1):
+        try:
+            f = backend.forecast(values[:cut], horizon_days, season_length=season_length)
+        except ForecastUnavailable:
+            continue
+        errors.append(abs(f.point - values[cut + horizon_days - 1]))
+    return errors
+
+
+def conformal_half_width(errors: list[float]) -> float:
+    """Finite-sample-corrected ``COVERAGE`` quantile of absolute errors."""
+    ordered = sorted(errors)
+    rank = min(len(ordered), math.ceil((len(ordered) + 1) * COVERAGE))
+    return ordered[rank - 1]
+
+
 class ConformalBackend:
     def __init__(self, inner: Forecaster) -> None:
         self._inner = inner
@@ -31,19 +65,11 @@ class ConformalBackend:
     def forecast(
         self, values: list[float], horizon_days: int, *, season_length: int | None = None
     ) -> BackendForecast:
-        from seleric_swarm.models.service import ForecastUnavailable
-
         base = self._inner.forecast(values, horizon_days, season_length=season_length)
 
-        last_cut = len(values) - horizon_days  # origin whose target is the final point
-        first_cut = max(MIN_TRAIN, last_cut - (MAX_ORIGINS - 1))
-        errors: list[float] = []
-        for cut in range(first_cut, last_cut + 1):
-            try:
-                f = self._inner.forecast(values[:cut], horizon_days, season_length=season_length)
-            except ForecastUnavailable:
-                continue
-            errors.append(abs(f.point - values[cut + horizon_days - 1]))
+        errors = rolling_errors(
+            self._inner, values, horizon_days, season_length=season_length, max_origins=MAX_ORIGINS
+        )
 
         if len(errors) < MIN_ERRORS:
             return BackendForecast(
@@ -61,9 +87,7 @@ class ConformalBackend:
                 ],
             )
 
-        errors.sort()
-        rank = min(len(errors), math.ceil((len(errors) + 1) * COVERAGE))
-        q = errors[rank - 1]
+        q = conformal_half_width(errors)
         return BackendForecast(
             point=base.point,
             lower=base.point - q,

@@ -103,3 +103,6 @@ class PredictionArtifact(BaseModel):
     confidence_interval: tuple[float, float] | None = None
     evidence_ids: list[str] = Field(min_length=1)
     feature_leakage_checked: bool
+    # How the method was chosen/scored (e.g. per-candidate backtest MAE for the
+    # generic forecaster). None for models validated ahead of time.
+    method_diagnostics: dict[str, object] | None = None

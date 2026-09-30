@@ -178,6 +178,35 @@ models:
     drift_policy: warn
     fallback: forecast.spend.daily
 
+  # Generic daily forecaster for ANY metric without a dedicated entry above.
+  # target "*" is only consulted after an exact-target lookup fails
+  # (toolsets/models.py::_approved_model_for). Unlike the entries above it is
+  # not back-tested ahead of time: models/backends/auto.py backtests
+  # {holt, statsforecast, seasonal_naive} on the requested series at request
+  # time, picks the lowest-MAE method (seasonal-naive on ties), builds a
+  # conformal interval from that method's own errors, and records the scores in
+  # PredictionArtifact.method_diagnostics. It refuses on <~30 daily points,
+  # constant series, or >40% zeros. `backtest_available: false` is deliberate:
+  # the evidence is per-request, not registry-level.
+  - id: forecast.generic.daily
+    version: "1"
+    type: forecast
+    status: approved
+    owner: profile_c
+    target: "*"
+    backend: auto
+    forecast_horizon_days: 14
+    last_validated_at: "2026-09-29"
+    backtest_available: false
+    validation:
+      metric: per_request_rolling_origin_mae
+      method: auto_select_with_conformal_interval
+    applicability:
+      minimum_history_days: 30
+      supports_seasonality: true
+    drift_policy: warn
+    fallback: null
+
   # LTV and propensity are deliberately absent, not forgotten.
   #
   # Both need a labelled training set and a feature store; this repo has

@@ -36,7 +36,7 @@ def _agent_ids(profiles: DomainHealthProfiles) -> dict[str, str]:
     return out
 
 
-async def export(days: int, brand_id: str, out: Path) -> int:
+async def export(days: int, brand_id: str, out: Path, *, all_metrics: bool = False) -> int:
     from seleric_swarm.bootstrap import build_runtime
 
     load_dotenv(repo_root() / ".env")
@@ -49,7 +49,8 @@ async def export(days: int, brand_id: str, out: Path) -> int:
     lookback = (date.fromisoformat(end) - date.fromisoformat(start)).days + 5
 
     rows: list[tuple[str, str, float]] = []
-    for mid in TARGETS:
+    targets = [m.id for m in runtime.metrics.all()] if all_metrics else list(TARGETS)
+    for mid in targets:
         definition = runtime.metrics.get(mid)
         if definition is None:
             print(f"  ! {mid}: not in metric registry, skipping")
@@ -79,9 +80,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=365)
     ap.add_argument("--brand-id", default=DEFAULT_BRAND_ID)
+    ap.add_argument("--all", action="store_true", help="every catalogue metric, not just the 4")
     ap.add_argument("--out", type=Path, default=Path("history.csv"))
     a = ap.parse_args()
-    asyncio.run(export(a.days, str(a.brand_id), a.out))
+    asyncio.run(export(a.days, str(a.brand_id), a.out, all_metrics=a.all))
 
 
 if __name__ == "__main__":
