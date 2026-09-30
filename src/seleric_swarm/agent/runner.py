@@ -982,7 +982,14 @@ async def run_v3_mission(
     # so the alias check runs for every intent. A verified YAML alias always takes
     # the deterministic Cube path; no model needed.
     alias_def = _lookup_alias(query)
-    if intent == "conversation" and alias_def is None:
+    # Small talk gets no tools at all. Exception: an elliptical follow-up
+    # (depends_on_prior) continues a prior analytical turn — "yes" confirming a
+    # pending breakdown, "and for brand X?" — and stripping its tools made the
+    # continuation impossible (live 2026-09-30, thread_14d713b4: "yes" narrated
+    # "Running queries..." through final_result and failed
+    # INSUFFICIENT_EVIDENCE). Tool availability is not tool invocation: true
+    # small talk can still be answered without calling anything.
+    if intent == "conversation" and alias_def is None and classification.depends_on_prior is not True:
         deps.call_counts[CONVERSATIONAL] = 1  # small talk: the agent gets no tools at all
     started = time.perf_counter()
     with mission_trace(

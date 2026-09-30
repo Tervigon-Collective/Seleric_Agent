@@ -146,10 +146,10 @@ metrics:
     domain: performance
 
   - id: metric.atc_rate
-    version: 1
+    version: 2
     owner: funnel
     catalogue_metric: session_atc_rate
-    description: Session add-to-cart rate on the website funnel.
+    description: Session add-to-cart rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.
     formula: atc_sessions / sessions
     depends_on: [session_add_to_carts]
     direction_bad: down
@@ -158,24 +158,26 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+    aliases: [add to cart rate, atc rate, funnel add to cart step, funnel step 2]
 
   - id: metric.sessions
-    version: 2
+    version: 3
     owner: funnel
     catalogue_metric: web_sessions
-    description: Snowplow website sessions (web_sessions on serve.session_funnel). Sliceable by channel, device, UTM, geo, landing page. Previously registered as 'sessions' which does not exist in the catalogue.
+    description: Snowplow website sessions (web_sessions on serve.session_funnel). Base metric for funnel decomposition — all funnel rates divide by this. Sliceable by channel, device, UTM, geo, landing page. Previously registered as 'sessions' which does not exist in the catalogue.
     formula: count(sessions)
     direction_bad: down
     frontier: true
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+    aliases: [web sessions, funnel base, sessions base]
 
   - id: metric.pdp_view_rate
-    version: 1
+    version: 2
     owner: funnel
     catalogue_metric: session_pdp_rate
-    description: PDP view rate on the website funnel.
+    description: PDP view rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.
     formula: pdp_sessions / sessions
     direction_bad: down
     frontier: true
@@ -183,12 +185,13 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+    aliases: [product view rate, pdp rate, funnel product view step, funnel step 1]
 
   - id: metric.checkout_rate
-    version: 1
+    version: 2
     owner: funnel
     catalogue_metric: session_checkout_rate
-    description: Checkout start rate on the website funnel.
+    description: Checkout start rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.
     formula: checkout_sessions / sessions
     direction_bad: down
     frontier: true
@@ -196,12 +199,13 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+    aliases: [checkout rate, funnel checkout step, funnel step 3]
 
   - id: metric.purchase_cvr
-    version: 2
+    version: 3
     owner: funnel
     catalogue_metric: session_conversion_rate
-    description: Purchase conversion rate — sessions that completed a purchase, expressed as a ratio (purchased_sessions / sessions). Sliceable by channel, device, geo, ad on serve.session_funnel.
+    description: Purchase conversion rate — sessions that completed a purchase, expressed as a ratio (purchased_sessions / sessions). Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count. Sliceable by channel, device, geo, ad on serve.session_funnel.
     formula: purchased_sessions / sessions
     direction_bad: down
     frontier: false
@@ -209,6 +213,7 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+    aliases: [purchase conversion rate, conversion rate, funnel purchase step, funnel step 4]
     # session_purchase_rate was the old Cube measure name; it no longer exists
     # in the catalogue. session_conversion_rate on session_funnel is the current
     # equivalent (same formula, richer dimension set). Version bumped to track
@@ -928,22 +933,23 @@ metrics:
     domain: funnel
 
   - id: metric.funnel_purchases
-    version: 1
+    version: 2
     owner: funnel
     catalogue_metric: funnel_purchases
-    description: Last-touch attributed orders on the channel-day funnel.
+    description: Last-touch attributed orders on the channel-day funnel (COUNT, NOT a rate). For funnel decomposition, use metric.purchase_cvr (session_conversion_rate) instead.
     formula: count(funnel_purchases)
     direction_bad: down
     unit: count
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+    aliases: [funnel purchases, attributed orders]
 
   - id: metric.session_add_to_carts
-    version: 1
+    version: 2
     owner: funnel
     catalogue_metric: session_add_to_carts
-    description: Sessions that added an item to cart.
+    description: Sessions that added an item to cart (COUNT, NOT a rate). For funnel decomposition, use metric.atc_rate (session_atc_rate) instead.
     formula: count(session_add_to_carts)
     direction_bad: down
     frontier: true
@@ -951,6 +957,7 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+    aliases: [add to cart sessions, atc sessions]
 
   - id: metric.session_atc_to_checkout_rate
     version: 1
@@ -966,16 +973,17 @@ metrics:
     domain: funnel
 
   - id: metric.session_checkout_steps
-    version: 1
+    version: 2
     owner: funnel
     catalogue_metric: session_checkout_steps
-    description: Checkout step events recorded across sessions.
+    description: Checkout step events recorded across sessions (COUNT of events, NOT a rate). For funnel decomposition, use metric.checkout_rate (session_checkout_rate) instead.
     formula: count(session_checkout_steps)
     direction_bad: down
     unit: count
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+    aliases: [checkout steps, checkout events]
 
   - id: metric.session_collection_views
     version: 1
@@ -990,16 +998,17 @@ metrics:
     domain: funnel
 
   - id: metric.session_product_views
-    version: 1
+    version: 2
     owner: funnel
     catalogue_metric: session_product_views
-    description: Product detail page views at session grain.
+    description: Product detail page views at session grain (COUNT of sessions with PDP view, NOT a rate). For funnel decomposition, use metric.pdp_view_rate (session_pdp_rate) instead.
     formula: count(session_product_views)
     direction_bad: down
     unit: count
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
+    aliases: [pdp views, product view sessions]
 
   - id: metric.session_remove_from_carts
     version: 1

@@ -11,6 +11,10 @@ is instructing the model to use it, not adding a new tool.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+import pytest
+
 from seleric_swarm.agent.instructions import INSTRUCTIONS
 
 
@@ -195,3 +199,74 @@ def test_limitations_and_evidence_ids_are_named_as_structured_fields():
     lowered = INSTRUCTIONS.lower()
     assert "these are\n  tool arguments, not text" in lowered
     assert "never restate either one inside final_response" in lowered
+
+
+# --- dynamic instructions: the tool-availability announcement ---------------
+# Live 2026-09-30 (thread_14d713b4): conversation missions withdraw every tool
+# via PrepareTools, but nothing told the model — it kept following the "query
+# the metric first" instructions with nothing to call and narrated its work
+# through final_result(status="running") until revisions exhausted.
+
+
+def _system_prompt_text(messages) -> str:
+    from pydantic_ai.messages import ModelRequest
+
+    # pydantic-ai renders @agent.instructions (static + dynamic) into
+    # ModelRequest.instructions, not into SystemPromptPart parts.
+    return "\n".join(m.instructions or "" for m in messages if isinstance(m, ModelRequest))
+
+
+async def _prompt_for_run(call_counts: dict) -> str:
+    """Run the agent once on a FunctionModel and return its system prompt."""
+    import contextlib
+
+    from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    from seleric_swarm.agent.agent import build_seleric_agent
+    from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
+    from seleric_swarm.conversations.contracts import ContextBundle, Principal
+    from seleric_swarm.state.artifacts import InMemoryArtifactStore
+
+    prompts: list[str] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        prompts.append(_system_prompt_text(messages))
+        return ModelResponse(parts=[TextPart("You're welcome!")])
+
+    deps = SelericDeps(
+        mission_id="MS3-instr",
+        as_of=datetime(2026, 9, 30, tzinfo=UTC),
+        principal=Principal(principal_id="p", workspace_id="w", user_id="u"),
+        thread_id="t",
+        run_id="r",
+        trace_id="tr",
+        context=ContextBundle(),
+        mcp_client=NullMcpClient(),
+        artifact_store=InMemoryArtifactStore(),
+        limits=ExecutionLimits(),
+        call_counts=call_counts,
+    )
+    # The plain-text reply is not a valid MissionResult; only the rendered
+    # system prompt is under test here.
+    with contextlib.suppress(Exception):
+        await build_seleric_agent(model=FunctionModel(model)).run("thanks!", deps=deps)
+    assert prompts, "the model was never asked for a response"
+    return prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_conversational_turn_is_told_it_has_no_tools() -> None:
+    from seleric_swarm.agent.agent import CONVERSATIONAL
+
+    prompt = await _prompt_for_run({CONVERSATIONAL: 1})
+    lowered = prompt.lower()
+    assert "no tools are available this turn" in lowered
+    assert "never 'running'" in lowered
+    assert "do not claim you ran or will run" in lowered
+
+
+@pytest.mark.asyncio
+async def test_normal_turn_is_not_told_that_tools_are_missing() -> None:
+    prompt = await _prompt_for_run({})
+    assert "NO TOOLS ARE AVAILABLE THIS TURN" not in prompt

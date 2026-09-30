@@ -58,6 +58,7 @@ COPY pyproject.toml README.md ./
 COPY --from=ui-builder /ui/dist ./office-ui/dist
 
 RUN mkdir -p /app/.data/attachments \
+        /app/.data/domain_health_snapshots \
     && chown -R seleric:seleric /app/.data
 
 ENV PATH="/app/.venv/bin:$PATH" \

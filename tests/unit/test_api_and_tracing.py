@@ -40,7 +40,11 @@ def test_health_and_ping_and_mission(runtime, monkeypatch):
     )
     assert created.status_code == 200
     mission = created.json()
-    assert mission["status"] in {"completed", "partial"}
+    # No LLM is configured in this suite, so the stub model's zero-tool
+    # "partial" result is rejected by the preamble gate (live 2026-09-30) and
+    # the mission ends failed/INSUFFICIENT_EVIDENCE — what matters here is
+    # that the pipeline ran end-to-end and returned a terminal status.
+    assert mission["status"] in {"completed", "partial", "failed"}
     mission_id = mission["mission_id"]
     assert mission_id.startswith("MS3-")
     fetched = client.get(f"/v1/missions/{mission_id}")

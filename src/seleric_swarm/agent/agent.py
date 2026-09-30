@@ -185,6 +185,35 @@ def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDep
         return pad.render() if pad is not None else ""
 
     @agent.instructions
+    def _tool_availability(ctx: RunContext[SelericDeps]) -> str:
+        # Live 2026-09-30 (thread_14d713b4, 2 failed runs): conversation-class
+        # missions withdraw every tool via PrepareTools (_withdraw_data_tools),
+        # but the model was never told — it kept following the "query the metric
+        # first" instructions with nothing to call and used final_result as a
+        # progress channel (status="running", "Running queries..."). The
+        # validator then rejected it into re-running the same tool-less agent
+        # until revisions exhausted (INSUFFICIENT_EVIDENCE). Announce the tool
+        # state so the model answers instead of narrating work it cannot do.
+        counts = getattr(ctx.deps, "call_counts", None)
+        if not counts or not counts.get(CONVERSATIONAL):
+            return ""
+        return (
+            "\n\n[tool status] NO TOOLS ARE AVAILABLE THIS TURN — this is a "
+            "conversational turn, and final_result is the only call you can "
+            "make. Therefore:\n"
+            "- Answer the user's message directly in final_response: a real "
+            "reply, never a plan, progress note, or promise of work.\n"
+            "- Use a terminal status — 'completed' for a normal reply, "
+            "'failed' only if the message cannot be answered at all. Never "
+            "'running'.\n"
+            "- You cannot fetch metrics here. Do not claim you ran or will run "
+            "queries, do not restate prior figures as fresh results, and never "
+            "invent numbers. If the message genuinely needs business data, say "
+            "plainly what you would need and ask the user to send it as a data "
+            "question."
+        )
+
+    @agent.instructions
     def _output_contract(ctx: RunContext[SelericDeps]) -> str:
         # Registered last so it lands at the very end of the composed prompt,
         # after the capability manifest and the scratchpad. Position is the

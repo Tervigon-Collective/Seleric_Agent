@@ -59,6 +59,14 @@ def _output(final_response: str) -> dict[str, object]:
 async def test_streamed_deltas_reconstruct_final_answer() -> None:
     model = TestModel(custom_output_args=_output("a valid streamed answer"))
     agent = Agent(model=model, deps_type=SelericDeps, output_type=MissionResult)
+
+    # A completed mission must have done tool work first — the zero-tool
+    # final_result preamble gate (live 2026-09-30) rejects a zero-tool
+    # completed result, so the fixture runs one real tool like production.
+    @agent.tool_plain
+    def search_semantics() -> str:
+        return "metric found"
+
     chunks: list[str] = []
 
     def on_stream(kind: str, text: str) -> None:

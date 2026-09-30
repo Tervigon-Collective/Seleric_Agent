@@ -161,6 +161,15 @@ async def test_run_validated_mission_passes_through_a_valid_result() -> None:
         }
     )
     agent = Agent(model=model, deps_type=SelericDeps, output_type=MissionResult)
+
+    # A completed mission must have done tool work first: the zero-tool
+    # final_result preamble gate (live 2026-09-30) rejects a completed result
+    # whose trace shows only the final_result call, so the fixture runs one
+    # real tool like a production answer would.
+    @agent.tool_plain
+    def search_semantics() -> str:
+        return "metric found"
+
     deps = _deps(limits=ExecutionLimits(max_validation_revisions=1))
     result = await run_validated_mission(agent, deps, "hello")
     assert result.status == "completed"
@@ -382,3 +391,89 @@ def test_validate_accepts_the_same_answer_in_plain_business_language() -> None:
         deps=_deps(artifact_store=store),
     )
     assert outcome.ok
+
+
+# --- zero-tool preamble gate ------------------------------------------------
+# Live 2026-09-30 (MS3-96688ff682): final_result was the model's FIRST and only
+# step — status="completed", 0 evidence — and every other gate was blind: the
+# status is terminal, the text is non-placeholder, and score() short-circuits
+# PASS when no artifacts exist.
+
+
+@pytest.mark.parametrize("status", ["completed", "partial"])
+def test_validate_rejects_a_zero_tool_preamble(status: str) -> None:
+    outcome = EvidenceValidator().validate(
+        _result(
+            status=status,
+            final_response="Let me resolve the metrics now.",
+            trace={"steps": [{"kind": "tool_call", "tool": "final_result", "seq": 1}]},
+        ),
+        deps=_deps(),
+    )
+    assert not outcome.ok
+    # REVISE, not REJECT: the model gets sent back to do the tool work.
+    assert not outcome.rejected
+    assert "0 tool calls" in (outcome.reason or "")
+    assert "final_result was called before any other tool" in (outcome.reason or "")
+
+
+def test_validate_preamble_gate_fails_open_without_steps() -> None:
+    """Legacy/empty traces carry no steps; fail open rather than brick runs."""
+    for trace in ({}, {"steps": []}):
+        outcome = EvidenceValidator().validate(
+            _result(final_response="Conversion was 2.1% in Q3.", trace=trace),
+            deps=_deps(),
+        )
+        assert outcome.ok, f"trace={trace!r} should pass"
+
+
+def test_validate_preamble_gate_lets_real_tool_work_through() -> None:
+    outcome = EvidenceValidator().validate(
+        _result(
+            final_response="The answer is ready.",
+            trace={
+                "steps": [
+                    {"kind": "tool_call", "tool": "query_metrics", "seq": 1},
+                    {"kind": "tool_return", "tool": "query_metrics", "seq": 2},
+                    {"kind": "tool_call", "tool": "final_result", "seq": 3},
+                ]
+            },
+        ),
+        deps=_deps(),
+    )
+    assert outcome.ok
+
+
+def test_validate_preamble_gate_exempts_conversational_turns() -> None:
+    """Zero evidence is legitimate when every tool was withdrawn for small talk."""
+    from seleric_swarm.agent.agent import CONVERSATIONAL
+
+    deps = _deps()
+    deps.call_counts[CONVERSATIONAL] = 1
+    outcome = EvidenceValidator().validate(
+        _result(
+            final_response="You're welcome!",
+            trace={"steps": [{"kind": "tool_call", "tool": "final_result", "seq": 1}]},
+        ),
+        deps=deps,
+    )
+    assert outcome.ok
+
+
+def test_validate_conversational_non_terminal_reason_never_asks_for_tool_work() -> None:
+    """With every tool withdrawn, "do the remaining tool work first" is
+    impossible — that is what burned the revision budget in thread_14d713b4."""
+    from seleric_swarm.agent.agent import CONVERSATIONAL
+
+    deps = _deps()
+    deps.call_counts[CONVERSATIONAL] = 1
+    outcome = EvidenceValidator().validate(
+        _result(status="running", final_response="Running queries..."), deps=deps
+    )
+    assert not outcome.ok
+    assert not outcome.rejected
+    reason = outcome.reason or ""
+    assert "conversational mode" in reason
+    assert "no tool work" in reason
+    assert "conversational answer" in reason
+    assert "do the remaining tool work first" not in reason

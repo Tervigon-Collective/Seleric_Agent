@@ -140,6 +140,13 @@ services:
         condition: service_healthy
       clamav:
         condition: service_healthy
+    # Writer (lifespan refresh loop, main.py) and readers must share one
+    # filesystem: missions execute in the recovery container, which had no
+    # snapshots dir of its own, so the business-state fast path silently
+    # returned None for every mission (live 2026-09-30: "How is the business
+    # doing?" always fell through to the agent loop).
+    volumes:
+      - domain_health:/app/.data/domain_health_snapshots
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/readyz"]
       interval: 15s
@@ -220,6 +227,10 @@ services:
       - default
       - laya_default
       - seleric-mcp_default
+    # Reader: this container executes the missions, so it must see the
+    # snapshots the api container's refresh loop writes (see api volumes).
+    volumes:
+      - domain_health:/app/.data/domain_health_snapshots
     depends_on:
       api:
         condition: service_healthy
@@ -268,6 +279,9 @@ services:
       # in its own container. seleric_api_url also accepts SELERIC_API_BASE_URL
       # for compatibility, but SELERIC_API_URL is the name settings.py binds to.
       SELERIC_API_URL: ${SELERIC_API_URL:-http://api:8000}
+    # Reader of the shared snapshots (see api volumes).
+    volumes:
+      - domain_health:/app/.data/domain_health_snapshots
     depends_on:
       api:
         condition: service_healthy
@@ -276,6 +290,7 @@ services:
 volumes:
   seleric_postgres:
   seleric_minio:
+  domain_health:
 
 networks:
   default:

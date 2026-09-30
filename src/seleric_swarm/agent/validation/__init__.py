@@ -48,6 +48,7 @@ from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
+from seleric_swarm.agent.agent import CONVERSATIONAL
 from seleric_swarm.agent.artifacts import CausalArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.agent.limits import ExecutionBudgetTracker
@@ -158,6 +159,23 @@ class EvidenceValidator:
             # shipping the preamble as the answer. A non-terminal status is the
             # model's own statement that it is not done, so treat it as REVISE
             # (retryable) and send it back to finish the work.
+            counts = deps.call_counts or {}
+            if counts.get(CONVERSATIONAL):
+                # Live 2026-09-30: with every tool withdrawn, "do the remaining
+                # tool work first" is impossible — the revision re-ran the same
+                # tool-less agent until revisions exhausted. Give it a feasible
+                # one instead: reply directly, terminal status.
+                return ValidationOutcome(
+                    ok=False,
+                    reason=(
+                        f"final_result was called with status={result.status!r}, but no "
+                        "tools are available this turn (conversational mode) — there is "
+                        "no tool work to do and 'running' is not a terminal state. "
+                        "Reply directly: final_response = your conversational answer "
+                        "to the user, status='completed' (or 'failed' only if the "
+                        "message cannot be answered at all). Never 'running'."
+                    ),
+                )
             return ValidationOutcome(
                 ok=False,
                 reason=(
@@ -173,6 +191,40 @@ class EvidenceValidator:
             return ValidationOutcome(
                 ok=False,
                 reason="final_response is a placeholder, not an answer; write the real answer",
+            )
+        steps = result.trace.get("steps") if isinstance(result.trace, dict) else None
+        if (
+            steps
+            and result.status in ("completed", "partial")
+            and not result.evidence_ids
+            and not result.finding_ids
+            and not (deps.call_counts or {}).get(CONVERSATIONAL)
+            and all(
+                step.get("tool") == "final_result"
+                for step in steps
+                if step.get("kind") == "tool_call"
+            )
+        ):
+            # Live 2026-09-30 (MS3-96688ff682): the model called final_result
+            # as its FIRST and only step — 0 tool calls, 0 evidence — with
+            # status="completed" and a preamble ("…Let me resolve the metrics
+            # now"). Every other gate was blind: the status is terminal, the
+            # text is non-placeholder, the id-leak check has an empty id-set
+            # with evidence_ids=[], and score() short-circuits to PASS when no
+            # artifacts exist. A data mission that ran no tools has nothing to
+            # report; a promise of future work is not an answer. REVISE so the
+            # model does the work (conversational turns are exempt above —
+            # zero evidence is legitimate there).
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    "final_result was called before any other tool: 0 tool calls and "
+                    "0 evidence, so the response is a plan or progress note, not an "
+                    "answer. Do the tool work first — resolve the metric with "
+                    "get_metric_definitions/search_semantics, fetch the values with "
+                    "query_metrics — then call final_result once with the real answer "
+                    "and its evidence_ids."
+                ),
             )
 
         # -- deterministic prose audits (see validation/answer_audit) --------
