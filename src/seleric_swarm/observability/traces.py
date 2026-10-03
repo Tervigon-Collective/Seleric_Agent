@@ -21,6 +21,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from opentelemetry import trace
+from seleric_swarm.observability.tracing import _langfuse_span
 
 _TRACER_NAME = "seleric.v3.mission"
 
@@ -31,10 +32,15 @@ def mission_trace(mission_id: str, **attributes: Any) -> Iterator[trace.Span]:
     stringified — OTel attributes must be primitives, and callers pass
     things like intent lists that aren't."""
     tracer = trace.get_tracer(_TRACER_NAME)
-    # record_exception/set_status_on_exception default to True -- an
-    # exception raised inside the block is captured on the span and
-    # re-raised, no manual try/except needed here.
-    with tracer.start_as_current_span("mission") as span:
+    inputs = {"query": attributes.get("query")} if attributes.get("query") else None
+    metadata = {"mission_id": mission_id, **attributes}
+    with tracer.start_as_current_span("mission") as span, _langfuse_span(
+        "mission",
+        metadata=metadata,
+        enabled=True,
+        inputs=inputs,
+        run_type="chain",
+    ) as handle:
         span.set_attribute("mission_id", mission_id)
         for key, value in attributes.items():
             if value is None:
@@ -42,4 +48,13 @@ def mission_trace(mission_id: str, **attributes: Any) -> Iterator[trace.Span]:
             if not isinstance(value, (str, bool, int, float)):
                 value = str(value)
             span.set_attribute(key, value)
-        yield span
+        try:
+            yield span
+        finally:
+            try:
+                from langfuse import get_client
+
+                get_client().flush()
+            except Exception:
+                pass
+

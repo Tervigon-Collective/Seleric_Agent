@@ -81,3 +81,29 @@ def test_traced_span_yields_usable_handle_when_disabled():
 def test_traced_span_reraises_body_errors_but_not_langsmith_errors():
     with pytest.raises(ValueError), traced_span("x", {"request_id": "x"}, enabled=True):
         raise ValueError("boom")
+
+
+def test_langfuse_failure_does_not_fail_span(monkeypatch):
+    import langfuse
+
+    def broken_get_client():
+        raise RuntimeError("langfuse connection error")
+
+    monkeypatch.setattr(langfuse, "get_client", broken_get_client)
+    with traced_span("mission.lookup_v1", {"request_id": "x"}, enabled=True) as handle:
+        handle.set_outputs({"result": "ok"})
+        ran = True
+    assert ran
+
+
+def test_langfuse_trace_url_generation():
+    from seleric_swarm.observability.tracing import langfuse_trace_url
+
+    url = langfuse_trace_url(
+        base_url="https://us.cloud.langfuse.com",
+        project_id="cmuspfedt04hxad0ckpve3uez",
+        trace_id="test-trace-123",
+    )
+    assert url == "https://us.cloud.langfuse.com/project/cmuspfedt04hxad0ckpve3uez/traces/test-trace-123"
+    assert langfuse_trace_url(trace_id=None) is None
+

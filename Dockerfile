@@ -10,7 +10,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 # voice-api is small (JWT minting) and lets the API serve POST /v1/voice/token.
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN rm -rf /app/.venv && \
     uv sync --frozen --no-dev --no-editable --extra voice-api
 
 # Voice worker image. livekit-agents is installed here rather than declared in
@@ -74,6 +74,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     EVENT_NOTIFIER_BACKEND=redis \
     BLOB_BACKEND=minio \
     MALWARE_SCANNER_BACKEND=clamav \
+    LANGFUSE_TRACING=true \
     LANGSMITH_TRACING=false \
     ALLOW_WRITE_ACTIONS=false \
     MCP_CONFIG_PATH=config/mcp_servers.yaml \

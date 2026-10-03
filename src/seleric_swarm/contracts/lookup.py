@@ -61,6 +61,8 @@ class DimensionMappingV1(BaseModel):
 class TraceInfo(BaseModel):
     request_id: str
     session_id: str
+    langfuse_trace_id: str | None = None
+    langfuse_trace_url: str | None = None
     langsmith_run_id: str | None = None
     langsmith_run_url: str | None = None
     elapsed_seconds: float | None = None

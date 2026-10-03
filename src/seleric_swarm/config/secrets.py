@@ -19,6 +19,8 @@ from .settings import Settings
 KEY_VAULT_SECRET_NAMES = {
     "AZURE_OPENAI_API_KEY": "seleric-azure-openai-api-key",
     "LANGSMITH_API_KEY": "seleric-langsmith-api-key",
+    "LANGFUSE_SECRET_KEY": "seleric-langfuse-secret-key",
+    "LANGFUSE_PUBLIC_KEY": "seleric-langfuse-public-key",
     "OPENROUTER_API_KEY": "seleric-openrouter-api-key",
 }
 

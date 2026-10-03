@@ -95,3 +95,14 @@ def test_check_readiness_helper(runtime):
     payload = check_readiness(runtime)
     assert payload["ready"] is True
     assert payload["checks"]["mcp"]["ok"] is True
+
+
+def test_mcp_probe_cleans_up_ephemeral_loop_client(runtime):
+    from seleric_swarm.api.ready import _mcp_probe
+
+    _mcp_probe(runtime)
+    for server in runtime.mcp._servers.values():
+        transport = getattr(server, "_transport", None)
+        if transport is not None and hasattr(transport, "_loop_clients"):
+            assert len(transport._loop_clients) == 0
+

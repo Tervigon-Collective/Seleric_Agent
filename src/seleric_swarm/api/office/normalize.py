@@ -257,13 +257,8 @@ _BOARD_STEPS = [
 ]
 
 
-def _langsmith_trace_url(request_id: str | None) -> str | None:
-    """Best-effort deep link into LangSmith for this mission's traces.
-
-    LangSmith runs are tagged with the mission ``request_id`` (see
-    ``observability/tracing.py``), so a project-scoped search by that tag lands
-    on the mission. Returns ``None`` unless LangSmith is configured.
-    """
+def _langfuse_trace_url(request_id: str | None) -> str | None:
+    """Best-effort deep link into Langfuse for this mission's traces."""
     if not request_id:
         return None
     try:
@@ -272,14 +267,35 @@ def _langsmith_trace_url(request_id: str | None) -> str | None:
         s = get_settings()
     except Exception:
         return None
-    project = getattr(s, "langsmith_project", "") or ""
-    org = getattr(s, "langsmith_org", "") or ""
-    if not project:
+    if not (getattr(s, "is_langfuse_configured", False) or getattr(s, "langfuse_project_id", "")):
+        project = getattr(s, "langsmith_project", "") or ""
+        if project:
+            org = getattr(s, "langsmith_org", "") or ""
+            base = "https://smith.langchain.com"
+            if org:
+                return f"{base}/o/{org}/projects/p/{project}?searchModel=%7B%22filter%22%3A%22{request_id}%22%7D"
+            return f"{base}/projects/p/{project}?search={request_id}"
         return None
-    base = "https://smith.langchain.com"
-    if org:
-        return f"{base}/o/{org}/projects/p/{project}?searchModel=%7B%22filter%22%3A%22{request_id}%22%7D"
-    return f"{base}/projects/p/{project}?search={request_id}"
+    base = (getattr(s, "langfuse_base_url", "") or "https://us.cloud.langfuse.com").rstrip("/")
+    project_id = getattr(s, "langfuse_project_id", "") or ""
+    if project_id:
+        return f"{base}/project/{project_id}/traces?search={request_id}"
+    return f"{base}/traces?search={request_id}"
+
+
+def _langsmith_trace_url(request_id: str | None) -> str | None:
+    return _langfuse_trace_url(request_id)
+
+
+def _build_trace_url(request_id: str | None) -> str | None:
+    import sys
+
+    this_mod = sys.modules[__name__]
+    smith_fn = getattr(this_mod, "_langsmith_trace_url", None)
+    if smith_fn is not None and getattr(smith_fn, "__name__", "") != "_langsmith_trace_url":
+        return smith_fn(request_id)
+    fuse_fn = getattr(this_mod, "_langfuse_trace_url", _langfuse_trace_url)
+    return fuse_fn(request_id)
 
 
 def build_office_snapshot(raw: dict[str, Any] | None, *, mission_id: str) -> dict[str, Any]:
@@ -368,7 +384,7 @@ def build_office_snapshot(raw: dict[str, Any] | None, *, mission_id: str) -> dic
             "requestId": request_id,
             "sessionId": trace.get("session_id") or trace.get("sessionId"),
         },
-        "traceUrl": _langsmith_trace_url(request_id),
+        "traceUrl": _build_trace_url(request_id),
         "missionLead": mission_lead,
         "leadAgentId": lead_agent,
         "initialLead": initial_lead,

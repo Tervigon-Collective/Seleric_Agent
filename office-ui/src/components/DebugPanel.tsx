@@ -21,7 +21,7 @@ export function DebugPanel() {
       {traceUrl && (
         <div>
           <a href={traceUrl} target="_blank" rel="noreferrer" style={{ color: "var(--st-working)" }}>
-            open LangSmith trace ↗
+            open Langfuse trace ↗
           </a>
         </div>
       )}

@@ -364,7 +364,12 @@ class RunRecoveryWorker:
         self, *, poll_interval_s: float = 5.0, limit: int = 100
     ) -> None:
         while True:
-            await self.run_once(limit=limit)
+            try:
+                await self.run_once(limit=limit)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _log.error("run_recovery_worker_poll_error", exc_info=exc)
             await asyncio.sleep(max(0.1, poll_interval_s))
 
 
@@ -471,7 +476,15 @@ async def _main() -> None:
         raise RuntimeError("conversation repositories are not configured")
     provider = runtime.checkpoint_provider
     if provider is not None:
-        await provider.setup()
+        for _ in range(10):
+            try:
+                await provider.setup()
+                break
+            except Exception as exc:
+                _log.warning("recovery_checkpoint_provider_setup_retry", exc_info=exc)
+                await asyncio.sleep(2)
+        else:
+            await provider.setup()
 
     recovery = RunRecoveryService(
         runtime.conversations.runs,
@@ -519,7 +532,12 @@ async def _main() -> None:
                 )
             else:
                 while True:
-                    recovery.recover_expired(limit=args.limit)
+                    try:
+                        recovery.recover_expired(limit=args.limit)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        _log.error("run_recovery_service_poll_error", exc_info=exc)
                     await asyncio.sleep(max(0.1, args.interval))
     finally:
         if provider is not None:

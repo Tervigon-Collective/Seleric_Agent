@@ -59,14 +59,19 @@ def _mcp_probe(runtime: SwarmRuntime) -> bool:
         return False
 
     async def call() -> None:
-        await asyncio.wait_for(
-            runtime.mcp.call(
-                agent_id="v3_agent",
-                capability=capability,
-                arguments={},
-            ),
-            timeout=runtime.settings.readiness_timeout_s,
-        )
+        try:
+            await asyncio.wait_for(
+                runtime.mcp.call(
+                    agent_id="v3_agent",
+                    capability=capability,
+                    arguments={},
+                ),
+                timeout=runtime.settings.readiness_timeout_s,
+            )
+        finally:
+            closer = getattr(runtime.mcp, "aclose_current_loop", None)
+            if closer is not None:
+                await closer()
 
     asyncio.run(call())
     return True

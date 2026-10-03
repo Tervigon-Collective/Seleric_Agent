@@ -100,9 +100,17 @@ def test_bootstrap_wires_resolved_event_notifier(settings, monkeypatch):
 
 
 def test_placeholder_secrets_are_stripped():
-    settings = Settings(azure_openai_api_key="replace_me", langsmith_api_key="changeme")
+    settings = Settings(
+        azure_openai_api_key="replace_me",
+        langsmith_api_key="changeme",
+        langfuse_public_key="todo",
+        langfuse_secret_key="replace_me",
+    )
     assert settings.azure_openai_api_key == ""
     assert settings.langsmith_api_key == ""
+    assert settings.langfuse_public_key == ""
+    assert settings.langfuse_secret_key == ""
+    assert not settings.is_langfuse_configured
 
 
 def test_redaction_masks_keys():

@@ -386,7 +386,7 @@ async def llm_ping(req: PingRequest) -> dict[str, Any]:
         "agent_version": "0.1.0",
         "model": runtime.settings.azure_openai_model,
     }
-    with traced_span("llm.ping", metadata, runtime.settings.langsmith_tracing):
+    with traced_span("llm.ping", metadata, runtime.settings.langfuse_tracing):
         response = await runtime.llm.complete(
             LLMRequest(
                 messages=[ChatMessage(role="user", content=req.message)],
@@ -780,7 +780,7 @@ def get_mission_events(
 
 @app.get("/v1/missions/{mission_id}/trace")
 def get_mission_trace(mission_id: str, request: Request) -> dict[str, Any]:
-    """Return trace metadata (request/session/langsmith ids) plus the full event timeline."""
+    """Return trace metadata (request/session/langfuse ids) plus the full event timeline."""
     runtime = get_runtime()
     store = runtime.store
     raw = getattr(store, "get_raw", lambda _m: None)(mission_id)

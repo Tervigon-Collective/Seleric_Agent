@@ -237,7 +237,8 @@ def run_diagnostics(run_id: str, request: Request) -> dict[str, Any]:
             "lost_spans": run.metadata.get("telemetry_lost", 0),
             "trace_url": trace_url,
             "langfuse_configured": bool(
-                runtime.settings.langfuse_project_id and runtime.settings.langfuse_otel_endpoint
+                runtime.settings.is_langfuse_configured
+                or (runtime.settings.langfuse_project_id and runtime.settings.langfuse_otel_endpoint)
             ),
         },
         "capabilities": effective_capabilities(runtime),

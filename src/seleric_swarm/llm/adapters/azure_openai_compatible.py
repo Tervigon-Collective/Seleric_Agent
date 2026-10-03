@@ -148,9 +148,10 @@ class AzureOpenAICompatibleAdapter:
     @staticmethod
     def _wrap_tracing(client: Any) -> tuple[Any, bool]:
         try:
-            from langsmith.wrappers import wrap_openai
+            from langfuse.openai import register_tracing
 
-            return wrap_openai(client), True
+            register_tracing()
+            return client, True
         except Exception:
             return client, False
 
@@ -186,15 +187,15 @@ class AzureOpenAICompatibleAdapter:
                     }
                     extra: dict[str, Any] = {}
                     if self._traced:
-                        extra["langsmith_extra"] = {
-                            "name": run_name,
-                            "tags": list(request.tags),
-                            "metadata": llm_run_metadata(
-                                request,
-                                retry_count=retry_count,
-                                resolved_model=resolved_model,
-                            ),
-                        }
+                        extra["name"] = run_name
+                        extra["tags"] = list(request.tags)
+                        extra["metadata"] = llm_run_metadata(
+                            request,
+                            retry_count=retry_count,
+                            resolved_model=resolved_model,
+                        )
+                        if request.metadata.session_id:
+                            extra["session_id"] = request.metadata.session_id
                     completion = await self._create_with_param_adaptation(
                         resolved_model, base_kwargs, extra
                     )

@@ -102,14 +102,34 @@ def configure_logging(settings: Settings) -> None:
     )
 
 
-def configure_langsmith_env(settings: Settings) -> None:
-    """Push Settings into process env so LangSmith client/wrappers see them.
+def configure_langfuse_env(settings: Settings) -> None:
+    """Push Settings into process env so Langfuse client/wrappers see them."""
+    try:
+        if settings.langfuse_public_key:
+            os.environ["LANGFUSE_PUBLIC_KEY"] = settings.langfuse_public_key
+        if settings.langfuse_secret_key:
+            os.environ["LANGFUSE_SECRET_KEY"] = settings.langfuse_secret_key
+        if settings.langfuse_base_url:
+            os.environ["LANGFUSE_BASE_URL"] = settings.langfuse_base_url
+            os.environ["LANGFUSE_HOST"] = settings.langfuse_base_url
+        if settings.langfuse_project_id:
+            os.environ["LANGFUSE_PROJECT_ID"] = settings.langfuse_project_id
 
-    Pydantic reads ``.env`` into Settings; it does not export those values to
-    ``os.environ``. LangSmith only looks at the process environment, so we copy
-    here. Assignment (not setdefault) so ``LANGSMITH_TRACING=true`` in ``.env``
-    wins over a stale false in the shell.
-    """
+        # Also register tracing with openai if credentials exist
+        if settings.langfuse_tracing and settings.langfuse_public_key and settings.langfuse_secret_key:
+            try:
+                from langfuse.openai import register_tracing
+
+                register_tracing()
+            except Exception:
+                pass
+    except Exception:
+        return
+
+
+def configure_langsmith_env(settings: Settings) -> None:
+    """Backward compatibility wrapper; configures Langfuse and keeps legacy env vars if provided."""
+    configure_langfuse_env(settings)
     try:
         tracing = "true" if settings.langsmith_tracing else "false"
         os.environ["LANGSMITH_TRACING"] = tracing
@@ -141,9 +161,10 @@ def _headers(raw: str) -> dict[str, str]:
 def configure_opentelemetry(settings: Settings) -> bool:
     """Configure OTLP once; Langfuse is supported through its stable OTLP endpoint."""
     global _otel_configured
-    if _otel_configured or not settings.otel_enabled:
+    if _otel_configured or not (settings.otel_enabled or settings.is_langfuse_configured):
         return _otel_configured
     try:
+        import base64
         from opentelemetry import trace
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.resources import Resource
@@ -155,9 +176,20 @@ def configure_opentelemetry(settings: Settings) -> bool:
             resource=Resource.create({"service.name": settings.otel_service_name}),
             sampler=ParentBased(TraceIdRatioBased(settings.otel_trace_sample_ratio)),
         )
+
+        langfuse_endpoint = settings.langfuse_otel_endpoint
+        langfuse_headers = settings.langfuse_otel_headers
+        if not langfuse_endpoint and settings.langfuse_public_key and settings.langfuse_secret_key:
+            base_url = (settings.langfuse_base_url or "https://cloud.langfuse.com").rstrip("/")
+            langfuse_endpoint = f"{base_url}/api/public/otel/v1/traces"
+            auth = base64.b64encode(
+                f"{settings.langfuse_public_key}:{settings.langfuse_secret_key}".encode()
+            ).decode()
+            langfuse_headers = f"Authorization=Basic {auth},x-langfuse-ingestion-version=4"
+
         endpoints = [
             (settings.otel_exporter_otlp_endpoint, settings.otel_exporter_otlp_headers),
-            (settings.langfuse_otel_endpoint, settings.langfuse_otel_headers),
+            (langfuse_endpoint, langfuse_headers),
         ]
         for endpoint, headers in endpoints:
             if endpoint:
@@ -289,15 +321,39 @@ class SpanHandle:
     """Lightweight handle yielded by :func:`traced_span`.
 
     Callers attach the coordinator's work to the trace with ``set_outputs`` (what
-    the step produced). A no-op when tracing is off or LangSmith is unavailable,
+    the step produced). A no-op when tracing is off or Langfuse is unavailable,
     so call sites never need to branch.
     """
 
-    __slots__ = ("_outputs", "_run")
+    __slots__ = ("_outputs", "_run", "_trace_id", "_trace_url")
 
-    def __init__(self, run: Any = None) -> None:
+    def __init__(
+        self,
+        run: Any = None,
+        trace_id: str | None = None,
+        trace_url: str | None = None,
+    ) -> None:
         self._run = run
         self._outputs: dict[str, Any] | None = None
+        self._trace_id = trace_id or getattr(run, "trace_id", None)
+        self._trace_url = trace_url
+
+    @property
+    def trace_id(self) -> str | None:
+        if self._trace_id:
+            return self._trace_id
+        if self._run is not None:
+            self._trace_id = getattr(self._run, "trace_id", None)
+        return self._trace_id
+
+    @property
+    def trace_url(self) -> str | None:
+        if self._trace_url:
+            return self._trace_url
+        tid = self.trace_id
+        if tid:
+            self._trace_url = langfuse_trace_url(trace_id=tid)
+        return self._trace_url
 
     def set_outputs(self, outputs: dict[str, Any]) -> None:
         self._outputs = outputs
@@ -306,13 +362,17 @@ class SpanHandle:
         if self._run is None or self._outputs is None:
             return
         try:
-            self._run.end(outputs=redact_mapping(self._outputs))
+            redacted = redact_mapping(self._outputs)
+            if hasattr(self._run, "update"):
+                self._run.update(output=redacted)
+            elif hasattr(self._run, "end"):
+                self._run.end(outputs=redacted)
         except Exception:
             pass
 
 
 @contextmanager
-def _langsmith_span(
+def _langfuse_span(
     name: str,
     metadata: dict[str, Any],
     enabled: bool,
@@ -321,34 +381,57 @@ def _langsmith_span(
     run_type: RunType = "chain",
     tags: list[str] | None = None,
 ) -> Iterator[SpanHandle]:
-    """Open a LangSmith span. Tracing failures never abort the mission.
+    """Open a Langfuse observation span. Tracing failures never abort the mission.
 
     Yields a :class:`SpanHandle`; use ``.set_outputs({...})`` to record what the
-    step produced so the LangSmith run tree shows inputs and outputs, not just a
+    step produced so the Langfuse run tree shows inputs and outputs, not just a
     name.
     """
-    if not enabled:
+    configured = False
+    try:
+        from seleric_swarm.config.settings import get_settings
+
+        s = get_settings()
+        configured = s.is_langfuse_configured
+        if configured and ("LANGFUSE_PUBLIC_KEY" not in os.environ or "LANGFUSE_SECRET_KEY" not in os.environ):
+            configure_langfuse_env(s)
+    except Exception:
+        pass
+
+    if not enabled or not configured:
         yield SpanHandle()
         return
     try:
-        from langsmith import trace
+        from langfuse import get_client
 
-        cm = trace(
+        as_type_map = {
+            "tool": "tool",
+            "chain": "chain",
+            "llm": "generation",
+            "retriever": "retriever",
+            "embedding": "embedding",
+            "prompt": "span",
+            "parser": "span",
+        }
+        as_type = as_type_map.get(run_type, "span")
+        client = get_client()
+        cm = client.start_as_current_observation(
             name=name,
-            run_type=run_type,
-            tags=tags,
+            as_type=as_type,  # type: ignore[arg-type]
             metadata=redact_mapping(metadata),
-            inputs=redact_mapping(inputs or {}),
+            input=redact_mapping(inputs) if inputs else None,
         )
         run = cm.__enter__()
+        tid = getattr(run, "trace_id", None)
+        turl = client.get_trace_url(trace_id=tid) if tid else client.get_trace_url()
     except Exception:
         logging.getLogger("seleric.observability").warning(
-            "langsmith_span_failed", extra={"span": name}
+            "langfuse_span_failed", extra={"span": name}
         )
         yield SpanHandle()
         return
 
-    handle = SpanHandle(run)
+    handle = SpanHandle(run, trace_id=tid, trace_url=turl)
     exc_info: tuple[Any, Any, Any] = (None, None, None)
     try:
         yield handle
@@ -366,17 +449,21 @@ def _langsmith_span(
             pass
 
 
+# Backward compatibility alias
+_langsmith_span = _langfuse_span
+
+
 @contextmanager
 def traced_span(
     name: str,
     metadata: dict[str, Any],
-    enabled: bool,
+    enabled: bool = True,
     *,
     inputs: dict[str, Any] | None = None,
     run_type: RunType = "chain",
     tags: list[str] | None = None,
 ) -> Iterator[SpanHandle]:
-    """Emit matching OTel and optional LangSmith spans from existing call sites."""
+    """Emit matching OTel and optional Langfuse spans from existing call sites."""
     kind: Literal["run", "task", "agent", "llm", "retrieval"] = (
         "llm" if run_type in {"llm", "embedding", "prompt"}
         else "retrieval" if run_type == "retriever"
@@ -384,23 +471,37 @@ def traced_span(
         else "task" if "task" in name
         else "run"
     )
-    with operation_span(kind, name, metadata), _langsmith_span(
+    with operation_span(kind, name, metadata), _langfuse_span(
         name, metadata, enabled, inputs=inputs, run_type=run_type, tags=tags
     ) as handle:
         yield handle
 
 
+def langfuse_trace_url(
+    base_url: str = "", project_id: str = "", trace_id: str | None = None
+) -> str | None:
+    try:
+        from langfuse import get_client
+
+        client = get_client()
+        url = client.get_trace_url(trace_id=trace_id)
+        if url:
+            return url
+    except Exception:
+        pass
+    if not trace_id:
+        return None
+    effective_base = (base_url or "https://us.cloud.langfuse.com").rstrip("/")
+    if project_id:
+        return f"{effective_base}/project/{project_id}/traces/{trace_id}"
+    return f"{effective_base}/traces/{trace_id}"
+
+
 def langsmith_run_url(project: str, run_id: str | None, org: str = "default") -> str | None:
+    """Backward compatibility alias for trace URL."""
     if not run_id:
         return None
+    url = langfuse_trace_url(trace_id=run_id)
+    if url:
+        return url
     return f"https://smith.langchain.com/o/{org}/projects/p/{project}/r/{run_id}"
-
-
-def langfuse_trace_url(
-    base_url: str, project_id: str, trace_id: str | None
-) -> str | None:
-    if not trace_id or not project_id:
-        return None
-    return (
-        f"{base_url.rstrip('/')}/project/{project_id}/traces/{trace_id}"
-    )

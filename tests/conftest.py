@@ -10,6 +10,9 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 os.environ["LLM_PROVIDER"] = "fake"
 os.environ["APP_ENV"] = "test"
+os.environ["LANGFUSE_TRACING"] = "false"
+os.environ["LANGFUSE_PUBLIC_KEY"] = ""
+os.environ["LANGFUSE_SECRET_KEY"] = ""
 os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["PERSISTENCE_BACKEND"] = "memory"
 os.environ["AZURE_OPENAI_API_KEY"] = ""
@@ -35,6 +38,9 @@ def settings() -> Settings:
     get_settings.cache_clear()
     return Settings(
         llm_provider="fake",
+        langfuse_tracing=False,
+        langfuse_public_key="",
+        langfuse_secret_key="",
         langsmith_tracing=False,
         persistence_backend="memory",
         app_env="test",

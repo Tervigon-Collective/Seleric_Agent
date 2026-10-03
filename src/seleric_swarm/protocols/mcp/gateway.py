@@ -128,6 +128,16 @@ class MCPGateway:
             result = await result
         self.invocations.append({"agent_id": agent_id, "capability": capability, "arguments": arguments})
         return result
+    async def aclose_current_loop(self) -> None:
+        """Close HTTP transport clients created for the current event loop."""
+        seen: set[int] = set()
+        for server in self._servers.values():
+            transport = getattr(server, "_transport", None)
+            if transport is not None and id(transport) not in seen:
+                seen.add(id(transport))
+                aclose_loop = getattr(transport, "aclose_current_loop", None)
+                if aclose_loop is not None:
+                    await aclose_loop()
 
     async def aclose(self) -> None:
         """Close underlying HTTP transports (shared across tool wrappers)."""

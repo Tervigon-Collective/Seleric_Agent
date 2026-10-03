@@ -56,7 +56,9 @@ services:
       start_period: 30s
 
   api:
-    build: .
+    build:
+      context: .
+      target: runtime
     command: ["/bin/sh", "-c", "seleric-migrate && exec seleric-api"]
     ports:
       - "${API_PUBLISH_PORT:-8090}:8000"
@@ -92,6 +94,11 @@ services:
       MALWARE_SCANNER_BACKEND: ${MALWARE_SCANNER_BACKEND:-clamav}
       CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
       CLAMAV_PORT: ${CLAMAV_PORT:-3310}
+      LANGFUSE_TRACING: ${LANGFUSE_TRACING:-true}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}
+      LANGFUSE_PROJECT_ID: ${LANGFUSE_PROJECT_ID:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       ALLOW_WRITE_ACTIONS: "false"
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
@@ -156,7 +163,9 @@ services:
     restart: unless-stopped
 
   recovery:
-    build: .
+    build:
+      context: .
+      target: runtime
     command:
       - seleric-recover
       - --executor
@@ -194,6 +203,11 @@ services:
       MALWARE_SCANNER_BACKEND: ${MALWARE_SCANNER_BACKEND:-clamav}
       CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
       CLAMAV_PORT: ${CLAMAV_PORT:-3310}
+      LANGFUSE_TRACING: ${LANGFUSE_TRACING:-true}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}
+      LANGFUSE_PROJECT_ID: ${LANGFUSE_PROJECT_ID:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       ALLOW_WRITE_ACTIONS: "false"
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}

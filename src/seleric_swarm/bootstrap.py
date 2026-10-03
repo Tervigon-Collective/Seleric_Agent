@@ -21,6 +21,7 @@ from seleric_swarm.conversations.postgres import build_conversation_repositories
 from seleric_swarm.llm.factory import build_llm
 from seleric_swarm.llm.metering import MeteredLLMPort
 from seleric_swarm.observability.tracing import (
+    configure_langfuse_env,
     configure_langsmith_env,
     configure_logging,
     configure_opentelemetry,
@@ -44,6 +45,11 @@ def _sync_settings_to_environ(settings: Settings) -> None:
         "AZURE_OPENAI_ENDPOINT": settings.azure_openai_endpoint,
         "AZURE_OPENAI_API_KEY": settings.azure_openai_api_key,
         "AZURE_OPENAI_MODEL": settings.azure_openai_model,
+        "LANGFUSE_PUBLIC_KEY": settings.langfuse_public_key,
+        "LANGFUSE_SECRET_KEY": settings.langfuse_secret_key,
+        "LANGFUSE_BASE_URL": settings.langfuse_base_url,
+        "LANGFUSE_HOST": settings.langfuse_base_url,
+        "LANGFUSE_PROJECT_ID": settings.langfuse_project_id,
         "LANGSMITH_API_KEY": settings.langsmith_api_key,
         "LANGSMITH_PROJECT": settings.langsmith_project,
         "LANGSMITH_ENDPOINT": settings.langsmith_endpoint,
@@ -60,7 +66,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     settings.validate_for_startup()
     _sync_settings_to_environ(settings)
     configure_logging(settings)
-    configure_langsmith_env(settings)
+    configure_langfuse_env(settings)
     configure_opentelemetry(settings)
     mcp = MCPGateway(settings.mcp_config_path)
     # CatalogueBootstrap is created eagerly but NOT warmed here — build_runtime

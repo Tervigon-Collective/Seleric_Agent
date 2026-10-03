@@ -111,6 +111,17 @@ class Settings(BaseSettings):
     openrouter_models: str = ""  # JSON array or comma-separated; first = highest priority
     openrouter_endpoint: str = "https://openrouter.ai/api/v1"
 
+    langfuse_tracing: bool = True
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = Field(
+        default="https://cloud.langfuse.com",
+        validation_alias=AliasChoices("langfuse_base_url", "LANGFUSE_BASE_URL", "LANGFUSE_HOST"),
+    )
+    langfuse_project_id: str = ""
+    langfuse_otel_endpoint: str = ""
+    langfuse_otel_headers: str = ""
+
     langsmith_tracing: bool = False
     langsmith_api_key: str = ""
     langsmith_project: str = ""
@@ -122,10 +133,6 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = ""
     otel_exporter_otlp_headers: str = ""
     otel_trace_sample_ratio: float = 1.0
-    langfuse_otel_endpoint: str = ""
-    langfuse_otel_headers: str = ""
-    langfuse_base_url: str = "https://cloud.langfuse.com"
-    langfuse_project_id: str = ""
     search_embedding_model: str = ""
 
     mcp_config_path: str = "config/mcp_servers.yaml"
@@ -248,6 +255,10 @@ class Settings(BaseSettings):
         ),
     )
 
+    @property
+    def is_langfuse_configured(self) -> bool:
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
+
     def missing_voice_credentials(self) -> list[str]:
         """LiveKit settings that voice needs but does not have.
 
@@ -280,6 +291,8 @@ class Settings(BaseSettings):
         "langsmith_project",
         "langsmith_endpoint",
         "otel_exporter_otlp_endpoint",
+        "langfuse_public_key",
+        "langfuse_secret_key",
         "langfuse_otel_endpoint",
         "langfuse_base_url",
         "langfuse_project_id",
@@ -319,6 +332,8 @@ class Settings(BaseSettings):
         "azure_openai_api_key_2",
         "openrouter_api_key",
         "langsmith_api_key",
+        "langfuse_public_key",
+        "langfuse_secret_key",
         "api_key",
         "seleric_mcp_token",
         "jev_api_key",
