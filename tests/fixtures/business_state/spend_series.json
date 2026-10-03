@@ -1,6 +1,6 @@
 {
   "metric_id": "metric.spend",
-  "catalogue_metric_id": "total_ad_spend",
+  "catalogue_metric_id": "ad_spend",
   "profile_id": "default_v1",
   "as_of": "2026-09-07",
   "series": [

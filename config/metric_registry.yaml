@@ -1,8 +1,9 @@
+# Semantic v2: catalogue_metric = catalogue_v2 ids (+ catalogue_filters); aliases agree with the MCP resolver.
 metrics:
   - id: metric.net_sales
     version: 1
     owner: commerce
-    catalogue_metric: commerce_net_revenue_daily
+    catalogue_metric: pnl_net_sales
     aliases: [sales, revenue, net sale, net sales, ns]
     description: Shopify Net Sales (ex-GST), dashboard-parity daily rollup.
     formula: commerce_net_revenue_daily
@@ -53,7 +54,7 @@ metrics:
   - id: metric.spend
     version: 2
     owner: performance
-    catalogue_metric: total_ad_spend
+    catalogue_metric: ad_spend
     # total_ad_spend lives on canonical_pnl — a blended cross-platform finance
     # view that is NOT scoped inside the paidmedia module.  Without explicit
     # null here, the gateway would pin performance_agent's paidmedia module,
@@ -72,10 +73,10 @@ metrics:
   - id: metric.gross_roas
     version: 1
     owner: performance
-    catalogue_metric: gross_roas
+    catalogue_metric: pnl_gross_roas
     # Blended ROAS lives on canonical_pnl with spend — unscoped, same as CAC.
     seleric_module: null
-    aliases: [roas, gross roas, return on ad spend, return on adspend]
+    aliases: [gross roas]
     description: Gross return on ad spend (gross sales or attributed revenue per unit of paid media spend).
     formula: gross_sales / total_ad_spend
     depends_on: [gross_sales, total_ad_spend]
@@ -93,7 +94,7 @@ metrics:
   - id: metric.net_roas
     version: 1
     owner: performance
-    catalogue_metric: net_roas
+    catalogue_metric: pnl_net_roas
     seleric_module: null
     aliases: [net roas]
     description: Net return on ad spend (net sales per unit of paid media spend).
@@ -113,7 +114,8 @@ metrics:
   - id: metric.cpm
     version: 1
     owner: performance
-    catalogue_metric: meta_cpm
+    catalogue_metric: cpm
+    catalogue_filters: {ad_platform: meta}
     description: Cost per thousand impressions (delivery frontier).
     formula: spend / impressions * 1000
     frontier: true
@@ -124,7 +126,8 @@ metrics:
   - id: metric.cpc
     version: 1
     owner: performance
-    catalogue_metric: meta_cpc
+    catalogue_metric: cpc
+    catalogue_filters: {ad_platform: meta}
     description: Cost per click (delivery frontier).
     formula: spend / clicks
     frontier: true
@@ -135,7 +138,8 @@ metrics:
   - id: metric.ctr
     version: 1
     owner: performance
-    catalogue_metric: meta_ctr
+    catalogue_metric: ctr
+    catalogue_filters: {ad_platform: meta}
     description: Click-through rate (delivery frontier).
     formula: clicks / impressions
     direction_bad: down
@@ -148,7 +152,7 @@ metrics:
   - id: metric.atc_rate
     version: 2
     owner: funnel
-    catalogue_metric: session_atc_rate
+    catalogue_metric: add_to_cart_rate
     description: Session add-to-cart rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.
     formula: atc_sessions / sessions
     depends_on: [session_add_to_carts]
@@ -163,7 +167,7 @@ metrics:
   - id: metric.sessions
     version: 3
     owner: funnel
-    catalogue_metric: web_sessions
+    catalogue_metric: sessions
     description: Snowplow website sessions (web_sessions on serve.session_funnel). Base metric for funnel decomposition — all funnel rates divide by this. Sliceable by channel, device, UTM, geo, landing page. Previously registered as 'sessions' which does not exist in the catalogue.
     formula: count(sessions)
     direction_bad: down
@@ -176,7 +180,7 @@ metrics:
   - id: metric.pdp_view_rate
     version: 2
     owner: funnel
-    catalogue_metric: session_pdp_rate
+    catalogue_metric: product_view_rate
     description: PDP view rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.
     formula: pdp_sessions / sessions
     direction_bad: down
@@ -190,7 +194,7 @@ metrics:
   - id: metric.checkout_rate
     version: 2
     owner: funnel
-    catalogue_metric: session_checkout_rate
+    catalogue_metric: checkout_rate
     description: Checkout start rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.
     formula: checkout_sessions / sessions
     direction_bad: down
@@ -204,7 +208,7 @@ metrics:
   - id: metric.purchase_cvr
     version: 3
     owner: funnel
-    catalogue_metric: session_conversion_rate
+    catalogue_metric: conversion_rate
     description: Purchase conversion rate — sessions that completed a purchase, expressed as a ratio (purchased_sessions / sessions). Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count. Sliceable by channel, device, geo, ad on serve.session_funnel.
     formula: purchased_sessions / sessions
     direction_bad: down
@@ -224,7 +228,7 @@ metrics:
   - id: metric.net_profit
     version: 2
     owner: finance
-    catalogue_metric: net_profit_all_channels
+    catalogue_metric: pnl_net_profit
     aliases: [np, net profit, net profits]
     description: >
       All-channels Net Profit (Shopify net + Amazon Attribution net − TOC −
@@ -244,7 +248,7 @@ metrics:
   - id: metric.net_profit_shopify
     version: 1
     owner: finance
-    catalogue_metric: net_profit
+    catalogue_metric: pnl_net_profit
     description: Shopify-only Net Profit (Net Sales − Net COGS − Meta+Google spend).
     formula: commerce_net_revenue_daily - net_cogs - (meta_spend + google_spend)
     depends_on: [commerce_net_revenue_daily, net_cogs, meta_spend, google_spend]
@@ -257,7 +261,7 @@ metrics:
   - id: metric.atc_to_purchase_rate
     version: 1
     owner: funnel
-    catalogue_metric: session_checkout_to_purchase_rate
+    catalogue_metric: checkout_to_purchase_rate
     description: Checkout-to-purchase rate on the website funnel.
     formula: purchased_sessions / checkout_sessions
     direction_bad: down
@@ -272,7 +276,7 @@ metrics:
   - id: metric.return_rate
     version: 2
     owner: commerce
-    catalogue_metric: refunded_orders
+    catalogue_metric: returned_orders
     description: Shopify returned orders count — orders with at least one return event on event_date (refunded_orders on serve.commerce_orders). Directionally adverse when rising. Note — this is a count, not a ratio; the catalogue no longer carries a return_rate ratio metric. Previously registered as 'return_rate' which does not exist in the catalogue.
     formula: count(returned_orders)
     direction_bad: up
@@ -338,7 +342,7 @@ metrics:
   - id: metric.attributed_net_revenue
     version: 1
     owner: attribution
-    catalogue_metric: attributed_net_revenue
+    catalogue_metric: net_sales
     description: First-party, last-touch attributed net revenue across channels.
     formula: sum(attributed_net_revenue)
     direction_bad: down
@@ -381,7 +385,7 @@ metrics:
   - id: metric.first_orders
     version: 1
     owner: customer
-    catalogue_metric: first_orders
+    catalogue_metric: new_customers
     description: Orders that were each customer's first purchase (new-customer acquisition volume).
     formula: count(first_orders)
     direction_bad: down
@@ -396,7 +400,8 @@ metrics:
   - id: metric.meta_spend
     version: 1
     owner: performance
-    catalogue_metric: meta_spend
+    catalogue_metric: ad_spend
+    catalogue_filters: {ad_platform: meta}
     description: Meta (Facebook/Instagram) ad spend.
     formula: sum(meta_spend)
     unit: INR
@@ -407,7 +412,8 @@ metrics:
   - id: metric.google_spend
     version: 1
     owner: performance
-    catalogue_metric: google_spend
+    catalogue_metric: ad_spend
+    catalogue_filters: {ad_platform: google}
     description: Google Ads spend.
     formula: sum(google_spend)
     unit: INR
@@ -418,7 +424,8 @@ metrics:
   - id: metric.meta_impressions
     version: 1
     owner: performance
-    catalogue_metric: meta_impressions
+    catalogue_metric: impressions
+    catalogue_filters: {ad_platform: meta}
     description: Ad impressions delivered by Meta.
     formula: sum(meta_impressions)
     direction_bad: down
@@ -430,7 +437,8 @@ metrics:
   - id: metric.google_impressions
     version: 1
     owner: performance
-    catalogue_metric: google_impressions
+    catalogue_metric: impressions
+    catalogue_filters: {ad_platform: google}
     description: Google Ads impressions.
     formula: sum(google_impressions)
     direction_bad: down
@@ -442,7 +450,8 @@ metrics:
   - id: metric.meta_clicks
     version: 1
     owner: performance
-    catalogue_metric: meta_clicks
+    catalogue_metric: clicks
+    catalogue_filters: {ad_platform: meta}
     description: All clicks on Meta ads.
     formula: sum(meta_clicks)
     direction_bad: down
@@ -454,7 +463,8 @@ metrics:
   - id: metric.google_clicks
     version: 1
     owner: performance
-    catalogue_metric: google_clicks
+    catalogue_metric: clicks
+    catalogue_filters: {ad_platform: google}
     description: Google Ads clicks.
     formula: sum(google_clicks)
     direction_bad: down
@@ -466,7 +476,8 @@ metrics:
   - id: metric.google_ctr
     version: 1
     owner: performance
-    catalogue_metric: google_ctr
+    catalogue_metric: ctr
+    catalogue_filters: {ad_platform: google}
     description: Google Ads click-through rate (delivery frontier).
     formula: google_clicks / google_impressions
     direction_bad: down
@@ -479,7 +490,8 @@ metrics:
   - id: metric.google_cpc
     version: 1
     owner: performance
-    catalogue_metric: google_cpc
+    catalogue_metric: cpc
+    catalogue_filters: {ad_platform: google}
     description: Google Ads cost per click (delivery frontier).
     formula: google_spend / google_clicks
     frontier: true
@@ -491,7 +503,8 @@ metrics:
   - id: metric.google_cpm
     version: 1
     owner: performance
-    catalogue_metric: google_cpm
+    catalogue_metric: cpm
+    catalogue_filters: {ad_platform: google}
     description: Google Ads cost per thousand impressions (delivery frontier).
     formula: google_spend / google_impressions * 1000
     frontier: true
@@ -503,7 +516,8 @@ metrics:
   - id: metric.meta_video_completion_rate
     version: 1
     owner: performance
-    catalogue_metric: meta_video_completion_rate
+    catalogue_metric: video_completion_rate
+    catalogue_filters: {ad_platform: meta}
     description: Meta video completion rate.
     formula: meta_video_completion_rate
     direction_bad: down
@@ -515,7 +529,8 @@ metrics:
   - id: metric.meta_landing_page_views
     version: 1
     owner: performance
-    catalogue_metric: meta_landing_page_views
+    catalogue_metric: landing_page_views
+    catalogue_filters: {ad_platform: meta}
     description: Meta-tracked landing page views (account-level Graph API metric, not clicks/impressions).
     formula: sum(meta_landing_page_views)
     direction_bad: down
@@ -527,7 +542,8 @@ metrics:
   - id: metric.meta_cost_per_landing_page_view
     version: 1
     owner: performance
-    catalogue_metric: meta_cost_per_landing_page_view
+    catalogue_metric: cost_per_landing_page_view
+    catalogue_filters: {ad_platform: meta}
     description: Meta cost per landing page view.
     formula: meta_spend / meta_landing_page_views
     frontier: true
@@ -542,7 +558,7 @@ metrics:
   - id: metric.attributed_orders
     version: 1
     owner: attribution
-    catalogue_metric: attributed_orders
+    catalogue_metric: orders
     description: First-party, last-touch attributed order count across channels.
     formula: count(attributed_orders)
     direction_bad: down
@@ -554,7 +570,7 @@ metrics:
   - id: metric.attributed_gross_revenue
     version: 1
     owner: attribution
-    catalogue_metric: attributed_gross_revenue
+    catalogue_metric: order_value_incl_tax
     description: First-party, last-touch attributed gross revenue across channels.
     formula: sum(attributed_gross_revenue)
     direction_bad: down
@@ -566,7 +582,7 @@ metrics:
   - id: metric.attributed_refund_amount
     version: 1
     owner: attribution
-    catalogue_metric: attributed_refund_amount
+    catalogue_metric: refund_amount
     description: Refund amount on attributed orders.
     formula: sum(attributed_refund_amount)
     unit: INR
@@ -577,7 +593,7 @@ metrics:
   - id: metric.attributed_new_customer_orders
     version: 1
     owner: attribution
-    catalogue_metric: attributed_new_customer_orders
+    catalogue_metric: new_customers
     description: Attributed orders placed by new (first-time) customers.
     formula: count(attributed_new_customer_orders)
     direction_bad: down
@@ -589,7 +605,7 @@ metrics:
   - id: metric.attributed_aov
     version: 1
     owner: attribution
-    catalogue_metric: attributed_aov
+    catalogue_metric: net_aov
     description: Average order value of attributed orders.
     formula: attributed_net_revenue / attributed_orders
     direction_bad: down
@@ -601,7 +617,8 @@ metrics:
   - id: metric.meta_attr_orders
     version: 1
     owner: attribution
-    catalogue_metric: meta_attr_orders
+    catalogue_metric: orders
+    catalogue_filters: {finance_channel: meta, is_paid: "true"}
     description: Orders last-touch attributed to Meta.
     formula: count(meta_attr_orders)
     direction_bad: down
@@ -613,7 +630,8 @@ metrics:
   - id: metric.meta_attr_net_revenue
     version: 1
     owner: attribution
-    catalogue_metric: meta_attr_net_revenue
+    catalogue_metric: net_sales
+    catalogue_filters: {finance_channel: meta, is_paid: "true"}
     description: Net revenue last-touch attributed to Meta.
     formula: sum(meta_attr_net_revenue)
     direction_bad: down
@@ -625,7 +643,8 @@ metrics:
   - id: metric.meta_attr_gross_revenue
     version: 1
     owner: attribution
-    catalogue_metric: meta_attr_gross_revenue
+    catalogue_metric: order_value_incl_tax
+    catalogue_filters: {finance_channel: meta, is_paid: "true"}
     description: Gross revenue last-touch attributed to Meta.
     formula: sum(meta_attr_gross_revenue)
     direction_bad: down
@@ -637,7 +656,8 @@ metrics:
   - id: metric.meta_attr_aov
     version: 1
     owner: attribution
-    catalogue_metric: meta_attr_aov
+    catalogue_metric: net_aov
+    catalogue_filters: {finance_channel: meta, is_paid: "true"}
     description: Average order value of orders attributed to Meta.
     formula: meta_attr_net_revenue / meta_attr_orders
     direction_bad: down
@@ -652,7 +672,7 @@ metrics:
   - id: metric.net_cogs
     version: 1
     owner: finance
-    catalogue_metric: net_cogs
+    catalogue_metric: pnl_net_cogs
     description: Net cost of goods sold (ordered minus refunded units, at cost).
     formula: sum(net_cogs)
     unit: INR
@@ -663,7 +683,7 @@ metrics:
   - id: metric.shipping_cost
     version: 1
     owner: finance
-    catalogue_metric: shipping_cost
+    catalogue_metric: pnl_shipping_cost
     description: Outbound shipping cost.
     formula: sum(shipping_cost)
     unit: INR
@@ -674,7 +694,7 @@ metrics:
   - id: metric.packaging_cost
     version: 1
     owner: finance
-    catalogue_metric: packaging_cost
+    catalogue_metric: pnl_packaging_cost
     description: Packaging cost per order.
     formula: sum(packaging_cost)
     unit: INR
@@ -685,7 +705,7 @@ metrics:
   - id: metric.payment_gateway_fees
     version: 1
     owner: finance
-    catalogue_metric: payment_gateway_fees
+    catalogue_metric: pnl_payment_gateway_fees
     description: Payment gateway processing fees.
     formula: sum(payment_gateway_fees)
     unit: INR
@@ -696,7 +716,7 @@ metrics:
   - id: metric.rto_cost
     version: 1
     owner: finance
-    catalogue_metric: rto_cost
+    catalogue_metric: pnl_rto_cost
     description: Return-to-origin (RTO) logistics cost.
     formula: sum(rto_cost)
     unit: INR
@@ -707,7 +727,7 @@ metrics:
   - id: metric.operating_cost
     version: 1
     owner: finance
-    catalogue_metric: operating_cost
+    catalogue_metric: pnl_operating_cost
     description: Total operating cost (shipping + packaging + gateway fees + RTO, ex ad spend).
     formula: shipping_cost + packaging_cost + payment_gateway_fees + rto_cost
     depends_on: [shipping_cost, packaging_cost, payment_gateway_fees, rto_cost]
@@ -719,7 +739,7 @@ metrics:
   - id: metric.gross_profit
     version: 1
     owner: finance
-    catalogue_metric: gross_profit
+    catalogue_metric: pnl_contribution_margin
     description: Net sales minus net COGS.
     formula: net_sales - net_cogs
     depends_on: [net_sales, net_cogs]
@@ -732,7 +752,7 @@ metrics:
   - id: metric.contribution_margin
     version: 1
     owner: finance
-    catalogue_metric: contribution_margin
+    catalogue_metric: pnl_contribution_margin
     description: Gross profit minus operating cost and ad spend.
     formula: gross_profit - operating_cost - total_ad_spend
     depends_on: [gross_profit, operating_cost, total_ad_spend]
@@ -745,7 +765,7 @@ metrics:
   - id: metric.gross_margin_pct
     version: 1
     owner: finance
-    catalogue_metric: gross_margin_pct
+    catalogue_metric: pnl_contribution_margin_pct
     description: Gross profit as a percentage of net sales.
     formula: gross_profit / net_sales
     direction_bad: down
@@ -757,7 +777,7 @@ metrics:
   - id: metric.contribution_margin_pct
     version: 1
     owner: finance
-    catalogue_metric: contribution_margin_pct
+    catalogue_metric: pnl_contribution_margin_pct
     description: Contribution margin as a percentage of net sales.
     formula: contribution_margin / net_sales
     direction_bad: down
@@ -769,7 +789,7 @@ metrics:
   - id: metric.net_margin_pct
     version: 1
     owner: finance
-    catalogue_metric: net_margin_pct
+    catalogue_metric: pnl_net_margin_pct
     description: Net profit as a percentage of net sales.
     formula: net_profit / net_sales
     direction_bad: down
@@ -781,7 +801,7 @@ metrics:
   - id: metric.mer
     version: 1
     owner: finance
-    catalogue_metric: mer
+    catalogue_metric: pnl_mer
     aliases: [marketing efficiency ratio, blended roas]
     description: Marketing Efficiency Ratio — net sales / total ad spend. Higher is better.
     formula: net_sales / total_ad_spend
@@ -798,7 +818,7 @@ metrics:
   - id: metric.new_customer_orders
     version: 1
     owner: commerce
-    catalogue_metric: new_customer_orders
+    catalogue_metric: new_customers
     description: Orders placed by first-time (Shopify) customers.
     formula: count(new_customer_orders)
     direction_bad: down
@@ -856,7 +876,7 @@ metrics:
   - id: metric.returns_cancels
     version: 1
     owner: commerce
-    catalogue_metric: returns_cancels
+    catalogue_metric: returned_or_cancelled_orders
     description: Cancelled orders plus refunded orders (Shopify).
     formula: cancelled_orders + refunded_orders
     depends_on: [cancelled_orders, refunded_orders]
@@ -872,7 +892,7 @@ metrics:
   - id: metric.product_orders
     version: 1
     owner: product
-    catalogue_metric: product_orders
+    catalogue_metric: orders
     description: Order-line count per product.
     formula: count(product_orders)
     direction_bad: down
@@ -923,7 +943,7 @@ metrics:
   - id: metric.funnel_conversion_rate
     version: 1
     owner: funnel
-    catalogue_metric: funnel_conversion_rate
+    catalogue_metric: conversion_rate
     description: Purchases (last-touch attributed orders) divided by sessions, on the channel-day funnel.
     formula: funnel_purchases / sessions
     direction_bad: down
@@ -943,12 +963,12 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
-    aliases: [funnel purchases, attributed orders]
+    aliases: [funnel purchases]
 
   - id: metric.session_add_to_carts
     version: 2
     owner: funnel
-    catalogue_metric: session_add_to_carts
+    catalogue_metric: add_to_carts
     description: Sessions that added an item to cart (COUNT, NOT a rate). For funnel decomposition, use metric.atc_rate (session_atc_rate) instead.
     formula: count(session_add_to_carts)
     direction_bad: down
@@ -957,12 +977,12 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
-    aliases: [add to cart sessions, atc sessions]
+    aliases: []
 
   - id: metric.session_atc_to_checkout_rate
     version: 1
     owner: funnel
-    catalogue_metric: session_atc_to_checkout_rate
+    catalogue_metric: add_to_cart_to_checkout_rate
     description: Add-to-cart to checkout-start rate on the website funnel.
     formula: checkout_sessions / atc_sessions
     direction_bad: down
@@ -975,7 +995,7 @@ metrics:
   - id: metric.session_checkout_steps
     version: 2
     owner: funnel
-    catalogue_metric: session_checkout_steps
+    catalogue_metric: checkout_steps
     description: Checkout step events recorded across sessions (COUNT of events, NOT a rate). For funnel decomposition, use metric.checkout_rate (session_checkout_rate) instead.
     formula: count(session_checkout_steps)
     direction_bad: down
@@ -983,7 +1003,7 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
-    aliases: [checkout steps, checkout events]
+    aliases: []
 
   - id: metric.session_collection_views
     version: 1
@@ -1008,12 +1028,12 @@ metrics:
     grain: day
     timezone: Asia/Kolkata
     domain: funnel
-    aliases: [pdp views, product view sessions]
+    aliases: []
 
   - id: metric.session_remove_from_carts
     version: 1
     owner: funnel
-    catalogue_metric: session_remove_from_carts
+    catalogue_metric: remove_from_carts
     description: Sessions that removed an item from cart.
     formula: count(session_remove_from_carts)
     direction_bad: up
@@ -1025,7 +1045,7 @@ metrics:
   - id: metric.session_site_searches
     version: 1
     owner: funnel
-    catalogue_metric: session_site_searches
+    catalogue_metric: site_searches
     description: Sessions with an on-site search interaction.
     formula: count(session_site_searches)
     direction_bad: down
@@ -1037,7 +1057,7 @@ metrics:
   - id: metric.session_avg_page_depth
     version: 1
     owner: funnel
-    catalogue_metric: session_avg_page_depth
+    catalogue_metric: avg_page_depth
     description: Average number of pages viewed per session.
     formula: avg(page_depth)
     direction_bad: down
@@ -1049,7 +1069,7 @@ metrics:
   - id: metric.session_avg_seconds_to_add_to_cart
     version: 1
     owner: funnel
-    catalogue_metric: session_avg_seconds_to_add_to_cart
+    catalogue_metric: avg_seconds_to_add_to_cart
     description: Average seconds from session start to first add-to-cart.
     formula: avg(seconds_to_add_to_cart)
     direction_bad: up
@@ -1061,7 +1081,7 @@ metrics:
   - id: metric.session_avg_seconds_to_checkout
     version: 1
     owner: funnel
-    catalogue_metric: session_avg_seconds_to_checkout
+    catalogue_metric: avg_seconds_to_checkout
     description: Average seconds from session start to checkout start.
     formula: avg(seconds_to_checkout)
     direction_bad: up
@@ -1073,7 +1093,7 @@ metrics:
   - id: metric.session_avg_seconds_to_purchase
     version: 1
     owner: funnel
-    catalogue_metric: session_avg_seconds_to_purchase
+    catalogue_metric: avg_seconds_to_purchase
     description: Average seconds from session start to purchase.
     formula: avg(seconds_to_purchase)
     direction_bad: up
@@ -1109,7 +1129,7 @@ metrics:
   - id: metric.product_view_events
     version: 1
     owner: funnel
-    catalogue_metric: product_views
+    catalogue_metric: product_view_events
     description: Product detail page view events (event count, not sessions).
     formula: count(product_views)
     direction_bad: down
@@ -1121,7 +1141,7 @@ metrics:
   - id: metric.collection_views
     version: 1
     owner: funnel
-    catalogue_metric: collection_views
+    catalogue_metric: collection_view_events
     description: Collection/category page view events.
     formula: count(collection_views)
     direction_bad: down
@@ -1157,7 +1177,7 @@ metrics:
   - id: metric.web_page_views
     version: 1
     owner: funnel
-    catalogue_metric: web_page_views
+    catalogue_metric: page_views
     description: Rendered page-view events.
     formula: count(web_page_views)
     direction_bad: down

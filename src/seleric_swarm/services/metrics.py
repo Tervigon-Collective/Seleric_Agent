@@ -57,6 +57,11 @@ class MetricDefinition:
         self.domain: str = payload.get("domain", self.owner)
         self.aliases: list[str] = [str(a).lower() for a in (payload.get("aliases") or [])]
         self.catalogue_metric: str | None = payload.get("catalogue_metric") or None
+        # Semantic v2: filters the catalogue metric needs to give this entry's number
+        # (e.g. metric.meta_spend = ad_spend with ad_platform = meta). Sent with every query.
+        self.catalogue_filters: dict[str, str] = {
+            str(k): str(v) for k, v in (payload.get("catalogue_filters") or {}).items()
+        }
         self.seleric_module: str | None = payload.get("seleric_module")
         direction_bad = payload.get("direction_bad", "up")
         self.direction_bad: Literal["up", "down"] = (
@@ -80,9 +85,13 @@ class MetricRegistry:
             path = root / path
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         self._metrics = {item["id"]: MetricDefinition(item) for item in data.get("metrics", [])}
-        self._by_catalogue = {
-            m.catalogue_metric: m.id for m in self._metrics.values() if m.catalogue_metric
-        }
+        # catalogue id -> the YAML overlay for the live catalogue entry. Semantic v2 maps several
+        # legacy entries onto one id (meta / google spend -> ad_spend + filter); only an UNFILTERED
+        # entry may overlay the live metric, and the first one wins (deterministic).
+        self._by_catalogue: dict[str, str] = {}
+        for m in self._metrics.values():
+            if m.catalogue_metric and not m.catalogue_filters:
+                self._by_catalogue.setdefault(m.catalogue_metric, m.id)
         self._live: CatalogueBootstrap | None = None
         self._live_defs: dict[str, MetricDefinition] = {}
 

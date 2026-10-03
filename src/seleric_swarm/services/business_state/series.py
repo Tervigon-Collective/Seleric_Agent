@@ -56,7 +56,13 @@ async def fetch_series(
         start=start,
         end=end,
         grain=grain,
-        filters=[{"dimension": "brand_id", "operator": "equals", "values": [brand_id]}],
+        filters=[
+            {"dimension": "brand_id", "operator": "equals", "values": [brand_id]},
+            *[
+                {"dimension": k, "operator": "equals", "values": [v]}
+                for k, v in (getattr(definition, "catalogue_filters", None) or {}).items()
+            ],
+        ],
         module=extra["module"] if extra else ...,
     )
     provenance = dict(result.get("provenance") or {})

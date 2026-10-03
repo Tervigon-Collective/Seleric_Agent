@@ -1,6 +1,6 @@
 {
   "metric_id": "metric.net_sales",
-  "catalogue_metric_id": "commerce_net_revenue_daily",
+  "catalogue_metric_id": "pnl_net_sales",
   "profile_id": "default_v1",
   "as_of": "2026-09-07",
   "series": [

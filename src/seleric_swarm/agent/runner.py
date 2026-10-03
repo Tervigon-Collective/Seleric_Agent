@@ -656,7 +656,10 @@ async def _alias_lookup_result(
 ) -> V3MissionResult:
     """Live Cube lookup for an exact YAML alias — no LLM, no invented metric id."""
     catalogue_id = str(definition.catalogue_metric or definition.id.removeprefix("metric."))
-    tool = await query_metrics(_ToolCtx(deps), metric_id=catalogue_id)
+    catalogue_filters = dict(getattr(definition, "catalogue_filters", None) or {})
+    tool = await query_metrics(
+        _ToolCtx(deps), metric_id=catalogue_id, dimensions=catalogue_filters or None
+    )
     value = None
     if tool.artifact_ids:
         artifact = deps.artifact_store.get(tool.artifact_ids[0])
