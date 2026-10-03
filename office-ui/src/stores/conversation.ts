@@ -21,6 +21,8 @@ interface ConversationState {
   memoryOptedOut: boolean;
   currentRunId: string | null;
   progress: string | null;
+  /** Accumulated thinking text streamed live from a thinking-capable model. */
+  thinkingText: string | null;
   /** Words being spoken by voice that have no persisted user message yet. */
   voicePending: string | null;
   setVoicePending: (text: string | null) => void;
@@ -134,6 +136,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   memoryOptedOut: false,
   currentRunId: null,
   progress: null,
+  thinkingText: null,
   voicePending: null,
 
   setVoicePending: (voicePending) => set({ voicePending }),
@@ -590,7 +593,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!get().submitting) return;
     const generation = submissionGeneration;
     if (!currentRunId) cancelledSubmissions.add(generation);
-    set({ submitting: false, currentRunId: null, progress: null });
+    set({ submitting: false, currentRunId: null, progress: null, thinkingText: null });
     try {
       if (!demoMode && currentRunId) await conversationsApi.cancelRun(currentRunId);
       demoSubmission += 1;
@@ -790,6 +793,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       return;
     }
     useOffice.getState().ingestEvent(toOfficeEvent(event));
+    if (event.event_type === "agent.thinking_delta") {
+      const delta = typeof event.payload.delta === "string" ? event.payload.delta : "";
+      if (delta) {
+        set((s) => ({ thinkingText: (s.thinkingText ?? "") + delta }));
+      }
+      return;
+    }
     if (event.event_type.startsWith("agent.") && event.summary) {
       set({ progress: event.summary });
     }
@@ -873,7 +883,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       subscriptions.get(event.thread_id)?.();
       subscriptions.delete(event.thread_id);
       if (get().selectedThreadId === event.thread_id) {
-        set({ submitting: false, currentRunId: null, progress: null });
+        set({ submitting: false, currentRunId: null, progress: null, thinkingText: null });
       }
     }
   },
@@ -886,6 +896,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     cancelledSubmissions.clear();
     subscriptions.forEach((stop) => stop());
     subscriptions.clear();
-    set({ threads: [], selectedThreadId: null, messages: {}, loading: false, submitting: false, uploads: {}, error: null, search: "", demoMode: false, memories: [], usedMemories: [], memoryOptedOut: false, currentRunId: null, progress: null, voicePending: null });
+    set({ threads: [], selectedThreadId: null, messages: {}, loading: false, submitting: false, uploads: {}, error: null, search: "", demoMode: false, memories: [], usedMemories: [], memoryOptedOut: false, currentRunId: null, progress: null, thinkingText: null, voicePending: null });
+
   },
 }));

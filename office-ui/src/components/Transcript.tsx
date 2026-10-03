@@ -5,6 +5,7 @@ import {
   ThreadPrimitive,
   type DataMessagePartProps,
 } from "@assistant-ui/react";
+import { useRef, useEffect } from "react";
 import type { MessagePart } from "../api/contracts";
 import { useConversationStore } from "../stores/conversation";
 import { MessagePartRenderer } from "./MessagePartRenderer";
@@ -68,12 +69,48 @@ function RunningLine() {
   );
 }
 
+/** Streams the model's reasoning live, in a collapsible details block. */
+function ThinkingBubble() {
+  const thinkingText = useConversationStore((state) => state.thinkingText);
+  const submitting = useConversationStore((state) => state.submitting);
+  const bodyRef = useRef<HTMLPreElement>(null);
+
+  // Auto-scroll the thinking pane as text streams in
+  useEffect(() => {
+    if (bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [thinkingText]);
+
+  if (!thinkingText) return null;
+
+  return (
+    <details className="thinking-bubble" open={submitting} aria-label="Model thinking process">
+      <summary className="thinking-bubble-summary">
+        <span className="thinking-bubble-icon" aria-hidden="true">🧠</span>
+        {submitting
+          ? <><span className="pulse-dot" aria-hidden="true" /> Thinking…</>
+          : "Thought process"}
+      </summary>
+      <pre
+        ref={bodyRef}
+        className="thinking-bubble-body"
+        aria-live="polite"
+        aria-label="Streaming thinking text"
+      >
+        {thinkingText}
+      </pre>
+    </details>
+  );
+}
+
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="message assistant" aria-label="assistant message">
       <div className="message-avatar" aria-hidden="true">S</div>
       <div className="message-body">
         <header>Seleric</header>
+        <ThinkingBubble />
         <MessagePrimitive.Parts components={parts} />
         <AuiIf condition={(state) => state.thread.isRunning}>
           <MessagePrimitive.If hasContent={false}>
@@ -91,9 +128,11 @@ function AssistantMessage() {
 }
 
 function SystemMessage() {
-  return <MessagePrimitive.Root className="message system" aria-label="system message">
-    <div className="message-body"><MessagePrimitive.Parts components={parts} /></div>
-  </MessagePrimitive.Root>;
+  return (
+    <MessagePrimitive.Root className="message system" aria-label="system message">
+      <div className="message-body"><MessagePrimitive.Parts components={parts} /></div>
+    </MessagePrimitive.Root>
+  );
 }
 
 function VoicePendingMessage() {

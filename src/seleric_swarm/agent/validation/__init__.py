@@ -42,7 +42,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import UsageLimitExceeded
@@ -357,6 +357,7 @@ async def _run_agent_streamed(
     query: str,
     budget: UsageLimits,
     on_delta: Callable[[str], None],
+    handler: Any | None = None,
 ) -> MissionResult:
     """Stream the final answer's tokens as they are generated.
 
@@ -371,6 +372,7 @@ async def _run_agent_streamed(
         deps=deps,
         usage_limits=budget,
         retries=max(1, deps.limits.agent_retries),
+        event_stream_handler=handler,
     ) as stream:
         emitted = 0
         async for partial in stream.stream_output(debounce_by=0.05):
@@ -400,7 +402,7 @@ async def _run_agent(
     with capture_run_messages() as messages:
         try:
             if on_delta is not None:
-                return await _run_agent_streamed(agent, deps, query, budget, on_delta)
+                return await _run_agent_streamed(agent, deps, query, budget, on_delta, handler)
             result = (
                 await agent.run(
                     query,

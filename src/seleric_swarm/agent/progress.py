@@ -18,6 +18,8 @@ from pydantic_ai.messages import (
     FinalResultEvent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
+    PartDeltaEvent,
+    ThinkingPartDelta,
 )
 
 _log = logging.getLogger("seleric.agent.progress")
@@ -91,5 +93,14 @@ def progress_handler(mission_id: str):
                     f"{tool_label(name)} — done",
                     {"tool": name, "tool_call_id": event.part.tool_call_id},
                 )
+            elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, ThinkingPartDelta):
+                delta = event.delta.content_delta or ""
+                if delta:
+                    emit_progress(
+                        mission_id,
+                        "agent.thinking_delta",
+                        "Thinking…",
+                        {"delta": delta},
+                    )
 
     return handler
