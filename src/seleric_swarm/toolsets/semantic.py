@@ -1450,8 +1450,16 @@ async def drilldown(
     dimension: str,
     period_start: datetime,
     period_end: datetime,
+    hierarchy: str | None = None,
+    within: dict[str, str] | None = None,
 ) -> ToolResult:
     """Breakdown of ``metric_id`` by ``dimension`` over a period.
+
+    Hierarchy drill (semantic v2): pass ``hierarchy`` (traffic: platform → channel → sub_channel;
+    geo; product; ad; campaign — see the catalogue ontology) with ``dimension="next"`` to go one
+    level below what ``within`` pins (e.g. ``within={"platform": "meta"}`` → channels of Meta), or
+    with ``dimension`` = a level of that hierarchy to jump to it. ``within`` values are equals
+    filters on the coarser levels and scope the parent query.
 
     The live ``metrics_drilldown`` tool drills into a prior ``metrics_query``
     result by its ``parent_query_id`` — it has no metric/period-only form.
@@ -1465,8 +1473,10 @@ async def drilldown(
     # product_title returned "no rows" and the model deferred to a follow-up
     # (live MS3-99ad433e18) — instead, name the metric(s) whose view DOES support
     # it. Catalogue-driven; empty snapshot -> no guard (fail-open, Cube decides).
+    within = {str(k): str(v) for k, v in (within or {}).items()}
+    next_level = bool(hierarchy) and dimension in ("", "next")
     supported = ctx.deps.catalogue.supported_dimensions_for(metric_id)
-    if supported and dimension not in supported:
+    if supported and not next_level and dimension not in supported:
         alts = ctx.deps.catalogue.metrics_supporting_dimension(dimension)
         redirect = f"; use one of: {', '.join(alts)}" if alts else "; no available metric supports it"
         return ToolResult(
@@ -1479,6 +1489,7 @@ async def drilldown(
         measure=metric_id,
         start=period_start.date().isoformat(),
         end=period_end.date().isoformat(),
+        filters=[{"dimension": k, "operator": "equals", "values": [v]} for k, v in within.items()] or None,
     )
     # Same args shape (and cache key) as an unfiltered query_metrics() call —
     # a prior plain total for this metric/period is reused here instead of
@@ -1501,7 +1512,12 @@ async def drilldown(
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )
-    drilldown_args = {"parent_query_id": parent_query_id, "target_dimensions": [dimension]}
+    if hierarchy:
+        drilldown_args: dict[str, Any] = {"parent_query_id": parent_query_id, "hierarchy": hierarchy}
+        if not next_level:
+            drilldown_args["to_level"] = dimension
+    else:
+        drilldown_args = {"parent_query_id": parent_query_id, "target_dimensions": [dimension]}
     fetch_drilldown = lambda: ctx.deps.mcp_client.call(  # noqa: E731
         agent_id=_AGENT_ID, capability="seleric.metrics_drilldown", arguments=drilldown_args
     )
@@ -1514,6 +1530,17 @@ async def drilldown(
             result = await fetch_drilldown()
     except Exception as exc:
         return _mcp_error_result(exc)
+    if hierarchy and isinstance(result, dict) and result.get("error"):
+        return ToolResult(
+            success=False,
+            summary=f"hierarchy drill {hierarchy} for {metric_id}: {result['error']}",
+            error_code="UNSUPPORTED_QUERY",
+            retryable=False,
+        )
+    if hierarchy:
+        # the server picked the level (next below what `within` pins); evidence is keyed by it
+        drilled = ((result or {}).get("drilled_to") or {}).get("dimensions") or []
+        dimension = drilled[-1] if drilled else dimension
     rows = (result or {}).get("rows") or []
     if not rows:
         return ToolResult(
@@ -1530,13 +1557,14 @@ async def drilldown(
             continue
         evidence = EvidenceArtifact(
             metric_id=metric_id,
-            dimensions={dimension: str(dimension_value(row, dimension))},
+            dimensions={**within, dimension: str(dimension_value(row, dimension))},
             grain="none",
             as_of=ctx.deps.as_of,
             period_start=period_start,
             period_end=period_end,
             value=float(value),
-            source_query={"parent_query_id": parent["query_id"], "target_dimensions": [dimension]},
+            source_query={"parent_query_id": parent["query_id"], "target_dimensions": [dimension],
+                          **({"hierarchy": hierarchy, "within": within} if hierarchy else {})},
         )
         artifact = ctx.deps.artifact_store.put(
             Artifact(

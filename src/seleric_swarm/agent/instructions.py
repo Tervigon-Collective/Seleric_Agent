@@ -91,6 +91,14 @@ candidate metrics at once (a complex or drilldown question), call
 ``get_metric_definitions`` with all their ids in one call rather than fetching
 them one at a time.
 
+To go one level down a hierarchy ("which channels drove Meta orders?", "which
+cities in Maharashtra?"), call ``drilldown`` with ``hierarchy`` and
+``dimension="next"``, pinning the coarser level in ``within`` — e.g.
+``hierarchy="traffic", within={"platform": "meta"}`` returns Meta's channels.
+Hierarchies: traffic (platform → channel → sub_channel), geo (shipping_country →
+shipping_state → shipping_city → shipping_pincode), product, ad, campaign.
+Audience breakdowns (age, gender, placement, device, region) are Meta-only.
+
 Some metrics live on a summary-level view and only support a couple of
 coarse dimensions (e.g. brand and date) — not every entity you might want to
 slice by. If the breakdown the user asked for isn't in a metric's

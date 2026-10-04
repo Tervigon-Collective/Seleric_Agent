@@ -858,6 +858,39 @@ async def test_drilldown_writes_one_artifact_per_row():
 
 
 @pytest.mark.asyncio
+async def test_drilldown_hierarchy_next_level_within_a_pinned_member():
+    """Semantic v2: drilldown(hierarchy=traffic, dimension="next", within={platform: meta}) scopes the
+    parent to Meta, lets the server pick the next level (channel) and keys evidence by it."""
+    mcp = FakeMcpClient(
+        {
+            "seleric.metrics_query": {"query_id": "q1", "rows": [{"orders": "588"}], "provenance": {}},
+            "seleric.metrics_drilldown": {
+                "rows": [{"channel": "ig_feed", "orders": "444"}, {"channel": "fb_feed", "orders": "139"}],
+                "drilled_to": {"hierarchy": "traffic", "dimensions": ["channel"]},
+                "provenance": {},
+            },
+        }
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.drilldown(
+        ctx,
+        metric_id="orders",
+        dimension="next",
+        period_start=datetime(2026, 9, 1, tzinfo=UTC),
+        period_end=datetime(2026, 9, 30, tzinfo=UTC),
+        hierarchy="traffic",
+        within={"platform": "meta"},
+    )
+    assert result.success is True and len(result.artifact_ids) == 2
+    parent = next(c for c in mcp.calls if c[0] == "seleric.metrics_query")[1]
+    assert {"dimension": "platform", "operator": "equals", "values": ["meta"]} in parent["filters"]
+    drill = next(c for c in mcp.calls if c[0] == "seleric.metrics_drilldown")[1]
+    assert drill == {"parent_query_id": "q1", "hierarchy": "traffic"}
+    art = ctx.deps.artifact_store.get(result.artifact_ids[0])
+    assert art.payload["dimensions"] == {"platform": "meta", "channel": "ig_feed"}
+
+
+@pytest.mark.asyncio
 async def test_drilldown_forwards_order_and_limit_to_parent_and_lists_values():
     mcp = FakeMcpClient(
         {
