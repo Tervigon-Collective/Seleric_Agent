@@ -102,9 +102,15 @@ class RequiredScope:
     breakdowns: frozenset[frozenset[str]] = frozenset()
     value_filters: tuple[ValueFilter, ...] = ()
     temporal_grain: str | None = None
+    # Concept axes the user's own words set (gateway catalogue_resolve_values "axes", e.g. date=finance
+    # for "net profit on the P&L"): merged into every concept resolution and checked on the evidence.
+    question_axes: tuple[tuple[str, str], ...] = ()
 
     def is_empty(self) -> bool:
-        return not self.breakdowns and not self.value_filters and not self.temporal_grain
+        return not self.breakdowns and not self.value_filters and not self.temporal_grain and not self.question_axes
+
+    def axis(self, name: str) -> str | None:
+        return dict(self.question_axes).get(name)
 
 
 def value_filters_from_resolution(resolution: dict | None) -> tuple[ValueFilter, ...]:
@@ -129,6 +135,12 @@ def value_filters_from_resolution(resolution: dict | None) -> tuple[ValueFilter,
                 ValueFilter(term=str(term.get("term")), dimensions=frozenset(dims), values=tuple(values))
             )
     return tuple(filters)
+
+
+def question_axes_from_resolution(resolution: dict | None) -> tuple[tuple[str, str], ...]:
+    """The axes the gateway read from the question's own words (``axes`` on the resolve-values payload)."""
+    axes = (resolution or {}).get("axes") or {}
+    return tuple(sorted((str(k), str(v)) for k, v in axes.items() if k and v))
 
 
 def _normalize(text: str) -> str:

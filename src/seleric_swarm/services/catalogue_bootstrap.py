@@ -86,6 +86,15 @@ class CatalogueSnapshot:
     def has_metric(self, metric_id: str) -> bool:
         return any(m.id == metric_id for m in self.metrics)
 
+    def date_basis_for(self, metric_id: str) -> tuple[str | None, str | None]:
+        """(date basis, twin id) for a metric that exists on both date axes — the gateway's
+        ``date_basis`` / ``date_twin`` (semantic v2: order vs finance / event date); (None, None) else."""
+        for meta in self.metrics:
+            if meta.id == metric_id:
+                raw = meta.raw or {}
+                return raw.get("date_basis"), raw.get("date_twin")
+        return None, None
+
     def supported_dimensions_for(self, metric_id: str) -> list[str]:
         """The metric's ``supported_dimensions``, or [] if unknown/not carried."""
         for meta in self.metrics:

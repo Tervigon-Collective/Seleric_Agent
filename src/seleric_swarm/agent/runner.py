@@ -9,6 +9,8 @@ stores the office gateway falls back to.
 
 from __future__ import annotations
 
+import dataclasses
+
 import asyncio
 import logging
 import os
@@ -38,6 +40,7 @@ from seleric_swarm.agent.plan import build_plan
 from seleric_swarm.agent.scope import (
     RequiredScope,
     build_required_scope,
+    question_axes_from_resolution,
     value_filters_from_resolution,
 )
 from seleric_swarm.agent.validation import run_validated_mission
@@ -950,9 +953,10 @@ async def run_v3_mission(
     values = await _resolve_values(runtime, mcp, query) if intent != "conversation" else {}
     required_scope = _required_scope(runtime, query, temporal_grain=classification.grain)
     value_filters = value_filters_from_resolution(values)
-    if value_filters:
-        required_scope = RequiredScope(
-            breakdowns=required_scope.breakdowns, value_filters=value_filters
+    question_axes = question_axes_from_resolution(values)
+    if value_filters or question_axes:
+        required_scope = dataclasses.replace(
+            required_scope, value_filters=value_filters, question_axes=question_axes
         )
     ceiling = int(getattr(runtime.settings, "max_tool_calls", 160))
     deps = SelericDeps(

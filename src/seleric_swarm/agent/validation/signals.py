@@ -457,7 +457,8 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any, catalogue: Any =
     ]
     value_filters = tuple(getattr(scope, "value_filters", ()) or ())
     requested_grain = getattr(scope, "temporal_grain", None)
-    if not breakdowns and not value_filters and not requested_grain:
+    stated_date = dict(getattr(scope, "question_axes", ()) or ()).get("date")
+    if not breakdowns and not value_filters and not requested_grain and not stated_date:
         return CheckOutcome(check="scope_coverage", status="NOT_APPLICABLE")
     evidence = [a for a in artifacts if a.artifact_type == "evidence"]
     if not evidence:
@@ -547,6 +548,25 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any, catalogue: Any =
                 priority=8,
             )
         )
+    # Date basis (semantic v2): the user's words set the date axis ("on the P&L" -> finance / event date;
+    # "orders placed" -> order) and the answer used a metric whose catalogue twin is on the other axis — the
+    # number is right for a different question. Catalogue-driven (date_basis / date_twin from the gateway).
+    wanted = scope.axis("date") if hasattr(scope, "axis") else None
+    basis_for = getattr(catalogue, "date_basis_for", None)
+    if wanted and basis_for is not None:
+        for mid in sorted(answer_metric_ids):
+            basis, twin = basis_for(mid)
+            if basis and twin and basis != wanted:
+                gaps.append(
+                    EvidenceGap(
+                        description=(
+                            f"the question asks for the {wanted} date basis, but '{mid}' is on the {basis} "
+                            f"basis — re-run with '{twin}' (same measure on the {wanted} basis)"
+                        ),
+                        blocking=True,
+                        priority=8,
+                    )
+                )
     # Temporal grain coverage: only a real time-series mismatch is a gap. Evidence
     # exists at a bucket grain (available_grains non-empty) but none satisfies the
     # request. A period total (grain="none", so available_grains empty) is the

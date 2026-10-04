@@ -671,11 +671,16 @@ async def resolve_concept(
     sibling); an unmodelled concept returns suggestions. On unsupported/unknown, fall
     back to ``search_semantics``. Resolution only — the id is validated by Cube on
     query."""
+    # The axes the user's OWN words set (read by the gateway from the whole question) win over what the
+    # extracted term carries: "net profit on the P&L" keeps date=finance even when only "net profit" is
+    # passed here. Axis names / values are the catalogue's; nothing is listed in this code.
+    stated = dict(getattr(ctx.deps.required_scope, "question_axes", ()) or ())
+    merged_axes = {**(axes or {}), **stated}
     try:
         result = await ctx.deps.mcp_client.call(
             agent_id=_AGENT_ID,
             capability="seleric.catalogue_resolve_concept",
-            arguments={"text": concept, "axes": axes or {}},
+            arguments={"text": concept, "axes": merged_axes},
         )
     except Exception as exc:
         return _mcp_error_result(exc)
