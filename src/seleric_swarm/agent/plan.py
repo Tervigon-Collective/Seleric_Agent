@@ -34,7 +34,13 @@ _PLAN_INSTRUCTIONS = (
     "catalogue one count metric for the base stage plus the rate metrics that "
     "divide by it, on the same view and grain, and fetch them in one query. "
     "Pass those evidence ids to `funnel_decomposition`, which derives the "
-    "stage order itself."
+    "stage order itself.\n\n"
+    "WHY-QUESTION RULE: If the question asks why a metric changed, or what "
+    "caused, drove or explains a change, the plan is: (1) resolve the metric "
+    "with `resolve_concept`; (2) call `diagnose_metric_change` once with that "
+    "id, the period asked about and the direction the user asserts; (3) answer "
+    "from its ANSWER SKELETON. Do not plan query_metrics comparisons for it. "
+    "Judge this from the question itself — the detected intent label can be wrong."
 )
 
 

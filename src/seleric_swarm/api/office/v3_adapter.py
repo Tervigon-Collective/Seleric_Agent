@@ -138,14 +138,27 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
         if bucket:
             buckets.setdefault(bucket, []).append(artifact.id)
     evidence = _evidence_rows(artifacts)
+    # One chart per (chart_type, metrics) set — the most recent. A mission that revised,
+    # reset an answer, or was retried re-charts with different evidence or intent;
+    # only the latest chart for that metric set should render on the answer.
+    latest_chart: dict[Any, Any] = {}
+    for artifact in artifacts:
+        if getattr(artifact, "artifact_type", None) != "chart_spec" or not isinstance(artifact.payload, dict):
+            continue
+        payload = artifact.payload
+        chart_type = str(payload.get("chart_type") or "bar")
+        metrics_key = tuple(sorted(payload.get("metrics") or []))
+        key = (chart_type, metrics_key) if metrics_key else frozenset(getattr(artifact, "evidence_ids", None) or [artifact.id])
+        prior = latest_chart.get(key)
+        if prior is None or artifact.created_at >= prior.created_at:
+            latest_chart[key] = artifact
     charts = [
         {
             "chart_type": (artifact.payload or {}).get("chart_type", "bar"),
             "artifact_id": artifact.id,
             "data": artifact.payload,
         }
-        for artifact in artifacts
-        if getattr(artifact, "artifact_type", None) == "chart_spec" and isinstance(artifact.payload, dict)
+        for artifact in sorted(latest_chart.values(), key=lambda a: a.created_at)
     ]
 
     return {

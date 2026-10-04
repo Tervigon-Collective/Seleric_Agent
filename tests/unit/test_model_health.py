@@ -158,9 +158,125 @@ async def test_gives_up_when_the_budget_is_spent_or_the_failure_is_permanent():
     assert waits == [] and bad.calls == 1
 
 
-async def test_opening_a_stream_is_retried():
+async def test_a_stream_is_a_retried_request_replayed():
+    """A live stream cannot fall back once open, so each agent step is a plain
+    request (retried / capped / falling back) replayed as a stream."""
+    from pydantic_ai.messages import ModelResponse, PartStartEvent, TextPart, ToolCallPart
+    from pydantic_ai.models import ModelRequestParameters
+
+    reply = ModelResponse(parts=[TextPart("hi"), ToolCallPart("final_result", {"a": 1})], model_name="m")
     inner = _Flaky([_rate_limited()])
+    inner.request = _counting(inner, reply)
     model, _h, _c, waits = _patient(inner)
-    async with model.request_stream([], None, None) as streamed:
-        assert streamed == "stream"
+    async with model.request_stream([], None, ModelRequestParameters()) as streamed:
+        events = [e async for e in streamed]
     assert inner.calls == 2 and len(waits) == 1
+    assert [type(e) for e in events if isinstance(e, PartStartEvent)] == [PartStartEvent, PartStartEvent]
+    assert streamed.get().parts == reply.parts
+
+
+def _counting(inner: _Flaky, reply):
+    async def request(*args, **kwargs):
+        inner.calls += 1
+        if inner.failures:
+            raise inner.failures.pop(0)
+        return reply
+
+    return request
+
+
+# --- wall-clock cap: a stalled deployment falls through to the next model --------------------------
+# live 2026-10-04 MS3-c645523b51: a trickling stream held one request 256s (read timeout resets per
+# byte), the mission died with a raw ReadTimeout and restarted from scratch — 658s for one chart.
+
+
+def _gated(health, key: str):
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    from seleric_swarm.agent.model_health import HealthGatedChatModel
+
+    return HealthGatedChatModel(key, provider=OpenAIProvider(api_key="x"), health=health, health_key=key)
+
+
+async def test_a_request_past_the_cap_is_a_model_error_that_cools_the_model(monkeypatch):
+    import asyncio
+
+    from pydantic_ai.models.openai import OpenAIChatModel
+
+    from seleric_swarm.agent import model_health
+
+    async def stall(self, *args, **kwargs):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(OpenAIChatModel, "request", stall)
+    monkeypatch.setattr(model_health, "AGENT_LLM_REQUEST_CAP_S", 0.05)
+    health, _clock = _health()
+    gated = _gated(health, "slow")
+    _gated(health, "other")
+    with pytest.raises(ModelAPIError, match="no response within"):
+        await gated.request([], None, None)
+    assert health.should_skip("slow")
+
+
+async def test_an_agent_run_survives_a_stalled_first_model(monkeypatch):
+    """End to end through the agent graph with an event handler (the path the
+    mission uses): the stalled model is abandoned at the cap and the next one
+    answers; tool progress events still arrive."""
+    import asyncio
+
+    from pydantic_ai import Agent
+    from pydantic_ai.messages import FunctionToolCallEvent, ModelResponse, TextPart, ToolCallPart
+    from pydantic_ai.models.fallback import FallbackModel
+    from pydantic_ai.models.function import FunctionModel
+    from pydantic_ai.models.openai import OpenAIChatModel
+
+    from seleric_swarm.agent import model_health
+
+    async def stall(self, *args, **kwargs):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(OpenAIChatModel, "request", stall)
+    monkeypatch.setattr(model_health, "AGENT_LLM_REQUEST_CAP_S", 0.05)
+    health, _clock = _health()
+
+    def answer(messages, info):
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("lookup", {})])
+        return ModelResponse(parts=[TextPart("done")])
+
+    chain = FallbackModel(_gated(health, "slow"), FunctionModel(answer))
+    agent = Agent(PatientModel(chain, health=health))
+
+    @agent.tool_plain
+    def lookup() -> str:
+        return "42"
+
+    seen: list[str] = []
+
+    async def handler(_ctx, events):
+        async for event in events:
+            if isinstance(event, FunctionToolCallEvent):
+                seen.append(event.part.tool_name)
+
+    run = await agent.run("q", event_stream_handler=handler)
+    assert run.output == "done"
+    assert seen == ["lookup"]
+
+
+async def test_a_truncated_empty_response_falls_through_to_the_next_model(monkeypatch):
+    """Live MS3-3eeef3a493: finish_reason=length with only reasoning failed the
+    mission (UnexpectedModelBehavior) instead of trying the next model."""
+    from pydantic_ai import Agent
+    from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
+    from pydantic_ai.models.fallback import FallbackModel
+    from pydantic_ai.models.function import FunctionModel
+    from pydantic_ai.models.openai import OpenAIChatModel
+
+    async def truncated(self, *args, **kwargs):
+        return ModelResponse(parts=[ThinkingPart("...")], finish_reason="length", model_name="m")
+
+    monkeypatch.setattr(OpenAIChatModel, "request", truncated)
+    health, _clock = _health()
+    chain = FallbackModel(_gated(health, "thinker"), FunctionModel(lambda m, i: ModelResponse(parts=[TextPart("ok")])))
+    run = await Agent(PatientModel(chain, health=health)).run("q")
+    assert run.output == "ok"

@@ -563,3 +563,194 @@ def test_metric_id_never_resolved_through_metric_registry():
     semantic toolset module must never reference MetricRegistry."""
     assert "MetricRegistry" not in dir(semantic)
     assert not any("MetricRegistry" in str(getattr(semantic, name)) for name in dir(semantic))
+
+
+# ---- Bound concept filters, list-dimension breakdown, and time-crossed guidance ----
+
+
+@pytest.mark.asyncio
+async def test_resolve_concept_binds_filter_and_propagates_to_query_metrics():
+    """When resolve_concept resolves a metric with a bound filter, that filter
+    must be advertised in the tool summary, stored in the deps query cache,
+    and automatically applied to query_metrics if not explicitly overridden."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    mcp = FakeMcpClient({
+        "seleric.catalogue_resolve_concept": {
+            "kind": "resolved_concept",
+            "metric_id": "test_metric_id",
+            "axes": {"scope": "ads"},
+            "filter": {"platform_dim": "test_platform"},
+        },
+        "seleric.metrics_query": {
+            "rows": [{"test_metric_id": "100"}],
+            "provenance": {"query_id": "q1"},
+        },
+    })
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(CatalogueMetricMeta(id="test_metric_id", view="test_view",
+                                         supported_dimensions=["platform_dim"]),),
+        ),
+    )
+    ctx = FakeRunContext(deps)
+
+    res_concept = await semantic.resolve_concept(ctx, concept="concept_query")
+    assert res_concept.success is True
+    assert "platform_dim" in res_concept.summary
+    assert deps.query_cache.peek("concept_filter:test_metric_id") == {"platform_dim": "test_platform"}
+
+    res_query = await semantic.query_metrics(
+        ctx,
+        metric_id="test_metric_id",
+        dimensions={},
+        grain="none",
+        period_start=datetime(2026, 9, 1, tzinfo=UTC),
+        period_end=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    assert res_query.success is True
+    query_call = next(c for c in mcp.calls if c[0] == "seleric.metrics_query")
+    filters_sent = query_call[1].get("filters") or []
+    assert any(f.get("dimension") == "platform_dim" and f.get("values") == ["test_platform"] for f in filters_sent)
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_list_dimension_becomes_breakdown_and_clean_row_dimensions():
+    """When a dimension is passed as a list of values (e.g. comparing entities)
+    without an explicit breakdown:
+    1. It is automatically added to breakdown so Cube groups by it.
+    2. Evidence rows receive the row's specific dimension value, NOT a comma-joined list."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    rows = [
+        {"test_metric.day": "2026-09-01", "entity_dim": "EntityA", "test_metric": "50"},
+        {"test_metric.day": "2026-09-01", "entity_dim": "EntityB", "test_metric": "70"},
+    ]
+    mcp = FakeMcpClient({"seleric.metrics_query": {"rows": rows, "provenance": {}}})
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(CatalogueMetricMeta(id="test_metric", view="test_view",
+                                         supported_dimensions=["entity_dim", "order_date"]),),
+            time_dimensions=frozenset({"order_date"}),
+        ),
+    )
+    ctx = FakeRunContext(deps)
+
+    res = await semantic.query_metrics(
+        ctx,
+        metric_id="test_metric",
+        dimensions={"entity_dim": ["EntityA", "EntityB"]},
+        grain="day",
+        period_start=datetime(2026, 9, 1, tzinfo=UTC),
+        period_end=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    assert res.success is True
+    query_call = next(c for c in mcp.calls if c[0] == "seleric.metrics_query")
+    assert "entity_dim" in (query_call[1].get("dimensions") or [])
+
+    art_a = ctx.deps.artifact_store.get(res.artifact_ids[0])
+    art_b = ctx.deps.artifact_store.get(res.artifact_ids[1])
+    assert art_a.payload["dimensions"] == {"entity_dim": "EntityA"}
+    assert art_b.payload["dimensions"] == {"entity_dim": "EntityB"}
+
+
+@pytest.mark.asyncio
+async def test_time_crossed_breakdown_with_bounded_list_not_rejected():
+    """A time-crossed query (grain != 'none') with an entity breakdown that is
+    explicitly bounded to a small list of items should NOT be rejected as an unranked dump,
+    even if the total row count (e.g. 3 entities x 14 days = 42 rows) exceeds _MAX_SERIES_IN_SUMMARY."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    entities = ["E1", "E2", "E3"]
+    rows = [
+        {"test_metric.day": f"2026-09-{d:02d}", "entity_dim": e, "test_metric": "10"}
+        for d in range(1, 15)
+        for e in entities
+    ]
+    assert len(rows) > semantic._MAX_SERIES_IN_SUMMARY
+
+    mcp = FakeMcpClient({"seleric.metrics_query": {"rows": rows, "provenance": {}}})
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(CatalogueMetricMeta(id="test_metric", view="test_view",
+                                         supported_dimensions=["entity_dim", "order_date"]),),
+            time_dimensions=frozenset({"order_date"}),
+        ),
+    )
+    ctx = FakeRunContext(deps)
+
+    res = await semantic.query_metrics(
+        ctx,
+        metric_id="test_metric",
+        dimensions={"entity_dim": entities},
+        grain="day",
+        period_start=datetime(2026, 9, 1, tzinfo=UTC),
+        period_end=datetime(2026, 9, 14, tzinfo=UTC),
+    )
+    assert res.success is True
+    assert len(res.artifact_ids) == len(rows)
+
+
+@pytest.mark.asyncio
+async def test_time_crossed_unbounded_dump_gives_clear_guidance_without_catch22():
+    """An unbounded time-crossed breakdown with > 20 rows provides clear guidance
+    to drop grain for leaderboards or filter to specific entities, without falsely
+    telling the user to add 'limit' to a time grain query."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    rows = [
+        {"test_metric.day": f"2026-09-{i:02d}", "entity_dim": f"Entity_{i}", "test_metric": "10"}
+        for i in range(1, semantic._MAX_SERIES_IN_SUMMARY + 5)
+    ]
+    mcp = FakeMcpClient({"seleric.metrics_query": {"rows": rows, "provenance": {}}})
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(CatalogueMetricMeta(id="test_metric", view="test_view",
+                                         supported_dimensions=["entity_dim", "order_date"]),),
+            time_dimensions=frozenset({"order_date"}),
+        ),
+    )
+    ctx = FakeRunContext(deps)
+
+    res = await semantic.query_metrics(
+        ctx,
+        metric_id="test_metric",
+        dimensions={"entity_dim": ""},
+        grain="day",
+        period_start=datetime(2026, 9, 1, tzinfo=UTC),
+        period_end=datetime(2026, 9, 30, tzinfo=UTC),
+    )
+    assert res.success is False
+    assert res.error_code == "UNSUPPORTED_QUERY"
+    assert "drop the grain" in res.summary
+    assert "filter by those entities" in res.summary
+    assert "Do not add limit with grain=day" in res.summary
+
+
+@pytest.mark.asyncio
+async def test_list_metrics_lists_the_catalogue_by_domain():
+    """Live MS3-29049b3e92: "list all the metrics you can query … at what grain"
+    had no tool and shipped a truncated answer."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    deps = replace(
+        _deps(FakeMcpClient({})),
+        catalogue=CatalogueSnapshot(
+            metrics=(
+                CatalogueMetricMeta(id="ctr", view="paid_media", raw={
+                    "display_name": "CTR", "aggregation": "ratio", "extra_granularities": ["hour"],
+                    "description": "Click-through rate. Date axis: report_date (IST); grain: ad_day."}),
+                CatalogueMetricMeta(id="net_sales", view="commerce", raw={"display_name": "Net sales"}),
+            )
+        ),
+    )
+    res = await semantic.list_metrics(FakeRunContext(deps))
+    assert res.success and "[paid_media]" in res.summary and "[commerce]" in res.summary
+    assert "row grain: ad_day" in res.summary and "day/week/month/quarter/year/hour" in res.summary
+    one = await semantic.list_metrics(FakeRunContext(deps), domain="paid")
+    assert "ctr" in one.summary and "net_sales" not in one.summary
+    assert not (await semantic.list_metrics(FakeRunContext(deps), domain="nope")).success

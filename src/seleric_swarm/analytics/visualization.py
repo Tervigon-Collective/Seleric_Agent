@@ -76,9 +76,15 @@ def generate_visualization_spec(
     # Extract all metrics and dimensions
     metrics = list(dict.fromkeys(e.metric_id for e in evidence))
     all_dims: set[str] = set()
+    dim_distinct_values: dict[str, set[str]] = {}
     for e in evidence:
         all_dims.update(e.dimensions.keys())
+        for k, v in e.dimensions.items():
+            if v is not None:
+                dim_distinct_values.setdefault(k, set()).add(v)
     dimensions = list(all_dims)
+    varying_dim_keys = [k for k, vals in sorted(dim_distinct_values.items()) if len(vals) > 1]
+    target_dimensions = varying_dim_keys if varying_dim_keys else dimensions
 
     # Detect if we have multiple time periods
     time_periods = set(e.period_start for e in evidence)
@@ -103,7 +109,7 @@ def generate_visualization_spec(
         "title": title,
         "chart_type": chart_type,
         "metrics": metrics,
-        "dimensions": dimensions,
+        "dimensions": target_dimensions,
         "series": [],
         "xAxis": {},
         "yAxis": [],
@@ -125,8 +131,11 @@ def generate_visualization_spec(
         def build_key(item: EvidenceArtifact) -> str:
             label = _format_metric_label(item.metric_id)
             if has_dims and item.dimensions:
-                dim_str = " - ".join(v for _, v in sorted(item.dimensions.items()) if v is not None)
-                return f"{label} ({dim_str})" if has_multi_metrics else dim_str
+                keys_to_use = varying_dim_keys if varying_dim_keys else sorted(item.dimensions.keys())
+                parts = [item.dimensions[k] for k in keys_to_use if k in item.dimensions and item.dimensions[k] is not None]
+                dim_str = " - ".join(parts) if parts else ""
+                if dim_str:
+                    return f"{label} ({dim_str})" if has_multi_metrics else dim_str
             return label
 
         data_rows, series_names = _group_by_time_multi(evidence, metrics, build_key)
@@ -152,8 +161,11 @@ def generate_visualization_spec(
         for e in evidence:
             label = _format_metric_label(e.metric_id)
             if e.dimensions:
-                dim_str = " - ".join(v for _, v in sorted(e.dimensions.items()) if v is not None)
-                label = f"{label} ({dim_str})"
+                keys_to_use = varying_dim_keys if varying_dim_keys else sorted(e.dimensions.keys())
+                parts = [e.dimensions[k] for k in keys_to_use if k in e.dimensions and e.dimensions[k] is not None]
+                dim_str = " - ".join(parts) if parts else ""
+                if dim_str:
+                    label = f"{label} ({dim_str})"
             if e.value is not None:
                 data.append({"name": label, "value": float(e.value)})
 
@@ -165,7 +177,7 @@ def generate_visualization_spec(
         })
 
     elif chart_type in ["bar", "pie"]:
-        grouped = _group_by_dimension(evidence, dimensions)
+        grouped = _group_by_dimension(evidence, target_dimensions)
         data = [{"name": k, "value": v} for k, v in grouped.items()]
 
         spec["xAxis"] = {"type": "category", "key": "name"}

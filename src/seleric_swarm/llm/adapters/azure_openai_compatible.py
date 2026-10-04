@@ -42,6 +42,10 @@ from seleric_swarm.llm.tracing import (
 )
 
 
+# model -> learned request fixes ("max_completion_tokens", "drop_temperature").
+_LEARNED_PARAM_FIXES: dict[str, set[str]] = {}
+
+
 def _unsupported_param_fix(exc: APIStatusError) -> str | None:
     """Map an OpenAI 400 'unsupported_parameter' to the adaptation that fixes it,
     or None if the error is unrelated. Reasoning models (gpt-5*, o-series) reject
@@ -110,8 +114,11 @@ class AzureOpenAICompatibleAdapter:
         # want `max_completion_tokens` not `max_tokens`, and reject a non-default
         # `temperature`. Learned from the API's own 400 (unsupported_parameter)
         # and cached so later calls skip the failed attempt. See
-        # `_create_with_param_adaptation`.
-        self._param_fixes: dict[str, set[str]] = {}
+        # `_create_with_param_adaptation`. Shared by every adapter in the process:
+        # adapters are built per call path, and a per-instance cache re-learned
+        # both 400s on every helper call (live 2026-10-05: 18 wasted gpt-5-mini
+        # round trips in one batch of value-sense checks).
+        self._param_fixes = _LEARNED_PARAM_FIXES
 
     @property
     def async_client(self) -> Any:

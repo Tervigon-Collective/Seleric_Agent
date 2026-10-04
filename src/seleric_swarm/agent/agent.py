@@ -36,6 +36,7 @@ from seleric_swarm.toolsets import (
     actions,
     analytics,
     causal,
+    diagnosis,
     experiments,
     knowledge,
     models,
@@ -57,6 +58,7 @@ from seleric_swarm.toolsets.semantic import LIVE_DATA_UNAVAILABLE
 TOOLS: list[Any] = [
     semantic.resolve_concept,
     semantic.search_semantics,
+    semantic.list_metrics,
     semantic.resolve_brand,
     semantic.get_metric_definition,
     semantic.get_metric_definitions,
@@ -74,6 +76,7 @@ TOOLS: list[Any] = [
     analytics.cohort_analysis,
     analytics.generate_visualization,
     sandbox.run_python,
+    diagnosis.diagnose_metric_change,
     causal.estimate_effect,
     causal.refute_estimate,
     models.forecast,

@@ -65,22 +65,31 @@ async def run_once(
 ) -> list[DomainStateSnapshot]:
     """Resolve + persist one snapshot per domain.
 
-    [Sprint 4 decision] Cron mechanism: no new scheduler dependency and no
-    long-running in-process loop -- this is a plain callable an OS-level
-    cron (or Windows Task Scheduler) invokes once via `python -m
-    seleric_swarm.services.domain_health.scheduler`. Cadence is daily for
-    every domain for now; 04 doc's open question (hourly for
-    performance/funnel) is deferred until a domain actually needs it --
-    re-running this more often is a cron-line change, not a code change.
-    Domains resolve sequentially (8 domains, run once/day -- not worth
-    asyncio.gather's added complexity unless wall-clock becomes an issue).
+    [Sprint 4 decision updated] Cron mechanism: run_once now resolves
+    domains concurrently using asyncio.gather with a strict timeout so it
+    can complete within a 1-minute cadence.
     """
+    import logging
+    log = logging.getLogger("seleric.business_state.scheduler")
+
     time_range = time_range or TimeRangeV1(kind="relative", relative_token="last_7d")
-    snapshots = []
-    for domain in domains:
-        snapshot = await resolver.resolve(domain, time_range=time_range, brand_id=brand_id, store=store)
-        await store.asave(snapshot)
-        snapshots.append(snapshot)
+    
+    async def _resolve_and_save(domain: str) -> DomainStateSnapshot | None:
+        try:
+            snapshot = await asyncio.wait_for(
+                resolver.resolve(domain, time_range=time_range, brand_id=brand_id, store=store),
+                timeout=45.0
+            )
+            await store.asave(snapshot)
+            return snapshot
+        except Exception as e:
+            log.error(f"Failed to resolve snapshot for {domain}", exc_info=e)
+            return None
+
+    tasks = [_resolve_and_save(domain) for domain in domains]
+    results = await asyncio.gather(*tasks)
+    snapshots = [s for s in results if s is not None]
+
     headline_ids = DomainHealthProfiles().headline_metrics()
     if headline_ids:
         headline = build_headline_snapshot(snapshots, headline_ids, brand_id=brand_id)

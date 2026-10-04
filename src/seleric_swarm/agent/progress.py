@@ -19,6 +19,8 @@ from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
     PartDeltaEvent,
+    PartStartEvent,
+    ThinkingPart,
     ThinkingPartDelta,
 )
 
@@ -31,11 +33,13 @@ _SINKS: dict[str, ProgressSink] = {}
 
 _TOOL_LABELS: dict[str, str] = {
     "search_semantics": "Searching the metric catalogue",
+    "list_metrics": "Listing the available metrics",
     "get_metric_definitions": "Reading metric definitions",
     "query_metrics": "Fetching metric data",
     "drilldown": "Drilling into segments",
     "compare_periods": "Comparing periods",
     "detect_anomalies": "Checking for anomalies",
+    "diagnose_metric_change": "Diagnosing what changed and why",
     "estimate_effect": "Estimating causal effect",
     "refute_estimate": "Stress-testing the estimate",
     "forecast": "Forecasting",
@@ -70,6 +74,28 @@ def tool_label(tool_name: str) -> str:
     return _TOOL_LABELS.get(tool_name) or tool_name.replace("_", " ").capitalize()
 
 
+_PROBLEM_MAX_CHARS = 160
+
+
+def _tool_problem(part: Any) -> str | None:
+    """Why a tool call produced nothing usable, or None when it succeeded.
+
+    Live 2026-10-04 (MS3-34e7eb26aa): seventeen refused generate_visualization
+    calls were each reported "— done", so the timeline showed success while the
+    model looped on a refusal. A refusal is a ``ToolResult(success=False)``; a
+    rejected argument set comes back as a retry prompt instead of a return.
+    """
+    if getattr(part, "part_kind", "") == "retry-prompt":
+        text = str(getattr(part, "content", "") or "invalid arguments")
+    else:
+        content = getattr(part, "content", None)
+        if getattr(content, "success", True) is not False:
+            return None
+        text = str(getattr(content, "summary", "") or getattr(content, "error_code", "") or "no result")
+    text = " ".join(text.split())
+    return text if len(text) <= _PROBLEM_MAX_CHARS else text[: _PROBLEM_MAX_CHARS - 1] + "…"
+
+
 def progress_handler(mission_id: str):
     """An ``event_stream_handler`` that reports each tool call and its outcome."""
 
@@ -87,14 +113,22 @@ def progress_handler(mission_id: str):
                 )
             elif isinstance(event, FunctionToolResultEvent):
                 name = getattr(event.part, "tool_name", None) or ""
+                problem = _tool_problem(event.part)
                 emit_progress(
                     mission_id,
                     "agent.tool_completed",
-                    f"{tool_label(name)} — done",
-                    {"tool": name, "tool_call_id": event.part.tool_call_id},
+                    f"{tool_label(name)} — " + (f"failed: {problem}" if problem else "done"),
+                    {"tool": name, "tool_call_id": event.part.tool_call_id, "success": not problem},
                 )
-            elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, ThinkingPartDelta):
-                delta = event.delta.content_delta or ""
+            elif isinstance(event, (PartDeltaEvent, PartStartEvent)):
+                # A replayed step (model_health.ReplayedStreamedResponse)
+                # delivers its reasoning as one whole part, a live one as deltas.
+                if isinstance(event, PartStartEvent):
+                    delta = event.part.content if isinstance(event.part, ThinkingPart) else ""
+                elif isinstance(event.delta, ThinkingPartDelta):
+                    delta = event.delta.content_delta or ""
+                else:
+                    delta = ""
                 if delta:
                     emit_progress(
                         mission_id,

@@ -18,6 +18,33 @@ DEFAULT_REFUTERS: tuple[str, ...] = (
     "data_subset_refuter",
 )
 
+# ---- Diagnosis engine (causal/diagnosis.py) ---------------------------------
+# Statistical conventions only. Nothing here names a metric, dimension, channel
+# or business threshold: every candidate cause, identity and DAG edge comes from
+# catalogue lineage plus the data, and these numbers only decide how much
+# evidence is "enough".
+DIAG_HISTORY_DAYS: int = 56            # daily history fetched before the event
+DIAG_REFERENCE_WEEKS: int = 4          # same-weekday reference days per event day
+DIAG_EVENT_Z: float = 2.0              # |z| at/above which the event is unusual
+DIAG_EVENT_Z_NOTABLE: float = 1.5      # |z| at/above which it is notable (diagnosed, flagged moderate)
+DIAG_OUTLIER_Z: float = 3.0            # robust z marking a history day abnormal (excluded from references)
+DIAG_IDENTITY_TOLERANCE: float = 0.01  # relative dispersion allowed in a verified identity
+DIAG_APPROX_IDENTITY_TOLERANCE: float = 0.1  # ... in an approximate (cross-system) identity
+DIAG_COMEASURE_CV: float = 0.02        # X/Y this stable => same quantity, not a cause
+DIAG_TREATMENT_CLUSTER_R: float = 0.9  # |r| grouping candidate treatments as inseparable
+DIAG_ALPHA: float = 0.05               # CI / test level
+DIAG_REFUTER_TOLERANCE: float = 0.25   # relative effect drift allowed by stability refuters
+DIAG_MAX_DRIVERS: int = 8              # upstream candidates estimated (search_breadth adds)
+DIAG_MAX_DIMENSIONS: int = 16          # dimensions screened for segment localisation
+DIAG_MAX_SEGMENTS_REPORTED: int = 5
+DIAG_MIN_ROWS_PER_COVARIATE: int = 3   # estimation rows needed per regressor
+DIAG_PLACEBO_SHIFTS: int = 60          # circular-shift placebo draws
+DIAG_BROAD_BASED_MAX: float = 0.3      # segment-specificity at/below which a change is broad-based
+DIAG_COMEASURE_R: float = 0.95         # normal-day lockstep with the outcome => same units, not a cause
+DIAG_MIN_DIMENSION_COVERAGE: float = 0.9  # share of the outcome a dimension's segments must account for
+# Calendar words in a catalogue grain (``brand_order_day``): time buckets, not units.
+DIAG_CALENDAR_GRAIN_TOKENS: tuple[str, ...] = ("hour", "day", "week", "month", "quarter", "year")
+
 # From config/prediction_policies.yaml — history sufficiency (also used by
 # anomaly/causal "enough rows" preconditions).
 MIN_OBSERVATION_ROWS: int = 8

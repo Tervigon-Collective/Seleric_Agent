@@ -428,7 +428,11 @@ def check_prediction(artifacts: list[Artifact]) -> CheckOutcome:
 
 
 def check_scope_coverage(
-    artifacts: list[Artifact], scope: Any, catalogue: Any = None, not_values: Any = ()
+    artifacts: list[Artifact],
+    scope: Any,
+    catalogue: Any = None,
+    not_values: Any = (),
+    cited: Any = (),
 ) -> CheckOutcome:
     """Executed evidence must cover the breakdowns and named values the query demanded.
 
@@ -476,10 +480,17 @@ def check_scope_coverage(
     filtered: set[str] = set()
     available_grains: set[str] = set()
     answer_metric_ids: set[str] = set()
+    # Per metric: the dimensions its evidence is grouped or filtered by, and
+    # whether the answer cites it.
+    scoped_by_metric: dict[str, set[str]] = {}
+    cited_ids = {str(c) for c in (cited or ())}
+    cited_metrics: set[str] = set()
     for artifact in evidence:
         parsed = _payload(artifact, EvidenceArtifact)
+        own: set[str] = set()
         if parsed is not None:
             grouped.update(parsed.dimensions.keys())
+            own.update(parsed.dimensions.keys())
             if parsed.metric_id:
                 answer_metric_ids.add(parsed.metric_id)
             if parsed.grain and parsed.grain != "none":
@@ -493,6 +504,11 @@ def check_scope_coverage(
         for applied in artifact.provenance.source_metadata.get("filters_applied") or []:
             if isinstance(applied, dict) and (dim := applied.get("dimension")):
                 filtered.add(str(dim))
+                own.add(str(dim))
+        if parsed is not None and parsed.metric_id:
+            scoped_by_metric.setdefault(parsed.metric_id, set()).update(own)
+            if artifact.id in cited_ids:
+                cited_metrics.add(parsed.metric_id)
 
     def _answer_metric_can_group(dims: frozenset[str]) -> bool:
         """Catalogue-driven: does a metric ACTUALLY USED in the answer support one
@@ -540,8 +556,39 @@ def check_scope_coverage(
     # A named value (live: "orders from whatsapp") must actually constrain the
     # evidence — filtered or grouped by one of the dimensions the data records
     # it in. Otherwise the answer is a total that ignores what was asked.
+    supported_for = getattr(catalogue, "supported_dimensions_for", None)
     for vf in value_filters:
         if (grouped | filtered) & set(vf.dimensions):
+            # Covered somewhere — but every metric the answer reports that CAN
+            # carry the value must carry it. Live 2026-10-05 MS3-c97c9fea15: a
+            # "Meta ads report" filtered orders to Meta and reported spend,
+            # impressions and clicks for Meta + Google; the mission-wide union
+            # passed it.
+            reported = cited_metrics or set(scoped_by_metric)
+            unscoped = sorted(
+                mid
+                for mid in reported
+                if not (scoped_by_metric.get(mid, set()) & set(vf.dimensions))
+                and (
+                    supported_for is None
+                    or not getattr(catalogue, "metrics", None)
+                    or set(vf.dimensions) & set(supported_for(mid))
+                )
+            )
+            if unscoped:
+                gaps.append(
+                    EvidenceGap(
+                        description=(
+                            f"the question names '{vf.term}' ({' / '.join(sorted(vf.dimensions))} = "
+                            f"{', '.join(vf.values)}), but {', '.join(unscoped)} "
+                            f"{'was' if len(unscoped) == 1 else 'were'} fetched without that filter, so "
+                            f"those numbers cover every value, not '{vf.term}' — re-query them filtered "
+                            f"to it (pass the filter in dimensions), or drop them"
+                        ),
+                        blocking=True,
+                        priority=8,
+                    )
+                )
             continue
         gaps.append(
             EvidenceGap(
@@ -645,6 +692,7 @@ def run_checks(
             getattr(deps, "required_scope", None),
             getattr(deps, "catalogue", None),
             not_values=getattr(result, "not_values", None) or (),
+            cited=getattr(result, "evidence_ids", None) or (),
         ),
         check_answer_grounding(artifacts, result),
     ]

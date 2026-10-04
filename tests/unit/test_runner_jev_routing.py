@@ -125,3 +125,25 @@ def test_resolved_window_line_pins_bare_last_month() -> None:
 def test_resolved_window_line_empty_when_no_relative_phrase() -> None:
     # No relative phrase → nothing pinned (fail-open; explicit dates don't drift).
     assert runner._resolved_window_line("what is net revenue", "Asia/Kolkata", "2026-09-25") == ""
+
+
+# -- 2026-10-05: small talk is decided without Jev ------------------------------------------------
+# Live: Jev labelled "hi" a trend AND a follow-up; in a thread the greeting kept its tools and
+# the user got a net-sales figure. Jev also costs ~6s per message.
+
+@pytest.mark.parametrize("text", ["hi", "Hi!", "hello there", "thanks", "thank you", "ok thanks bye", "good morning"])
+def test_social_turns_are_small_talk(text):
+    from seleric_swarm.agent.runner import _is_small_talk
+
+    assert _is_small_talk(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["yes", "ok", "okay", "hi, what were sales yesterday", "thanks, now by channel", "net profit last 30 days", "top 5", "how are sales"],
+)
+def test_requests_and_acceptances_are_not_small_talk(text):
+    from seleric_swarm.agent.runner import _is_affirmation, _is_small_talk
+
+    assert not _is_small_talk(text)
+    assert not _is_affirmation("thanks")  # thanks never re-runs the previous offer

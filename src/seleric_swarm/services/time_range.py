@@ -47,6 +47,10 @@ _RELATIVE_COMPARE = (
 )
 
 
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_WEEKDAY = re.compile(r"\b(" + "|".join(_WEEKDAYS) + r")s?\b")
+
+
 def _last_complete_day(anchor: date) -> str:
     """End of a trailing "last N days/weeks/months/quarters" window: yesterday.
     Today is still in progress, so "last 7 days" is the 7 complete days before
@@ -222,6 +226,17 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
                 relative_token=_PERIOD_VS_PRIOR_TOKENS[unit],
             )
     lower = text.lower()
+    # A single named weekday ("on Monday", "last Monday") = its most recent
+    # COMPLETED occurrence, strictly before as_of: today is still in progress.
+    # Left to the model before, which once dated "Monday" as a Sunday (live
+    # 2026-10-04) and diagnosed an incomplete day. Two names = a comparison,
+    # not handled here.
+    named = {m.group(1) for m in _WEEKDAY.finditer(lower)}
+    if len(named) == 1:
+        target = _WEEKDAYS.index(named.pop())
+        back = (anchor.weekday() - target) % 7 or 7
+        day = (anchor - timedelta(days=back)).isoformat()
+        return TimeRangeV1(kind="absolute", start=day, end=day, relative_token=f"last_{_WEEKDAYS[target]}")
     if re.search(r"\byesterday\b", lower):
         day = (anchor - timedelta(days=1)).isoformat()
         return TimeRangeV1(kind="absolute", start=day, end=day, relative_token="yesterday")

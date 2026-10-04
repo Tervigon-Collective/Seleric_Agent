@@ -41,11 +41,13 @@ joint decision.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import capture_run_messages
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
@@ -54,7 +56,7 @@ from seleric_swarm.agent.artifacts import CausalArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.agent.limits import ExecutionBudgetTracker
 from seleric_swarm.agent.output import MissionResult
-from seleric_swarm.agent.progress import has_progress_sink, progress_handler
+from seleric_swarm.agent.progress import emit_progress, has_progress_sink, progress_handler
 from seleric_swarm.agent.validation.signals import (
     AlternativeHypothesis,
     Challenge,
@@ -63,7 +65,7 @@ from seleric_swarm.agent.validation.signals import (
     run_checks,
 )
 from seleric_swarm.agent.validation.trust import TrustResult, score_trust
-from seleric_swarm.agent.validation.answer_audit import leaked_metric_ids, total_mismatch
+from seleric_swarm.agent.validation.answer_audit import cut_off, leaked_metric_ids, total_mismatch
 from seleric_swarm.agent.validation.verdict import decide_verdict
 from seleric_swarm.api.status import is_terminal_status
 
@@ -87,6 +89,8 @@ __all__ = [
 ]
 
 
+_log = logging.getLogger("seleric.agent.validation")
+
 _PLACEHOLDER_ANSWERS = frozenset({"placeholder", "todo", "tbd", "n/a", "na", "none", "null", "answer"})
 
 
@@ -107,6 +111,10 @@ class ValidationOutcome:
     trust_label: TrustLabel | None = None
     trust_components: dict[str, float] = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
+    # The answer states something its own content proves false (a headline total
+    # its table does not sum to). Such a draft is never shipped, not even as the
+    # partial answer of an exhausted revision loop.
+    self_contradicting: bool = False
 
     @property
     def rejected(self) -> bool:
@@ -130,6 +138,17 @@ def _evidence_metric_ids(result: MissionResult, deps: SelericDeps) -> set[str]:
             if isinstance(metric_id, str) and metric_id.strip():
                 ids.add(metric_id.strip())
     return ids
+
+
+_WORK_ARTIFACT_TYPES = frozenset({"evidence", "finding"})
+
+
+def _mission_has_evidence(deps: SelericDeps) -> bool:
+    """True once the mission holds fetched evidence or a derived finding."""
+    return any(
+        a.artifact_type in _WORK_ARTIFACT_TYPES
+        for a in deps.artifact_store.list_for_mission(deps.mission_id)
+    )
 
 
 class EvidenceValidator:
@@ -193,6 +212,14 @@ class EvidenceValidator:
                 ok=False,
                 reason="final_response is a placeholder, not an answer; write the real answer",
             )
+        if (dangling := cut_off(result.final_response)) is not None:
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    f"final_response stops mid-sentence (ends on '{dangling}'): the answer was cut "
+                    "off. Write the complete answer"
+                ),
+            )
         steps = result.trace.get("steps") if isinstance(result.trace, dict) else None
         if (
             steps
@@ -205,6 +232,7 @@ class EvidenceValidator:
                 for step in steps
                 if step.get("kind") == "tool_call"
             )
+            and not _mission_has_evidence(deps)
         ):
             # Live 2026-09-30 (MS3-96688ff682): the model called final_result
             # as its FIRST and only step — 0 tool calls, 0 evidence — with
@@ -216,6 +244,12 @@ class EvidenceValidator:
             # report; a promise of future work is not an answer. REVISE so the
             # model does the work (conversational turns are exempt above —
             # zero evidence is legitimate there).
+            #
+            # "No work done" means no evidence in the MISSION, not no tool call
+            # in this run: a revision (or a recovery retry of the same mission)
+            # that answers from evidence an earlier run already fetched has
+            # done the work. Live 2026-10-04 (MS3-34e7eb26aa) this gate failed
+            # two correct-table revisions that needed no new fetch.
             return ValidationOutcome(
                 ok=False,
                 reason=(
@@ -233,7 +267,7 @@ class EvidenceValidator:
         # on v0.1.24 shipped them anyway. Checked, not asserted.
         arithmetic = total_mismatch(result.final_response)
         if arithmetic:
-            return ValidationOutcome(ok=False, reason=arithmetic)
+            return ValidationOutcome(ok=False, reason=arithmetic, self_contradicting=True)
         leaked = leaked_metric_ids(result.final_response, _evidence_metric_ids(result, deps))
         if leaked:
             return ValidationOutcome(
@@ -352,87 +386,70 @@ def _summarize_steps(messages: list) -> list[dict]:
     return steps
 
 
-async def _run_agent_streamed(
-    agent: Agent[SelericDeps, MissionResult],
-    deps: SelericDeps,
-    query: str,
-    budget: UsageLimits,
-    on_delta: Callable[[str], None],
-    handler: Any | None = None,
-) -> MissionResult:
-    """Stream the final answer's tokens as they are generated.
-
-    ``run_stream`` runs the full agent graph — all the tool calls — internally
-    and only yields once the model starts emitting the final ``MissionResult``.
-    We diff the ``final_response`` field across the partially-validated outputs
-    and push each new suffix to ``on_delta``; everything else (evidence, status,
-    trace) is read from the fully-validated output at the end, unchanged.
-    """
-    async with agent.run_stream(
-        query,
-        deps=deps,
-        usage_limits=budget,
-        retries=max(1, deps.limits.agent_retries),
-        event_stream_handler=handler,
-    ) as stream:
-        emitted = 0
-        async for partial in stream.stream_output(debounce_by=0.05):
-            text = getattr(partial, "final_response", None) or ""
-            if len(text) > emitted:
-                on_delta(text[emitted:])
-                emitted = len(text)
-        result = await stream.get_output()
-        steps = _summarize_steps(stream.all_messages())
-    return result.model_copy(update={"trace": {**result.trace, "steps": steps}})
-
-
 async def _run_agent(
     agent: Agent[SelericDeps, MissionResult],
     deps: SelericDeps,
     query: str,
     *,
-    on_delta: Callable[[str], None] | None = None,
+    message_history: list[ModelMessage] | None = None,
     usage_limits: UsageLimits | None = None,
-) -> MissionResult:
-    # capture_run_messages populates `messages` even when the run raises
-    # UsageLimitExceeded — the failing-budget case we most need to debug.
-    # Only stream when something is listening: streaming changes the request path
-    # (request_stream), so runs with no UI keep the plain request path.
+) -> tuple[MissionResult, list[ModelMessage]]:
+    """One agent run: the result plus every message of the conversation so far.
+
+    The messages (``message_history`` included) are returned so a revision can
+    continue the same conversation. Before 2026-10-04 each revision was a fresh
+    run that saw only "your previous answer was rejected" and the scratchpad —
+    no tool results, so no evidence or artifact ids. It could not cite the
+    evidence it had fetched or chart it, guessed ids, and was rejected again
+    (live MS3-34e7eb26aa: 12 refused generate_visualization calls in one
+    revision, then INSUFFICIENT_EVIDENCE on a correct table).
+
+    Partial output is never streamed: an answer reaches the user only after it
+    validates (see ``run_validated_mission``). The non-streamed path also keeps
+    pydantic-ai's output-validation retries, which a streamed final_result
+    cannot use.
+    """
     handler = progress_handler(deps.mission_id) if has_progress_sink(deps.mission_id) else None
     budget = usage_limits or _usage_limits(deps.limits)
+    # capture_run_messages populates `messages` even when the run raises
+    # UsageLimitExceeded — the failing-budget case we most need to debug.
     with capture_run_messages() as messages:
         try:
-            if on_delta is not None:
-                return await _run_agent_streamed(agent, deps, query, budget, on_delta, handler)
-            result = (
-                await agent.run(
-                    query,
-                    deps=deps,
-                    usage_limits=budget,
-                    retries=max(1, deps.limits.agent_retries),
-                    event_stream_handler=handler,
-                )
-            ).output
-            return result.model_copy(update={"trace": {**result.trace, "steps": _summarize_steps(messages)}})
-        except UsageLimitExceeded:
-            return MissionResult(
-                mission_id=deps.mission_id,
-                status="failed",
-                query=query,
-                as_of=deps.as_of,
-                final_response="This question took too many steps. Please retry with a more specific metric name.",
-                error_code="EXECUTION_LIMIT_EXCEEDED",
-                limitations=["EXECUTION_LIMIT_EXCEEDED"],
-                trace={"steps": _summarize_steps(messages)},
+            run = await agent.run(
+                query,
+                deps=deps,
+                message_history=message_history,
+                usage_limits=budget,
+                retries=max(1, deps.limits.agent_retries),
+                event_stream_handler=handler,
             )
+        except UsageLimitExceeded:
+            return (
+                MissionResult(
+                    mission_id=deps.mission_id,
+                    status="failed",
+                    query=query,
+                    as_of=deps.as_of,
+                    final_response="This question took too many steps. Please retry with a more specific metric name.",
+                    error_code="EXECUTION_LIMIT_EXCEEDED",
+                    limitations=["EXECUTION_LIMIT_EXCEEDED"],
+                    trace={"steps": _summarize_steps(messages)},
+                ),
+                list(messages),
+            )
+    history = run.all_messages()
+    result = run.output
+    return result.model_copy(update={"trace": {**result.trace, "steps": _summarize_steps(history)}}), history
 
 
-def _validation_trace(outcome: ValidationOutcome, deps: SelericDeps) -> dict:
+def _validation_trace(
+    outcome: ValidationOutcome, deps: SelericDeps, revisions: list[dict[str, Any]] | None = None
+) -> dict:
     """Diagnostics for a failed/partial validation so the response explains
-    itself (D3): the verdict, the human reason, the trust score, and the
-    resolved RequiredScope that drove a coverage gap. Without this a mission
-    that failed on scope surfaced only ``INSUFFICIENT_EVIDENCE`` — undiagnosable
-    from one request_id."""
+    itself (D3): the verdict, the human reason, the trust score, the resolved
+    RequiredScope that drove a coverage gap, and every earlier rejection.
+    Without this a mission that failed on scope surfaced only
+    ``INSUFFICIENT_EVIDENCE`` — undiagnosable from one request_id."""
     scope = getattr(deps, "required_scope", None)
     scope_repr = None
     if scope is not None and not scope.is_empty():
@@ -450,8 +467,37 @@ def _validation_trace(outcome: ValidationOutcome, deps: SelericDeps) -> dict:
             "reason": outcome.reason,
             "trust_score": outcome.trust_score,
             "required_scope": scope_repr,
+            "revisions": list(revisions or []),
         }
     }
+
+
+def _is_answer(result: MissionResult, outcome: ValidationOutcome) -> bool:
+    """A rejected draft that is still a real answer the user could be shown.
+
+    Rejected for a fixable reason (a citation, a coverage gap, wording), not
+    because it is empty, a placeholder, a non-terminal preamble, or provably
+    wrong about its own numbers.
+    """
+    text = (result.final_response or "").strip()
+    core = text.strip(".…").lower()
+    return bool(
+        text
+        and core
+        and core not in _PLACEHOLDER_ANSWERS
+        and is_terminal_status(result.status)
+        and result.status != "failed"
+        and not outcome.self_contradicting
+        and not outcome.rejected
+    )
+
+
+_REASON_IN_PROGRESS_CHARS = 140
+
+
+def _short(reason: str | None) -> str:
+    text = " ".join((reason or "the answer did not pass validation").split())
+    return text if len(text) <= _REASON_IN_PROGRESS_CHARS else text[: _REASON_IN_PROGRESS_CHARS - 1] + "…"
 
 
 async def run_validated_mission(
@@ -469,25 +515,63 @@ async def run_validated_mission(
     ``ExecutionBudgetTracker`` like every other execution limit, not a separate
     ad hoc counter. A REJECT verdict short-circuits without spending one.
 
-    ``on_stream(kind, text)`` — when supplied — streams the final answer live:
-    ``("delta", suffix)`` for each new chunk, ``("reset", "")`` when a REVISE
-    scraps the streamed-but-rejected answer so the caller can clear it before
-    the revised answer streams in.
+    Each revision continues the same conversation (``message_history``), so the
+    model sees its own tool results and the draft that was rejected.
+
+    ``on_stream(kind, text)`` — when supplied — receives the answer once, as
+    ``("delta", full_text)``, after it has validated (or ships as a partial).
+    A rejected draft is never sent. Before 2026-10-04 every draft streamed live
+    and each rejection wiped it with ``("reset", "")``: MS3-34e7eb26aa showed the
+    user seven answers appearing and vanishing. ``reset`` is no longer emitted
+    here; callers may keep handling it.
     """
+    result = await _validated(agent, deps, query, validator=validator, tracker=tracker)
+    if (
+        on_stream is not None
+        and result.status in ("completed", "partial")
+        and (result.final_response or "").strip()
+    ):
+        on_stream("delta", result.final_response)
+    return result
+
+
+async def _validated(
+    agent: Agent[SelericDeps, MissionResult],
+    deps: SelericDeps,
+    query: str,
+    *,
+    validator: EvidenceValidator | None,
+    tracker: ExecutionBudgetTracker | None,
+) -> MissionResult:
     validator = validator or EvidenceValidator()
     tracker = tracker or ExecutionBudgetTracker(limits=deps.limits)
-    on_delta = (lambda text: on_stream("delta", text)) if on_stream else None
 
     # pydantic-ai enforces UsageLimits per agent.run(); share the mission budget
     # across the initial run + revisions so N revisions don't multiply it.
     attempts_total = 1 + max(0, deps.limits.max_validation_revisions)
     mission_budget = _usage_limits(deps.limits, attempts_total)
 
-    result = await _run_agent(agent, deps, query, on_delta=on_delta, usage_limits=mission_budget)
+    result, history = await _run_agent(agent, deps, query, usage_limits=mission_budget)
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
     outcome = validator.validate(result, deps=deps)
+    revisions: list[dict[str, Any]] = []
+    # The latest rejected draft that is still a real answer, with its own
+    # rejection — what an exhausted loop ships as a partial. Not simply the
+    # last draft: live MS3-34e7eb26aa ended on a draft whose headline total
+    # contradicted its own table, and that is what the user was shown.
+    best: tuple[MissionResult, ValidationOutcome] | None = None
     while not outcome.ok:
+        revisions.append({"revision": len(revisions), "verdict": outcome.verdict, "reason": outcome.reason})
+        _log.info(
+            "v3_validation_rejected mission=%s revision=%d verdict=%s reason=%s",
+            deps.mission_id,
+            len(revisions) - 1,
+            outcome.verdict,
+            outcome.reason,
+        )
+        if _is_answer(result, outcome):
+            best = (result, outcome)
         if outcome.rejected:
             # Terminal: the evidence contradicts the claim. Re-prompting spends
             # a revision to get the same rejection.
@@ -502,48 +586,26 @@ async def run_validated_mission(
                     "error_code": "INSUFFICIENT_EVIDENCE",
                     "final_response": resp,
                     "limitations": ["INSUFFICIENT_EVIDENCE", *([outcome.reason] if outcome.reason else [])],
-                    "trace": {**result.trace, **_validation_trace(outcome, deps)},
+                    "trace": {**result.trace, **_validation_trace(outcome, deps, revisions)},
                 }
             )
         verdict = tracker.consume("validation_revisions")
         if not verdict.ok:
-            resp = (
-                result.final_response.strip()
-                if (result.final_response and result.final_response.strip())
-                else "I could not back this answer with live metric evidence. Please retry."
-            )
-            # If the agent produced a substantive answer with evidence, mark as partial
-            # rather than failed. The user got a real answer — failing the mission
-            # breaks UI trust and telemetry when validation revisions are exhausted
-            # on a scope gap that the agent cannot fix without new data.
-            has_substantive_answer = (
-                result.final_response
-                and result.final_response.strip()
-                and result.evidence_ids
-                and result.final_response.strip().lower() not in _PLACEHOLDER_ANSWERS
-            )
-            base_limitation = "VALIDATION_REVISIONS_EXHAUSTED" if has_substantive_answer else "INSUFFICIENT_EVIDENCE"
-            return result.model_copy(
-                update={
-                    "status": "partial" if has_substantive_answer else "failed",
-                    "error_code": None if has_substantive_answer else "INSUFFICIENT_EVIDENCE",
-                    "final_response": resp,
-                    # Name the unresolved scope part alongside the code, so a
-                    # partial answer states what it does not cover (never merge
-                    # evidence with an unresolved scope difference silently).
-                    "limitations": [base_limitation, *([outcome.reason] if outcome.reason else [])],
-                    "trace": {**result.trace, **_validation_trace(outcome, deps)},
-                }
-            )
-        if on_stream is not None:
-            # The streamed-but-rejected answer is now stale; tell the caller to
-            # clear it before the revised answer streams in over the top.
-            on_stream("reset", "")
-        revision_prompt = (
-            f"{query}\n\nYour previous answer was rejected: {outcome.reason}. Revise it."
+            return _exhausted(result, outcome, best, deps, revisions)
+        emit_progress(
+            deps.mission_id,
+            "agent.revising",
+            f"Revising the answer — {_short(outcome.reason)}",
+            {"revision": len(revisions), "verdict": outcome.verdict},
         )
-        result = await _run_agent(agent, deps, revision_prompt, on_delta=on_delta,
-                              usage_limits=mission_budget)
+        revision_prompt = (
+            f"Your previous answer was rejected: {outcome.reason}. Revise it: fix exactly "
+            "that problem, reuse the evidence and artifacts you already fetched (their ids "
+            "are in the tool results above), and call final_result again."
+        )
+        result, history = await _run_agent(
+            agent, deps, revision_prompt, message_history=history, usage_limits=mission_budget
+        )
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
         outcome = validator.validate(result, deps=deps)
@@ -554,7 +616,55 @@ async def run_validated_mission(
         "trust_score": outcome.trust_score,
         "trust_label": outcome.trust_label,
         "reasons": outcome.reasons,
-        "revisions_used": getattr(tracker, "validation_revisions", 0),
+        "revisions_used": len(revisions),
+        "revisions": revisions,
     }
     existing_trace = result.trace or {}
     return result.model_copy(update={"trace": {**existing_trace, "validation": validation_trace}})
+
+
+def _exhausted(
+    result: MissionResult,
+    outcome: ValidationOutcome,
+    best: tuple[MissionResult, ValidationOutcome] | None,
+    deps: SelericDeps,
+    revisions: list[dict[str, Any]],
+) -> MissionResult:
+    """Revisions ran out. Ship the best real answer as partial, or fail cleanly.
+
+    A real answer backed by mission evidence is a partial: the user gets it with
+    the unresolved issue named, rather than a failed mission (which breaks UI
+    trust and telemetry on a scope gap the agent cannot fix without new data).
+    Evidence is read from the mission, not only ``evidence_ids`` — a correct
+    answer that forgot to cite is still backed. Anything else fails with a
+    generic message; a draft known to be wrong is never shown.
+    """
+    trace = {**result.trace, **_validation_trace(outcome, deps, revisions)}
+    if best is not None and _mission_has_evidence(deps):
+        answer, answer_outcome = best
+        cited = [aid for aid in answer.evidence_ids if deps.artifact_store.get(aid) is not None]
+        return answer.model_copy(
+            update={
+                "status": "partial",
+                "error_code": None,
+                "final_response": answer.final_response.strip(),
+                "evidence_ids": cited,
+                # Name the unresolved part of THIS answer alongside the code,
+                # so a partial states what it does not cover (never merge
+                # evidence with an unresolved scope difference silently).
+                "limitations": [
+                    "VALIDATION_REVISIONS_EXHAUSTED",
+                    *([answer_outcome.reason] if answer_outcome.reason else []),
+                ],
+                "trace": {**answer.trace, **trace, "steps": result.trace.get("steps")},
+            }
+        )
+    return result.model_copy(
+        update={
+            "status": "failed",
+            "error_code": "INSUFFICIENT_EVIDENCE",
+            "final_response": "I could not back this answer with live metric evidence. Please retry.",
+            "limitations": ["INSUFFICIENT_EVIDENCE", *([outcome.reason] if outcome.reason else [])],
+            "trace": trace,
+        }
+    )

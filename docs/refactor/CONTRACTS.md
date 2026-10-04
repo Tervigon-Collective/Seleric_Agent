@@ -459,3 +459,27 @@ the 5 above); pinned in `tests/unit/test_v3_agent_wiring.py`.
   + four `ads.py` surfaces) registered outside frozen §4, and `insights_explain`
   removed from the MCP adapter's tool list (dead — never called). Tool count
   25 → 30, pinned in `tests/unit/test_v3_agent_wiring.py`. Needs A/B/C sign-off.
+- 2026-10-04: **A3 proposed** — `diagnosis.diagnose_metric_change(metric_id,
+  event_start?, event_end?, claimed_direction?, filters?, search_breadth=0)`
+  registered (tool count 28 → 29). A deliberate, scoped exception to rule 5:
+  it fetches its own daily history (outcome, lineage components, rate×base
+  chains, candidate drivers, per-segment rows) through the same certified
+  `_cached_metrics_query` path `query_metrics` uses (budgeted, cached, written
+  as `EvidenceArtifact`s), because a diagnosis needs hundreds of evidence rows
+  that cannot be ferried through the model by id. It calls no other tool
+  (rule 4 holds); the calculation is the pure `causal/diagnosis.py`. Outputs:
+  one `Finding(finding_type="diagnosis")` carrying every reportable number,
+  one `CausalArtifact` per estimated driver. Classification semantics
+  tightened for both this tool and `estimate_effect`: `CAUSALLY_SUPPORTED`
+  now also requires a confidence interval excluding 0 and direction evidence
+  beyond a same-day association (lead/lag or intervention-like shifts);
+  estimation uses an explicit time-series DAG (calendar + lagged pre-treatment
+  adjustment only), HAC intervals, and two time-series refuters
+  (circular-shift placebo, future-treatment placebo). Needs A/B/C sign-off.
+- 2026-10-05: **A4 proposed** — `semantic.list_metrics(domain?)` registered
+  (tool count 29 → 30): a read-only listing of the in-memory catalogue
+  snapshot (`deps.catalogue`) grouped by view, with date axis, row grain and
+  time buckets. No MCP call, no values, no evidence. Added because "what can
+  you query" had no tool: live MS3-29049b3e92 searched twice and shipped a
+  truncated answer. Also: `query_metrics` gained `pool_listed_values` (a list
+  dimension value now splits one row per value; pooling is explicit).

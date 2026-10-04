@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_models: str = ""  # JSON array or comma-separated; first = highest priority
     openrouter_endpoint: str = "https://openrouter.ai/api/v1"
+    # Output cap for the OpenRouter tier. Unset, OpenRouter reserves the model's
+    # full output window (64k for claude-haiku-4.5) against the credit balance
+    # and refuses with 402 when the balance can't cover it (live 2026-10-04,
+    # "requested up to 64000 tokens, but can only afford 5400") — even though a
+    # mission step never needs more than a few thousand tokens.
+    openrouter_max_tokens: int = 8192
 
     langfuse_tracing: bool = True
     langfuse_public_key: str = ""

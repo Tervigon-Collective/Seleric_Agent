@@ -178,3 +178,30 @@ async def test_classify_query_parses_live_shape(monkeypatch) -> None:
     assert result.intent == "lookup"
     assert result.complexity == "simple"
     assert result.needs_write is False
+
+
+def test_routing_hint_sends_why_questions_to_the_diagnosis_tool() -> None:
+    from seleric_swarm.agent.runner import _routing_hint
+
+    hint = _routing_hint(QueryClassification(intent="diagnostic"))
+    assert "diagnose_metric_change" in hint
+    assert "diagnose_metric_change" not in _routing_hint(QueryClassification(intent="lookup"))
+
+
+@pytest.mark.parametrize(
+    ("text", "grain"),
+    [
+        ("gross revenue last week all days", "day"),
+        ("give me daily chart of ad spend for the last 30 days", "day"),
+        ("net sales day-wise for September", "day"),
+        ("orders by week this quarter", "week"),
+        ("monthly revenue this year", "month"),
+        ("net profit last 30 days by order date", None),  # a date basis, not a bucket
+        ("what were net sales last month", None),
+        ("daily and monthly sales", None),  # two buckets named: the agent decides
+    ],
+)
+def test_stated_grain_is_read_from_the_words(text, grain):
+    from seleric_swarm.agent.intent import stated_grain
+
+    assert stated_grain(text) == grain

@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from seleric_swarm.paths import repo_root
-from seleric_swarm.services.domain_health.models import DomainStateSnapshot
+from seleric_swarm.services.domain_health.models import DomainStateSnapshot, ResolvedMetric
 
 _SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -69,3 +69,22 @@ class SnapshotStore:
 
     async def aget_latest(self, domain: str) -> DomainStateSnapshot | None:
         return await asyncio.to_thread(self.get_latest, domain)
+
+    async def afind_metric(
+        self,
+        metric_id: str,
+        *,
+        max_age_hours: float = 2.0,
+    ) -> tuple[ResolvedMetric, DomainStateSnapshot] | None:
+        """Return a fresh ResolvedMetric and its snapshot from any domain, or None."""
+        from seleric_swarm.services.domain_health.scheduler import ALL_DOMAINS
+        from seleric_swarm.services.business_state.formatter import is_stale
+
+        for domain in ALL_DOMAINS:
+            snapshot = await self.aget_latest(domain)
+            if snapshot is None or snapshot.status == "UNAVAILABLE" or is_stale(snapshot, max_age_hours=max_age_hours):
+                continue
+            for metric in snapshot.metrics:
+                if metric.metric_id == metric_id:
+                    return metric, snapshot
+        return None

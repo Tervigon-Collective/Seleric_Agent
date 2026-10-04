@@ -399,3 +399,58 @@ def test_grouped_breakdown_does_not_trip_verdict():
     outcome = EvidenceValidator().score(deps)
     # scope coverage is satisfied → it contributes no REVISE reason.
     assert "breakdown" not in (outcome.reason or "")
+
+
+def _metric_evidence(store: InMemoryArtifactStore, metric_id: str, dimensions: dict[str, str]) -> str:
+    stamp = datetime(2026, 9, 28, tzinfo=UTC)
+    payload = EvidenceArtifact(
+        metric_id=metric_id,
+        dimensions=dimensions,
+        grain="none",  # type: ignore[arg-type]
+        as_of=datetime.now(UTC),
+        period_start=stamp,
+        period_end=stamp,
+        value=1.0,
+        source_query={"measure": metric_id},
+    )
+    artifact = Artifact(
+        workspace_id="ws1",
+        artifact_type="evidence",
+        payload=payload.model_dump(mode="json"),
+        classification="factual",
+        evidence_ids=[f"raw:{metric_id}"],
+        provenance=ArtifactProvenance(query_version="q1"),
+        mission_id=_MISSION,
+    )
+    store.put(artifact)
+    return artifact.id
+
+
+def test_every_reported_metric_must_carry_the_named_value():
+    """Live 2026-10-05 MS3-c97c9fea15: a "Meta ads report" filtered orders to
+    Meta but reported spend/impressions/clicks for Meta + Google; one filtered
+    metric used to cover the whole answer."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    store = InMemoryArtifactStore()
+    orders = _metric_evidence(store, "orders", {"platform": "meta"})
+    spend = _metric_evidence(store, "ad_spend", {})
+    sales = _metric_evidence(store, "net_sales", {})  # cannot carry ad_platform: exempt
+    catalogue = CatalogueSnapshot(
+        metrics=(
+            CatalogueMetricMeta(id="orders", view="commerce", supported_dimensions=["platform"]),
+            CatalogueMetricMeta(id="ad_spend", view="paid_media", supported_dimensions=["ad_platform"]),
+            CatalogueMetricMeta(id="net_sales", view="commerce", supported_dimensions=["order_date"]),
+        )
+    )
+    scope = RequiredScope(
+        value_filters=(ValueFilter(term="meta", dimensions=frozenset({"ad_platform", "platform"}), values=("meta",)),)
+    )
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, catalogue, cited=[orders, spend, sales])
+    assert out.status == "INSUFFICIENT"
+    assert "ad_spend" in out.gaps[0].description and "net_sales" not in out.gaps[0].description
+
+    # Re-fetched filtered, the same answer passes; an uncited exploratory fetch does not block.
+    spend_meta = _metric_evidence(store, "ad_spend", {"ad_platform": "meta"})
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, catalogue, cited=[orders, spend_meta])
+    assert out.status == "OK", out.gaps

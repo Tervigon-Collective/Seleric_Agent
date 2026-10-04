@@ -299,3 +299,16 @@ def test_months_phrase_beats_days_phrase():
     # the test confirms whichever fires first returns a consistent result.
     assert window.relative_token is not None
     assert window.kind == "absolute"
+
+
+def test_named_weekday_is_its_last_completed_occurrence() -> None:
+    from seleric_swarm.services.time_range import window_from_query
+
+    # 2026-10-04 is a Sunday: "Monday" is 2026-09-28, never today or a future day.
+    w = window_from_query("what caused the spike in CAC on Monday?", "Asia/Kolkata", "2026-10-04")
+    assert (w.start, w.end, w.relative_token) == ("2026-09-28", "2026-09-28", "last_monday")
+    # Asked on a Monday, "Monday" is last week's (today is still in progress).
+    w = window_from_query("why did orders drop on Monday", "Asia/Kolkata", "2026-10-05")
+    assert (w.start, w.end) == ("2026-09-28", "2026-09-28")
+    # Two weekday names are a comparison, not a single day.
+    assert window_from_query("Monday vs Tuesday orders", "Asia/Kolkata", "2026-10-04") is None

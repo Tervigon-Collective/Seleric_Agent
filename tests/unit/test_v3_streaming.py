@@ -85,9 +85,10 @@ async def test_streamed_deltas_reconstruct_final_answer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reset_emitted_before_a_revision_restreams() -> None:
-    # An empty final_response never validates -> the bounded REVISE loop fires,
-    # which must emit a reset so the streamed-but-rejected draft is cleared.
+async def test_a_rejected_draft_is_never_streamed() -> None:
+    # An empty final_response never validates -> the bounded REVISE loop runs to
+    # exhaustion. No draft may reach the stream: the user must not watch answers
+    # appear and vanish (live MS3-34e7eb26aa streamed seven, each wiped by a reset).
     model = TestModel(custom_output_args=_output(""))
     agent = Agent(model=model, deps_type=SelericDeps, output_type=MissionResult)
     kinds: list[str] = []
@@ -100,4 +101,21 @@ async def test_reset_emitted_before_a_revision_restreams() -> None:
     )
 
     assert result.status == "failed"
-    assert "reset" in kinds
+    assert kinds == []
+
+
+@pytest.mark.asyncio
+async def test_answer_is_streamed_once_after_it_validates() -> None:
+    model = TestModel(custom_output_args=_output("a valid streamed answer"))
+    agent = Agent(model=model, deps_type=SelericDeps, output_type=MissionResult)
+
+    @agent.tool_plain
+    def search_semantics() -> str:
+        return "metric found"
+
+    events: list[tuple[str, str]] = []
+    await run_validated_mission(
+        agent, _deps(), "hello", on_stream=lambda kind, text: events.append((kind, text))
+    )
+
+    assert events == [("delta", "a valid streamed answer")]

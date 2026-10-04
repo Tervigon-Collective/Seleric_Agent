@@ -331,8 +331,10 @@ async def test_query_metrics_filters_to_any_of_several_values():
         _Ctx(deps),  # type: ignore[arg-type]
         metric_id="attributed_orders",
         dimensions={"lt_utm_medium": ["acme chat", "ac", "acme chat"]},
+        pool_listed_values=True,  # spellings of ONE group: pooled (a bare list splits per value)
     )
     assert result.success is True
+    assert not mcp.arguments[0].get("dimensions")
     medium = [f for f in mcp.arguments[0]["filters"] if f["dimension"] == "lt_utm_medium"]
     assert medium == [{"dimension": "lt_utm_medium", "operator": "equals", "values": ["acme chat", "ac"]}]
     stored = deps.artifact_store.list_for_mission(_MISSION)

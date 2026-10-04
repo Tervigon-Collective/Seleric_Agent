@@ -119,3 +119,79 @@ def test_a_rounded_magnitude_in_prose_still_reconciles():
     """"~3.91M" is a legitimate rounding of 3,907,157.70 — half of its last
     represented unit is 5,000, which covers the 2,842 gap."""
     assert total_mismatch(f"Receipts rose to ~3.91M INR in the summed window.\n{_TABLE_B}") is None
+
+
+# -- 2026-10-05: claim binding (live false positives that FAILED correct answers) --
+
+_NET_PROFIT = [
+    -42150.82, -29332.48, -27760.06, -18342.92, -34330.06, -25009.12, -8439.02, 896.89,
+    -17026.13, 26819.23, 23524.32, 12000.0, 5000.0, 3000.0, 2000.0, 1000.0, 500.0, 250.0,
+    125.0, 100.0, 90.0, 80.0, 70.0, 60.0, 50.0, 40.0, 30.0, 20.0, 10.0, 5.0,
+]
+
+
+def _net_profit_table() -> str:
+    rows = "\n".join(f"| 2026-09-{i + 1:02d} | {v:,.2f} |" for i, v in enumerate(_NET_PROFIT))
+    return f"| Date | Net profit (INR) |\n| --- | ---: |\n{rows}\n"
+
+
+def test_a_period_length_or_a_lowest_value_is_not_read_as_the_total():
+    """Live MS3-701d6624a0: "The 30-day total is a net loss of about INR 37.6k
+    … (lowest: INR -42.2k …)" was read as asserting -42,200 and FAILED a
+    correct answer."""
+    total = sum(_NET_PROFIT)
+    text = (
+        f"Net profit was INR {total:,.2f} (loss).\n\n{_net_profit_table()}\n"
+        f"Interpretation: The 30-day total is a net loss of about INR {abs(total) / 1000:.1f}k driven "
+        "by large negative days early in the window (lowest: INR -42.2k on 2026-09-01) despite more "
+        "positive days overall (17 positive days vs 13 negative days)."
+    )
+    assert total_mismatch(text) is None
+
+
+def test_a_wrong_total_after_a_colon_is_still_caught():
+    """Splitting on ":" separated "Total spend:" from its figure, so this
+    shape was never checked."""
+    assert total_mismatch(f"Total spend: INR 9,146,009.\n{_TABLE}") is not None
+    assert total_mismatch(f"Total spend: INR 11,943,009.97.\n{_TABLE}") is None
+
+
+def test_an_overall_rate_inside_the_rows_is_not_a_total():
+    """Live MS3-c645523b51: an overall CTR over daily CTR rows was flagged as
+    a wrong total and burned three revisions."""
+    table = "| Date | CTR |\n| --- | ---: |\n| 2026-09-27 | 0.0201 |\n| 2026-09-28 | 0.0215 |\n| 2026-09-29 | 0.0181 |\n"
+    assert total_mismatch(f"Overall CTR for the week was 0.0199.\n\n{table}") is None
+    assert total_mismatch(f"Overall, CTR fell by 0.0020 over the week.\n\n{table}") is None
+
+
+def test_ranks_and_percentages_are_not_totals():
+    assert total_mismatch(f"Across the top 5 campaigns the total was 11,943,009.97 (up 12% overall).\n{_TABLE}") is None
+
+
+def test_per_row_rounding_of_a_long_table_is_not_a_wrong_total():
+    """Live MS3-e18a06b408: the exact total the tool returned (32,858.55) vs
+    30 rows printed at 2 decimals summing to 32,858.60 — a correct total."""
+    rows = [-1095.2851] * 29 + [-1095.2851 - 0.0001]
+    table = "| Day | Net profit |\n| --- | ---: |\n" + "".join(f"| d{i} | {v:,.2f} |\n" for i, v in enumerate(rows))
+    exact = sum(rows)
+    assert abs(exact - sum(round(v, 2) for v in rows)) > 0.1
+    assert total_mismatch(f"Net profit was a loss of INR {abs(exact):,.2f} (total).\n\n{table}") is None
+    assert total_mismatch(f"Net profit was a loss of INR {abs(exact) + 50:,.2f} (total).\n\n{table}") is not None
+
+
+@pytest.mark.parametrize(
+    ("text", "dangling"),
+    [
+        ("I don't have a single ", "single"),
+        ("Net sales were ₹87,998 for the", "the"),
+        ("Hi — how can I help you today?", None),
+        ("Net sales were ₹87,998.", None),
+        ("| a | b |\n| --- | --- |\n| x | 1 |", None),
+        ("Would you like this by channel", None),
+        ("Revenue: 1,234 INR", None),
+    ],
+)
+def test_a_cut_off_answer_is_detected(text, dangling):
+    from seleric_swarm.agent.validation.answer_audit import cut_off
+
+    assert cut_off(text) == dangling

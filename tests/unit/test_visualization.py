@@ -151,3 +151,59 @@ async def test_generate_visualization_tool():
     assert chart_artifact.artifact_type == "chart_spec"
     assert chart_artifact.classification == "derived"
     assert chart_artifact.payload["chart_type"] == "line"
+
+
+def test_visualization_spec_varying_dimensions_exclude_constant_filter():
+    """Constant filter dimensions (e.g. platform='meta' or a list of filtered IDs)
+    must not pollute the series key when an entity dimension (e.g. campaign_name) varies."""
+    evidence = [
+        _make_evidence(
+            "metric.ctr", "2026-09-01T00:00:00", "2026-09-01T23:59:59", 0.05,
+            dimensions={"campaign_name": "Dog Harness", "platform": "meta", "account_id": "12345"},
+        ),
+        _make_evidence(
+            "metric.ctr", "2026-09-02T00:00:00", "2026-09-02T23:59:59", 0.06,
+            dimensions={"campaign_name": "Dog Harness", "platform": "meta", "account_id": "12345"},
+        ),
+        _make_evidence(
+            "metric.ctr", "2026-09-01T00:00:00", "2026-09-01T23:59:59", 0.03,
+            dimensions={"campaign_name": "Snugboo", "platform": "meta", "account_id": "12345"},
+        ),
+        _make_evidence(
+            "metric.ctr", "2026-09-02T00:00:00", "2026-09-02T23:59:59", 0.04,
+            dimensions={"campaign_name": "Snugboo", "platform": "meta", "account_id": "12345"},
+        ),
+    ]
+    spec = generate_visualization_spec(evidence, "trend", title="Campaign CTR")
+    assert spec["chart_type"] == "line"
+    series_names = [s["name"] for s in spec["series"]]
+    assert series_names == ["Dog Harness", "Snugboo"]
+    assert "meta" not in series_names[0]
+    assert "12345" not in series_names[0]
+
+
+def test_visualization_spec_multimetric_with_varying_dimensions():
+    evidence = [
+        _make_evidence(
+            "metric.ctr", "2026-09-01T00:00:00", "2026-09-01T23:59:59", 0.05,
+            dimensions={"campaign_name": "Dog Harness", "platform": "meta"}, unit="pct",
+        ),
+        _make_evidence(
+            "metric.cpa", "2026-09-01T00:00:00", "2026-09-01T23:59:59", 20.0,
+            dimensions={"campaign_name": "Dog Harness", "platform": "meta"}, unit="inr",
+        ),
+        _make_evidence(
+            "metric.ctr", "2026-09-02T00:00:00", "2026-09-02T23:59:59", 0.06,
+            dimensions={"campaign_name": "Snugboo", "platform": "meta"}, unit="pct",
+        ),
+        _make_evidence(
+            "metric.cpa", "2026-09-02T00:00:00", "2026-09-02T23:59:59", 22.0,
+            dimensions={"campaign_name": "Snugboo", "platform": "meta"}, unit="inr",
+        ),
+    ]
+    spec = generate_visualization_spec(evidence, "trend", title="CTR and CPA")
+    series_names = [s["name"] for s in spec["series"]]
+    assert "Ctr (Dog Harness)" in series_names
+    assert "Cpa (Dog Harness)" in series_names
+    assert "meta" not in series_names[0]
+

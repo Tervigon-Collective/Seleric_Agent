@@ -68,11 +68,10 @@ def _ratio_lookup(ctx: RunContext[SelericDeps]) -> funnel_math.RatioLookup:
 
     def is_ratio(metric_id: str) -> bool | None:
         for candidate in (metric_id, canonical(metric_id)):
-            for meta in snapshot.metrics:
-                if meta.id != candidate:
-                    continue
-                aggregation = str(meta.raw.get("aggregation") or "").strip().lower()
-                return aggregation == "ratio" if aggregation else None
+            if not snapshot.has_metric(candidate):
+                continue
+            aggregation = snapshot.aggregation_for(candidate)
+            return aggregation == "ratio" if aggregation else None
         return None
 
     return is_ratio
@@ -84,6 +83,35 @@ def _provenance(evidence_ids: list[str]) -> ArtifactProvenance:
 
 def _refuse(summary: str, *, error_code: str, retryable: bool = False) -> ToolResult:
     return ToolResult(success=False, summary=summary, error_code=error_code, retryable=retryable)
+
+
+_AVAILABLE_EVIDENCE_SHOWN = 60
+
+
+def _available_evidence(ctx: RunContext[SelericDeps]) -> str:
+    """The evidence this mission already holds, so a refused call can be fixed.
+
+    Live 2026-10-04 (MS3-34e7eb26aa): a call with ids that did not exist was
+    refused with only the bad ids, and the model guessed again — twelve times.
+    Naming the real ids (with what each one is) turns the next call into a fix.
+    """
+    rows: list[str] = []
+    for artifact in ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id):
+        if artifact.artifact_type != "evidence":
+            continue
+        try:
+            ev = EvidenceArtifact.model_validate(artifact.payload)
+        except Exception:
+            continue
+        period = f"{ev.period_start.date()}" + (
+            "" if ev.period_end.date() == ev.period_start.date() else f"..{ev.period_end.date()}"
+        )
+        dims = ", ".join(f"{k}={v}" for k, v in sorted(ev.dimensions.items()))
+        rows.append(f"{artifact.id} ({ev.metric_id} {period}{' ' + dims if dims else ''})")
+    if not rows:
+        return " This mission holds no evidence yet: fetch it with query_metrics first."
+    more = "" if len(rows) <= _AVAILABLE_EVIDENCE_SHOWN else f" …(+{len(rows) - _AVAILABLE_EVIDENCE_SHOWN} more)"
+    return " Evidence available in this mission: " + "; ".join(rows[:_AVAILABLE_EVIDENCE_SHOWN]) + more
 
 
 def _load_evidence(ctx: RunContext[SelericDeps], evidence_ids: list[str]) -> tuple[list[EvidenceArtifact], ToolResult | None]:
@@ -101,7 +129,7 @@ def _load_evidence(ctx: RunContext[SelericDeps], evidence_ids: list[str]) -> tup
     missing = [aid for aid in evidence_ids if aid not in found]
     if missing:
         return [], _refuse(
-            f"evidence not found in store: {', '.join(missing)}",
+            f"evidence not found in store: {', '.join(missing)}." + _available_evidence(ctx),
             error_code="INSUFFICIENT_EVIDENCE",
         )
 
@@ -779,8 +807,19 @@ async def generate_visualization(
     
     if "error" in spec:
         return _refuse(spec["error"], error_code="VISUALIZATION_FAILED")
-        
-    artifact = ctx.deps.artifact_store.put(
+
+    # Idempotent: the same chart over the same evidence is one artifact. A
+    # revision or a recovery retry of the mission re-asks for the chart it
+    # already has; writing it again showed duplicate charts on the answer.
+    wanted = set(evidence_ids)
+    artifact = next(
+        (
+            a
+            for a in ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id)
+            if a.artifact_type == "chart_spec" and a.payload == spec and set(a.evidence_ids) == wanted
+        ),
+        None,
+    ) or ctx.deps.artifact_store.put(
         Artifact(
             workspace_id=ctx.deps.principal.workspace_id,
             artifact_type="chart_spec",
@@ -791,10 +830,14 @@ async def generate_visualization(
             mission_id=ctx.deps.mission_id,
         )
     )
-    
+
     return ToolResult(
         success=True,
         artifact_ids=[artifact.id],
-        summary=f"Generated {spec['chart_type']} chart visualization.",
-        provenance=_provenance(evidence_ids)
+        summary=(
+            f"Generated {spec['chart_type']} chart visualization. It is attached to your answer "
+            "automatically: do not link, embed or describe it as an image in final_response, and "
+            "do not call generate_visualization again for the same evidence."
+        ),
+        provenance=_provenance(evidence_ids),
     )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 QueryClass = Literal["lookup", "comparison", "unsupported"]
 MissionStatus = Literal[
@@ -59,6 +59,12 @@ class DimensionMappingV1(BaseModel):
 
 
 class TraceInfo(BaseModel):
+    # Extra keys (the runner's intent/classification fields) are kept: this
+    # model dropped them, and with them ``validation``, so no stored mission
+    # showed why a draft was revised (live 2026-10-04: MS3-e18a06b408 revised
+    # a correct total away and the record could not say why).
+    model_config = ConfigDict(extra="allow")
+
     request_id: str
     session_id: str
     langfuse_trace_id: str | None = None
@@ -68,6 +74,8 @@ class TraceInfo(BaseModel):
     elapsed_seconds: float | None = None
     # Per-step agent trace (tool calls + args, returns, retries, model text).
     steps: list[dict[str, Any]] | None = None
+    # Verdict, trust score and every rejected revision with its reason.
+    validation: dict[str, Any] | None = None
 
 
 class MissionError(BaseModel):

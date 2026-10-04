@@ -504,6 +504,96 @@ def _fmt_value(value: float) -> str:
 _MAX_SERIES_IN_SUMMARY = 40
 
 
+def _series_stats(ctx: RunContext[SelericDeps], metric_id: str, values: list[float]) -> str:
+    """Row statistics computed here, so the model quotes a total instead of adding rows.
+
+    Live 2026-10-04 (MS3-34e7eb26aa): four of seven drafts stated a wrong sum of
+    27 daily rows, each one rejected by the arithmetic audit. Whether the rows may
+    be summed at all is the catalogue's ``aggregation`` — never guessed from the
+    id or the unit: an additive metric gets a total and per-row average, a ratio
+    is told it cannot be summed, and a metric the catalogue does not type gets
+    only its range.
+    """
+    if len(values) < 2:
+        return ""
+    catalogue = getattr(ctx.deps, "catalogue", None)
+    aggregation = None
+    if catalogue is not None and hasattr(catalogue, "aggregation_for"):
+        for candidate in dict.fromkeys((metric_id, ctx.deps.canonical_metric_id(metric_id))):
+            aggregation = catalogue.aggregation_for(candidate)
+            if aggregation:
+                break
+    span = f"min={_fmt_value(min(values))}, max={_fmt_value(max(values))}"
+    if aggregation == "additive":
+        total = sum(values)
+        return (
+            f" Computed over all {len(values)} rows: total={_fmt_value(total)}, "
+            f"average per row={_fmt_value(total / len(values))}, {span}. "
+            "Quote these figures; do not re-add the rows."
+        )
+    if aggregation == "ratio":
+        return (
+            f" Range over all {len(values)} rows: {span}. {metric_id} is a ratio: its rows "
+            "cannot be summed or averaged into a period figure — query it with grain='none' "
+            "for that."
+        )
+    return f" Range over all {len(values)} rows: {span}."
+
+
+# What makes two evidence rows the same fact. ``as_of``/``fetched_at`` are left
+# out: a retry fetching the identical row a minute later is not new evidence.
+_EVIDENCE_IDENTITY = (
+    "metric_id", "dimensions", "grain", "period_start", "period_end", "value", "unit", "source_query",
+)
+
+
+def _evidence_identity(payload: dict[str, Any]) -> str:
+    return json.dumps({k: payload.get(k) for k in _EVIDENCE_IDENTITY}, sort_keys=True, default=str)
+
+
+def _evidence_index(ctx: RunContext[SelericDeps]) -> dict[str, str]:
+    """identity -> artifact id for the evidence this mission already holds."""
+    index: dict[str, str] = {}
+    for artifact in ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id):
+        if artifact.artifact_type == "evidence" and isinstance(artifact.payload, dict):
+            index.setdefault(_evidence_identity(artifact.payload), artifact.id)
+    return index
+
+
+def _put_evidence(
+    ctx: RunContext[SelericDeps],
+    evidence: EvidenceArtifact,
+    *,
+    index: dict[str, str],
+    raw_id: str,
+    provenance: ArtifactProvenance,
+) -> str:
+    """Write one EvidenceArtifact, or reuse the identical one the mission holds.
+
+    The per-run query cache only dedupes within one set of deps. A recovery
+    retry of the same mission gets fresh deps but the same artifact store, so
+    it re-wrote every row (live MS3-34e7eb26aa: 54 evidence rows for 27 days,
+    each day twice) — anything summing the mission's evidence double-counted.
+    """
+    payload = evidence.model_dump(mode="json")
+    identity = _evidence_identity(payload)
+    if (existing := index.get(identity)) is not None:
+        return existing
+    artifact = ctx.deps.artifact_store.put(
+        Artifact(
+            workspace_id=ctx.deps.principal.workspace_id,
+            artifact_type="evidence",
+            payload=payload,
+            classification="factual",
+            evidence_ids=[raw_id],
+            provenance=provenance,
+            mission_id=ctx.deps.mission_id,
+        )
+    )
+    index[identity] = artifact.id
+    return artifact.id
+
+
 # Catalogue descriptions open with a one-sentence "what it is + when to use it";
 # echo only that so the model can tell near-identical ids apart (e.g. Meta net
 # sales on the event-date basis vs order-date) without a definitions round-trip.
@@ -625,6 +715,47 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
         )
 
 
+_DATE_AXIS = re.compile(r"Date axis:\s*([^;.]+)(?:;\s*grain:\s*([^.;]+))?", re.IGNORECASE)
+
+
+async def list_metrics(ctx: RunContext[SelericDeps], domain: str | None = None) -> ToolResult:
+    """Every metric you can query, grouped by domain (view), with its date axis,
+    row grain and time buckets. Use it for "what can you query / list your
+    metrics / what data do you have" — one call, no search. ``domain``
+    narrows to one domain (e.g. "paid_media"). Listing only: no values."""
+    # Live 2026-10-05 MS3-29049b3e92: with no listing tool the agent searched
+    # twice, then shipped "I don't have a single " as a completed answer.
+    metrics = list(ctx.deps.catalogue.metrics)
+    if domain:
+        wanted = domain.strip().lower()
+        metrics = [m for m in metrics if wanted in (m.view or "").lower() or wanted in str((m.raw or {}).get("category") or "").lower()]
+    if not metrics:
+        domains = sorted({m.view for m in ctx.deps.catalogue.metrics if m.view})
+        return ToolResult(
+            success=False,
+            summary=f"no metrics in domain '{domain}'. Domains: {', '.join(domains) or 'none loaded'}",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+        )
+    by_view: dict[str, list[str]] = {}
+    for m in sorted(metrics, key=lambda m: (m.view, m.id)):
+        raw = m.raw or {}
+        axis = _DATE_AXIS.search(str(raw.get("description") or ""))
+        buckets = ["day", "week", "month", "quarter", "year", *list(raw.get("extra_granularities") or [])]
+        parts = [str(raw.get("display_name") or m.label or m.id)]
+        if raw.get("aggregation"):
+            parts.append(str(raw["aggregation"]))
+        if axis:
+            parts.append(f"date: {axis.group(1).strip()}" + (f", row grain: {axis.group(2).strip()}" if axis.group(2) else ""))
+        parts.append("buckets: " + "/".join(dict.fromkeys(buckets)))
+        by_view.setdefault(m.view or "other", []).append(f"{m.id} ({'; '.join(parts)})")
+    body = "\n".join(f"[{view}] " + " | ".join(items) for view, items in by_view.items())
+    return ToolResult(
+        success=True,
+        summary=f"{len(metrics)} metrics in {len(by_view)} domain(s). Describe them in plain names, not ids:\n{body}",
+    )
+
+
 async def resolve_brand(ctx: RunContext[SelericDeps], name: str) -> ToolResult:
     """Resolve a brand name/code (e.g. "Sniff Theory", "Urthend") to a
     ``brand_id`` for use in a ``query_metrics`` filter — call this instead of
@@ -710,9 +841,15 @@ async def resolve_concept(
         if result.get("disambiguation"):
             warnings.append(str(result["disambiguation"]))
         axes_str = ", ".join(f"{k}={v}" for k, v in (result.get("axes") or {}).items())
+        filter_bound = result.get("filter")
+        filter_str = ""
+        if filter_bound and isinstance(filter_bound, dict):
+            filter_str = f" — bound filter: {filter_bound}. Pass this in dimensions to query_metrics!"
+            if mid:
+                ctx.deps.query_cache.set(f"concept_filter:{mid}", filter_bound)
         return ToolResult(
             success=True,
-            summary=f"{concept} -> {mid}" + (f" ({axes_str})" if axes_str else ""),
+            summary=f"{concept} -> {mid}" + (f" ({axes_str})" if axes_str else "") + filter_str,
             warnings=warnings,
             provenance=ArtifactProvenance(source_metadata=result),
         )
@@ -856,6 +993,7 @@ def _reject_unsupported_breakdown_shape(
     order: str | None,
     limit: int | None,
     row_count: int,
+    dimensions: dict[str, Any] | None = None,
 ) -> ToolResult | None:
     """Refuse two breakdown shapes a single Cube query answers wrong, steering to the
     executions that answer them right. Structure-driven, not keyword/metric-driven:
@@ -904,21 +1042,30 @@ def _reject_unsupported_breakdown_shape(
             retryable=False,
         )
 
-    if order is None and limit is None and row_count > _MAX_SERIES_IN_SUMMARY:
-        per_bucket = (
-            f" For the top per {bucket}, issue one ranked query per bucket "
-            f"(a per-period filter) or use run_python over the evidence."
-            if time_crossed
-            else ""
-        )
-        return ToolResult(
-            success=False,
-            summary=(
+    dims_dict = dimensions or {}
+    all_dims_filtered = bool(cat_dims) and all(
+        isinstance(val := dims_dict.get(k), (list, tuple, set)) and len(val) <= _MAX_SERIES_IN_SUMMARY
+        for k in cat_dims
+    )
+    if order is None and limit is None and row_count > _MAX_SERIES_IN_SUMMARY and not all_dims_filtered:
+        if time_crossed:
+            summary = (
+                f"query_metrics({metric_id}): the '{dims}' breakdown across {bucket}s returned {row_count} "
+                f"groups — too many to report directly. To rank an overall leaderboard, drop the grain "
+                f"(set grain='none', order='desc' or 'asc', limit=K). To see trends for specific entities, "
+                f"filter by those entities in dimensions (e.g. dimensions={{'{dims}': ['val1', 'val2', ...]}}). "
+                f"Do not add limit with grain={bucket}, as limit applies globally across all {bucket}s."
+            )
+        else:
+            summary = (
                 f"query_metrics({metric_id}): the '{dims}' breakdown returned {row_count} "
                 f"groups — too many to report directly, and it is not ranked. Rank it: set "
-                f"order='desc' (top) or 'asc' (bottom) and limit=K for a leaderboard.{per_bucket} "
+                f"order='desc' (top) or 'asc' (bottom) and limit=K for a leaderboard. "
                 f"Re-issue a ranked, bounded query — do not sort or aggregate the rows by hand."
-            ),
+            )
+        return ToolResult(
+            success=False,
+            summary=summary,
             error_code="UNSUPPORTED_QUERY",
             retryable=False,
         )
@@ -1093,15 +1240,20 @@ async def query_metrics(
     period_end: datetime | None = None,
     order: str | None = None,
     limit: int | None = None,
+    pool_listed_values: bool = False,
 ) -> ToolResult:
     """The only path to a numeric metric value. Writes one EvidenceArtifact.
 
     ``dimensions`` / periods default empty-or-as_of so the model can look up
     "gross sale" without inventing a brand filter or a training-data year.
 
-    A dimension value filters to that value; a list filters to ANY of them
-    (e.g. ``dimensions={"<dimension>": ["<value>", "<value>"]}``); an empty
-    string breaks the result down by that dimension.
+    A dimension value filters to that value; an empty string breaks the result
+    down by that dimension; a list keeps only those values AND returns one row
+    (one series, with ``grain``) per value — e.g. the daily trend of the top 5
+    campaigns is ``dimensions={"campaign_id": [<the 5 ids>]}, grain="day"``.
+    Add the entity's name dimension as an empty breakdown to label the rows.
+    Set ``pool_listed_values=True`` only when the listed values are spellings of ONE
+    group (``utm_medium`` whatsapp/wa) and you want a single pooled number.
 
     For a time series (monthly/weekly/daily trend) set ``grain`` — do NOT pass
     the date dimension (``refund_date``/``report_date``/…) as a breakdown; that
@@ -1116,6 +1268,14 @@ async def query_metrics(
     if (unknown := _reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     dimensions = _sanitize_dimensions(dimensions)
+    # Only lists the model wrote compare entities; a concept's bound filter is
+    # a definition ("WhatsApp" = utm_medium whatsapp|wa) and stays pooled.
+    asked_lists = {k for k, v in dimensions.items() if isinstance(v, list)}
+    if bound_filter := ctx.deps.query_cache.peek(f"concept_filter:{metric_id}"):
+        if isinstance(bound_filter, dict):
+            for k, v in bound_filter.items():
+                if k not in dimensions:
+                    dimensions[k] = v
     _reject_incompatible_dimensions(ctx, metric_id, dimensions)
     window_note: str | None = None
     if (pinned := _pin_to_resolved_window(ctx, period_start, period_end)) is not None:
@@ -1129,6 +1289,22 @@ async def query_metrics(
     period_end = period_end or ctx.deps.as_of
     period_start = period_start or period_end
     breakdown = [k for k, v in dimensions.items() if not v]
+    # A list of several values is a set of entities to compare, so each keeps
+    # its own row. Pooled, "CTR trend of the top 5 campaigns" came back as one
+    # blended line labelled with five ids, and the model then attached daily
+    # values to campaign names the evidence never carried (live 2026-10-04
+    # MS3-c645523b51, MS3-23de4a7094). Brand lists stay a filter (one brand
+    # scope), time dimensions are the grain's job.
+    if not pool_listed_values:
+        breakdown += [
+            k
+            for k, v in dimensions.items()
+            if k in asked_lists
+            and isinstance(v, list)
+            and len(v) > 1
+            and _normalize_dim_token(k) not in _BRAND_DIM_KEYS
+            and not ctx.deps.catalogue.is_time_dimension(k)
+        ]
     # A time-axis dimension (catalogue is_time: order_date, refund_date, …)
     # requested as a breakdown is NOT a categorical group-by. Cube buckets time
     # via `granularity`; sending the raw date dimension as a group-by instead
@@ -1166,7 +1342,40 @@ async def query_metrics(
         limit=limit,
         inject_default_brand=supports_brand,
     )
-    result = await _cached_metrics_query(ctx, args)
+    
+    result = None
+    _cache_eligible = (
+        grain == "none"
+        and not breakdown
+        and not filters
+        and limit is None
+        and not pool_listed_values
+    )
+    if _cache_eligible:
+        from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
+        import logging
+        _log = logging.getLogger(__name__)
+        try:
+            cached = await SnapshotStore().afind_metric(metric_id)
+            if cached is not None:
+                resolved, snapshot = cached
+                snap_start = snapshot.window.get("start")
+                snap_end = snapshot.window.get("end")
+                if snap_start == period_start.date().isoformat() and snap_end == period_end.date().isoformat():
+                    _log.debug("query_metrics ready_store hit metric_id=%s as_of=%s", metric_id, snapshot.as_of)
+                    result = {
+                        "rows": [{metric_id: resolved.value}],
+                        "provenance": {
+                            "source": "ready_store",
+                            "as_of": resolved.freshness,
+                            "snapshot_as_of": snapshot.as_of,
+                        }
+                    }
+        except Exception as e:
+            _log.debug("query_metrics ready_store miss metric_id=%s reason=%s", metric_id, str(e))
+            
+    if result is None:
+        result = await _cached_metrics_query(ctx, args)
     if result.get("error") and _unknown_brand_error(result["error"]):
         # Drop ONLY the user's bad brand filter; the arg builder re-injects the
         # default brand in its place. Keep every other filter and the breakdown.
@@ -1269,7 +1478,7 @@ async def query_metrics(
     # unranked dump, or a per-group top-N expressed as a global limit) with a graceful
     # failed result — no artifacts written, no ModelRetry (which could exhaust into a crash).
     if (blocked := _reject_unsupported_breakdown_shape(
-        ctx, metric_id, breakdown, grain, order, limit, len(rows)
+        ctx, metric_id, breakdown, grain, order, limit, len(rows), dimensions=dimensions
     )) is not None:
         return blocked
     provenance = ArtifactProvenance(
@@ -1286,6 +1495,7 @@ async def query_metrics(
         # immutable evidence per day, not one mutable blob.
         per_row_dates = [row_date(row) for row in rows] if grain != "none" else [None] * len(rows)
         currency = str((result.get("provenance") or {}).get("currency") or "").strip()
+        known_evidence = _evidence_index(ctx)
         artifact_ids: list[str] = []
         last_value: float | None = None
         # The per-row (label, value) series the MODEL sees in the tool return.
@@ -1312,9 +1522,17 @@ async def query_metrics(
             # row itself — read it there (live 2026-09-21: a product_id breakdown
             # via query_metrics wrote every row with dimensions={}, making ~200
             # per-product counts indistinguishable from each other).
-            row_dimensions = {
-                k: (",".join(v) if isinstance(v, list) else v) for k, v in dimensions.items() if v
-            }
+            row_dimensions: dict[str, str] = {}
+            for k, v in dimensions.items():
+                if not v:
+                    continue
+                row_val = dimension_value(row, k)
+                if row_val is not None and str(row_val) not in ("", "None", "null", "none", "NULL"):
+                    row_dimensions[k] = str(row_val)
+                elif isinstance(v, (list, tuple, set)):
+                    row_dimensions[k] = ",".join(str(x) for x in v) if len(v) > 1 else str(list(v)[0])
+                else:
+                    row_dimensions[k] = str(v)
             for key in breakdown:
                 raw = str(dimension_value(row, key))
                 # Behavioral: drop rows with empty/unmapped breakdown values
@@ -1336,18 +1554,15 @@ async def query_metrics(
                     unit=currency or None,
                     source_query=args,
                 )
-                artifact = ctx.deps.artifact_store.put(
-                    Artifact(
-                        workspace_id=ctx.deps.principal.workspace_id,
-                        artifact_type="evidence",
-                        payload=evidence.model_dump(mode="json"),
-                        classification="factual",
-                        evidence_ids=[f"raw:{metric_id}:{bucket_start.date()}:{bucket_end.date()}"],
+                artifact_ids.append(
+                    _put_evidence(
+                        ctx,
+                        evidence,
+                        index=known_evidence,
+                        raw_id=f"raw:{metric_id}:{bucket_start.date()}:{bucket_end.date()}",
                         provenance=provenance,
-                        mission_id=ctx.deps.mission_id,
                     )
                 )
-                artifact_ids.append(artifact.id)
                 # Label: the time bucket AND the breakdown dimension values, both when
                 # present. A breakdown+grain query previously dropped the category
                 # from the label, making rows indistinguishable. Preserve it.
@@ -1386,7 +1601,8 @@ async def query_metrics(
             more = "" if len(series) <= _MAX_SERIES_IN_SUMMARY else f"; …(+{len(series) - _MAX_SERIES_IN_SUMMARY} more rows in evidence)"
             summary = (
                 f"{metric_id} over {period_start.date()}..{period_end.date()} "
-                f"({len(series)} rows) — use these exact values: {body}{more}"
+                f"({len(series)} rows) — use these exact values: {body}{more}."
+                + _series_stats(ctx, metric_id, [float(s["value"]) for s in series])
             )
         prov = ArtifactProvenance(
             query_version=provenance.query_version,
@@ -1498,7 +1714,9 @@ async def drilldown(
     items can share) is grouped by key AND label, so same-named items stay separate rows.
 
     Hierarchy drill (semantic v2): pass ``hierarchy`` (traffic: platform → channel → sub_channel;
-    geo; product; ad; campaign — see the catalogue ontology) with ``dimension="next"`` to go one
+    geo; product; ``ad``: ad_platform → campaign_name → adset_name → ad_name, for AD metrics —
+    spend, impressions, clicks, CTR, CPC, ROAS; ``campaign``: orders/sessions by their
+    last-touch campaign, NOT ad metrics — see the catalogue ontology) with ``dimension="next"`` to go one
     level below what ``within`` pins (e.g. ``within={"platform": "meta"}`` → channels of Meta), or
     with ``dimension`` = a level of that hierarchy to jump to it. ``within`` values are equals
     filters on the coarser levels and scope the parent query.
@@ -1613,8 +1831,10 @@ async def drilldown(
             retryable=False,
         )
     provenance = ArtifactProvenance(source_metadata=result.get("provenance") or {})
+    known_evidence = _evidence_index(ctx)
     artifact_ids: list[str] = []
     lines: list[str] = []
+    values: list[float] = []
     for row in rows:
         value = row.get(metric_id)
         if value is None:
@@ -1623,6 +1843,7 @@ async def drilldown(
             continue  # no activity: not a member of a top / bottom ranking
         row_dims = {d: str(dimension_value(row, d)) for d in targets}
         lines.append(f"{', '.join(f'{d}={v}' for d, v in row_dims.items())} -> {_fmt_value(float(value))}")
+        values.append(float(value))
         evidence = EvidenceArtifact(
             metric_id=metric_id,
             dimensions={**within, **row_dims},
@@ -1634,18 +1855,15 @@ async def drilldown(
             source_query={"parent_query_id": parent["query_id"], "target_dimensions": list(targets),
                           **({"hierarchy": hierarchy, "within": within} if hierarchy else {})},
         )
-        artifact = ctx.deps.artifact_store.put(
-            Artifact(
-                workspace_id=ctx.deps.principal.workspace_id,
-                artifact_type="evidence",
-                payload=evidence.model_dump(mode="json"),
-                classification="factual",
-                evidence_ids=[f"raw:{metric_id}:{':'.join(targets)}:{':'.join(row_dims.values())}"],
+        artifact_ids.append(
+            _put_evidence(
+                ctx,
+                evidence,
+                index=known_evidence,
+                raw_id=f"raw:{metric_id}:{':'.join(targets)}:{':'.join(row_dims.values())}",
                 provenance=provenance,
-                mission_id=ctx.deps.mission_id,
             )
         )
-        artifact_ids.append(artifact.id)
     if not artifact_ids:
         return ToolResult(
             success=False,
@@ -1660,7 +1878,8 @@ async def drilldown(
         f", ranked {direction}" if direction else "")
     summary = (
         f"{metric_id} by {', '.join(targets)}{scope} over {period_start.date()}..{period_end.date()} "
-        f"({len(artifact_ids)} rows{ranking}) — use these exact values: {'; '.join(shown)}{more}"
+        f"({len(artifact_ids)} rows{ranking}) — use these exact values: {'; '.join(shown)}{more}."
+        + _series_stats(ctx, metric_id, values)
     )
     ctx.deps.scratchpad.note(summary)
     return ToolResult(

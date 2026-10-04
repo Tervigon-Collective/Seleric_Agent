@@ -7,13 +7,12 @@ a larger space (history_days + candidate_cap), not a byte-identical re-run.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
 
 import pytest
 
 from seleric_swarm.agent.artifacts import CausalArtifact, EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
-from seleric_swarm.causal.dowhy_service import DoWhyEstimate, RefuterOutcome
+from seleric_swarm.causal.dowhy_service import TimeSeriesEffect
 from seleric_swarm.causal.service import classify_from_refutations, widening_for
 from seleric_swarm.conversations.contracts import (
     Artifact,
@@ -96,6 +95,23 @@ def _series(
     return ids
 
 
+def _fake_effect(effect: float, *, direction: str = "temporal", passed: bool = True, ci: tuple[float, float] | None = None):
+    def fake(**kwargs):
+        lo, hi = ci or (effect * 0.8, effect * 1.2)
+        return TimeSeriesEffect(
+            treatment=kwargs["treatment_name"], outcome=kwargs["outcome_name"], status="estimated",
+            effect=effect, confidence_interval=[lo, hi], n_rows=30, adjustment_set=["trend", "x__lag1"],
+            refutations=[
+                {"name": "time_shift_placebo", "passed": passed},
+                {"name": "future_treatment_placebo", "passed": True},
+                {"name": "random_common_cause", "passed": True},
+            ],
+            temporal={"direction": direction},
+        )
+
+    return fake
+
+
 # ---- bug #6: search_breadth widens history + candidate_cap --------------------
 
 
@@ -119,21 +135,7 @@ def test_estimate_effect_records_widened_caps_in_query(monkeypatch: pytest.Monke
         *_series(store, "metric.net_sales", n=35, slope=1.5),
         *_series(store, "metric.sessions", n=35, slope=0.5),
     ]
-    fake_est = DoWhyEstimate(
-        treatment="metric.spend",
-        outcome="metric.net_sales",
-        effect=1.25,
-        estimator="backdoor.linear_regression",
-        common_causes=["metric.sessions"],
-        refutations=[
-            RefuterOutcome("placebo_treatment_refuter", 1.25, 0.01, True),
-            RefuterOutcome("random_common_cause", 1.25, 1.20, True),
-        ],
-        n_rows=35,
-    )
-    mock_svc = MagicMock()
-    mock_svc.estimate.return_value = fake_est
-    monkeypatch.setattr("seleric_swarm.causal.service.DoWhyService", lambda: mock_svc)
+    monkeypatch.setattr("seleric_swarm.causal.service.estimate_time_series_effect", _fake_effect(1.25))
 
     ctx = FakeRunContext(_deps(store))
     r0 = causal.estimate_effect(
@@ -157,21 +159,7 @@ def test_search_breadth_does_not_tighten_min_span(monkeypatch: pytest.MonkeyPatc
         *_series(store, "metric.net_sales", n=30, slope=1.5),
         *_series(store, "metric.sessions", n=30, slope=0.5),
     ]
-    fake_est = DoWhyEstimate(
-        treatment="metric.spend",
-        outcome="metric.net_sales",
-        effect=1.0,
-        estimator="backdoor.linear_regression",
-        common_causes=["metric.sessions"],
-        refutations=[
-            RefuterOutcome("placebo_treatment_refuter", 1.0, 0.0, True),
-            RefuterOutcome("random_common_cause", 1.0, 0.9, True),
-        ],
-        n_rows=30,
-    )
-    mock_svc = MagicMock()
-    mock_svc.estimate.return_value = fake_est
-    monkeypatch.setattr("seleric_swarm.causal.service.DoWhyService", lambda: mock_svc)
+    monkeypatch.setattr("seleric_swarm.causal.service.estimate_time_series_effect", _fake_effect(1.0))
 
     ctx = FakeRunContext(_deps(store))
     r0 = causal.estimate_effect(
@@ -239,21 +227,7 @@ def test_estimate_writes_causal_artifact_with_classification(
         *_series(store, "metric.net_sales", n=30, slope=1.5),
         *_series(store, "metric.sessions", n=30, slope=0.3),
     ]
-    fake_est = DoWhyEstimate(
-        treatment="metric.spend",
-        outcome="metric.net_sales",
-        effect=2.0,
-        estimator="backdoor.linear_regression",
-        common_causes=["metric.sessions"],
-        refutations=[
-            RefuterOutcome("placebo_treatment_refuter", 2.0, 0.0, True),
-            RefuterOutcome("random_common_cause", 2.0, 1.9, True),
-        ],
-        n_rows=30,
-    )
-    mock_svc = MagicMock()
-    mock_svc.estimate.return_value = fake_est
-    monkeypatch.setattr("seleric_swarm.causal.service.DoWhyService", lambda: mock_svc)
+    monkeypatch.setattr("seleric_swarm.causal.service.estimate_time_series_effect", _fake_effect(2.0))
 
     ctx = FakeRunContext(_deps(store))
     result = causal.estimate_effect(
@@ -267,18 +241,65 @@ def test_estimate_writes_causal_artifact_with_classification(
 
 
 def test_classify_requires_refutations_for_causally_supported() -> None:
-    assert (
-        classify_from_refutations(effect=1.0, refutations=[], common_causes=["x"])
-        == "ASSOCIATION"
-    )
+    ok = [{"name": "a", "passed": True}, {"name": "b", "passed": True}]
+    assert classify_from_refutations(effect=1.0, refutations=[], common_causes=["x"]) == "ASSOCIATION"
     assert (
         classify_from_refutations(
-            effect=1.0,
-            refutations=[{"name": "a", "passed": True}, {"name": "b", "passed": True}],
-            common_causes=["x"],
+            effect=1.0, refutations=ok, common_causes=["x"], confidence_interval=[0.5, 1.5], direction="temporal"
         )
         == "CAUSALLY_SUPPORTED"
     )
+
+
+def test_classify_never_supports_an_unoriented_or_null_effect() -> None:
+    ok = [{"name": "a", "passed": True}, {"name": "b", "passed": True}]
+    # Refuters passing on a same-day association is still only correlation.
+    assert (
+        classify_from_refutations(effect=1.0, refutations=ok, common_causes=[], confidence_interval=[0.5, 1.5], direction="assumed")
+        == "ASSOCIATION"
+    )
+    assert (
+        classify_from_refutations(effect=1.0, refutations=ok, common_causes=[], confidence_interval=[-0.2, 1.5], direction="temporal")
+        == "ASSOCIATION"
+    )
+
+
+def test_unoriented_estimate_is_association(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = InMemoryArtifactStore()
+    eids = [*_series(store, "metric.spend", n=30, slope=2.0), *_series(store, "metric.net_sales", n=30, slope=1.5)]
+    monkeypatch.setattr("seleric_swarm.causal.service.estimate_time_series_effect", _fake_effect(2.0, direction="assumed"))
+    result = causal.estimate_effect(FakeRunContext(_deps(store)), eids, "metric.spend", "metric.net_sales")  # type: ignore[arg-type]
+    payload = CausalArtifact.model_validate(store.get(result.artifact_ids[0]).payload)
+    assert payload.evidence_classification == "ASSOCIATION"
+    assert any("direction not identified" in w for w in result.warnings)
+
+
+def test_real_estimator_does_not_call_a_shared_trend_causal() -> None:
+    """End-to-end on the real DoWhy path: two independent upward trends."""
+    store = InMemoryArtifactStore()
+    eids = [*_series(store, "metric.spend", n=35, slope=2.0), *_series(store, "metric.net_sales", n=35, slope=1.5)]
+    result = causal.estimate_effect(FakeRunContext(_deps(store)), eids, "metric.spend", "metric.net_sales")  # type: ignore[arg-type]
+    payload = CausalArtifact.model_validate(store.get(result.artifact_ids[0]).payload)
+    assert payload.evidence_classification != "CAUSALLY_SUPPORTED"
+
+
+def test_dimension_slices_do_not_overwrite_the_total() -> None:
+    from seleric_swarm.causal.service import build_observation_frame
+
+    start = datetime(2026, 9, 1, tzinfo=UTC)
+    ev = []
+    for i in range(10):
+        d = start + timedelta(days=i)
+        for metric, dims, value in (("y", {}, 100.0 + i), ("y", {"channel": "a"}, 1.0), ("x", {}, 5.0 + i)):
+            ev.append(EvidenceArtifact(
+                metric_id=metric, dimensions=dims, grain="day", as_of=start, period_start=d, period_end=d,
+                value=value, source_query={},
+            ))
+    series, _, warnings = build_observation_frame(
+        ev, treatment="x", outcome="y", history_days=30, candidate_cap=6, as_of=start + timedelta(days=9)
+    )
+    assert series is not None and series["y"][(start + timedelta(days=3)).date()] == 103.0
+    assert any("set aside" in w for w in warnings)
 
 
 def test_refute_estimate_rewrites_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -313,21 +334,7 @@ def test_refute_estimate_rewrites_artifact(monkeypatch: pytest.MonkeyPatch) -> N
         )
     ).id
 
-    fake_est = DoWhyEstimate(
-        treatment="metric.spend",
-        outcome="metric.net_sales",
-        effect=0.5,
-        estimator="backdoor.linear_regression",
-        common_causes=["metric.sessions"],
-        refutations=[
-            RefuterOutcome("placebo_treatment_refuter", 0.5, 0.01, True),
-            RefuterOutcome("random_common_cause", 0.5, 0.48, True),
-        ],
-        n_rows=30,
-    )
-    mock_svc = MagicMock()
-    mock_svc.estimate.return_value = fake_est
-    monkeypatch.setattr("seleric_swarm.causal.service.DoWhyService", lambda: mock_svc)
+    monkeypatch.setattr("seleric_swarm.causal.service.estimate_time_series_effect", _fake_effect(0.5))
 
     ctx = FakeRunContext(_deps(store))
     result = causal.refute_estimate(ctx, prior_id)  # type: ignore[arg-type]

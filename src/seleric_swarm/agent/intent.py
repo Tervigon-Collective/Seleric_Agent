@@ -16,6 +16,8 @@ full ``build_seleric_agent()`` loop, same as an alias miss in ``runner.py``.
 
 from __future__ import annotations
 
+import re
+
 import logging
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
@@ -169,6 +171,30 @@ _RELEVANCE_CRITERIA = {
     "true": "The passage directly helps answer the question",
     "false": "Off-topic, or only incidentally mentions the query's words",
 }
+
+
+# A time bucket the user states in words. Jev's grain guess is noise (it labels
+# nearly every message the same way), so a stated bucket always wins:
+# "gross revenue last week all days" came back as one weekly total (live
+# 2026-10-05) and the user then asked about a single day of it.
+_STATED_GRAIN = (
+    ("day", re.compile(
+        r"\b(daily|day[- ]?(?:wise|by[- ]day|on[- ]day|level)|per[- ]day|each day|every day|"
+        r"all(?: the)? days|by (?:the )?day|for each day)\b", re.IGNORECASE)),
+    ("week", re.compile(
+        r"\b(weekly|week[- ]?(?:wise|by[- ]week|on[- ]week|level)|per[- ]week|each week|every week|"
+        r"all(?: the)? weeks|by (?:the )?week)\b", re.IGNORECASE)),
+    ("month", re.compile(
+        r"\b(monthly|month[- ]?(?:wise|by[- ]month|on[- ]month|level)|per[- ]month|each month|"
+        r"every month|all(?: the)? months|by (?:the )?month)\b", re.IGNORECASE)),
+)
+
+
+def stated_grain(query: str) -> str | None:
+    """The time bucket the question names in words, or None. Ambiguous (two
+    buckets named) -> None, leaving the choice to the agent."""
+    found = {grain for grain, pattern in _STATED_GRAIN if pattern.search(query or "")}
+    return found.pop() if len(found) == 1 else None
 
 
 @dataclass(frozen=True)

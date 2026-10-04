@@ -33,7 +33,7 @@ from seleric_swarm.agent.dependencies import (
     NullMcpClient,
     SelericDeps,
 )
-from seleric_swarm.agent.intent import QueryClassification, classify_query
+from seleric_swarm.agent.intent import QueryClassification, classify_query, stated_grain
 from seleric_swarm.api.status import is_terminal_status
 from seleric_swarm.agent.model import resolve_v3_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
@@ -131,6 +131,8 @@ _TOOL_BUDGET_BY_INTENT: dict[str, int] = {
 
 # Simple, read-only intents cheap enough for the fast model tier.
 _FAST_MODEL_INTENTS = frozenset({"conversation", "lookup", "aggregation", "trend"})
+# Intents answered by toolsets/diagnosis.py::diagnose_metric_change.
+_DIAGNOSTIC_INTENTS = frozenset({"diagnostic", "causal_investigation"})
 
 
 def _should_plan(classification: QueryClassification) -> bool:
@@ -414,7 +416,17 @@ def _resolved_window(query: str, timezone: str, as_of: str):
 # A bare acceptance of the prior answer's closing offer ("yes", "sure, go ahead").
 # Grammar words only — never metric or domain words.
 _AFFIRMATION_WORDS = frozenset(
-    "yes yeah yep yup sure ok okay go ahead please do it that proceed haan ha ji thanks".split()
+    "yes yeah yep yup sure ok okay go ahead please do it that proceed haan ha ji".split()
+)
+# Social turns: answered directly, no tools, no classifier round trip. "thanks"
+# is here, not an acceptance — it used to re-run the previous answer's offer.
+# Live 2026-10-05: Jev labelled "hi" as a trend AND a follow-up (it labels every
+# message "trend"); in a thread the greeting kept its tools, the zero-tool gate
+# rejected the greeting twice, and the user got "Net sales were ₹87,998.05".
+_SMALL_TALK_WORDS = frozenset(
+    "hi hii hiii hello helo hey heya hiya yo namaste hola there good morning afternoon "
+    "evening night thanks thank you thx ty tysm cheers bye goodbye see later great cool "
+    "nice awesome how are r u doing whats what's up sup seleric team ok okay".split()
 )
 _PERIOD_LINE = re.compile(
     r"Period:\s*(\d{4}-\d{2}-\d{2})(?:\s*(?:to|through|\.\.|–|—|-)\s*(\d{4}-\d{2}-\d{2}))?"
@@ -424,6 +436,14 @@ _PERIOD_LINE = re.compile(
 def _is_affirmation(query: str) -> bool:
     words = re.sub(r"[^a-z ]", " ", query.lower()).split()
     return 0 < len(words) <= 5 and all(w in _AFFIRMATION_WORDS for w in words)
+
+
+def _is_small_talk(query: str) -> bool:
+    if re.search(r"\d", query):
+        return False
+    words = re.sub(r"[^a-z' ]", " ", query.lower()).split()
+    # A bare "ok"/"okay" accepts the previous offer; that stays a follow-up.
+    return 0 < len(words) <= 6 and all(w in _SMALL_TALK_WORDS for w in words) and not _is_affirmation(query)
 
 
 def _answer_period(final_response: str) -> tuple[str, str] | None:
@@ -520,9 +540,15 @@ def _routing_hint(classification: QueryClassification) -> str:
         parts.append(f"direction={classification.direction}")
     if classification.depends_on_prior:
         parts.append("follow_up=true")
+    why = (
+        "[why-question: resolve the metric once, then call diagnose_metric_change for the period asked "
+        "about and answer from its ANSWER SKELETON — do not reconstruct the diagnosis from query_metrics]\n\n"
+        if classification.intent in _DIAGNOSTIC_INTENTS
+        else ""
+    )
     if not parts:
-        return ""
-    return (
+        return why
+    return why + (
         "[routing hint (advisory — defer to the question if it disagrees; "
         "for period=custom_date_range use the explicit dates in the question, "
         f"never invent dates): {' '.join(parts)}]\n\n"
@@ -808,7 +834,7 @@ async def _alias_lookup_result(
     catalogue_id = str(definition.catalogue_metric or definition.id.removeprefix("metric."))
     catalogue_filters = dict(getattr(definition, "catalogue_filters", None) or {})
     tool = await query_metrics(
-        _ToolCtx(deps), metric_id=catalogue_id, dimensions=catalogue_filters or None
+        _ToolCtx(deps), metric_id=catalogue_id, dimensions=catalogue_filters or None, pool_listed_values=True
     )
     value = None
     if tool.artifact_ids:
@@ -943,6 +969,8 @@ def _to_lookup(
             session_id=str(result.trace.get("session_id") or session_id),
             elapsed_seconds=result.trace.get("elapsed_seconds"),
             steps=result.trace.get("steps"),
+            validation=result.trace.get("validation"),
+            intent=result.trace.get("intent"),
         ),
     )
 
@@ -1093,15 +1121,34 @@ async def run_v3_mission(
         )
 
     mcp = getattr(runtime, "mcp", None) or NullMcpClient()
-    catalogue = await _catalogue_snapshot(runtime)
-    classification = await classify_query(
-        query,
-        base_url=getattr(runtime.settings, "jev_base_url", ""),
-        api_key=getattr(runtime.settings, "jev_api_key", ""),
-        timeout=float(getattr(runtime.settings, "jev_timeout_s", 5.0)),
+    small_talk = _is_small_talk(query)
+    # Jev answers in ~6s (measured 2026-10-05) and was awaited before anything
+    # else; it now runs alongside the catalogue / value resolution it never
+    # depended on. Small talk needs neither.
+    classifying = (
+        None
+        if small_talk
+        else asyncio.ensure_future(
+            classify_query(
+                query,
+                base_url=getattr(runtime.settings, "jev_base_url", ""),
+                api_key=getattr(runtime.settings, "jev_api_key", ""),
+                timeout=float(getattr(runtime.settings, "jev_timeout_s", 5.0)),
+            )
+        )
     )
+    catalogue = await _catalogue_snapshot(runtime)
+    values = {} if small_talk else await _resolve_values(runtime, mcp, query)
+    classification = (
+        QueryClassification(intent="conversation", depends_on_prior=False)
+        if classifying is None
+        else await classifying
+    )
+    if (grain := stated_grain(query)) and grain != classification.grain:
+        classification = dataclasses.replace(classification, grain=grain)
     intent = classification.intent
-    values = await _resolve_values(runtime, mcp, query) if intent != "conversation" else {}
+    if intent == "conversation":
+        values = {}
     required_scope = _required_scope(runtime, query, temporal_grain=classification.grain)
     value_filters, ordinary_words = await _confirm_value_filters(
         runtime, query, value_filters_from_resolution(values)
@@ -1115,9 +1162,14 @@ async def run_v3_mission(
     # Detect a follow-up and load the last turn's grounding record. Jev's
     # depends_on_prior misses bare acceptances ("yes"), so those always count.
     affirmation = _is_affirmation(query)
-    is_followup = classification.depends_on_prior is True or affirmation
+    is_followup = not small_talk and (classification.depends_on_prior is True or affirmation)
     prior_turn_record: dict[str, Any] | None = None
-    if is_followup:
+    # Loaded for every analytical turn, not only flagged follow-ups: Jev called
+    # "Now can you give me a breakdown by the ad, gross and net sale" (right
+    # after a last-7-days report) standalone, and the agent picked 2026-09-07..
+    # 10-04 on its own (live 2026-10-05 MS3-a93b7a3eb0). A thread's next
+    # question that names no period continues the prior one by default.
+    if not small_talk:
         try:
             prior_turn_record = _latest_turn_record(get_v3_artifact_store(), thread_id=thread_id)
         except Exception:
@@ -1126,7 +1178,7 @@ async def run_v3_mission(
     # The prior period is a stated default, not a pin: resolved_window rewrites every
     # call to its dates, which would break "compare with the week before".
     prior_window = None
-    if is_followup and not _names_a_period(query, timezone, as_of_dt.date().isoformat()):
+    if not small_talk and not _names_a_period(query, timezone, as_of_dt.date().isoformat()):
         prior_window = _prior_window(prior_turn_record)
     ceiling = int(getattr(runtime.settings, "max_tool_calls", 160))
     deps = SelericDeps(
@@ -1269,6 +1321,11 @@ async def run_v3_mission(
                             "direction": classification.direction,
                             "depends_on_prior": classification.depends_on_prior,
                             "steps": v3_result.trace.get("steps"),
+                            # Verdict + every rejected revision's reason. Dropped
+                            # here before 2026-10-04, so a mission that revised to
+                            # exhaustion could only be diagnosed by replaying the
+                            # validator by hand.
+                            "validation": v3_result.trace.get("validation"),
                         },
                     }
                 )

@@ -27,7 +27,7 @@ def test_every_frozen_function_is_registered() -> None:
     unregistered — the test suite would stay green, because a tool nobody
     registers is a tool nobody tests.
     """
-    assert len(TOOLS) == 28
+    assert len(TOOLS) == 30  # + diagnosis.diagnose_metric_change, semantic.list_metrics
 
 
 def test_all_tools_register_on_the_agent() -> None:
@@ -35,6 +35,7 @@ def test_all_tools_register_on_the_agent() -> None:
     names = set(agent._function_toolset.tools.keys())
     assert names == {
         "search_semantics",
+        "list_metrics",
         "resolve_brand",
         "resolve_concept",
         "get_metric_definition",
@@ -43,6 +44,7 @@ def test_all_tools_register_on_the_agent() -> None:
         "drilldown",
         "compare_periods",
         "detect_anomalies",
+        "diagnose_metric_change",
         "estimate_effect",
         "refute_estimate",
         "forecast",

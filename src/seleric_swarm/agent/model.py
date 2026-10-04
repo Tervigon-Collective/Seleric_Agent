@@ -132,7 +132,9 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
     or_models = resolved_openrouter_models(settings)
     if or_models and settings.openrouter_api_key.strip():
         or_provider = build_openrouter_provider(settings)
-        models.extend(chat(name, or_provider, "openrouter") for name in or_models)
+        or_cap = int(getattr(settings, "openrouter_max_tokens", 0) or 0)
+        or_settings = OpenAIChatModelSettings(max_tokens=or_cap) if or_cap > 0 else None
+        models.extend(chat(name, or_provider, "openrouter", or_settings) for name in or_models)
 
     chain: Model = models[0] if len(models) == 1 else FallbackModel(*models)
     return PatientModel(chain, health=MODEL_HEALTH)

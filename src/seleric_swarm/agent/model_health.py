@@ -15,11 +15,15 @@ import asyncio
 import os
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import structlog
 from pydantic_ai.exceptions import FallbackExceptionGroup, ModelAPIError, ModelHTTPError
+from pydantic_ai.messages import ModelResponse, ModelResponseStreamEvent, TextPart, ToolCallPart
+from pydantic_ai.models import StreamedResponse
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.wrapper import WrapperModel
 
@@ -29,6 +33,15 @@ COOLDOWN_RATE_LIMITED_S = 45.0
 COOLDOWN_TIMEOUT_S = 90.0
 COOLDOWN_SERVER_ERROR_S = 30.0
 COOLDOWN_UNAVAILABLE_S = 300.0
+
+# Wall-clock cap on ONE model request. The httpx read timeout cannot bound it:
+# it resets on every byte, and a stalled deployment trickling bytes held a
+# request for 248-292s (live 2026-10-04 MS3-c645523b51 / MS3-63801a5f52, with
+# AGENT_LLM_TIMEOUT_S=240), i.e. the whole MISSION_TIMEOUT_S=300 budget. Healthy
+# agent steps measured over 3 days of run events: p50 3.5s, p99 22s, max 43s.
+# A request past the cap is a ModelAPIError, so the chain falls through to the
+# next model instead of the mission dying.
+AGENT_LLM_REQUEST_CAP_S = float(os.getenv("AGENT_LLM_REQUEST_CAP_S", "60"))
 
 
 class ModelHealth:
@@ -76,6 +89,15 @@ def cooldown_for(exc: ModelAPIError) -> float:
     return COOLDOWN_TIMEOUT_S  # timeouts / connection errors
 
 
+def _spent_without_output(response: Any) -> bool:
+    if getattr(response, "finish_reason", None) != "length":
+        return False
+    return not any(
+        isinstance(part, ToolCallPart) or (isinstance(part, TextPart) and part.content.strip())
+        for part in getattr(response, "parts", [])
+    )
+
+
 class HealthGatedChatModel(OpenAIChatModel):
     """``OpenAIChatModel`` that fails instantly while cooling down."""
 
@@ -97,12 +119,27 @@ class HealthGatedChatModel(OpenAIChatModel):
     async def request(self, *args: Any, **kwargs: Any) -> Any:
         self._gate()
         try:
-            response = await super().request(*args, **kwargs)
+            response = await self._capped(super().request(*args, **kwargs))
+            if _spent_without_output(response):
+                # Live 2026-10-05 (MS3-3eeef3a493): a reasoning model used its whole
+                # output budget thinking over a long thread and returned nothing; the
+                # agent graph raised UnexpectedModelBehavior, which is not a model
+                # error, so the mission failed instead of trying the next model.
+                raise ModelAPIError(self.model_name, "hit its token limit before producing any output")
         except ModelAPIError as exc:
             self._record_failure(exc)
             raise
         self._health.recover(self._health_key)
         return response
+
+    async def _capped(self, call: Awaitable[Any]) -> Any:
+        cap = AGENT_LLM_REQUEST_CAP_S
+        if cap <= 0:
+            return await call
+        try:
+            return await asyncio.wait_for(call, timeout=cap)
+        except TimeoutError as exc:
+            raise ModelAPIError(self.model_name, f"no response within {cap:.0f}s") from exc
 
     @asynccontextmanager
     async def request_stream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
@@ -186,15 +223,61 @@ class PatientModel(WrapperModel):
                 attempt += 1
 
     @asynccontextmanager
-    async def request_stream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
-        # Only opening the stream is retried; once tokens flow a failure propagates.
-        started, attempt = self._clock(), 0
-        async with AsyncExitStack() as stack:
-            while True:
-                try:
-                    streamed = await stack.enter_async_context(self.wrapped.request_stream(*args, **kwargs))
-                    break
-                except (ModelAPIError, FallbackExceptionGroup) as exc:
-                    await self._wait_or_raise(exc, started, attempt)
-                    attempt += 1
-            yield streamed
+    async def request_stream(
+        self, messages: Any, model_settings: Any, model_request_parameters: Any, run_context: Any = None
+    ) -> AsyncIterator[StreamedResponse]:
+        """The agent streams only so its event handler sees tool calls; the
+        answer itself is never shown before validation. A live stream cannot
+        fall back or be retried once it is open — pydantic-ai's FallbackModel
+        propagates mid-stream failures — so a provider stall became a raw
+        ReadTimeout that failed the mission and restarted it from scratch
+        (live 2026-10-04: 658s for one CTR chart). Each step is therefore a
+        plain request (cap, cooldown, fallback and patience all apply) replayed
+        as a stream."""
+        response = await self.request(messages, model_settings, model_request_parameters)
+        yield ReplayedStreamedResponse(model_request_parameters=model_request_parameters, response=response)
+
+
+@dataclass
+class ReplayedStreamedResponse(StreamedResponse):
+    """A finished ``ModelResponse`` presented as a stream: one start event per
+    part, so the run's event handler (tool progress, final-result detection)
+    behaves as it does on a live stream."""
+
+    response: ModelResponse | None = None
+
+    def __post_init__(self) -> None:
+        assert self.response is not None
+        self._usage = self.response.usage
+        self.provider_response_id = self.response.provider_response_id
+        self.provider_details = self.response.provider_details
+        self.finish_reason = self.response.finish_reason
+        self.metadata = self.response.metadata
+
+    async def _get_event_iterator(self) -> AsyncIterator[ModelResponseStreamEvent]:
+        assert self.response is not None
+        for index, part in enumerate(self.response.parts):
+            yield self._parts_manager.handle_part(vendor_part_id=index, part=part)
+
+    async def close_stream(self) -> None:
+        pass
+
+    @property
+    def model_name(self) -> str:
+        assert self.response is not None
+        return self.response.model_name or ""
+
+    @property
+    def provider_name(self) -> str | None:
+        assert self.response is not None
+        return self.response.provider_name
+
+    @property
+    def provider_url(self) -> str | None:
+        assert self.response is not None
+        return self.response.provider_url
+
+    @property
+    def timestamp(self) -> datetime:
+        assert self.response is not None
+        return self.response.timestamp

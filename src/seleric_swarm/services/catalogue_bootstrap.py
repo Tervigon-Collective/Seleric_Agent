@@ -71,6 +71,16 @@ class CatalogueSnapshot:
     # Dimension ids the catalogue marks ``is_time`` (order_date, refund_date, …):
     # the time axis Cube buckets via granularity, never a categorical group-by.
     time_dimensions: frozenset[str] = frozenset()
+    # Per-dimension catalogue facts the planners read: hierarchy position and
+    # enumerated values ((dimension id, {"hierarchy_level": int, "n_allowed": int}), ...).
+    dimension_facts: tuple[tuple[str, tuple[tuple[str, int], ...]], ...] = ()
+
+    def dimension_fact(self, dimension: str, key: str) -> int:
+        """A numeric catalogue fact about a dimension (0 when not declared)."""
+        for did, facts in self.dimension_facts:
+            if did == dimension:
+                return dict(facts).get(key, 0)
+        return 0
 
     def stable_key_for(self, dimension: str) -> str | None:
         """The dimension that identifies the entity ``dimension`` labels, if declared."""
@@ -94,6 +104,16 @@ class CatalogueSnapshot:
                 raw = meta.raw or {}
                 return raw.get("date_basis"), raw.get("date_twin")
         return None, None
+
+    def aggregation_for(self, metric_id: str) -> str | None:
+        """The catalogue's ``aggregation`` for a metric (e.g. "additive", "ratio"),
+        lower-cased, or None when the metric or the field is not carried. The
+        catalogue is the only authority on whether rows of a metric may be summed."""
+        for meta in self.metrics:
+            if meta.id == metric_id:
+                aggregation = str((meta.raw or {}).get("aggregation") or "").strip().lower()
+                return aggregation or None
+        return None
 
     def supported_dimensions_for(self, metric_id: str) -> list[str]:
         """The metric's ``supported_dimensions``, or [] if unknown/not carried."""
@@ -203,6 +223,7 @@ class CatalogueBootstrap:
         self._dimension_aliases: dict[str, list[str]] = {}
         self._stable_keys: dict[str, str] = {}
         self._time_dimensions: set[str] = set()
+        self._dimension_facts: dict[str, dict[str, int]] = {}
         self._grain_defaults: dict[str, Any] = {}
         self._warmed_at: float | None = None
 
@@ -268,6 +289,9 @@ class CatalogueBootstrap:
             dimensions=tuple(sorted(self.dimension_ids())),
             stable_keys=tuple(sorted(self._stable_keys.items())),
             time_dimensions=frozenset(self._time_dimensions),
+            dimension_facts=tuple(
+                (did, tuple(sorted(facts.items()))) for did, facts in sorted(self._dimension_facts.items())
+            ),
         )
 
     def unresolvable(self, candidate_ids: list[str]) -> list[str]:
@@ -324,6 +348,7 @@ class CatalogueBootstrap:
         self._dimension_aliases = {}
         self._stable_keys = {}
         self._time_dimensions = set()
+        self._dimension_facts = {}
         for dim in dims:
             if not isinstance(dim, dict):
                 continue
@@ -334,6 +359,11 @@ class CatalogueBootstrap:
                     self._stable_keys[did] = str(dim["stable_key"])
                 if dim.get("is_time"):
                     self._time_dimensions.add(did)
+                hierarchy = dim.get("hierarchy") if isinstance(dim.get("hierarchy"), dict) else {}
+                self._dimension_facts[did] = {
+                    "hierarchy_level": int(hierarchy.get("level") or 0),
+                    "n_allowed": len(dim.get("allowed_values") or []),
+                }
         defaults = payload.get("grain_defaults") or {}
         self._grain_defaults = dict(defaults) if isinstance(defaults, dict) else {}
         return len(self._cache)
