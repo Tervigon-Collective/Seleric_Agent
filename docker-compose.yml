@@ -131,6 +131,7 @@ services:
       JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}
       AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-240}
       MISSION_TIMEOUT_S: ${MISSION_TIMEOUT_S:-420}
+      BUSINESS_STATE_REFRESH_ENABLED: "0"
     # Join the external laya_default network so JEV/Laya is reachable as
     # http://laya-serve:8000 (its 127.0.0.1 host port is not reachable from
     # containers). `default` is kept so postgres/redis/minio/etc. still resolve.
@@ -234,6 +235,7 @@ services:
       JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}
       AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-240}
       MISSION_TIMEOUT_S: ${MISSION_TIMEOUT_S:-420}
+      BUSINESS_STATE_REFRESH_ENABLED: "0"
     # Join the external laya_default network so JEV/Laya is reachable as
     # http://laya-serve:8000 (its 127.0.0.1 host port is not reachable from
     # containers). `default` is kept so postgres/redis/minio/etc. still resolve.
@@ -299,6 +301,39 @@ services:
       # for compatibility, but SELERIC_API_URL is the name settings.py binds to.
       SELERIC_API_URL: ${SELERIC_API_URL:-http://api:8000}
     # Reader of the shared snapshots (see api volumes).
+    volumes:
+      - domain_health:/app/.data/domain_health_snapshots
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  business-state-cron:
+    build:
+      context: .
+      target: runtime
+    command: >
+      /bin/sh -c "while true; do python -m seleric_swarm.services.domain_health.scheduler; sleep 60; done"
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
+      LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
+      PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
+      AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
+      AZURE_OPENAI_FAST_MODEL: ${AZURE_OPENAI_FAST_MODEL:-}
+      SELERIC_MCP_URL: ${COMPOSE_SELERIC_MCP_URL:-${SELERIC_MCP_URL:-}}
+      SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
+      BUSINESS_STATE_REFRESH_ENABLED: "0"
+    networks:
+      - default
+      - laya_default
+      - seleric-mcp_default
     volumes:
       - domain_health:/app/.data/domain_health_snapshots
     depends_on:

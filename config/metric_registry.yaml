@@ -905,8 +905,22 @@ metrics:
     version: 1
     owner: product
     catalogue_metric: product_net_revenue
+    aliases: [product net sales, net sales by product, product net revenue]
     description: Net revenue per product.
     formula: sum(product_net_revenue)
+    direction_bad: down
+    unit: INR
+    grain: day
+    timezone: Asia/Kolkata
+    domain: product
+
+  - id: metric.product_gross_revenue
+    version: 1
+    owner: product
+    catalogue_metric: product_gross_revenue
+    aliases: [product gross sales, product gross revenue, gross sales by product]
+    description: Gross revenue (sales) per product.
+    formula: sum(product_gross_revenue)
     direction_bad: down
     unit: INR
     grain: day

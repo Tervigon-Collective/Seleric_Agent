@@ -19,7 +19,7 @@ interface ChartRendererProps {
 
 function exportToCsv(data: any[], filename: string) {
   if (!data || data.length === 0) return;
-  const headers = Object.keys(data[0]);
+  const headers = Array.from(new Set(data.flatMap(Object.keys)));
   const rows = data.map(row =>
     headers.map(header => {
       const val = row[header];
@@ -55,11 +55,15 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
     const { title, chart_type, series, xAxis, yAxis, data } = spec;
 
     const baseOptions: any = {
+      color: [
+        '#6366f1', '#3b82f6', '#0ea5e9', '#14b8a6', '#10b981',
+        '#84cc16', '#f59e0b', '#f97316', '#ef4444', '#ec4899', '#8b5cf6'
+      ],
       title: {
         text: title || 'Chart',
         left: 'left',
         textStyle: {
-          color: '#f0f4f8',
+          color: 'var(--text)',
           fontSize: 13,
           fontWeight: 600,
           fontFamily: 'inherit'
@@ -67,18 +71,27 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
       },
       tooltip: {
         trigger: chart_type === 'pie' ? 'item' : 'axis',
-        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-        borderColor: '#334155',
+        backgroundColor: 'var(--panel)',
+        borderColor: 'var(--line)',
         borderWidth: 1,
-        textStyle: { color: '#f8fafc', fontSize: 12 },
+        textStyle: { color: 'var(--text)', fontSize: 12 },
         padding: [8, 12]
       },
       legend: {
         bottom: 0,
-        textStyle: { color: '#94a3b8', fontSize: 11 },
+        type: 'scroll',
+        pageIconColor: 'var(--text)',
+        pageTextStyle: { color: 'var(--text-dim)' },
+        textStyle: { 
+          color: 'var(--text-dim)', 
+          fontSize: 11,
+          overflow: 'truncate',
+          width: 140
+        },
         icon: 'circle'
       },
       dataset: {
+        dimensions: xAxis && xAxis.key ? [xAxis.key, ...(series || []).map((s: any) => s.key)] : undefined,
         source: data
       },
       backgroundColor: 'transparent'
@@ -90,15 +103,15 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
 
       // Styling for axes
       if (baseOptions.xAxis.type !== 'value') {
-        baseOptions.xAxis.axisLine = { lineStyle: { color: '#334155' } };
-        baseOptions.xAxis.axisLabel = { color: '#94a3b8', fontSize: 11 };
+        baseOptions.xAxis.axisLine = { lineStyle: { color: 'var(--line)' } };
+        baseOptions.xAxis.axisLabel = { color: 'var(--text-dim)', fontSize: 11 };
       }
 
       baseOptions.yAxis.forEach((y: any) => {
-        y.splitLine = { lineStyle: { color: '#1e293b', type: 'dashed' } };
-        y.axisLabel = { color: '#94a3b8', fontSize: 11 };
+        y.splitLine = { lineStyle: { color: 'var(--line)', type: 'dashed' } };
+        y.axisLabel = { color: 'var(--text-dim)', fontSize: 11 };
         if (y.name) {
-          y.nameTextStyle = { color: '#64748b', fontSize: 10 };
+          y.nameTextStyle = { color: 'var(--text-dim)', fontSize: 10 };
         }
       });
 
@@ -117,7 +130,8 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
         itemStyle: {
           borderRadius: chart_type === 'bar' ? [4, 4, 0, 0] : 0
         },
-        smooth: chart_type === 'line' || chart_type === 'area'
+        smooth: chart_type === 'line' || chart_type === 'area',
+        connectNulls: chart_type === 'line' || chart_type === 'area'
       };
       if (s.areaStyle) {
         item.areaStyle = s.areaStyle;
@@ -131,6 +145,12 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
         baseOptions.series[0].data = data;
         baseOptions.series[0].radius = ['42%', '72%'];
         baseOptions.series[0].center = ['50%', '50%'];
+        baseOptions.series[0].label = { show: false };
+        baseOptions.series[0].itemStyle = {
+          borderRadius: 4,
+          borderColor: 'var(--panel)',
+          borderWidth: 2
+        };
       }
     } else if (chart_type === 'funnel') {
       delete baseOptions.dataset;
@@ -159,11 +179,10 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
         width: '100%',
         margin: '0.75rem 0',
         padding: '0.75rem 1rem',
-        background: 'rgba(15, 23, 42, 0.65)',
-        border: '1px solid rgba(51, 65, 85, 0.6)',
+        background: 'var(--panel-2)',
+        border: '1px solid var(--line)',
         borderRadius: '8px',
-        backdropFilter: 'blur(8px)',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+        boxShadow: 'var(--shadow)'
       }}
     >
       <div
@@ -173,7 +192,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
           alignItems: 'center',
           marginBottom: '0.5rem',
           paddingBottom: '0.4rem',
-          borderBottom: '1px solid rgba(51, 65, 85, 0.4)'
+          borderBottom: '1px solid var(--line)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -185,14 +204,14 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
               letterSpacing: '0.05em',
               padding: '2px 6px',
               borderRadius: '4px',
-              background: 'rgba(99, 102, 241, 0.15)',
-              color: '#818cf8',
-              border: '1px solid rgba(99, 102, 241, 0.3)'
+              background: 'var(--st-working)',
+              color: 'var(--panel)',
+              border: '1px solid var(--st-working)'
             }}
           >
             {chartLabel}
           </span>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: '#e2e8f0' }}>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
             {spec.title || 'Visualization'}
           </span>
         </div>
@@ -205,21 +224,21 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
             alignItems: 'center',
             gap: '4px',
             fontSize: '11px',
-            color: '#94a3b8',
-            background: 'rgba(30, 41, 59, 0.7)',
-            border: '1px solid #334155',
+            color: 'var(--text-dim)',
+            background: 'var(--panel)',
+            border: '1px solid var(--line)',
             borderRadius: '4px',
             padding: '3px 8px',
             cursor: 'pointer',
             transition: 'color 0.15s, border-color 0.15s'
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.color = '#f8fafc';
-            e.currentTarget.style.borderColor = '#64748b';
+            e.currentTarget.style.color = 'var(--text)';
+            e.currentTarget.style.borderColor = 'var(--text-dim)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.color = '#94a3b8';
-            e.currentTarget.style.borderColor = '#334155';
+            e.currentTarget.style.color = 'var(--text-dim)';
+            e.currentTarget.style.borderColor = 'var(--line)';
           }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
