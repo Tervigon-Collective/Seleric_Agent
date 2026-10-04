@@ -14,7 +14,7 @@ from typing import Any
 from pydantic_ai.models import Model
 
 from seleric_swarm.agent.agent import _stub_test_model
-from seleric_swarm.agent.model_health import MODEL_HEALTH, HealthGatedChatModel
+from seleric_swarm.agent.model_health import MODEL_HEALTH, HealthGatedChatModel, PatientModel
 from seleric_swarm.config.settings import Settings, configured_chat_model
 
 # Read timeout (httpx) for the agent's model client. A hung call costs its
@@ -134,6 +134,5 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
         or_provider = build_openrouter_provider(settings)
         models.extend(chat(name, or_provider, "openrouter") for name in or_models)
 
-    if len(models) == 1:
-        return models[0]
-    return FallbackModel(*models)
+    chain: Model = models[0] if len(models) == 1 else FallbackModel(*models)
+    return PatientModel(chain, health=MODEL_HEALTH)

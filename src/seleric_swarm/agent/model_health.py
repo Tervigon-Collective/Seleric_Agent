@@ -11,13 +11,19 @@ recently-failed model than to fail the mission without a single call.
 
 from __future__ import annotations
 
+import asyncio
+import os
 import time
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
 
-from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
+import structlog
+from pydantic_ai.exceptions import FallbackExceptionGroup, ModelAPIError, ModelHTTPError
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.wrapper import WrapperModel
+
+_log = structlog.get_logger()
 
 COOLDOWN_RATE_LIMITED_S = 45.0
 COOLDOWN_TIMEOUT_S = 90.0
@@ -47,6 +53,12 @@ class ModelHealth:
         if not self._cooling(key):
             return False
         return any(not self._cooling(other) for other in self._known if other != key)
+
+    def seconds_until_any_ready(self) -> float:
+        """0 when some known model is not cooling, else until the first cooldown ends."""
+        now = self._clock()
+        remaining = [self._until.get(k, 0.0) - now for k in self._known]
+        return max(0.0, min(remaining, default=0.0))
 
 
 MODEL_HEALTH = ModelHealth()
@@ -102,3 +114,87 @@ class HealthGatedChatModel(OpenAIChatModel):
             self._record_failure(exc)
             raise
         self._health.recover(self._health_key)
+
+
+# How long one model request may wait for the chain to come back after every
+# model failed transiently (429 / 5xx / timeout). Without it the mission died and
+# the recovery worker re-ran it from scratch, discarding every tool result: live
+# thread_e75c2615 restarted twice on LLM_RATE_LIMITED and took 7 minutes.
+# Stays well under MISSION_TIMEOUT_S; 0 disables waiting.
+AGENT_LLM_WAIT_BUDGET_S = float(os.getenv("AGENT_LLM_WAIT_BUDGET_S", "60"))
+_MAX_SINGLE_WAIT_S = 20.0
+_MIN_WAIT_S = 2.0
+
+
+def _causes(exc: BaseException) -> list[BaseException]:
+    if isinstance(exc, BaseExceptionGroup):
+        return [c for sub in exc.exceptions for c in _causes(sub)]
+    return [exc]
+
+
+def is_transient(exc: BaseException) -> bool:
+    """Some model in the chain failed in a way that heals by itself: a 429, a 5xx,
+    a timeout / connection error or a cooldown skip. Auth/credit errors and other
+    4xx are not — waiting does not change them."""
+    for c in _causes(exc):
+        if isinstance(c, ModelHTTPError):
+            if c.status_code == 429 or c.status_code >= 500:
+                return True
+        elif isinstance(c, ModelAPIError):
+            return True
+    return False
+
+
+class PatientModel(WrapperModel):
+    """Retries the SAME model request when the whole chain failed transiently.
+
+    Waits for the first cooldown to end (else a short backoff), within
+    ``budget_s`` per request, so the mission keeps its message history and tool
+    results instead of failing into a from-scratch run retry."""
+
+    def __init__(
+        self,
+        wrapped: Any,
+        *,
+        health: ModelHealth = MODEL_HEALTH,
+        budget_s: float | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        super().__init__(wrapped)
+        self._health = health
+        self._budget_s = AGENT_LLM_WAIT_BUDGET_S if budget_s is None else budget_s
+        self._sleep = sleep
+        self._clock = clock
+
+    async def _wait_or_raise(self, exc: BaseException, started: float, attempt: int) -> None:
+        left = self._budget_s - (self._clock() - started)
+        if not is_transient(exc) or left <= 0:
+            raise exc
+        wait = self._health.seconds_until_any_ready() or _MIN_WAIT_S * (2**attempt)
+        wait = max(_MIN_WAIT_S, min(wait, _MAX_SINGLE_WAIT_S, left))
+        _log.warning("llm_chain_unavailable_waiting", wait_s=round(wait, 1), attempt=attempt + 1)
+        await self._sleep(wait)
+
+    async def request(self, *args: Any, **kwargs: Any) -> Any:
+        started, attempt = self._clock(), 0
+        while True:
+            try:
+                return await self.wrapped.request(*args, **kwargs)
+            except (ModelAPIError, FallbackExceptionGroup) as exc:
+                await self._wait_or_raise(exc, started, attempt)
+                attempt += 1
+
+    @asynccontextmanager
+    async def request_stream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+        # Only opening the stream is retried; once tokens flow a failure propagates.
+        started, attempt = self._clock(), 0
+        async with AsyncExitStack() as stack:
+            while True:
+                try:
+                    streamed = await stack.enter_async_context(self.wrapped.request_stream(*args, **kwargs))
+                    break
+                except (ModelAPIError, FallbackExceptionGroup) as exc:
+                    await self._wait_or_raise(exc, started, attempt)
+                    attempt += 1
+            yield streamed

@@ -80,6 +80,7 @@ def test_prefer_fast_model(classification, expected) -> None:
 
 
 def _names(model) -> list[str]:
+    model = getattr(model, "wrapped", model)  # PatientModel wraps the chain
     models = model.models if isinstance(model, FallbackModel) else [model]
     return [getattr(m, "model_name", str(m)) for m in models]
 
