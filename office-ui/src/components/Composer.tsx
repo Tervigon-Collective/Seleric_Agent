@@ -2,8 +2,11 @@ import {
   AuiIf,
   AttachmentPrimitive,
   ComposerPrimitive,
+  useAuiState,
 } from "@assistant-ui/react";
 import { useVoiceStore, type VoiceStatus } from "../stores/voice";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { attachAutoCorrect, type AutoCorrectItem } from "../utils/autocorrect";
 
 const VOICE_LABEL: Record<VoiceStatus, string> = {
   idle: "Talk to Seleric",
@@ -33,15 +36,120 @@ function VoiceControls() {
   );
 }
 
+function renderBackdrop(text: string, corrections: AutoCorrectItem[]) {
+  if (!text) return null;
+
+  const valid = corrections
+    .filter((c) => text.slice(c.start, c.end) === c.corrected)
+    .sort((a, b) => a.start - b.start);
+
+  if (valid.length === 0) {
+    return <span>{text}</span>;
+  }
+
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  valid.forEach((item, idx) => {
+    if (item.start > lastIndex) {
+      nodes.push(
+        <span key={`text-${idx}-${lastIndex}`}>
+          {text.slice(lastIndex, item.start)}
+        </span>
+      );
+    }
+    nodes.push(
+      <mark
+        key={`correct-${item.id || idx}`}
+        className="autocorrect-highlight"
+        data-original={item.original}
+        title={`Auto-corrected from "${item.original}"`}
+      >
+        {item.corrected}
+      </mark>
+    );
+    lastIndex = item.end;
+  });
+
+  if (lastIndex < text.length) {
+    nodes.push(
+      <span key={`text-tail-${lastIndex}`}>
+        {text.slice(lastIndex)}
+      </span>
+    );
+  }
+
+  if (text.endsWith("\n")) {
+    nodes.push(<br key="trailing-br" />);
+  }
+
+  return nodes;
+}
+
 export function Composer() {
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const [corrections, setCorrections] = useState<AutoCorrectItem[]>([]);
+  const text = useAuiState((s) => (s.composer.isEditing ? s.composer.text : ""));
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+
+    const handleAutoCorrect = (e: Event) => {
+      const item = (e as CustomEvent<AutoCorrectItem>).detail;
+      if (!item) return;
+      setCorrections((prev) => {
+        const filtered = prev.filter(
+          (c) => !(c.start === item.start && c.end === item.end)
+        );
+        return [...filtered, item];
+      });
+
+      setTimeout(() => {
+        setCorrections((prev) => prev.filter((c) => c.id !== item.id));
+      }, 1500);
+    };
+
+    const handleScroll = () => {
+      if (backdropRef.current) {
+        backdropRef.current.scrollTop = el.scrollTop;
+      }
+    };
+
+    el.addEventListener("autocorrect", handleAutoCorrect);
+    el.addEventListener("scroll", handleScroll);
+
+    const detach = attachAutoCorrect(el);
+
+    return () => {
+      detach();
+      el.removeEventListener("autocorrect", handleAutoCorrect);
+      el.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  const activeCorrections = useMemo(() => {
+    if (!text) return [];
+    return corrections.filter(
+      (c) => text.slice(c.start, c.end) === c.corrected
+    );
+  }, [corrections, text]);
+
   return (
     <ComposerPrimitive.Root className="composer" aria-label="Message composer">
       <ComposerPrimitive.AddAttachment className="attach-btn" aria-label="Choose attachments">＋</ComposerPrimitive.AddAttachment>
-      <ComposerPrimitive.Input
-        placeholder="Ask Seleric…"
-        aria-label="Message"
-        rows={2}
-      />
+      <div className="composer-input-wrapper">
+        <div className="composer-backdrop" aria-hidden="true" ref={backdropRef}>
+          {renderBackdrop(text, activeCorrections)}
+        </div>
+        <ComposerPrimitive.Input
+          ref={inputRef}
+          placeholder="Ask Seleric…"
+          aria-label="Message"
+          rows={2}
+        />
+      </div>
       <AuiIf condition={(state) => !state.thread.isRunning}>
         <ComposerPrimitive.Send className="send-btn" aria-label="Send message">↑</ComposerPrimitive.Send>
       </AuiIf>

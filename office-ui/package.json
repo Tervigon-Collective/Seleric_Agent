@@ -6,7 +6,7 @@
   "description": "Seleric AI Office — spatial real-time visualization of the Seleric intelligence swarm.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build --base=/ui/",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -15,11 +15,13 @@
   "dependencies": {
     "@assistant-ui/react": "^0.15.20",
     "livekit-client": "^2.22.3",
+    "nspell": "^2.1.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@types/nspell": "^2.1.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^6.1.1",

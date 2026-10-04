@@ -785,6 +785,90 @@ button {
   border-color: var(--st-working);
 }
 
+.composer-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.composer-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+  overflow-x: hidden;
+  color: transparent;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.45;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  box-sizing: border-box;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.composer-backdrop::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes autocorrect-flash {
+  0% {
+    background-color: rgba(47, 125, 209, 0.32);
+    border-bottom: 2px solid var(--st-working);
+    opacity: 1;
+  }
+  60% {
+    background-color: rgba(47, 125, 209, 0.22);
+    border-bottom: 2px solid var(--st-working);
+    opacity: 1;
+  }
+  100% {
+    background-color: transparent;
+    border-bottom: 2px solid transparent;
+    opacity: 0;
+  }
+}
+
+@keyframes autocorrect-flash-dark {
+  0% {
+    background-color: rgba(79, 154, 230, 0.42);
+    border-bottom: 2px solid var(--st-working);
+    opacity: 1;
+  }
+  60% {
+    background-color: rgba(79, 154, 230, 0.28);
+    border-bottom: 2px solid var(--st-working);
+    opacity: 1;
+  }
+  100% {
+    background-color: transparent;
+    border-bottom: 2px solid transparent;
+    opacity: 0;
+  }
+}
+
+.composer-backdrop mark.autocorrect-highlight {
+  color: transparent;
+  background-color: transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 3px;
+  padding: 1px 1px;
+  animation: autocorrect-flash 1.4s ease-out forwards;
+}
+
+[data-theme="dark"] .composer-backdrop mark.autocorrect-highlight {
+  animation-name: autocorrect-flash-dark;
+}
+
 .composer textarea {
   display: block;
   width: 100%;
