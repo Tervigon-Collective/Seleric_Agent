@@ -73,10 +73,10 @@ async def test_v3_runner_ns_uses_live_catalogue_id_not_llm():
         async def call(self, *, agent_id: str, capability: str, arguments: dict) -> dict:
             del agent_id
             if capability == "seleric.metrics_query":
-                assert arguments["measures"] == ["pnl_net_sales"]
+                assert arguments["measures"] == ["net_sales"]
                 return {
                     "query_id": "q1",
-                    "rows": [{"pnl_net_sales": "71727"}],
+                    "rows": [{"net_sales": "71727"}],
                     "provenance": {},
                 }
             return {}

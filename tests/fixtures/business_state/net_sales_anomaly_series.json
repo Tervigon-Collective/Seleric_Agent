@@ -1,6 +1,6 @@
 {
   "metric_id": "metric.net_sales",
-  "catalogue_metric_id": "pnl_net_sales",
+  "catalogue_metric_id": "net_sales",
   "profile_id": "default_v1",
   "as_of": "2026-09-07",
   "notes": "Synthetic scenario for Sprint 2 anomaly detection (robust_zscore, median + MAD). Not the same series as net_sales_series.json's trend fixture -- this one is engineered so the 14-point history alternates 100/90/110 (median=100, MAD=10) and the observed point (150 on the last day) is a clean, deliberate spike. Expected values computed by detectors.robust_zscore directly, not hand-derived, to avoid arithmetic mistakes -- see tests/unit/test_business_state_anomaly.py.",

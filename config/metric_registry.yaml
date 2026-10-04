@@ -3,7 +3,7 @@ metrics:
   - id: metric.net_sales
     version: 1
     owner: commerce
-    catalogue_metric: pnl_net_sales
+    catalogue_metric: net_sales
     aliases: [sales, revenue, net sale, net sales, ns]
     description: Shopify Net Sales (ex-GST), dashboard-parity daily rollup.
     formula: commerce_net_revenue_daily
@@ -73,7 +73,7 @@ metrics:
   - id: metric.gross_roas
     version: 1
     owner: performance
-    catalogue_metric: pnl_gross_roas
+    catalogue_metric: gross_roas
     # Blended ROAS lives on canonical_pnl with spend — unscoped, same as CAC.
     seleric_module: null
     aliases: [gross roas]
@@ -94,7 +94,7 @@ metrics:
   - id: metric.net_roas
     version: 1
     owner: performance
-    catalogue_metric: pnl_net_roas
+    catalogue_metric: net_roas
     seleric_module: null
     aliases: [net roas]
     description: Net return on ad spend (net sales per unit of paid media spend).
@@ -229,7 +229,7 @@ metrics:
     version: 2
     owner: finance
     catalogue_metric: pnl_net_profit
-    aliases: [np, net profit, net profits]
+    aliases: []
     description: >
       All-channels Net Profit (Shopify net + Amazon Attribution net − TOC −
       Meta+Google+Amazon spend). Distinct from Shopify-only net_profit.
@@ -802,7 +802,7 @@ metrics:
     version: 1
     owner: finance
     catalogue_metric: pnl_mer
-    aliases: [marketing efficiency ratio, blended roas]
+    aliases: []
     description: Marketing Efficiency Ratio — net sales / total ad spend. Higher is better.
     formula: net_sales / total_ad_spend
     depends_on: [net_sales, total_ad_spend]

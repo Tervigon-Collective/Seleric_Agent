@@ -22,6 +22,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "config" / "metric_registry.yaml"
+REGISTRY_ON_V2 = re.compile(r"^# Semantic v2: catalogue_metric = catalogue_v2 ids", re.M)
 # v1 registry ids that never existed in the v1 catalogue (meta ad-attribution, pre-serve names):
 # their v2 meaning is Meta-attributed paid orders / revenue.
 LEGACY = {
@@ -47,13 +48,17 @@ def main() -> int:
     old = {m["old"]: (m["new"], {k.split(".", 1)[1]: v for k, v in (m.get("filters") or {}).items()})
            for m in idmap["maps"]}
     doc = yaml.safe_load(REGISTRY.read_text(encoding="utf-8"))
+    # Ids already on catalogue_v2 stay as they are: since 2026-10-04 some v1 ids are live again as the
+    # ORDER-date twins of pnl_* (net_roas, net_profit, ...), so "in the v1 map" no longer means "v1 id".
+    done = {e.get("catalogue_metric") for e in doc["metrics"]} if REGISTRY_ON_V2.search(REGISTRY.read_text()) else set()
     changed, dropped_aliases, unmapped = 0, [], []
     for e in doc["metrics"]:
         cm = e.get("catalogue_metric")
         if not cm:
             continue
-        if cm in svc.cat.metrics and cm not in old:
-            new, flt = cm, {}
+        if cm in svc.cat.metrics and (cm not in old or cm in done):
+            new = cm
+            flt = {str(k): str(v) for k, v in (e.get("catalogue_filters") or {}).items()}  # keep what is there
         elif cm in old:
             new, flt = old[cm]
         elif cm in LEGACY:
