@@ -178,6 +178,21 @@ app.include_router(conversations_router)
 app.include_router(phase7_router)
 app.include_router(business_state_router)
 
+# Load repo .env before anything reads settings (CWD-independent): the voice
+# route's voice_enabled check below and the middleware further down.
+_settings_boot = None
+try:
+    from dotenv import load_dotenv
+
+    from seleric_swarm.config.settings import get_settings
+    from seleric_swarm.paths import repo_root
+
+    load_dotenv(repo_root() / ".env")
+    get_settings.cache_clear()
+    _settings_boot = get_settings()
+except Exception:
+    _settings_boot = None
+
 # Voice agent token route (docs/features/voice-agent/). Mounted unconditionally
 # so the route can answer 404 "voice is not enabled" rather than vanishing —
 # but an import failure while voice is switched ON is fatal, not a warning that
@@ -223,20 +238,6 @@ except Exception:  # office UI is optional — never block the core API on it
 
     def _register_mission(_mission_id: str | None) -> None:  # type: ignore[misc]
         return None
-
-# Load repo .env before middleware reads settings (CWD-independent).
-_settings_boot = None
-try:
-    from dotenv import load_dotenv
-
-    from seleric_swarm.config.settings import get_settings
-    from seleric_swarm.paths import repo_root
-
-    load_dotenv(repo_root() / ".env")
-    get_settings.cache_clear()
-    _settings_boot = get_settings()
-except Exception:
-    _settings_boot = None
 
 # Starlette applies middleware in reverse add order: CORS outermost so
 # Swagger / Cursor-preview preflights never hit API-key or rate-limit 401s.
@@ -295,12 +296,9 @@ class MissionRequest(BaseModel):
     )
     mode: str = "read_only"
     session_id: str | None = None
-    # When the query is diagnostic / predictive / prescriptive it is routed to the
-    # dynamic two-axis swarm. These switch in the full agent subsystems
-    # (agents/diagnostic, agents/prediction, agents/skeptic) instead of the
-    # lightweight in-loop specialists. Lookup / comparison queries ignore them.
-    # When True they ALSO ensure the matching intent is present so the specialist
-    # actually runs (e.g. full_prediction on a "why" query still forecasts).
+    # Deprecated, ignored: these switched swarm_v2's specialist subsystems, which
+    # were deleted in Sprint 5 (V3 is the only mission path). Kept so existing
+    # clients that send them still validate; run_v3_mission discards them.
     full_diagnostic: bool = True
     full_prediction: bool = True
     full_skeptic: bool = True

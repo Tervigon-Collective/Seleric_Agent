@@ -973,6 +973,10 @@ async def run_v3_mission(
             max_tool_calls=_tool_budget(intent, ceiling),
             max_runtime_seconds=float(getattr(runtime.settings, "mission_timeout_s", 600.0)),
             agent_retries=int(getattr(runtime.settings, "agent_retries", 2)),
+            max_validation_revisions=int(
+                getattr(runtime.settings, "max_validation_revisions", 3)
+            ),
+            mcp_call_timeout_s=float(getattr(runtime.settings, "mcp_call_timeout_s", 15.0)),
         ),
         catalogue=catalogue,
         metrics=getattr(runtime, "metrics", None),

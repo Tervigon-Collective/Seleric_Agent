@@ -65,7 +65,17 @@ class MissionQueryCache(Generic[K, V]):
     def set(self, key: K, value: V) -> None:
         self._store[key] = value
 
-    async def get_or_fetch(self, key: K, fetch: Callable[[], Awaitable[V]]) -> V:
+    async def get_or_fetch(
+        self,
+        key: K,
+        fetch: Callable[[], Awaitable[V]],
+        *,
+        cacheable: Callable[[V], bool] | None = None,
+    ) -> V:
+        """``cacheable`` (default: everything) decides whether a fetched value is
+        memoized. Callers whose fetch returns a failure as a value (not an
+        exception) pass it so a transient failure isn't replayed for the rest of
+        the mission; concurrent waiters still share that one result."""
         cached = self._store.get(key)
         if cached is not None:
             self.hits += 1
@@ -73,7 +83,16 @@ class MissionQueryCache(Generic[K, V]):
         pending = self._inflight.get(key)
         if pending is not None:
             self.hits += 1
-            return await asyncio.shield(pending)
+            try:
+                return await asyncio.shield(pending)
+            except asyncio.CancelledError:
+                task = asyncio.current_task()
+                if task is not None and task.cancelling():
+                    raise
+                # The fetch's owner was cancelled (e.g. its wait_for timed out),
+                # not this caller: take the fetch over instead of inheriting a
+                # CancelledError that would abort this caller's tool call.
+                return await self.get_or_fetch(key, fetch, cacheable=cacheable)
         self.misses += 1
         future: asyncio.Future[V] = asyncio.get_running_loop().create_future()
         self._inflight[key] = future
@@ -81,10 +100,14 @@ class MissionQueryCache(Generic[K, V]):
             value = await fetch()
         except BaseException as exc:
             future.set_exception(exc)
+            # Mark retrieved: with no concurrent waiter nobody else reads it, and
+            # asyncio would log "Future exception was never retrieved".
+            future.exception()
             raise
         else:
             future.set_result(value)
-            self._store[key] = value
+            if cacheable is None or cacheable(value):
+                self._store[key] = value
             return value
         finally:
             del self._inflight[key]

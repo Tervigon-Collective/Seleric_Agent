@@ -8,8 +8,9 @@ deleted) — completing Profile C's half of the validator.
 
 Joint decision recorded with A1 acceptance (2026-09-18): keep
 ``max_validation_revisions = 1`` — later revised: the live default is now
-**2** (one revision pass; see ``agent/dependencies.py``), raised to allow a
-revision for scope/evidence gaps. Causal escalation is ``search_breadth`` on
+**3** (up to three revision passes after the initial run, i.e. 4 attempts; see
+``ExecutionLimits`` in ``agent/dependencies.py``), raised to allow revisions for
+scope/evidence gaps. Causal escalation is ``search_breadth`` on
 ``estimate_effect`` (A1.1), not this counter — widening a causal search does not
 consume a validation revision. Skeptic → validator is a **change in kind**
 (cross-agent adversarial challenge becomes in-context self-review), not a

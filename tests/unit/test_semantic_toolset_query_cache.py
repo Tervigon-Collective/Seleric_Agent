@@ -211,3 +211,31 @@ async def test_different_metrics_still_fetch_independently():
     # for each call.
     assert ctx.deps.query_cache.misses == 4
     assert ctx.deps.query_cache.hits == 0
+
+
+@pytest.mark.asyncio
+async def test_transient_metrics_query_failure_is_retried_not_replayed():
+    """A retryable failure (transient MCP fault) used to be memoized at both
+    cache layers, so the model's retry got the same failure without a fetch."""
+
+    class FlakyMcp(FakeMcpClient):
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+            self.calls.append((capability, arguments))
+            if len(self.calls) == 1:
+                raise ConnectionError("upstream reset")
+            return self.responses[capability]
+
+    mcp = FlakyMcp({"seleric.metrics_query": {"rows": [{"units_sold": "2314"}], "provenance": {}}})
+    ctx = FakeRunContext(_deps(mcp))
+    kwargs = {
+        "metric_id": "units_sold",
+        "dimensions": {},
+        "grain": "none",
+        "period_start": datetime(2026, 7, 1, tzinfo=UTC),
+        "period_end": datetime(2026, 7, 31, tzinfo=UTC),
+    }
+    first = await semantic.query_metrics(ctx, **kwargs)
+    assert first.success is False and first.retryable is True
+    second = await semantic.query_metrics(ctx, **kwargs)
+    assert second.success is True
+    assert len(mcp.calls) == 2

@@ -79,9 +79,8 @@ old values are read-only compatibility, not a live creation path.
 - `agent/dependencies.py` — `SelericDeps`, `ExecutionLimits`, `NullMcpClient`.
 - `agent/model.py::resolve_v3_model`, `agent/validation/__init__.py::run_validated_mission`
   (the `EvidenceValidator` gate — bounded by
-  `max_validation_revisions = 2`, i.e. one revision pass beyond the initial
-  run; see `agent/dependencies.py` — note the module docstring in
-  `agent/validation/__init__.py` still says 1 and is stale).
+  `max_validation_revisions = 3`, i.e. up to three revision passes beyond the
+  initial run; see `ExecutionLimits` in `agent/dependencies.py`).
 - Toolsets (`src/seleric_swarm/toolsets/`): `semantic.py` (metric/dimension
   resolution + `query_metrics`/`drilldown` against the live catalogue —
   Cube is the only authority for business metrics), `analytics.py`

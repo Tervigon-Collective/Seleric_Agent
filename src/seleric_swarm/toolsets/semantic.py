@@ -19,6 +19,7 @@ import calendar
 import difflib
 import json
 import re
+from collections.abc import Awaitable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -215,13 +216,27 @@ async def _cached_metrics_query(
     ctx: RunContext[SelericDeps], arguments: dict[str, Any]
 ) -> dict[str, Any]:
     import asyncio
-    fetch = lambda: call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=arguments)
+
     key = _cache_key("seleric.metrics_query", arguments)
+
+    def call() -> Awaitable[dict[str, Any]]:
+        return call_metrics_query(ctx.deps.mcp_client, agent_id=_AGENT_ID, arguments=arguments)
+
+    def fetch() -> Awaitable[dict[str, Any]]:
+        if not _QUERY_CACHE_ENABLED:
+            return call()
+        # call_metrics_query returns failures as {"error": ...} values; caching
+        # one would replay a transient MCP fault for the rest of the mission,
+        # even though _fetch_failure tells the model it is retryable.
+        return ctx.deps.query_cache.get_or_fetch(
+            key, call, cacheable=lambda r: not r.get("error")
+        )
+
     if _QUERY_CACHE_ENABLED and ctx.deps.query_cache.peek(key) is not None:
         # Already fetched this mission -- a cache hit costs no real Cube
         # query, so it must not consume max_cube_queries (ExecutionLimits,
         # CONTRACTS.md) either.
-        return await ctx.deps.query_cache.get_or_fetch(key, fetch)
+        return await fetch()
     verdict = ctx.deps.budget.consume("cube_queries")
     if not verdict.ok:
         # Withdraw the fetch tools, don't ModelRetry: an ignored retry counts
@@ -236,10 +251,7 @@ async def _cached_metrics_query(
         }
     mcp_timeout = float(getattr(ctx.deps.limits, "mcp_call_timeout_s", 15.0))
     try:
-        result = await asyncio.wait_for(
-            fetch() if not _QUERY_CACHE_ENABLED else ctx.deps.query_cache.get_or_fetch(key, fetch),
-            timeout=mcp_timeout,
-        )
+        result = await asyncio.wait_for(fetch(), timeout=mcp_timeout)
     except asyncio.TimeoutError:
         return {
             "error": f"MCP call timed out after {mcp_timeout}s",
@@ -1432,7 +1444,13 @@ async def query_metrics(
                 )
             }
         )
-    return await ctx.deps.query_cache.get_or_fetch(result_key, _write_evidence)
+    return await ctx.deps.query_cache.get_or_fetch(
+        result_key,
+        _write_evidence,
+        # Deterministic failures stay cached; a retryable one (transient MCP or
+        # Cube fault) must actually re-run when the model retries it.
+        cacheable=lambda r: r.success or not r.retryable,
+    )
 
 
 def _resolve_drilldown_parent_id(
@@ -1566,7 +1584,9 @@ async def drilldown(
     try:
         if _QUERY_CACHE_ENABLED:
             result: dict[str, Any] = await ctx.deps.query_cache.get_or_fetch(
-                _cache_key("seleric.metrics_drilldown", drilldown_args), fetch_drilldown
+                _cache_key("seleric.metrics_drilldown", drilldown_args),
+                fetch_drilldown,
+                cacheable=lambda r: not (isinstance(r, dict) and r.get("error")),
             )
         else:
             result = await fetch_drilldown()
