@@ -194,6 +194,38 @@ def test_filter_on_any_dimension_holding_the_value_covers_it():
     assert out.status == "OK"
 
 
+# Semantic v2: the gateway reports a word its catalogue uses as a filter value (meta, google, …) as
+# non-vocabulary, so it becomes a required scope like any other named value — nothing listed here.
+_META = {
+    "terms": [{
+        "term": "meta", "catalogue_vocabulary": False, "best_match": "exact",
+        "dimensions": [
+            {"dimension": d, "view": "commerce", "values": [{"value": "meta", "volume": 588, "match": "exact"}],
+             "metrics": []}
+            for d in ("ad_platform", "finance_channel", "platform")
+        ],
+    }],
+}
+
+
+def test_unscoped_drill_does_not_cover_a_named_platform():
+    # live 2026-10-04: "which channels drove our Meta orders" drilled ALL orders by channel
+    store = InMemoryArtifactStore()
+    _evidence(store, day=1, dimensions={"channel": "ig_feed"})
+    _evidence(store, day=2, dimensions={"channel": "google_pmax"})
+    out = check_scope_coverage(store.list_for_mission(_MISSION), RequiredScope(value_filters=value_filters_from_resolution(_META)))
+    assert out.status == "INSUFFICIENT" and out.gaps[0].blocking and "meta" in out.gaps[0].description
+
+
+def test_hierarchy_drill_within_the_named_platform_covers_it():
+    # drilldown(hierarchy="traffic", within={"platform": "meta"}) keys evidence by within + level
+    store = InMemoryArtifactStore()
+    _evidence(store, day=1, dimensions={"platform": "meta", "channel": "ig_feed"})
+    _evidence(store, day=2, dimensions={"platform": "meta", "channel": "fb_feed"})
+    out = check_scope_coverage(store.list_for_mission(_MISSION), RequiredScope(value_filters=value_filters_from_resolution(_META)))
+    assert out.status == "OK"
+
+
 def test_ignored_named_value_forces_revise_end_to_end():
     store = InMemoryArtifactStore()
     for d in range(1, 11):
