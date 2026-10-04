@@ -66,6 +66,7 @@ from seleric_swarm.observability.traces import mission_trace
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
+from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.services.time_range import as_of_date, window_from_query
 from seleric_swarm.state.missions import Mission
 from seleric_swarm.toolsets.semantic import query_metrics
@@ -341,6 +342,79 @@ def _resolved_window(query: str, timezone: str, as_of: str):
     return window
 
 
+# A bare acceptance of the prior answer's closing offer ("yes", "sure, go ahead").
+# Grammar words only — never metric or domain words.
+_AFFIRMATION_WORDS = frozenset(
+    "yes yeah yep yup sure ok okay go ahead please do it that proceed haan ha ji thanks".split()
+)
+_PERIOD_LINE = re.compile(
+    r"Period:\s*(\d{4}-\d{2}-\d{2})(?:\s*(?:to|through|\.\.|–|—|-)\s*(\d{4}-\d{2}-\d{2}))?"
+)
+
+
+def _is_affirmation(query: str) -> bool:
+    words = re.sub(r"[^a-z ]", " ", query.lower()).split()
+    return 0 < len(words) <= 5 and all(w in _AFFIRMATION_WORDS for w in words)
+
+
+def _answer_period(final_response: str) -> tuple[str, str] | None:
+    """The period the answer stated in its footer ("Period: A to B" / "A..B" / "A")."""
+    found = _PERIOD_LINE.findall(final_response or "")
+    if not found:
+        return None
+    start, end = found[-1]
+    return start, end or start
+
+
+def _closing_offer(final_response: str) -> str:
+    """The question the answer ended on ("Would you like me to …?"), if any."""
+    for line in reversed((final_response or "").strip().splitlines()):
+        line = line.strip()
+        if line.endswith("?"):
+            return re.split(r"(?<=[.!])\s+", line)[-1][:300]
+        if line:
+            return ""
+    return ""
+
+
+def _names_a_period(query: str, timezone: str, as_of: str) -> bool:
+    try:
+        return window_from_query(query, timezone, as_of) is not None
+    except Exception:
+        return True  # unparseable phrase: do not impose the prior period
+
+
+def _prior_window(record: dict[str, Any] | None):
+    """The period the prior answer covered, as a pinned window for a follow-up that names none."""
+    start, end = (record or {}).get("period_start"), (record or {}).get("period_end")
+    if not start or not end:
+        return None
+    return TimeRangeV1(kind="absolute", start=start, end=end, relative_token="prior_answer_period")
+
+
+def _followup_hint(record: dict[str, Any] | None, *, affirmation: bool, window: Any) -> str:
+    """Follow-ups keep the prior answer's period, and "yes" means do what was offered.
+    Live thread_e75c2615: "yes" to "dig into channel or landing-page behaviour?"
+    re-ran the same diagnosis on a different window (-6% "normal" became -15%
+    "notable") and never drilled by channel."""
+    if not record:
+        return ""
+    lines: list[str] = []
+    if window is not None and window.relative_token == "prior_answer_period":
+        lines.append(
+            f"The question names no period: use the prior answer's period {window.start}..{window.end} "
+            "(pass those dates explicitly) unless the request itself implies another, e.g. a comparison."
+        )
+    offer = record.get("offer")
+    if affirmation and offer:
+        lines.append(
+            f'The user accepted the offer that ended your prior answer: "{offer}" Do exactly that '
+            "(e.g. the breakdown or drill it names), on the same metric and period; do not repeat the "
+            "prior analysis."
+        )
+    return "[follow-up]\n" + "\n".join(lines) + "\n\n" if lines else ""
+
+
 def _resolved_window_line(query: str, timezone: str, as_of: str) -> str:
     """Resolve a relative time phrase to concrete dates once, deterministically,
     so the agent uses a fixed window instead of resolving "last month" itself —
@@ -445,6 +519,8 @@ def _render_turn_record(record: dict[str, Any]) -> str:
     period = record.get("period")
     if period and period != "none":
         parts.append(f"period={period}")
+    if record.get("period_start"):
+        parts.append(f"period_used={record['period_start']}..{record.get('period_end') or record['period_start']}")
     grain = record.get("grain")
     if grain and grain != "none":
         parts.append(f"grain={grain}")
@@ -879,9 +955,13 @@ def _write_turn_record(
             "metric_labels": metric_labels[:10],
             "top_items": entities[:5],
             "evidence_ids": (result.evidence_ids or [])[:8],
+            "offer": _closing_offer(result.final_response or ""),
             "mission_id": mission_id,
             "as_of": as_of_dt.date().isoformat(),
         }
+        period = _answer_period(result.final_response or "")
+        if period:
+            record["period_start"], record["period_end"] = period
         artifact_store.put(
             Artifact(
                 workspace_id=workspace_id,
@@ -960,6 +1040,22 @@ async def run_v3_mission(
         required_scope = dataclasses.replace(
             required_scope, value_filters=value_filters, question_axes=question_axes
         )
+    # Detect a follow-up and load the last turn's grounding record. Jev's
+    # depends_on_prior misses bare acceptances ("yes"), so those always count.
+    affirmation = _is_affirmation(query)
+    is_followup = classification.depends_on_prior is True or affirmation
+    prior_turn_record: dict[str, Any] | None = None
+    if is_followup:
+        try:
+            prior_turn_record = _latest_turn_record(get_v3_artifact_store(), thread_id=thread_id)
+        except Exception:
+            _log.warning("prior_turn_record_load_failed", exc_info=True)
+    resolved_window = _resolved_window(query, timezone, as_of_dt.date().isoformat())
+    # The prior period is a stated default, not a pin: resolved_window rewrites every
+    # call to its dates, which would break "compare with the week before".
+    prior_window = None
+    if is_followup and not _names_a_period(query, timezone, as_of_dt.date().isoformat()):
+        prior_window = _prior_window(prior_turn_record)
     ceiling = int(getattr(runtime.settings, "max_tool_calls", 160))
     deps = SelericDeps(
         mission_id=mission_id,
@@ -982,7 +1078,7 @@ async def run_v3_mission(
         ),
         catalogue=catalogue,
         metrics=getattr(runtime, "metrics", None),
-        resolved_window=_resolved_window(query, timezone, as_of_dt.date().isoformat()),
+        resolved_window=resolved_window,
         jev=JevConfig(
             base_url=getattr(runtime.settings, "jev_base_url", ""),
             api_key=getattr(runtime.settings, "jev_api_key", ""),
@@ -1002,7 +1098,7 @@ async def run_v3_mission(
     # "Running queries..." through final_result and failed
     # INSUFFICIENT_EVIDENCE). Tool availability is not tool invocation: true
     # small talk can still be answered without calling anything.
-    if intent == "conversation" and alias_def is None and classification.depends_on_prior is not True:
+    if intent == "conversation" and alias_def is None and not is_followup:
         deps.call_counts[CONVERSATIONAL] = 1  # small talk: the agent gets no tools at all
     started = time.perf_counter()
     with mission_trace(
@@ -1058,21 +1154,9 @@ async def run_v3_mission(
                 )
                 if plan:
                     _store_plan_artifact(deps, plan=plan, intent=intent)
-                # Detect follow-up and load the last turn's grounding record.
-                # When Jev flags depends_on_prior=True, we load the most recent
-                # TurnRecord for this thread and inject it at the top of the
-                # [thread context] block as a structured 'Prior answer:' line.
-                # This gives the agent entity names, period, and metric labels
-                # without forcing it to re-parse truncated prose from prior turns.
-                is_followup = classification.depends_on_prior is True
-                prior_turn_record: dict[str, Any] | None = None
-                if is_followup:
-                    try:
-                        prior_turn_record = _latest_turn_record(
-                            get_v3_artifact_store(), thread_id=thread_id
-                        )
-                    except Exception:
-                        _log.warning("prior_turn_record_load_failed", exc_info=True)
+                # prior_turn_record / is_followup were loaded before deps (the
+                # prior period feeds the [follow-up] hint). The record sits at the top of
+                # [thread context] as a structured 'Prior answer:' line.
                 # Only pay the ~8.6k-token full-catalogue dump when explicitly
                 # enabled; otherwise the agent resolves via search_semantics +
                 # get_metric_definitions. The snapshot still rides in deps for
@@ -1086,7 +1170,9 @@ async def run_v3_mission(
                     if getattr(runtime.settings, "catalogue_in_prompt", False)
                     else None,
                     plan=plan,
-                    hint=_values_block(values) + _routing_hint(classification),
+                    hint=_values_block(values)
+                    + _routing_hint(classification)
+                    + _followup_hint(prior_turn_record, affirmation=affirmation, window=prior_window),
                     is_followup=is_followup,
                     prior_turn_record=prior_turn_record,
                 )

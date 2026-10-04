@@ -47,6 +47,15 @@ _RELATIVE_COMPARE = (
 )
 
 
+def _last_complete_day(anchor: date) -> str:
+    """End of a trailing "last N days/weeks/months/quarters" window: yesterday.
+    Today is still in progress, so "last 7 days" is the 7 complete days before
+    it — the gateway's last_7d preset does the same. Ending on today made the
+    diagnosis drop the partial day and analyse 6 days (live thread_e75c2615:
+    "last 7 days" = 09-28..10-03), and weeks/months/quarters ran one day long."""
+    return (anchor - timedelta(days=1)).isoformat()
+
+
 def _sub_months(anchor: date, n: int) -> date:
     """Subtract n calendar months from anchor — no 30-day approximation.
 
@@ -130,11 +139,11 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
     found = _LAST_N_DAYS.search(text)
     if found:
         n = max(1, min(int(found.group(1)), 90))
-        start = anchor - timedelta(days=n - 1)
+        start = anchor - timedelta(days=n)
         return TimeRangeV1(
             kind="absolute",
             start=start.isoformat(),
-            end=anchor.isoformat(),
+            end=_last_complete_day(anchor),
             relative_token=f"last_{n}d",
         )
 
@@ -145,7 +154,7 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
         return TimeRangeV1(
             kind="absolute",
             start=start.isoformat(),
-            end=anchor.isoformat(),
+            end=_last_complete_day(anchor),
             relative_token=f"last_{n}w",
         )
 
@@ -156,7 +165,7 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
         return TimeRangeV1(
             kind="absolute",
             start=start.isoformat(),
-            end=anchor.isoformat(),
+            end=_last_complete_day(anchor),
             relative_token=f"last_{n}m",
         )
 
@@ -168,7 +177,7 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
         return TimeRangeV1(
             kind="absolute",
             start=start.isoformat(),
-            end=anchor.isoformat(),
+            end=_last_complete_day(anchor),
             relative_token=f"last_{n}q",
         )
 
@@ -267,11 +276,11 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
         last_n = re.fullmatch(r"last_(\d+)d", token)
         if last_n:
             n = max(1, min(int(last_n.group(1)), 90))
-            start = anchor - timedelta(days=n - 1)
+            start = anchor - timedelta(days=n)
             return TimeRangeV1(
                 kind="absolute",
                 start=start.isoformat(),
-                end=anchor.isoformat(),
+                end=_last_complete_day(anchor),
                 relative_token=token,
             )
         last_nw = re.fullmatch(r"last_(\d+)w", token)
@@ -281,7 +290,7 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
             return TimeRangeV1(
                 kind="absolute",
                 start=start.isoformat(),
-                end=anchor.isoformat(),
+                end=_last_complete_day(anchor),
                 relative_token=token,
             )
         last_nm = re.fullmatch(r"last_(\d+)m", token)
@@ -291,7 +300,7 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
             return TimeRangeV1(
                 kind="absolute",
                 start=start.isoformat(),
-                end=anchor.isoformat(),
+                end=_last_complete_day(anchor),
                 relative_token=token,
             )
         last_nq = re.fullmatch(r"last_(\d+)q", token)
@@ -301,7 +310,7 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
             return TimeRangeV1(
                 kind="absolute",
                 start=start.isoformat(),
-                end=anchor.isoformat(),
+                end=_last_complete_day(anchor),
                 relative_token=token,
             )
         if token == "today":
