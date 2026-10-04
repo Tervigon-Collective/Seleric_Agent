@@ -32,6 +32,9 @@ _ALLOWLIST: dict[str, str] = {
     "main.py": "/v1/llm/ping dev-surface echo, never reaches a mission response",
     # Not final_response: offline eval tooling, not the production answer path.
     "eval/llm_judge.py": "offline eval judge, not a mission response path",
+    # Not final_response: _confirm_value_filters reads a JSON word list that only removes
+    # value filters from the mission scope; no model text reaches the answer.
+    "agent/runner.py": "value-sense JSON word list, never shown to the user",
     # KNOWN GAP (PRD-005): these write free text into result.audit["narrative"]
     # / verdict.explanation. Neither field is read anywhere else in the
     # codebase today (see coordinator/* — no reference), so nothing reaches

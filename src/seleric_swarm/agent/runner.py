@@ -10,6 +10,7 @@ stores the office gateway falls back to.
 from __future__ import annotations
 
 import dataclasses
+import json
 
 import asyncio
 import logging
@@ -39,6 +40,7 @@ from seleric_swarm.agent.output import MissionResult as V3MissionResult
 from seleric_swarm.agent.plan import build_plan
 from seleric_swarm.agent.scope import (
     RequiredScope,
+    ValueFilter,
     build_required_scope,
     question_axes_from_resolution,
     value_filters_from_resolution,
@@ -67,6 +69,7 @@ from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
 from seleric_swarm.contracts.lookup import TimeRangeV1
+from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.services.time_range import as_of_date, window_from_query
 from seleric_swarm.state.missions import Mission
 from seleric_swarm.toolsets.semantic import query_metrics
@@ -254,6 +257,72 @@ async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[s
     # Cache the result
     _VALUE_RESOLUTION_CACHE[cache_key] = result
     return result
+
+
+_VALUE_SENSE_PROMPT = (
+    "A business question was matched word-by-word against values recorded in the data. For each "
+    "listed word, decide whether the question uses it to NAME that value (the user wants the data "
+    "filtered to it, e.g. 'whatsapp' in 'orders from whatsapp', 'meta' in 'meta spend') or as "
+    "ordinary language (e.g. 'other' in 'compared to other days', 'new' in 'any new ideas'). "
+    "When unsure, the word names the value. Reply with JSON only: "
+    '{"ordinary": ["<word>", ...]} listing only the ordinary-language words.'
+)
+
+
+async def _confirm_value_filters(
+    runtime: SwarmRuntime, query: str, filters: tuple[ValueFilter, ...]
+) -> tuple[tuple[ValueFilter, ...], frozenset[str]]:
+    """Drop value filters whose word the question uses as plain language.
+
+    An exact data match is not intent: "compared to OTHER days" matched
+    payment_method = other, the coverage gate made it required, and the model —
+    told the data records it — kept filtering by it (live thread_e75c2615, still
+    after the not_values waiver). One fast-model call reads each word in context,
+    before the loop. Fail-open toward the filter (an error keeps every filter, so
+    a named "meta" is never dropped by an outage)."""
+    llm = getattr(runtime, "llm", None)
+    if not filters or llm is None:
+        return filters, frozenset()
+    settings = runtime.settings
+    model = (getattr(settings, "azure_openai_fast_model", "") or "").strip() or settings.azure_openai_model
+    listing = "\n".join(
+        f'- "{vf.term}": {" / ".join(sorted(vf.dimensions))} = {", ".join(vf.values)}' for vf in filters
+    )
+    try:
+        response = await asyncio.wait_for(
+            llm.complete(
+                LLMRequest(
+                    messages=[
+                        ChatMessage(role="system", content=_VALUE_SENSE_PROMPT),
+                        ChatMessage(role="user", content=f"Question: {query}\n\nWords:\n{listing}"),
+                    ],
+                    model=model,
+                    temperature=0,
+                    max_tokens=1500,  # reasoning models spend hidden tokens first
+                    timeout_s=8.0,
+                    metadata=LLMRequestMetadata(agent_id="value_sense", query_class="scope"),
+                    tags=["value_sense"],
+                )
+            ),
+            timeout=10.0,
+        )
+        found = re.search(r"\{.*\}", response.text or "", re.DOTALL)
+        words = json.loads(found.group(0)).get("ordinary", []) if found else []
+    except Exception:
+        _log.warning("value_sense_failed", exc_info=True)
+        return filters, frozenset()
+    named = {vf.term.lower() for vf in filters}
+    ordinary = frozenset(str(w).strip().lower() for w in words if str(w).strip().lower() in named)
+    if ordinary:
+        _log.info("value_filters_dropped_as_ordinary terms=%s", sorted(ordinary))
+    return tuple(vf for vf in filters if vf.term.lower() not in ordinary), ordinary
+
+
+def _without_terms(resolution: dict[str, Any], terms: frozenset[str]) -> dict[str, Any]:
+    if not terms or not resolution:
+        return resolution
+    kept = [t for t in resolution.get("terms") or [] if str(t.get("term", "")).lower() not in terms]
+    return {**resolution, "terms": kept}
 
 
 _VALUES_MAX_TERMS = 4
@@ -1034,7 +1103,10 @@ async def run_v3_mission(
     intent = classification.intent
     values = await _resolve_values(runtime, mcp, query) if intent != "conversation" else {}
     required_scope = _required_scope(runtime, query, temporal_grain=classification.grain)
-    value_filters = value_filters_from_resolution(values)
+    value_filters, ordinary_words = await _confirm_value_filters(
+        runtime, query, value_filters_from_resolution(values)
+    )
+    values = _without_terms(values, ordinary_words)
     question_axes = question_axes_from_resolution(values)
     if value_filters or question_axes:
         required_scope = dataclasses.replace(
