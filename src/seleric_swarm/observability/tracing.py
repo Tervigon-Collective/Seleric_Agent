@@ -220,7 +220,7 @@ def instrument_fastapi(app: Any) -> None:
 
         FastAPIInstrumentor.instrument_app(
             app,
-            excluded_urls="health,readyz",
+            excluded_urls="health,readyz,ui.*,.*messages.*,.*stream.*,.*threads.*,favicon.*",
             http_capture_headers_server_request=["x-request-id"],
         )
     except Exception:
@@ -355,8 +355,27 @@ class SpanHandle:
             self._trace_url = langfuse_trace_url(trace_id=tid)
         return self._trace_url
 
-    def set_outputs(self, outputs: dict[str, Any]) -> None:
-        self._outputs = outputs
+    def set_outputs(self, outputs: Any) -> None:
+        if isinstance(outputs, str):
+            self._outputs = {"response": outputs}
+        elif isinstance(outputs, dict):
+            self._outputs = outputs
+        else:
+            self._outputs = {"output": str(outputs)}
+        if self._run is not None:
+            try:
+                redacted = redact_mapping(self._outputs)
+                if hasattr(self._run, "update"):
+                    self._run.update(output=redacted)
+                elif hasattr(self._run, "end"):
+                    self._run.end()
+                if hasattr(self._run, "set_trace_io"):
+                    try:
+                        self._run.set_trace_io(output=redacted)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
     def _flush(self) -> None:
         if self._run is None or self._outputs is None:
@@ -366,7 +385,12 @@ class SpanHandle:
             if hasattr(self._run, "update"):
                 self._run.update(output=redacted)
             elif hasattr(self._run, "end"):
-                self._run.end(outputs=redacted)
+                self._run.end()
+            if hasattr(self._run, "set_trace_io"):
+                try:
+                    self._run.set_trace_io(output=redacted)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -401,6 +425,19 @@ def _langfuse_span(
     if not enabled or not configured:
         yield SpanHandle()
         return
+
+    prop_cm = None
+    session_id = str(metadata.get("session_id") or metadata.get("thread_id") or "") or None
+    user_id = str(metadata.get("user_id") or metadata.get("owner_user_id") or "") or None
+    if session_id or user_id or tags:
+        try:
+            from langfuse import propagate_attributes
+
+            prop_cm = propagate_attributes(session_id=session_id, user_id=user_id, tags=tags)
+            prop_cm.__enter__()
+        except Exception:
+            prop_cm = None
+
     try:
         from langfuse import get_client
 
@@ -422,12 +459,22 @@ def _langfuse_span(
             input=redact_mapping(inputs) if inputs else None,
         )
         run = cm.__enter__()
+        if hasattr(run, "set_trace_io") and inputs:
+            try:
+                run.set_trace_io(input=redact_mapping(inputs))
+            except Exception:
+                pass
         tid = getattr(run, "trace_id", None)
         turl = client.get_trace_url(trace_id=tid) if tid else client.get_trace_url()
     except Exception:
         logging.getLogger("seleric.observability").warning(
             "langfuse_span_failed", extra={"span": name}
         )
+        if prop_cm is not None:
+            try:
+                prop_cm.__exit__(None, None, None)
+            except Exception:
+                pass
         yield SpanHandle()
         return
 
@@ -447,6 +494,11 @@ def _langfuse_span(
             cm.__exit__(*exc_info)
         except Exception:
             pass
+        if prop_cm is not None:
+            try:
+                prop_cm.__exit__(*exc_info)
+            except Exception:
+                pass
 
 
 # Backward compatibility alias

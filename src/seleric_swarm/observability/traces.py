@@ -26,8 +26,41 @@ from seleric_swarm.observability.tracing import _langfuse_span
 _TRACER_NAME = "seleric.v3.mission"
 
 
+class MissionTraceHandle:
+    """Wrapper around OTel span and Langfuse span handle."""
+
+    def __init__(self, otel_span: trace.Span, langfuse_handle: Any) -> None:
+        self._otel_span = otel_span
+        self._langfuse_handle = langfuse_handle
+
+    def set_attribute(self, key: str, value: Any) -> None:
+        if hasattr(self._otel_span, "set_attribute"):
+            if not isinstance(value, (str, bool, int, float)):
+                value = str(value)
+            self._otel_span.set_attribute(key, value)
+
+    def set_output(self, output: Any) -> None:
+        payload = {"response": output} if isinstance(output, str) else output if isinstance(output, dict) else {"output": str(output)}
+        if self._langfuse_handle is not None and hasattr(self._langfuse_handle, "set_outputs"):
+            self._langfuse_handle.set_outputs(payload)
+        if hasattr(self._otel_span, "set_attribute"):
+            try:
+                import json
+                output_str = str(output)
+                self._otel_span.set_attribute("final_response", output_str[:2000])
+                self._otel_span.set_attribute("output.value", output_str)
+                payload_json = json.dumps(payload)
+                self._otel_span.set_attribute("langfuse.observation.output", payload_json)
+                self._otel_span.set_attribute("langfuse.trace.output", payload_json)
+            except Exception:
+                pass
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._otel_span, name)
+
+
 @contextmanager
-def mission_trace(mission_id: str, **attributes: Any) -> Iterator[trace.Span]:
+def mission_trace(mission_id: str, **attributes: Any) -> Iterator[Any]:
     """Open one span for a mission run. Non-string attribute values are
     stringified — OTel attributes must be primitives, and callers pass
     things like intent lists that aren't."""
@@ -41,15 +74,25 @@ def mission_trace(mission_id: str, **attributes: Any) -> Iterator[trace.Span]:
         inputs=inputs,
         run_type="chain",
     ) as handle:
-        span.set_attribute("mission_id", mission_id)
+        handle_wrapper = MissionTraceHandle(span, handle)
+        handle_wrapper.set_attribute("mission_id", mission_id)
+        handle_wrapper.set_attribute("langfuse.trace.name", "mission")
+        if attributes.get("query"):
+            try:
+                import json
+                query_str = str(attributes["query"])
+                handle_wrapper.set_attribute("input.value", query_str)
+                query_json = json.dumps({"query": query_str})
+                handle_wrapper.set_attribute("langfuse.observation.input", query_json)
+                handle_wrapper.set_attribute("langfuse.trace.input", query_json)
+            except Exception:
+                pass
         for key, value in attributes.items():
             if value is None:
                 continue
-            if not isinstance(value, (str, bool, int, float)):
-                value = str(value)
-            span.set_attribute(key, value)
+            handle_wrapper.set_attribute(key, value)
         try:
-            yield span
+            yield handle_wrapper
         finally:
             try:
                 from langfuse import get_client

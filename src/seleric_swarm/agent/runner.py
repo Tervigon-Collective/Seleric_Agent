@@ -1002,7 +1002,12 @@ async def run_v3_mission(
         intent=intent,
         complexity=classification.complexity,
         needs_write=classification.needs_write,
-    ):
+        request_id=request_id,
+        session_id=thread_id,
+        thread_id=thread_id,
+        workspace_id=workspace_id,
+        user_id=owner_user_id,
+    ) as m_trace:
         try:
             fast_result = (
                 await _business_state_fast_answer(
@@ -1137,6 +1142,12 @@ async def run_v3_mission(
                     "intent": intent,
                 },
             )
+        finally:
+            if "result" in locals() and hasattr(result, "final_response") and hasattr(m_trace, "set_output"):
+                try:
+                    m_trace.set_output(result.final_response)
+                except Exception:
+                    pass
 
     v3_store.finish(
         mission_id,
