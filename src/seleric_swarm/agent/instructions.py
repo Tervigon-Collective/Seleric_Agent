@@ -329,6 +329,10 @@ BEFORE YOU CALL final_result, CHECK final_response AGAINST THIS:
 - The answer ENDS with the footer line and one optional short question. Nothing
   may follow them — no "Scope", "Notes", "Coverage", "Limitations", "Evidence
   IDs" or "Methodology" section, under any name.
+- Every multi-row table carries each measure as its own column (e.g. spend,
+  sales, ratio) — never collapse underlying measures into a single derived
+  column. If a derived figure is shown, the components that produce it must
+  be visible in the same table or clearly stated in the text.
 - Footer, exactly: Period: <range> · Currency: <ccy> · Data as of <date>
 - Nowhere in the text: artifact or evidence ids, metric ids, filter expressions,
   grain, view/table names, timezone or fetch timestamps. Those are working

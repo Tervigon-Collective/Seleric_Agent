@@ -1289,57 +1289,57 @@ async def query_metrics(
                 k: (",".join(v) if isinstance(v, list) else v) for k, v in dimensions.items() if v
             }
             for key in breakdown:
-                row_dimensions[key] = str(dimension_value(row, key))
-            evidence = EvidenceArtifact(
-                metric_id=metric_id,
-                dimensions=row_dimensions,
-                grain=grain,  # type: ignore[arg-type]
-                as_of=ctx.deps.as_of,
-                period_start=bucket_start,
-                period_end=bucket_end,
-                value=last_value,
-                unit=currency or None,
-                source_query=args,
-            )
-            artifact = ctx.deps.artifact_store.put(
-                Artifact(
-                    workspace_id=ctx.deps.principal.workspace_id,
-                    artifact_type="evidence",
-                    payload=evidence.model_dump(mode="json"),
-                    classification="factual",
-                    evidence_ids=[f"raw:{metric_id}:{bucket_start.date()}:{bucket_end.date()}"],
-                    provenance=provenance,
-                    mission_id=ctx.deps.mission_id,
+                raw = str(dimension_value(row, key))
+                # Behavioral: drop rows with empty/unmapped breakdown values
+                # rather than letting them leak into labels or aggregate under
+                # a false "None" category. Applies to any breakdown dimension.
+                if raw in ("", "None", "null", "none", "NULL"):
+                    break
+                row_dimensions[key] = raw
+            else:
+                # Only build evidence/label when all breakdown values resolved
+                evidence = EvidenceArtifact(
+                    metric_id=metric_id,
+                    dimensions=row_dimensions,
+                    grain=grain,  # type: ignore[arg-type]
+                    as_of=ctx.deps.as_of,
+                    period_start=bucket_start,
+                    period_end=bucket_end,
+                    value=last_value,
+                    unit=currency or None,
+                    source_query=args,
                 )
-            )
-            artifact_ids.append(artifact.id)
-            # Label: the time bucket AND the breakdown dimension values, both when
-            # present. A breakdown+grain query (live MS3-848d29f41a: returned_units
-            # by product_title at month grain) previously labelled every row by the
-            # month alone, dropping product_title from the summary the model reads —
-            # so it reported "product with 119 returned units" with no name, though
-            # the name was on the artifact. The time dim is already the bucket, so
-            # drop is_time dims from the categorical part (catalogue-driven, no
-            # name-matching). Week/month include both ends so buckets can't collide.
-            time_label = ""
-            if bucket_date and grain in {"week", "month"}:
-                time_label = f"{bucket_start.date()}..{bucket_end.date()}"
-                # A week/month bucket the requested period cuts short holds only
-                # part of that week/month (live: "last week" over 18–24 Sep returned
-                # a 21–24 Sep bucket labelled as the whole 21–27 week). Say so.
-                clip_start = max(bucket_start.date(), period_start.date())
-                clip_end = min(bucket_end.date(), period_end.date())
-                if (clip_start, clip_end) != (bucket_start.date(), bucket_end.date()):
-                    time_label += f" (PARTIAL {grain}: only {clip_start}..{clip_end})"
-            elif bucket_date:
-                time_label = bucket_date
-            dim_label = ", ".join(
-                f"{k}={v}"
-                for k, v in row_dimensions.items()
-                if not ctx.deps.catalogue.is_time_dimension(k)
-            )
-            label = " | ".join(p for p in (time_label, dim_label) if p) or f"{bucket_start.date()}..{bucket_end.date()}"
-            series.append({"label": label, "value": last_value})
+                artifact = ctx.deps.artifact_store.put(
+                    Artifact(
+                        workspace_id=ctx.deps.principal.workspace_id,
+                        artifact_type="evidence",
+                        payload=evidence.model_dump(mode="json"),
+                        classification="factual",
+                        evidence_ids=[f"raw:{metric_id}:{bucket_start.date()}:{bucket_end.date()}"],
+                        provenance=provenance,
+                        mission_id=ctx.deps.mission_id,
+                    )
+                )
+                artifact_ids.append(artifact.id)
+                # Label: the time bucket AND the breakdown dimension values, both when
+                # present. A breakdown+grain query previously dropped the category
+                # from the label, making rows indistinguishable. Preserve it.
+                time_label = ""
+                if bucket_date and grain in {"week", "month"}:
+                    time_label = f"{bucket_start.date()}..{bucket_end.date()}"
+                    clip_start = max(bucket_start.date(), period_start.date())
+                    clip_end = min(bucket_end.date(), period_end.date())
+                    if (clip_start, clip_end) != (bucket_start.date(), bucket_end.date()):
+                        time_label += f" (PARTIAL {grain}: only {clip_start}..{clip_end})"
+                elif bucket_date:
+                    time_label = bucket_date
+                dim_label = ", ".join(
+                    f"{k}={v}"
+                    for k, v in row_dimensions.items()
+                    if not ctx.deps.catalogue.is_time_dimension(k)
+                )
+                label = " | ".join(p for p in (time_label, dim_label) if p) or f"{bucket_start.date()}..{bucket_end.date()}"
+                series.append({"label": label, "value": last_value})
         if not artifact_ids:
             return ToolResult(
                 success=False,
