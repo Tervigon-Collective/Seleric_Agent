@@ -82,10 +82,19 @@ class MissionResult(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
     finding_ids: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+    not_values: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Words from the [values in the data] hints that the question uses as ordinary language, "
+            "not as that value (e.g. 'other' in 'compared to other days' is not payment_method = other). "
+            "Listed words are not required as filters. Never list a word the user meant as a "
+            "filter (a channel, platform, product or source they named)."
+        ),
+    )
     error_code: str | None = None
     trace: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("evidence_ids", "finding_ids", "limitations", mode="before")
+    @field_validator("evidence_ids", "finding_ids", "limitations", "not_values", mode="before")
     @classmethod
     def _empty_means_none(cls, value: Any) -> Any:
         # Models regularly send "" or null for "none" (live: limitations="" and

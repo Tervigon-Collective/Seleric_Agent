@@ -427,7 +427,9 @@ def check_prediction(artifacts: list[Artifact]) -> CheckOutcome:
     return out
 
 
-def check_scope_coverage(artifacts: list[Artifact], scope: Any, catalogue: Any = None) -> CheckOutcome:
+def check_scope_coverage(
+    artifacts: list[Artifact], scope: Any, catalogue: Any = None, not_values: Any = ()
+) -> CheckOutcome:
     """Executed evidence must cover the breakdowns and named values the query demanded.
 
     The reconciliation gate for the silent-drop failure (live "by source"
@@ -455,7 +457,13 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any, catalogue: Any =
         frozenset([cs]) if isinstance(cs, str) else frozenset(cs)
         for cs in (getattr(scope, "breakdowns", ()) or ())
     ]
-    value_filters = tuple(getattr(scope, "value_filters", ()) or ())
+    # A value hint is a candidate, not a command: an exact data match on an ordinary word ("compared to
+    # OTHER days" -> payment_method = other) is not scope. The answer names such words in not_values and
+    # they stop being required (live thread_e75c2615: six forced revisions toward a filter nobody asked for).
+    waived = {str(w).strip().lower() for w in (not_values or ()) if str(w).strip()}
+    value_filters = tuple(
+        vf for vf in (getattr(scope, "value_filters", ()) or ()) if str(vf.term).strip().lower() not in waived
+    )
     requested_grain = getattr(scope, "temporal_grain", None)
     stated_date = dict(getattr(scope, "question_axes", ()) or ()).get("date")
     if not breakdowns and not value_filters and not requested_grain and not stated_date:
@@ -542,7 +550,9 @@ def check_scope_coverage(artifacts: list[Artifact], scope: Any, catalogue: Any =
                     f"{' / '.join(sorted(vf.dimensions))} = {', '.join(vf.values)}, but the "
                     f"answer's evidence is not filtered by it — re-run filtered to those "
                     f"values with a metric that supports that dimension, or state plainly "
-                    f"that no available metric supports it"
+                    f"that no available metric supports it; if the question uses "
+                    f"'{vf.term}' as an ordinary word rather than that value, list it in "
+                    f"not_values instead"
                 ),
                 blocking=True,
                 priority=8,
@@ -631,7 +641,10 @@ def run_checks(
         check_causal(artifacts),
         check_prediction(artifacts),
         check_scope_coverage(
-            artifacts, getattr(deps, "required_scope", None), getattr(deps, "catalogue", None)
+            artifacts,
+            getattr(deps, "required_scope", None),
+            getattr(deps, "catalogue", None),
+            not_values=getattr(result, "not_values", None) or (),
         ),
         check_answer_grounding(artifacts, result),
     ]

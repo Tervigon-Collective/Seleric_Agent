@@ -282,7 +282,9 @@ def _values_block(resolution: dict[str, Any]) -> str:
         return ""
     return (
         "[values in the data — words in the question that match values the data "
-        "records, learned from live data]\n"
+        "records, learned from live data. A match is a candidate: if the question "
+        "uses a word as ordinary language (\"other days\", \"new idea\"), do not "
+        "filter by it and list the word in not_values]\n"
         + "\n".join(lines)
         + "\n\n"
     )

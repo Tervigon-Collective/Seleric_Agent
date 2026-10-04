@@ -20,6 +20,7 @@ import pytest
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
+from seleric_swarm.agent.output import MissionResult
 from seleric_swarm.agent.runner import _resolve_values, _values_block
 from seleric_swarm.agent.scope import RequiredScope, ValueFilter, value_filters_from_resolution
 from seleric_swarm.agent.validation import EvidenceValidator
@@ -244,6 +245,55 @@ def test_ignored_named_value_forces_revise_end_to_end():
         required_scope=_SCOPE,
     )
     assert EvidenceValidator().score(deps).verdict == "REVISE"
+
+
+# live thread_e75c2615: "why was 2026-09-24 lower than OTHER days" — "other" is a payment_method value in the
+# data, so the hint made it a required filter and six revisions chased payment_method = other.
+_OTHER = {
+    "terms": [{
+        "term": "other", "catalogue_vocabulary": False, "best_match": "exact",
+        "dimensions": [{"dimension": "payment_method", "view": "payments",
+                        "values": [{"value": "other", "volume": 3, "match": "exact"}], "metrics": []}],
+    }],
+}
+
+
+def test_ordinary_word_listed_in_not_values_is_not_required():
+    store = InMemoryArtifactStore()
+    for d in range(1, 6):
+        _evidence(store, day=d, dimensions={})
+    scope = RequiredScope(value_filters=value_filters_from_resolution(_OTHER))
+    gated = check_scope_coverage(store.list_for_mission(_MISSION), scope)
+    assert gated.status == "INSUFFICIENT" and "not_values" in gated.gaps[0].description
+    waived = check_scope_coverage(store.list_for_mission(_MISSION), scope, not_values=["Other"])
+    assert waived.status != "INSUFFICIENT" and not waived.gaps
+    # Waiving one word never waives another named value.
+    both = RequiredScope(value_filters=value_filters_from_resolution(_OTHER) + _SCOPE.value_filters)
+    out = check_scope_coverage(store.list_for_mission(_MISSION), both, not_values=["other"])
+    assert out.status == "INSUFFICIENT" and "acme chat" in out.gaps[0].description
+
+
+def test_not_values_reaches_the_gate_through_the_answer():
+    store = InMemoryArtifactStore()
+    for d in range(1, 11):
+        _evidence(store, day=d, dimensions={})
+    deps = SelericDeps(
+        mission_id=_MISSION,
+        as_of=datetime.now(UTC),
+        principal=Principal(principal_id="p1", workspace_id="ws1", user_id="u1"),
+        thread_id="t1",
+        run_id="r1",
+        trace_id="tr1",
+        context=ContextBundle(),
+        mcp_client=None,
+        artifact_store=store,
+        limits=ExecutionLimits(),
+        required_scope=RequiredScope(value_filters=value_filters_from_resolution(_OTHER)),
+    )
+    draft = MissionResult(status="completed", final_response="x", not_values="other")
+    assert draft.not_values == ["other"]
+    assert EvidenceValidator().score(deps).verdict == "REVISE"
+    assert EvidenceValidator().score(deps, result=draft).verdict != "REVISE"
 
 
 # --- query_metrics: "any of these values" in one query ---------------------------
