@@ -476,6 +476,16 @@ def _empty_search_verdict(ctx: RunContext[SelericDeps]) -> ToolResult | None:
         provenance=ArtifactProvenance(source_metadata={"matches": []}),
     )
 
+def _fmt_value(value: float) -> str:
+    """Compact number for a summary line: integers without ".0", amounts to 2 decimals, small ratios
+    to 6 significant digits (so a CTR of 0.020819 is not rounded away)."""
+    if value.is_integer():
+        return str(int(value))
+    if abs(value) >= 1:
+        return f"{value:.2f}"
+    return f"{value:.6g}"
+
+
 # Cap the per-row values echoed into the tool summary. Top-N already limits
 # rows; this bounds a large ungrouped breakdown. Every row still lands in
 # evidence + source_metadata["series"]; the summary just shows the first N.
@@ -1452,8 +1462,17 @@ async def drilldown(
     period_end: datetime,
     hierarchy: str | None = None,
     within: dict[str, str] | None = None,
+    order: str | None = None,
+    limit: int | None = None,
 ) -> ToolResult:
     """Breakdown of ``metric_id`` by ``dimension`` over a period.
+
+    Ranked drill: ``order`` ("desc" | "asc") with an optional ``limit`` returns the top / bottom
+    rows by the metric itself (server-side sort + limit); rows with no activity (value 0) are left
+    out of a ranking. Without ``order`` every row is kept, zeros included.
+
+    A label dimension that declares a stable key in the catalogue (e.g. a title two different
+    items can share) is grouped by key AND label, so same-named items stay separate rows.
 
     Hierarchy drill (semantic v2): pass ``hierarchy`` (traffic: platform → channel → sub_channel;
     geo; product; ad; campaign — see the catalogue ontology) with ``dimension="next"`` to go one
@@ -1485,11 +1504,29 @@ async def drilldown(
             error_code="UNSUPPORTED_QUERY",
             retryable=False,
         )
+    direction = (order or "").strip().lower() or None
+    if direction not in (None, "asc", "desc"):
+        return ToolResult(
+            success=False,
+            summary=f"order must be 'desc' or 'asc' (got {order!r})",
+            error_code="UNSUPPORTED_QUERY",
+            retryable=False,
+        )
+    # Group a label by its declared stable key too (catalogue-declared, only when this metric
+    # can carry the key), so two items sharing a label never merge into one row.
+    targets = [dimension]
+    stable_key = None if next_level else ctx.deps.catalogue.stable_key_for(dimension)
+    if stable_key and stable_key != dimension and (not supported or stable_key in supported):
+        targets = [stable_key, dimension]
+    # The server's drilldown inherits the parent's sort and limit, so the ranking applies to the
+    # drilled rows (the parent itself is one total row).
     parent_args = build_metrics_query_args(
         measure=metric_id,
         start=period_start.date().isoformat(),
         end=period_end.date().isoformat(),
         filters=[{"dimension": k, "operator": "equals", "values": [v]} for k, v in within.items()] or None,
+        sort=[{"field": metric_id, "direction": direction}] if direction else None,
+        limit=limit if limit and limit > 0 else None,
     )
     # Same args shape (and cache key) as an unfiltered query_metrics() call —
     # a prior plain total for this metric/period is reused here instead of
@@ -1517,7 +1554,7 @@ async def drilldown(
         if not next_level:
             drilldown_args["to_level"] = dimension
     else:
-        drilldown_args = {"parent_query_id": parent_query_id, "target_dimensions": [dimension]}
+        drilldown_args = {"parent_query_id": parent_query_id, "target_dimensions": list(targets)}
     fetch_drilldown = lambda: ctx.deps.mcp_client.call(  # noqa: E731
         agent_id=_AGENT_ID, capability="seleric.metrics_drilldown", arguments=drilldown_args
     )
@@ -1541,6 +1578,7 @@ async def drilldown(
         # the server picked the level (next below what `within` pins); evidence is keyed by it
         drilled = ((result or {}).get("drilled_to") or {}).get("dimensions") or []
         dimension = drilled[-1] if drilled else dimension
+        targets = [dimension]
     rows = (result or {}).get("rows") or []
     if not rows:
         return ToolResult(
@@ -1551,19 +1589,24 @@ async def drilldown(
         )
     provenance = ArtifactProvenance(source_metadata=result.get("provenance") or {})
     artifact_ids: list[str] = []
+    lines: list[str] = []
     for row in rows:
         value = row.get(metric_id)
         if value is None:
             continue
+        if direction and float(value) == 0:
+            continue  # no activity: not a member of a top / bottom ranking
+        row_dims = {d: str(dimension_value(row, d)) for d in targets}
+        lines.append(f"{', '.join(f'{d}={v}' for d, v in row_dims.items())} -> {_fmt_value(float(value))}")
         evidence = EvidenceArtifact(
             metric_id=metric_id,
-            dimensions={**within, dimension: str(dimension_value(row, dimension))},
+            dimensions={**within, **row_dims},
             grain="none",
             as_of=ctx.deps.as_of,
             period_start=period_start,
             period_end=period_end,
             value=float(value),
-            source_query={"parent_query_id": parent["query_id"], "target_dimensions": [dimension],
+            source_query={"parent_query_id": parent["query_id"], "target_dimensions": list(targets),
                           **({"hierarchy": hierarchy, "within": within} if hierarchy else {})},
         )
         artifact = ctx.deps.artifact_store.put(
@@ -1572,7 +1615,7 @@ async def drilldown(
                 artifact_type="evidence",
                 payload=evidence.model_dump(mode="json"),
                 classification="factual",
-                evidence_ids=[f"raw:{metric_id}:{dimension}:{dimension_value(row, dimension)}"],
+                evidence_ids=[f"raw:{metric_id}:{':'.join(targets)}:{':'.join(row_dims.values())}"],
                 provenance=provenance,
                 mission_id=ctx.deps.mission_id,
             )
@@ -1585,9 +1628,19 @@ async def drilldown(
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )
+    shown = lines[:_MAX_SERIES_IN_SUMMARY]
+    more = "" if len(lines) <= _MAX_SERIES_IN_SUMMARY else f"; …(+{len(lines) - _MAX_SERIES_IN_SUMMARY} more rows in evidence)"
+    scope = f" within {', '.join(f'{k}={v}' for k, v in within.items())}" if within else ""
+    ranking = f", top {limit} by {metric_id} {direction}" if direction and limit else (
+        f", ranked {direction}" if direction else "")
+    summary = (
+        f"{metric_id} by {', '.join(targets)}{scope} over {period_start.date()}..{period_end.date()} "
+        f"({len(artifact_ids)} rows{ranking}) — use these exact values: {'; '.join(shown)}{more}"
+    )
+    ctx.deps.scratchpad.note(summary)
     return ToolResult(
         success=True,
         artifact_ids=artifact_ids,
-        summary=f"{metric_id} by {dimension}: {len(artifact_ids)} row(s)",
+        summary=summary,
         provenance=provenance,
     )
