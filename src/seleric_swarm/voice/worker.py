@@ -865,79 +865,81 @@ def _prewarm(proc: Any) -> None:
     proc.userdata["vad"] = silero.VAD.load()
 
 
+async def _voice_entrypoint(ctx: Any) -> None:
+    from livekit.agents import AgentSession
+
+    settings = get_settings()
+    participant = await ctx.wait_for_participant()
+    principal = principal_from_metadata(getattr(participant, "metadata", None))
+    if principal is None:
+        logger.error(
+            "refusing voice session: participant carries no usable identity",
+            extra={"room": getattr(ctx.room, "name", "")},
+        )
+        return
+
+    logger.info(
+        "voice session started",
+        extra={
+            "room": getattr(ctx.room, "name", ""),
+            "workspace_id": principal.workspace_id,
+            "user_id": principal.user_id,
+            "thread_id": principal.thread_id,
+        },
+    )
+
+    session = AgentSession(
+        stt=_build_stt(settings),
+        llm=_build_llm(settings),
+        tts=_build_tts(settings),
+        vad=ctx.proc.userdata["vad"],
+        turn_handling=_build_turn_handling(),
+    )
+
+    runner = VoiceTurnRunner(session, principal, settings, ctx)
+    session.on("metrics_collected", LatencyLog().on_metrics)
+
+    @session.on("user_input_transcribed")
+    def _on_transcript(event: Any) -> None:
+        transcript = str(getattr(event, "transcript", "") or "").strip()
+        is_final = bool(getattr(event, "is_final", False))
+        if not transcript:
+            return
+
+        # Broadcast live transcript to room data channel for UI display
+        try:
+            msg = json.dumps({"type": "transcript", "speaker": "You", "text": transcript, "is_final": is_final})
+            _track_task(ctx.room.local_participant.publish_data(msg.encode("utf-8")))
+        except Exception:
+            pass
+
+        if not is_final:
+            return
+
+        logger.info(
+            "voice transcript received",
+            extra={
+                "transcript": transcript,
+                "thread_id": principal.thread_id,
+                "user_id": principal.user_id,
+            },
+        )
+    await session.start(agent=build_voice_agent(runner), room=ctx.room)
+    session.say("Seleric Voice is ready. Ask any business question.")
+
+
 def build_server() -> Any:
     """Construct the LiveKit ``AgentServer`` with the Phase 1 conversational session.
 
     Imported lazily so that importing this module (for the metadata helpers, or
     for tests) does not require the heavy ``livekit-agents`` dependency.
     """
-    from livekit.agents import AgentServer, AgentSession, JobContext
+    from livekit.agents import AgentServer
 
     _import_plugins()
-    settings = get_settings()
     server = AgentServer()
     server.setup_fnc = _prewarm
-
-    @server.rtc_session()
-    async def entrypoint(ctx: JobContext) -> None:
-        participant = await ctx.wait_for_participant()
-        principal = principal_from_metadata(getattr(participant, "metadata", None))
-        if principal is None:
-            logger.error(
-                "refusing voice session: participant carries no usable identity",
-                extra={"room": getattr(ctx.room, "name", "")},
-            )
-            return
-
-        logger.info(
-            "voice session started",
-            extra={
-                "room": getattr(ctx.room, "name", ""),
-                "workspace_id": principal.workspace_id,
-                "user_id": principal.user_id,
-                "thread_id": principal.thread_id,
-            },
-        )
-
-        session = AgentSession(
-            stt=_build_stt(settings),
-            llm=_build_llm(settings),
-            tts=_build_tts(settings),
-            vad=ctx.proc.userdata["vad"],
-            turn_handling=_build_turn_handling(),
-        )
-
-        runner = VoiceTurnRunner(session, principal, settings, ctx)
-        session.on("metrics_collected", LatencyLog().on_metrics)
-
-        @session.on("user_input_transcribed")
-        def _on_transcript(event: Any) -> None:
-            transcript = str(getattr(event, "transcript", "") or "").strip()
-            is_final = bool(getattr(event, "is_final", False))
-            if not transcript:
-                return
-
-            # Broadcast live transcript to room data channel for UI display
-            try:
-                msg = json.dumps({"type": "transcript", "speaker": "You", "text": transcript, "is_final": is_final})
-                _track_task(ctx.room.local_participant.publish_data(msg.encode("utf-8")))
-            except Exception:
-                pass
-
-            if not is_final:
-                return
-
-            logger.info(
-                "voice transcript received",
-                extra={
-                    "transcript": transcript,
-                    "thread_id": principal.thread_id,
-                    "user_id": principal.user_id,
-                },
-            )
-        await session.start(agent=build_voice_agent(runner), room=ctx.room)
-        session.say("Seleric Voice is ready. Ask any business question.")
-
+    server.rtc_session()(_voice_entrypoint)
     return server
 
 
