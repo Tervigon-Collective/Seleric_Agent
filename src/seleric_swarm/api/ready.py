@@ -54,7 +54,9 @@ def _mcp_probe(runtime: SwarmRuntime) -> bool:
     capabilities = runtime.mcp.capabilities
     if not capabilities:
         return False
-    capability = "seleric.catalogue_list_metrics"
+    # A cheap read-only call (~3 KB). Not catalogue_list_metrics: the docker healthcheck runs this
+    # every 15 s and that tool's server-side loop breaker is shared by every MCP caller.
+    capability = "seleric.modules_list"
     if capability not in capabilities:
         return False
 
