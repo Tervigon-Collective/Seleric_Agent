@@ -50,3 +50,32 @@ def test_apply_param_fixes_renames_tokens_and_drops_temperature():
     assert "temperature" not in out
     # A model with no learned fixes is passed through untouched.
     assert adapter._apply_param_fixes(base, "gpt-4o") == base
+
+
+async def test_traced_call_sends_tags_and_session_as_langfuse_metadata():
+    """Langfuse 4's OpenAI wrapper rejects tags= / session_id= kwargs (TypeError on every
+    traced complete()); they travel as langfuse_* metadata keys instead."""
+    from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
+
+    seen: dict = {}
+
+    async def create(**kwargs):
+        seen.update(kwargs)
+        msg = SimpleNamespace(content="ok", tool_calls=None, refusal=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=msg, finish_reason="stop")], usage=None, model="m")
+
+    adapter = AzureOpenAICompatibleAdapter.__new__(AzureOpenAICompatibleAdapter)
+    adapter._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    adapter._traced, adapter._dev, adapter._max_retries, adapter._model = True, False, 0, "m"
+    adapter._param_fixes = {}
+    await adapter.complete(
+        LLMRequest(
+            messages=[ChatMessage(role="user", content="hi")],
+            model="m",
+            tags=["value_sense"],
+            metadata=LLMRequestMetadata(session_id="s1", agent_id="a"),
+        )
+    )
+    assert "tags" not in seen and "session_id" not in seen
+    assert seen["metadata"]["langfuse_tags"] == ["value_sense"]
+    assert seen["metadata"]["langfuse_session_id"] == "s1"

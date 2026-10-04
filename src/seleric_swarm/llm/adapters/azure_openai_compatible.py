@@ -187,15 +187,23 @@ class AzureOpenAICompatibleAdapter:
                     }
                     extra: dict[str, Any] = {}
                     if self._traced:
+                        # Langfuse 4's OpenAI wrapper takes only name/metadata as extra
+                        # kwargs; tags and session ride in metadata as langfuse_* keys.
+                        # Passing tags=/session_id= made every traced complete() raise
+                        # TypeError (found 2026-10-04 via the value-sense call).
                         extra["name"] = run_name
-                        extra["tags"] = list(request.tags)
-                        extra["metadata"] = llm_run_metadata(
-                            request,
-                            retry_count=retry_count,
-                            resolved_model=resolved_model,
+                        metadata = dict(
+                            llm_run_metadata(
+                                request,
+                                retry_count=retry_count,
+                                resolved_model=resolved_model,
+                            )
                         )
+                        if request.tags:
+                            metadata["langfuse_tags"] = list(request.tags)
                         if request.metadata.session_id:
-                            extra["session_id"] = request.metadata.session_id
+                            metadata["langfuse_session_id"] = request.metadata.session_id
+                        extra["metadata"] = metadata
                     completion = await self._create_with_param_adaptation(
                         resolved_model, base_kwargs, extra
                     )
