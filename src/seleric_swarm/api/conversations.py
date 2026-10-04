@@ -1101,6 +1101,24 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
                 },
             )
         )
+    raw_charts = raw.get("charts")
+    if isinstance(raw_charts, list):
+        for chart in raw_charts:
+            if not isinstance(chart, dict):
+                continue
+            chart_type = str(chart.get("chart_type") or "bar")
+            artifact_id = chart.get("artifact_id")
+            chart_data = chart.get("data") if isinstance(chart.get("data"), (dict, list)) else chart
+            parts.append(
+                MessagePart(
+                    type=MessagePartType.CHART,
+                    content={
+                        "chart_type": chart_type,
+                        "artifact_id": str(artifact_id) if artifact_id else None,
+                        "data": chart_data,
+                    },
+                )
+            )
     return parts
 
 

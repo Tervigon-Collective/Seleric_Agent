@@ -2,6 +2,7 @@ import type { MessagePart } from "../api/contracts";
 import { useShellStore } from "../stores/shell";
 import { SafeContent } from "./SafeContent";
 import { ApprovalCard } from "./ApprovalCard";
+import { ChartRenderer } from "./charts/ChartRenderer";
 
 const text = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 const record = (value: unknown): Record<string, unknown> =>
@@ -33,7 +34,7 @@ export function MessagePartRenderer({ part }: { part: MessagePart }) {
     }
     case "TOOL_CALL": return <aside className="part-card tool"><strong>Tool</strong><code>{text(value.tool)}</code><span>{text(value.status ?? "")}</span></aside>;
     case "ARTIFACT": return <button className="part-card artifact" onClick={() => showArtifact({ ...value, ...record(value.provenance) })}><strong>Artifact</strong><span>{text(value.title ?? value.artifact_id)}</span></button>;
-    case "CHART": return <figure className="part-card chart"><figcaption>{text(value.title ?? "Chart")}</figcaption><pre>{text(value.data ?? value)}</pre></figure>;
+    case "CHART": return <ChartRenderer spec={value.data ?? value as any} />;
     case "AGENT_STATUS": return <p className="part-status" aria-live="polite">● {text(part.content)}</p>;
     case "APPROVAL": return <ApprovalCard value={value} />;
     case "WARNING": return <aside className="part-card warning" role="alert">{text(part.content)}</aside>;

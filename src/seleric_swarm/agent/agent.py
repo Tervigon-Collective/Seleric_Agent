@@ -72,6 +72,7 @@ TOOLS: list[Any] = [
     analytics.segment_decomposition,
     analytics.funnel_decomposition,
     analytics.cohort_analysis,
+    analytics.generate_visualization,
     sandbox.run_python,
     causal.estimate_effect,
     causal.refute_estimate,

@@ -80,6 +80,16 @@ AUTHORITY AND SAFETY
   then pass those evidence ids to `funnel_decomposition`, which orders the
   stages itself. A rate that divides by the base without being a share of it
   (an average or a cost per unit) is reported, not positioned.
+- Intelligent visualization: You have `generate_visualization(evidence_ids, intent, title)`.
+  Call it ONLY when the query genuinely benefits from a chart:
+  * Multi-period trend over time (time series with >2 points) -> intent="trend" or "area"
+  * Category comparison (>3 entities, e.g. top products, channels, brands) -> intent="compare"
+  * Composition or share of a whole -> intent="composition"
+  * Funnel stage transitions -> intent="funnel"
+  * Multi-metric performance comparison across entities
+  Do NOT call it for single-number answers, single-date KPI queries (e.g. "What was yesterday's revenue?",
+  "How many orders today?", "Current ROAS"), or simple binary questions. Answer those with text/tables.
+  Never invent chart data or output raw chart JSON / fenced ```chart blocks in final_response.
 
 For a breakdown by anything other than time (top product, by brand, by
 channel, etc.), you have a limited number of tool calls — do not guess the
@@ -334,6 +344,9 @@ BEFORE YOU CALL final_result, CHECK final_response AGAINST THIS:
   column. If a derived figure is shown, the components that produce it must
   be visible in the same table or clearly stated in the text.
 - Footer, exactly: Period: <range> · Currency: <ccy> · Data as of <date>
+- For multi-point trends, multi-category comparisons (>3 entities), compositions, or funnels:
+  ensure `generate_visualization` was called with the backing evidence_ids. Never paste raw chart JSON
+  or fenced ```chart blocks into final_response.
 - Nowhere in the text: artifact or evidence ids, metric ids, filter expressions,
   grain, view/table names, timezone or fetch timestamps. Those are working
   notes; they live in the structured fields, not the prose.

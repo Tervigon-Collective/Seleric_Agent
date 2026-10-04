@@ -40,6 +40,7 @@ from seleric_swarm.analytics import funnel as funnel_math
 from seleric_swarm.analytics.breakdown import Segment, contributions, shares
 from seleric_swarm.analytics.comparison import MetricPoint, period_deltas
 from seleric_swarm.analytics.grain import CALCULATION_VERSION, validate_grain_set
+from seleric_swarm.analytics.visualization import generate_visualization_spec
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.business_state.detectors import robust_zscore
 from seleric_swarm.toolsets import policy_config as policy
@@ -707,7 +708,7 @@ async def cohort_analysis(ctx: RunContext[SelericDeps], evidence_ids: list[str])
         cohort_math.CohortReading(
             # One dimension value identifies the cohort; with several stamped,
             # join them so two cohorts never collapse onto one label.
-            label="/".join(str(v) for _, v in sorted(item.dimensions.items())),
+            label="/".join(v for _, v in sorted(item.dimensions.items())),
             value=item.value,
             period_start=item.period_start,
             ref=aid,
@@ -756,4 +757,44 @@ async def cohort_analysis(ctx: RunContext[SelericDeps], evidence_ids: list[str])
         ),
         provenance=_provenance(evidence_ids),
         warnings=[f"cohorts identified by {basis}"] if by_period else [],
+    )
+
+async def generate_visualization(
+    ctx: RunContext[SelericDeps], evidence_ids: list[str], intent: str, title: str = "Visualization"
+) -> ToolResult:
+    """Generate a visualization specification for a given set of evidence.
+    
+    This tool should only be used when:
+    - Comparing > 3 categories
+    - Showing trends over time (time series)
+    - Showing compositions (pie/donut)
+    
+    Do NOT use this tool for single numbers or simple KPI requests.
+    """
+    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    if refusal is not None:
+        return refusal
+        
+    spec = generate_visualization_spec(evidence, intent, title)
+    
+    if "error" in spec:
+        return _refuse(spec["error"], error_code="VISUALIZATION_FAILED")
+        
+    artifact = ctx.deps.artifact_store.put(
+        Artifact(
+            workspace_id=ctx.deps.principal.workspace_id,
+            artifact_type="chart_spec",
+            payload=spec,
+            classification="derived",
+            evidence_ids=list(evidence_ids),
+            provenance=_provenance(evidence_ids),
+            mission_id=ctx.deps.mission_id,
+        )
+    )
+    
+    return ToolResult(
+        success=True,
+        artifact_ids=[artifact.id],
+        summary=f"Generated {spec['chart_type']} chart visualization.",
+        provenance=_provenance(evidence_ids)
     )

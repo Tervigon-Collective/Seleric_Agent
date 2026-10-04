@@ -138,6 +138,15 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
         if bucket:
             buckets.setdefault(bucket, []).append(artifact.id)
     evidence = _evidence_rows(artifacts)
+    charts = [
+        {
+            "chart_type": (artifact.payload or {}).get("chart_type", "bar"),
+            "artifact_id": artifact.id,
+            "data": artifact.payload,
+        }
+        for artifact in artifacts
+        if getattr(artifact, "artifact_type", None) == "chart_spec" and isinstance(artifact.payload, dict)
+    ]
 
     return {
         "route": "v3",
@@ -155,6 +164,7 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
         "events": _mission_events(mission, has_evidence=bool(evidence)),
         "artifacts": buckets,
         "evidence": evidence,
+        "charts": charts,
         "final_response": mission.final_response or "",
         "error_code": mission.error_code,
         "limitations": [] if mission.status != "failed" else [mission.final_response or "failed"],
