@@ -1421,6 +1421,14 @@ async def query_metrics(
         for k, v in dimensions.items()
         if v
     ]
+    # Rows with an empty breakdown value are dropped when evidence is written (below), so exclude them
+    # in the query: otherwise a ranked limit is spent on them first (live 2026-10-06: net_profit by
+    # campaign_name x sub_channel, limit=5 -> 4 of the top 5 had no campaign, 1 row survived).
+    filters += [
+        {"dimension": k, "operator": "set", "values": []}
+        for k in breakdown
+        if not ctx.deps.catalogue.is_time_dimension(k) and _normalize_dim_token(k) not in _BRAND_DIM_KEYS
+    ]
     sort = _top_n_sort(metric_id, order)
     # Only scope to the default brand for metrics that actually carry a brand
     # dimension (catalogue-driven, not a hardcoded metric list): injecting a
@@ -1546,7 +1554,8 @@ async def query_metrics(
         # ponytail: one extra Cube query per zero-row filtered miss; cached by
         # args so a re-issued identical query pays it only once.
         non_brand = [
-            f for f in filters if _normalize_dim_token(f["dimension"]) not in _BRAND_DIM_KEYS
+            f for f in filters
+            if _normalize_dim_token(f["dimension"]) not in _BRAND_DIM_KEYS and f.get("operator") != "set"
         ]
         hint = ""
         if non_brand:
