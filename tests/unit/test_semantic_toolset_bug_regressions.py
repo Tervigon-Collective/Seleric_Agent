@@ -374,11 +374,11 @@ async def test_breakdown_plus_grain_summary_keeps_the_category_label():
 
 
 @pytest.mark.asyncio
-async def test_large_unranked_breakdown_is_blocked_not_dumped():
+async def test_large_unranked_breakdown_is_ranked_not_dumped():
     """Live MS3-848d29f41a: returned_units by product_title x month came back as 817
-    rows the model then hand-ranked (dropped a month, named no product). A large,
-    unranked categorical breakdown must be refused with guidance, and NO artifacts
-    written — not silently dumped for hand-processing."""
+    rows the model then hand-ranked (dropped a month, named no product). It was then
+    refused outright (2026-10-05: no data at all). Now the entities are ranked server-side
+    and only the top K are returned, each with every bucket — nothing left to hand-rank."""
     from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 
     rows = [
@@ -403,11 +403,11 @@ async def test_large_unranked_breakdown_is_blocked_not_dumped():
         period_start=datetime(2026, 6, 1, tzinfo=UTC),
         period_end=datetime(2026, 6, 30, tzinfo=UTC),
     )
-    assert result.success is False
-    assert "product_title" in result.summary
-    assert "order=" in result.summary  # steered to the ranked shape
-    # nothing persisted on the blocked path
-    assert not ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id)
+    assert result.success is True, result.summary
+    assert len(result.artifact_ids) == semantic._TOP_K_SERIES
+    assert f"top {semantic._TOP_K_SERIES}" in result.summary and "ranked server-side" in result.summary
+    rank = mcp.calls[-1][1]
+    assert rank["sort"] == [{"field": "returned_units", "direction": "desc"}] and "granularity" not in rank
 
 
 @pytest.mark.asyncio
@@ -695,40 +695,119 @@ async def test_time_crossed_breakdown_with_bounded_list_not_rejected():
 
 
 @pytest.mark.asyncio
-async def test_time_crossed_unbounded_dump_gives_clear_guidance_without_catch22():
-    """An unbounded time-crossed breakdown with > 20 rows provides clear guidance
-    to drop grain for leaderboards or filter to specific entities, without falsely
-    telling the user to add 'limit' to a time grain query."""
+async def test_time_crossed_unbounded_dump_returns_the_top_entities_with_full_series():
+    """Live 2026-10-05: "CTR by campaign per day" returned 151 campaigns and the tool refused it
+    (UNSUPPORTED_QUERY) although every number was there. It now ranks the entities server-side over the
+    whole period (a ratio by its catalogue volume_metric) and keeps every bucket of the top K."""
     from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 
+    n_entities, n_days = 30, 3
     rows = [
-        {"test_metric.day": f"2026-09-{i:02d}", "entity_dim": f"Entity_{i}", "test_metric": "10"}
-        for i in range(1, semantic._MAX_SERIES_IN_SUMMARY + 5)
+        {"ctr.day": f"2026-09-0{d}", "campaign_name": f"C{e:02d}", "ctr": "0.02"}
+        for e in range(n_entities) for d in range(1, n_days + 1)
     ]
+    ranked = [{"campaign_name": f"C{e:02d}", "impressions": str(1000 - e)} for e in reversed(range(n_entities))]
+
+    class Mcp(FakeMcpClient):
+        async def call(self, *, agent_id, capability, arguments):
+            self.calls.append((capability, arguments))
+            if arguments.get("measures", [arguments.get("measure")])[0] == "impressions" or \
+                    arguments.get("measure") == "impressions":
+                return {"rows": ranked[: arguments.get("limit") or len(ranked)], "provenance": {}}
+            return {"rows": rows, "provenance": {}}
+
+    mcp = Mcp({})
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(
+            metrics=(
+                CatalogueMetricMeta(id="ctr", view="paid_media", supported_dimensions=["campaign_name", "report_date"],
+                                    raw={"aggregation": "ratio", "volume_metric": "impressions"}),
+                CatalogueMetricMeta(id="impressions", view="paid_media",
+                                    supported_dimensions=["campaign_name", "report_date"], raw={"aggregation": "additive"}),
+            ),
+            time_dimensions=frozenset({"report_date"}),
+        ),
+    )
+    res = await semantic.query_metrics(
+        FakeRunContext(deps), metric_id="ctr", dimensions={"campaign_name": ""}, grain="day",
+        period_start=datetime(2026, 9, 1, tzinfo=UTC), period_end=datetime(2026, 9, 3, tzinfo=UTC),
+    )
+    assert res.success is True, res.summary
+    k = semantic._TOP_K_SERIES
+    assert len(res.artifact_ids) == k * n_days            # every day of each kept campaign
+    assert f"top {k}" in res.summary and "impressions" in res.summary
+    assert "C29" in res.summary and "C00" not in res.summary.split("]")[0]   # ranked by volume, desc
+    rank_call = [a for c, a in mcp.calls if "impressions" in str(a.get("measures") or a.get("measure"))]
+    assert rank_call and rank_call[0].get("limit") == k and not rank_call[0].get("granularity")
+
+
+@pytest.mark.asyncio
+async def test_unranked_large_breakdown_without_grain_is_ranked_server_side_not_refused():
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    n = semantic._MAX_SERIES_IN_SUMMARY + 10
+    rows = [{"variant_title": f"V{i}", "product_net_revenue": str(i)} for i in range(n)]
     mcp = FakeMcpClient({"seleric.metrics_query": {"rows": rows, "provenance": {}}})
     deps = replace(
         _deps(mcp),
         catalogue=CatalogueSnapshot(
-            metrics=(CatalogueMetricMeta(id="test_metric", view="test_view",
-                                         supported_dimensions=["entity_dim", "order_date"]),),
+            metrics=(CatalogueMetricMeta(id="product_net_revenue", view="product",
+                                         supported_dimensions=["variant_title", "order_date"],
+                                         raw={"aggregation": "additive"}),),
             time_dimensions=frozenset({"order_date"}),
         ),
     )
-    ctx = FakeRunContext(deps)
-
     res = await semantic.query_metrics(
-        ctx,
-        metric_id="test_metric",
-        dimensions={"entity_dim": ""},
-        grain="day",
-        period_start=datetime(2026, 9, 1, tzinfo=UTC),
-        period_end=datetime(2026, 9, 30, tzinfo=UTC),
+        FakeRunContext(deps), metric_id="product_net_revenue", dimensions={"variant_title": ""},
+        period_start=datetime(2026, 9, 1, tzinfo=UTC), period_end=datetime(2026, 9, 30, tzinfo=UTC),
     )
-    assert res.success is False
-    assert res.error_code == "UNSUPPORTED_QUERY"
-    assert "drop the grain" in res.summary
-    assert "filter by those entities" in res.summary
-    assert "Do not add limit with grain=day" in res.summary
+    assert res.success is True, res.summary
+    assert len(res.artifact_ids) == n                      # "list all variants" keeps every row
+    assert mcp.calls[-1][1]["sort"] == [{"field": "product_net_revenue", "direction": "desc"}]
+    assert "ranked by product_net_revenue" in res.summary
+
+
+@pytest.mark.asyncio
+async def test_order_grain_metric_by_product_redirects_to_its_grain_twin():
+    """Live 2026-10-04: "gross sale by product" / "COGS of these products" — the redirect listed
+    alphabetical metrics and the model answered with net revenue / the brand total. The catalogue's
+    grain_twins name the product-grain metric; it is the one offered."""
+    from pydantic_ai import ModelRetry
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    prod_dims = ["product_title", "sku", "order_date"]
+    mcp = FakeMcpClient({})
+    deps = replace(
+        _deps(mcp),
+        catalogue=CatalogueSnapshot(metrics=(
+            CatalogueMetricMeta(id="gross_sales", supported_dimensions=["brand_id", "order_date"],
+                                raw={"grain_twins": ["product_gross_sale"]}),
+            CatalogueMetricMeta(id="event_count", supported_dimensions=prod_dims),
+            CatalogueMetricMeta(id="product_net_revenue", supported_dimensions=prod_dims),
+            CatalogueMetricMeta(id="product_gross_sale", supported_dimensions=prod_dims),
+        )),
+    )
+    with pytest.raises(ModelRetry) as exc:
+        await semantic.query_metrics(
+            FakeRunContext(deps), metric_id="gross_sales", dimensions={"sku": ""},
+            period_start=datetime(2026, 9, 1, tzinfo=UTC), period_end=datetime(2026, 9, 30, tzinfo=UTC),
+        )
+    msg = str(exc.value)
+    assert "metric_id='product_gross_sale'" in msg
+    assert "event_count" not in msg and "product_net_revenue" not in msg
+    assert not mcp.calls
+
+
+def test_redirect_alternatives_rank_by_shared_id_words():
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    snap = CatalogueSnapshot(metrics=tuple(
+        CatalogueMetricMeta(id=m, supported_dimensions=["product_title"])
+        for m in ("event_count", "events_per_session", "orders", "product_net_cogs", "units_sold")
+    ))
+    assert snap.metrics_supporting_dimension("product_title", like="net_cogs")[0] == "product_net_cogs"
+    assert snap.metrics_supporting_dimension("product_title")[0] == "event_count"   # no hint: alphabetical
 
 
 @pytest.mark.asyncio

@@ -122,14 +122,36 @@ class CatalogueSnapshot:
                 return [d for d in (meta.supported_dimensions or []) if d]
         return []
 
-    def metrics_supporting_dimension(self, dimension: str, n: int = 6) -> list[str]:
+    def metrics_supporting_dimension(self, dimension: str, n: int = 6, like: str | None = None) -> list[str]:
         """Ids of metrics whose ``supported_dimensions`` include *dimension* —
         the redirect candidates when a chosen metric can't carry a requested
         breakdown/filter. Empty when nothing supports it (a real capability gap,
-        not a bad pick)."""
+        not a bad pick).
+
+        Ranked by how many id words they share with *like* (the metric that could not
+        carry it), then alphabetically: alphabetical alone offered event_count /
+        events_per_session for "net_sales by product_title" (live 2026-10-04)."""
         target = dimension.strip()
         hits = [m.id for m in self.metrics if target in (m.supported_dimensions or [])]
-        return sorted(hits)[:n]
+        words = set((like or "").lower().split("_")) - {""}
+        return sorted(hits, key=lambda h: (-len(words & set(h.split("_"))), h))[:n]
+
+    def grain_twins_for(self, metric_id: str) -> list[str]:
+        """The catalogue's ``grain_twins`` of a metric: the same concept selection at another grain
+        (net_sales -> product_net_revenue), declared by the gateway from the concepts' scope axis."""
+        for meta in self.metrics:
+            if meta.id == metric_id:
+                return [str(t) for t in ((meta.raw or {}).get("grain_twins") or []) if t]
+        return []
+
+    def volume_metric_for(self, metric_id: str) -> str | None:
+        """The additive metric a leaderboard of this ratio is selected by (ctr -> impressions), from the
+        gateway's ``volume_metric``; None for additive metrics or when not declared."""
+        for meta in self.metrics:
+            if meta.id == metric_id:
+                vol = (meta.raw or {}).get("volume_metric")
+                return str(vol) if vol else None
+        return None
 
     def closest_metric_ids(self, query: str, n: int = 5) -> list[str]:
         """Best-effort id suggestions for a bad pick — feeds ``ModelRetry``."""

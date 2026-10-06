@@ -971,10 +971,26 @@ def _reject_incompatible_dimensions(
     supported = set(catalogue.supported_dimensions_for(metric_id))
     if not supported:
         return  # snapshot doesn't describe this metric's dims — let Cube decide
-    for key in dimensions:
-        if key in supported:
-            continue
-        alternatives = [m for m in catalogue.metrics_supporting_dimension(key) if m != metric_id]
+    missing = [k for k in dimensions if k not in supported]
+    # Grain twin first (catalogue concepts' scope axis): an order-level metric cannot be split by
+    # product, but its product-line twin answers the same question at that grain (net_sales ->
+    # product_net_revenue). Live 2026-10-04 the model got an alphabetical list instead and answered
+    # "gross sales by product" with net revenue, and "COGS of these products" with the brand total.
+    twins = [
+        t for t in catalogue.grain_twins_for(metric_id)
+        if missing and set(missing) <= set(catalogue.supported_dimensions_for(t))
+    ]
+    if twins:
+        twin = twins[0]
+        raise ModelRetry(
+            f"'{metric_id}' is not stored at the grain of {', '.join(repr(k) for k in missing)}. The same "
+            f"measure at that grain is '{twin}'"
+            + (f" (also: {', '.join(twins[1:])})" if len(twins) > 1 else "")
+            + f". Retry query_metrics with metric_id='{twin}' and the same dimensions, and name the metric "
+            f"'{twin}' in the answer (its definition may differ in detail, e.g. ex-GST)."
+        )
+    for key in missing:
+        alternatives = [m for m in catalogue.metrics_supporting_dimension(key, like=metric_id) if m != metric_id]
         if not alternatives:
             continue  # nothing supports it — not a wrong-pick, don't block
         raise ModelRetry(
@@ -983,6 +999,88 @@ def _reject_incompatible_dimensions(
             f"use one of these metrics instead: {', '.join(alternatives)}. "
             f"Re-resolve and retry with a compatible metric."
         )
+
+
+# Entities kept when an unranked categorical breakdown crossed with a time grain is too large to
+# read: the top K over the whole period, each with its full series.
+_TOP_K_SERIES = 10
+
+
+async def _rank_large_breakdown(
+    ctx: RunContext[SelericDeps],
+    metric_id: str,
+    breakdown: list[str],
+    grain: str,
+    order: str | None,
+    limit: int | None,
+    rows: list[dict[str, Any]],
+    dimensions: dict[str, Any],
+    filters: list[dict[str, Any]],
+    start: str,
+    end: str,
+    supports_brand: bool,
+) -> tuple[list[dict[str, Any]], str] | None:
+    """Answer an unranked breakdown that returned more groups than the model can read, instead of
+    refusing it (live 2026-10-05: "CTR by campaign per day" -> 151 campaigns -> UNSUPPORTED_QUERY, and the
+    user got no data although ClickHouse had all of it).
+
+    * No time grain: re-issue the SAME query ranked by the metric (server-side, desc) — every row is
+      kept in evidence, the summary shows the head of a real leaderboard rather than Cube's arbitrary order.
+    * Crossed with a time grain: a single ranked query cannot give "top per bucket", and a global limit
+      drops buckets (Case B below). So rank the ENTITIES over the whole period with one server-side query
+      (grain none, desc, limit K) — by the metric itself when additive, else by the catalogue's
+      ``volume_metric`` (CTR by impressions: a 1-impression campaign must not top a CTR board) — and
+      keep every bucket of those K entities. Values are Cube's; nothing is summed or re-sorted here.
+
+    None (fall through to the guard) when the shape is not a large unranked categorical breakdown, the
+    caller listed the entities, or the ranking query fails."""
+    catalogue = ctx.deps.catalogue
+    if not catalogue.metrics or order is not None or limit is not None or len(rows) <= _MAX_SERIES_IN_SUMMARY:
+        return None
+    cat_dims = [k for k in breakdown if not catalogue.is_time_dimension(k)]
+    if not cat_dims or any(isinstance(dimensions.get(k), (list, tuple, set)) for k in cat_dims):
+        return None
+    time_crossed = grain != "none"
+    additive = (catalogue.aggregation_for(metric_id) or "additive") == "additive"
+    rank_by = metric_id if (additive or not time_crossed) else (catalogue.volume_metric_for(metric_id) or metric_id)
+    ranked_args = build_metrics_query_args(
+        measure=rank_by,
+        start=start,
+        end=end,
+        grain=None,
+        dimensions=cat_dims,
+        filters=filters or None,
+        sort=[{"field": rank_by, "direction": "desc"}],
+        limit=None if not time_crossed else _TOP_K_SERIES,
+        inject_default_brand=supports_brand,
+    )
+    ranked = await _cached_metrics_query(ctx, ranked_args)
+    ranked_rows = ranked.get("rows") or []
+    if ranked.get("error") or not ranked_rows:
+        return None
+    dims = ", ".join(cat_dims)
+
+    def key(row: dict[str, Any]) -> tuple[str, ...]:
+        return tuple(str(dimension_value(row, d)) for d in cat_dims)
+
+    if not time_crossed:
+        return ranked_rows, (
+            f"[{len(ranked_rows)} {dims} groups, ranked by {metric_id} (desc, server-side); every row is in "
+            f"evidence — for a shorter board re-issue with limit=K.]"
+        )
+    top = [key(r) for r in ranked_rows[:_TOP_K_SERIES]]
+    keep = set(top)
+    kept = [r for r in rows if key(r) in keep]
+    n_groups = len({key(r) for r in rows})
+    if not kept:
+        return None
+    names = "; ".join(", ".join(k) for k in top)
+    basis = metric_id if rank_by == metric_id else f"{rank_by} (the volume behind {metric_id})"
+    return kept, (
+        f"[{n_groups} {dims} groups over {grain}s is too many to read, so this is the top {len(top)} by "
+        f"total {basis} over {start}..{end} (ranked server-side), each with its full {grain} series: {names}. "
+        f"The other {max(n_groups - len(top), 0)} are omitted — list them in dimensions to see them.]"
+    )
 
 
 def _reject_unsupported_breakdown_shape(
@@ -1477,7 +1575,13 @@ async def query_metrics(
     # Before persisting: refuse breakdown shapes a single query answers wrong (a large
     # unranked dump, or a per-group top-N expressed as a global limit) with a graceful
     # failed result — no artifacts written, no ModelRetry (which could exhaust into a crash).
-    if (blocked := _reject_unsupported_breakdown_shape(
+    rank_note: str | None = None
+    if (picked := await _rank_large_breakdown(
+        ctx, metric_id, breakdown, grain, order, limit, rows, dimensions, filters,
+        period_start.date().isoformat(), period_end.date().isoformat(), supports_brand,
+    )) is not None:
+        rows, rank_note = picked
+    if rank_note is None and (blocked := _reject_unsupported_breakdown_shape(
         ctx, metric_id, breakdown, grain, order, limit, len(rows), dimensions=dimensions
     )) is not None:
         return blocked
@@ -1604,6 +1708,8 @@ async def query_metrics(
                 f"({len(series)} rows) — use these exact values: {body}{more}."
                 + _series_stats(ctx, metric_id, [float(s["value"]) for s in series])
             )
+        if rank_note:
+            summary = f"{rank_note} {summary}"
         prov = ArtifactProvenance(
             query_version=provenance.query_version,
             source_metadata={**(provenance.source_metadata or {}), "series": series},
