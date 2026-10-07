@@ -296,6 +296,8 @@ def _mission_values(deps: SelericDeps) -> list[float]:
             walk(payload.get("value"))
         elif artifact.artifact_type == "finding":
             walk(payload.get("metrics"))
+        elif artifact.artifact_type == "signal":
+            walk(payload.get("signals"))
     return values
 
 

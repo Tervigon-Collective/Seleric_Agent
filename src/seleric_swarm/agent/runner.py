@@ -74,6 +74,7 @@ from seleric_swarm.conversations.contracts import (
 from seleric_swarm.observability.traces import mission_trace
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
+from seleric_swarm.services.insights import insight_block
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.services.time_range import as_of_date, window_from_query
 from seleric_swarm.state.missions import Mission
@@ -1189,12 +1190,18 @@ async def run_v3_mission(
                 _stage("plan_ms")
                 resolver.prime(deps)
                 plan = plan_outcome.text if plan_outcome is not None else None
-                prefetch = await execute_plan(
-                    plan_outcome.plan if plan_outcome is not None else None,
-                    deps,
-                    windows=_prefetch_windows(deps.required_scope, prior_window),
-                    as_of=as_of_dt,
-                    grain=classification.grain,
+                # The plan's data and the business-health signals around it are
+                # independent reads: fetch them together.
+                asked_metrics = list((plan_outcome.stats.get("metrics") if plan_outcome else None) or [])
+                prefetch, (insights, insight_stats) = await asyncio.gather(
+                    execute_plan(
+                        plan_outcome.plan if plan_outcome is not None else None,
+                        deps,
+                        windows=_prefetch_windows(deps.required_scope, prior_window),
+                        as_of=as_of_dt,
+                        grain=classification.grain,
+                    ),
+                    insight_block(deps, asked_metrics),
                 )
                 _stage("prefetch_ms")
                 if prefetch is not None:
@@ -1222,7 +1229,8 @@ async def run_v3_mission(
                     plan=plan,
                     hint=_values_block(values)
                     + _routing_hint(classification)
-                    + _followup_hint(prior_turn_record, affirmation=affirmation, window=prior_window),
+                    + _followup_hint(prior_turn_record, affirmation=affirmation, window=prior_window)
+                    + insights,
                     is_followup=is_followup,
                     prior_turn_record=prior_turn_record,
                 )
@@ -1255,6 +1263,7 @@ async def run_v3_mission(
                             "validation": v3_result.trace.get("validation"),
                             "plan": _plan_trace(plan_outcome, v3_result.trace.get("steps")),
                             "understand": understood.stats,
+                            "insights": insight_stats,
                             "stages_ms": dict(stages),
                         },
                     }

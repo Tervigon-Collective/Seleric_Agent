@@ -734,7 +734,9 @@ def check_scope_coverage(
     return CheckOutcome(check="scope_coverage", status=status, gaps=gaps)
 
 
-_NON_CLAIM_ARTIFACT_TYPES = frozenset({"plan"})
+# A plan is observability; a signal is context from the hourly snapshots
+# (services/insights.py), not this mission's claim.
+_NON_CLAIM_ARTIFACT_TYPES = frozenset({"plan", "signal"})
 
 
 def run_checks(
