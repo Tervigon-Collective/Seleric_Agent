@@ -28,6 +28,7 @@ from typing import Any
 from seleric_swarm.agent.artifacts import Finding
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.plan import MissionPlan
+from seleric_swarm.agent.progress import emit_progress, tool_label
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.elapsed import ELAPSED_KEY, covers_in_progress_day
 from seleric_swarm.toolsets import semantic
@@ -55,11 +56,16 @@ def _at(day: date, as_of: datetime) -> datetime:
     return datetime(day.year, day.month, day.day, tzinfo=as_of.tzinfo)
 
 
-def _payloads(deps: SelericDeps, artifact_ids: list[str]) -> list[dict[str, Any]]:
+def _payloads(deps: SelericDeps, artifact_ids: list[str], *, elapsed: bool = False) -> list[dict[str, Any]]:
+    """The evidence rows of one query on the basis it asked for: full periods, or
+    only the hours elapsed today (``elapsed``). query_metrics adds a same-hours
+    companion to a complete window when the mission also covers the running day;
+    keyed like the full row, it overwrote it (golden Q6 2026-10-08: Sep 1-8 net
+    sales 696,778 shown as the 00:00-02:00 slice, 31,102)."""
     out = []
     for aid in artifact_ids:
         payload = getattr(deps.artifact_store.get(aid), "payload", None)
-        if isinstance(payload, dict):
+        if isinstance(payload, dict) and (ELAPSED_KEY in (payload.get("dimensions") or {})) == elapsed:
             out.append(payload)
     return out
 
@@ -103,16 +109,42 @@ async def execute_plan(
     to the agent."""
     if plan is None:
         return None
+    two_windows = plan.shape in ("entity_comparison", "period_comparison") and len(windows) >= 2
+    if not two_windows and plan.shape not in _SINGLE_WINDOW_SHAPES:
+        return None
     started = time.perf_counter()
+    labels = dict.fromkeys(tool_label(step.tool) for step in plan.steps)
+    emit_progress(deps.mission_id, "agent.stage", "; ".join(labels), {"stage": "prefetch"})
     try:
-        if plan.shape in ("entity_comparison", "period_comparison") and len(windows) >= 2:
-            return await _execute(plan, deps, windows=windows, as_of=as_of, started=started)
-        if plan.shape in _SINGLE_WINDOW_SHAPES:
+        if two_windows:
+            prefetch = await _execute(plan, deps, windows=windows, as_of=as_of, started=started)
+        else:
             window = windows[0] if windows else (as_of.date(), as_of.date())
-            return await _execute_single(plan, deps, window=window, as_of=as_of, grain=grain, started=started)
+            prefetch = await _execute_single(plan, deps, window=window, as_of=as_of, grain=grain, started=started)
     except Exception:
         _log.warning("plan_execution_failed", exc_info=True)
-    return None
+        return None
+    if prefetch is not None and (units := _units_line(plan, deps)):
+        prefetch.text = f"{prefetch.text}\n{units}"
+    return prefetch
+
+
+def _units_line(plan: MissionPlan, deps: SelericDeps) -> str:
+    """The catalogue unit of every prefetched metric. The fetched values are bare
+    numbers; without their unit the model guessed the currency (labelled INR figures
+    as USD, golden Q2 2026-10-08)."""
+    raw = {m.id: (m.raw or {}) for m in deps.catalogue.metrics}
+    metrics = list(dict.fromkeys(metric for step in plan.steps for metric in step.metric_ids if metric in raw))
+    units = {metric: str(raw[metric].get("unit") or "").strip() for metric in metrics}
+    units = {metric: unit for metric, unit in units.items() if unit}
+    if not units:
+        return ""
+    line = "Units (catalogue): " + ", ".join(f"{metric}={unit}" for metric, unit in units.items())
+    line += ". Label every figure with its unit"
+    currencies = {str(raw[metric].get("currency_default") or "").strip() for metric in metrics} - {""}
+    if len(currencies) == 1:
+        line += f"; the footer's Currency is {currencies.pop()}"
+    return line + "."
 
 
 async def _execute_single(
@@ -270,7 +302,7 @@ async def _execute(
         evidence_ids += result.artifact_ids
         additive = catalogue.aggregation_for(metric) == "additive"
         days = ref_days if label == "ref" else cmp_days
-        for payload in _payloads(deps, result.artifact_ids):
+        for payload in _payloads(deps, result.artifact_ids, elapsed=bool(additive and today_running)):
             if payload.get("value") is None:
                 continue
             key = str(payload["dimensions"].get(entity, "")) if entity else ""
@@ -382,17 +414,18 @@ async def _mapping(
             continue
         if entity:
             dims[entity] = entities
+        elapsed_only = bool(today_running and deps.catalogue.aggregation_for(metric) == "additive")
         result = await _query(
             deps, gate, metric_id=metric, dimensions=dims,
             period_start=_at(comparison[0], as_of), period_end=_at(comparison[1], as_of),
-            elapsed_only=bool(today_running and deps.catalogue.aggregation_for(metric) == "additive"),
+            elapsed_only=elapsed_only,
         )
         if not getattr(result, "success", False):
             lines.append(f"- {metric}: not available ({result.summary[:120]})")
             continue
         evidence_ids += result.artifact_ids
         rows = []
-        for payload in _payloads(deps, result.artifact_ids):
+        for payload in _payloads(deps, result.artifact_ids, elapsed=elapsed_only):
             labels = ", ".join(f"{k}={v}" for k, v in payload["dimensions"].items() if k != ELAPSED_KEY)
             rows.append(f"  - {labels}: {_fmt(payload.get('value'))}")
         lines.append(f"- {metric} ({len(rows)} rows):")

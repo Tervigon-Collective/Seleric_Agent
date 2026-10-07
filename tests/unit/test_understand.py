@@ -126,12 +126,14 @@ async def test_understand_reads_one_structured_answer_with_its_context():
         "why was meta lower than other days",
         catalogue=CatalogueSnapshot(),
         value_words=["meta", "other"],
+        value_meanings={"other": "payment_method = other"},
         prior_question="net sales yesterday",
         prior_offer="Want it by channel?",
     )
     assert out.understanding is not None and out.understanding.ordinary_words == ["other"]
     assert out.stats["status"] == "ok"
-    assert "Data-value words" in seen[0] and "meta, other" in seen[0]
+    # Each word with where the data records it: "other sources" is not a payment method.
+    assert "Data-value words" in seen[0] and "- meta\n- other: recorded as payment_method = other" in seen[0]
     assert "Want it by channel?" in seen[0] and "net sales yesterday" in seen[0]
 
 

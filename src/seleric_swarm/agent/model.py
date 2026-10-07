@@ -25,7 +25,13 @@ from seleric_swarm.config.settings import Settings, configured_chat_model
 AGENT_LLM_TIMEOUT_S = float(os.getenv("AGENT_LLM_TIMEOUT_S", "45"))
 
 
-def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False, role_tuning: bool = True) -> Model:
+def resolve_v3_model(
+    settings: Settings,
+    *,
+    prefer_fast: bool = False,
+    role_tuning: bool = True,
+    reasoning_effort: str = "",
+) -> Model:
     """Live OpenAI-compatible model when configured; otherwise the stub TestModel.
 
     Wraps every configured model (``AZURE_OPENAI_MODELS``, primary first) in a
@@ -84,7 +90,9 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False, role_tuni
     # e.g. "low"/"medium"). DeepSeek-V4-Pro accepts reasoning_effort; unset leaves
     # the provider default so this can't regress reasoning quality or break the
     # fallback chain unless explicitly opted in.
-    strong_effort = os.getenv("AZURE_OPENAI_STRONG_REASONING_EFFORT", "").strip() if role_tuning else ""
+    strong_effort = reasoning_effort.strip() or (
+        os.getenv("AZURE_OPENAI_STRONG_REASONING_EFFORT", "").strip() if role_tuning else ""
+    )
     strong_settings = (
         OpenAIChatModelSettings(openai_reasoning_effort=strong_effort)
         if strong_effort
@@ -110,8 +118,11 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False, role_tuni
 
 def resolve_planner_model(settings: Settings) -> Model:
     """The planner's model: AZURE_OPENAI_PLANNER_MODEL on the same endpoint, else the
-    agent's chain. Provider-default settings — the agent's reasoning-effort tuning is
-    a per-deployment choice and is not carried over to a different model family."""
+    agent's chain. The agent's reasoning-effort tuning is a per-deployment choice and
+    is not carried over; AZURE_OPENAI_PLANNER_REASONING_EFFORT sets the planner's own
+    (empty = provider default). Measured 2026-10-08 on 27 questions: gpt-5-mini at
+    "low" read the same slots as grok-4.20-reasoning in 5.0s mean (max 8.6s) against
+    11.8s (max 40.7s); "minimal" misread why-questions and once hung 92s."""
     name = (getattr(settings, "azure_openai_planner_model", "") or "").strip()
     if not name:
         return resolve_v3_model(settings)
@@ -120,4 +131,5 @@ def resolve_planner_model(settings: Settings) -> Model:
     only = settings.model_copy(
         update={"azure_openai_models": json.dumps([name]), "azure_openai_fast_model": ""}
     )
-    return resolve_v3_model(only, role_tuning=False)
+    effort = (getattr(settings, "azure_openai_planner_reasoning_effort", "") or "").strip()
+    return resolve_v3_model(only, role_tuning=False, reasoning_effort=effort)

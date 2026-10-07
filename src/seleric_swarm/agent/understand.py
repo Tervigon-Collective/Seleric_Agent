@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -115,9 +116,10 @@ _INSTRUCTIONS = (
     "spelled out, plus your best metric id from the catalogue (empty if unsure). When the "
     "message continues the previous turn and names no measure, carry the previous turn's.\n"
     "- breakdown_dimensions: dimension ids for any 'by …' or 'map to …' the user asks for.\n"
-    "- ordinary_words: only words from the 'Data-value words' list, and only when the message "
-    "uses them as ordinary language (\"other days\", \"direct answer\") rather than meaning "
-    "that recorded value."
+    "- ordinary_words: decide for each word in the 'Data-value words' list whether the message "
+    "means that value of the dimension it is recorded under. List every word it does not mean "
+    "that way: ordinary language (\"other days\", \"direct answer\"), or the same word meant "
+    "for a different kind of thing than that dimension holds. Words meant as that value stay out."
 )
 
 
@@ -132,6 +134,7 @@ def _prompt(
     *,
     catalogue: CatalogueSnapshot,
     value_words: list[str],
+    value_meanings: Mapping[str, str] | None = None,
     prior_question: str = "",
     prior_offer: str = "",
 ) -> str:
@@ -144,7 +147,13 @@ def _prompt(
             prior.append(f"- the answer ended by offering: {prior_offer[:300]}")
         parts.append("\n".join(prior))
     if value_words:
-        parts.append("Data-value words (words in the message the data records as values): " + ", ".join(value_words))
+        # Where each word is recorded: the bare word could not tell "other sources"
+        # from the payment_method value "other" (golden Q17, 2026-10-08).
+        meanings = value_meanings or {}
+        parts.append(
+            "Data-value words (words in the message the data records as values, and where):\n"
+            + "\n".join(f"- {w}" + (f": recorded as {meanings[w]}" if meanings.get(w) else "") for w in value_words)
+        )
     rendered = catalogue.render_compact()
     if rendered:
         parts.append(rendered)
@@ -158,6 +167,7 @@ async def understand(
     *,
     catalogue: CatalogueSnapshot,
     value_words: list[str] = (),  # type: ignore[assignment]
+    value_meanings: Mapping[str, str] | None = None,
     prior_question: str = "",
     prior_offer: str = "",
 ) -> UnderstandOutcome:
@@ -174,6 +184,7 @@ async def understand(
                 query,
                 catalogue=catalogue,
                 value_words=list(value_words),
+                value_meanings=value_meanings,
                 prior_question=prior_question,
                 prior_offer=prior_offer,
             )

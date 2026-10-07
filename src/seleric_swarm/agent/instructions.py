@@ -339,8 +339,9 @@ plumbing. Structure every analytical answer like this:
 6. One footer line, format exactly:
    "Period: <range> · Currency: <ccy> · Data as of <date>".
    Omit any field that does not apply to the metric. Use the source's own
-   freshness for "Data as of"; if only query time is known, label it
-   "Fetched at" instead — never substitute today's date.
+   freshness for "Data as of"; if only query time is known, write
+   "Fetched at <date>" in place of "Data as of <date>" (never both) — never
+   substitute today's date.
 7. Optionally end with one suggested next step that goes BEYOND the question,
    written as a plain statement ("Next: …"), never as a question or an offer.
    Never offer to do part of what was asked — do it, or name it in limitations.

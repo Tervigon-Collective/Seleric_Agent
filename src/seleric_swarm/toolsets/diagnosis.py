@@ -241,6 +241,7 @@ def _parse_segments(result: dict[str, Any], metric_id: str, dimension: str) -> d
 def _evidence_rows(
     ctx: RunContext[SelericDeps], metric_id: str, values: dict[date, float], days: list[date],
     args: dict[str, Any], index: dict[str, str], tz: Any, dimensions: dict[str, str] | None = None,
+    unit: str | None = None,
 ) -> list[str]:
     ids: list[str] = []
     for d in days:
@@ -249,7 +250,7 @@ def _evidence_rows(
         start = datetime(d.year, d.month, d.day, tzinfo=tz)
         ev = EvidenceArtifact(
             metric_id=metric_id, dimensions=dict(dimensions or {}), grain="day", as_of=ctx.deps.as_of,
-            period_start=start, period_end=start, value=values[d], source_query=args,
+            period_start=start, period_end=start, value=values[d], unit=unit, source_query=args,
         )
         ids.append(semantic._put_evidence(
             ctx, ev, index=index, raw_id=f"raw:{metric_id}:{d}:{d}",
@@ -534,6 +535,9 @@ async def diagnose_metric_change(
     quality: list[str] = []
     series: dict[str, dict[date, float]] = {}
     args_by_metric: dict[str, dict[str, Any]] = {}
+    # The currency the data source reports per metric (as query_metrics records it),
+    # so diagnosis evidence carries its unit like every other figure.
+    units: dict[str, str] = {}
     for m, (res, args) in zip(series_ids, series_results, strict=True):
         if args is None:
             if m == metric_id:
@@ -550,6 +554,8 @@ async def diagnose_metric_change(
         if parsed:
             series[m] = parsed
             args_by_metric[m] = args
+            if currency := str((res.get("provenance") or {}).get("currency") or "").strip():
+                units[m] = currency
     if metric_id not in series:
         return _refuse(f"no daily data for {metric_id} over {hist_start}..{ev_end}")
     segments: dict[str, dict[str, dict[str, dict[date, float]]]] = {}
@@ -614,7 +620,7 @@ async def diagnose_metric_change(
                      *(f.driver for f in report.drivers if f.status in ("implicated", "ruled_out") and f.driver in series)]
     for m in dict.fromkeys(cited_metrics):
         if m in series:
-            ids = _evidence_rows(ctx, m, series[m], cited_days, args_by_metric[m], index, tz)
+            ids = _evidence_rows(ctx, m, series[m], cited_days, args_by_metric[m], index, tz, unit=units.get(m))
             per_metric_ids[m] = ids
             evidence_ids += ids
     chain_pair = tuple(t.metric for t in report.chain)
@@ -624,7 +630,7 @@ async def diagnose_metric_change(
                 if (m, dim.dimension) in seg_args:
                     evidence_ids += _evidence_rows(
                         ctx, m, segments[m][dim.dimension].get(s.segment, {}), cited_days, seg_args[(m, dim.dimension)],
-                        index, tz, {dim.dimension: s.segment},
+                        index, tz, {dim.dimension: s.segment}, unit=units.get(m),
                     )
     for dim in report.dimensions[:3]:
         for s in dim.top[:3]:
@@ -632,7 +638,8 @@ async def diagnose_metric_change(
                 if m and (m, dim.dimension) in seg_args:
                     vals = segments[m][dim.dimension].get(s.segment, {})
                     evidence_ids += _evidence_rows(
-                        ctx, m, vals, cited_days, seg_args[(m, dim.dimension)], index, tz, {dim.dimension: s.segment}
+                        ctx, m, vals, cited_days, seg_args[(m, dim.dimension)], index, tz, {dim.dimension: s.segment},
+                        unit=units.get(m),
                     )
     if not evidence_ids:
         return _refuse(f"diagnosis of {metric_id} produced no citable evidence")

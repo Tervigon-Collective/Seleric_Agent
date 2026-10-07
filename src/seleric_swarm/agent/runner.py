@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 
 import asyncio
+import functools
 import logging
 import os
 import re
@@ -44,6 +45,7 @@ from seleric_swarm.agent.model import resolve_planner_model, resolve_v3_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
 from seleric_swarm.agent.executor import execute_plan
 from seleric_swarm.agent.plan import PlanOutcome, plan_adherence, plan_from_slots
+from seleric_swarm.agent.progress import emit_progress, tool_label
 from seleric_swarm.agent.understand import classification_from, understand
 from seleric_swarm.agent.scope import (
     RequiredScope,
@@ -792,14 +794,21 @@ def _prefetch_windows(scope: RequiredScope, prior_window: Any) -> list[tuple[dat
         return []
 
 
+@functools.cache
+def _headline_registry_ids() -> tuple[str, ...]:
+    """domain_health_profiles.yaml's headline, read once per process (the config is
+    baked into the image; parsing it cost ~25ms on every mission)."""
+    from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles
+
+    return tuple(DomainHealthProfiles().headline_metrics())
+
+
 def _headline_metric_ids(runtime: SwarmRuntime) -> list[str]:
     """The configured business headline (domain_health_profiles.yaml) as catalogue ids."""
     try:
-        from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles
-
         registry = getattr(runtime, "metrics", None)
         out: list[str] = []
-        for registry_id in DomainHealthProfiles().headline_metrics():
+        for registry_id in _headline_registry_ids():
             definition = registry.get(registry_id) if registry is not None else None
             out.append((definition.catalogue_metric if definition is not None else None) or registry_id)
         return list(dict.fromkeys(out))
@@ -1047,6 +1056,10 @@ async def run_v3_mission(
         )
 
     mcp = getattr(runtime, "mcp", None) or NullMcpClient()
+    # Reading the question and prefetching run before the agent loop, which is the
+    # first place tool progress is reported: without these the UI showed nothing
+    # for the first ~20s of a mission.
+    emit_progress(mission_id, "agent.stage", "Reading your question", {"stage": "understand"})
     stages: dict[str, int] = {}
     stage_started = time.perf_counter()
 
@@ -1077,6 +1090,10 @@ async def run_v3_mission(
         query,
         catalogue=catalogue,
         value_words=[vf.term for vf in value_filters_from_resolution(values)],
+        value_meanings={
+            vf.term: f"{' / '.join(sorted(vf.dimensions))} = {', '.join(vf.values[:3])}"
+            for vf in value_filters_from_resolution(values)
+        },
         prior_question=str((prior_turn_record or {}).get("query") or ""),
         prior_offer=str((prior_turn_record or {}).get("offer") or ""),
     )
@@ -1245,6 +1262,7 @@ async def run_v3_mission(
                 )
                 _stage("prefetch_ms")
                 if prefetch is not None:
+                    emit_progress(mission_id, "agent.stage", tool_label("analyze"), {"stage": "answer"})
                     plan = f"{plan}\n\n{prefetch.text}" if plan else prefetch.text
                     deps.call_counts[PREFETCHED] = 1
                     if plan_outcome is not None:

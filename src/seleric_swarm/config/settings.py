@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     # Per-role deployments on AZURE_OPENAI_ENDPOINT (2026-10-07). Empty = the agent model.
     # planner: reads the question into PlanSlots (agent/plan.py).
     azure_openai_planner_model: str = ""
+    # The planner's reasoning effort ("low", "medium", ...); empty = provider default.
+    azure_openai_planner_reasoning_effort: str = ""
     # helper: short single-shot calls — value sense, business-state fast answer, /llm ping.
     azure_openai_helper_model: str = ""
     azure_openai_api_version: str = "2024-05-01-preview"
