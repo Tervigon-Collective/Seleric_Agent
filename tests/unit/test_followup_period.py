@@ -11,6 +11,7 @@ from seleric_swarm.agent.runner import (
     _answer_period,
     _closing_offer,
     _followup_hint,
+    _latest_turn_record,
     _names_a_period,
     _prior_window,
     _render_turn_record,
@@ -50,6 +51,11 @@ def test_turn_record_carries_period_and_offer():
     assert (record["period_start"], record["period_end"]) == ("2026-09-28", "2026-10-03")
     assert record["offer"].startswith("Would you like")
     assert "period_used=2026-09-28..2026-10-03" in _render_turn_record(record)
+    # The next turn finds it by thread id. The V3 store had no list_for_context, so
+    # this lookup returned None in every live mission and follow-ups lost the period.
+    found = _latest_turn_record(store, thread_id="t1")
+    assert found is not None and found["offer"].startswith("Would you like")
+    assert _latest_turn_record(store, thread_id="other-thread") is None
 
 
 def test_yes_carries_the_offer_and_the_period():
