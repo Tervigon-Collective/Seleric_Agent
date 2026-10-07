@@ -907,7 +907,9 @@ async def semantic_sql(
     the workspace brand), not by your WHERE clause; a cube that has no brand
     cannot be queried here. Every numeric cell becomes a citable evidence
     artifact (cite the returned ids in evidence_ids). Single SELECT/WITH
-    statement, read-only, rows capped, 30s timeout."""
+    statement, read-only, rows capped, 30s timeout. Tables and columns are checked
+    against the views before anything runs: an unknown name comes back with that
+    view's columns."""
     brand = str(brand_id or DEFAULT_BRAND_ID)
     try:
         start = datetime.fromisoformat(period_start[:10]).replace(tzinfo=ctx.deps.as_of.tzinfo)
@@ -923,17 +925,21 @@ async def semantic_sql(
         result = await ctx.deps.mcp_client.call(
             agent_id=_AGENT_ID,
             capability="seleric.semantic_sql",
-            arguments={"sql": sql, "max_rows": max_rows, "brand_id": brand},
+            arguments={"sql": sql, "max_rows": max_rows, "brand_id": brand, "session_key": ctx.deps.mission_id},
         )
     except Exception as exc:
         return _mcp_error_result(exc)
     result = dict(result or {})
     if result.get("error"):
+        # A schema rejection names the valid columns: correct the SQL once with
+        # those names. Anything else (rate limit, Cube failure) is not retryable.
+        correctable = bool(result.get("retryable"))
         return ToolResult(
             success=False,
-            summary=f"semantic_sql failed: {result['error']}",
+            summary=f"semantic_sql failed: {result['error']}"
+            + (" — fix the SQL with the names listed and call once more." if correctable else ""),
             error_code="SEMANTIC_SQL_ERROR",
-            retryable=False,
+            retryable=correctable,
             provenance=ArtifactProvenance(source_metadata=result),
         )
     rows = [r for r in (result.get("data") or []) if isinstance(r, dict)]
