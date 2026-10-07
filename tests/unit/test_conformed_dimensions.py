@@ -217,3 +217,16 @@ async def test_a_value_gap_is_never_answered_by_a_grain_twin():
     with pytest.raises(ModelRetry):
         await semantic.query_metrics(ctx, "net_profit", dimensions={"platform": "email"}, **SEP)
     assert not mcp.calls
+
+
+@pytest.mark.asyncio
+async def test_two_measures_collapsing_onto_one_id_are_reported():
+    from seleric_swarm.agent.plan import MetricSlot, _resolve_metrics
+
+    async def resolver(words: list[str]) -> dict[str, str | None]:
+        return {w: "orders" for w in words}
+
+    ids, notes = await _resolve_metrics(
+        [MetricSlot(words="purchases", metric_id=""), MetricSlot(words="checkouts", metric_id="")], resolver, SNAP)
+    assert ids == ["orders"]
+    assert any("'checkouts' resolved to orders, like an earlier measure" in n for n in notes)

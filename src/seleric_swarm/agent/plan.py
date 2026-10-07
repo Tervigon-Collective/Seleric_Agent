@@ -161,6 +161,10 @@ async def _resolve_metrics(
             notes.append(f"no catalogue metric for '{slot.words}'")
         elif candidate not in ids:
             ids.append(candidate)
+        else:
+            # two asked measures landing on one id means one of them was lost (live 2026-10-08: "cost per
+            # click" / "cost per mille" both resolved to CTR) — say so, so the agent fetches it itself
+            notes.append(f"'{slot.words}' resolved to {candidate}, like an earlier measure — find its own metric id")
     return ids, notes
 
 
