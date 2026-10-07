@@ -11,6 +11,7 @@ import logging
 import random
 import signal
 import socket
+import threading
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -182,6 +183,9 @@ class RunRecoveryWorker:
         self._lease_s = lease_s
         self._heartbeat_s = min(max(0.1, heartbeat_s), max(0.1, lease_s / 2))
         self._max_concurrency = max(1, max_concurrency)
+        # Set to start a dispatch now instead of at the next poll: by a run
+        # submission (Postgres NOTIFY, see listen_for_runs) or a freed slot.
+        self.wake = asyncio.Event()
         self._recovery = RunRecoveryService(
             runs,
             retry_delay_s=retry_delay_s,
@@ -395,6 +399,8 @@ class RunRecoveryWorker:
             task = asyncio.create_task(self._execute_with_slot(slots, run, attempt))
             in_flight.add(task)
             task.add_done_callback(in_flight.discard)
+            # A freed slot may let a queued run start: look again now, not at the next poll.
+            task.add_done_callback(lambda _t: self.wake.set())
         return claimed
 
     async def run_forever(
@@ -422,14 +428,14 @@ class RunRecoveryWorker:
         slots = asyncio.Semaphore(self._max_concurrency)
         in_flight: set[asyncio.Task[str]] = set()
         while not stop.is_set():
+            self.wake.clear()
             try:
                 await self._dispatch(slots, in_flight, limit=limit)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 _log.error("run_recovery_worker_poll_error", exc_info=exc)
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(stop.wait(), timeout=max(0.1, poll_interval_s))
+            await _until_any(stop, self.wake, timeout=max(0.1, poll_interval_s))
         if not in_flight:
             return
         _log.warning("run_recovery_worker_draining in_flight=%d timeout_s=%s", len(in_flight), drain_timeout_s)
@@ -442,11 +448,43 @@ class RunRecoveryWorker:
             await asyncio.gather(*pending, return_exceptions=True)
 
 
+async def _until_any(*events: asyncio.Event, timeout: float) -> None:
+    """Return when any event is set or the timeout passes."""
+    waiters = [asyncio.ensure_future(e.wait()) for e in events]
+    try:
+        await asyncio.wait(waiters, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for waiter in waiters:
+            waiter.cancel()
+
+
+RUN_CHANNEL = "seleric_runs"
+
+
 class DurablePollingRunQueue:
-    """The durable queue is the QUEUED run/RETRYABLE attempt rows themselves."""
+    """The durable queue is the QUEUED run/RETRYABLE attempt rows themselves.
+
+    ``enqueue`` also sends a Postgres NOTIFY on ``RUN_CHANNEL`` so a listening
+    worker (``listen_for_runs``) starts the run at once instead of at its next
+    poll (up to ``--interval`` seconds later). Best-effort: the rows stay the
+    queue, and polling still picks up anything a lost notification missed."""
+
+    def __init__(self, engine: Any = None) -> None:
+        self._engine = engine
 
     async def enqueue(self, run_id: str) -> None:
-        del run_id
+        if self._engine is None:
+            return
+        try:
+            await asyncio.to_thread(self._notify, run_id)
+        except Exception:
+            _log.warning("run_notify_failed", exc_info=True)
+
+    def _notify(self, run_id: str) -> None:
+        from sqlalchemy import text
+
+        with self._engine.begin() as conn:
+            conn.execute(text("SELECT pg_notify(:channel, :run_id)"), {"channel": RUN_CHANNEL, "run_id": run_id})
 
     async def close(self) -> None:
         return None
@@ -506,7 +544,8 @@ def build_run_queue(
     executor: ResumableRunExecutor,
 ) -> RunWorkQueue:
     if runtime.settings.persistence_backend == "postgres":
-        return DurablePollingRunQueue()
+        runs = getattr(getattr(runtime, "conversations", None), "runs", None)
+        return DurablePollingRunQueue(getattr(runs, "engine", None))
     repositories = runtime.conversations
     if repositories is None:
         raise RuntimeError("conversation repositories are not configured")
@@ -523,6 +562,34 @@ def build_run_queue(
             max_concurrency=runtime.settings.run_max_concurrency,
         )
     )
+
+
+def listen_for_runs(
+    database_url: str, wake: asyncio.Event, loop: asyncio.AbstractEventLoop, stop: threading.Event
+) -> threading.Thread:
+    """LISTEN on ``RUN_CHANNEL`` in a background thread and set ``wake`` on each
+    notification. Reconnects after errors; the poll loop covers any gap."""
+    from sqlalchemy.engine import make_url
+
+    url = make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
+
+    def _run() -> None:
+        import psycopg
+
+        while not stop.is_set():
+            try:
+                with psycopg.connect(url, autocommit=True) as conn:
+                    conn.execute(f"LISTEN {RUN_CHANNEL}")
+                    while not stop.is_set():
+                        for _ in conn.notifies(timeout=1.0):
+                            loop.call_soon_threadsafe(wake.set)
+            except Exception:
+                _log.warning("run_listener_error", exc_info=True)
+                stop.wait(2.0)
+
+    thread = threading.Thread(target=_run, name="run-listener", daemon=True)
+    thread.start()
+    return thread
 
 
 async def _main() -> None:
@@ -601,12 +668,18 @@ async def _main() -> None:
                 for sig in (signal.SIGTERM, signal.SIGINT):
                     with contextlib.suppress(NotImplementedError, RuntimeError):
                         loop.add_signal_handler(sig, stop.set)
-                await worker.run_forever(
-                    poll_interval_s=args.interval,
-                    limit=args.limit,
-                    stop=stop,
-                    drain_timeout_s=runtime.settings.run_drain_timeout_s,
-                )
+                listener_stop = threading.Event()
+                if runtime.settings.persistence_backend == "postgres" and runtime.settings.database_url:
+                    listen_for_runs(runtime.settings.database_url, worker.wake, loop, listener_stop)
+                try:
+                    await worker.run_forever(
+                        poll_interval_s=args.interval,
+                        limit=args.limit,
+                        stop=stop,
+                        drain_timeout_s=runtime.settings.run_drain_timeout_s,
+                    )
+                finally:
+                    listener_stop.set()
             else:
                 while True:
                     try:

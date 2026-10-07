@@ -73,3 +73,21 @@ def test_old_missions_leave_the_cache_only_after_they_are_written():
     assert first.id not in store._by_id  # evicted from memory...
     assert store.get(first.id) is not None  # ...still readable from Postgres
     store.close()
+
+
+async def test_a_submitted_run_wakes_the_listening_worker():
+    import asyncio
+    import threading
+
+    from seleric_swarm.recovery import DurablePollingRunQueue, listen_for_runs
+
+    engine = _engine()
+    url = engine.url.render_as_string(hide_password=False)
+    wake, stop = asyncio.Event(), threading.Event()
+    listen_for_runs(url, wake, asyncio.get_running_loop(), stop)
+    try:
+        await asyncio.sleep(0.5)  # let the listener connect and LISTEN
+        await DurablePollingRunQueue(engine).enqueue("run-1")
+        await asyncio.wait_for(wake.wait(), timeout=5)
+    finally:
+        stop.set()
