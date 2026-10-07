@@ -30,7 +30,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 
 from seleric_swarm.agent.intent import QueryClassification
-from seleric_swarm.agent.plan import PlanShape, PlanSlots
+from seleric_swarm.agent.plan import MetricSlot, PlanShape, PlanSlots
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 
 _log = logging.getLogger("seleric.agent.understand")
@@ -39,8 +39,27 @@ QuestionKind = Literal["conversation", "analysis", "overview", "forecast", "what
 
 
 class Understanding(PlanSlots):
-    # Defaulted so a reply that omits it (small talk) is not a failed reading.
-    shape: PlanShape = "other"
+    # The slots the plan is built from are required, not defaulted. With every slot
+    # defaulted the planner model (grok) returned only ``kind`` — 42 output tokens —
+    # and every mission ran unplanned: shape "other", no metrics, no entity (live
+    # 2026-10-07 MS3-cbf57264a7, 7 of 7 analysis missions "no usable step"). Required
+    # fields make the model state them; a conversation states "other" and [] in a
+    # few tokens.
+    shape: PlanShape = Field(
+        description="The question's shape (see the instructions); other for a conversation."
+    )
+    entity_dimension: str = Field(
+        description="For entity_comparison: the catalogue dimension id that holds the entities' names; else ''."
+    )
+    rank_by: MetricSlot | None = Field(
+        description="What makes an entity 'best' / 'top' (an outcome or efficiency measure); null when nothing is ranked."
+    )
+    metrics: list[MetricSlot] = Field(
+        description="Every measure the user asks for, one entry each; [] only when the message names none."
+    )
+    breakdown_dimensions: list[str] = Field(
+        description="Catalogue dimension ids the user asks to break down or map by; [] when none."
+    )
     kind: QuestionKind = Field(
         description=(
             "conversation: greeting, thanks, small talk or a question about the assistant — no "
@@ -64,6 +83,12 @@ class Understanding(PlanSlots):
     ordinary_words: list[str] = Field(
         default_factory=list,
         description="Of the listed data-value words, the ones the question uses as plain language, not as that value.",
+    )
+    names_period: bool = Field(
+        description=(
+            "True when the message names or implies a time period of its own (a date, yesterday, "
+            "last 7 completed days, this month, since Monday); false when it names none."
+        )
     )
     grain: Literal["hour", "day", "week", "month", "none"] = Field(
         default="none", description="The time bucket the user asks to see results in, if any."

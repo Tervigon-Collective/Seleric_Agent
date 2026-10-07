@@ -54,7 +54,9 @@ def _bare(metric_id: str) -> str:
     return metric_id.removeprefix("metric.")
 
 
-def _signal(m: ResolvedMetric, snapshot: DomainStateSnapshot, related: bool) -> Signal | None:
+def _signal(
+    m: ResolvedMetric, snapshot: DomainStateSnapshot, related: bool, metric_id: str = "", label: str = "",
+) -> Signal | None:
     anomaly = m.anomaly or {}
     flagged = bool(anomaly.get("is_anomaly"))
     delta = m.period_delta_pct
@@ -67,7 +69,8 @@ def _signal(m: ResolvedMetric, snapshot: DomainStateSnapshot, related: bool) -> 
     else:
         kind = "unusual"
     severity = float(anomaly.get("score") or 0.0) if flagged else abs(delta or 0.0) / 10.0
-    bits = [f"{_bare(m.metric_id)} ({snapshot.domain}) = {m.value:g}" if m.value is not None else _bare(m.metric_id)]
+    name = label or _bare(m.metric_id)
+    bits = [f"{name} ({snapshot.domain}) = {m.value:g}" if m.value is not None else name]
     if delta is not None:
         bits.append(f"{delta:+.1f}% vs the previous period")
     if flagged:
@@ -78,7 +81,7 @@ def _signal(m: ResolvedMetric, snapshot: DomainStateSnapshot, related: bool) -> 
             + ")"
         )
     return Signal(
-        metric_id=_bare(m.metric_id),
+        metric_id=metric_id or _bare(m.metric_id),
         domain=snapshot.domain,
         kind=kind,
         severity=severity,
@@ -105,6 +108,18 @@ async def gather_signals(
     asked = {deps.canonical_metric_id(_bare(m)) for m in asked_metric_ids}
     views = {meta.view for meta in deps.catalogue.metrics if meta.id in asked and meta.view}
     view_of = {meta.id: meta.view for meta in deps.catalogue.metrics}
+    label_of = {meta.id: meta.label for meta in deps.catalogue.metrics if meta.label}
+
+    def canonical(snapshot_metric_id: str) -> str:
+        # The registry id as stored ("metric.net_profit_order") resolves to its
+        # catalogue id; the bare spelling does not, and leaked into answers as
+        # "net_profit_order" (live 2026-10-08, golden Q1/Q2).
+        definition = deps.metrics.get(snapshot_metric_id) if deps.metrics is not None else None
+        if definition is not None and definition.catalogue_metric:
+            return deps.canonical_metric_id(definition.catalogue_metric)
+        mid = deps.canonical_metric_id(snapshot_metric_id)
+        return mid if mid != snapshot_metric_id else deps.canonical_metric_id(_bare(snapshot_metric_id))
+
     snapshots: list[DomainStateSnapshot] = []
     for domain in ALL_DOMAINS:
         snap = await store.aget_latest(domain)
@@ -112,14 +127,14 @@ async def gather_signals(
             continue
         snapshots.append(snap)
     asked_domains = {
-        s.domain for s in snapshots for m in s.metrics if deps.canonical_metric_id(_bare(m.metric_id)) in asked
+        s.domain for s in snapshots for m in s.metrics if canonical(m.metric_id) in asked
     }
     signals: list[Signal] = []
     for snap in snapshots:
         for m in snap.metrics:
-            mid = deps.canonical_metric_id(_bare(m.metric_id))
+            mid = canonical(m.metric_id)
             related = mid in asked or snap.domain in asked_domains or view_of.get(mid) in views
-            if (sig := _signal(m, snap, related)) is not None:
+            if (sig := _signal(m, snap, related, mid, label_of.get(mid, ""))) is not None:
                 signals.append(sig)
     signals.sort(key=lambda s: (not s.related, -s.severity))
     return signals[:limit]

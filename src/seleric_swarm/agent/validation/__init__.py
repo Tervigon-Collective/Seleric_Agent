@@ -73,6 +73,9 @@ from seleric_swarm.agent.validation.signals import (
 from seleric_swarm.agent.validation.trust import TrustResult, score_trust
 from seleric_swarm.agent.validation.answer_audit import (
     _SENTENCE_END,
+    _inside_identifier,
+    _reconciles,
+    _table_columns_with_rounding,
     _claim_candidates,
     _numbers_in,
     cut_off,
@@ -288,34 +291,31 @@ def _mission_values(deps: SelericDeps) -> list[float]:
             for item in node:
                 walk(item)
 
+    # Roll-ups of fetched rows along their own dimensions: rows fetched at
+    # channel × sub-channel grain, reported per channel and in total, were
+    # rejected as unbacked until the mission failed (live 2026-10-08, golden Q17:
+    # 925,892 total, 373,160 Meta, 354,872 unattributed — all exact row sums).
+    rollups: dict[tuple[Any, ...], float] = {}
     for artifact in deps.artifact_store.list_for_mission(deps.mission_id):
         payload = getattr(artifact, "payload", None)
         if not isinstance(payload, dict):
             continue
         if artifact.artifact_type == "evidence":
             walk(payload.get("value"))
+            value, dims = payload.get("value"), payload.get("dimensions")
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and isinstance(dims, dict) and dims:
+                query = (payload.get("metric_id"), payload.get("period_start"), payload.get("period_end"),
+                         payload.get("grain"), tuple(sorted(dims)))
+                rollups[(*query, None, None)] = rollups.get((*query, None, None), 0.0) + float(value)
+                for key, member in dims.items():
+                    group = (*query, key, member)
+                    rollups[group] = rollups.get(group, 0.0) + float(value)
         elif artifact.artifact_type == "finding":
             walk(payload.get("metrics"))
         elif artifact.artifact_type == "signal":
             walk(payload.get("signals"))
+    values.extend(rollups.values())
     return values
-
-
-def _inside_identifier(text: str, start: int, end: int) -> bool:
-    """A number that is part of a name ("TH-383-SUSPENDER", "BN520_TM099") is a label,
-    not a figure: it touches a letter, digit or a joiner that leads into one."""
-    def joined(index: int, step: int) -> bool:
-        if not 0 <= index < len(text):
-            return False
-        ch = text[index]
-        if ch.isalnum():
-            return True
-        if ch in "-_/":
-            nxt = index + step
-            return 0 <= nxt < len(text) and text[nxt].isalnum()
-        return False
-
-    return joined(start - 1, -1) or joined(end, 1)
 
 
 def _figures(text: str) -> list[tuple[float, float, bool]]:
@@ -355,6 +355,36 @@ _SMALL_COUNT = 31
 _MIN_UNBACKED = 3
 
 
+def _mission_labels(deps: SelericDeps) -> set[float]:
+    """Numeric dimension values the mission returned (ad ids, campaign ids): labels.
+
+    Live 2026-10-08 the gate called ad_id 120250695088280783 an unbacked figure
+    ("1.20251e+17") — an entity the diagnosis itself had named as where the change
+    concentrated — and the revision dropped the finding."""
+    labels: set[float] = set()
+
+    def add(token: Any) -> None:
+        text = str(token).strip()
+        if text and text.lstrip("-").replace(".", "", 1).isdigit():
+            try:
+                labels.add(float(text))
+            except ValueError:
+                pass
+
+    for artifact in deps.artifact_store.list_for_mission(deps.mission_id):
+        payload = getattr(artifact, "payload", None)
+        if not isinstance(payload, dict):
+            continue
+        for value in (payload.get("dimensions") or {}).values() if isinstance(payload.get("dimensions"), dict) else ():
+            add(value)
+        metrics = payload.get("metrics") if artifact.artifact_type == "finding" else None
+        if isinstance(metrics, dict):
+            for key in metrics:
+                for part in str(key).split("."):
+                    add(part)
+    return labels
+
+
 def _unbacked_figures(result: MissionResult, deps: SelericDeps) -> tuple[list[str], float]:
     """Figures in the answer no fetched or derived value accounts for, and their share.
     Live 2026-10-07 (gpt-5-nano) a row of plausible numbers was written for a day the
@@ -363,15 +393,66 @@ def _unbacked_figures(result: MissionResult, deps: SelericDeps) -> tuple[list[st
     if not pool:
         return [], 0.0
     query_numbers = {abs(v) for v, _t, _p in _figures(result.query or "")}
+    labels = _mission_labels(deps)
     figures = [
         (v, t, pct)
         for v, t, pct in _figures(result.final_response)
-        if not (not pct and float(v).is_integer() and abs(v) <= _SMALL_COUNT) and abs(v) not in query_numbers
+        if not (not pct and float(v).is_integer() and abs(v) <= _SMALL_COUNT)
+        and abs(v) not in query_numbers
+        and not (not pct and v in labels)
     ]
     if not figures:
         return [], 0.0
-    unbacked = [f"{v:g}{'%' if pct else ''}" for v, t, pct in figures if not _backed(v, t, pct, pool)]
+    backed = [v for v, t, pct in figures if not pct and _backed(v, t, pct, pool)]
+    # The backed cells of each column: a table's own "Total" row is not in the pool
+    # itself, and requiring every cell to be backed rejected the column it totals
+    # (live 2026-10-08, golden Q17: 373,160 over eight backed rows).
+    columns = []
+    for values, rounding in _table_columns_with_rounding(result.final_response, _label_columns(deps)):
+        kept = [x for x in values if _backed(x, rounding, False, pool)]
+        if len(kept) >= 2:
+            columns.append((kept, rounding))
+    unbacked = [
+        f"{v:g}{'%' if pct else ''}"
+        for v, t, pct in figures
+        if not _backed(v, t, pct, pool) and not _derived_from_shown(v, t, pct, backed, columns)
+    ]
     return unbacked, len(unbacked) / len(figures)
+
+
+def _derived_from_shown(
+    value: float,
+    tolerance: float,
+    percent: bool,
+    backed: list[float],
+    columns: list[tuple[list[float], float]],
+) -> bool:
+    """Arithmetic on figures the answer shows and the mission backs is backed too.
+
+    Live 2026-10-07 (MS3-dbb04d8eac, MS3-892f8fceba) the gate rejected the sum of the
+    two rows a table printed ("11,896.34") and one row's share of it ("64%"), and the
+    revisions that followed dropped the total the user asked for. A sum of a backed
+    column (the total audit's own reconciliation), a share of two backed figures or
+    the change between them is not an invented number.
+    """
+    if not percent:
+        if any(_reconciles(value, tolerance, values, rounding) for values, rounding in columns):
+            return True
+        # The change between two backed figures the answer shows (a bridge line,
+        # "down 22,553.8 from …").
+        # Within the figure's own rounding only: pairwise differences are many, and a
+        # proportional slack would let an invented number match one by chance.
+        slack = max(tolerance, 0.01)
+        return any(abs(abs(value) - abs(a - b)) <= slack for i, a in enumerate(backed) for b in backed[i + 1:])
+    candidates = [abs(x) for x in backed if x]
+    slack = max(tolerance, 0.05)
+    for a in candidates:
+        for b in candidates:
+            if a == b:
+                continue
+            if abs(value - 100 * a / b) <= slack or abs(value - 100 * abs(a - b) / b) <= slack:
+                return True
+    return False
 
 
 def _mission_has_evidence(deps: SelericDeps) -> bool:

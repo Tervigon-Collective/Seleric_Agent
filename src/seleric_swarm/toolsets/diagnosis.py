@@ -300,6 +300,15 @@ def _finding_metrics(report: engine.DiagnosisReport) -> dict[str, float]:
             put(f"decomposition.{t.metric}.{k}", getattr(t, k))
         if abs(t.reference) > 1e-12:
             put(f"decomposition.{t.metric}.pct_change", t.event / t.reference - 1)
+    for t in report.bridge:
+        for k in ("event", "reference", "contribution", "share_of_change", "previous", "contribution_vs_previous"):
+            put(f"bridge.{t.metric}.{k}", getattr(t, k))
+        if abs(t.reference) > 1e-12:
+            put(f"bridge.{t.metric}.pct_change", t.event / t.reference - 1)
+        if t.previous and abs(t.previous) > 1e-12 and t.contribution_vs_previous is not None:
+            put(f"bridge.{t.metric}.pct_change_vs_previous", t.sign * t.contribution_vs_previous / t.previous)
+    put("bridge.residual", report.bridge_residual)
+    put("bridge.residual_vs_previous", report.bridge_residual_vs_previous)
     for t in report.chain:
         for k in ("event", "reference", "contribution", "share_of_change"):
             put(f"chain.{t.metric}.{k}", getattr(t, k))
@@ -429,7 +438,7 @@ async def diagnose_metric_change(
     likely_contributor / correlation / insufficient_evidence. Report those
     labels faithfully; do not upgrade them.
     """
-    if (unknown := semantic._reject_unknown_metric(ctx, metric_id)) is not None:
+    if (unknown := await semantic._reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     tz = ctx.deps.as_of.tzinfo
     today = ctx.deps.as_of.date()
@@ -507,7 +516,17 @@ async def diagnose_metric_change(
         async with sem:
             return await coro
 
-    series_ids = list(dict.fromkeys([metric_id, *identity_metrics, *chain_metrics, *drivers]))
+    # Accounting-bridge candidates: every additive metric in the outcome's unit
+    # (only quantities of one unit can sum to it). The engine keeps a signed sum
+    # only if it reproduces the outcome on every history day.
+    bridge_pool: list[str] = []
+    if out_meta.additive and out_meta.unit:
+        bridge_pool = [
+            m for m, meta in lineage.items()
+            if m != metric_id and meta.additive and meta.unit == out_meta.unit
+            and ctx.deps.catalogue.has_metric(m) and _supports_brand(ctx, m)
+        ]
+    series_ids = list(dict.fromkeys([metric_id, *identity_metrics, *chain_metrics, *drivers, *bridge_pool]))
     series_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters)) for m in series_ids))
     seg_jobs = [(metric_id, d) for d in dims] + ([(weight, d) for d in dims] if weight else [])
     seg_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters, dimension=d)) for m, d in seg_jobs))
@@ -522,6 +541,10 @@ async def diagnose_metric_change(
             quality.append(f"{m}: fetch failed ({str(res.get('error'))[:120]})")
             continue
         if res.get("_dropped_filters"):
+            if m in bridge_pool and m not in (metric_id, *identity_metrics, *chain_metrics, *drivers):
+                # An unfiltered total cannot be a term of a filtered outcome.
+                bridge_pool.remove(m)
+                continue
             quality.append(f"{m} cannot be filtered by {', '.join(res['_dropped_filters'])}; used unfiltered")
         parsed = _parse_series(res, m)
         if parsed:
@@ -571,6 +594,7 @@ async def diagnose_metric_change(
         candidate_drivers=[d for d in drivers if d in series], partial_days=partial,
         claimed_direction=claimed_direction, denominators=({metric_id: weight} if weight else {}),
         scope_tokens=frozenset(t for d in _scope_dimensions(ctx) for t in d.lower().split("_") if t),
+        bridge_candidates=[m for m in bridge_pool if m in series],
     )
     for _ in inp.candidate_drivers:
         if not ctx.deps.budget.consume("causal_queries").ok:
@@ -585,7 +609,8 @@ async def diagnose_metric_change(
         cited_days = sorted({*cited_days, *(date.fromisoformat(x) for x in report.event.previous_period["days"])})
     evidence_ids: list[str] = []
     per_metric_ids: dict[str, list[str]] = {}
-    cited_metrics = [metric_id, *(t.metric for t in report.decomposition), *(t.metric for t in report.chain),
+    cited_metrics = [metric_id, *(t.metric for t in report.decomposition), *(t.metric for t in report.bridge),
+                     *(t.metric for t in report.chain),
                      *(f.driver for f in report.drivers if f.status in ("implicated", "ruled_out") and f.driver in series)]
     for m in dict.fromkeys(cited_metrics):
         if m in series:

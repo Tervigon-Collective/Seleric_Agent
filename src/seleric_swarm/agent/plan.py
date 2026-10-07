@@ -263,7 +263,11 @@ def compose_plan(
                     ),
                 )
             )
-    elif shape == "period_comparison":
+    elif shape == "period_comparison" and metric_ids:
+        # Only with measures named: a metric-less plan read to the agent as missing
+        # information, and "compare this month to the same days last month" was
+        # answered with a request to pick metrics (live 2026-10-08, golden Q6).
+        # With none named, no plan — the agent picks the business headline itself.
         for window_text, label in ((ref_text, "reference"), (cmp_text, "comparison")):
             steps.append(
                 PlanStep(
@@ -459,11 +463,19 @@ async def plan_from_slots(
     as_of: datetime | None = None,
     stats: dict[str, Any] | None = None,
     started: float | None = None,
+    headline_metric_ids: Sequence[str] = (),
 ) -> PlanOutcome:
-    """The plan from slots already read (``agent/understand.py``) — code only, no LLM."""
+    """The plan from slots already read (``agent/understand.py``) — code only, no LLM.
+
+    ``headline_metric_ids``: the configured business headline, used when a period
+    comparison names no measure ("compare this month to the same days last month"
+    was answered with break-even ROAS alone, golden Q6 2026-10-08)."""
     stats = {} if stats is None else stats
     started = time.perf_counter() if started is None else started
     metric_ids, notes = await _resolve_metrics(slots.metrics, resolver, catalogue)
+    if not metric_ids and slots.shape == "period_comparison" and headline_metric_ids:
+        metric_ids = [m for m in headline_metric_ids if not catalogue.metrics or catalogue.has_metric(m)]
+        notes.append("no measure named: compared the business headline measures")
     rank_id = None
     if slots.rank_by is not None:
         rank_ids, rank_notes = await _resolve_metrics([slots.rank_by], resolver, catalogue)

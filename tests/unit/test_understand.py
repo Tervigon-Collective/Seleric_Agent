@@ -35,7 +35,13 @@ def _clean_v3_state():
     registry.clear()
 
 
+_SLOTS = {"entity_dimension": "", "rank_by": None, "metrics": [], "breakdown_dimensions": [], "names_period": False}
+
+
 def _model(payload: dict[str, Any], seen: list[str] | None = None) -> FunctionModel:
+    # The slots are required: a model reply states them (empty when the question has none).
+    payload = {**_SLOTS, **payload}
+
     def _func(messages, info):
         if seen is not None:
             seen.append(str(messages[-1].parts[-1].content))
@@ -45,7 +51,7 @@ def _model(payload: dict[str, Any], seen: list[str] | None = None) -> FunctionMo
 
 
 def _u(**kw: Any) -> Understanding:
-    return Understanding.model_validate({"kind": "analysis", "shape": "lookup", **kw})
+    return Understanding.model_validate({"kind": "analysis", "shape": "lookup", **_SLOTS, **kw})
 
 
 @pytest.mark.parametrize(
@@ -86,6 +92,30 @@ async def test_understand_skips_the_stub_model_and_fails_open():
 
     out = await understand(FunctionModel(_boom), "net sales", catalogue=CatalogueSnapshot())
     assert out.understanding is None and out.stats["status"] == "failed"
+
+
+async def test_a_reply_without_the_plan_slots_is_not_a_reading():
+    """Live 2026-10-07: with every slot defaulted, the planner model returned only
+    ``kind`` and each analysis mission ran unplanned (shape other, no metrics). The
+    slots are required, so a reply that omits them is asked again, never accepted
+    as an empty reading."""
+    calls: list[int] = []
+
+    def _func(messages, info):
+        calls.append(1)
+        args = {"kind": "analysis"} if len(calls) == 1 else {
+            "kind": "analysis", "shape": "entity_comparison", "entity_dimension": "campaign_name",
+            "names_period": True,
+            "rank_by": {"words": "return on ad spend", "metric_id": "net_roas"},
+            "metrics": [{"words": "spend", "metric_id": "ad_spend"}], "breakdown_dimensions": [],
+        }
+        return ModelResponse(parts=[ToolCallPart(tool_name=info.output_tools[0].name, args=args)])
+
+    out = await understand(FunctionModel(_func), "best campaigns vs today", catalogue=CatalogueSnapshot())
+    assert len(calls) == 2
+    assert out.understanding is not None
+    assert out.understanding.shape == "entity_comparison"
+    assert [m.metric_id for m in out.understanding.metrics] == ["ad_spend"]
 
 
 async def test_understand_reads_one_structured_answer_with_its_context():

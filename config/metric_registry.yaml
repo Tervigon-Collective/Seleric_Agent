@@ -1294,3 +1294,53 @@ metrics:
   timezone: Asia/Kolkata
   domain: funnel
   seleric_module: null
+# Order-date twins of the Finance (event-date, pnl_*) entries above, for the
+# cross-domain headline. The headline mixed bases: net sales on order date next to
+# net profit / MER on event date, so "business status" showed 10-06 net sales
+# 118,840 beside a net profit of -23,230 that belongs to a different set of orders
+# (order-date net profit that day: +5,995) — live 2026-10-07 MS3-e81cbc105a.
+- id: metric.net_profit_order
+  version: 1
+  owner: finance
+  catalogue_metric: net_profit
+  aliases: []
+  description: Net profit of the orders placed (order date) = net sales − net COGS − ad spend.
+  formula: net_sales - net_cogs - ad_spend
+  depends_on:
+  - net_sales
+  - net_cogs
+  - ad_spend
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.mer_order
+  version: 1
+  owner: finance
+  catalogue_metric: mer
+  aliases: []
+  description: Marketing efficiency ratio on order date — net sales of the orders placed ÷ ad spend.
+  formula: net_sales / ad_spend
+  depends_on:
+  - net_sales
+  - ad_spend
+  direction_bad: down
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.contribution_margin_pct_order
+  version: 1
+  owner: finance
+  catalogue_metric: contribution_margin_pct
+  description: Contribution margin as a percentage of net sales (order date).
+  formula: contribution_margin / net_sales
+  direction_bad: down
+  unit: pct
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null

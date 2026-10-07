@@ -1196,6 +1196,16 @@ def _pin_to_resolved_window(
         pinnable.add((window.start_b, window.end_b))
     if asked in pinnable:
         return None
+    # Drift is a miscomputed version of the named period, so it overlaps it ("last
+    # month" fetched as 08-01..08-30). A window that shares no day with any named
+    # period is a different period on purpose — the baseline of "compare to the last
+    # 7 days", the previous week of a trend, the history a "why" needs. Pulling it
+    # back made every comparison unfetchable: the model asked for 09-23..09-29 seven
+    # times, got 09-30..10-06 each time, was told ALREADY FETCHED and answered "the
+    # previous window could not be retrieved" (live 2026-10-07 MS3-d13b253ea0, and
+    # golden Q5 "last 7 days versus the previous 7 days").
+    if all(asked[1] < start or asked[0] > end for start, end in pinnable):
+        return None
     token = (window.relative_token or "").replace("_", " ")
     tz = period_start.tzinfo
     return (
@@ -1208,7 +1218,7 @@ def _pin_to_resolved_window(
     )
 
 
-def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult | None:
+async def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult | None:
     """Gate an id against the warmed catalogue snapshot before any Cube call.
     Validation only — never rewrites the id to a guess (rule 1 / the
     no-alias-table warning in this module's docstring).
@@ -1232,6 +1242,18 @@ def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> Tool
             f"'{metric_id}' is not a catalogue metric id. Closest ids: "
             f"{', '.join(candidates)}. Pick the exact id from the [catalogue] "
             f"listing and retry."
+        )
+    # A business word passed as an id ("spend", "revenue") is not an unmodelled
+    # concept: the catalogue's own concept resolver names its id. Without this the
+    # model was told "not modelled — tell the user it is not available" and printed
+    # spend and revenue as "No data available" for every campaign (live 2026-10-08,
+    # golden Q9). Resolution only — the id comes from the catalogue, not this code.
+    concept = await resolve_concept(ctx, metric_id.replace("_", " "))
+    resolved = (concept.provenance.source_metadata or {}).get("metric_id") if concept.success and concept.provenance else None
+    if resolved and resolved != metric_id and catalogue.has_metric(resolved):
+        raise ModelRetry(
+            f"'{metric_id}' is a business term, not a metric id: the catalogue resolves it to "
+            f"'{resolved}' ({concept.summary}). Retry with metric_id='{resolved}'."
         )
     return ToolResult(
         success=False,
@@ -1477,7 +1499,7 @@ async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) ->
         )
     if (spent := _definition_budget_spent(ctx)) is not None:
         return spent
-    if (unknown := _reject_unknown_metric(ctx, metric_id)) is not None:
+    if (unknown := await _reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     try:
         result = await ctx.deps.mcp_client.call(
@@ -1898,7 +1920,7 @@ async def query_metrics(
     states the per-day average for a multi-day period. Additive metrics only;
     for a ratio, compare its additive parts this way.
     """
-    if (unknown := _reject_unknown_metric(ctx, metric_id)) is not None:
+    if (unknown := await _reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     dimensions = _sanitize_dimensions(dimensions)
     # Only lists the model wrote compare entities; a concept's bound filter is

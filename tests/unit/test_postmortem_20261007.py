@@ -458,3 +458,124 @@ def test_figures_without_any_citation_are_sent_back() -> None:
     )
     outcome = EvidenceValidator().validate(result, deps=_deps(store))
     assert not outcome.ok and "cites no evidence_ids" in (outcome.reason or "")
+
+
+# ---------------------------------------------------------------- 2026-10-07 night (golden set)
+def test_digits_inside_an_entity_name_are_not_a_stated_total():
+    from seleric_swarm.agent.validation.answer_audit import header_key, total_mismatch
+
+    answer = (
+        "Suspender ad sales total INR 11,896.34.\n\n"
+        "| Campaign | Ad name | Sales (INR) |\n| --- | --- | ---: |\n"
+        "| TH-383-SUSPENDER-29SEP | TH-383-SUSPENDER-UGC | 7,611.74 |\n"
+        "| TH-445-PROSUSPENDERBOOTS-6OCT | TH-445-PROSUSPENDERBOOTS-UGC | 4,284.60 |\n\n"
+        "The rows reconcile exactly to the total; TH-383-SUSPENDER-UGC provided ~64% of it."
+    )
+    labels = frozenset({header_key("Campaign"), header_key("Ad name")})
+    assert total_mismatch(answer, labels) is None
+    # A genuinely wrong total is still caught.
+    assert total_mismatch(answer.replace("11,896.34", "12,896.34"), labels) is not None
+
+
+def test_a_baseline_window_disjoint_from_the_named_period_is_not_pulled_back():
+    """Live 2026-10-07 MS3-d13b253ea0: "compare to the last 7 days" pinned every call
+    to 09-30..10-06, so the previous week could never be fetched."""
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    from seleric_swarm.contracts.lookup import TimeRangeV1
+    from seleric_swarm.toolsets.semantic import _pin_to_resolved_window
+
+    window = TimeRangeV1(kind="absolute", start="2026-09-30", end="2026-10-06", relative_token="last_7d")
+    ctx = SimpleNamespace(deps=SimpleNamespace(resolved_window=window))
+
+    def asked(a: str, b: str):
+        return _pin_to_resolved_window(ctx, datetime.fromisoformat(a), datetime.fromisoformat(b))
+
+    assert asked("2026-09-23", "2026-09-29") is None  # the previous 7 days: a baseline
+    assert asked("2026-09-30", "2026-10-06") is None  # the named period itself
+    drift = asked("2026-09-30", "2026-10-05")  # a miscomputed version of it
+    assert drift is not None and drift[0].date().isoformat() == "2026-09-30"
+    assert drift[1].date().isoformat() == "2026-10-06"
+
+
+def test_a_signed_bridge_and_a_two_row_change_are_the_tables_own_arithmetic():
+    """Live 2026-10-08 (Q15): "−18,586.67" read as unsigned, and the change between
+    the event-day and previous-day rows was called a wrong total."""
+    from seleric_swarm.agent.validation.answer_audit import total_mismatch
+
+    bridge = (
+        "Net profit fell by INR −18,585.67 in total.\n\n| Component | Change (INR) |\n| --- | ---: |\n"
+        "| Gross sales | −50,768.00 |\n| Discounts | +951.00 |\n| Returns | +4,023.33 |\n"
+        "| COGS | +16,745.00 |\n| Ad spend | +10,463.00 |\n"
+    )
+    assert total_mismatch(bridge) is None
+    assert total_mismatch(bridge.replace("−18,585.67", "−19,585.67")) is not None
+    rows = (
+        "The total change in net profit was INR −18,586.67.\n\n| Date | Net profit (INR) |\n| --- | ---: |\n"
+        "| 2026-10-02 | -11,641.95 |\n| 2026-10-01 | 6,944.72 |\n"
+    )
+    assert total_mismatch(rows) is None
+    assert total_mismatch(rows.replace("18,586.67", "19,586.67")) is not None
+
+
+def test_a_period_comparison_that_names_no_measure_is_not_planned():
+    """Golden Q6 (2026-10-08): an empty-metric plan made the agent ask which metrics."""
+    from datetime import date
+
+    from seleric_swarm.agent.plan import PlanSlots, compose_plan
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
+
+    slots = PlanSlots(shape="period_comparison")
+    windows = [(date(2026, 10, 1), date(2026, 10, 7)), (date(2026, 9, 1), date(2026, 9, 7))]
+    plan, notes = compose_plan(
+        slots, metric_ids=[], rank_id=None, windows=windows, catalogue=CatalogueSnapshot(), as_of=None
+    )
+    assert plan is None and "no usable step" in notes
+
+
+def test_a_pipe_inside_a_cell_does_not_shift_the_columns():
+    """Golden Q16 (2026-10-08): "[Google Build] Brand Search | 5th March" split a row,
+    so a correct total was rejected twice."""
+    from seleric_swarm.agent.validation.answer_audit import table_cells, total_mismatch
+
+    assert table_cells(r"| Brand Search \| 5th March | -3,558.22 |") == ["Brand Search | 5th March", "-3,558.22"]
+    escaped = (
+        "The three campaigns lost INR -9,767.0 in total.\n\n| Campaign | Net profit |\n| --- | ---: |\n"
+        "| Brand Search \\| 5th March | -3,558.22 |\n| TH-383-SUSPENDER-26SEP-ADV+ | -3,122.10 |\n"
+        "| Demand Gen \\| Hero Products | -3,086.68 |\n"
+    )
+    assert total_mismatch(escaped, frozenset({"campaign"})) is None
+    assert total_mismatch(escaped.replace("9,767.0", "9,867.0"), frozenset({"campaign"})) is not None
+
+
+def test_a_rollup_of_fetched_rows_along_their_own_dimension_is_backed():
+    """Golden Q17 (2026-10-08): per-channel and total sums of rows fetched at
+    channel × sub-channel grain were rejected as unbacked until the mission failed."""
+    from datetime import UTC, datetime
+
+    from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
+    from seleric_swarm.agent.validation import _mission_values
+    from seleric_swarm.conversations.contracts import ContextBundle, Principal
+    from seleric_swarm.conversations.contracts import Artifact
+    from seleric_swarm.state.artifacts import InMemoryArtifactStore
+
+    store = InMemoryArtifactStore()
+    deps = SelericDeps(
+        mission_id="m1", as_of=datetime(2026, 10, 8, tzinfo=UTC),
+        principal=Principal(principal_id="p", workspace_id="w", user_id="u"),
+        thread_id="t", run_id="r", trace_id="tr", context=ContextBundle(), mcp_client=NullMcpClient(),
+        artifact_store=store, limits=ExecutionLimits(),
+    )
+    rows = [("meta", "ig_feed", 261300.64), ("meta", "fb_feed", 96145.28), ("google", "pmax", 169356.01)]
+    for channel, sub, value in rows:
+        store.put(Artifact(
+            workspace_id="w", artifact_type="evidence", classification="factual", mission_id="m1",
+            evidence_ids=[f"q:{channel}:{sub}"],
+            payload={"metric_id": "product_net_revenue", "dimensions": {"finance_channel": channel, "sub_channel": sub},
+                     "grain": "none", "period_start": "2026-08-09", "period_end": "2026-10-07", "value": value},
+        ))
+    values = _mission_values(deps)
+    assert any(abs(v - 357445.92) < 0.01 for v in values)  # Meta = its two rows
+    assert any(abs(v - 526801.93) < 0.01 for v in values)  # every row of the query
+    assert not any(abs(v - 430656.65) < 0.01 for v in values)  # ig_feed + pmax: no shared dimension value

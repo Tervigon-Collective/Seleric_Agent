@@ -438,3 +438,55 @@ def test_a_recount_of_an_identity_component_is_never_the_cause():
     ))
     assert {t.metric for t in r.decomposition} >= {"m_spend"}
     assert any(f.driver == "m_funnel" and f.status == "excluded" for f in r.drivers), [(f.driver, f.status) for f in r.drivers]
+
+
+# ---------------------------------------------------------------- exact additive bridge
+def _pnl(seed: int = 11):
+    """profit = margin − spend; margin = sales − cogs; plus a near-twin and noise.
+    The event day mirrors 2026-10-02: orders collapse, spend is cut far less."""
+    rng = np.random.default_rng(seed)
+    sales = 80000 + 8000 * rng.normal(size=N)
+    sales[-1] = 38000
+    cogs = 0.38 * sales + 500 * rng.normal(size=N)
+    spend = 42000 + 3000 * rng.normal(size=N)
+    spend[-1] = 35000
+    margin = sales - cogs
+    profit = margin - spend
+    twin = profit + 4000 * rng.normal(size=N)  # another date basis: close, never exact
+    sessions = 4000 + 300 * rng.normal(size=N)
+    lineage = {m: MetricMeta(m, "additive", "pnl", unit="INR") for m in
+               ("m_profit", "m_margin", "m_sales", "m_cogs", "m_spend", "m_profit_other_basis")}
+    lineage["m_sessions"] = MetricMeta("m_sessions", "additive", "web", unit="count")
+    series = {"m_profit": S(profit), "m_margin": S(margin), "m_sales": S(sales), "m_cogs": S(cogs),
+              "m_spend": S(spend), "m_profit_other_basis": S(twin), "m_sessions": S(sessions)}
+    return lineage, series
+
+
+def test_additive_outcome_gets_an_exact_bridge_that_reconciles():
+    lineage, series = _pnl()
+    pool = ["m_margin", "m_sales", "m_cogs", "m_spend", "m_profit_other_basis"]
+    r = diagnose(DiagnosisInput(
+        outcome="m_profit", event_days=EVENT, series=series, lineage=lineage,
+        candidate_drivers=["m_sales", "m_sessions"], claimed_direction="down", bridge_candidates=pool,
+    ))
+    assert r.bridge_identity[0] in ("m_profit = m_margin − m_spend", "m_profit = − m_spend + m_margin")
+    assert "m_margin = m_sales − m_cogs" in r.bridge_identity or "m_margin = − m_cogs + m_sales" in r.bridge_identity
+    top = [t for t in r.bridge if t.depth == 1]
+    assert abs(sum(t.contribution for t in top) - r.event.delta) < 1e-6  # vs the usual: exact
+    assert abs(sum(t.contribution_vs_previous for t in top) - r.event.previous_period["delta"]) < 1e-6
+    leaves = {t.metric: t for t in r.bridge if t.depth == 2}
+    assert leaves["m_sales"].share_of_change > 1.0  # sales fell by more than profit did
+    assert leaves["m_cogs"].share_of_change < 0  # lower COGS offset part of it
+    # Bridge terms are arithmetic components, never tested as causes of the outcome.
+    assert driver(r, "m_sales").status == "excluded"
+    assert any("EXACT BRIDGE" in line for line in r.narrative)
+    assert r.verdict != "root_cause_not_identified"
+
+
+def test_a_near_twin_is_not_accepted_as_a_bridge():
+    lineage, series = _pnl()
+    r = diagnose(DiagnosisInput(
+        outcome="m_profit", event_days=EVENT, series=series, lineage=lineage,
+        bridge_candidates=["m_profit_other_basis", "m_sessions"],
+    ))
+    assert r.bridge == [] and r.bridge_identity == []

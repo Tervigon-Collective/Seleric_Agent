@@ -389,7 +389,8 @@ OUTPUT_CONTRACT = """\
 BEFORE YOU CALL final_result, CHECK final_response AGAINST THIS:
 - More than one period, entity or segment? For data-fetching queries, it MUST be a Markdown table with a
   header row and a `| --- |` delimiter row. Bullet or "label: value" lines for a
-  series are wrong. A single value needs no table. (Exception: For advisory or strategic queries, you may use fluid prose or bullet points to summarize data).
+  series are wrong. A "|" inside a cell value (campaign names often contain one) is written
+  "\\|", or it splits the row into extra columns. A single value needs no table. (Exception: For advisory or strategic queries, you may use fluid prose or bullet points to summarize data).
 - Interpretation: For data queries, one or two sentences noting the total, direction of change, and dominating rows. For advisory queries, provide a longer strategic synthesis.
 - Mark an incomplete period in its own row label, and never trend or total it
   against complete ones as if it were like-for-like.

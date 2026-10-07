@@ -28,7 +28,8 @@ _SYSTEM_PROMPT = (
     "1. Lead with the answer in one plain sentence with the key number, rounded "
     "and with the local currency symbol/grouping.\n"
     "2. Show a compact table or a few bullets of only the metrics that matter.\n"
-    "3. One footer line: 'Period: <range> · Currency: <ccy> · Data as of <date>'.\n"
+    "3. One footer line: 'Period: <the snapshot's period> · Currency: <the metrics' currency "
+    "unit> · Data as of <date>'. The values are one day: never describe them as a range.\n"
     "4. End with one short follow-up question.\n"
     "Use business language (net revenue, MER, ROAS, CAC, contribution margin). "
     "Never expose metric ids, cube/table names, or internal plumbing."
@@ -53,15 +54,22 @@ def is_stale(snapshot: DomainStateSnapshot, *, max_age_hours: float = 2.0) -> bo
     return age is None or age > max_age_hours
 
 
-def _snapshot_context(snapshot: DomainStateSnapshot) -> dict:
+def _snapshot_context(snapshot: DomainStateSnapshot, units: dict[str, str] | None = None) -> dict:
     """Compact, LLM-friendly view of the snapshot -- metric ids kept internal-
-    only inputs; only the numbers the model needs to phrase the answer."""
+    only inputs; only the numbers the model needs to phrase the answer.
+
+    The period, the change's baseline and each metric's unit are stated, not left
+    to the model: live 2026-10-07 (MS3-e81cbc105a) it wrote "Period: 2026-09-30
+    to 2026-10-06" for one day's values (it read the rolling-mean ``window``) and
+    "Currency: $" for INR."""
+    units = units or {}
     metrics = []
     for m in snapshot.metrics:
         entry: dict = {
             "metric": m.metric_id.removeprefix("metric."),
             "value": m.value,
-            "change_pct": m.period_delta_pct,
+            "unit": units.get(m.metric_id),
+            "change_pct_vs_prior_day": m.period_delta_pct,
             "avg_7d": m.rolling_mean_7d,
             "freshness": m.freshness,
         }
@@ -74,11 +82,23 @@ def _snapshot_context(snapshot: DomainStateSnapshot) -> dict:
         metrics.append(entry)
     return {
         "as_of": snapshot.as_of,
-        "window": snapshot.window,
+        "period": snapshot.as_of,
+        "values_are": f"one day ({snapshot.as_of}); change_pct_vs_prior_day compares it with the day before",
+        "avg_7d_window": snapshot.window,
         "status": snapshot.status,
         "signals": snapshot.headline_signals,
         "metrics": metrics,
     }
+
+
+def _units(runtime: SwarmRuntime, snapshot: DomainStateSnapshot) -> dict[str, str]:
+    registry = getattr(runtime, "metrics", None)
+    out: dict[str, str] = {}
+    for m in snapshot.metrics:
+        definition = registry.get(m.metric_id) if registry is not None else None
+        if definition is not None and definition.unit:
+            out[m.metric_id] = definition.unit
+    return out
 
 
 async def format_business_state(
@@ -98,7 +118,7 @@ async def format_business_state(
     unbacked number (same evidence discipline as the agent synthesis path)."""
     settings = runtime.settings
     model = helper_chat_model(settings)
-    context = json.dumps(_snapshot_context(snapshot), default=str, separators=(",", ":"))
+    context = json.dumps(_snapshot_context(snapshot, _units(runtime, snapshot)), default=str, separators=(",", ":"))
     allowed = _allowed_tokens(snapshot)
 
     async def _ask(extra_instruction: str = "") -> str:
@@ -151,6 +171,12 @@ def _rounding_variants(value: float) -> set[str]:
             if isinstance(r, float) and r.is_integer():
                 out.add(str(int(r)))
                 out.add(str(abs(int(r))))
+        # Fixed decimals as written: "1.30" and "70926.20" are 1.3 and 70926.2 —
+        # string-matched, they failed the audit twice and every overview fell back
+        # to the raw list (live 2026-10-08).
+        for places in (1, 2):
+            out.add(f"{v:.{places}f}")
+            out.add(f"{abs(v):.{places}f}")
     return out
 
 

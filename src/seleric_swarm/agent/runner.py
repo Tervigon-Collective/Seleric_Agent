@@ -792,6 +792,22 @@ def _prefetch_windows(scope: RequiredScope, prior_window: Any) -> list[tuple[dat
         return []
 
 
+def _headline_metric_ids(runtime: SwarmRuntime) -> list[str]:
+    """The configured business headline (domain_health_profiles.yaml) as catalogue ids."""
+    try:
+        from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles
+
+        registry = getattr(runtime, "metrics", None)
+        out: list[str] = []
+        for registry_id in DomainHealthProfiles().headline_metrics():
+            definition = registry.get(registry_id) if registry is not None else None
+            out.append((definition.catalogue_metric if definition is not None else None) or registry_id)
+        return list(dict.fromkeys(out))
+    except Exception:
+        _log.warning("headline_metrics_unavailable", exc_info=True)
+        return []
+
+
 def _business_state_fast_path_enabled() -> bool:
     """Kill switch for the snapshot answer to whole-business overview questions."""
     return os.getenv("BUSINESS_STATE_FAST_PATH", "1").strip().lower() not in {"0", "false", "no"}
@@ -815,6 +831,16 @@ async def _business_state_fast_answer(
     try:
         snapshot = await SnapshotStore().aget_latest("business")
         if snapshot is None or snapshot.status == "UNAVAILABLE" or is_stale(snapshot):
+            return None
+        # The snapshot holds one day (its as_of) against the day before. A question
+        # that names any other period is not answerable from it: "the last 7
+        # completed days" was answered with 10-06 alone and a footer claiming
+        # 09-30..10-06 (live 2026-10-07 MS3-e81cbc105a, golden Q4).
+        day = snapshot.as_of
+        if any(
+            (w.start.isoformat(), w.end.isoformat()) != (day, day)
+            for w in deps.required_scope.windows
+        ):
             return None
         answer = await format_business_state(
             runtime, question=query, snapshot=snapshot, request_id=request_id, session_id=thread_id
@@ -948,7 +974,11 @@ def _write_turn_record(
             "metric_labels": metric_labels[:10],
             "top_items": entities[:5],
             "evidence_ids": (result.evidence_ids or [])[:8],
-            "offer": _closing_offer(result.final_response or ""),
+            # The step the answer proposed, as the agent stated it: next steps are
+            # written as statements, so a closing question alone left "yes" with
+            # nothing to accept (live 2026-10-08 replay of thread_5235dd2c).
+            "offer": (getattr(result, "next_step", "") or "").strip()[:300]
+            or _closing_offer(result.final_response or ""),
             "mission_id": mission_id,
             "as_of": as_of_dt.date().isoformat(),
         }
@@ -1147,6 +1177,10 @@ async def run_v3_mission(
                 )
                 if understanding is not None
                 and understanding.kind == "overview"
+                # The snapshot is one day against the day before: a question that
+                # names its own period ("the last 7 completed days", which the date
+                # parser does not read) is answered by the agent (golden Q4, 2026-10-08).
+                and not understanding.names_period
                 and _business_state_fast_path_enabled()
                 else None
             )
@@ -1183,6 +1217,7 @@ async def run_v3_mission(
                         resolver=resolver,
                         windows=[(w.start, w.end) for w in deps.required_scope.windows],
                         as_of=as_of_dt,
+                        headline_metric_ids=_headline_metric_ids(runtime),
                     )
                     if understanding is not None and not small_talk and not affirmation
                     else None

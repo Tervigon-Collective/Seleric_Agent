@@ -292,7 +292,9 @@ async def test_query_metrics_rejects_fabricated_metric_without_calling_cube():
     assert result.success is False
     assert result.retryable is False  # no loop: not a transient failure
     assert result.error_code == "UNSUPPORTED_QUERY"
-    assert len(mcp.calls) == 0  # rejected before any Cube call
+    # Rejected before any Cube call; only the catalogue's concept resolver was asked
+    # whether the word names a modelled concept (it does not).
+    assert [c for c, _ in mcp.calls] == ["seleric.catalogue_resolve_concept"]
 
 
 @pytest.mark.asyncio
