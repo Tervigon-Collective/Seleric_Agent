@@ -1298,7 +1298,9 @@ def _period_from_time_values(value: DimensionValue) -> tuple[_date, _date] | Non
 
 def _fit_to_metric(
     catalogue: Any, metric_id: str, dimensions: dict[str, DimensionValue], filters: list[MetricFilter]
-) -> tuple[dict[str, DimensionValue], list[MetricFilter], dict[str, str], list[str], tuple[_date, _date] | None]:
+) -> tuple[
+    dict[str, DimensionValue], list[MetricFilter], dict[str, str], list[str], tuple[_date, _date] | None, list[str]
+]:
     """Map a request onto *metric_id*'s own slicing surface, catalogue-driven:
 
     * a time dimension of another view is this metric's own time axis — as a breakdown it is the grain
@@ -1308,10 +1310,13 @@ def _fit_to_metric(
       sibling's declared values hold the requested ones.
 
     Returns (dimensions, filters, renames {asked: used}, keys still unsupported, period named by a time
-    filter). Nothing is guessed: a key with no catalogue mapping is reported, not dropped."""
+    filter). Nothing is guessed: a key with no catalogue mapping is reported, not dropped. A key whose family
+    IS on this view but cannot hold the value (a traffic platform that is no P&L channel) is reported as
+    ``"<key>=<values>"`` — a value gap, which no other grain of the same measure fixes."""
     supported = set(catalogue.supported_dimensions_for(metric_id))
     renames: dict[str, str] = {}
     missing: list[str] = []
+    value_gaps: list[str] = []
     period: tuple[_date, _date] | None = None
 
     def place(key: str, values: list[str] | None) -> str | None:
@@ -1321,6 +1326,8 @@ def _fit_to_metric(
         if sib is not None:
             renames[key] = sib
             return sib
+        if values and catalogue.conformed_sibling(key, supported) is not None:
+            value_gaps.append(f"{key}={','.join(values)}")
         return None
 
     out: dict[str, DimensionValue] = {}
@@ -1346,7 +1353,7 @@ def _fit_to_metric(
             missing.append(f.dimension)
         else:
             fitted.append(f.model_copy(update={"dimension": used}))
-    return out, fitted, renames, list(dict.fromkeys(missing)), period
+    return out, fitted, renames, list(dict.fromkeys(missing)), period, value_gaps
 
 
 def _fold_equals_filters(
@@ -1394,11 +1401,16 @@ def _conform_dimensions(
         return [f"'{a}' is answered by its conformed dimension '{b}' (same values on this metric's view)."
                 for a, b in renames.items()]
 
-    fitted, fitted_filters, renames, missing, period = _fit_to_metric(catalogue, metric_id, dimensions, filters)
+    fitted, fitted_filters, renames, missing, period, value_gaps = _fit_to_metric(
+        catalogue, metric_id, dimensions, filters
+    )
     if not missing:
         return metric_id, fitted, fitted_filters, renames, notes_for(renames), period
-    for twin in catalogue.grain_twins_for(metric_id):
-        t_dims, t_filters, t_renames, t_missing, t_period = _fit_to_metric(catalogue, twin, dimensions, filters)
+    # a grain twin answers a slice this view does not have — never a value its own slice cannot hold (that
+    # twin would be a different measure answering a different question: live harness, net_profit for an
+    # email platform went to the product-line gross profit)
+    for twin in [] if value_gaps else catalogue.grain_twins_for(metric_id):
+        t_dims, t_filters, t_renames, t_missing, t_period, _ = _fit_to_metric(catalogue, twin, dimensions, filters)
         if t_missing:
             continue
         t_filters = [f.model_copy(update={"dimension": twin}) if f.dimension == metric_id else f for f in t_filters]

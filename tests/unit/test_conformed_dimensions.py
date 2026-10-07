@@ -201,3 +201,19 @@ def test_scope_coverage_accepts_a_conformed_sibling():
     # without the family (an older snapshot) the same evidence would not cover it
     bare = replace(SNAP, dimension_families=())
     assert check_scope_coverage([art], scope, catalogue=bare, cited=[art.id]).status != "OK"
+
+
+@pytest.mark.asyncio
+async def test_a_value_gap_is_never_answered_by_a_grain_twin():
+    # net_profit's product-line twin carries the traffic `platform`, but that twin is another measure:
+    # "email" not being a P&L channel is a value gap, not a grain gap
+    snap = replace(SNAP, metrics=(
+        *(m for m in SNAP.metrics if m.id != "net_profit"),
+        CatalogueMetricMeta(id="net_profit", supported_dimensions=PNL_DIMS, raw={"grain_twins": ["product_profit"]}),
+        CatalogueMetricMeta(id="product_profit", supported_dimensions=["brand_id", "order_date", "platform"]),
+    ))
+    mcp = RecordingMcp()
+    ctx = FakeRunContext(replace(_deps(mcp), catalogue=snap))
+    with pytest.raises(ModelRetry):
+        await semantic.query_metrics(ctx, "net_profit", dimensions={"platform": "email"}, **SEP)
+    assert not mcp.calls
