@@ -131,7 +131,7 @@ async def test_a_lookup_is_fetched_in_parallel_before_the_loop() -> None:
     assert sorted(a["measures"][0] for a in mcp.args) == ["ret", "spend"]
     # No window named: the tool's own default, the mission day.
     assert {a["time_range"]["start"] for a in mcp.args} == {"2026-10-07"}
-    assert "spend=7.0" in out.text and f"finding_ids=[{out.finding_id}]" in out.text
+    assert "spend=7 " in out.text and f"finding_ids=[{out.finding_id}]" in out.text
 
 
 @pytest.mark.asyncio

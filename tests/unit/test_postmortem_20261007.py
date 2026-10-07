@@ -376,7 +376,7 @@ async def test_a_reference_window_compared_with_today_also_gets_the_same_hours(a
         period_end=datetime(2026, 10, 6, tzinfo=IST),
     )
     assert result.success
-    assert "ad_spend=720.0 over 2026-10-04..2026-10-06" in result.summary
+    assert "ad_spend=720 over 2026-10-04..2026-10-06" in result.summary
     assert "SAME HOURS AS TODAY" in result.summary and "per-day average 120.00 over 3 days" in result.summary
     assert len(result.artifact_ids) == 2
 

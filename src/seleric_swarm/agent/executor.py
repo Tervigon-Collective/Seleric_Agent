@@ -167,8 +167,8 @@ async def _execute_single(
     metrics = list(dict.fromkeys(step.metric_ids))
     jobs = []
     for metric in metrics:
-        supported = set(deps.catalogue.supported_dimensions_for(metric))
-        dims = {d: "" for d in step.dimensions if not supported or d in supported}
+        # query_metrics answers a conformed sibling / the grain twin; only a slice nothing carries is dropped
+        dims = {d: "" for d in step.dimensions if deps.catalogue.carries(metric, d)}
         jobs.append(
             _query(
                 deps, gate, metric_id=metric, dimensions=dims or None, grain=grain,
@@ -408,8 +408,7 @@ async def _mapping(
     breakdown = [d for d in step.dimensions if d != entity]
     lines = [f"Mapping for {comparison[0]}..{comparison[1]} by {', '.join([*([entity] if entity else []), *breakdown])}:"]
     for metric in step.metric_ids:
-        supported = set(deps.catalogue.supported_dimensions_for(metric))
-        dims: dict[str, Any] = {d: "" for d in breakdown if not supported or d in supported}
+        dims: dict[str, Any] = {d: "" for d in breakdown if deps.catalogue.carries(metric, d)}
         if not dims:
             continue
         if entity:

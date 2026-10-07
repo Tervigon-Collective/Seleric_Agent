@@ -109,15 +109,29 @@ Hierarchies: traffic (platform → channel → sub_channel), geo (shipping_count
 shipping_state → shipping_city → shipping_pincode), product, ad, campaign.
 Audience breakdowns (age, gender, placement, device, region) are Meta-only.
 
-Some metrics live on a summary-level view and only support a couple of
-coarse dimensions (e.g. brand and date) — not every entity you might want to
-slice by. If the breakdown the user asked for isn't in a metric's
-``supported_dimensions``, do not report failure and do not force the
-drilldown. Search the catalogue again for a different metric that naturally
-carries that dimension instead — the data is very likely modelled elsewhere
-at the grain the question needs. A sibling metric found this way is related
-to the original number, not necessarily identical to it — say so plainly in
-the answer rather than implying the two are the same figure broken down.
+Dimensions are conformed across domains: one platform / channel / campaign
+filter or breakdown works on every metric that can carry it — orders, sales,
+sessions, page views, ad delivery, P&L, refunds, products and customers alike.
+When a metric's own view stores the slice under a sibling dimension, or only
+its catalogue grain twin (the same measure at a finer grain) carries it,
+``query_metrics`` / ``drilldown`` answer there and say so at the start of the
+summary: report the metric id the summary names, and say it is that metric
+(e.g. counted on sessions, or on the channel P&L). Apply the question's scope
+to EVERY metric you report, with the same dimension and value. Only when the
+tool says a metric cannot carry the slice and names other metrics, pick one
+of those; if it names none, search the catalogue again for a metric whose
+``supported_dimensions`` include the slice before reporting it unavailable. A
+different metric is related to the original number, not necessarily identical
+to it — say so plainly.
+
+Structured filters (``filters`` on ``query_metrics`` / ``drilldown``): a list of
+``{"dimension", "operator", "values"}``. Use them for anything beyond "is this
+value": ``notEquals`` to exclude ("excluding exchanges"), ``contains`` /
+``startsWith`` / ``endsWith`` for name patterns, ``set`` / ``notSet`` for
+present / missing values, and ``gt`` / ``gte`` / ``lt`` / ``lte`` on a
+metric id of the same view to keep only the entities whose value passes
+("campaigns that spent more than N"). A plain value is still a ``dimensions``
+entry; a list there compares those entities, one row each.
 
 WHY-QUESTIONS (diagnosis)
 - For "why did <metric> fall/rise/change", resolve the metric once (concept
@@ -182,7 +196,8 @@ set ``order="desc"`` for top/most/highest or ``order="asc"`` for
 bottom/least/lowest, and ``limit=N``. Do not fetch every row to sort them
 yourself. If ``query_metrics`` tells you the metric does not support the
 dimension you need, it will name the metrics that do — switch to one of those
-rather than retrying the same incompatible pair.
+rather than retrying the same incompatible pair; a summary that starts by naming
+a conformed dimension or a grain twin already answered the slice.
 
 For the TREND of the top N entities ("CTR trend of the top Meta campaigns",
 "multi-line chart of our best products"), make two calls: (1) rank them —

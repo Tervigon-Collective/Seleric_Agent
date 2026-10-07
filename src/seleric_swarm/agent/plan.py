@@ -359,13 +359,8 @@ def sanitize_plan(
             if dimensions and dimension not in dimensions:
                 notes.append(f"step {number}: no dimension {dimension}")
                 continue
-            unsupported = [
-                m
-                for m in metrics
-                if (supported := catalogue.supported_dimensions_for(m))
-                and dimension not in supported
-                and not catalogue.is_time_dimension(dimension)
-            ]
+            # conformed siblings and grain twins count: query_metrics answers through them
+            unsupported = [m for m in metrics if not catalogue.carries(m, dimension)]
             if unsupported:
                 notes.append(f"step {number}: {', '.join(unsupported)} cannot be broken down by {dimension}")
                 continue

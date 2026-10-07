@@ -74,6 +74,11 @@ class CatalogueSnapshot:
     # Per-dimension catalogue facts the planners read: hierarchy position and
     # enumerated values ((dimension id, {"hierarchy_level": int, "n_allowed": int}), ...).
     dimension_facts: tuple[tuple[str, tuple[tuple[str, int], ...]], ...] = ()
+    # Conformed families (gateway ``family`` / ``family_rank``): dimensions that carry the same values on
+    # different views (platform / channel / campaign). (dimension id, family, rank), and each dimension's
+    # declared values ((dimension id, (value, ...)), ...) — only for small declared enums.
+    dimension_families: tuple[tuple[str, str, int], ...] = ()
+    dimension_values: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     def dimension_fact(self, dimension: str, key: str) -> int:
         """A numeric catalogue fact about a dimension (0 when not declared)."""
@@ -81,6 +86,54 @@ class CatalogueSnapshot:
             if did == dimension:
                 return dict(facts).get(key, 0)
         return 0
+
+    def allowed_values_for(self, dimension: str) -> tuple[str, ...] | None:
+        """The catalogue's declared values of a dimension, or None when it declares none (open values)."""
+        for did, values in self.dimension_values:
+            if did == dimension:
+                return values
+        return None
+
+    def conformed_sibling(
+        self, dimension: str, supported: set[str] | frozenset[str], values: list[str] | None = None
+    ) -> str | None:
+        """The member of *dimension*'s conformed family that *supported* (one metric's slicing surface)
+        carries, in the catalogue's preference order, whose declared values hold *values* (case-insensitive;
+        a member with open values holds any). None without a family or when no member fits — a value one
+        member lacks (a traffic platform that is not a P&L channel) is never moved onto another slice."""
+        fam = next((f for d, f, _ in self.dimension_families if d == dimension), None)
+        if fam is None:
+            return None
+        members = sorted((rank, d) for d, f, rank in self.dimension_families if f == fam and d != dimension)
+        for _, member in members:
+            if member not in supported:
+                continue
+            allowed = self.allowed_values_for(member)
+            if not values or allowed is None:
+                return member
+            lowered = {a.lower() for a in allowed}
+            if all(str(v).lower() in lowered for v in values):
+                return member
+        return None
+
+    def family_members(self, dimension: str) -> frozenset[str]:
+        """*dimension* and every dimension of its conformed family (just itself without a family)."""
+        fam = next((f for d, f, _ in self.dimension_families if d == dimension), None)
+        if fam is None:
+            return frozenset({dimension})
+        return frozenset(d for d, f, _ in self.dimension_families if f == fam) | {dimension}
+
+    def carries(self, metric_id: str, dimension: str) -> bool:
+        """Can a query for *metric_id* be sliced by *dimension*? Directly, through a conformed sibling on its
+        view, or through its catalogue grain twin (query_metrics routes there) — the same order the tools
+        use. Time dimensions are the grain on every axis. True on an empty snapshot (fail-open)."""
+        if not self.metrics or self.is_time_dimension(dimension):
+            return True
+        for mid in (metric_id, *self.grain_twins_for(metric_id)):
+            supported = set(self.supported_dimensions_for(mid))
+            if not supported or dimension in supported or self.conformed_sibling(dimension, supported):
+                return True
+        return False
 
     def stable_key_for(self, dimension: str) -> str | None:
         """The dimension that identifies the entity ``dimension`` labels, if declared."""
@@ -111,6 +164,13 @@ class CatalogueSnapshot:
                 raw = meta.raw or {}
                 return raw.get("date_basis"), raw.get("date_twin")
         return None, None
+
+    def unit_for(self, metric_id: str) -> str | None:
+        """The catalogue's unit of a metric (a currency code, count, ratio, …), or None when not carried."""
+        for meta in self.metrics:
+            if meta.id == metric_id:
+                return str((meta.raw or {}).get("unit") or "") or None
+        return None
 
     def aggregation_for(self, metric_id: str) -> str | None:
         """The catalogue's ``aggregation`` for a metric (e.g. "additive", "ratio"),
@@ -265,6 +325,8 @@ class CatalogueBootstrap:
         self._stable_keys: dict[str, str] = {}
         self._time_dimensions: set[str] = set()
         self._dimension_facts: dict[str, dict[str, int]] = {}
+        self._dimension_families: dict[str, tuple[str, int]] = {}
+        self._dimension_values: dict[str, tuple[str, ...]] = {}
         self._grain_defaults: dict[str, Any] = {}
         self._warmed_at: float | None = None
 
@@ -333,6 +395,10 @@ class CatalogueBootstrap:
             dimension_facts=tuple(
                 (did, tuple(sorted(facts.items()))) for did, facts in sorted(self._dimension_facts.items())
             ),
+            dimension_families=tuple(
+                (did, fam, rank) for did, (fam, rank) in sorted(self._dimension_families.items())
+            ),
+            dimension_values=tuple(sorted(self._dimension_values.items())),
         )
 
     def unresolvable(self, candidate_ids: list[str]) -> list[str]:
@@ -390,6 +456,8 @@ class CatalogueBootstrap:
         self._stable_keys = {}
         self._time_dimensions = set()
         self._dimension_facts = {}
+        self._dimension_families = {}
+        self._dimension_values = {}
         for dim in dims:
             if not isinstance(dim, dict):
                 continue
@@ -405,6 +473,10 @@ class CatalogueBootstrap:
                     "hierarchy_level": int(hierarchy.get("level") or 0),
                     "n_allowed": len(dim.get("allowed_values") or []),
                 }
+                if dim.get("family"):
+                    self._dimension_families[did] = (str(dim["family"]), int(dim.get("family_rank") or 0))
+                if dim.get("allowed_values"):
+                    self._dimension_values[did] = tuple(str(v) for v in dim["allowed_values"])
         defaults = payload.get("grain_defaults") or {}
         self._grain_defaults = dict(defaults) if isinstance(defaults, dict) else {}
         return len(self._cache)

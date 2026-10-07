@@ -1001,13 +1001,13 @@ metrics:
 - id: metric.product_gross_revenue
   version: 1
   owner: product
-  catalogue_metric: product_gross_revenue
+  catalogue_metric: product_gross_sale
   aliases:
   - product gross sales
   - product gross revenue
   - gross sales by product
   description: Gross revenue (sales) per product.
-  formula: sum(product_gross_revenue)
+  formula: sum(product_gross_sale)
   direction_bad: down
   unit: INR
   grain: day
