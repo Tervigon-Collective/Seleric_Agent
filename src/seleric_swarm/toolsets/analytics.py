@@ -354,7 +354,7 @@ async def compare_periods(ctx: RunContext[SelericDeps], evidence_ids: list[str])
     periods = list(dict.fromkeys((e.period_start, e.period_end) for e in evidence))
     if len(periods) != 2:
         return _refuse(
-            f"compare_periods needs evidence from exactly 2 distinct periods, got {len(periods)}",
+            f"compare needs evidence from exactly 2 distinct periods, got {len(periods)}",
             error_code="INSUFFICIENT_EVIDENCE",
         )
 
@@ -557,7 +557,7 @@ async def contribution_analysis(
             success=False,
             summary=(
                 f"no evidence carries a {dimension!r} dimension value; "
-                "contribution_analysis needs drilldown output, not a plain query_metrics "
+                "contribution needs drilldown output, not a plain query_metrics "
                 "breakdown (which leaves dimensions empty on every row)"
             ),
             error_code="INSUFFICIENT_EVIDENCE",
@@ -565,7 +565,7 @@ async def contribution_analysis(
         )
     if len(by_period) > 2:
         return _refuse(
-            f"contribution_analysis handles 1 or 2 periods, got {len(by_period)}",
+            f"contribution handles 1 or 2 periods, got {len(by_period)}",
             error_code="INSUFFICIENT_EVIDENCE",
         )
 
@@ -962,3 +962,45 @@ async def generate_visualization(
         ),
         provenance=_provenance(evidence_ids),
     )
+
+
+AnalysisMethod = Literal["compare", "anomaly", "contribution", "segments", "funnel", "cohort"]
+
+
+async def analyze(
+    ctx: RunContext[SelericDeps],
+    evidence_ids: list[str],
+    method: AnalysisMethod,
+    dimensions: list[str] | None = None,
+) -> ToolResult:
+    """Calculate over evidence you already fetched (never fetches). Pick the method:
+
+    - ``compare``: period-over-period change; ids must cover exactly two periods,
+      the first id's period is A and the change is A - B.
+    - ``anomaly``: score each series' latest point against its own history
+      (robust z-score); the ids are the series.
+    - ``contribution``: each value of ``dimensions[0]``'s share of the total (one
+      period) or contribution to the change (two periods) — "what drove it".
+    - ``segments``: the same metric broken down across several ``dimensions`` at once.
+    - ``funnel``: step-to-step conversion and drop-off (one base count + its rates).
+    - ``cohort``: compare cohorts (dimension values or windows) with their median.
+
+    Every result is a citable Finding."""
+    dims = [d for d in (dimensions or []) if d]
+    if method == "compare":
+        return await compare_periods(ctx, evidence_ids)
+    if method == "anomaly":
+        return await detect_anomalies(ctx, evidence_ids)
+    if method == "contribution":
+        if not dims:
+            return _refuse("contribution needs dimensions=[<the dimension to split by>]", error_code="INVALID_ARGUMENT")
+        return await contribution_analysis(ctx, evidence_ids, dims[0])
+    if method == "segments":
+        if not dims:
+            return _refuse("segments needs dimensions=[<dimension>, ...]", error_code="INVALID_ARGUMENT")
+        return await segment_decomposition(ctx, evidence_ids, dims)
+    if method == "funnel":
+        return await funnel_decomposition(ctx, evidence_ids)
+    if method == "cohort":
+        return await cohort_analysis(ctx, evidence_ids)
+    return _refuse(f"unknown method {method!r}", error_code="INVALID_ARGUMENT")

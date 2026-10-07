@@ -30,6 +30,7 @@ from seleric_swarm.agent.agent import (
     PREFETCHED,
     build_seleric_agent,
     registered_tool_names,
+    unbacked_tools,
 )
 from seleric_swarm.agent.dependencies import (
     ExecutionLimits,
@@ -1163,7 +1164,12 @@ async def run_v3_mission(
                 model = resolve_v3_model(
                     runtime.settings, prefer_fast=_prefer_fast_model(classification)
                 )
-                agent = build_seleric_agent(model=model)
+                agent = build_seleric_agent(
+                    model=model,
+                    hidden=unbacked_tools(
+                        allow_writes=bool(getattr(runtime.settings, "allow_write_actions", False))
+                    ),
+                )
                 # The plan is built in code from the understand call's slots — no
                 # second LLM call. An accepted offer ("yes") is not re-planned: the
                 # follow-up hint tells the agent to do exactly what it offered.

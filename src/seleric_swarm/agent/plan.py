@@ -482,7 +482,7 @@ async def plan_from_slots(
     resolved_words = [f"'{m.words}' = {mid}" for m, mid in _pairs(slots.metrics, metric_ids)]
     if resolved_words:
         notes = [
-            "metrics already resolved by the catalogue (use these ids, no resolve_concept needed): "
+            "metrics already resolved by the catalogue (use these ids, no find_metrics needed): "
             + ", ".join(resolved_words),
             *notes,
         ]

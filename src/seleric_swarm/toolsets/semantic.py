@@ -15,6 +15,7 @@ independently-attributed evidence).
 
 from __future__ import annotations
 
+import asyncio
 import calendar
 import difflib
 import json
@@ -513,7 +514,7 @@ def _empty_search_verdict(ctx: RunContext[SelericDeps]) -> ToolResult | None:
         success=True,
         summary=(
             "No catalogue metric matches this concept after repeated searches — it is "
-            "not modelled. search_semantics is now disabled for this mission: do not "
+            "not modelled. Catalogue search is now disabled for this mission: do not "
             "search again; tell the user this data is not available."
         ),
         provenance=ArtifactProvenance(source_metadata={"matches": []}),
@@ -709,7 +710,7 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
         return ToolResult(
             success=False,
             summary=(
-                "SEMANTIC_RESOLUTION_LOOP: search_semantics is disabled for this "
+                "SEMANTIC_RESOLUTION_LOOP: catalogue search is disabled for this "
                 "mission (budget exhausted). Call query_metrics with the best metric "
                 "id from your earlier search results — for a product/SKU question use "
                 "a product_* metric (e.g. product_net_revenue, product_return_revenue, "
@@ -1077,7 +1078,7 @@ async def resolve_concept(
         return ToolResult(
             success=False,
             summary=f"'{concept}' unsupported at those axes: {result.get('reason', '')}"
-            + (f" — nearest: {nearest}" if nearest else "") + ". Try search_semantics.",
+            + (f" — nearest: {nearest}" if nearest else "") + ". Try find_metrics with the user's other words.",
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
             provenance=ArtifactProvenance(source_metadata=result),
@@ -1086,10 +1087,63 @@ async def resolve_concept(
     return ToolResult(
         success=False,
         summary=f"no concept matched '{concept}'"
-        + (f" — did you mean: {sugg}?" if sugg else "") + " Use search_semantics.",
+        + (f" — did you mean: {sugg}?" if sugg else "") + "",
         error_code="INSUFFICIENT_EVIDENCE",
         retryable=False,
         provenance=ArtifactProvenance(source_metadata=result),
+    )
+
+
+async def find_metrics(
+    ctx: RunContext[SelericDeps],
+    phrases: list[str] | None = None,
+    axes: dict[str, str] | None = None,
+    domain: str | None = None,
+) -> ToolResult:
+    """Find the catalogue metric id for every measure the question names — one call.
+
+    Pass each measure in the user's own words (``phrases=["net sales", "ad spend",
+    "roas"]``), measure words only: breakdowns, periods and filters belong in
+    ``query_metrics``. Each phrase goes to the catalogue's deterministic concept
+    resolver (axes the user's words imply may be passed in ``axes``); a phrase it
+    cannot place falls back to the glossary-backed search, which returns ranked
+    candidates. A resolved concept may bind a filter: pass it to ``query_metrics``
+    unchanged. With no phrases, lists every metric you can query (optionally one
+    ``domain``) — for "what data do you have". Resolution only: no values."""
+    wanted = [p.strip() for p in (phrases or []) if p and p.strip()]
+    if not wanted:
+        return await list_metrics(ctx, domain)
+    wanted = list(dict.fromkeys(wanted))
+    resolved = await asyncio.gather(*(resolve_concept(ctx, p, axes) for p in wanted))
+    misses = [p for p, r in zip(wanted, resolved, strict=True) if not r.success]
+    searched = dict(zip(misses, await asyncio.gather(*(search_semantics(ctx, p) for p in misses)), strict=True))
+    lines: list[str] = []
+    warnings: list[str] = []
+    found: dict[str, Any] = {}
+    for phrase, result in zip(wanted, resolved, strict=True):
+        if result.success:
+            lines.append(f"- {result.summary}")
+            warnings += [f"{phrase}: {w}" for w in result.warnings]
+            found[phrase] = result.provenance.source_metadata
+            continue
+        fallback = searched[phrase]
+        if fallback.success:
+            lines.append(f"- '{phrase}' has no single concept; closest catalogue metrics: {fallback.summary}")
+            found[phrase] = fallback.provenance.source_metadata
+        else:
+            lines.append(f"- '{phrase}': {result.summary} / {fallback.summary}")
+    if not found:
+        return ToolResult(
+            success=False,
+            summary="no catalogue metric found:\n" + "\n".join(lines),
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+        )
+    return ToolResult(
+        success=True,
+        summary="\n".join(lines),
+        warnings=warnings,
+        provenance=ArtifactProvenance(source_metadata={"resolved": found}),
     )
 
 
@@ -1177,7 +1231,7 @@ def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> Tool
         success=False,
         summary=(
             f"'{metric_id}' is not a catalogue metric and no similar metric exists — "
-            f"this concept is not modelled. Confirm with search_semantics if unsure; "
+            f"this concept is not modelled. Confirm with find_metrics if unsure; "
             f"otherwise tell the user it is not available. Do not guess another id."
         ),
         error_code="UNSUPPORTED_QUERY",

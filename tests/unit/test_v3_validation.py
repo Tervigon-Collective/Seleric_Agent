@@ -197,7 +197,7 @@ async def test_run_validated_mission_streams_tool_progress_when_a_sink_is_regist
     agent = Agent(model=model, deps_type=SelericDeps, output_type=MissionResult)
 
     @agent.tool_plain
-    def search_semantics() -> str:
+    def find_metrics() -> str:
         return "5 metrics"
 
     seen: list[tuple[str, str]] = []
@@ -209,8 +209,8 @@ async def test_run_validated_mission_streams_tool_progress_when_a_sink_is_regist
 
     assert result.status == "completed"
     assert result.final_response == "a valid answer"
-    assert ("agent.tool_started", "Searching the metric catalogue") in seen
-    assert ("agent.tool_completed", "Searching the metric catalogue — done") in seen
+    assert ("agent.tool_started", "Finding the metrics in the catalogue") in seen
+    assert ("agent.tool_completed", "Finding the metrics in the catalogue — done") in seen
     assert seen[-1] == ("agent.answering", "Writing the answer")
 
 

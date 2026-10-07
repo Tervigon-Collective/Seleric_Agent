@@ -457,7 +457,7 @@ async def diagnose_metric_change(
     if n_event > _MAX_EVENT_DAYS:
         return _refuse(
             f"event window {ev_start}..{ev_end} is {n_event} days; diagnose at most {_MAX_EVENT_DAYS} days at a time "
-            "(compare_periods suits longer periods)", error_code="UNSUPPORTED_QUERY",
+            "(analyze(method=\"compare\") suits longer periods)", error_code="UNSUPPORTED_QUERY",
         )
     event_days = [ev_start + timedelta(days=i) for i in range(n_event)]
     # Days still in progress cannot be compared with complete ones. Drop them

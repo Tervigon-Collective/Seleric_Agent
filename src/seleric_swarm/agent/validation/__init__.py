@@ -509,7 +509,7 @@ class EvidenceValidator:
                     "final_result was called before any other tool: 0 tool calls and "
                     "0 evidence, so the response is a plan or progress note, not an "
                     "answer. Do the tool work first — resolve the metric with "
-                    "get_metric_definitions/search_semantics, fetch the values with "
+                    "find_metrics/get_metric_definitions, fetch the values with "
                     "query_metrics — then call final_result once with the real answer "
                     "and its evidence_ids."
                 ),
