@@ -94,6 +94,10 @@ _PERIOD_COUNT_AFTER = re.compile(
 _RANK_BEFORE = re.compile(r"\b(?:last|past|next|first|top|bottom)\s*$", re.IGNORECASE)
 _PERCENT_AFTER = re.compile(r"^\s*(?:%|pp\b|percent|percentage)", re.IGNORECASE)
 
+# Most words a total word and its figure may be apart and still be one claim.
+# "The 30-day total is a net loss of about INR 37.6k" is 7 apart.
+_MAX_CLAIM_GAP_WORDS = 10
+
 # "overall"/"aggregate" also name a blended figure — an overall CTR or margin
 # lies between the rows, it is not their sum (live MS3-c645523b51: "overall
 # CTR 0.0199" over daily CTR rows was flagged as a wrong total).
@@ -117,21 +121,34 @@ def _numbers_in(text: str) -> list[float]:
     return out
 
 
-def _table_columns(text: str) -> list[list[float]]:
-    return [values for values, _ in _table_columns_with_rounding(text)]
+def _table_columns(text: str, label_columns: frozenset[str] = frozenset()) -> list[list[float]]:
+    return [values for values, _ in _table_columns_with_rounding(text, label_columns)]
 
 
-def _table_columns_with_rounding(text: str) -> list[tuple[list[float], float]]:
+def header_key(cell: str) -> str:
+    """A table header as a catalogue-comparable key: "Campaign ID" -> "campaign_id"."""
+    return "_".join(cell.strip().strip("*`").lower().split())
+
+
+def _table_columns_with_rounding(
+    text: str, label_columns: frozenset[str] = frozenset()
+) -> list[tuple[list[float], float]]:
     """Numeric columns of every Markdown table in ``text``.
 
     Requires the GFM delimiter row, exactly as the UI renderer does — a block
     without one is not a table to the reader either.
+
+    A column headed by a catalogue dimension (``label_columns``, keys as
+    ``header_key`` builds them) holds labels — ids, years, pincodes — not a
+    measure, so it is never summed (live 2026-10-07 MS3-4f7be7ba30: a
+    campaign_id column was added up to 481,002,724,792,603,968).
     """
     lines = text.splitlines()
     columns: list[tuple[list[float], float]] = []
     i = 0
     while i < len(lines) - 1:
         if "|" in lines[i] and _TABLE_DELIM.match(lines[i + 1]) and "|" in lines[i + 1]:
+            header = [header_key(c) for c in lines[i].strip().strip("|").split("|")]
             rows: list[list[str]] = []
             i += 2
             while i < len(lines) and "|" in lines[i] and lines[i].strip():
@@ -139,6 +156,8 @@ def _table_columns_with_rounding(text: str) -> list[tuple[list[float], float]]:
                 i += 1
             width = max((len(r) for r in rows), default=0)
             for col in range(width):
+                if col < len(header) and header[col] in label_columns:
+                    continue
                 values = []
                 rounding = 0.0
                 for row in rows:
@@ -209,10 +228,18 @@ def _claims_on(sentence: str) -> list[tuple[str, float, float]]:
         best: tuple[int, int, float, float] | None = None
         for value, tolerance, start, end in candidates:
             if end <= word.start():
+                gap = sentence[end : word.start()]
                 key = (word.start() - end, 1)
             elif start >= word.end():
+                gap = sentence[word.end() : start]
                 key = (start - word.end(), 0)
             else:
+                continue
+            # A figure many words away belongs to another clause: "…the highest
+            # ROAS (2.75) in the ranking but did not appear in the top-5 by spend,
+            # so its impact on total spend is small" bound 2.75 as the total
+            # (live 2026-10-07 MS3-4f7be7ba30).
+            if len(gap.split()) > _MAX_CLAIM_GAP_WORDS:
                 continue
             if best is None or key < best[:2]:
                 best = (*key, value, tolerance)
@@ -268,13 +295,14 @@ def _blend_of_rows(claim: float, tolerance: float, values: list[float]) -> bool:
     )
 
 
-def total_mismatch(text: str) -> str | None:
+def total_mismatch(text: str, label_columns: frozenset[str] = frozenset()) -> str | None:
     """A stated total that no column of the answer's own table can produce.
 
     Returns a reason string for the revision loop, or None when the answer is
     internally consistent (which includes: no table, or no total claimed).
+    ``label_columns``: header keys of label (dimension) columns, never summed.
     """
-    rounded = _table_columns_with_rounding(text)
+    rounded = _table_columns_with_rounding(text, label_columns)
     columns = [values for values, _ in rounded]
     if not columns:
         return None
@@ -311,6 +339,49 @@ def leaked_metric_ids(text: str, metric_ids: set[str]) -> list[str]:
         if re.search(rf"\b{re.escape(token)}\b", text):
             found.append(token)
     return sorted(found)
+
+
+def _is_word_char(ch: str) -> bool:
+    return ch.isalnum() or ch == "_"
+
+
+def _sentence_start(text: str, index: int) -> bool:
+    before = text[:index].rstrip(" *_`(\"'")
+    return not before or before[-1] in ".!?:\n|"
+
+
+def replace_metric_ids(text: str, labels: dict[str, str]) -> str:
+    """Write each internal metric id in ``text`` as its catalogue display name.
+
+    A leaked id is a wording slip with a known fix, so it is corrected in place
+    instead of costing a revision: live 2026-10-07 (MS3-4f7be7ba30) the last
+    revision of a finished answer was spent on "total_sales" in the prose, and
+    the model chain broke during it. Whole-word matches only; ids without an
+    underscore are left alone for the same reason ``leaked_metric_ids`` skips them.
+    """
+    for metric_id, label in labels.items():
+        token = metric_id.strip()
+        name = (label or "").strip()
+        if len(token) < 5 or "_" not in token or not name or name == token:
+            continue
+        out: list[str] = []
+        pos = 0
+        while (hit := text.find(token, pos)) >= 0:
+            end = hit + len(token)
+            whole = (hit == 0 or not _is_word_char(text[hit - 1])) and (
+                end == len(text) or not _is_word_char(text[end])
+            )
+            out.append(text[pos:hit])
+            if whole:
+                # "Total sales" mid-sentence reads "total sales"; an acronym ("ROAS") stays.
+                lower_ok = len(name) > 1 and name[1].islower() and not _sentence_start(text, hit)
+                out.append(name[0].lower() + name[1:] if lower_ok else name)
+            else:
+                out.append(token)
+            pos = end
+        out.append(text[pos:])
+        text = "".join(out)
+    return text
 
 
 # Words a finished sentence never ends on. An answer ending on one of these

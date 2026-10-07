@@ -21,7 +21,12 @@ from datetime import datetime
 from typing import Any
 
 import structlog
-from pydantic_ai.exceptions import FallbackExceptionGroup, ModelAPIError, ModelHTTPError
+from pydantic_ai.exceptions import (
+    FallbackExceptionGroup,
+    ModelAPIError,
+    ModelHTTPError,
+    UnexpectedModelBehavior,
+)
 from pydantic_ai.messages import ModelResponse, ModelResponseStreamEvent, TextPart, ToolCallPart
 from pydantic_ai.models import StreamedResponse
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -148,7 +153,14 @@ class HealthGatedChatModel(OpenAIChatModel):
     async def request(self, *args: Any, **kwargs: Any) -> Any:
         self._gate()
         try:
-            response = await self._capped(super().request(*args, **kwargs))
+            try:
+                response = await self._capped(super().request(*args, **kwargs))
+            except UnexpectedModelBehavior as exc:
+                # A completion the client cannot parse (live 2026-10-07 MS3-4f7be7ba30:
+                # an OpenRouter tail model answered 200 with choices=null) is this
+                # model failing, not the mission: fall through to the next model, and
+                # let PatientModel wait for the chain when it was the last one.
+                raise ModelAPIError(self.model_name, f"malformed response: {exc}") from exc
             if _spent_without_output(response):
                 # Live 2026-10-05 (MS3-3eeef3a493): a reasoning model used its whole
                 # output budget thinking over a long thread and returned nothing; the

@@ -110,6 +110,11 @@ def capability_manifest() -> str:
     return "\n".join(lines)
 
 
+def registered_tool_names() -> frozenset[str]:
+    """Names of every registered tool — what a plan step may name."""
+    return frozenset(getattr(fn, "__name__", str(fn)) for fn in TOOLS)
+
+
 def _stub_test_model() -> TestModel:
     # TestModel's default arbitrary-data generator doesn't respect datetime
     # field constraints (produces "a" for `as_of`, failing validation) — a

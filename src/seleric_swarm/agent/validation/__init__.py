@@ -44,11 +44,17 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import capture_run_messages
 from pydantic_ai.messages import ModelMessage, ModelRequest
-from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.exceptions import (
+    FallbackExceptionGroup,
+    ModelAPIError,
+    UnexpectedModelBehavior,
+    UsageLimitExceeded,
+)
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from seleric_swarm.agent.agent import CONVERSATIONAL
@@ -68,11 +74,14 @@ from seleric_swarm.agent.validation.trust import TrustResult, score_trust
 from seleric_swarm.agent.validation.answer_audit import (
     cut_off,
     ends_in_offer,
+    header_key,
     leaked_metric_ids,
+    replace_metric_ids,
     total_mismatch,
 )
 from seleric_swarm.agent.validation.verdict import decide_verdict
 from seleric_swarm.api.status import is_terminal_status
+from seleric_swarm.services.elapsed import ELAPSED_KEY, covers_in_progress_day
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -97,6 +106,8 @@ __all__ = [
 _log = logging.getLogger("seleric.agent.validation")
 
 _PLACEHOLDER_ANSWERS = frozenset({"placeholder", "todo", "tbd", "n/a", "na", "none", "null", "answer"})
+# A limitation is one sentence; the longest legitimate ones seen live were ~330 chars.
+_MAX_LIMITATION_CHARS = 600
 
 
 @dataclass
@@ -146,6 +157,108 @@ def _evidence_metric_ids(result: MissionResult, deps: SelericDeps) -> set[str]:
 
 
 _WORK_ARTIFACT_TYPES = frozenset({"evidence", "finding"})
+
+
+def _label_columns(deps: SelericDeps) -> frozenset[str]:
+    """Header keys of catalogue dimensions: a table column under one holds labels."""
+    catalogue = getattr(deps, "catalogue", None)
+    return frozenset(header_key(d) for d in getattr(catalogue, "dimensions", ()) or ())
+
+
+def _humanize_metric_ids(result: MissionResult, deps: SelericDeps) -> MissionResult:
+    """Replace internal metric ids in the prose with their catalogue display names."""
+    catalogue = getattr(deps, "catalogue", None)
+    text = result.final_response or ""
+    if catalogue is None or "_" not in text:
+        return result
+    labels = {m.id: (m.label or "") for m in getattr(catalogue, "metrics", ())}
+    fixed = replace_metric_ids(text, labels)
+    return result if fixed == text else result.model_copy(update={"final_response": fixed})
+
+
+def _stated_percents(text: str) -> list[float]:
+    """Magnitudes of the percentages written in the prose ("≈73%", "(-12.5%)")."""
+    out: list[float] = []
+    for token in (text or "").replace("(", " ").replace(")", " ").split():
+        word = token.strip(".,;:!?*`'\"")
+        if not word.endswith("%"):
+            continue
+        number = word[:-1].lstrip("+-−~≈").replace(",", "")
+        try:
+            out.append(abs(float(number)))
+        except ValueError:
+            continue
+    return out
+
+
+# A naive change below this is too small to be told apart from an ordinary figure.
+_MIN_FLAGGED_CHANGE_PCT = 5.0
+_PERCENT_MATCH_TOLERANCE = 1.0
+
+
+def _unequal_window_change(result: MissionResult, deps: SelericDeps) -> str | None:
+    """A percentage change stated between two windows that are not comparable.
+
+    For one additive metric and slice cited over two windows of different length,
+    or where one window includes today while it is still running (and was not
+    fetched with ``elapsed_only``), the naive change between the two totals is
+    meaningless. Live 2026-10-06 (MS3-4c6633d347): a 3-day total vs today's first
+    18 hours became "spend down ≈73%" while spend was 17% ahead of the same hours.
+    Only the change the prose actually states is flagged; the metric's additivity
+    comes from the catalogue.
+    """
+    percents = _stated_percents(result.final_response)
+    catalogue = getattr(deps, "catalogue", None)
+    if not percents or catalogue is None:
+        return None
+    items: list[tuple[tuple[Any, ...], date, date, bool, float]] = []
+    for aid in result.evidence_ids:
+        payload = getattr(deps.artifact_store.get(aid), "payload", None)
+        if not isinstance(payload, dict):
+            continue
+        metric_id, value = payload.get("metric_id"), payload.get("value")
+        if not metric_id or value is None or catalogue.aggregation_for(metric_id) != "additive":
+            continue
+        try:
+            start = datetime.fromisoformat(str(payload["period_start"])).date()
+            end = datetime.fromisoformat(str(payload["period_end"])).date()
+        except (KeyError, ValueError):
+            continue
+        dims = payload.get("dimensions") or {}
+        elapsed = ELAPSED_KEY in dims
+        partial = not elapsed and covers_in_progress_day(start, end, deps.as_of)
+        group = (metric_id, tuple(sorted((k, str(v)) for k, v in dims.items() if k != ELAPSED_KEY)))
+        items.append((group, start, end, partial, float(value)))
+    for i, a in enumerate(items):
+        for b in items[i + 1 :]:
+            if a[0] != b[0] or (a[1], a[2]) == (b[1], b[2]):
+                continue
+            a_days, b_days = (a[2] - a[1]).days + 1, (b[2] - b[1]).days + 1
+            if a_days == b_days and not (a[3] or b[3]):
+                continue
+            for base, other in ((a, b), (b, a)):
+                if base[4] == 0:
+                    continue
+                change = abs(other[4] / base[4] - 1) * 100
+                if change < _MIN_FLAGGED_CHANGE_PCT:
+                    continue
+                if not any(abs(p - change) <= _PERCENT_MATCH_TOLERANCE for p in percents):
+                    continue
+                label = catalogue.label_for(a[0][0]) or a[0][0]
+
+                def window(item: tuple[Any, ...]) -> str:
+                    days = (item[2] - item[1]).days + 1
+                    running = ", today still in progress" if item[3] else ""
+                    return f"{item[1]}..{item[2]} ({days} day{'s' if days != 1 else ''}{running})"
+
+                return (
+                    f"the answer states a {change:.0f}% change in {label} between {window(base)} "
+                    f"and {window(other)}, but those windows are not comparable. Compare per-day "
+                    "figures over the same elapsed hours: re-query every compared period with "
+                    "query_metrics(elapsed_only=True) and compare per-day averages — or, if that is "
+                    "not available, state that today is still running instead of a change"
+                )
+    return None
 
 
 def _mission_has_evidence(deps: SelericDeps) -> bool:
@@ -210,6 +323,17 @@ class EvidenceValidator:
                     "call it exactly once with completed/partial/failed and the real answer"
                 ),
             )
+        if long_notes := [n for n in result.limitations if len(n) > _MAX_LIMITATION_CHARS]:
+            # Live 2026-10-07 (MS3-6880d30fa7): a revision wrote its own derailed
+            # monologue ("I'm going to redo properly … Apologies. (End)") into
+            # limitations, and it shipped as completed.
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    f"a limitations entry is {len(long_notes[0])} characters long; each limitation is "
+                    "one short sentence naming what the answer does not cover and why — rewrite them"
+                ),
+            )
         core = result.final_response.strip().strip(".…").lower()
         if result.final_response.strip() and (not core or core in _PLACEHOLDER_ANSWERS):
             # Live: a run shipped the literal answer "placeholder" to the user.
@@ -270,9 +394,13 @@ class EvidenceValidator:
         # -- deterministic prose audits (see validation/answer_audit) --------
         # The response contract forbids both of these in plain words; live runs
         # on v0.1.24 shipped them anyway. Checked, not asserted.
-        arithmetic = total_mismatch(result.final_response)
+        arithmetic = total_mismatch(result.final_response, _label_columns(deps))
         if arithmetic:
             return ValidationOutcome(ok=False, reason=arithmetic, self_contradicting=True)
+        # A change computed between incomparable windows is a wrong headline, so it
+        # is never shipped either (not even as an exhausted loop's partial).
+        if unequal := _unequal_window_change(result, deps):
+            return ValidationOutcome(ok=False, reason=unequal, self_contradicting=True)
         leaked = leaked_metric_ids(result.final_response, _evidence_metric_ids(result, deps))
         if leaked:
             return ValidationOutcome(
@@ -283,23 +411,25 @@ class EvidenceValidator:
                     "evidence_ids, never in the prose"
                 ),
             )
-        # An answer that offers to go and do the work is not an answer. Only
-        # checked on ``completed``: a ``partial`` that names what it still needs
-        # has already declared itself incomplete and must not be nagged.
+        # An answer that offers to go and do the work is not an answer.
         # Live 2026-10-06 (MS3-167d9f4838): the mission fetched one of two requested
         # windows, then closed with "Do you want me to (A) fetch today's metrics ...
-        # or (B) run a diagnose?" and shipped as completed.
-        if result.status == "completed" and (offer := ends_in_offer(result.final_response)):
+        # or (B) run a diagnose?" and shipped as completed. Checked on ``partial``
+        # too since 2026-10-07: after one offer was revised away, MS3-4c6633d347
+        # relabelled itself partial and shipped "Would you like me to (A) fetch the
+        # touchpoint drilldown now ... or (B) ...?" — work its own tools could do.
+        # An exhausted loop still ships the best draft as a partial.
+        if result.status in ("completed", "partial") and (offer := ends_in_offer(result.final_response)):
             return ValidationOutcome(
                 ok=False,
                 reason=(
                     f"final_response ends by offering to run the remaining work instead of "
                     f"reporting the result: \"{offer}\". Answer the whole question you were "
                     f"asked with the tools you have — fetch whatever is still missing and "
-                    f"report it. If a requirement genuinely cannot be met, use status='partial' "
-                    f"and state plainly in limitations what is missing and why; if you truly "
-                    f"cannot proceed without an answer only the user has, say exactly which "
-                    f"value you need and set status='partial'."
+                    f"report it. If a requirement genuinely cannot be met, use status='partial', "
+                    f"state plainly in limitations what is missing and why, and end the answer "
+                    f"without an offer; if you truly cannot proceed without an answer only the "
+                    f"user has, say exactly which value you need and set status='partial'."
                 ),
             )
 
@@ -371,6 +501,10 @@ def _usage_limits(limits: ExecutionLimits) -> UsageLimits:
     tool_cap = max(1, limits.max_tool_calls)
     return UsageLimits(request_limit=tool_cap + 32, tool_calls_limit=tool_cap)
 
+
+# A revision that dies on these is a model-chain failure, not a wrong answer:
+# the best draft so far ships as a partial instead of failing the mission.
+_MODEL_FAILURES = (UnexpectedModelBehavior, ModelAPIError, FallbackExceptionGroup, TimeoutError)
 
 # Requests the wrap-up run may spend writing the answer (plus output retries).
 _WRAP_UP_REQUESTS = 3
@@ -662,6 +796,7 @@ async def _validated(
     )
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
+    result = _humanize_metric_ids(result, deps)
     outcome = validator.validate(result, deps=deps)
     revisions: list[dict[str, Any]] = []
     # The latest rejected draft that is still a real answer, with its own
@@ -711,16 +846,36 @@ async def _validated(
             "that problem, reuse the evidence and artifacts you already fetched (their ids "
             "are in the tool results above), and call final_result again."
         )
-        result, history = await _run_agent(
-            agent,
-            deps,
-            revision_prompt,
-            message_history=history,
-            usage_limits=mission_budget,
-            usage=mission_usage,
-        )
+        try:
+            result, history = await _run_agent(
+                agent,
+                deps,
+                revision_prompt,
+                message_history=history,
+                usage_limits=mission_budget,
+                usage=mission_usage,
+            )
+        except _MODEL_FAILURES as exc:
+            # The model chain broke mid-revision (every model rate limited and the
+            # tail returned a malformed completion, or tool calls written as text).
+            # Before 2026-10-07 this escaped the loop: the mission failed and the
+            # recovery worker re-ran it from scratch, discarding a real draft that
+            # had only a wording issue left (live MS3-4f7be7ba30, 3 attempts, 7.5 min).
+            _log.warning(
+                "v3_revision_model_failed mission=%s revision=%d error=%s",
+                deps.mission_id,
+                len(revisions),
+                type(exc).__name__,
+            )
+            if best is None or not _mission_has_evidence(deps):
+                raise
+            revisions.append(
+                {"revision": len(revisions), "verdict": None, "reason": f"model failed: {type(exc).__name__}"}
+            )
+            return _exhausted(result, outcome, best, deps, revisions, code="MODEL_UNAVAILABLE")
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
+        result = _humanize_metric_ids(result, deps)
         outcome = validator.validate(result, deps=deps)
 
     # Attach validation telemetry to trace for observability
@@ -742,6 +897,8 @@ def _exhausted(
     best: tuple[MissionResult, ValidationOutcome] | None,
     deps: SelericDeps,
     revisions: list[dict[str, Any]],
+    *,
+    code: str = "VALIDATION_REVISIONS_EXHAUSTED",
 ) -> MissionResult:
     """Revisions ran out. Ship the best real answer as partial, or fail cleanly.
 
@@ -766,7 +923,7 @@ def _exhausted(
                 # so a partial states what it does not cover (never merge
                 # evidence with an unresolved scope difference silently).
                 "limitations": [
-                    "VALIDATION_REVISIONS_EXHAUSTED",
+                    code,
                     *([answer_outcome.reason] if answer_outcome.reason else []),
                 ],
                 "trace": {**answer.trace, **trace, "steps": result.trace.get("steps")},

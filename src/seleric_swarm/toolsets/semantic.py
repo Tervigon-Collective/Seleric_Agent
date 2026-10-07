@@ -30,6 +30,12 @@ from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.limits import withdraw_tool
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+from seleric_swarm.services.elapsed import (
+    ELAPSED_KEY,
+    completed_hours,
+    covers_in_progress_day,
+    in_progress_day,
+)
 from seleric_swarm.services.mcp_query import (
     _BRAND_DIM_KEYS,
     DEFAULT_BRAND_ID,
@@ -1022,7 +1028,11 @@ async def resolve_concept(
     unsupported axis combination returns a reason plus nearest metrics (never a wrong
     sibling); an unmodelled concept returns suggestions. On unsupported/unknown, fall
     back to ``search_semantics``. Resolution only — the id is validated by Cube on
-    query."""
+    query.
+
+    Pass only the measure phrase: breakdowns ("by campaign"), periods and filters
+    belong in ``query_metrics``. Live 2026-10-07 the measure plus a breakdown
+    resolved to a different metric than the measure alone."""
     # The axes the user's OWN words set (read by the gateway from the whole question) win over what the
     # extracted term carries: "net profit on the P&L" keeps date=finance even when only "net profit" is
     # passed here. Axis names / values are the catalogue's; nothing is listed in this code.
@@ -1509,6 +1519,238 @@ def _top_n_sort(metric_id: str, order: str | None) -> list[dict[str, Any]] | Non
     return [{"field": metric_id, "direction": order}]
 
 
+_EMPTY_LABELS = ("", "None", "null", "none", "NULL")
+
+
+def _compares_with_today(ctx: RunContext[SelericDeps]) -> bool:
+    """The question compares some window with today while today is still running."""
+    windows = getattr(ctx.deps.required_scope, "windows", ()) or ()
+    return any(covers_in_progress_day(w.start, w.end, ctx.deps.as_of) for w in windows)
+
+
+def _same_hours_applies(
+    ctx: RunContext[SelericDeps],
+    metric_id: str,
+    period_start: datetime,
+    period_end: datetime,
+    grain: str,
+    order: str | None,
+    limit: int | None,
+) -> bool:
+    """A complete-days total of an additive metric, in a question that compares it with
+    today: it also gets the same-hours figure (``_elapsed_metrics``), so the like-for-like
+    number is in front of the model without it having to ask. Live 2026-10-07
+    (MS3-371b639a68): told to re-query with elapsed_only, the model compared 3-day
+    totals with half a day anyway and reported "lower spend today" while spend was
+    32% ahead. Rankings keep their own entity set, so they are left alone."""
+    return (
+        grain == "none"
+        and order is None
+        and not limit
+        and ctx.deps.catalogue.aggregation_for(metric_id) == "additive"
+        and not covers_in_progress_day(period_start.date(), period_end.date(), ctx.deps.as_of)
+        and _compares_with_today(ctx)
+    )
+
+
+def _in_progress_note(
+    ctx: RunContext[SelericDeps],
+    metric_id: str,
+    period_start: datetime,
+    period_end: datetime,
+    *,
+    same_hours: bool = False,
+) -> str | None:
+    """Warn that an additive total is not comparable with today's partial day: either
+    it includes today, or the question compares it with today (and the same-hours
+    figure is not attached)."""
+    as_of = ctx.deps.as_of
+    if ctx.deps.catalogue.aggregation_for(metric_id) != "additive":
+        return None
+    hours = completed_hours(as_of)
+    if covers_in_progress_day(period_start.date(), period_end.date(), as_of):
+        return (
+            f"NOTE: {as_of.date()} is today and still in progress (about {hours} of 24 hours "
+            "elapsed), so this total covers only part of that day. Do not compare it with "
+            "complete days or with a multi-day total — re-query every compared period with "
+            "elapsed_only=True, or say plainly that today is still running."
+        )
+    # Live 2026-10-07 (MS3-5bb148f278): today was fetched with elapsed_only but the
+    # 3-day reference was not, so full days sat next to half a day.
+    if not same_hours and _compares_with_today(ctx):
+        return (
+            f"NOTE: the question compares this window with today ({as_of.date()}), which is still "
+            f"in progress (about {hours} of 24 hours elapsed). These are full-day totals: for the "
+            "comparison, query this window with elapsed_only=True as well so both count the same hours."
+        )
+    return None
+
+
+def _row_hour(row: dict[str, Any]) -> datetime | None:
+    """The hour bucket of a grain='hour' row (Cube names it ``<dimension>.hour``)."""
+    for key, value in row.items():
+        if str(key).endswith(".hour") and isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                continue
+    return None
+
+
+async def _elapsed_metrics(
+    ctx: RunContext[SelericDeps],
+    *,
+    metric_id: str,
+    dimensions: dict[str, Any],
+    breakdown: list[str],
+    filters: list[dict[str, Any]],
+    grain: str,
+    period_start: datetime,
+    period_end: datetime,
+    order: str | None,
+    limit: int | None,
+    supports_brand: bool,
+) -> ToolResult:
+    """``query_metrics(elapsed_only=True)``: each day of the period counted only
+    over the hours already elapsed today, so complete days compare like for like
+    with today. One hourly Cube query; the tool, not the model, adds the hours."""
+    as_of = ctx.deps.as_of
+    aggregation = ctx.deps.catalogue.aggregation_for(metric_id)
+    if aggregation != "additive":
+        return ToolResult(
+            success=False,
+            summary=(
+                f"elapsed_only needs an additive metric; {metric_id} is "
+                f"{aggregation or 'not declared additive'}. Compare its additive parts with "
+                "elapsed_only=True, or compare the ratio as is and say today is still running."
+            ),
+            error_code="UNSUPPORTED_QUERY",
+            retryable=False,
+        )
+    if in_progress_day(as_of) is None:
+        return ToolResult(
+            success=False,
+            summary=(
+                f"elapsed_only compares against today's elapsed hours, but {as_of.date()} is "
+                "complete — query without it."
+            ),
+            error_code="UNSUPPORTED_QUERY",
+            retryable=False,
+        )
+    cutoff = completed_hours(as_of)
+    if cutoff == 0:
+        return ToolResult(
+            success=False,
+            summary="today has no complete hour yet — say the day has only just started.",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+        )
+    args = build_metrics_query_args(
+        measure=metric_id,
+        start=period_start.date().isoformat(),
+        end=period_end.date().isoformat(),
+        grain="hour",
+        dimensions=breakdown or None,
+        filters=filters or None,
+        inject_default_brand=supports_brand,
+    )
+    result = await _cached_metrics_query(ctx, args)
+    if result.get("error"):
+        return ToolResult(
+            success=False,
+            summary=(
+                f"query_metrics({metric_id}, elapsed_only) failed: {result['error']}. Without an "
+                "hourly series, compare per-day averages and say today is still running."
+            ),
+            error_code="UNSUPPORTED_QUERY",
+            retryable=False,
+        )
+    first_day, last_day = period_start.date(), period_end.date()
+    by_day = grain == "day"
+    totals: dict[tuple[str, tuple[str, ...]], float] = {}
+    unlabelled = 0.0
+    for row in result.get("rows") or []:
+        hour = _row_hour(row)
+        value = row.get(metric_id)
+        if hour is None or value is None or hour.hour >= cutoff:
+            continue
+        if not first_day <= hour.date() <= last_day:
+            continue
+        labels = tuple(str(dimension_value(row, k)) for k in breakdown)
+        if any(v in _EMPTY_LABELS for v in labels):
+            unlabelled += float(value)
+            continue
+        key = (hour.date().isoformat() if by_day else "", labels)
+        totals[key] = totals.get(key, 0.0) + float(value)
+    if not totals:
+        return ToolResult(
+            success=False,
+            summary=f"no data for {metric_id} over {first_day}..{last_day} before {cutoff:02d}:00",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+        )
+    ranked = list(totals.items())
+    if order in ("desc", "asc"):
+        ranked.sort(key=lambda kv: kv[1], reverse=order == "desc")
+    if limit:
+        ranked = ranked[: max(1, int(limit))]
+    n_days = (last_day - first_day).days + 1
+    through = f"{cutoff:02d}:00"
+    fixed = {k: (",".join(map(str, v)) if isinstance(v, list) else str(v)) for k, v in dimensions.items() if v}
+    provenance_data: dict[str, Any] = result.get("provenance") or {}
+    currency = str(provenance_data.get("currency") or "").strip()
+    provenance = ArtifactProvenance(
+        query_version=str(provenance_data.get("query_id") or ""), source_metadata=provenance_data
+    )
+    known = _evidence_index(ctx)
+    artifact_ids: list[str] = []
+    parts: list[str] = []
+    for (day, labels), total in ranked:
+        start = datetime.fromisoformat(day).replace(tzinfo=period_start.tzinfo) if day else period_start
+        end = start if day else period_end
+        row_dims = {**fixed, **dict(zip(breakdown, labels, strict=True)), ELAPSED_KEY: through}
+        evidence = EvidenceArtifact(
+            metric_id=metric_id,
+            dimensions=row_dims,
+            grain="day" if day else "none",
+            as_of=as_of,
+            period_start=start,
+            period_end=end,
+            value=total,
+            unit=currency or None,
+            source_query=args,
+        )
+        artifact_ids.append(
+            _put_evidence(
+                ctx,
+                evidence,
+                index=known,
+                raw_id=f"raw:{metric_id}:{start.date()}:{end.date()}:{through}",
+                provenance=provenance,
+            )
+        )
+        label = " | ".join(p for p in (day, ", ".join(f"{k}={v}" for k, v in zip(breakdown, labels, strict=True))) if p)
+        per_day = "" if day or n_days == 1 else f" (per-day average {total / n_days:.2f} over {n_days} days)"
+        parts.append(f"{label or 'total'}={total}{per_day}")
+    summary = (
+        f"{metric_id} over {first_day}..{last_day}, counting only 00:00-{through} of each day "
+        f"(the hours elapsed today), so every day is comparable with today — use these exact "
+        f"values: {'; '.join(parts[:_MAX_SERIES_IN_SUMMARY])}"
+        + (f"; …(+{len(parts) - _MAX_SERIES_IN_SUMMARY} more rows in evidence)" if len(parts) > _MAX_SERIES_IN_SUMMARY else "")
+        + ". Compare per-day figures, never a multi-day total with one day."
+    )
+    if unlabelled:
+        # Live 2026-10-07 (MS3-5bb148f278): net sales broken down by campaign AND ad set
+        # dropped every Google order (no ad set), and the answer reported those
+        # campaigns at 0 sales beside their own non-zero order counts.
+        summary += (
+            f" {unlabelled:g} of the period's {metric_id} has no {' / '.join(breakdown)} value and is "
+            "not listed above — a missing row is not zero; drop the finer breakdown to count it."
+        )
+    ctx.deps.scratchpad.note(summary)
+    return ToolResult(success=True, artifact_ids=artifact_ids, summary=summary, provenance=provenance)
+
+
 # Cap on values enumerated when disambiguating a zero-row filter. A high-card
 # dimension (thousands of SKUs) is bounded here so the probe can't blow up; the
 # close-match is still found among the top slice.
@@ -1563,6 +1805,7 @@ async def query_metrics(
     order: str | None = None,
     limit: int | None = None,
     pool_listed_values: bool = False,
+    elapsed_only: bool = False,
 ) -> ToolResult:
     """The only path to a numeric metric value. Writes one EvidenceArtifact.
 
@@ -1587,6 +1830,13 @@ async def query_metrics(
     value, e.g. ``dimensions={"product_title": ""}``), set ``order="desc"``
     (top/most/highest) or ``"asc"`` (bottom/least/lowest), and ``limit=N``.
     That is one call — do not fetch every row and sort client-side.
+
+    Today is still in progress, so a period that includes today is not
+    comparable with complete days. To compare today with earlier days, set
+    ``elapsed_only=True`` on EVERY period you compare: each day then counts only
+    the hours already elapsed today (same hours, like for like), and the result
+    states the per-day average for a multi-day period. Additive metrics only;
+    for a ratio, compare its additive parts this way.
     """
     if (unknown := _reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
@@ -1663,6 +1913,21 @@ async def query_metrics(
     supports_brand = (not ctx.deps.catalogue.metrics) or bool(
         {d.lower() for d in ctx.deps.catalogue.supported_dimensions_for(metric_id)} & _BRAND_DIM_KEYS
     )
+    same_hours = _same_hours_applies(ctx, metric_id, period_start, period_end, grain, order, limit)
+    if elapsed_only:
+        return await _elapsed_metrics(
+            ctx,
+            metric_id=metric_id,
+            dimensions=dimensions,
+            breakdown=breakdown,
+            filters=filters,
+            grain=grain,
+            period_start=period_start,
+            period_end=period_end,
+            order=order,
+            limit=limit,
+            supports_brand=supports_brand,
+        )
     args = build_metrics_query_args(
         measure=metric_id,
         start=period_start.date().isoformat(),
@@ -1674,7 +1939,7 @@ async def query_metrics(
         limit=limit,
         inject_default_brand=supports_brand,
     )
-    
+
     result = None
     _cache_eligible = (
         grain == "none"
@@ -1946,6 +2211,8 @@ async def query_metrics(
             )
         if rank_note:
             summary = f"{rank_note} {summary}"
+        if note := _in_progress_note(ctx, metric_id, period_start, period_end, same_hours=same_hours):
+            summary = f"{summary} {note}"
         prov = ArtifactProvenance(
             query_version=provenance.query_version,
             source_metadata={**(provenance.source_metadata or {}), "series": series},
@@ -1971,8 +2238,34 @@ async def query_metrics(
     # apart, doubling the evidence the model had to re-read next turn).
     # Cache the built ToolResult too, so a repeat call reuses the same
     # artifact_ids instead of writing them again.
+    async def _build() -> ToolResult:
+        base = await _write_evidence()
+        if not (base.success and same_hours):
+            return base
+        companion = await _elapsed_metrics(
+            ctx,
+            metric_id=metric_id,
+            dimensions=dimensions,
+            breakdown=breakdown,
+            filters=filters,
+            grain=grain,
+            period_start=period_start,
+            period_end=period_end,
+            order=None,
+            limit=None,
+            supports_brand=supports_brand,
+        )
+        if not companion.success:
+            return base
+        return base.model_copy(
+            update={
+                "artifact_ids": [*base.artifact_ids, *companion.artifact_ids],
+                "summary": f"{base.summary} SAME HOURS AS TODAY — {companion.summary}",
+            }
+        )
+
     if not _QUERY_CACHE_ENABLED:
-        return await _write_evidence()
+        return await _build()
     result_key = _cache_key("query_metrics_result", args)
     prior = ctx.deps.query_cache.peek(result_key)
     if prior is not None and prior.success:
@@ -2005,7 +2298,7 @@ async def query_metrics(
         )
     return await ctx.deps.query_cache.get_or_fetch(
         result_key,
-        _write_evidence,
+        _build,
         # Deterministic failures stay cached; a retryable one (transient MCP or
         # Cube fault) must actually re-run when the model retries it.
         cacheable=lambda r: r.success or not r.retryable,

@@ -31,10 +31,11 @@ def resolved_openrouter_models(settings: Settings) -> list[str]:
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            parsed = []
-        ids = [str(m).strip() for m in parsed if str(m).strip()]
-        if ids:
-            return ids
+            parsed = None
+        if isinstance(parsed, list):
+            # An explicit "[]" disables the tail; before 2026-10-07 it fell through
+            # to the comma split and became one model literally named "[]".
+            return [str(m).strip() for m in parsed if str(m).strip()]
     return [m.strip() for m in raw.split(",") if m.strip()]
 
 

@@ -26,7 +26,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from openai import APITimeoutError as OpenAIAPITimeoutError
 from pydantic_ai.exceptions import ModelHTTPError
 
-from seleric_swarm.agent.agent import CONVERSATIONAL, build_seleric_agent, capability_manifest
+from seleric_swarm.agent.agent import (
+    CONVERSATIONAL,
+    build_seleric_agent,
+    capability_manifest,
+    registered_tool_names,
+)
 from seleric_swarm.agent.dependencies import (
     ExecutionLimits,
     JevConfig,
@@ -37,7 +42,7 @@ from seleric_swarm.agent.intent import QueryClassification, classify_query, stat
 from seleric_swarm.api.status import is_terminal_status
 from seleric_swarm.agent.model import resolve_v3_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
-from seleric_swarm.agent.plan import build_plan
+from seleric_swarm.agent.plan import PlanOutcome, build_plan, plan_adherence
 from seleric_swarm.agent.scope import (
     RequiredScope,
     ValueFilter,
@@ -382,15 +387,22 @@ async def _catalogue_snapshot(runtime: SwarmRuntime) -> CatalogueSnapshot:
         return CatalogueSnapshot()
 
 
-def _store_plan_artifact(deps: SelericDeps, *, plan: str, intent: str | None) -> None:
+def _store_plan_artifact(
+    deps: SelericDeps, *, plan: str, intent: str | None, outcome: PlanOutcome | None = None
+) -> None:
     """Persist the plan for observability. Non-fatal — a store failure never
     blocks the mission (the plan is already prepended to the prompt)."""
+    payload: dict[str, Any] = {"plan": plan, "intent": intent}
+    if outcome is not None:
+        payload["stats"] = outcome.stats
+        if outcome.plan is not None:
+            payload["structured"] = outcome.plan.model_dump(mode="json")
     try:
         deps.artifact_store.put(
             Artifact(
                 workspace_id=deps.principal.workspace_id,
                 artifact_type="plan",
-                payload={"plan": plan, "intent": intent},
+                payload=payload,
                 classification="ui",
                 mission_id=deps.mission_id,
             )
@@ -414,6 +426,19 @@ def _resolved_window(query: str, timezone: str, as_of: str):
     if not window.relative_token or not window.start or not window.end:
         return None
     return window
+
+
+def _question_window(query: str, timezone: str, as_of: str):
+    """Every period the question names, comparisons included, or None.
+
+    ``_resolved_window`` keeps only a single absolute span because it pins tool
+    calls; the scope's required windows need both halves of "the last 3 days
+    versus today". Feeding them ``_resolved_window`` dropped every comparison, so
+    the two-window coverage check never fired (found 2026-10-07)."""
+    try:
+        return window_from_query(query, timezone, as_of)
+    except Exception:
+        return None
 
 
 # A bare acceptance of the prior answer's closing offer ("yes", "sure, go ahead").
@@ -544,8 +569,10 @@ def _routing_hint(classification: QueryClassification) -> str:
     if classification.depends_on_prior:
         parts.append("follow_up=true")
     why = (
-        "[why-question: resolve the metric once, then call diagnose_metric_change for the period asked "
-        "about and answer from its ANSWER SKELETON — do not reconstruct the diagnosis from query_metrics]\n\n"
+        "[why-question: for why ONE metric's total moved over a complete window, resolve the metric once, "
+        "then call diagnose_metric_change for the period asked about and answer from its ANSWER SKELETON — "
+        "do not reconstruct that diagnosis from query_metrics. If the why is about particular entities, or "
+        "the window includes today (still in progress), compare them instead: the diagnosis needs complete days]\n\n"
         if classification.intent in _DIAGNOSTIC_INTENTS
         else ""
     )
@@ -734,6 +761,17 @@ def _part_text(message: dict[str, Any]) -> str:
     return "\n".join(chunks)
 
 
+def _plan_trace(outcome: PlanOutcome | None, steps: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """Planner telemetry for the mission trace: status, latency, tokens, shape, and
+    how much of the plan the mission actually followed."""
+    if outcome is None:
+        return None
+    trace = dict(outcome.stats)
+    if outcome.plan is not None:
+        trace["adherence"] = plan_adherence(outcome.plan, steps)
+    return trace
+
+
 def _mission_prompt(
     query: str,
     as_of_dt: datetime,
@@ -765,7 +803,7 @@ def _mission_prompt(
         rendered = catalogue.render()
         if rendered:
             catalogue_block = f"[catalogue]\n{rendered}\n\n"
-    plan_block = f"[plan]\n{plan}\n\n" if plan else ""
+    plan_block = f"[advisory plan]\n{plan}\n\n" if plan else ""
     return (
         f"{thread}{catalogue_block}{plan_block}{hint}{query}\n\n"
         f"[system: mission as_of={as_of_day.isoformat()} timezone={timezone}. "
@@ -974,6 +1012,7 @@ def _to_lookup(
             steps=result.trace.get("steps"),
             validation=result.trace.get("validation"),
             intent=result.trace.get("intent"),
+            plan=result.trace.get("plan"),
         ),
     )
 
@@ -1183,7 +1222,9 @@ async def run_v3_mission(
     # to reconcile and a mission that answers one half of the comparison ships as
     # ``completed`` (live 2026-10-06 MS3-167d9f4838, where ``today`` was dropped
     # by the resolver and never noticed downstream).
-    if not small_talk and (windows := required_windows_from_resolved(resolved_window)):
+    if not small_talk and (
+        windows := required_windows_from_resolved(_question_window(query, timezone, as_of_dt.date().isoformat()))
+    ):
         required_scope = dataclasses.replace(required_scope, windows=windows)
     # The prior period is a stated default, not a pin: resolved_window rewrites every
     # call to its dates, which would break "compare with the week before".
@@ -1275,19 +1316,21 @@ async def run_v3_mission(
                 agent = build_seleric_agent(model=model)
                 # #1: only pay for an upfront plan on genuinely multi-step work;
                 # a simple lookup already has the full catalogue + manifest.
-                plan = (
+                plan_outcome = (
                     await build_plan(
                         model,
                         query=query,
                         intent=intent,
                         manifest=capability_manifest(),
                         catalogue=catalogue,
+                        tool_names=registered_tool_names(),
                     )
                     if _should_plan(classification)
                     else None
                 )
-                if plan:
-                    _store_plan_artifact(deps, plan=plan, intent=intent)
+                plan = plan_outcome.text if plan_outcome is not None else None
+                if plan_outcome is not None and plan_outcome.stats.get("status") != "skipped":
+                    _store_plan_artifact(deps, plan=plan or "", intent=intent, outcome=plan_outcome)
                 # prior_turn_record / is_followup were loaded before deps (the
                 # prior period feeds the [follow-up] hint). The record sits at the top of
                 # [thread context] as a structured 'Prior answer:' line.
@@ -1336,6 +1379,7 @@ async def run_v3_mission(
                             # exhaustion could only be diagnosed by replaying the
                             # validator by hand.
                             "validation": v3_result.trace.get("validation"),
+                            "plan": _plan_trace(plan_outcome, v3_result.trace.get("steps")),
                         },
                     }
                 )

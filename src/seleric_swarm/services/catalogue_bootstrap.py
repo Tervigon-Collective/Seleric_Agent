@@ -96,6 +96,13 @@ class CatalogueSnapshot:
     def has_metric(self, metric_id: str) -> bool:
         return any(m.id == metric_id for m in self.metrics)
 
+    def label_for(self, metric_id: str) -> str | None:
+        """The catalogue display name of a metric (None when unknown or not carried)."""
+        for meta in self.metrics:
+            if meta.id == metric_id:
+                return (meta.label or "").strip() or None
+        return None
+
     def date_basis_for(self, metric_id: str) -> tuple[str | None, str | None]:
         """(date basis, twin id) for a metric that exists on both date axes — the gateway's
         ``date_basis`` / ``date_twin`` (semantic v2: order vs finance / event date); (None, None) else."""
