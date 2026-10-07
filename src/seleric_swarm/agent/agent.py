@@ -176,6 +176,7 @@ PREFETCHED = "plan_prefetched"
 _PREFETCHED_TOOLS = frozenset(
     {
         "query_metrics",
+        "semantic_sql",
         "drilldown",
         "get_metric_definitions",
         "find_metrics",

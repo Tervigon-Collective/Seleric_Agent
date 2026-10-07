@@ -92,11 +92,11 @@ _LOOKUP_STATUSES = {
 }
 
 
-# --- Jev-driven routing (latency optimizations) --------------------------------
+# --- Routing from the understand call (latency optimizations) -----------------
 
 
 # Per-intent tool-call ceilings. These sit under Settings.max_tool_calls.
-# Unknown intent (Jev down) keeps the configured ceiling, never tightening
+# Unknown intent (understand call unavailable) keeps the configured ceiling, never tightening
 # on missing signal. Headroom is large on purpose: a lookup still does
 # search→resolve→query→synthesis, and a diagnostic/causal run fans out.
 _TOOL_BUDGET_BY_INTENT: dict[str, int] = {
@@ -1195,7 +1195,12 @@ async def run_v3_mission(
                 asked_metrics = list((plan_outcome.stats.get("metrics") if plan_outcome else None) or [])
                 prefetch, (insights, insight_stats) = await asyncio.gather(
                     execute_plan(
-                        plan_outcome.plan if plan_outcome is not None else None,
+                        # Only a plain analysis is prefetched: a prefetch narrows the
+                        # agent's tools to the data tools, and a forecast, what-if or
+                        # action question needs the tool its kind names.
+                        plan_outcome.plan
+                        if plan_outcome is not None and understanding is not None and understanding.kind == "analysis"
+                        else None,
                         deps,
                         windows=_prefetch_windows(deps.required_scope, prior_window),
                         as_of=as_of_dt,

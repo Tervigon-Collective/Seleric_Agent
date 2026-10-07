@@ -30,7 +30,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 
 from seleric_swarm.agent.intent import QueryClassification
-from seleric_swarm.agent.plan import PlanSlots
+from seleric_swarm.agent.plan import PlanShape, PlanSlots
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 
 _log = logging.getLogger("seleric.agent.understand")
@@ -39,6 +39,8 @@ QuestionKind = Literal["conversation", "analysis", "overview", "forecast", "what
 
 
 class Understanding(PlanSlots):
+    # Defaulted so a reply that omits it (small talk) is not a failed reading.
+    shape: PlanShape = "other"
     kind: QuestionKind = Field(
         description=(
             "conversation: greeting, thanks, small talk or a question about the assistant — no "

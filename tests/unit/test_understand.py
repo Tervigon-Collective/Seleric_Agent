@@ -190,3 +190,12 @@ async def test_ordinary_words_do_not_become_required_filters(monkeypatch):
     await _run(monkeypatch, _Mcp(), reading, "compared to other days")
     assert not captured["scope"].value_filters
 
+
+
+async def test_a_forecast_question_is_not_prefetched_so_its_tool_stays_available(monkeypatch):
+    mcp = _Mcp()
+    reading = {"kind": "forecast", "shape": "trend", "metrics": [{"words": "net sales", "metric_id": ""}]}
+    await _run(monkeypatch, mcp, reading, "forecast net sales for next week")
+    assert not [c for c, _ in mcp.calls if c == "seleric.metrics_query"]
+    plans = [a for a in get_v3_artifact_store().list_for_mission("MS3-u") if a.artifact_type == "plan"]
+    assert plans and "prefetch" not in plans[0].payload["stats"]

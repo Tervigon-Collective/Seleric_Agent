@@ -83,7 +83,7 @@ def _change(before: float | None, after: float | None) -> float | None:
     return (after - before) / abs(before) * 100
 
 
-_SINGLE_WINDOW_SHAPES = frozenset({"lookup", "trend", "breakdown", "other"})
+_SINGLE_WINDOW_SHAPES = frozenset({"lookup", "trend", "breakdown"})
 
 
 async def execute_plan(
