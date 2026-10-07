@@ -24,11 +24,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.capabilities import PrepareTools
+from pydantic_ai.capabilities import PrepareTools, ProcessHistory
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 
+from seleric_swarm.agent.context import compact_history
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.instructions import INSTRUCTIONS, OUTPUT_CONTRACT
 from seleric_swarm.agent.output import MissionResult
@@ -141,6 +142,22 @@ def _stub_test_model() -> TestModel:
 
 
 CONVERSATIONAL = "conversational"
+# Set on deps.call_counts when the planner's executor already fetched the plan's
+# data (agent/executor.py): the agent then sees only the tools it may still need,
+# not all of them (~6k tokens of schemas on every step).
+PREFETCHED = "plan_prefetched"
+_PREFETCHED_TOOLS = frozenset(
+    {
+        "query_metrics",
+        "drilldown",
+        "get_metric_definition",
+        "get_metric_definitions",
+        "resolve_concept",
+        "search_semantics",
+        "run_python",
+        "generate_visualization",
+    }
+)
 
 _STILL_AVAILABLE_WITHOUT_LIVE_DATA = frozenset(
     {
@@ -170,6 +187,8 @@ async def _withdraw_data_tools(
         return []
     if counts.get(LIVE_DATA_UNAVAILABLE):
         tool_defs = [t for t in tool_defs if t.name in _STILL_AVAILABLE_WITHOUT_LIVE_DATA]
+    if counts.get(PREFETCHED):
+        tool_defs = [t for t in tool_defs if t.name in _PREFETCHED_TOOLS]
     withdrawn = withdrawn_tools(ctx.deps)
     return [t for t in tool_defs if t.name not in withdrawn]
 
@@ -183,7 +202,7 @@ def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDep
         instructions=INSTRUCTIONS + "\n\n" + capability_manifest(),
         name="seleric_agent",
         tools=TOOLS,
-        capabilities=[PrepareTools(_withdraw_data_tools), RepeatCallGuard()],
+        capabilities=[PrepareTools(_withdraw_data_tools), RepeatCallGuard(), ProcessHistory(compact_history)],
     )
 
     @agent.instructions

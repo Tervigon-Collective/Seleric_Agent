@@ -12,6 +12,7 @@ import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from seleric_swarm.config.settings import helper_chat_model
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.services.numeric_audit import unaudited_numbers
 
@@ -96,7 +97,7 @@ async def format_business_state(
     summary that is auditable by construction -- the fast path never returns an
     unbacked number (same evidence discipline as the agent synthesis path)."""
     settings = runtime.settings
-    model = (getattr(settings, "azure_openai_fast_model", "") or "").strip() or settings.azure_openai_model
+    model = helper_chat_model(settings)
     context = json.dumps(_snapshot_context(snapshot), default=str, separators=(",", ":"))
     allowed = _allowed_tokens(snapshot)
 

@@ -161,5 +161,5 @@ def test_ci_and_container_configuration_are_hardened() -> None:
             line.strip().startswith("MALWARE_SCANNER_BACKEND:")
             for line in compose.splitlines()
         )
-        == 2
+        == 3
     )

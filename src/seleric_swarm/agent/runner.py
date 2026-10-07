@@ -26,8 +26,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from openai import APITimeoutError as OpenAIAPITimeoutError
 from pydantic_ai.exceptions import ModelHTTPError
 
+from seleric_swarm.config.settings import helper_chat_model
 from seleric_swarm.agent.agent import (
     CONVERSATIONAL,
+    PREFETCHED,
     build_seleric_agent,
     capability_manifest,
     registered_tool_names,
@@ -40,8 +42,9 @@ from seleric_swarm.agent.dependencies import (
 )
 from seleric_swarm.agent.intent import QueryClassification, classify_query, stated_grain
 from seleric_swarm.api.status import is_terminal_status
-from seleric_swarm.agent.model import resolve_v3_model
+from seleric_swarm.agent.model import resolve_planner_model, resolve_v3_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
+from seleric_swarm.agent.executor import execute_plan
 from seleric_swarm.agent.plan import PlanOutcome, build_plan, plan_adherence
 from seleric_swarm.agent.scope import (
     RequiredScope,
@@ -145,6 +148,14 @@ _DIAGNOSTIC_INTENTS = frozenset({"diagnostic", "causal_investigation"})
 def _should_plan(classification: QueryClassification) -> bool:
     """#1: plan only for multi-step work (by intent) or when Jev rates it complex."""
     return classification.intent in _PLAN_INTENTS or classification.complexity == "complex"
+
+
+def _should_plan_mission(deps: SelericDeps, is_followup: bool) -> bool:
+    """Plan every analytical mission. Routing used to hang on Jev's intent label,
+    which was close to random live ("hi" -> trend); the planner's own slots now
+    carry the question's shape. Small talk and bare follow-ups ("yes") are not
+    planned: the first has no data, the second continues the prior turn."""
+    return not deps.call_counts.get(CONVERSATIONAL) and not is_followup
 
 
 def _tool_budget(intent: str | None, ceiling: int) -> int:
@@ -293,7 +304,7 @@ async def _confirm_value_filters(
     if not filters or llm is None:
         return filters, frozenset()
     settings = runtime.settings
-    model = (getattr(settings, "azure_openai_fast_model", "") or "").strip() or settings.azure_openai_model
+    model = helper_chat_model(settings)
     listing = "\n".join(
         f'- "{vf.term}": {" / ".join(sorted(vf.dimensions))} = {", ".join(vf.values)}' for vf in filters
     )
@@ -761,6 +772,52 @@ def _part_text(message: dict[str, Any]) -> str:
     return "\n".join(chunks)
 
 
+class _ConceptResolver:
+    """Map the planner's metric phrases to catalogue ids with the catalogue's own
+    concept resolver (the same call the resolve_concept tool makes), in parallel.
+    Remembers each id's bound filter so the mission can start with it applied
+    (``prime``) instead of re-resolving every concept in an LLM turn.
+    A phrase the resolver cannot place maps to None; errors fail open."""
+
+    def __init__(self, mcp: Any, scope: RequiredScope) -> None:
+        self._mcp = mcp
+        self._axes = dict(getattr(scope, "question_axes", ()) or ())
+        self.filters: dict[str, dict[str, Any]] = {}
+
+    async def _one(self, text: str) -> str | None:
+        try:
+            result = await asyncio.wait_for(
+                self._mcp.call(
+                    agent_id="planner",
+                    capability="seleric.catalogue_resolve_concept",
+                    arguments={"text": text, "axes": self._axes},
+                ),
+                timeout=5.0,
+            )
+        except Exception:
+            return None
+        result = dict(result or {})
+        if result.get("kind") != "resolved_concept":
+            return None
+        metric_id = result.get("metric_id")
+        if metric_id and isinstance(result.get("filter"), dict) and result["filter"]:
+            self.filters[metric_id] = result["filter"]
+        return metric_id
+
+    async def __call__(self, texts: list[str]) -> dict[str, str | None]:
+        found = await asyncio.gather(*(self._one(t) for t in texts))
+        return dict(zip(texts, found, strict=True))
+
+    def prime(self, deps: SelericDeps) -> None:
+        """Apply the bound filters exactly as resolve_concept would have."""
+        for metric_id, bound in self.filters.items():
+            deps.query_cache.set(f"concept_filter:{metric_id}", bound)
+
+
+def _concept_resolver(mcp: Any, scope: RequiredScope) -> _ConceptResolver:
+    return _ConceptResolver(mcp, scope)
+
+
 def _plan_trace(outcome: PlanOutcome | None, steps: list[dict[str, Any]] | None) -> dict[str, Any] | None:
     """Planner telemetry for the mission trace: status, latency, tokens, shape, and
     how much of the plan the mission actually followed."""
@@ -768,7 +825,8 @@ def _plan_trace(outcome: PlanOutcome | None, steps: list[dict[str, Any]] | None)
         return None
     trace = dict(outcome.stats)
     if outcome.plan is not None:
-        trace["adherence"] = plan_adherence(outcome.plan, steps)
+        # Prefetched plans were executed by code, not by the agent's tool calls.
+        trace["adherence"] = "prefetched" if "prefetch" in trace else plan_adherence(outcome.plan, steps)
     return trace
 
 
@@ -1316,19 +1374,35 @@ async def run_v3_mission(
                 agent = build_seleric_agent(model=model)
                 # #1: only pay for an upfront plan on genuinely multi-step work;
                 # a simple lookup already has the full catalogue + manifest.
+                resolver = _concept_resolver(mcp, deps.required_scope)
                 plan_outcome = (
                     await build_plan(
-                        model,
+                        resolve_planner_model(runtime.settings),
                         query=query,
                         intent=intent,
                         manifest=capability_manifest(),
                         catalogue=catalogue,
                         tool_names=registered_tool_names(),
+                        resolver=resolver,
+                        windows=[(w.start, w.end) for w in deps.required_scope.windows],
+                        as_of=as_of_dt,
                     )
-                    if _should_plan(classification)
+                    if _should_plan_mission(deps, is_followup)
                     else None
                 )
+                resolver.prime(deps)
                 plan = plan_outcome.text if plan_outcome is not None else None
+                prefetch = await execute_plan(
+                    plan_outcome.plan if plan_outcome is not None else None,
+                    deps,
+                    windows=[(w.start, w.end) for w in deps.required_scope.windows],
+                    as_of=as_of_dt,
+                )
+                if prefetch is not None:
+                    plan = f"{plan}\n\n{prefetch.text}" if plan else prefetch.text
+                    deps.call_counts[PREFETCHED] = 1
+                    if plan_outcome is not None:
+                        plan_outcome.stats["prefetch"] = prefetch.stats
                 if plan_outcome is not None and plan_outcome.stats.get("status") != "skipped":
                     _store_plan_artifact(deps, plan=plan or "", intent=intent, outcome=plan_outcome)
                 # prior_turn_record / is_followup were loaded before deps (the

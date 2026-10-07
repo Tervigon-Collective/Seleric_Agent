@@ -9,6 +9,7 @@ import importlib
 import inspect
 import logging
 import random
+import signal
 import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -360,17 +361,85 @@ class RunRecoveryWorker:
         )
         return any(c.status is RunAttemptStatus.RETRYABLE for c in candidates)
 
+    async def _dispatch(
+        self, slots: asyncio.Semaphore, in_flight: set[asyncio.Task[str]], *, limit: int
+    ) -> int:
+        """Claim as many runnable attempts as there are free slots and start them
+        without waiting for them. Returns how many were claimed."""
+        scan_moment = datetime.now(UTC)
+        await asyncio.to_thread(self._recovery.recover_expired, now=scan_moment, limit=limit)
+        candidates = await asyncio.to_thread(self._runs.list_recoverable, now=scan_moment, limit=limit)
+        claimed = 0
+        for candidate in candidates:
+            if candidate.status is not RunAttemptStatus.RETRYABLE:
+                continue
+            if slots.locked():
+                break
+            await slots.acquire()
+            claim_moment = datetime.now(UTC)
+            run = await asyncio.to_thread(self._runs.get, candidate.run_id)
+            if (
+                run is None
+                or run.status is RunStatus.CANCELLED
+                or (run.next_retry_at is not None and run.next_retry_at > claim_moment)
+            ):
+                slots.release()
+                continue
+            attempt = await asyncio.to_thread(
+                self._runs.claim, run.id, self._worker_id, self._lease_s, now=claim_moment
+            )
+            if attempt is None:
+                slots.release()
+                continue
+            claimed += 1
+            task = asyncio.create_task(self._execute_with_slot(slots, run, attempt))
+            in_flight.add(task)
+            task.add_done_callback(in_flight.discard)
+        return claimed
+
     async def run_forever(
-        self, *, poll_interval_s: float = 5.0, limit: int = 100
+        self,
+        *,
+        poll_interval_s: float = 5.0,
+        limit: int = 100,
+        stop: asyncio.Event | None = None,
+        drain_timeout_s: float | None = None,
     ) -> None:
-        while True:
+        """Poll and run missions until ``stop`` is set, then drain.
+
+        Missions are dispatched continuously: a poll claims attempts for the free
+        slots and does not wait for running ones. Before 2026-10-07 each poll
+        waited for its whole batch, so a run submitted behind a long mission sat
+        queued until that mission ended (live MS3-4c6633d347 waited 80s).
+
+        On ``stop`` (SIGTERM from ``docker stop`` / a redeploy) no new attempt is
+        claimed and running missions are allowed to finish, up to
+        ``drain_timeout_s``; their heartbeats keep the leases alive meanwhile.
+        Before, a redeploy killed the running mission and it restarted from
+        scratch once its lease expired (live 2026-10-07 MS3-4f7be7ba30 attempt 2).
+        """
+        stop = stop or asyncio.Event()
+        slots = asyncio.Semaphore(self._max_concurrency)
+        in_flight: set[asyncio.Task[str]] = set()
+        while not stop.is_set():
             try:
-                await self.run_once(limit=limit)
+                await self._dispatch(slots, in_flight, limit=limit)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 _log.error("run_recovery_worker_poll_error", exc_info=exc)
-            await asyncio.sleep(max(0.1, poll_interval_s))
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stop.wait(), timeout=max(0.1, poll_interval_s))
+        if not in_flight:
+            return
+        _log.warning("run_recovery_worker_draining in_flight=%d timeout_s=%s", len(in_flight), drain_timeout_s)
+        _done, pending = await asyncio.wait(set(in_flight), timeout=drain_timeout_s)
+        if pending:
+            # Out of grace: leave these to lease expiry, so another worker retries them.
+            _log.error("run_recovery_worker_drain_timeout abandoned=%d", len(pending))
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
 
 
 class DurablePollingRunQueue:
@@ -527,8 +596,16 @@ async def _main() -> None:
                 )
         else:
             if worker is not None:
+                stop = asyncio.Event()
+                loop = asyncio.get_running_loop()
+                for sig in (signal.SIGTERM, signal.SIGINT):
+                    with contextlib.suppress(NotImplementedError, RuntimeError):
+                        loop.add_signal_handler(sig, stop.set)
                 await worker.run_forever(
-                    poll_interval_s=args.interval, limit=args.limit
+                    poll_interval_s=args.interval,
+                    limit=args.limit,
+                    stop=stop,
+                    drain_timeout_s=runtime.settings.run_drain_timeout_s,
                 )
             else:
                 while True:

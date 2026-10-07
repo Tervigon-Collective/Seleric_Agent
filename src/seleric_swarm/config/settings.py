@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     run_max_concurrency: int = 4
     run_retry_delay_s: float = 5.0
     run_retry_jitter_s: float = 1.0
+    # On SIGTERM the worker stops claiming and lets running missions finish for up
+    # to this long. Keep it above MISSION_TIMEOUT_S and below the container's
+    # stop_grace_period (docker-compose.yml) so a redeploy never cuts a mission.
+    run_drain_timeout_s: float = 480.0
     shutdown_timeout_s: float = 10.0
     blob_backend: Literal["local", "minio"] = "local"
     blob_local_path: str = ".data/attachments"
@@ -87,35 +91,20 @@ class Settings(BaseSettings):
     # be deployed on AZURE_OPENAI_ENDPOINT. Empty (default) = model tiering off,
     # every mission uses the normal model chain.
     azure_openai_fast_model: str = ""
+    # Per-role deployments on AZURE_OPENAI_ENDPOINT (2026-10-07). Empty = the agent model.
+    # planner: reads the question into PlanSlots (agent/plan.py).
+    azure_openai_planner_model: str = ""
+    # helper: short single-shot calls — value sense, business-state fast answer, /llm ping.
+    azure_openai_helper_model: str = ""
     azure_openai_api_version: str = "2024-05-01-preview"
     # "openai_compatible" -> Azure AI Inference; "azure" -> classic Azure OpenAI.
     azure_auth_style: Literal["openai_compatible", "azure"] = "openai_compatible"
     azure_key_vault_url: str | None = None
 
-    # Optional second Azure resource (distinct endpoint + key + quota), tried
-    # after every model on the primary resource is exhausted. Unlike
-    # AZURE_OPENAI_MODELS (multiple deployments on one resource, sharing one
-    # quota), this survives an endpoint-level rate limit. Same auth style as
-    # the primary resource. Empty (default) = no second resource, unchanged
-    # single-resource fallback behavior.
-    azure_openai_endpoint_2: str = ""
-    azure_openai_api_key_2: str = ""
-    azure_openai_models_2: str = ""
-
-    # Optional independent-provider fallback tier (OpenRouter). Appended after
-    # every Azure model in resolve_v3_model's FallbackModel chain, so an
-    # Azure-wide 429 (both resources throttled) falls through to a genuinely
-    # separate provider pool. OpenAI-compatible; no api-version. Empty (default)
-    # = no OpenRouter tier, unchanged Azure-only behavior.
-    openrouter_api_key: str = ""
-    openrouter_models: str = ""  # JSON array or comma-separated; first = highest priority
-    openrouter_endpoint: str = "https://openrouter.ai/api/v1"
-    # Output cap for the OpenRouter tier. Unset, OpenRouter reserves the model's
-    # full output window (64k for claude-haiku-4.5) against the credit balance
-    # and refuses with 402 when the balance can't cover it (live 2026-10-04,
-    # "requested up to 64000 tokens, but can only afford 5400") — even though a
-    # mission step never needs more than a few thousand tokens.
-    openrouter_max_tokens: int = 8192
+    # One LLM resource only (2026-10-07: gpt-5-nano on seleric.cognitiveservices).
+    # The second Azure resource and the OpenRouter tail were removed: the tail's
+    # free models broke missions mid-revision, and a deployment-level 429 is now
+    # waited out (agent/model_health.PatientModel) rather than routed elsewhere.
 
     langfuse_tracing: bool = True
     langfuse_public_key: str = ""
@@ -308,10 +297,6 @@ class Settings(BaseSettings):
         "azure_openai_models",
         "azure_openai_model1",
         "azure_openai_model2",
-        "azure_openai_endpoint_2",
-        "azure_openai_models_2",
-        "openrouter_models",
-        "openrouter_endpoint",
         "seleric_mcp_url",
         "qdrant_url",
         "qdrant_collection",
@@ -335,8 +320,6 @@ class Settings(BaseSettings):
 
     @field_validator(
         "azure_openai_api_key",
-        "azure_openai_api_key_2",
-        "openrouter_api_key",
         "langsmith_api_key",
         "langfuse_public_key",
         "langfuse_secret_key",
@@ -503,6 +486,16 @@ class Settings(BaseSettings):
     def numbered_fallback_models(self) -> list[str]:
         """Every configured model after the primary, in priority order."""
         return self.resolved_models()[1:]
+
+
+def helper_chat_model(settings: object) -> str:
+    """Deployment for short helper calls: AZURE_OPENAI_HELPER_MODEL, else the fast model,
+    else "" (the adapter then uses the primary model)."""
+    for name in ("azure_openai_helper_model", "azure_openai_fast_model"):
+        value = str(getattr(settings, name, "") or "").strip()
+        if value:
+            return value
+    return ""
 
 
 def configured_chat_model(settings: object) -> str:

@@ -185,7 +185,7 @@ async def test_revision_continues_the_conversation() -> None:
             return ModelResponse(parts=[ToolCallPart("fetch", {})])
         if _user_prompts(messages) == 1:
             return _final("")  # rejected: empty answer
-        return _final("the revised answer")
+        return _final("the revised answer is complete")
 
     agent = Agent(FunctionModel(model), deps_type=SelericDeps, output_type=MissionResult)
 
@@ -197,7 +197,7 @@ async def test_revision_continues_the_conversation() -> None:
 
     result = await run_validated_mission(agent, _deps(), "q")
     assert result.status == "completed"
-    assert result.final_response == "the revised answer"
+    assert result.final_response == "the revised answer is complete"
     # The revision saw the first run's tool result instead of starting blind.
     assert fetches == 1
     assert result.trace["validation"]["revisions"][0]["reason"]

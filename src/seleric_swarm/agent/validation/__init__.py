@@ -72,6 +72,9 @@ from seleric_swarm.agent.validation.signals import (
 )
 from seleric_swarm.agent.validation.trust import TrustResult, score_trust
 from seleric_swarm.agent.validation.answer_audit import (
+    _SENTENCE_END,
+    _claim_candidates,
+    _numbers_in,
     cut_off,
     ends_in_offer,
     header_key,
@@ -108,6 +111,13 @@ _log = logging.getLogger("seleric.agent.validation")
 _PLACEHOLDER_ANSWERS = frozenset({"placeholder", "todo", "tbd", "n/a", "na", "none", "null", "answer"})
 # A limitation is one sentence; the longest legitimate ones seen live were ~330 chars.
 _MAX_LIMITATION_CHARS = 600
+# Fewest words an answer may have ("Net sales yesterday were ₹1.2L." is five).
+_MIN_ANSWER_WORDS = 4
+
+
+def _word_count(text: str) -> int:
+    """Words with at least one letter: figures, dates and table rules are not words."""
+    return sum(1 for token in (text or "").split() if any(ch.isalpha() for ch in token))
 
 
 @dataclass
@@ -261,6 +271,107 @@ def _unequal_window_change(result: MissionResult, deps: SelericDeps) -> str | No
     return None
 
 
+def _mission_values(deps: SelericDeps) -> list[float]:
+    """Every number the mission fetched or derived: evidence values and the numeric
+    entries of findings (the executor's per-day figures and changes, run_python output)."""
+    values: list[float] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, bool):
+            return
+        if isinstance(node, (int, float)):
+            values.append(float(node))
+        elif isinstance(node, dict):
+            for item in node.values():
+                walk(item)
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                walk(item)
+
+    for artifact in deps.artifact_store.list_for_mission(deps.mission_id):
+        payload = getattr(artifact, "payload", None)
+        if not isinstance(payload, dict):
+            continue
+        if artifact.artifact_type == "evidence":
+            walk(payload.get("value"))
+        elif artifact.artifact_type == "finding":
+            walk(payload.get("metrics"))
+    return values
+
+
+def _inside_identifier(text: str, start: int, end: int) -> bool:
+    """A number that is part of a name ("TH-383-SUSPENDER", "BN520_TM099") is a label,
+    not a figure: it touches a letter, digit or a joiner that leads into one."""
+    def joined(index: int, step: int) -> bool:
+        if not 0 <= index < len(text):
+            return False
+        ch = text[index]
+        if ch.isalnum():
+            return True
+        if ch in "-_/":
+            nxt = index + step
+            return 0 <= nxt < len(text) and text[nxt].isalnum()
+        return False
+
+    return joined(start - 1, -1) or joined(end, 1)
+
+
+def _figures(text: str) -> list[tuple[float, float, bool]]:
+    """(value, rounding tolerance, is_percent) for each figure the prose states."""
+    out: list[tuple[float, float, bool]] = []
+    for line in (text or "").splitlines():
+        pieces = line.strip().strip("|").split("|") if "|" in line else _SENTENCE_END.split(line)
+        for piece in pieces:
+            for value, tolerance, start, end in _claim_candidates(piece):
+                if _inside_identifier(piece, start, end):
+                    continue
+                out.append((value, tolerance, False))
+            for token in piece.replace("(", " ").replace(")", " ").split():
+                word = token.strip(".,;:!?*`'\"")
+                if word.endswith("%"):
+                    number = word[:-1].lstrip("+-−~≈").replace(",", "")
+                    try:
+                        decimals = len(number.partition(".")[2])
+                        out.append((abs(float(number)), 0.5 * 10**-decimals, True))
+                    except ValueError:
+                        continue
+    return out
+
+
+def _backed(value: float, tolerance: float, percent: bool, pool: list[float]) -> bool:
+    for known in pool:
+        slack = max(tolerance, 0.006 * abs(known), 0.005)
+        if abs(abs(value) - abs(known)) <= slack:
+            return True
+        if percent and abs(abs(value) - abs(known) * 100) <= max(tolerance, 0.006 * abs(known) * 100, 0.05):
+            return True
+    return False
+
+
+# Figures that are never data: small counts of days, hours, ranks and steps.
+_SMALL_COUNT = 31
+_MIN_UNBACKED = 3
+
+
+def _unbacked_figures(result: MissionResult, deps: SelericDeps) -> tuple[list[str], float]:
+    """Figures in the answer no fetched or derived value accounts for, and their share.
+    Live 2026-10-07 (gpt-5-nano) a row of plausible numbers was written for a day the
+    mission never fetched, and an "INR 4,431.03" appeared with no query behind it."""
+    pool = _mission_values(deps)
+    if not pool:
+        return [], 0.0
+    query_numbers = {abs(v) for v, _t, _p in _figures(result.query or "")}
+    figures = [
+        (v, t, pct)
+        for v, t, pct in _figures(result.final_response)
+        if not (not pct and float(v).is_integer() and abs(v) <= _SMALL_COUNT) and abs(v) not in query_numbers
+    ]
+    if not figures:
+        return [], 0.0
+    unbacked = [f"{v:g}{'%' if pct else ''}" for v, t, pct in figures if not _backed(v, t, pct, pool)]
+    return unbacked, len(unbacked) / len(figures)
+
+
 def _mission_has_evidence(deps: SelericDeps) -> bool:
     """True once the mission holds fetched evidence or a derived finding."""
     return any(
@@ -341,6 +452,19 @@ class EvidenceValidator:
                 ok=False,
                 reason="final_response is a placeholder, not an answer; write the real answer",
             )
+        conversational = bool((deps.call_counts or {}).get(CONVERSATIONAL))
+        data_mission = not conversational and _mission_has_evidence(deps)
+        if data_mission and _word_count(result.final_response) < _MIN_ANSWER_WORDS:
+            # Live 2026-10-07 (MS3-258bf5e8bb, gpt-5-nano): a 13-tool-call comparison
+            # shipped final_response="4431.03" as completed.
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    "final_response is a bare value, not an answer. Write the answer: a lead "
+                    "sentence that answers the question, the table or figures behind it, and "
+                    "what they mean"
+                ),
+            )
         if (dangling := cut_off(result.final_response)) is not None:
             return ValidationOutcome(
                 ok=False,
@@ -401,6 +525,33 @@ class EvidenceValidator:
         # is never shipped either (not even as an exhausted loop's partial).
         if unequal := _unequal_window_change(result, deps):
             return ValidationOutcome(ok=False, reason=unequal, self_contradicting=True)
+        unbacked, share = _unbacked_figures(result, deps) if data_mission else ([], 0.0)
+        if len(unbacked) >= _MIN_UNBACKED:
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    f"these figures in final_response match nothing this mission fetched or derived: "
+                    f"{', '.join(unbacked[:8])}. Report only values from the tool results (or compute "
+                    "derived values with run_python so they are recorded); never estimate or fill in a figure"
+                ),
+                # Mostly invented numbers are never shipped, not even as a partial.
+                self_contradicting=share > 0.5,
+            )
+        if (
+            data_mission
+            and result.status in ("completed", "partial")
+            and not result.evidence_ids
+            and not result.finding_ids
+            and _numbers_in(result.final_response)
+        ):
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    "final_response states figures but cites no evidence_ids, although this "
+                    "mission fetched evidence. Put the artifact ids behind every figure you report "
+                    "in evidence_ids (they are in the tool results above)"
+                ),
+            )
         leaked = leaked_metric_ids(result.final_response, _evidence_metric_ids(result, deps))
         if leaked:
             return ValidationOutcome(

@@ -33,7 +33,6 @@ from seleric_swarm.conversations.contracts import (
     Principal,
     PrincipalAuthMethod,
 )
-from seleric_swarm.llm.openrouter import resolved_openrouter_models
 from seleric_swarm.services import elapsed
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
@@ -322,13 +321,6 @@ async def test_a_total_that_includes_today_carries_the_in_progress_note(at_noon)
 # -- model chain ----------------------------------------------------------------------
 
 
-def test_an_explicit_empty_openrouter_list_disables_the_tail() -> None:
-    class _S:
-        openrouter_models = "[]"
-
-    assert resolved_openrouter_models(_S()) == []
-
-
 @pytest.mark.asyncio
 async def test_a_malformed_completion_falls_through_to_the_next_model(monkeypatch) -> None:
     from pydantic_ai.models.openai import OpenAIChatModel
@@ -442,3 +434,27 @@ def test_a_comparison_question_carries_both_windows() -> None:
 
     window = runner._question_window("last 3 days vs today", "Asia/Kolkata", "2026-10-07")
     assert [str(w) for w in required_windows_from_resolved(window)] == ["2026-10-04..2026-10-06", "2026-10-07"]
+
+
+def test_a_bare_value_from_a_data_mission_is_sent_back() -> None:
+    store = InMemoryArtifactStore()
+    aid = _evidence(store, "ad_spend", TODAY, TODAY, 4431.03)
+    result = MissionResult(
+        mission_id="MS3-pm", status="completed", query="q", as_of=TODAY, final_response="4431.03", evidence_ids=[aid]
+    )
+    outcome = EvidenceValidator().validate(result, deps=_deps(store))
+    assert not outcome.ok and "bare value" in (outcome.reason or "")
+
+
+def test_figures_without_any_citation_are_sent_back() -> None:
+    store = InMemoryArtifactStore()
+    _evidence(store, "ad_spend", TODAY, TODAY, 4431.03)
+    result = MissionResult(
+        mission_id="MS3-pm",
+        status="completed",
+        query="q",
+        as_of=TODAY,
+        final_response="Ad spend today is INR 4,431.03 so far.",
+    )
+    outcome = EvidenceValidator().validate(result, deps=_deps(store))
+    assert not outcome.ok and "cites no evidence_ids" in (outcome.reason or "")

@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.responses import Response, StreamingResponse
 
+from seleric_swarm.config.settings import helper_chat_model
 from seleric_swarm.agent.runner import run_v3_mission
 from seleric_swarm.api.async_missions import (
     cancel_running_mission,
@@ -382,13 +383,13 @@ async def llm_ping(req: PingRequest) -> dict[str, Any]:
         "workflow_version": runtime.settings.workflow_version,
         "agent_name": "llm_port",
         "agent_version": "0.1.0",
-        "model": runtime.settings.azure_openai_model,
+        "model": helper_chat_model(runtime.settings),
     }
     with traced_span("llm.ping", metadata, runtime.settings.langfuse_tracing):
         response = await runtime.llm.complete(
             LLMRequest(
                 messages=[ChatMessage(role="user", content=req.message)],
-                model=runtime.settings.azure_openai_model,
+                model=helper_chat_model(runtime.settings),
                 temperature=0,
                 max_tokens=32,
                 timeout_s=runtime.settings.llm_timeout_s,

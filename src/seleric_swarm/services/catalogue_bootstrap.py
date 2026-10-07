@@ -185,6 +185,18 @@ class CatalogueSnapshot:
                 seen.append(resolved)
         return seen
 
+    def render_compact(self) -> str:
+        """Ids and labels only, plus the dimension ids — for a call that picks ids from
+        the catalogue but does not query (the planner's slot reader). About a third of
+        ``render``: no aliases, units or per-metric dimension lists."""
+        if not self.metrics:
+            return ""
+        lines = ["Metrics (id: label):"]
+        lines += [f"- {m.id}: {m.label or m.id}" for m in sorted(self.metrics, key=lambda m: m.id)]
+        if self.dimensions:
+            lines.append("Dimensions: " + ", ".join(sorted(self.dimensions)))
+        return "\n".join(lines)
+
     def render(self) -> str:
         """Compact one-line-per-metric listing for the mission prompt."""
         if not self.metrics:
