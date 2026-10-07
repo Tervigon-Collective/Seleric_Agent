@@ -98,7 +98,7 @@ async def run_once(
     return snapshots
 
 
-def main() -> None:
+async def main() -> None:
     from seleric_swarm.bootstrap import build_runtime
     from seleric_swarm.config.settings import Settings
 
@@ -107,10 +107,10 @@ def main() -> None:
     if business_state is None:
         raise RuntimeError("build_runtime did not initialize BusinessStateService")
     resolver = DomainStateResolver(business_state)
-    snapshots = asyncio.run(run_once(resolver, SnapshotStore()))
+    snapshots = await run_once(resolver, SnapshotStore())
     for snapshot in snapshots:
         print(f"{snapshot.domain}: status={snapshot.status} signals={snapshot.headline_signals}")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

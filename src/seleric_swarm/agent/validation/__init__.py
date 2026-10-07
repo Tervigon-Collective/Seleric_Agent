@@ -47,9 +47,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import capture_run_messages
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelRequest
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from seleric_swarm.agent.agent import CONVERSATIONAL
 from seleric_swarm.agent.artifacts import CausalArtifact
@@ -65,7 +65,12 @@ from seleric_swarm.agent.validation.signals import (
     run_checks,
 )
 from seleric_swarm.agent.validation.trust import TrustResult, score_trust
-from seleric_swarm.agent.validation.answer_audit import cut_off, leaked_metric_ids, total_mismatch
+from seleric_swarm.agent.validation.answer_audit import (
+    cut_off,
+    ends_in_offer,
+    leaked_metric_ids,
+    total_mismatch,
+)
 from seleric_swarm.agent.validation.verdict import decide_verdict
 from seleric_swarm.api.status import is_terminal_status
 
@@ -278,6 +283,25 @@ class EvidenceValidator:
                     "evidence_ids, never in the prose"
                 ),
             )
+        # An answer that offers to go and do the work is not an answer. Only
+        # checked on ``completed``: a ``partial`` that names what it still needs
+        # has already declared itself incomplete and must not be nagged.
+        # Live 2026-10-06 (MS3-167d9f4838): the mission fetched one of two requested
+        # windows, then closed with "Do you want me to (A) fetch today's metrics ...
+        # or (B) run a diagnose?" and shipped as completed.
+        if result.status == "completed" and (offer := ends_in_offer(result.final_response)):
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    f"final_response ends by offering to run the remaining work instead of "
+                    f"reporting the result: \"{offer}\". Answer the whole question you were "
+                    f"asked with the tools you have — fetch whatever is still missing and "
+                    f"report it. If a requirement genuinely cannot be met, use status='partial' "
+                    f"and state plainly in limitations what is missing and why; if you truly "
+                    f"cannot proceed without an answer only the user has, say exactly which "
+                    f"value you need and set status='partial'."
+                ),
+            )
 
         causal_check = self._validate_causal_classifications(deps)
         if not causal_check.ok:
@@ -331,28 +355,41 @@ class EvidenceValidator:
         return ValidationOutcome(ok=True)
 
 
-def _usage_limits(limits: ExecutionLimits, attempts_hint: int = 1) -> UsageLimits:
+def _usage_limits(limits: ExecutionLimits) -> UsageLimits:
     """Bound one mission across its agent runs.
 
     Tool calls use the execution cap; model requests get extra room for
     planning, retries, and the final answer.
 
-    ``attempts_hint`` shares that total budget across the initial run plus each
-    REVISE revision (pydantic-ai enforces ``UsageLimits`` per individual
-    ``agent.run()``, so without this the budget would be granted fresh — and
-    the mission could do N× the intended work for N revisions). Each attempt
-    gets a ceil-share so nothing is starved; the mission's aggregate stays at
-    the configured single-run budget. Defaults to 1 for a standalone run.
+    The limits are checked against ONE ``RunUsage`` shared by the initial run
+    and every REVISE revision (``_run_agent(usage=...)``), so the mission's
+    aggregate stays at the configured budget without splitting it up front.
+    Before 2026-10-06 each attempt got a 1/(1+revisions) share: a lookup's 100
+    tool calls became 25 for the FIRST run, and a broad "in-depth analysis"
+    (32 calls) failed outright although no revision ever ran (MS3-486986e598).
     """
-    attempts = max(1, attempts_hint)
-
-    def _share(total: int) -> int:
-        return -(-total // attempts)  # ceil division
-
     tool_cap = max(1, limits.max_tool_calls)
-    return UsageLimits(
-        request_limit=_share(tool_cap + 32), tool_calls_limit=_share(tool_cap)
-    )
+    return UsageLimits(request_limit=tool_cap + 32, tool_calls_limit=tool_cap)
+
+
+# Requests the wrap-up run may spend writing the answer (plus output retries).
+_WRAP_UP_REQUESTS = 3
+_WRAP_UP_PROMPT = (
+    "The tool budget for this question is used up — you cannot call any more tools. "
+    "Answer now with final_result, using only the evidence and artifact ids already in "
+    "the tool results above. Set status to partial and list in limitations exactly which "
+    "parts of the question the fetched evidence does not cover."
+)
+
+
+def _resumable(messages: list[ModelMessage]) -> list[ModelMessage]:
+    """History a new run can continue: drop a trailing model response whose tool
+    calls were refused by the usage limit (a tool call without a tool return is
+    rejected by the provider)."""
+    history = list(messages)
+    while history and not isinstance(history[-1], ModelRequest):
+        history.pop()
+    return history
 
 
 def _trunc(value: object, limit: int = 2000) -> object:
@@ -393,8 +430,14 @@ async def _run_agent(
     *,
     message_history: list[ModelMessage] | None = None,
     usage_limits: UsageLimits | None = None,
+    usage: RunUsage | None = None,
 ) -> tuple[MissionResult, list[ModelMessage]]:
     """One agent run: the result plus every message of the conversation so far.
+
+    ``usage`` is the mission's shared counter (see ``_usage_limits``). When the
+    tool budget runs out the evidence already fetched is not thrown away: one
+    tool-less wrap-up run answers from it as a partial that names what it does
+    not cover. Only if that also fails does the mission fail.
 
     The messages (``message_history`` included) are returned so a revision can
     continue the same conversation. Before 2026-10-04 each revision was a fresh
@@ -411,6 +454,7 @@ async def _run_agent(
     """
     handler = progress_handler(deps.mission_id) if has_progress_sink(deps.mission_id) else None
     budget = usage_limits or _usage_limits(deps.limits)
+    usage = usage if usage is not None else RunUsage()
     # capture_run_messages populates `messages` even when the run raises
     # UsageLimitExceeded — the failing-budget case we most need to debug.
     with capture_run_messages() as messages:
@@ -420,26 +464,87 @@ async def _run_agent(
                 deps=deps,
                 message_history=message_history,
                 usage_limits=budget,
+                usage=usage,
+                retries=max(1, deps.limits.agent_retries),
+                event_stream_handler=handler,
+            )
+        except UsageLimitExceeded as exc:
+            _log.info("v3_tool_budget_exhausted mission=%s detail=%s", deps.mission_id, exc)
+            return await _wrap_up(agent, deps, query, list(messages), usage, handler)
+    history = run.all_messages()
+    result = run.output
+    return result.model_copy(update={"trace": {**result.trace, "steps": _summarize_steps(history)}}), history
+
+
+async def _wrap_up(
+    agent: Agent[SelericDeps, MissionResult],
+    deps: SelericDeps,
+    query: str,
+    messages: list[ModelMessage],
+    usage: RunUsage,
+    handler: Any,
+) -> tuple[MissionResult, list[ModelMessage]]:
+    """Answer from the evidence already fetched once the tool budget is spent.
+
+    No further tool call is allowed (``tool_calls_limit`` = calls already made);
+    final_result is the output tool and does not count. The answer is at most a
+    partial: it was cut short, so it cannot claim full coverage."""
+    emit_progress(
+        deps.mission_id,
+        "agent.revising",
+        "Tool budget reached — answering from the evidence already fetched",
+        {"reason": "tool_budget"},
+    )
+    history = _resumable(messages)
+    limits = UsageLimits(
+        request_limit=usage.requests + _WRAP_UP_REQUESTS, tool_calls_limit=usage.tool_calls
+    )
+    with capture_run_messages() as wrap_messages:
+        try:
+            run = await agent.run(
+                _WRAP_UP_PROMPT,
+                deps=deps,
+                message_history=history,
+                usage_limits=limits,
+                usage=usage,
                 retries=max(1, deps.limits.agent_retries),
                 event_stream_handler=handler,
             )
         except UsageLimitExceeded:
-            return (
-                MissionResult(
-                    mission_id=deps.mission_id,
-                    status="failed",
-                    query=query,
-                    as_of=deps.as_of,
-                    final_response="This question took too many steps. Please retry with a more specific metric name.",
-                    error_code="EXECUTION_LIMIT_EXCEEDED",
-                    limitations=["EXECUTION_LIMIT_EXCEEDED"],
-                    trace={"steps": _summarize_steps(messages)},
+            run = None
+    if run is None or not (run.output.final_response or "").strip():
+        steps = list(wrap_messages) or messages
+        return (
+            MissionResult(
+                mission_id=deps.mission_id,
+                status="failed",
+                query=query,
+                as_of=deps.as_of,
+                final_response=(
+                    "This question needs more data lookups than one answer allows. Ask about a "
+                    "narrower slice — one metric group, channel or period — and I can go deeper."
                 ),
-                list(messages),
-            )
+                error_code="EXECUTION_LIMIT_EXCEEDED",
+                limitations=["EXECUTION_LIMIT_EXCEEDED"],
+                trace={"steps": _summarize_steps(steps)},
+            ),
+            steps,
+        )
     history = run.all_messages()
     result = run.output
-    return result.model_copy(update={"trace": {**result.trace, "steps": _summarize_steps(history)}}), history
+    limitations = [*result.limitations]
+    if "TOOL_BUDGET_EXHAUSTED" not in limitations:
+        limitations.insert(0, "TOOL_BUDGET_EXHAUSTED")
+    return (
+        result.model_copy(
+            update={
+                "status": "partial" if result.status in ("completed", "running") else result.status,
+                "limitations": limitations,
+                "trace": {**result.trace, "steps": _summarize_steps(history)},
+            }
+        ),
+        history,
+    )
 
 
 def _validation_trace(
@@ -546,12 +651,15 @@ async def _validated(
     validator = validator or EvidenceValidator()
     tracker = tracker or ExecutionBudgetTracker(limits=deps.limits)
 
-    # pydantic-ai enforces UsageLimits per agent.run(); share the mission budget
-    # across the initial run + revisions so N revisions don't multiply it.
-    attempts_total = 1 + max(0, deps.limits.max_validation_revisions)
-    mission_budget = _usage_limits(deps.limits, attempts_total)
+    # pydantic-ai checks UsageLimits against the RunUsage it is handed; one
+    # counter for the initial run + revisions keeps the mission at one budget
+    # without starving the first run.
+    mission_budget = _usage_limits(deps.limits)
+    mission_usage = RunUsage()
 
-    result, history = await _run_agent(agent, deps, query, usage_limits=mission_budget)
+    result, history = await _run_agent(
+        agent, deps, query, usage_limits=mission_budget, usage=mission_usage
+    )
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
     outcome = validator.validate(result, deps=deps)
@@ -604,7 +712,12 @@ async def _validated(
             "are in the tool results above), and call final_result again."
         )
         result, history = await _run_agent(
-            agent, deps, revision_prompt, message_history=history, usage_limits=mission_budget
+            agent,
+            deps,
+            revision_prompt,
+            message_history=history,
+            usage_limits=mission_budget,
+            usage=mission_usage,
         )
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result

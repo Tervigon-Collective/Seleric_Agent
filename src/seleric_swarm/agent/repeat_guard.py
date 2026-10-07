@@ -44,10 +44,10 @@ def _replay(prior: Any, tool: str, n: int) -> Any:
         f"REPEATED CALL ({n}x, identical arguments) — {tool} returns the same result "
         "every time; it is shown again below. "
         + (
-            f"{tool} is now withdrawn for this mission: use what you have, try a "
+            f"{tool} is now withdrawn for this mission: use the established context to format your terminal output now, try a "
             "different approach, or answer."
             if n >= WITHDRAW_AFTER
-            else "Do not call it again with these arguments."
+            else "Use the established context to format your terminal output now. Do not call it again with these arguments."
         )
     )
     return prior.model_copy(update={"summary": f"{note} {prior.summary}"})

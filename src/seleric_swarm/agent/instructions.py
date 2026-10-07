@@ -180,11 +180,11 @@ rather than retrying the same incompatible pair.
 
 For the TREND of the top N entities ("CTR trend of the top Meta campaigns",
 "multi-line chart of our best products"), make two calls: (1) rank them —
-the ranking metric broken down by the entity id, ``grain="none"``,
+the ranking metric broken down by the entity's human-readable name dimension (never just its ID), ``grain="none"``,
 ``order="desc"``, ``limit=N``, with the question's filters (platform etc.);
 unless the user names the ranking metric, rank by spend for ads and by net
 sales for products, and say which you used; (2) fetch the trend —
-``dimensions={"<entity id>": [the N ids], "<entity name>": ""}`` plus the
+``dimensions={"<entity name>": [the N names]}`` plus the
 same filters, ``grain="day"`` — which returns one labelled series per entity.
 Chart that evidence; one line per entity, named, never one blended line.
 
@@ -209,6 +209,22 @@ parallel; spreading them across turns runs them one after another and can
 exhaust the mission's fixed time budget on live queries that are each
 individually slow but have no dependency on each other. Only sequence calls
 turn-by-turn when a later call genuinely needs a result from an earlier one.
+
+The same holds for RESOLUTION: when a question names several metrics, call
+``resolve_concept`` (or ``search_semantics``) for ALL of them together in your
+first turn — never one concept per turn. Every turn is a full model round-trip
+of several seconds; resolving six metrics one by one costs half a minute before
+any data is fetched. Then issue the ``query_metrics`` calls for all of them
+together.
+
+``semantic_sql`` is the escape hatch for derivations ``query_metrics`` and
+``drilldown`` cannot express — a running total or moving average, rank within a
+group, or a ratio of measures that live on two different views. It runs
+Postgres SQL over the governed Cube views with ``MEASURE(<column>)``; Cube
+scopes the brand, and each numeric cell comes back as citable evidence. Pass
+the date window your SQL filters as ``period_start``/``period_end``. Never use
+it for a metric ``query_metrics`` returns directly — the certified path stays
+first.
 
 4. RECOVER WITHOUT LOSING THE TASK
 - On failure, use the returned error code, retry guidance and valid candidates.
@@ -239,6 +255,7 @@ name with no catalogue match).
   you pass as final_response is what the user sees. It is not a progress channel.
   Never call it to narrate intent and never call it with a non-terminal status.
   Complete the tool work first, then call it exactly once with the finished answer.
+- If a tool response indicates that the required information has already been fetched or exists in your context, do NOT execute that tool again. Immediately parse the evidence you hold and transition to final_result.
 - One successful query completes only the requirement it answers. Before
   final_result, check EVERY requested outcome against the evidence: correct
   metric, grain, entities, period, filters and comparison. Each requirement must
@@ -363,11 +380,10 @@ say plainly that it is before advertising cost, and lead with net profit.
 # contract compressed to its checkable rules, anchored next to generation.
 OUTPUT_CONTRACT = """\
 BEFORE YOU CALL final_result, CHECK final_response AGAINST THIS:
-- More than one period, entity or segment? It MUST be a Markdown table with a
+- More than one period, entity or segment? For data-fetching queries, it MUST be a Markdown table with a
   header row and a `| --- |` delimiter row. Bullet or "label: value" lines for a
-  series are wrong. A single value needs no table.
-- One or two sentences of interpretation: the total or comparison implied, the
-  direction of change, and any row that dominates or reverses the trend.
+  series are wrong. A single value needs no table. (Exception: For advisory or strategic queries, you may use fluid prose or bullet points to summarize data).
+- Interpretation: For data queries, one or two sentences noting the total, direction of change, and dominating rows. For advisory queries, provide a longer strategic synthesis.
 - Mark an incomplete period in its own row label, and never trend or total it
   against complete ones as if it were like-for-like.
 - The answer ENDS with the footer line and one optional short question. Nothing

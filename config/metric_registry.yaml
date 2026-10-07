@@ -1,1201 +1,1296 @@
-# Semantic v2: catalogue_metric = catalogue_v2 ids (+ catalogue_filters); aliases agree with the MCP resolver.
 metrics:
-  - id: metric.net_sales
-    version: 1
-    owner: commerce
-    catalogue_metric: net_sales
-    aliases: [sales, revenue, net sale, net sales, ns]
-    description: Shopify Net Sales (ex-GST), dashboard-parity daily rollup.
-    formula: commerce_net_revenue_daily
-    depends_on: [gross_sales, discounts, returns, purchase]
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-    validation:
-      - non_negative
-
-  - id: metric.gross_sales
-    version: 1
-    owner: commerce
-    catalogue_metric: gross_sales
-    aliases: [gs, gross sale, gross sales]
-    description: Gross Sales (Shopify-only, ex-GST) before discounts.
-    formula: sum(gross_sales)
-    depends_on: [purchase, avg_price]
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-    validation:
-      - non_negative
-
-  - id: metric.cac
-    version: 1
-    owner: performance
-    catalogue_metric: cac
-    # ltv_cac.cac is not inside paidmedia or finance module allowlists — query unscoped.
-    seleric_module: null
-    description: Cost to acquire a purchase/order under the approved attribution definition.
-    formula: total_ad_spend / new_customers
-    depends_on: [total_ad_spend, new_customers]
-    # Outcome metric — quiet delivery frontier can still hand off when CAC moves.
-    frontier: false
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-    unit: INR
-    validation:
-      - denominator_non_negative
-      - spend_non_negative
-
-  - id: metric.spend
-    version: 2
-    owner: performance
-    catalogue_metric: ad_spend
-    # total_ad_spend lives on canonical_pnl — a blended cross-platform finance
-    # view that is NOT scoped inside the paidmedia module.  Without explicit
-    # null here, the gateway would pin performance_agent's paidmedia module,
-    # causing catalogue_get_metric to fail and the semantic fallback to choose
-    # amazon_ads_spend instead.  null = unscoped = accesses canonical_pnl.
-    seleric_module: null
-    aliases: [ad spend, media spend, adsp, adspend]
-    description: Total paid media ad spend across all platforms (Meta + Google + Amazon Ads) from serve.canonical_pnl. Use for blended-spend, MER, and net profit calculations.
-    formula: total_ad_spend
-    frontier: true
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.gross_roas
-    version: 1
-    owner: performance
-    catalogue_metric: gross_roas
-    # Blended ROAS lives on canonical_pnl with spend — unscoped, same as CAC.
-    seleric_module: null
-    aliases: [gross roas]
-    description: Gross return on ad spend (gross sales or attributed revenue per unit of paid media spend).
-    formula: gross_sales / total_ad_spend
-    depends_on: [gross_sales, total_ad_spend]
-    direction_bad: down
-    frontier: false
-    probe: false
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-    validation:
-      - denominator_non_negative
-      - spend_non_negative
-
-  - id: metric.net_roas
-    version: 1
-    owner: performance
-    catalogue_metric: net_roas
-    seleric_module: null
-    aliases: [net roas]
-    description: Net return on ad spend (net sales per unit of paid media spend).
-    formula: net_sales / total_ad_spend
-    depends_on: [net_sales, total_ad_spend]
-    direction_bad: down
-    frontier: false
-    probe: false
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-    validation:
-      - denominator_non_negative
-      - spend_non_negative
-
-  - id: metric.cpm
-    version: 1
-    owner: performance
-    catalogue_metric: cpm
-    catalogue_filters: {ad_platform: meta}
-    description: Cost per thousand impressions (delivery frontier).
-    formula: spend / impressions * 1000
-    frontier: true
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.cpc
-    version: 1
-    owner: performance
-    catalogue_metric: cpc
-    catalogue_filters: {ad_platform: meta}
-    description: Cost per click (delivery frontier).
-    formula: spend / clicks
-    frontier: true
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.ctr
-    version: 1
-    owner: performance
-    catalogue_metric: ctr
-    catalogue_filters: {ad_platform: meta}
-    description: Click-through rate (delivery frontier).
-    formula: clicks / impressions
-    direction_bad: down
-    frontier: true
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.atc_rate
-    version: 2
-    owner: funnel
-    catalogue_metric: add_to_cart_rate
-    description: Session add-to-cart rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.
-    formula: atc_sessions / sessions
-    depends_on: [session_add_to_carts]
-    direction_bad: down
-    frontier: true
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-    aliases: [add to cart rate, atc rate, funnel add to cart step, funnel step 2]
-
-  - id: metric.sessions
-    version: 3
-    owner: funnel
-    catalogue_metric: sessions
-    description: Snowplow website sessions (web_sessions on serve.session_funnel). Base metric for funnel decomposition — all funnel rates divide by this. Sliceable by channel, device, UTM, geo, landing page. Previously registered as 'sessions' which does not exist in the catalogue.
-    formula: count(sessions)
-    direction_bad: down
-    frontier: true
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-    aliases: [web sessions, funnel base, sessions base]
-
-  - id: metric.pdp_view_rate
-    version: 2
-    owner: funnel
-    catalogue_metric: product_view_rate
-    description: PDP view rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.
-    formula: pdp_sessions / sessions
-    direction_bad: down
-    frontier: true
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-    aliases: [product view rate, pdp rate, funnel product view step, funnel step 1]
-
-  - id: metric.checkout_rate
-    version: 2
-    owner: funnel
-    catalogue_metric: checkout_rate
-    description: Checkout start rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.
-    formula: checkout_sessions / sessions
-    direction_bad: down
-    frontier: true
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-    aliases: [checkout rate, funnel checkout step, funnel step 3]
-
-  - id: metric.purchase_cvr
-    version: 3
-    owner: funnel
-    catalogue_metric: conversion_rate
-    description: Purchase conversion rate — sessions that completed a purchase, expressed as a ratio (purchased_sessions / sessions). Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count. Sliceable by channel, device, geo, ad on serve.session_funnel.
-    formula: purchased_sessions / sessions
-    direction_bad: down
-    frontier: false
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-    aliases: [purchase conversion rate, conversion rate, funnel purchase step, funnel step 4]
-    # session_purchase_rate was the old Cube measure name; it no longer exists
-    # in the catalogue. session_conversion_rate on session_funnel is the current
-    # equivalent (same formula, richer dimension set). Version bumped to track
-    # this catalogue alignment.
-
-  # Default "net profit" for agents = Historical / P&L all-channels (matches
-  # catalogue glossary). Shopify-only is metric.net_profit_shopify.
-  - id: metric.net_profit
-    version: 2
-    owner: finance
-    catalogue_metric: pnl_net_profit
-    aliases: []
-    description: >
-      All-channels Net Profit (Shopify net + Amazon Attribution net − TOC −
-      Meta+Google+Amazon spend). Distinct from Shopify-only net_profit.
-    formula: net_sales_all_channels - total_operating_cost_all_channels - total_ad_spend
-    depends_on: [net_sales_all_channels, total_operating_cost_all_channels, total_ad_spend]
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-    # Blended P&L aggregate (canonical_pnl) -- no SKU-level breakdown exists
-    # upstream. Explicit so a cross-domain grain (e.g. "sku" from a sibling
-    # product question) doesn't get silently applied here too.
-    supported_dimensions: [channel]
-
-  - id: metric.net_profit_shopify
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_net_profit
-    description: Shopify-only Net Profit (Net Sales − Net COGS − Meta+Google spend).
-    formula: commerce_net_revenue_daily - net_cogs - (meta_spend + google_spend)
-    depends_on: [commerce_net_revenue_daily, net_cogs, meta_spend, google_spend]
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.atc_to_purchase_rate
-    version: 1
-    owner: funnel
-    catalogue_metric: checkout_to_purchase_rate
-    description: Checkout-to-purchase rate on the website funnel.
-    formula: purchased_sessions / checkout_sessions
-    direction_bad: down
-    frontier: true
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  # APM / technical metrics are omitted until they exist in the live catalogue.
-
-  - id: metric.return_rate
-    version: 2
-    owner: commerce
-    catalogue_metric: returned_orders
-    description: Shopify returned orders count — orders with at least one return event on event_date (refunded_orders on serve.commerce_orders). Directionally adverse when rising. Note — this is a count, not a ratio; the catalogue no longer carries a return_rate ratio metric. Previously registered as 'return_rate' which does not exist in the catalogue.
-    formula: count(returned_orders)
-    direction_bad: up
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-
-  - id: metric.orders
-    version: 1
-    owner: commerce
-    catalogue_metric: orders
-    description: Order count (Shopify-scoped unless otherwise filtered).
-    formula: count(orders)
-    direction_bad: down
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-
-  - id: metric.units_sold
-    version: 1
-    owner: product
-    catalogue_metric: units_sold
-    aliases: [best selling product, best selling products, top selling product, top selling products, units, units sold]
-    description: Net units (ordered minus refunded) on eligible placement lines.
-    formula: ordered_units - refunded_units
-    direction_bad: down
-    frontier: true
-    unit: units
-    grain: day
-    timezone: Asia/Kolkata
-    domain: product
-    supported_dimensions: [sku, product_title]
-
-  - id: metric.repeat_rate
-    version: 1
-    owner: customer
-    catalogue_metric: repeat_rate
-    description: Repeat customers divided by customers in the query window.
-    formula: repeat_customers / customers
-    depends_on: [repeat_customers, customers]
-    direction_bad: down
-    # Outcome KPI — quiet product/ops frontier can hand off here.
-    frontier: false
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.refunded_amount_excl_tax
-    version: 1
-    owner: operations
-    catalogue_metric: refunded_amount_excl_tax
-    description: Refund amount excluding tax on the refund event date.
-    aliases: [refunded amount, refund amount, refunds, refund]
-    formula: sum(refund_amount_ex_gst)
-    frontier: true
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: operations
-
-  - id: metric.attributed_net_revenue
-    version: 1
-    owner: attribution
-    catalogue_metric: net_sales
-    description: First-party, last-touch attributed net revenue across channels.
-    formula: sum(attributed_net_revenue)
-    direction_bad: down
-    # Outcome — RCA may hand to attribution when channel revenue moves.
-    frontier: false
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-    validation:
-      - non_negative
-
-  # ------------------------------------------------------------------
-  # Customer (customer_ltv, purchase_sequence)
-  # ------------------------------------------------------------------
-  - id: metric.customers
-    version: 1
-    owner: customer
-    catalogue_metric: customers
-    description: Distinct purchasing customers (Shopify) in the query window.
-    formula: count(customers)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.repeat_customers
-    version: 1
-    owner: customer
-    catalogue_metric: repeat_customers
-    description: Customers with 2+ orders in the query window.
-    formula: count(repeat_customers)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  - id: metric.first_orders
-    version: 1
-    owner: customer
-    catalogue_metric: new_customers
-    description: Orders that were each customer's first purchase (new-customer acquisition volume).
-    formula: count(first_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: customer
-
-  # ------------------------------------------------------------------
-  # Performance marketing / Paid media (Meta/Google ad delivery)
-  # ------------------------------------------------------------------
-  - id: metric.meta_spend
-    version: 1
-    owner: performance
-    catalogue_metric: ad_spend
-    catalogue_filters: {ad_platform: meta}
-    description: Meta (Facebook/Instagram) ad spend.
-    formula: sum(meta_spend)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.google_spend
-    version: 1
-    owner: performance
-    catalogue_metric: ad_spend
-    catalogue_filters: {ad_platform: google}
-    description: Google Ads spend.
-    formula: sum(google_spend)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.meta_impressions
-    version: 1
-    owner: performance
-    catalogue_metric: impressions
-    catalogue_filters: {ad_platform: meta}
-    description: Ad impressions delivered by Meta.
-    formula: sum(meta_impressions)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.google_impressions
-    version: 1
-    owner: performance
-    catalogue_metric: impressions
-    catalogue_filters: {ad_platform: google}
-    description: Google Ads impressions.
-    formula: sum(google_impressions)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.meta_clicks
-    version: 1
-    owner: performance
-    catalogue_metric: clicks
-    catalogue_filters: {ad_platform: meta}
-    description: All clicks on Meta ads.
-    formula: sum(meta_clicks)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.google_clicks
-    version: 1
-    owner: performance
-    catalogue_metric: clicks
-    catalogue_filters: {ad_platform: google}
-    description: Google Ads clicks.
-    formula: sum(google_clicks)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.google_ctr
-    version: 1
-    owner: performance
-    catalogue_metric: ctr
-    catalogue_filters: {ad_platform: google}
-    description: Google Ads click-through rate (delivery frontier).
-    formula: google_clicks / google_impressions
-    direction_bad: down
-    frontier: true
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.google_cpc
-    version: 1
-    owner: performance
-    catalogue_metric: cpc
-    catalogue_filters: {ad_platform: google}
-    description: Google Ads cost per click (delivery frontier).
-    formula: google_spend / google_clicks
-    frontier: true
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.google_cpm
-    version: 1
-    owner: performance
-    catalogue_metric: cpm
-    catalogue_filters: {ad_platform: google}
-    description: Google Ads cost per thousand impressions (delivery frontier).
-    formula: google_spend / google_impressions * 1000
-    frontier: true
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.meta_video_completion_rate
-    version: 1
-    owner: performance
-    catalogue_metric: video_completion_rate
-    catalogue_filters: {ad_platform: meta}
-    description: Meta video completion rate.
-    formula: meta_video_completion_rate
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.meta_landing_page_views
-    version: 1
-    owner: performance
-    catalogue_metric: landing_page_views
-    catalogue_filters: {ad_platform: meta}
-    description: Meta-tracked landing page views (account-level Graph API metric, not clicks/impressions).
-    formula: sum(meta_landing_page_views)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  - id: metric.meta_cost_per_landing_page_view
-    version: 1
-    owner: performance
-    catalogue_metric: cost_per_landing_page_view
-    catalogue_filters: {ad_platform: meta}
-    description: Meta cost per landing page view.
-    formula: meta_spend / meta_landing_page_views
-    frontier: true
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: performance
-
-  # ------------------------------------------------------------------
-  # Attribution (order_attribution, meta_ad_attribution)
-  # ------------------------------------------------------------------
-  - id: metric.attributed_orders
-    version: 1
-    owner: attribution
-    catalogue_metric: orders
-    description: First-party, last-touch attributed order count across channels.
-    formula: count(attributed_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.attributed_gross_revenue
-    version: 1
-    owner: attribution
-    catalogue_metric: order_value_incl_tax
-    description: First-party, last-touch attributed gross revenue across channels.
-    formula: sum(attributed_gross_revenue)
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.attributed_refund_amount
-    version: 1
-    owner: attribution
-    catalogue_metric: refund_amount
-    description: Refund amount on attributed orders.
-    formula: sum(attributed_refund_amount)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.attributed_new_customer_orders
-    version: 1
-    owner: attribution
-    catalogue_metric: new_customers
-    description: Attributed orders placed by new (first-time) customers.
-    formula: count(attributed_new_customer_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.attributed_aov
-    version: 1
-    owner: attribution
-    catalogue_metric: net_aov
-    description: Average order value of attributed orders.
-    formula: attributed_net_revenue / attributed_orders
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.meta_attr_orders
-    version: 1
-    owner: attribution
-    catalogue_metric: orders
-    catalogue_filters: {finance_channel: meta, is_paid: "true"}
-    description: Orders last-touch attributed to Meta.
-    formula: count(meta_attr_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.meta_attr_net_revenue
-    version: 1
-    owner: attribution
-    catalogue_metric: net_sales
-    catalogue_filters: {finance_channel: meta, is_paid: "true"}
-    description: Net revenue last-touch attributed to Meta.
-    formula: sum(meta_attr_net_revenue)
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.meta_attr_gross_revenue
-    version: 1
-    owner: attribution
-    catalogue_metric: order_value_incl_tax
-    catalogue_filters: {finance_channel: meta, is_paid: "true"}
-    description: Gross revenue last-touch attributed to Meta.
-    formula: sum(meta_attr_gross_revenue)
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  - id: metric.meta_attr_aov
-    version: 1
-    owner: attribution
-    catalogue_metric: net_aov
-    catalogue_filters: {finance_channel: meta, is_paid: "true"}
-    description: Average order value of orders attributed to Meta.
-    formula: meta_attr_net_revenue / meta_attr_orders
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: attribution
-
-  # ------------------------------------------------------------------
-  # Finance / P&L (canonical_pnl)
-  # ------------------------------------------------------------------
-  - id: metric.net_cogs
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_net_cogs
-    description: Net cost of goods sold (ordered minus refunded units, at cost).
-    formula: sum(net_cogs)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.shipping_cost
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_shipping_cost
-    description: Outbound shipping cost.
-    formula: sum(shipping_cost)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.packaging_cost
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_packaging_cost
-    description: Packaging cost per order.
-    formula: sum(packaging_cost)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.payment_gateway_fees
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_payment_gateway_fees
-    description: Payment gateway processing fees.
-    formula: sum(payment_gateway_fees)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.rto_cost
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_rto_cost
-    description: Return-to-origin (RTO) logistics cost.
-    formula: sum(rto_cost)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.operating_cost
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_operating_cost
-    description: Total operating cost (shipping + packaging + gateway fees + RTO, ex ad spend).
-    formula: shipping_cost + packaging_cost + payment_gateway_fees + rto_cost
-    depends_on: [shipping_cost, packaging_cost, payment_gateway_fees, rto_cost]
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.gross_profit
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_contribution_margin
-    description: Net sales minus net COGS.
-    formula: net_sales - net_cogs
-    depends_on: [net_sales, net_cogs]
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.contribution_margin
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_contribution_margin
-    description: Gross profit minus operating cost and ad spend.
-    formula: gross_profit - operating_cost - total_ad_spend
-    depends_on: [gross_profit, operating_cost, total_ad_spend]
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.gross_margin_pct
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_contribution_margin_pct
-    description: Gross profit as a percentage of net sales.
-    formula: gross_profit / net_sales
-    direction_bad: down
-    unit: pct
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.contribution_margin_pct
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_contribution_margin_pct
-    description: Contribution margin as a percentage of net sales.
-    formula: contribution_margin / net_sales
-    direction_bad: down
-    unit: pct
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.net_margin_pct
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_net_margin_pct
-    description: Net profit as a percentage of net sales.
-    formula: net_profit / net_sales
-    direction_bad: down
-    unit: pct
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  - id: metric.mer
-    version: 1
-    owner: finance
-    catalogue_metric: pnl_mer
-    aliases: []
-    description: Marketing Efficiency Ratio — net sales / total ad spend. Higher is better.
-    formula: net_sales / total_ad_spend
-    depends_on: [net_sales, total_ad_spend]
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: finance
-
-  # ------------------------------------------------------------------
-  # Commerce (commerce_orders, commerce_performance)
-  # ------------------------------------------------------------------
-  - id: metric.new_customer_orders
-    version: 1
-    owner: commerce
-    catalogue_metric: new_customers
-    description: Orders placed by first-time (Shopify) customers.
-    formula: count(new_customer_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-
-  - id: metric.total_sales
-    version: 1
-    owner: commerce
-    catalogue_metric: total_sales
-    description: Total sales before discounts and returns/cancellations (Shopify, ex-GST).
-    formula: sum(total_sales)
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-
-  - id: metric.discounts
-    version: 1
-    owner: commerce
-    catalogue_metric: discounts
-    description: Discount amount applied to orders (Shopify, ex-GST).
-    formula: sum(discounts)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-
-  - id: metric.return_cancel_revenue
-    version: 1
-    owner: commerce
-    catalogue_metric: return_cancel_revenue
-    description: Revenue reversed by cancellations and returns (Shopify, ex-GST).
-    formula: sum(return_cancel_revenue)
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-
-  - id: metric.cancelled_orders
-    version: 1
-    owner: commerce
-    catalogue_metric: cancelled_orders
-    description: Orders cancelled on purchase date (Shopify).
-    formula: count(cancelled_orders)
-    direction_bad: up
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-
-  - id: metric.returns_cancels
-    version: 1
-    owner: commerce
-    catalogue_metric: returned_or_cancelled_orders
-    description: Cancelled orders plus refunded orders (Shopify).
-    formula: cancelled_orders + refunded_orders
-    depends_on: [cancelled_orders, refunded_orders]
-    direction_bad: up
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: commerce
-
-  # ------------------------------------------------------------------
-  # Product (product_performance)
-  # ------------------------------------------------------------------
-  - id: metric.product_orders
-    version: 1
-    owner: product
-    catalogue_metric: orders
-    description: Order-line count per product.
-    formula: count(product_orders)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: product
-
-  - id: metric.product_net_revenue
-    version: 1
-    owner: product
-    catalogue_metric: product_net_revenue
-    aliases: [product net sales, net sales by product, product net revenue]
-    description: Net revenue per product.
-    formula: sum(product_net_revenue)
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: product
-
-  - id: metric.product_gross_revenue
-    version: 1
-    owner: product
-    catalogue_metric: product_gross_revenue
-    aliases: [product gross sales, product gross revenue, gross sales by product]
-    description: Gross revenue (sales) per product.
-    formula: sum(product_gross_revenue)
-    direction_bad: down
-    unit: INR
-    grain: day
-    timezone: Asia/Kolkata
-    domain: product
-
-  - id: metric.product_gross_margin_pct
-    version: 1
-    owner: product
-    catalogue_metric: product_gross_margin_pct
-    description: Product gross profit as a percentage of product net revenue.
-    formula: product_gross_profit / product_net_revenue
-    direction_bad: down
-    unit: pct
-    grain: day
-    timezone: Asia/Kolkata
-    domain: product
-
-  # ------------------------------------------------------------------
-  # Website funnel (session_funnel, funnel_daily, web_events, web_events_daily)
-  # ------------------------------------------------------------------
-  - id: metric.bounce_rate
-    version: 1
-    owner: funnel
-    catalogue_metric: bounce_rate
-    description: Share of sessions that never reached a product detail page.
-    formula: (sessions - pdp_sessions) / sessions
-    direction_bad: up
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.funnel_conversion_rate
-    version: 1
-    owner: funnel
-    catalogue_metric: conversion_rate
-    description: Purchases (last-touch attributed orders) divided by sessions, on the channel-day funnel.
-    formula: funnel_purchases / sessions
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.funnel_purchases
-    version: 2
-    owner: funnel
-    catalogue_metric: funnel_purchases
-    description: Last-touch attributed orders on the channel-day funnel (COUNT, NOT a rate). For funnel decomposition, use metric.purchase_cvr (session_conversion_rate) instead.
-    formula: count(funnel_purchases)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-    aliases: [funnel purchases]
-
-  - id: metric.session_add_to_carts
-    version: 2
-    owner: funnel
-    catalogue_metric: add_to_carts
-    description: Sessions that added an item to cart (COUNT, NOT a rate). For funnel decomposition, use metric.atc_rate (session_atc_rate) instead.
-    formula: count(session_add_to_carts)
-    direction_bad: down
-    frontier: true
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-    aliases: []
-
-  - id: metric.session_atc_to_checkout_rate
-    version: 1
-    owner: funnel
-    catalogue_metric: add_to_cart_to_checkout_rate
-    description: Add-to-cart to checkout-start rate on the website funnel.
-    formula: checkout_sessions / atc_sessions
-    direction_bad: down
-    frontier: true
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.session_checkout_steps
-    version: 2
-    owner: funnel
-    catalogue_metric: checkout_steps
-    description: Checkout step events recorded across sessions (COUNT of events, NOT a rate). For funnel decomposition, use metric.checkout_rate (session_checkout_rate) instead.
-    formula: count(session_checkout_steps)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-    aliases: []
-
-  - id: metric.session_collection_views
-    version: 1
-    owner: funnel
-    catalogue_metric: session_collection_views
-    description: Sessions that viewed a collection/category page.
-    formula: count(session_collection_views)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.session_product_views
-    version: 2
-    owner: funnel
-    catalogue_metric: session_product_views
-    description: Product detail page views at session grain (COUNT of sessions with PDP view, NOT a rate). For funnel decomposition, use metric.pdp_view_rate (session_pdp_rate) instead.
-    formula: count(session_product_views)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-    aliases: []
-
-  - id: metric.session_remove_from_carts
-    version: 1
-    owner: funnel
-    catalogue_metric: remove_from_carts
-    description: Sessions that removed an item from cart.
-    formula: count(session_remove_from_carts)
-    direction_bad: up
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.session_site_searches
-    version: 1
-    owner: funnel
-    catalogue_metric: site_searches
-    description: Sessions with an on-site search interaction.
-    formula: count(session_site_searches)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.session_avg_page_depth
-    version: 1
-    owner: funnel
-    catalogue_metric: avg_page_depth
-    description: Average number of pages viewed per session.
-    formula: avg(page_depth)
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.session_avg_seconds_to_add_to_cart
-    version: 1
-    owner: funnel
-    catalogue_metric: avg_seconds_to_add_to_cart
-    description: Average seconds from session start to first add-to-cart.
-    formula: avg(seconds_to_add_to_cart)
-    direction_bad: up
-    unit: s
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.session_avg_seconds_to_checkout
-    version: 1
-    owner: funnel
-    catalogue_metric: avg_seconds_to_checkout
-    description: Average seconds from session start to checkout start.
-    formula: avg(seconds_to_checkout)
-    direction_bad: up
-    unit: s
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.session_avg_seconds_to_purchase
-    version: 1
-    owner: funnel
-    catalogue_metric: avg_seconds_to_purchase
-    description: Average seconds from session start to purchase.
-    formula: avg(seconds_to_purchase)
-    direction_bad: up
-    unit: s
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.events_per_session
-    version: 1
-    owner: funnel
-    catalogue_metric: events_per_session
-    description: Average website events per session (event-grain).
-    formula: count(web_events) / count(distinct sessions)
-    direction_bad: down
-    unit: ratio
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.add_to_cart_events
-    version: 1
-    owner: funnel
-    catalogue_metric: add_to_cart_events
-    description: Add-to-cart events (event count, not sessions).
-    formula: count(add_to_cart_events)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.product_view_events
-    version: 1
-    owner: funnel
-    catalogue_metric: product_view_events
-    description: Product detail page view events (event count, not sessions).
-    formula: count(product_views)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.collection_views
-    version: 1
-    owner: funnel
-    catalogue_metric: collection_view_events
-    description: Collection/category page view events.
-    formula: count(collection_views)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.site_search_events
-    version: 1
-    owner: funnel
-    catalogue_metric: site_search_events
-    description: On-site search interaction events (volume only, no search terms).
-    formula: count(site_search_events)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.web_events
-    version: 1
-    owner: funnel
-    catalogue_metric: web_events
-    description: All Snowplow website events (page/product/collection views, cart, checkout, search, purchase).
-    formula: count(web_events)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
-
-  - id: metric.web_page_views
-    version: 1
-    owner: funnel
-    catalogue_metric: page_views
-    description: Rendered page-view events.
-    formula: count(web_page_views)
-    direction_bad: down
-    unit: count
-    grain: day
-    timezone: Asia/Kolkata
-    domain: funnel
+- id: metric.net_sales
+  version: 1
+  owner: commerce
+  catalogue_metric: net_sales
+  aliases:
+  - sales
+  - revenue
+  - net sale
+  - net sales
+  - ns
+  description: Shopify Net Sales (ex-GST), dashboard-parity daily rollup.
+  formula: commerce_net_revenue_daily
+  depends_on:
+  - gross_sales
+  - discounts
+  - returns
+  - purchase
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: commerce
+  validation:
+  - non_negative
+  seleric_module: null
+- id: metric.gross_sales
+  version: 1
+  owner: commerce
+  catalogue_metric: gross_sales
+  aliases:
+  - gs
+  - gross sale
+  - gross sales
+  description: Gross Sales (Shopify-only, ex-GST) before discounts.
+  formula: sum(gross_sales)
+  depends_on:
+  - purchase
+  - avg_price
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: commerce
+  validation:
+  - non_negative
+  seleric_module: null
+- id: metric.cac
+  version: 1
+  owner: performance
+  catalogue_metric: cac
+  seleric_module: null
+  description: Cost to acquire a purchase/order under the approved attribution definition.
+  formula: total_ad_spend / new_customers
+  depends_on:
+  - total_ad_spend
+  - new_customers
+  frontier: false
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  unit: INR
+  validation:
+  - denominator_non_negative
+  - spend_non_negative
+- id: metric.spend
+  version: 2
+  owner: performance
+  catalogue_metric: ad_spend
+  seleric_module: null
+  aliases:
+  - ad spend
+  - media spend
+  - adsp
+  - adspend
+  description: Total paid media ad spend across all platforms (Meta + Google + Amazon
+    Ads) from serve.canonical_pnl. Use for blended-spend, MER, and net profit calculations.
+  formula: total_ad_spend
+  frontier: true
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+- id: metric.gross_roas
+  version: 1
+  owner: performance
+  catalogue_metric: gross_roas
+  seleric_module: null
+  aliases:
+  - gross roas
+  description: Gross return on ad spend (gross sales or attributed revenue per unit
+    of paid media spend).
+  formula: gross_sales / total_ad_spend
+  depends_on:
+  - gross_sales
+  - total_ad_spend
+  direction_bad: down
+  frontier: false
+  probe: false
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  validation:
+  - denominator_non_negative
+  - spend_non_negative
+- id: metric.net_roas
+  version: 1
+  owner: performance
+  catalogue_metric: net_roas
+  seleric_module: null
+  aliases:
+  - net roas
+  description: Net return on ad spend (net sales per unit of paid media spend).
+  formula: net_sales / total_ad_spend
+  depends_on:
+  - net_sales
+  - total_ad_spend
+  direction_bad: down
+  frontier: false
+  probe: false
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  validation:
+  - denominator_non_negative
+  - spend_non_negative
+- id: metric.cpm
+  version: 1
+  owner: performance
+  catalogue_metric: cpm
+  catalogue_filters:
+    ad_platform: meta
+  description: Cost per thousand impressions (delivery frontier).
+  formula: spend / impressions * 1000
+  frontier: true
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.cpc
+  version: 1
+  owner: performance
+  catalogue_metric: cpc
+  catalogue_filters:
+    ad_platform: meta
+  description: Cost per click (delivery frontier).
+  formula: spend / clicks
+  frontier: true
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.ctr
+  version: 1
+  owner: performance
+  catalogue_metric: ctr
+  catalogue_filters:
+    ad_platform: meta
+  description: Click-through rate (delivery frontier).
+  formula: clicks / impressions
+  direction_bad: down
+  frontier: true
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.atc_rate
+  version: 2
+  owner: funnel
+  catalogue_metric: add_to_cart_rate
+  description: "Session add-to-cart rate on the website funnel. Use for funnel decomposition\
+    \ (product view \u2192 add-to-cart \u2192 checkout \u2192 purchase). This is a\
+    \ ratio (rate), not a count."
+  formula: atc_sessions / sessions
+  depends_on:
+  - session_add_to_carts
+  direction_bad: down
+  frontier: true
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  aliases:
+  - add to cart rate
+  - atc rate
+  - funnel add to cart step
+  - funnel step 2
+  seleric_module: null
+- id: metric.sessions
+  version: 3
+  owner: funnel
+  catalogue_metric: sessions
+  description: "Snowplow website sessions (web_sessions on serve.session_funnel).\
+    \ Base metric for funnel decomposition \u2014 all funnel rates divide by this.\
+    \ Sliceable by channel, device, UTM, geo, landing page. Previously registered\
+    \ as 'sessions' which does not exist in the catalogue."
+  formula: count(sessions)
+  direction_bad: down
+  frontier: true
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  aliases:
+  - web sessions
+  - funnel base
+  - sessions base
+  seleric_module: null
+- id: metric.pdp_view_rate
+  version: 2
+  owner: funnel
+  catalogue_metric: product_view_rate
+  description: "PDP view rate on the website funnel. Use for funnel decomposition\
+    \ (product view \u2192 add-to-cart \u2192 checkout \u2192 purchase). This is a\
+    \ ratio (rate), not a count."
+  formula: pdp_sessions / sessions
+  direction_bad: down
+  frontier: true
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  aliases:
+  - product view rate
+  - pdp rate
+  - funnel product view step
+  - funnel step 1
+  seleric_module: null
+- id: metric.checkout_rate
+  version: 2
+  owner: funnel
+  catalogue_metric: checkout_rate
+  description: "Checkout start rate on the website funnel. Use for funnel decomposition\
+    \ (product view \u2192 add-to-cart \u2192 checkout \u2192 purchase). This is a\
+    \ ratio (rate), not a count."
+  formula: checkout_sessions / sessions
+  direction_bad: down
+  frontier: true
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  aliases:
+  - checkout rate
+  - funnel checkout step
+  - funnel step 3
+  seleric_module: null
+- id: metric.purchase_cvr
+  version: 3
+  owner: funnel
+  catalogue_metric: conversion_rate
+  description: "Purchase conversion rate \u2014 sessions that completed a purchase,\
+    \ expressed as a ratio (purchased_sessions / sessions). Use for funnel decomposition\
+    \ (product view \u2192 add-to-cart \u2192 checkout \u2192 purchase). This is a\
+    \ ratio (rate), not a count. Sliceable by channel, device, geo, ad on serve.session_funnel."
+  formula: purchased_sessions / sessions
+  direction_bad: down
+  frontier: false
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  aliases:
+  - purchase conversion rate
+  - conversion rate
+  - funnel purchase step
+  - funnel step 4
+  seleric_module: null
+- id: metric.net_profit
+  version: 2
+  owner: finance
+  catalogue_metric: pnl_net_profit
+  aliases: []
+  description: "All-channels Net Profit (Shopify net + Amazon Attribution net \u2212\
+    \ TOC \u2212 Meta+Google+Amazon spend). Distinct from Shopify-only net_profit.\n"
+  formula: net_sales_all_channels - total_operating_cost_all_channels - total_ad_spend
+  depends_on:
+  - net_sales_all_channels
+  - total_operating_cost_all_channels
+  - total_ad_spend
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  supported_dimensions:
+  - channel
+  seleric_module: null
+- id: metric.net_profit_shopify
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_net_profit
+  description: "Shopify-only Net Profit (Net Sales \u2212 Net COGS \u2212 Meta+Google\
+    \ spend)."
+  formula: commerce_net_revenue_daily - net_cogs - (meta_spend + google_spend)
+  depends_on:
+  - commerce_net_revenue_daily
+  - net_cogs
+  - meta_spend
+  - google_spend
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.atc_to_purchase_rate
+  version: 1
+  owner: funnel
+  catalogue_metric: checkout_to_purchase_rate
+  description: Checkout-to-purchase rate on the website funnel.
+  formula: purchased_sessions / checkout_sessions
+  direction_bad: down
+  frontier: true
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.return_rate
+  version: 2
+  owner: commerce
+  catalogue_metric: returned_orders
+  description: "Shopify returned orders count \u2014 orders with at least one return\
+    \ event on event_date (refunded_orders on serve.commerce_orders). Directionally\
+    \ adverse when rising. Note \u2014 this is a count, not a ratio; the catalogue\
+    \ no longer carries a return_rate ratio metric. Previously registered as 'return_rate'\
+    \ which does not exist in the catalogue."
+  formula: count(returned_orders)
+  direction_bad: up
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: commerce
+  seleric_module: null
+- id: metric.orders
+  version: 1
+  owner: commerce
+  catalogue_metric: orders
+  description: Order count (Shopify-scoped unless otherwise filtered).
+  formula: count(orders)
+  direction_bad: down
+  grain: day
+  timezone: Asia/Kolkata
+  domain: commerce
+  seleric_module: null
+- id: metric.units_sold
+  version: 1
+  owner: product
+  catalogue_metric: units_sold
+  aliases:
+  - best selling product
+  - best selling products
+  - top selling product
+  - top selling products
+  - units
+  - units sold
+  description: Net units (ordered minus refunded) on eligible placement lines.
+  formula: ordered_units - refunded_units
+  direction_bad: down
+  frontier: true
+  unit: units
+  grain: day
+  timezone: Asia/Kolkata
+  domain: product
+  supported_dimensions:
+  - sku
+  - product_title
+  seleric_module: null
+- id: metric.repeat_rate
+  version: 1
+  owner: customer
+  catalogue_metric: repeat_rate
+  description: Repeat customers divided by customers in the query window.
+  formula: repeat_customers / customers
+  depends_on:
+  - repeat_customers
+  - customers
+  direction_bad: down
+  frontier: false
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: customer
+  seleric_module: null
+- id: metric.refunded_amount_excl_tax
+  version: 1
+  owner: operations
+  catalogue_metric: refunded_amount_excl_tax
+  description: Refund amount excluding tax on the refund event date.
+  aliases:
+  - refunded amount
+  - refund amount
+  - refunds
+  - refund
+  formula: sum(refund_amount_ex_gst)
+  frontier: true
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: operations
+  seleric_module: null
+- id: metric.attributed_net_revenue
+  version: 1
+  owner: attribution
+  catalogue_metric: net_sales
+  description: First-party, last-touch attributed net revenue across channels.
+  formula: sum(attributed_net_revenue)
+  direction_bad: down
+  frontier: false
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: attribution
+  validation:
+  - non_negative
+  seleric_module: null
+- id: metric.customers
+  version: 1
+  owner: customer
+  catalogue_metric: customers
+  description: Distinct purchasing customers (Shopify) in the query window.
+  formula: count(customers)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: customer
+  seleric_module: null
+- id: metric.repeat_customers
+  version: 1
+  owner: customer
+  catalogue_metric: repeat_customers
+  description: Customers with 2+ orders in the query window.
+  formula: count(repeat_customers)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: customer
+  seleric_module: null
+- id: metric.first_orders
+  version: 1
+  owner: customer
+  catalogue_metric: new_customers
+  description: Orders that were each customer's first purchase (new-customer acquisition
+    volume).
+  formula: count(first_orders)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: customer
+  seleric_module: null
+- id: metric.meta_spend
+  version: 1
+  owner: performance
+  catalogue_metric: ad_spend
+  catalogue_filters:
+    ad_platform: meta
+  description: Meta (Facebook/Instagram) ad spend.
+  formula: sum(meta_spend)
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.google_spend
+  version: 1
+  owner: performance
+  catalogue_metric: ad_spend
+  catalogue_filters:
+    ad_platform: google
+  description: Google Ads spend.
+  formula: sum(google_spend)
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.meta_impressions
+  version: 1
+  owner: performance
+  catalogue_metric: impressions
+  catalogue_filters:
+    ad_platform: meta
+  description: Ad impressions delivered by Meta.
+  formula: sum(meta_impressions)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.google_impressions
+  version: 1
+  owner: performance
+  catalogue_metric: impressions
+  catalogue_filters:
+    ad_platform: google
+  description: Google Ads impressions.
+  formula: sum(google_impressions)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.meta_clicks
+  version: 1
+  owner: performance
+  catalogue_metric: clicks
+  catalogue_filters:
+    ad_platform: meta
+  description: All clicks on Meta ads.
+  formula: sum(meta_clicks)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.google_clicks
+  version: 1
+  owner: performance
+  catalogue_metric: clicks
+  catalogue_filters:
+    ad_platform: google
+  description: Google Ads clicks.
+  formula: sum(google_clicks)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.google_ctr
+  version: 1
+  owner: performance
+  catalogue_metric: ctr
+  catalogue_filters:
+    ad_platform: google
+  description: Google Ads click-through rate (delivery frontier).
+  formula: google_clicks / google_impressions
+  direction_bad: down
+  frontier: true
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.google_cpc
+  version: 1
+  owner: performance
+  catalogue_metric: cpc
+  catalogue_filters:
+    ad_platform: google
+  description: Google Ads cost per click (delivery frontier).
+  formula: google_spend / google_clicks
+  frontier: true
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.google_cpm
+  version: 1
+  owner: performance
+  catalogue_metric: cpm
+  catalogue_filters:
+    ad_platform: google
+  description: Google Ads cost per thousand impressions (delivery frontier).
+  formula: google_spend / google_impressions * 1000
+  frontier: true
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.meta_video_completion_rate
+  version: 1
+  owner: performance
+  catalogue_metric: video_completion_rate
+  catalogue_filters:
+    ad_platform: meta
+  description: Meta video completion rate.
+  formula: meta_video_completion_rate
+  direction_bad: down
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.meta_landing_page_views
+  version: 1
+  owner: performance
+  catalogue_metric: landing_page_views
+  catalogue_filters:
+    ad_platform: meta
+  description: Meta-tracked landing page views (account-level Graph API metric, not
+    clicks/impressions).
+  formula: sum(meta_landing_page_views)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.meta_cost_per_landing_page_view
+  version: 1
+  owner: performance
+  catalogue_metric: cost_per_landing_page_view
+  catalogue_filters:
+    ad_platform: meta
+  description: Meta cost per landing page view.
+  formula: meta_spend / meta_landing_page_views
+  frontier: true
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: performance
+  seleric_module: null
+- id: metric.attributed_orders
+  version: 1
+  owner: attribution
+  catalogue_metric: orders
+  description: First-party, last-touch attributed order count across channels.
+  formula: count(attributed_orders)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: attribution
+  seleric_module: null
+- id: metric.attributed_gross_revenue
+  version: 1
+  owner: attribution
+  catalogue_metric: order_value_incl_tax
+  description: First-party, last-touch attributed gross revenue across channels.
+  formula: sum(attributed_gross_revenue)
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: attribution
+  seleric_module: null
+- id: metric.attributed_refund_amount
+  version: 1
+  owner: attribution
+  catalogue_metric: refund_amount
+  description: Refund amount on attributed orders.
+  formula: sum(attributed_refund_amount)
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: attribution
+  seleric_module: null
+- id: metric.attributed_new_customer_orders
+  version: 1
+  owner: attribution
+  catalogue_metric: new_customers
+  description: Attributed orders placed by new (first-time) customers.
+  formula: count(attributed_new_customer_orders)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: attribution
+  seleric_module: null
+- id: metric.attributed_aov
+  version: 1
+  owner: attribution
+  catalogue_metric: net_aov
+  description: Average order value of attributed orders.
+  formula: attributed_net_revenue / attributed_orders
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: attribution
+  seleric_module: null
+- id: metric.meta_attr_orders
+  version: 1
+  owner: attribution
+  catalogue_metric: orders
+  catalogue_filters:
+    finance_channel: meta
+    is_paid: 'true'
+  description: Orders last-touch attributed to Meta.
+  formula: count(meta_attr_orders)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: attribution
+  seleric_module: null
+- id: metric.meta_attr_net_revenue
+  version: 1
+  owner: attribution
+  catalogue_metric: net_sales
+  catalogue_filters:
+    finance_channel: meta
+    is_paid: 'true'
+  description: Net revenue last-touch attributed to Meta.
+  formula: sum(meta_attr_net_revenue)
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: attribution
+  seleric_module: null
+- id: metric.meta_attr_gross_revenue
+  version: 1
+  owner: attribution
+  catalogue_metric: order_value_incl_tax
+  catalogue_filters:
+    finance_channel: meta
+    is_paid: 'true'
+  description: Gross revenue last-touch attributed to Meta.
+  formula: sum(meta_attr_gross_revenue)
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: attribution
+  seleric_module: null
+- id: metric.meta_attr_aov
+  version: 1
+  owner: attribution
+  catalogue_metric: net_aov
+  catalogue_filters:
+    finance_channel: meta
+    is_paid: 'true'
+  description: Average order value of orders attributed to Meta.
+  formula: meta_attr_net_revenue / meta_attr_orders
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: attribution
+  seleric_module: null
+- id: metric.net_cogs
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_net_cogs
+  description: Net cost of goods sold (ordered minus refunded units, at cost).
+  formula: sum(net_cogs)
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.shipping_cost
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_shipping_cost
+  description: Outbound shipping cost.
+  formula: sum(shipping_cost)
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.packaging_cost
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_packaging_cost
+  description: Packaging cost per order.
+  formula: sum(packaging_cost)
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.payment_gateway_fees
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_payment_gateway_fees
+  description: Payment gateway processing fees.
+  formula: sum(payment_gateway_fees)
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.rto_cost
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_rto_cost
+  description: Return-to-origin (RTO) logistics cost.
+  formula: sum(rto_cost)
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.operating_cost
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_operating_cost
+  description: Total operating cost (shipping + packaging + gateway fees + RTO, ex
+    ad spend).
+  formula: shipping_cost + packaging_cost + payment_gateway_fees + rto_cost
+  depends_on:
+  - shipping_cost
+  - packaging_cost
+  - payment_gateway_fees
+  - rto_cost
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.gross_profit
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_contribution_margin
+  description: Net sales minus net COGS.
+  formula: net_sales - net_cogs
+  depends_on:
+  - net_sales
+  - net_cogs
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.contribution_margin
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_contribution_margin
+  description: Gross profit minus operating cost and ad spend.
+  formula: gross_profit - operating_cost - total_ad_spend
+  depends_on:
+  - gross_profit
+  - operating_cost
+  - total_ad_spend
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.gross_margin_pct
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_contribution_margin_pct
+  description: Gross profit as a percentage of net sales.
+  formula: gross_profit / net_sales
+  direction_bad: down
+  unit: pct
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.contribution_margin_pct
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_contribution_margin_pct
+  description: Contribution margin as a percentage of net sales.
+  formula: contribution_margin / net_sales
+  direction_bad: down
+  unit: pct
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.net_margin_pct
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_net_margin_pct
+  description: Net profit as a percentage of net sales.
+  formula: net_profit / net_sales
+  direction_bad: down
+  unit: pct
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.mer
+  version: 1
+  owner: finance
+  catalogue_metric: pnl_mer
+  aliases: []
+  description: "Marketing Efficiency Ratio \u2014 net sales / total ad spend. Higher\
+    \ is better."
+  formula: net_sales / total_ad_spend
+  depends_on:
+  - net_sales
+  - total_ad_spend
+  direction_bad: down
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: finance
+  seleric_module: null
+- id: metric.new_customer_orders
+  version: 1
+  owner: commerce
+  catalogue_metric: new_customers
+  description: Orders placed by first-time (Shopify) customers.
+  formula: count(new_customer_orders)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: commerce
+  seleric_module: null
+- id: metric.total_sales
+  version: 1
+  owner: commerce
+  catalogue_metric: total_sales
+  description: Total sales before discounts and returns/cancellations (Shopify, ex-GST).
+  formula: sum(total_sales)
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: commerce
+  seleric_module: null
+- id: metric.discounts
+  version: 1
+  owner: commerce
+  catalogue_metric: discounts
+  description: Discount amount applied to orders (Shopify, ex-GST).
+  formula: sum(discounts)
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: commerce
+  seleric_module: null
+- id: metric.return_cancel_revenue
+  version: 1
+  owner: commerce
+  catalogue_metric: return_cancel_revenue
+  description: Revenue reversed by cancellations and returns (Shopify, ex-GST).
+  formula: sum(return_cancel_revenue)
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: commerce
+  seleric_module: null
+- id: metric.cancelled_orders
+  version: 1
+  owner: commerce
+  catalogue_metric: cancelled_orders
+  description: Orders cancelled on purchase date (Shopify).
+  formula: count(cancelled_orders)
+  direction_bad: up
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: commerce
+  seleric_module: null
+- id: metric.returns_cancels
+  version: 1
+  owner: commerce
+  catalogue_metric: returned_or_cancelled_orders
+  description: Cancelled orders plus refunded orders (Shopify).
+  formula: cancelled_orders + refunded_orders
+  depends_on:
+  - cancelled_orders
+  - refunded_orders
+  direction_bad: up
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: commerce
+  seleric_module: null
+- id: metric.product_orders
+  version: 1
+  owner: product
+  catalogue_metric: orders
+  description: Order-line count per product.
+  formula: count(product_orders)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: product
+  seleric_module: null
+- id: metric.product_net_revenue
+  version: 1
+  owner: product
+  catalogue_metric: product_net_revenue
+  aliases:
+  - product net sales
+  - net sales by product
+  - product net revenue
+  description: Net revenue per product.
+  formula: sum(product_net_revenue)
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: product
+  seleric_module: null
+- id: metric.product_gross_revenue
+  version: 1
+  owner: product
+  catalogue_metric: product_gross_revenue
+  aliases:
+  - product gross sales
+  - product gross revenue
+  - gross sales by product
+  description: Gross revenue (sales) per product.
+  formula: sum(product_gross_revenue)
+  direction_bad: down
+  unit: INR
+  grain: day
+  timezone: Asia/Kolkata
+  domain: product
+  seleric_module: null
+- id: metric.product_gross_margin_pct
+  version: 1
+  owner: product
+  catalogue_metric: product_gross_margin_pct
+  description: Product gross profit as a percentage of product net revenue.
+  formula: product_gross_profit / product_net_revenue
+  direction_bad: down
+  unit: pct
+  grain: day
+  timezone: Asia/Kolkata
+  domain: product
+  seleric_module: null
+- id: metric.bounce_rate
+  version: 1
+  owner: funnel
+  catalogue_metric: bounce_rate
+  description: Share of sessions that never reached a product detail page.
+  formula: (sessions - pdp_sessions) / sessions
+  direction_bad: up
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.funnel_conversion_rate
+  version: 1
+  owner: funnel
+  catalogue_metric: conversion_rate
+  description: Purchases (last-touch attributed orders) divided by sessions, on the
+    channel-day funnel.
+  formula: funnel_purchases / sessions
+  direction_bad: down
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.funnel_purchases
+  version: 2
+  owner: funnel
+  catalogue_metric: funnel_purchases
+  description: Last-touch attributed orders on the channel-day funnel (COUNT, NOT
+    a rate). For funnel decomposition, use metric.purchase_cvr (session_conversion_rate)
+    instead.
+  formula: count(funnel_purchases)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  aliases:
+  - funnel purchases
+  seleric_module: null
+- id: metric.session_add_to_carts
+  version: 2
+  owner: funnel
+  catalogue_metric: add_to_carts
+  description: Sessions that added an item to cart (COUNT, NOT a rate). For funnel
+    decomposition, use metric.atc_rate (session_atc_rate) instead.
+  formula: count(session_add_to_carts)
+  direction_bad: down
+  frontier: true
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  aliases: []
+  seleric_module: null
+- id: metric.session_atc_to_checkout_rate
+  version: 1
+  owner: funnel
+  catalogue_metric: add_to_cart_to_checkout_rate
+  description: Add-to-cart to checkout-start rate on the website funnel.
+  formula: checkout_sessions / atc_sessions
+  direction_bad: down
+  frontier: true
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.session_checkout_steps
+  version: 2
+  owner: funnel
+  catalogue_metric: checkout_steps
+  description: Checkout step events recorded across sessions (COUNT of events, NOT
+    a rate). For funnel decomposition, use metric.checkout_rate (session_checkout_rate)
+    instead.
+  formula: count(session_checkout_steps)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  aliases: []
+  seleric_module: null
+- id: metric.session_collection_views
+  version: 1
+  owner: funnel
+  catalogue_metric: session_collection_views
+  description: Sessions that viewed a collection/category page.
+  formula: count(session_collection_views)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.session_product_views
+  version: 2
+  owner: funnel
+  catalogue_metric: session_product_views
+  description: Product detail page views at session grain (COUNT of sessions with
+    PDP view, NOT a rate). For funnel decomposition, use metric.pdp_view_rate (session_pdp_rate)
+    instead.
+  formula: count(session_product_views)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  aliases: []
+  seleric_module: null
+- id: metric.session_remove_from_carts
+  version: 1
+  owner: funnel
+  catalogue_metric: remove_from_carts
+  description: Sessions that removed an item from cart.
+  formula: count(session_remove_from_carts)
+  direction_bad: up
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.session_site_searches
+  version: 1
+  owner: funnel
+  catalogue_metric: site_searches
+  description: Sessions with an on-site search interaction.
+  formula: count(session_site_searches)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.session_avg_page_depth
+  version: 1
+  owner: funnel
+  catalogue_metric: avg_page_depth
+  description: Average number of pages viewed per session.
+  formula: avg(page_depth)
+  direction_bad: down
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.session_avg_seconds_to_add_to_cart
+  version: 1
+  owner: funnel
+  catalogue_metric: avg_seconds_to_add_to_cart
+  description: Average seconds from session start to first add-to-cart.
+  formula: avg(seconds_to_add_to_cart)
+  direction_bad: up
+  unit: s
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.session_avg_seconds_to_checkout
+  version: 1
+  owner: funnel
+  catalogue_metric: avg_seconds_to_checkout
+  description: Average seconds from session start to checkout start.
+  formula: avg(seconds_to_checkout)
+  direction_bad: up
+  unit: s
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.session_avg_seconds_to_purchase
+  version: 1
+  owner: funnel
+  catalogue_metric: avg_seconds_to_purchase
+  description: Average seconds from session start to purchase.
+  formula: avg(seconds_to_purchase)
+  direction_bad: up
+  unit: s
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.events_per_session
+  version: 1
+  owner: funnel
+  catalogue_metric: events_per_session
+  description: Average website events per session (event-grain).
+  formula: count(web_events) / count(distinct sessions)
+  direction_bad: down
+  unit: ratio
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.add_to_cart_events
+  version: 1
+  owner: funnel
+  catalogue_metric: add_to_cart_events
+  description: Add-to-cart events (event count, not sessions).
+  formula: count(add_to_cart_events)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.product_view_events
+  version: 1
+  owner: funnel
+  catalogue_metric: product_view_events
+  description: Product detail page view events (event count, not sessions).
+  formula: count(product_views)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.collection_views
+  version: 1
+  owner: funnel
+  catalogue_metric: collection_view_events
+  description: Collection/category page view events.
+  formula: count(collection_views)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.site_search_events
+  version: 1
+  owner: funnel
+  catalogue_metric: site_search_events
+  description: On-site search interaction events (volume only, no search terms).
+  formula: count(site_search_events)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.web_events
+  version: 1
+  owner: funnel
+  catalogue_metric: web_events
+  description: All Snowplow website events (page/product/collection views, cart, checkout,
+    search, purchase).
+  formula: count(web_events)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null
+- id: metric.web_page_views
+  version: 1
+  owner: funnel
+  catalogue_metric: page_views
+  description: Rendered page-view events.
+  formula: count(web_page_views)
+  direction_bad: down
+  unit: count
+  grain: day
+  timezone: Asia/Kolkata
+  domain: funnel
+  seleric_module: null

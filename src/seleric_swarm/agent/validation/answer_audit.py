@@ -332,3 +332,62 @@ def cut_off(text: str) -> str | None:
     if last and last[0].lower() in _DANGLING:
         return last[0]
     return None
+
+
+# An answer that hands the remaining work back to the reader instead of doing
+# it. INSTRUCTIONS forbids this in plain words ("Never end your turn to ask the
+# user whether you should run the next tool call or continue a lookup you have
+# already started") and the model did it anyway, so it is checked like the
+# arithmetic above rather than trusted.
+#
+# ``should I``/``shall I`` are gated behind a WORK VERB on purpose. Bare "should
+# I" is also how a legitimate blocker reads — "Which brand should I use, Acme
+# or Globex?" is the model correctly asking for something only the user has,
+# which INSTRUCTIONS explicitly permits. An offer is about *doing the work*
+# ("Should I fetch today's numbers too?"), not about which value to use.
+_WORK_VERB = (
+    r"(?:fetch|run|get|pull|check|compute|calculate|do|proceed|continue|add|show|"
+    r"drill(?:\s+\w+)?\s?down|break(?:\s+\w+)?\s+down|re-?run|look|try|"
+    r"investigate|diagnose|extend|include|map|compare|split|group)"
+)
+_OFFER_LEAD = re.compile(
+    r"\b(?:"
+    r"do you want|do you wish|would you like|would you prefer|shall we|"
+    r"want me to|let me know if you (?:want|need|would like)|"
+    rf"(?:should|shall) i (?:also )?{_WORK_VERB}"
+    r")\b",
+    re.IGNORECASE,
+)
+# How many trailing sentences of the closing line to consider. An offer is
+# normally the last sentence; the preceding one because "…which is what I have.
+# Do you want me to fetch today as well?" is the shape a live answer took
+# (MS3-167d9f4838).
+_OFFER_TRAILING_SENTENCES = 2
+_OFFER_REASON_CHARS = 240
+
+
+def ends_in_offer(text: str) -> str | None:
+    """The trailing sentence that offers to do the work instead of doing it.
+
+    Returns the offending sentence (for the revision reason) or None.
+
+    Scoped to the answer's closing line: an offer is the last thing an answer
+    says, and scanning the whole text would drag a preceding markdown table
+    into the reason string. Requires an offer lead-in *and* a question mark, so
+    prose that merely contains the phrase ("let me know if revenue disagrees")
+    is not a hand-back.
+
+    A false positive costs one revision and the reason states the distinction,
+    so the model either finishes the work or reframes as a stated limitation.
+    That is the intended trade: shipping a half-answer as ``completed`` is worse
+    than one extra turn.
+    """
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not lines or not lines[-1].endswith("?"):
+        return None
+    sentences = [s for s in _SENTENCE_END.split(lines[-1]) if s and s.strip()]
+    for sentence in sentences[-_OFFER_TRAILING_SENTENCES:]:
+        if _OFFER_LEAD.search(sentence):
+            found = " ".join(sentence.split())
+            return found[:_OFFER_REASON_CHARS]
+    return None

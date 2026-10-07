@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from pydantic_ai import RunContext
 
-from seleric_swarm.agent.artifacts import EvidenceArtifact, PredictionArtifact
+from seleric_swarm.agent.artifacts import PredictionArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.analytics.grain import CALCULATION_VERSION, validate_grain_set
@@ -42,6 +42,7 @@ from seleric_swarm.models.service import (
     model_registry_from_yaml,
 )
 from seleric_swarm.toolsets import policy_config as policy
+from seleric_swarm.toolsets.analytics import _load_evidence as _load_evidence
 
 _registry_cache: dict[str, object] = {}
 
@@ -57,37 +58,6 @@ def _refuse(summary: str, *, warning: str, error_code: str = "INSUFFICIENT_EVIDE
     return ToolResult(
         success=False, summary=summary, error_code=error_code, retryable=False, warnings=[warning]
     )
-
-
-def _load_evidence(
-    ctx: RunContext[SelericDeps], evidence_ids: list[str]
-) -> tuple[list[EvidenceArtifact], ToolResult | None]:
-    if not evidence_ids:
-        return [], _refuse("no evidence_ids supplied", warning=policy.WARN_NO_EVIDENCE)
-
-    artifacts = ctx.deps.artifact_store.get_many(list(evidence_ids))
-    found = {a.id for a in artifacts}
-    missing = [aid for aid in evidence_ids if aid not in found]
-    if missing:
-        return [], _refuse(
-            f"evidence not found in store: {', '.join(missing)}", warning=policy.WARN_NO_EVIDENCE
-        )
-
-    evidence: list[EvidenceArtifact] = []
-    for artifact in artifacts:
-        if artifact.artifact_type != "evidence":
-            return [], _refuse(
-                f"artifact {artifact.id} is artifact_type={artifact.artifact_type!r}, not evidence",
-                warning=policy.WARN_NO_EVIDENCE,
-            )
-        try:
-            evidence.append(EvidenceArtifact.model_validate(artifact.payload))
-        except Exception as exc:
-            return [], _refuse(
-                f"artifact {artifact.id} is not a valid EvidenceArtifact: {exc}",
-                warning=policy.WARN_NO_EVIDENCE,
-            )
-    return evidence, None
 
 
 def _approved_model_for(target: str, *, model_type: str) -> ModelRecord | None:
@@ -147,7 +117,9 @@ async def forecast(
     ``grain="day"`` would silently become a "daily" history point
     (``docs/BUG_SHEET.md`` #14).
     """
-    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    evidence, evidence_ids, refusal = _load_evidence(
+        ctx, evidence_ids, warnings=[policy.WARN_NO_EVIDENCE]
+    )
     if refusal is not None:
         return refusal
 

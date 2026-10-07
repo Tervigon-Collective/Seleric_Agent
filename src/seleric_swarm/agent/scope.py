@@ -49,6 +49,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date
+
+from seleric_swarm.contracts.lookup import TimeRangeV1
 
 # Breakdown lead-ins. "by" is the loose one, but precision comes from the
 # resolve-or-drop rule below, not from this pattern: a captured term that does
@@ -83,6 +86,55 @@ class ValueFilter:
 
 
 @dataclass(frozen=True)
+class RequiredWindow:
+    """One period the question demanded, as a closed date span.
+
+    A *comparison* question names two of these. Live 2026-10-06
+    (MS3-167d9f4838): "the last 3 days versus today" resolved to a single window
+    — ``services/time_range.py`` returned on its first match and ``today`` was
+    dropped — so the mission fetched, analysed and shipped only the 3-day half
+    as ``completed``. ``RequiredScope`` had no field to hold the second window,
+    so ``check_scope_coverage`` had nothing to reconcile and no gate could
+    fire. This is that field.
+    """
+
+    start: date
+    end: date
+
+    def __str__(self) -> str:
+        return self.start.isoformat() if self.start == self.end else f"{self.start}..{self.end}"
+
+
+def required_windows_from_resolved(
+    window: TimeRangeV1 | None,
+) -> tuple[RequiredWindow, ...]:
+    """The dated periods a resolved comparison question demands.
+
+    A single-window question yields one entry; ``kind="comparison"`` yields both
+    periods **only when the second one is dated** — an undated ``start_b`` is not
+    a constraint, and inventing one would gate a mission on nothing.
+
+    Half-open on purpose: ``window_from_query`` already resolves relative phrases
+    to closed spans, and nothing downstream may widen or narrow them.
+    """
+    if window is None or not window.start or not window.end:
+        return ()
+    try:
+        first = RequiredWindow(date.fromisoformat(window.start[:10]), date.fromisoformat(window.end[:10]))
+    except ValueError:
+        return ()
+    if window.kind != "comparison" or not window.start_b or not window.end_b:
+        return (first,)
+    try:
+        second = RequiredWindow(date.fromisoformat(window.start_b[:10]), date.fromisoformat(window.end_b[:10]))
+    except ValueError:
+        return (first,)
+    if second == first:
+        return (first,)
+    return (first, second)
+
+
+@dataclass(frozen=True)
 class RequiredScope:
     """Hard constraints resolved to catalogue dimension ids.
 
@@ -96,18 +148,28 @@ class RequiredScope:
     ``value_filters`` — named values the answer must be filtered to.
     ``temporal_grain`` — the time grain the query requests (day/week/month/quarter/year).
        Evidence at a finer grain can satisfy a coarser grain request via aggregation.
+    ``windows`` — the dated periods the query demands; **two entries for a
+       comparison question**. Reconced against the evidence's own
+       ``period_start``/``period_end`` in ``check_scope_coverage``.
     (Extension point, not yet populated: exclusion dims.)
     """
 
     breakdowns: frozenset[frozenset[str]] = frozenset()
     value_filters: tuple[ValueFilter, ...] = ()
     temporal_grain: str | None = None
+    windows: tuple[RequiredWindow, ...] = ()
     # Concept axes the user's own words set (gateway catalogue_resolve_values "axes", e.g. date=finance
     # for "net profit on the P&L"): merged into every concept resolution and checked on the evidence.
     question_axes: tuple[tuple[str, str], ...] = ()
 
     def is_empty(self) -> bool:
-        return not self.breakdowns and not self.value_filters and not self.temporal_grain and not self.question_axes
+        return not (
+            self.breakdowns
+            or self.value_filters
+            or self.temporal_grain
+            or self.windows
+            or self.question_axes
+        )
 
     def axis(self, name: str) -> str | None:
         return dict(self.question_axes).get(name)

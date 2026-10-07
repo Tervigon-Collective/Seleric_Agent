@@ -195,3 +195,59 @@ def test_a_cut_off_answer_is_detected(text, dangling):
     from seleric_swarm.agent.validation.answer_audit import cut_off
 
     assert cut_off(text) == dangling
+
+
+# -- handing the work back to the reader ----------------------------------------
+#
+# Live 2026-10-06 (MS3-167d9f4838): the mission fetched one of the two windows the
+# question asked about and closed with "Do you want me to (A) fetch today's
+# metrics ... or (B) run a diagnose?", shipping as `completed`. INSTRUCTIONS
+# forbids this in plain words, so it is checked rather than trusted.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The incident's closing line, after a table.
+        "Top 3-day performers (2026-10-03..2026-10-05): PMax.\n\n"
+        "| a | b |\n|---|---|\n| 1 | 2 |\n\n"
+        "Do you want me to (A) fetch today's metrics, or (B) run a diagnose?",
+        # An offer is normally the last sentence but not always the only one.
+        "ROAS fell 4%. That is the diagnosis. Would you like me to open a ticket?",
+        # Verb-gated leads: about doing the work.
+        "Should I fetch today's numbers as well?",
+        "Shall I break this down by ad set?",
+        "Do you want the same broken down by ad set?",
+    ],
+)
+def test_an_answer_ending_in_an_offer_is_detected(text: str) -> None:
+    from seleric_swarm.agent.validation.answer_audit import ends_in_offer
+
+    assert ends_in_offer(text) is not None, text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A genuine blocker: which value to use is only the user's to give, and
+        # INSTRUCTIONS explicitly permits asking for it.
+        "Which brand should I use — Acme or Globex?",
+        "Should I use gross_sales or net_sales for revenue?",
+        # Asking which DEFINITION to use is the blocker case, not an offer of
+        # work: the user owns that choice, so it must not be flagged.
+        "Do you prefer net sales or gross sales here?",
+        # A real question with a real answer.
+        "Why did ROAS fall? Because spend rose 12% while sales were flat.",
+        # The lead-in inside prose is not a hand-back.
+        "Totals may shift once refunds post; let me know if the figures disagree.",
+        # No question mark: a trailing note, not a hand-back.
+        "Let me know if you want the CSV.",
+        # A finished answer.
+        "ROAS fell from 2.79 to 1.66 today, driven by a 12% spend increase on PMax.",
+        "",
+    ],
+)
+def test_a_finished_answer_is_not_flagged_as_an_offer(text: str) -> None:
+    from seleric_swarm.agent.validation.answer_audit import ends_in_offer
+
+    assert ends_in_offer(text) is None, text

@@ -30,6 +30,12 @@ from pydantic_ai.models.wrapper import WrapperModel
 _log = structlog.get_logger()
 
 COOLDOWN_RATE_LIMITED_S = 45.0
+# Consecutive 429s double the cooldown up to this cap; a success resets it. A
+# per-minute TOKEN quota smaller than one agent prompt (DeepSeek-V4-Pro,
+# southindia, ~50k-token steps) re-trips within a minute, so a flat 45s made
+# the first step of nearly every mission eat a 429 (12 of 19 missions on
+# 2026-10-06) before falling through.
+COOLDOWN_RATE_LIMITED_MAX_S = float(os.getenv("AGENT_LLM_429_COOLDOWN_MAX_S", "600"))
 COOLDOWN_TIMEOUT_S = 90.0
 COOLDOWN_SERVER_ERROR_S = 30.0
 COOLDOWN_UNAVAILABLE_S = 300.0
@@ -49,6 +55,7 @@ class ModelHealth:
         self._clock = clock
         self._until: dict[str, float] = {}
         self._known: set[str] = set()
+        self._strikes: dict[str, int] = {}
 
     def register(self, key: str) -> None:
         self._known.add(key)
@@ -58,6 +65,15 @@ class ModelHealth:
 
     def recover(self, key: str) -> None:
         self._until.pop(key, None)
+        self._strikes.pop(key, None)
+
+    def rate_limited(self, key: str, base: float, hint: float | None = None) -> float:
+        """Cooldown for a 429: doubles per consecutive strike (capped), never shorter
+        than the provider's own retry-after hint."""
+        strikes = self._strikes.get(key, 0) + 1
+        self._strikes[key] = strikes
+        seconds = min(base * 2 ** (strikes - 1), max(base, COOLDOWN_RATE_LIMITED_MAX_S))
+        return max(seconds, hint or 0.0)
 
     def _cooling(self, key: str) -> bool:
         return self._until.get(key, 0.0) > self._clock()
@@ -89,6 +105,17 @@ def cooldown_for(exc: ModelAPIError) -> float:
     return COOLDOWN_TIMEOUT_S  # timeouts / connection errors
 
 
+def retry_after_hint(exc: ModelAPIError) -> float | None:
+    """Seconds the provider's standard ``Retry-After`` response header asks for, if
+    it sent one in delta-seconds form."""
+    headers = getattr(exc, "headers", None) or {}
+    raw = next((v for k, v in headers.items() if str(k).lower() == "retry-after"), None)
+    try:
+        return float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _spent_without_output(response: Any) -> bool:
     if getattr(response, "finish_reason", None) != "length":
         return False
@@ -113,6 +140,8 @@ class HealthGatedChatModel(OpenAIChatModel):
 
     def _record_failure(self, exc: ModelAPIError) -> None:
         seconds = cooldown_for(exc)
+        if isinstance(exc, ModelHTTPError) and exc.status_code == 429:
+            seconds = self._health.rate_limited(self._health_key, seconds, retry_after_hint(exc))
         if seconds:
             self._health.cool(self._health_key, seconds)
 

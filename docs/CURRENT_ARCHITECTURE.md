@@ -291,3 +291,27 @@ reachable through `query_metrics` (`meta_ad_performance`). No ad write/CRUD
 tools are wired either. `semantic.resolve_brand` is registered so
 multi-brand questions resolve a `brand_id` instead of the model inventing
 one.
+
+---
+### Phase 6 — Semantic SQL (Cube Core / 2026-10-06)
+
+**What:** Cube Core's Postgres-protocol SQL API (`CUBEJS_PG_SQL_PORT=15432`) is enabled on `cube-v2`; the agent surface adds `semantic_sql` (new MCP tool `semantic_sql` + agent wrapper `semantic.semantic_sql`).
+
+**Safety rules (hard):** read-only SELECT only; single statement; no DDL/DML (`INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/TRUNCATE/GRANT/REVOKE`); no blocking/dangerous functions (`pg_sleep`, `pg_terminate_backend`, `pg_cancel_backend`, `set_config`, `lo_import`, `copy`); must reference Cube view members or `MEASURE()`; max rows 5000 (hard cap 50,000); statement timeout 30s; rate limit 6 calls/min per caller; provenance carries `query_sha`, `catalogue_version`, `freshness`.
+
+**Access control:** Postgres wire auth uses dev-mode `user:password` (env `CUBE_SQL_DSN`); production DSN must replace it. Cube-side policies: none added this phase (brand scoping stays at ClickHouse `cube_serve` login + agent module filters).
+
+**Caching / pre-aggregations:** Cube Store (`cubestore` service, `ws://cubestore:3030`) is added and running; pre-aggregation YAML defined for 3 hot grains (`pnl_daily` daily rollup by finance_channel, `orders` daily by sales_channel, `ad_delivery` daily by ad_platform) — deferred from active build due to Cube 1.6.48 + ClickHouse index parsing limitation (see `doc/semantic_v2/PHASE6.md`).
+
+**Agent loop impact:** `semantic_sql` is registered in `agent/agent.py` (`TOOLS`), `semantic_layer/semantic_sql.py` validates and runs queries, returns `SemanticSqlResult` with `data`, `columns`, `row_count`, `limited`, `query_sha`, `elapsed_ms`. The agent wrapper builds a `ToolResult` with `EvidenceArtifact` provenance (query text, time range, result set). The `semantic_sql` capability wire uses the same `MCPGateway` and `CubeClient` auth as `metrics_query`.
+
+**Verification status:**
+- `psql "postgresql://user:password@127.0.0.1:15432/cube" -c "SELECT 1"` passes (Postgres wire)
+- `POST /cubejs-api/v1/cubesql` (REST SQL) passes via `CubeClient`
+- `semantic_sql` MCP tool returns governed rows with provenance (verified: `finance_channel` rollup from `serve.pnl_daily`)
+- Validation blocks `DROP`, `SELECT pg_sleep(5)`, and multi-statement SQL
+- Rate limit enforced (`6/min`)
+
+**Reference docs:**
+- Plan / gap: `Seleric_Agent_Core/doc/semantic_v2/PHASE6.md`
+- Cube docs (inspiration): Cube Core introduction (`docs.cube.dev/docs/introduction`)

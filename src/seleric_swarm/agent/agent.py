@@ -63,6 +63,7 @@ TOOLS: list[Any] = [
     semantic.get_metric_definition,
     semantic.get_metric_definitions,
     semantic.query_metrics,
+    semantic.semantic_sql,
     semantic.drilldown,
     # toolsets/ads.py (Meta/Google platform APIs) is deliberately not
     # registered: those are third-party surfaces outside the certified Cube

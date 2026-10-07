@@ -17,6 +17,7 @@ from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal.service import estimate_from_evidence
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+from seleric_swarm.toolsets.analytics import _load_evidence as _load_evidence
 from seleric_swarm.toolsets.policy_config import (
     DEFAULT_CAUSAL_ESTIMATOR,
     MIN_HISTORY_DAYS,
@@ -49,45 +50,6 @@ def _refuse(summary: str, *, error_code: str, warnings: list[str] | None = None)
         retryable=False,
         warnings=list(warnings or []),
     )
-
-
-def _load_evidence(
-    ctx: RunContext[SelericDeps], evidence_ids: list[str]
-) -> tuple[list[EvidenceArtifact], ToolResult | None]:
-    if not evidence_ids:
-        return [], _refuse(
-            "no evidence_ids supplied",
-            error_code="INSUFFICIENT_EVIDENCE",
-            warnings=[WARN_NO_EVIDENCE],
-        )
-
-    artifacts = ctx.deps.artifact_store.get_many(list(evidence_ids))
-    found = {a.id for a in artifacts}
-    missing = [aid for aid in evidence_ids if aid not in found]
-    if missing:
-        return [], _refuse(
-            f"evidence not found in store: {', '.join(missing)}",
-            error_code="INSUFFICIENT_EVIDENCE",
-            warnings=[WARN_NO_EVIDENCE],
-        )
-
-    evidence: list[EvidenceArtifact] = []
-    for artifact in artifacts:
-        if artifact.artifact_type != "evidence":
-            return [], _refuse(
-                f"artifact {artifact.id} is artifact_type={artifact.artifact_type!r}, not evidence",
-                error_code="INSUFFICIENT_EVIDENCE",
-                warnings=[WARN_NO_EVIDENCE],
-            )
-        try:
-            evidence.append(EvidenceArtifact.model_validate(artifact.payload))
-        except Exception as exc:
-            return [], _refuse(
-                f"artifact {artifact.id} payload is not a valid EvidenceArtifact: {exc}",
-                error_code="INSUFFICIENT_EVIDENCE",
-                warnings=[WARN_NO_EVIDENCE],
-            )
-    return evidence, None
 
 
 def _precondition_history(
@@ -169,7 +131,9 @@ def estimate_effect(
     search_breadth: SearchBreadth = 0,
 ) -> ToolResult:
     """Estimate a causal effect from already-fetched evidence (frozen §4)."""
-    evidence, refuse = _load_evidence(ctx, evidence_ids)
+    evidence, evidence_ids, refuse = _load_evidence(
+        ctx, evidence_ids, warnings=[WARN_NO_EVIDENCE]
+    )
     if refuse is not None:
         return refuse
 
@@ -246,9 +210,13 @@ def refute_estimate(ctx: RunContext[SelericDeps], causal_artifact_id: str) -> To
             warnings=[WARN_MISSING_CAUSAL_ARTIFACT],
         )
 
-    evidence, refuse = _load_evidence(ctx, prior.evidence_ids)
+    evidence, prior_evidence_ids, refuse = _load_evidence(
+        ctx, prior.evidence_ids, warnings=[WARN_NO_EVIDENCE]
+    )
     if refuse is not None:
         return refuse
+    # From here on the refutation cites the ids that actually resolved, not
+    # ``prior.evidence_ids`` — a repaired id must reach the artifact it backs.
 
     treatment = str(prior.query.get("treatment") or "")
     outcome = str(prior.query.get("outcome") or "")
@@ -281,10 +249,10 @@ def refute_estimate(ctx: RunContext[SelericDeps], causal_artifact_id: str) -> To
         evidence_classification=outcome_est.evidence_classification,
         effect_estimate=outcome_est.effect_estimate,
         refutation_checks=list(outcome_est.refutation_checks),
-        evidence_ids=list(prior.evidence_ids),
+        evidence_ids=list(prior_evidence_ids),
         method=outcome_est.method,
     )
-    aid = _write_causal(ctx, causal, evidence_ids=prior.evidence_ids)
+    aid = _write_causal(ctx, causal, evidence_ids=prior_evidence_ids)
     return ToolResult(
         success=True,
         artifact_ids=[aid],
@@ -292,6 +260,6 @@ def refute_estimate(ctx: RunContext[SelericDeps], causal_artifact_id: str) -> To
             f"refute {causal_artifact_id}: classification={outcome_est.evidence_classification}, "
             f"refutations={len(outcome_est.refutation_checks)}"
         ),
-        provenance=_provenance(prior.evidence_ids),
+        provenance=_provenance(prior_evidence_ids),
         warnings=list(outcome_est.warnings),
     )

@@ -87,8 +87,10 @@ class MissionResult(BaseModel):
         description=(
             "Words from the [values in the data] hints that the question uses as ordinary language, "
             "not as that value (e.g. 'other' in 'compared to other days' is not payment_method = other). "
-            "Listed words are not required as filters. Never list a word the user meant as a "
-            "filter (a channel, platform, product or source they named)."
+            "Listed words are not required as filters. Never list a word the user meant as a filter "
+            "for that specific dimension. However, if the hint suggests a dimension that does not match "
+            "the user's intended entity type (e.g. the hint suggests ad_name but the user meant a product), "
+            "you MUST list the word in not_values to reject the incorrect dimension mapping."
         ),
     )
     error_code: str | None = None

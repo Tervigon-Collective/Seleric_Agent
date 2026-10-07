@@ -27,7 +27,7 @@ def test_every_frozen_function_is_registered() -> None:
     unregistered — the test suite would stay green, because a tool nobody
     registers is a tool nobody tests.
     """
-    assert len(TOOLS) == 30  # + diagnosis.diagnose_metric_change, semantic.list_metrics
+    assert len(TOOLS) == 31  # + diagnosis.diagnose_metric_change, semantic.list_metrics, semantic.semantic_sql
 
 
 def test_all_tools_register_on_the_agent() -> None:
@@ -35,6 +35,7 @@ def test_all_tools_register_on_the_agent() -> None:
     names = set(agent._function_toolset.tools.keys())
     assert names == {
         "search_semantics",
+        "semantic_sql",
         "list_metrics",
         "resolve_brand",
         "resolve_concept",
@@ -77,7 +78,7 @@ async def test_stub_model_still_calls_zero_tools() -> None:
     # "final_result" is pydantic_ai's own internal structured-output call,
     # not one of the real tools -- excluded, not counted as a tool call.
     agent = build_seleric_agent()
-    result = await agent.run("hello")
+    result = await agent.run("hello")  # type: ignore[arg-type]
     assert result.output.mission_id == "stub"
     messages = result.all_messages()
     tool_calls = [

@@ -27,12 +27,14 @@ import pytest
 from seleric_swarm.agent.artifacts import CausalArtifact, EvidenceArtifact, PredictionArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.agent.validation import AlternativeHypothesis, EvidenceValidator
+from seleric_swarm.agent.scope import RequiredScope
 from seleric_swarm.agent.validation.signals import (
     Challenge,
     CheckOutcome,
     EvidenceGap,
     check_contradiction,
     check_evidence,
+    check_scope_coverage,
 )
 from seleric_swarm.agent.validation.trust import score_trust
 from seleric_swarm.agent.validation.verdict import decide_verdict
@@ -441,3 +443,128 @@ def test_prediction_without_leakage_check_warns():
 
     assert outcome.verdict == "REVISE"
     assert any("feature-leakage" in r for r in outcome.reasons)
+
+
+# -- requested time windows -----------------------------------------------------
+#
+# Live 2026-10-06 (MS3-167d9f4838): the question compared "the last 3 days versus
+# today"; the resolver dropped the second window, nothing reconciled the periods,
+# and the mission shipped the 3-day half as `completed`. `RequiredScope` had no
+# field to hold a second window, so the gate below is what closes it.
+
+
+def _span(store: InMemoryArtifactStore, *, start: int, end: int, grain: str = "none") -> str:
+    payload = EvidenceArtifact(
+        metric_id="metric.net_sales",
+        grain=grain,  # type: ignore[arg-type]
+        as_of=datetime.now(UTC),
+        period_start=datetime(2026, 10, start, tzinfo=UTC),
+        period_end=datetime(2026, 10, end, tzinfo=UTC),
+        value=100.0,
+        source_query={"measure": "metric.net_sales"},
+    )
+    return store.put(
+        Artifact(
+            workspace_id="ws-1",
+            artifact_type="evidence",
+            payload=payload.model_dump(mode="json"),
+            classification="factual",
+            evidence_ids=[f"raw:{start}:{end}"],
+            provenance=ArtifactProvenance(query_version="q1"),
+            mission_id=_MISSION,
+        )
+    ).id
+
+
+def _incident_scope() -> Any:
+    from seleric_swarm.agent.scope import required_windows_from_resolved
+    from seleric_swarm.services.time_range import window_from_query
+
+    return RequiredScope(
+        windows=required_windows_from_resolved(
+            window_from_query(
+                "the last 3 days versus today", "Asia/Kolkata", "2026-10-06"
+            )
+        )
+    )
+
+
+def test_a_comparison_question_missing_one_window_is_a_blocking_gap() -> None:
+    """The incident: 10-03..10-05 fetched, 10-06 never fetched."""
+    store = InMemoryArtifactStore()
+    _span(store, start=3, end=5)
+    outcome = check_scope_coverage(store.list_for_mission(_MISSION), _incident_scope())
+    assert outcome.status == "INSUFFICIENT"
+    blocking = [g for g in outcome.gaps if g.blocking]
+    assert len(blocking) == 1
+    assert "2026-10-06" in blocking[0].description
+
+
+@pytest.mark.parametrize(
+    "spans",
+    [
+        pytest.param([(3, 5), (6, 6)], id="both_windows_fetched_separately"),
+        pytest.param([(3, 6)], id="one_fetch_spanning_both"),
+        pytest.param([(3, 3), (4, 4), (5, 5), (6, 6)], id="day_grained_series"),
+    ],
+)
+def test_evidence_covering_both_windows_is_accepted(spans: list[tuple[int, int]]) -> None:
+    store = InMemoryArtifactStore()
+    for start, end in spans:
+        _span(store, start=start, end=end, grain="day" if start != end else "none")
+    outcome = check_scope_coverage(store.list_for_mission(_MISSION), _incident_scope())
+    assert outcome.status == "OK", outcome.gaps
+    assert not outcome.gaps
+
+
+def test_a_hole_in_the_evidence_does_not_count_as_covering_a_window() -> None:
+    """10-03 and 10-05 with no 10-04 is a gap, not a 3-day window.
+
+    The gap names the window that is not covered, not the missing day inside it.
+    """
+    store = InMemoryArtifactStore()
+    for day in (3, 5, 6):
+        _span(store, start=day, end=day, grain="day")
+    outcome = check_scope_coverage(store.list_for_mission(_MISSION), _incident_scope())
+    assert outcome.status == "INSUFFICIENT"
+    # Only the 3-day window is unsatisfied; 10-06 is covered by its own row.
+    assert [g.description for g in outcome.gaps if g.blocking] == [
+        g.description for g in outcome.gaps if g.blocking and "2026-10-03..2026-10-05" in g.description
+    ]
+    assert sum(1 for g in outcome.gaps if g.blocking) == 1
+
+
+def test_a_single_window_question_is_not_gated_on_a_second_period() -> None:
+    store = InMemoryArtifactStore()
+    # "last 7 days" from as_of 2026-10-06 is 2026-09-29..2026-10-05: it starts in
+    # SEPTEMBER, which is why this fixture cannot reuse the October-only _span.
+    stamp_s, stamp_e = datetime(2026, 9, 29, tzinfo=UTC), datetime(2026, 10, 5, tzinfo=UTC)
+    payload = EvidenceArtifact(
+        metric_id="metric.net_sales",
+        grain="none",
+        as_of=datetime.now(UTC),
+        period_start=stamp_s,
+        period_end=stamp_e,
+        value=100.0,
+        source_query={"measure": "metric.net_sales"},
+    )
+    store.put(
+        Artifact(
+            workspace_id="ws-1",
+            artifact_type="evidence",
+            payload=payload.model_dump(mode="json"),
+            classification="factual",
+            evidence_ids=["raw:7d"],
+            provenance=ArtifactProvenance(query_version="q1"),
+            mission_id=_MISSION,
+        )
+    )
+    from seleric_swarm.agent.scope import required_windows_from_resolved
+    from seleric_swarm.services.time_range import window_from_query
+
+    scope = RequiredScope(
+        windows=required_windows_from_resolved(
+            window_from_query("total ad spend in the last 7 days", "Asia/Kolkata", "2026-10-06")
+        )
+    )
+    assert check_scope_coverage(store.list_for_mission(_MISSION), scope).status == "OK"

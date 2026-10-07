@@ -49,6 +49,8 @@ def settings() -> Settings:
     )
 
 
+_GLOBAL_MCP_CACHE = {}
+
 @pytest.fixture
 def runtime(settings: Settings):
     rt = build_runtime(settings)
@@ -56,6 +58,18 @@ def runtime(settings: Settings):
         reason = "SELERIC_MCP_URL/TOKEN not configured — live MCP required"
         # Skip in both CI and local when MCP credentials are absent
         pytest.skip(reason)
+        
+    original_call = rt.mcp.call
+
+    async def cached_mcp_call(*, agent_id: str, capability: str, arguments: dict):
+        import json
+        key = (agent_id, capability, json.dumps(arguments, sort_keys=True))
+        if key not in _GLOBAL_MCP_CACHE:
+            _GLOBAL_MCP_CACHE[key] = await original_call(agent_id=agent_id, capability=capability, arguments=arguments)
+        return _GLOBAL_MCP_CACHE[key]
+
+    rt.mcp.call = cached_mcp_call
+
     try:
         yield rt
     finally:

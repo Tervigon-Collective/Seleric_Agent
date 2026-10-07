@@ -117,14 +117,26 @@ def configure_langfuse_env(settings: Settings) -> None:
 
         # Also register tracing with openai if credentials exist
         if settings.langfuse_tracing and settings.langfuse_public_key and settings.langfuse_secret_key:
-            try:
-                from langfuse.openai import register_tracing
-
-                register_tracing()
-            except Exception:
-                pass
+            ensure_openai_tracing()
     except Exception:
         return
+
+
+def ensure_openai_tracing() -> bool:
+    """Wrap the OpenAI SDK with Langfuse tracing exactly once per process.
+
+    ``langfuse.openai`` wraps the SDK when the module is first imported, and
+    every explicit ``register_tracing()`` wraps it AGAIN — nothing guards it.
+    Calling it per client build stacked the wrappers, so each LLM call showed
+    up as 5–13 identical generations that grew with process age, inflating
+    Langfuse token/cost totals by that factor (live 2026-10-06). The import is
+    cached by Python, so importing is the idempotent way to register.
+    """
+    try:
+        import langfuse.openai  # noqa: F401  (registers on first import only)
+    except Exception:
+        return False
+    return True
 
 
 def configure_langsmith_env(settings: Settings) -> None:

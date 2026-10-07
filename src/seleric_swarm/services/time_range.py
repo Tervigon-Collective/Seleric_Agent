@@ -50,6 +50,76 @@ _RELATIVE_COMPARE = (
 _WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 _WEEKDAY = re.compile(r"\b(" + "|".join(_WEEKDAYS) + r")s?\b")
 
+# Locator for "the question names a window here". Deliberately a *coarse*
+# boundary finder only: each matched phrase is handed to ``_single_window``,
+# which does the actual resolution, so this pattern can never drift from the
+# single-window semantics. Ordered longest-alternative-first within each class
+# so "2026-06-01 to 2026-06-30" wins over the bare day inside it.
+_WINDOW_PHRASE = re.compile(
+    r"last\s+\d+\s+(?:days?|weeks?|months?|quarters?)"
+    r"|(?:" + "|".join(sorted(_MONTH_NAMES, key=len, reverse=True)) + r")\s+\d{4}"
+    r"|20\d{2}-\d{2}-\d{2}(?:\s+(?:to|through|-|–)\s+20\d{2}-\d{2}-\d{2})?"
+    r"|this\s+(?:week|month|year)"
+    r"|last\s+(?:week|month|year)"
+    r"|(?:today|yesterday)",
+    re.IGNORECASE,
+)
+
+
+def _two_named_windows(text: str, anchor: date) -> TimeRangeV1 | None:
+    """Two separately named windows joined by a comparison preposition.
+
+    "last 3 days versus today" names two periods. The chain in
+    ``_single_window`` returns on its first match, so the second was dropped and
+    the mission silently answered a different question (live MS3-167d9f4838).
+    This resolves the pair first and emits ``kind="comparison"``.
+
+    Precision is the whole design. Two conditions, both required:
+
+    - **A comparison preposition sits between the two phrases.** The same
+      reasoning as ``_RELATIVE_COMPARE`` above: the second window must be *bound*
+      to the comparison, not merely present in the sentence. "for last month, how
+      did this channel compare to the site average" names one window and a
+      non-temporal comparison; "change" and "over" in the looser
+      ``_COMPARISON_VERB`` must not manufacture a period-over-period reading, so
+      only ``_VS``-style joiners count here.
+    - **The two resolve to different spans.** "last 7 days vs the last 7 days"
+      names no comparison; falling through leaves the single-window answer.
+
+    Fail-open throughout: anything not matching both conditions returns ``None``
+    and the original behaviour is untouched.
+    """
+    matches = list(_WINDOW_PHRASE.finditer(text))
+    if len(matches) < 2:
+        return None
+    first, second = matches[0], matches[1]
+    between = text[first.end() : second.start()]
+    if not re.search(_VS, between, re.IGNORECASE):
+        return None
+
+    period_a = _single_window(first.group(0), anchor)
+    period_b = _single_window(second.group(0), anchor)
+    if period_a is None or period_b is None:
+        return None
+    if not (period_a.start and period_a.end and period_b.start and period_b.end):
+        return None
+    if (period_a.start, period_a.end) == (period_b.start, period_b.end):
+        return None
+
+    def _token(period: TimeRangeV1) -> str:
+        return (period.relative_token or "custom").replace("_", " ")
+
+    return TimeRangeV1(
+        kind="comparison",
+        start=period_a.start,
+        end=period_a.end,
+        start_b=period_b.start,
+        end_b=period_b.end,
+        # The token is what `_resolved_window_line` gates on to tell the model
+        # the dates at all, so it must be populated for the pair too.
+        relative_token=f"{_token(period_a)} vs {_token(period_b)}",
+    )
+
 
 def _last_complete_day(anchor: date) -> str:
     """End of a trailing "last N days/weeks/months/quarters" window: yesterday.
@@ -116,9 +186,30 @@ def as_of_date(as_of: str | None, timezone: str) -> date:
 
 
 def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRangeV1 | None:
-    """Resolve an explicit window from the question: last-N days/weeks/months/quarters, ISO dates, yesterday/today.
+    """Resolve the question's time window(s).
 
-    Priority order (first match wins):
+    A question that names **two** windows joined by a comparison preposition
+    ("last 3 days versus today") resolves to ``kind="comparison"`` with both
+    periods, so the second one is never silently dropped. Before 2026-10-06 the
+    priority chain returned on its *first* match, so "the last 3 days versus
+    today" resolved to ``2026-10-03..2026-10-05`` and ``today`` vanished: the
+    model was told one window, fetched one window, and answered half the
+    question as ``completed`` (live MS3-167d9f4838). Nothing downstream could
+    catch it — ``RequiredScope`` had no slot for a second window, so
+    ``check_scope_coverage`` had nothing to reconcile.
+
+    Everything else defers to ``_single_window``, which owns the single-window
+    priority chain unchanged.
+    """
+    text = query or ""
+    anchor = as_of_date(as_of, timezone)
+    if (comparison := _two_named_windows(text, anchor)) is not None:
+        return comparison
+    return _single_window(text, anchor)
+
+
+def _single_window(text: str, anchor: date) -> TimeRangeV1 | None:
+    """Resolve one explicitly named window. Priority order (first match wins):
       1. last N days           → last_Nd  (capped at 90 to guard against typos)
       2. last N weeks          → last_Nw  (calendar weeks, no cap)
       3. last N months         → last_Nm  (calendar months, no cap)
@@ -137,9 +228,6 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
           matching prior period)
       12. yesterday / today / this week / this month / this year
     """
-    text = query or ""
-    anchor = as_of_date(as_of, timezone)
-
     found = _LAST_N_DAYS.search(text)
     if found:
         n = max(1, min(int(found.group(1)), 90))

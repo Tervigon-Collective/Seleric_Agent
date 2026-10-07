@@ -25,14 +25,14 @@ from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
 
-from seleric_swarm.agent.limits import withdraw_tool
-
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
+from seleric_swarm.agent.limits import withdraw_tool
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.mcp_query import (
     _BRAND_DIM_KEYS,
+    DEFAULT_BRAND_ID,
     build_metrics_query_args,
     call_metrics_query,
     dimension_value,
@@ -113,20 +113,21 @@ def _sanitize_dimensions(
 ) -> dict[str, DimensionValue]:
     cleaned: dict[str, DimensionValue] = {}
     for key, raw in (dimensions or {}).items():
-        if isinstance(raw, (list, tuple)):
+        val: str | list[str] | None = raw
+        if isinstance(val, (list, tuple)):
             kept = [
                 str(v).strip()
-                for v in raw
+                for v in val
                 if v is not None and str(v).strip() and not _is_placeholder_dimension_value(str(v).strip())
             ]
             if len(kept) > 1:
                 cleaned[str(key)] = list(dict.fromkeys(kept))
                 continue
-            raw = kept[0] if kept else None
-        if raw is None:
+            val = kept[0] if kept else None
+        if val is None:
             cleaned[str(key)] = ""
             continue
-        text = str(raw).strip()
+        text = str(val).strip()
         if text and _normalize_dim_token(text) in _GROUPBY_MARKERS:
             cleaned[str(key)] = ""  # breakdown, not a literal filter
             continue
@@ -252,7 +253,7 @@ async def _cached_metrics_query(
     mcp_timeout = float(getattr(ctx.deps.limits, "mcp_call_timeout_s", 15.0))
     try:
         result = await asyncio.wait_for(fetch(), timeout=mcp_timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return {
             "error": f"MCP call timed out after {mcp_timeout}s",
             "rows": [],
@@ -456,25 +457,49 @@ _SEARCH_SHORTLIST = 8
 
 _SHORTLIST_FIELDS = ("id", "display_name", "view", "supported_dimensions", "matched_on")
 
-# After this many searches in one mission, search_semantics stops returning a
-# fresh-looking result and forces the model to commit — a mechanical breaker for
-# the paraphrase-search loop (SEARCH-01) that exact-arg caching can't catch.
+# After this many search ROUNDS in one mission, search_semantics stops returning
+# a fresh-looking result and forces the model to commit — a mechanical breaker
+# for the paraphrase-search loop (SEARCH-01) that exact-arg caching can't catch.
+# A round is one model step: a paraphrase loop searches one step after another,
+# while parallel searches in ONE step are distinct concepts of a broad question.
+# Counting calls instead withdrew the tool mid-fan-out (live 2026-10-06
+# MS3-6a09be7996: 11 parallel searches, one per metric the question named; the
+# last 6 were refused and never resolved).
 _MAX_SEARCHES = 5
+# Backstop on the raw call count, so a huge single fan-out is still bounded.
+_MAX_SEARCH_CALLS = 24
 
-# After this many *empty* searches (no catalogue match), the concept is almost
-# certainly not modelled — stop before the full _MAX_SEARCHES budget so the
-# model concludes "not available" instead of paraphrasing into the wall (live
-# L12: 4 empty searches for un-modelled inventory metrics). One empty is
-# tolerated: a rephrase can still land the right term.
+# After this many *empty* search rounds (no catalogue match), the concept is
+# almost certainly not modelled — stop before the full _MAX_SEARCHES budget so
+# the model concludes "not available" instead of paraphrasing into the wall
+# (live L12: 4 empty searches for un-modelled inventory metrics). One empty is
+# tolerated: a rephrase can still land the right term. Counted per round for
+# the same reason as _MAX_SEARCHES: two unmodelled concepts in one parallel
+# fan-out are not a rephrase.
 _MAX_EMPTY_SEARCHES = 2
+
+
+def _rounds(ctx: RunContext[SelericDeps], key: str) -> int:
+    """Record this call's model step under ``key``; return how many distinct
+    steps have used it. A context without ``run_step`` counts every call as its
+    own round."""
+    steps: list[Any] = ctx.deps.call_counts.setdefault(key, [])
+    step = getattr(ctx, "run_step", None)
+    marker = step if step is not None else f"call-{len(steps)}"
+    if marker not in steps:
+        steps.append(marker)
+    return len(steps)
+
+# Key for storing best metric ids from successful searches in call_counts
+_SEARCH_RESULTS_KEY = "search_semantics_results"
+
 
 
 def _empty_search_verdict(ctx: RunContext[SelericDeps]) -> ToolResult | None:
     """Withdraw search_semantics once repeated searches keep coming back empty,
     so an un-modelled concept ends in a decisive "not available" rather than
     burning the paraphrase budget. Returns ``None`` while empties are tolerated."""
-    empties = ctx.deps.call_counts.get("search_semantics_empty", 0) + 1
-    ctx.deps.call_counts["search_semantics_empty"] = empties
+    empties = _rounds(ctx, "search_semantics_empty_steps")
     if empties < _MAX_EMPTY_SEARCHES:
         return None
     withdraw_tool(ctx.deps, "search_semantics")
@@ -658,13 +683,23 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
     ``query_metrics`` still validate against Cube unchanged (rule 1)."""
     count = ctx.deps.call_counts.get("search_semantics", 0) + 1
     ctx.deps.call_counts["search_semantics"] = count
+    rounds = _rounds(ctx, "search_semantics_steps")
     # Hard budget: past the cap, search_semantics is disabled for the mission —
     # a ModelRetry redirect, not an advisory string the model can ignore (live
     # 2026-09-22 MS3-53296c1a5e: the soft "STOP SEARCHING" summary was ignored
     # 11 times until the step budget tripped). The model already has candidates
     # from earlier searches; force it to execute or report no compatible metric.
-    if count > _MAX_SEARCHES:
+    if rounds > _MAX_SEARCHES or count > _MAX_SEARCH_CALLS:
         withdraw_tool(ctx.deps, "search_semantics")
+        # Include best metric ids from earlier successful searches
+        prior_results: list[dict[str, Any]] = ctx.deps.call_counts.get(_SEARCH_RESULTS_KEY, [])
+        prior_metric_ids = [r.get("id") for r in prior_results if r.get("id")]
+        prior_hint = ""
+        if prior_metric_ids:
+            prior_hint = (
+                f" Your earlier searches found these metrics: {', '.join(prior_metric_ids[:5])}. "
+                "Pass one of these to query_metrics."
+            )
         return ToolResult(
             success=False,
             summary=(
@@ -672,7 +707,8 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
                 "mission (budget exhausted). Call query_metrics with the best metric "
                 "id from your earlier search results — for a product/SKU question use "
                 "a product_* metric (e.g. product_net_revenue, product_return_revenue, "
-                "returned_units). If no metric supports the breakdown you need, call "
+                "returned_units)."
+                f"{prior_hint} If no metric supports the breakdown you need, call "
                 "final_result stating that plainly."
             ),
             error_code="SEMANTIC_RESOLUTION_LOOP",
@@ -688,6 +724,17 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
         matches = [_slim_match(m) for m in hoisted][:_SEARCH_SHORTLIST]
         if not matches and (verdict := _empty_search_verdict(ctx)) is not None:
             return verdict
+        # Store successful search results for SEMANTIC_RESOLUTION_LOOP error
+        if matches:
+            existing: list[dict[str, Any]] = list(ctx.deps.call_counts.get(_SEARCH_RESULTS_KEY, []))
+            # Keep only unique metric ids, most recent first
+            seen = set()
+            for m in matches:
+                mid = m.get("id")
+                if mid and mid not in seen:
+                    seen.add(mid)
+                    existing.insert(0, {"id": mid, "display_name": m.get("display_name", "")})
+            ctx.deps.call_counts[_SEARCH_RESULTS_KEY] = existing[:10]
         warnings = [] if matches else [f"no catalogue match for '{query}'"]
         return ToolResult(
             success=True,
@@ -704,6 +751,16 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
             return _mcp_error_result(exc)
         if not matches and (verdict := _empty_search_verdict(ctx)) is not None:
             return verdict
+        # Store successful search results for SEMANTIC_RESOLUTION_LOOP error
+        if matches:
+            existing = list(ctx.deps.call_counts.get(_SEARCH_RESULTS_KEY, []))
+            seen = set()
+            for m in matches:
+                mid = m.get("id")
+                if mid and mid not in seen:
+                    seen.add(mid)
+                    existing.insert(0, {"id": mid, "display_name": m.get("display_name", "")})
+            ctx.deps.call_counts[_SEARCH_RESULTS_KEY] = existing[:10]
         warnings = [] if matches else [f"no catalogue match for '{query}'"]
         if any(m.get("stale") for m in matches):
             warnings.append("catalogue index may be stale; rerun scripts/sync_catalogue_to_qdrant.py")
@@ -796,6 +853,158 @@ async def resolve_brand(ctx: RunContext[SelericDeps], name: str) -> ToolResult:
     )
 
 
+# Evidence written per semantic_sql call: one artifact per numeric cell, so a
+# broad result can't flood the mission store. Past the cap the rows still reach
+# the model in the summary, flagged as uncited.
+_SQL_MAX_EVIDENCE = 400
+
+
+def _sql_cell_day(value: str) -> str | None:
+    """The calendar day a label cell holds (an ISO date/timestamp), else None.
+    All-digit strings are ids, not compact ISO dates."""
+    if value.isdigit():
+        return None
+    try:
+        return datetime.fromisoformat(value).date().isoformat()
+    except ValueError:
+        return None
+
+
+def _sql_cell_number(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+async def semantic_sql(
+    ctx: RunContext[SelericDeps],
+    sql: str,
+    period_start: str,
+    period_end: str,
+    brand_id: str | None = None,
+    max_rows: int | None = None,
+) -> ToolResult:
+    """Ad-hoc analysis via Cube Core's Semantic SQL (Postgres protocol) — ONLY for
+    derivations ``query_metrics`` / ``drilldown`` cannot express: CTEs, window
+    functions (running totals, moving averages, rank within a group), ratios of
+    measures from two views. Prefer ``query_metrics`` for any certified metric it
+    can return directly.
+
+    Write Postgres SQL over the governed Cube views (the views the catalogue's
+    metrics name); aggregate measures with ``MEASURE(<column>)`` and GROUP BY the
+    dimension columns. Filter the dates in SQL yourself and pass the same window
+    as ``period_start`` / ``period_end`` (YYYY-MM-DD, inclusive) — that window is
+    recorded on the evidence. The brand is scoped by Cube (``brand_id``, default
+    the workspace brand), not by your WHERE clause; a cube that has no brand
+    cannot be queried here. Every numeric cell becomes a citable evidence
+    artifact (cite the returned ids in evidence_ids). Single SELECT/WITH
+    statement, read-only, rows capped, 30s timeout."""
+    brand = str(brand_id or DEFAULT_BRAND_ID)
+    try:
+        start = datetime.fromisoformat(period_start[:10]).replace(tzinfo=ctx.deps.as_of.tzinfo)
+        end = datetime.fromisoformat(period_end[:10]).replace(tzinfo=ctx.deps.as_of.tzinfo)
+    except (TypeError, ValueError):
+        return ToolResult(
+            success=False,
+            summary="semantic_sql needs period_start and period_end as YYYY-MM-DD (the window the SQL filters)",
+            error_code="SEMANTIC_SQL_ERROR",
+            retryable=False,
+        )
+    try:
+        result = await ctx.deps.mcp_client.call(
+            agent_id=_AGENT_ID,
+            capability="seleric.semantic_sql",
+            arguments={"sql": sql, "max_rows": max_rows, "brand_id": brand},
+        )
+    except Exception as exc:
+        return _mcp_error_result(exc)
+    result = dict(result or {})
+    if result.get("error"):
+        return ToolResult(
+            success=False,
+            summary=f"semantic_sql failed: {result['error']}",
+            error_code="SEMANTIC_SQL_ERROR",
+            retryable=False,
+            provenance=ArtifactProvenance(source_metadata=result),
+        )
+    rows = [r for r in (result.get("data") or []) if isinstance(r, dict)]
+    meta = {k: v for k, v in result.items() if k != "data"}
+    # The brand scope is a Cube-side filter: record it like query_metrics' filters
+    # so scope coverage sees the answer as brand-filtered.
+    meta["filters_applied"] = [{"dimension": "brand_id", "operator": "equals", "values": [brand]}]
+    meta["sql"] = sql[:2000]
+    provenance = ArtifactProvenance(source_metadata=meta)
+    known_evidence = _evidence_index(ctx)
+    source_query = {"semantic_sql": sql[:2000], "brand_id": brand, "query_sha": result.get("query_sha")}
+    artifact_ids: list[str] = []
+    lines: list[str] = []
+    uncited = 0
+    for row in rows:
+        labels = {str(k): str(v) for k, v in row.items() if _sql_cell_number(v) is None and v is not None}
+        dims = {k: (_sql_cell_day(v) or v) for k, v in labels.items()}
+        day = next((d for v in labels.values() if (d := _sql_cell_day(v))), None)
+        row_start = datetime.fromisoformat(day).replace(tzinfo=start.tzinfo) if day else start
+        row_end = row_start if day else end
+        cells = []
+        for column, value in row.items():
+            number = _sql_cell_number(value)
+            if number is None:
+                continue
+            cells.append(f"{column}={number:g}")
+            if len(artifact_ids) >= _SQL_MAX_EVIDENCE:
+                uncited += 1
+                continue
+            evidence = EvidenceArtifact(
+                metric_id=str(column),
+                dimensions=dims,
+                grain="day" if day else "none",
+                as_of=ctx.deps.as_of,
+                period_start=row_start,
+                period_end=row_end,
+                value=number,
+                source_query=source_query,
+            )
+            artifact_ids.append(
+                _put_evidence(
+                    ctx,
+                    evidence,
+                    index=known_evidence,
+                    raw_id=f"raw:semantic_sql:{result.get('query_sha', '')}:{column}",
+                    provenance=provenance,
+                )
+            )
+        label = ", ".join(f"{k}={v}" for k, v in dims.items())
+        lines.append(f"{label} | {'; '.join(cells)}" if label else "; ".join(cells))
+    if not artifact_ids:
+        return ToolResult(
+            success=False,
+            summary=(
+                f"semantic_sql returned {len(rows)} row(s) with no numeric value "
+                f"over {start.date()}..{end.date()} (brand {brand})"
+            ),
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+            provenance=provenance,
+        )
+    shown = lines[:_MAX_SERIES_IN_SUMMARY]
+    more = "" if len(lines) <= len(shown) else f"; …(+{len(lines) - len(shown)} more rows in evidence)"
+    summary = (
+        f"semantic_sql over {start.date()}..{end.date()} (brand {brand}, {len(rows)} rows"
+        + (", rows capped" if result.get("limited") else "")
+        + f") — use these exact values: {' || '.join(shown)}{more}."
+    )
+    warnings = [f"{uncited} value(s) past the evidence cap are not citable"] if uncited else []
+    return ToolResult(
+        success=True,
+        artifact_ids=artifact_ids,
+        summary=summary,
+        warnings=warnings,
+        provenance=provenance,
+    )
+
+
 async def resolve_concept(
     ctx: RunContext[SelericDeps],
     concept: str,
@@ -879,7 +1088,7 @@ def _pin_to_resolved_window(
     period_start: datetime | None,
     period_end: datetime | None,
 ) -> tuple[datetime, datetime, str] | None:
-    """Hold the caller to the period the question named.
+    """Hold the caller to a period the question named.
 
     ``services/time_range.py`` resolves a relative phrase to exact dates once,
     deterministically, precisely because the model drifts when it does the
@@ -895,22 +1104,37 @@ def _pin_to_resolved_window(
     that exists to be authoritative should not be arguable. The override is
     reported in ``warnings`` so it stays visible rather than silent.
 
-    Fail-open when the question named no relative period, or when the caller
-    already asked for exactly that period.
+    **A comparison question names two periods and both are pinnable.** Pinning
+    only period A would make the second window unfetchable — the model would ask
+    for "today", be corrected back to "last 3 days", and lose it. That is
+    exactly the failure the comparison resolution exists to fix (live
+    MS3-167d9f4838: the second window was dropped and never recovered), so a
+    call matching *either* dated period of a comparison is accepted untouched.
+
+    Fail-open when the question named no relative period, when the caller
+    already asked for exactly that period, or when the comparison's second
+    period is undated.
     """
     window = ctx.deps.resolved_window
     if window is None or period_start is None or period_end is None:
         return None
+    if not window.start or not window.end:
+        return None
     asked = (period_start.date().isoformat(), period_end.date().isoformat())
-    if asked == (window.start, window.end):
+    pinnable = {(window.start, window.end)}
+    if window.kind == "comparison" and window.start_b and window.end_b:
+        pinnable.add((window.start_b, window.end_b))
+    if asked in pinnable:
         return None
     token = (window.relative_token or "").replace("_", " ")
     tz = period_start.tzinfo
     return (
         datetime.fromisoformat(window.start).replace(tzinfo=tz),
         datetime.fromisoformat(window.end).replace(tzinfo=tz),
-        f"'{token}' is {window.start}..{window.end}; this call asked for "
-        f"{asked[0]}..{asked[1]} and was corrected to the period the question names",
+        (
+            f"'{token}' is {window.start}..{window.end}; this call asked for "
+            f"{asked[0]}..{asked[1]} and was corrected to the period the question names"
+        ),
     )
 
 
@@ -1348,7 +1572,8 @@ async def query_metrics(
     A dimension value filters to that value; an empty string breaks the result
     down by that dimension; a list keeps only those values AND returns one row
     (one series, with ``grain``) per value — e.g. the daily trend of the top 5
-    campaigns is ``dimensions={"campaign_id": [<the 5 ids>]}, grain="day"``.
+    entities is ``dimensions={"<entity_name_dimension>": [<the 5 names>]}, grain="day"``.
+    Always group by the entity's human-readable name dimension rather than its ID.
     Add the entity's name dimension as an empty breakdown to label the rows.
     Set ``pool_listed_values=True`` only when the listed values are spellings of ONE
     group (``utm_medium`` whatsapp/wa) and you want a single pooled number.
@@ -1382,8 +1607,9 @@ async def query_metrics(
     if window is not None and period_start is None and period_end is None:
         # The question named a period; use it rather than collapsing to as_of,
         # which is today and therefore still empty while the day is in flight.
-        period_start = datetime.fromisoformat(window.start).replace(tzinfo=ctx.deps.as_of.tzinfo)
-        period_end = datetime.fromisoformat(window.end).replace(tzinfo=ctx.deps.as_of.tzinfo)
+        if window.start and window.end:
+            period_start = datetime.fromisoformat(window.start).replace(tzinfo=ctx.deps.as_of.tzinfo)
+            period_end = datetime.fromisoformat(window.end).replace(tzinfo=ctx.deps.as_of.tzinfo)
     period_end = period_end or ctx.deps.as_of
     period_start = period_start or period_end
     breakdown = [k for k, v in dimensions.items() if not v]
@@ -1517,7 +1743,7 @@ async def query_metrics(
                 retryable=False,
             )
         return _fetch_failure(f"query_metrics({metric_id})", result["error"])
-    not_found = result.get("value_not_found") or []
+    not_found: list[dict[str, Any]] = result.get("value_not_found") or []  # type: ignore
     if not_found:
         # Cube answers a filter on a value that never occurs with a 0 row; the
         # gateway flags it so "0" is never reported as a measured count (live:
@@ -1543,7 +1769,7 @@ async def query_metrics(
             error_code="VALUE_NOT_FOUND",
             retryable=False,
         )
-    rows = result.get("rows") or []
+    rows: list[dict[str, Any]] = result.get("rows") or []  # type: ignore
     if not rows:
         # Zero rows on an exact NON-brand filter is ambiguous — the value may be
         # misspelled or absent, not genuinely empty. Enumerate the dimension's
@@ -1594,9 +1820,10 @@ async def query_metrics(
         ctx, metric_id, breakdown, grain, order, limit, len(rows), dimensions=dimensions
     )) is not None:
         return blocked
+    provenance_data: dict[str, Any] = result.get("provenance") or {}  # type: ignore
     provenance = ArtifactProvenance(
-        query_version=str(result.get("provenance", {}).get("query_id") or ""),
-        source_metadata=result.get("provenance") or {},
+        query_version=str(provenance_data.get("query_id") or ""),
+        source_metadata=provenance_data,
     )
 
     async def _write_evidence() -> ToolResult:
@@ -1607,7 +1834,7 @@ async def query_metrics(
         # day-granularity series (e.g. feeding a causal/anomaly consumer) is
         # immutable evidence per day, not one mutable blob.
         per_row_dates = [row_date(row) for row in rows] if grain != "none" else [None] * len(rows)
-        currency = str((result.get("provenance") or {}).get("currency") or "").strip()
+        currency = str(provenance_data.get("currency") or "").strip()
         known_evidence = _evidence_index(ctx)
         artifact_ids: list[str] = []
         last_value: float | None = None
@@ -1728,12 +1955,13 @@ async def query_metrics(
         # already holds — not a new number, so rule 6's evidence chain is
         # untouched). In-process append; no I/O, no added latency.
         ctx.deps.scratchpad.note(summary)
+        api_warnings: list[str] = result.get("warnings") or []  # type: ignore
         return ToolResult(
             success=True,
             artifact_ids=artifact_ids,
             summary=summary,
             provenance=prov,
-            warnings=[*(result.get("warnings") or []), *([window_note] if window_note else [])],
+            warnings=[*api_warnings, *([window_note] if window_note else [])],
         )
 
     # A cache HIT above means the same fetch already ran this mission — but
@@ -1945,7 +2173,8 @@ async def drilldown(
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )
-    provenance = ArtifactProvenance(source_metadata=result.get("provenance") or {})
+    prov_data: dict[str, Any] = result.get("provenance") or {}  # type: ignore
+    provenance = ArtifactProvenance(source_metadata=prov_data)
     known_evidence = _evidence_index(ctx)
     artifact_ids: list[str] = []
     lines: list[str] = []

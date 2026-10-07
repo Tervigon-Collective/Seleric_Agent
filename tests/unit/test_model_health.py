@@ -280,3 +280,28 @@ async def test_a_truncated_empty_response_falls_through_to_the_next_model(monkey
     chain = FallbackModel(_gated(health, "thinker"), FunctionModel(lambda m, i: ModelResponse(parts=[TextPart("ok")])))
     run = await Agent(PatientModel(chain, health=health)).run("q")
     assert run.output == "ok"
+
+
+def test_repeated_429s_back_off_and_a_success_resets():
+    # 2026-10-06: DeepSeek-V4-Pro's per-minute token quota re-tripped within a
+    # flat 45s cooldown, so most missions' first step ate a 429.
+    from seleric_swarm.agent.model_health import COOLDOWN_RATE_LIMITED_MAX_S
+
+    health, _ = _health()
+    waits = [health.rate_limited("a", COOLDOWN_RATE_LIMITED_S) for _ in range(6)]
+    assert waits[:3] == [COOLDOWN_RATE_LIMITED_S, 2 * COOLDOWN_RATE_LIMITED_S, 4 * COOLDOWN_RATE_LIMITED_S]
+    assert max(waits) == COOLDOWN_RATE_LIMITED_MAX_S
+    health.recover("a")
+    assert health.rate_limited("a", COOLDOWN_RATE_LIMITED_S) == COOLDOWN_RATE_LIMITED_S
+
+
+def test_retry_after_hint_is_a_floor():
+    from seleric_swarm.agent.model_health import retry_after_hint
+
+    exc = ModelHTTPError(429, "m", body={}, headers={"Retry-After": "120"})
+    assert retry_after_hint(exc) == 120.0
+    health, _ = _health()
+    assert health.rate_limited("a", COOLDOWN_RATE_LIMITED_S, retry_after_hint(exc)) == 120.0
+    assert retry_after_hint(ModelHTTPError(429, "m", body={})) is None
+    dated = ModelHTTPError(429, "m", body={}, headers={"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"})
+    assert retry_after_hint(dated) is None

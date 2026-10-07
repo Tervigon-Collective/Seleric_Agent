@@ -175,7 +175,18 @@ class PostgresMissionStore:
                         "source": evidence.source,
                         "metric_or_fact": evidence.metric_or_fact,
                         "value_json": _json(evidence.value),
-                        "dimensions": _json(evidence.time_range),
+                        # evidence.dimensions, NOT evidence.time_range: the two
+                        # are structurally identical dicts, and reading the wrong
+                        # one filled this column with {start, end} for every row
+                        # (live 2026-10-06 MS3-167d9f4838: 47 evidence rows all
+                        # stamped {"start","end"}, campaign grouping lost, so the
+                        # audit store could not say which campaign a value
+                        # belonged to). Nominal NewTypes on EvidenceView make a
+                        # repeat a type error. The column has no window field —
+                        # time_range is rebuilt from the artifact's
+                        # period_start/period_end on read (see
+                        # api/office/v3_adapter.py::_evidence_rows).
+                        "dimensions": _json(dict(evidence.dimensions)),
                         "provenance": _json(evidence.provenance),
                         "quality_flags": _json([]),
                     },

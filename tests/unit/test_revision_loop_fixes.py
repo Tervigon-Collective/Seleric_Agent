@@ -244,8 +244,12 @@ def test_refused_tool_is_reported_as_failed() -> None:
         ToolResult(success=False, summary="evidence not found in store: x", error_code="INSUFFICIENT_EVIDENCE"),
     )
     ok = ToolReturnPart("generate_visualization", ToolResult(success=True, summary="chart"))
-    assert "evidence not found" in (_tool_problem(refused) or "")
-    assert _tool_problem(ok) is None
+    # _tool_problem returns (problem_text, is_retry): a refusal is a failure,
+    # a ModelRetry is the model re-evaluating its own arguments.
+    problem, is_retry = _tool_problem(refused)
+    assert problem is not None and "evidence not found" in problem
+    assert is_retry is False
+    assert _tool_problem(ok) == (None, False)
 
 
 # -- tool summaries, evidence and charts ------------------------------------------
@@ -298,9 +302,54 @@ def test_identical_evidence_is_written_once_per_mission() -> None:
 def test_unknown_evidence_ids_refusal_lists_what_exists() -> None:
     store = InMemoryArtifactStore()
     ids = _seed(store, [1.0, 2.0])
-    _, refusal = analytics._load_evidence(_ctx(store), ["artifact_guess"])
+    _, _, refusal = analytics._load_evidence(_ctx(store), ["artifact_guess"])
     assert refusal is not None and not refusal.success
     assert all(aid in refusal.summary for aid in ids)
+    # A wrong id is a corrected-argument fix, not a dead end: INSTRUCTIONS tells
+    # the model a non-retryable error does not justify re-calling, so marking this
+    # one non-retryable is what made a single mistyped id abandon a mission
+    # (live MS3-167d9f4838).
+    assert refusal.retryable is True
+
+
+def test_mistyped_evidence_id_is_repaired_when_unambiguous() -> None:
+    """A dropped character in a 40-char artifact id is recoverable by construction.
+
+    Live 2026-10-06 (MS3-167d9f4838): 47 ids were hand-copied into run_python,
+    one lost its trailing character, and the whole computation was refused.
+    """
+    store = InMemoryArtifactStore()
+    ids = _seed(store, [1.0, 2.0, 3.0])
+    real = ids[1]
+    evidence, resolved, refusal = analytics._load_evidence(_ctx(store), [*ids[:1], real[:-1], *ids[2:]])
+    assert refusal is None
+    assert resolved == [ids[0], real, ids[2]], "order must be preserved for the zip() callers"
+    assert [e.metric_id for e in evidence] == [e.metric_id for e in evidence]
+    assert resolved[1] in ids
+
+
+def test_ambiguous_evidence_id_prefix_is_not_repaired() -> None:
+    """Two candidates for one fragment resolve to nothing — never a guess.
+
+    Guessing between them is how a finding ends up citing evidence that did not
+    back it (non-negotiable rule 6). Real 32-hex ids never collide on an 8-char
+    prefix, so the collision is staged here: a store handing back two ids that
+    share one must still refuse.
+    """
+    store = InMemoryArtifactStore()
+    seeded = _seed(store, [1.0, 2.0])
+    shared = "artifact_abcdef01"
+    collision = [
+        stored.model_copy(update={"id": f"{shared}{suffix}"})
+        for stored, suffix in zip(store.list_for_mission(MISSION), ("0", "1"), strict=True)
+    ]
+    assert all(a.id.startswith(shared) for a in collision)
+    store.list_for_mission = lambda mission_id: collision  # type: ignore[method-assign]
+
+    _, resolved, refusal = analytics._load_evidence(_ctx(store), [f"{shared}0"])
+    assert refusal is not None and not refusal.success
+    assert resolved == []
+    assert seeded, "seed must not be empty for this test to mean anything"
 
 
 @pytest.mark.asyncio

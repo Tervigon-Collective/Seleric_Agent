@@ -43,6 +43,7 @@ from seleric_swarm.agent.scope import (
     ValueFilter,
     build_required_scope,
     question_axes_from_resolution,
+    required_windows_from_resolved,
     value_filters_from_resolution,
 )
 from seleric_swarm.agent.validation import run_validated_mission
@@ -110,7 +111,7 @@ def _lookup_alias(query: str) -> MetricDefinition | None:
 # Intents whose answers genuinely benefit from an upfront plan. Simple lookups
 # already have the full catalogue + capability manifest in context.
 _PLAN_INTENTS = frozenset(
-    {"diagnostic", "causal_investigation", "simulation", "forecast", "comparison"}
+    {"diagnostic", "causal_investigation", "simulation", "forecast", "comparison", "advisory"}
 )
 
 # Per-intent tool-call ceilings. These sit under Settings.max_tool_calls.
@@ -127,6 +128,7 @@ _TOOL_BUDGET_BY_INTENT: dict[str, int] = {
     "forecast": 250,
     "simulation": 250,
     "causal_investigation": 250,
+    "advisory": 150,
 }
 
 # Simple, read-only intents cheap enough for the fast model tier.
@@ -355,7 +357,8 @@ def _values_block(resolution: dict[str, Any]) -> str:
     return (
         "[values in the data — words in the question that match values the data "
         "records, learned from live data. A match is a candidate: if the question "
-        "uses a word as ordinary language (\"other days\", \"new idea\"), do not "
+        "uses a word as ordinary language (\"other days\", \"new idea\"), or if the "
+        "dimension does not match the intended entity (e.g. ad_name vs product), do not "
         "filter by it and list the word in not_values]\n"
         + "\n".join(lines)
         + "\n\n"
@@ -834,7 +837,7 @@ async def _alias_lookup_result(
     catalogue_id = str(definition.catalogue_metric or definition.id.removeprefix("metric."))
     catalogue_filters = dict(getattr(definition, "catalogue_filters", None) or {})
     tool = await query_metrics(
-        _ToolCtx(deps), metric_id=catalogue_id, dimensions=catalogue_filters or None, pool_listed_values=True
+        _ToolCtx(deps), metric_id=catalogue_id, dimensions=catalogue_filters or None, pool_listed_values=True  # type: ignore[arg-type]
     )
     value = None
     if tool.artifact_ids:
@@ -1024,7 +1027,7 @@ def _write_turn_record(
     """
     if result.status not in {"completed", "partial"}:
         return
-    if classification.intent == "conversation":
+    if classification.intent in {"conversation", "advisory"}:
         return
     try:
         entities = _parse_named_entities(result.final_response or "")
@@ -1145,7 +1148,7 @@ async def run_v3_mission(
         else await classifying
     )
     if (grain := stated_grain(query)) and grain != classification.grain:
-        classification = dataclasses.replace(classification, grain=grain)
+        classification = dataclasses.replace(classification, grain=grain)  # type: ignore[arg-type]
     intent = classification.intent
     if intent == "conversation":
         values = {}
@@ -1175,6 +1178,13 @@ async def run_v3_mission(
         except Exception:
             _log.warning("prior_turn_record_load_failed", exc_info=True)
     resolved_window = _resolved_window(query, timezone, as_of_dt.date().isoformat())
+    # A comparison question ("the last 3 days versus today") resolves to TWO dated
+    # periods. Carry both into the scope, or ``check_scope_coverage`` has nothing
+    # to reconcile and a mission that answers one half of the comparison ships as
+    # ``completed`` (live 2026-10-06 MS3-167d9f4838, where ``today`` was dropped
+    # by the resolver and never noticed downstream).
+    if not small_talk and (windows := required_windows_from_resolved(resolved_window)):
+        required_scope = dataclasses.replace(required_scope, windows=windows)
     # The prior period is a stated default, not a pin: resolved_window rewrites every
     # call to its dates, which would break "compare with the week before".
     prior_window = None

@@ -35,7 +35,7 @@ deflates the score. V3 currently has no temporal-order or graph-path check
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
@@ -427,6 +427,38 @@ def check_prediction(artifacts: list[Artifact]) -> CheckOutcome:
     return out
 
 
+def _merged_spans(periods: list[tuple[date, date]]) -> list[tuple[date, date]]:
+    """Collapse evidence periods into the maximal contiguous spans they cover.
+
+    Coverage of a requested window is a property of the *union*, not of any one
+    row. A day-grained fetch of 10-03..10-06 writes one artifact per day, each
+    spanning a single day; requiring one row to contain a multi-day window would
+    call that complete evidence a gap and send a correct answer back for
+    revision. Overlapping and *adjacent* days merge; a genuine hole (10-03 and
+    10-05 with no 10-04) leaves two spans and correctly fails containment.
+    """
+    if not periods:
+        return []
+    ordered = sorted(periods)
+    merged: list[tuple[date, date]] = [ordered[0]]
+    for start, end in ordered[1:]:
+        last_start, last_end = merged[-1]
+        if start <= last_end + timedelta(days=1):
+            merged[-1] = (last_start, max(last_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _spans_contain(
+    spans: list[tuple[date, date]], win_start: date, win_end: date
+) -> bool:
+    """True when some merged span wholly covers ``[win_start, win_end]``."""
+    if win_end < win_start:
+        win_start, win_end = win_end, win_start
+    return any(start <= win_start and win_end <= end for start, end in spans)
+
+
 def check_scope_coverage(
     artifacts: list[Artifact],
     scope: Any,
@@ -470,7 +502,8 @@ def check_scope_coverage(
     )
     requested_grain = getattr(scope, "temporal_grain", None)
     stated_date = dict(getattr(scope, "question_axes", ()) or ()).get("date")
-    if not breakdowns and not value_filters and not requested_grain and not stated_date:
+    windows = tuple(getattr(scope, "windows", ()) or ())
+    if not breakdowns and not value_filters and not requested_grain and not stated_date and not windows:
         return CheckOutcome(check="scope_coverage", status="NOT_APPLICABLE")
     evidence = [a for a in artifacts if a.artifact_type == "evidence"]
     if not evidence:
@@ -480,6 +513,9 @@ def check_scope_coverage(
     filtered: set[str] = set()
     available_grains: set[str] = set()
     answer_metric_ids: set[str] = set()
+    # Date spans the evidence actually covers, for the requested-window
+    # reconciliation below.
+    evidence_periods: list[tuple[date, date]] = []
     # Per metric: the dimensions its evidence is grouped or filtered by, and
     # whether the answer cites it.
     scoped_by_metric: dict[str, set[str]] = {}
@@ -489,12 +525,21 @@ def check_scope_coverage(
         parsed = _payload(artifact, EvidenceArtifact)
         own: set[str] = set()
         if parsed is not None:
-            grouped.update(parsed.dimensions.keys())
             own.update(parsed.dimensions.keys())
+            grouped.update(parsed.dimensions.keys())
             if parsed.metric_id:
                 answer_metric_ids.add(parsed.metric_id)
             if parsed.grain and parsed.grain != "none":
                 available_grains.add(parsed.grain)
+            try:
+                evidence_periods.append(
+                    (
+                        parsed.period_start.date(),
+                        parsed.period_end.date(),
+                    )
+                )
+            except AttributeError:
+                pass
         # A named value is covered by *filtering* just as well as grouping (a
         # brand/source scope is applied as a Cube filter, which lands in
         # provenance, not in the row's grouped dimensions). Without this a
@@ -598,8 +643,9 @@ def check_scope_coverage(
                     f"answer's evidence is not filtered by it — re-run filtered to those "
                     f"values with a metric that supports that dimension, or state plainly "
                     f"that no available metric supports it; if the question uses "
-                    f"'{vf.term}' as an ordinary word rather than that value, list it in "
-                    f"not_values instead"
+                    f"'{vf.term}' as an ordinary word rather than that value, or if the "
+                    f"dimension does not match the user's intended entity (e.g. ad_name vs product), "
+                    f"list it in not_values instead"
                 ),
                 blocking=True,
                 priority=8,
@@ -645,6 +691,39 @@ def check_scope_coverage(
                     priority=8,
                 )
             )
+
+    # Requested time windows. A comparison question names two periods and both
+    # must appear in the evidence. Before this gate existed, nothing reconciled
+    # them: live 2026-10-06 (MS3-167d9f4838) asked to compare "the last 3 days
+    # versus today", the resolver dropped the second window, the mission fetched
+    # and analysed only 2026-10-03..10-05, and shipped that half as
+    # ``completed`` with a clarifying question about the rest.
+    #
+    # Containment, not equality: one fetch spanning both periods ("last 7 days
+    # for a vs-b question") satisfies both, and a daily series covering a range
+    # satisfies the range. Per mission rather than per metric — requiring every
+    # metric to cover both windows would flag a correct answer that compares
+    # windows on the metrics it could and states the rest as unavailable.
+    for window in windows:
+        win_start = getattr(window, "start", None)
+        win_end = getattr(window, "end", None)
+        if not isinstance(win_start, date) or not isinstance(win_end, date):
+            continue
+        if _spans_contain(_merged_spans(evidence_periods), win_start, win_end):
+            continue
+        gaps.append(
+            EvidenceGap(
+                description=(
+                    f"the question asks about {win_start}..{win_end} as well, but no evidence "
+                    f"in this mission covers that period — a comparison question needs both "
+                    f"periods fetched before it can be answered. Fetch it (one query_metrics "
+                    f"per metric over that window) and compare, or state plainly that the "
+                    f"period is unavailable"
+                ),
+                blocking=True,
+                priority=8,
+            )
+        )
 
     if not gaps:
         return CheckOutcome(check="scope_coverage")

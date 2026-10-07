@@ -77,23 +77,21 @@ def tool_label(tool_name: str) -> str:
 _PROBLEM_MAX_CHARS = 160
 
 
-def _tool_problem(part: Any) -> str | None:
+def _tool_problem(part: Any) -> tuple[str | None, bool]:
     """Why a tool call produced nothing usable, or None when it succeeded.
-
-    Live 2026-10-04 (MS3-34e7eb26aa): seventeen refused generate_visualization
-    calls were each reported "— done", so the timeline showed success while the
-    model looped on a refusal. A refusal is a ``ToolResult(success=False)``; a
-    rejected argument set comes back as a retry prompt instead of a return.
+    Returns (problem_text, is_retry).
     """
     if getattr(part, "part_kind", "") == "retry-prompt":
         text = str(getattr(part, "content", "") or "invalid arguments")
+        text = " ".join(text.split())
+        return (text if len(text) <= _PROBLEM_MAX_CHARS else text[: _PROBLEM_MAX_CHARS - 1] + "…", True)
     else:
         content = getattr(part, "content", None)
         if getattr(content, "success", True) is not False:
-            return None
+            return None, False
         text = str(getattr(content, "summary", "") or getattr(content, "error_code", "") or "no result")
-    text = " ".join(text.split())
-    return text if len(text) <= _PROBLEM_MAX_CHARS else text[: _PROBLEM_MAX_CHARS - 1] + "…"
+        text = " ".join(text.split())
+        return (text if len(text) <= _PROBLEM_MAX_CHARS else text[: _PROBLEM_MAX_CHARS - 1] + "…", False)
 
 
 def progress_handler(mission_id: str):
@@ -113,13 +111,21 @@ def progress_handler(mission_id: str):
                 )
             elif isinstance(event, FunctionToolResultEvent):
                 name = getattr(event.part, "tool_name", None) or ""
-                problem = _tool_problem(event.part)
-                emit_progress(
-                    mission_id,
-                    "agent.tool_completed",
-                    f"{tool_label(name)} — " + (f"failed: {problem}" if problem else "done"),
-                    {"tool": name, "tool_call_id": event.part.tool_call_id, "success": not problem},
-                )
+                problem, is_retry = _tool_problem(event.part)
+                if is_retry:
+                    emit_progress(
+                        mission_id,
+                        "agent.tool_revising",
+                        f"{tool_label(name)} — re-evaluating: {problem}",
+                        {"tool": name, "tool_call_id": event.part.tool_call_id, "success": False, "is_retry": True},
+                    )
+                else:
+                    emit_progress(
+                        mission_id,
+                        "agent.tool_completed",
+                        f"{tool_label(name)} — " + (f"failed: {problem}" if problem else "done"),
+                        {"tool": name, "tool_call_id": event.part.tool_call_id, "success": not problem},
+                    )
             elif isinstance(event, (PartDeltaEvent, PartStartEvent)):
                 # A replayed step (model_health.ReplayedStreamedResponse)
                 # delivers its reasoning as one whole part, a live one as deltas.

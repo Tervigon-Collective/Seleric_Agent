@@ -38,6 +38,7 @@ IntentLabel = Literal[
     "forecast",
     "simulation",
     "causal_investigation",
+    "advisory",
 ]
 
 # Analytics grain (#1) — the time bucket a comparison/series is computed at.
@@ -76,6 +77,7 @@ _LABELS: frozenset[str] = frozenset(
         "forecast",
         "simulation",
         "causal_investigation",
+        "advisory",
     }
 )
 _GRAIN_LABELS: frozenset[str] = frozenset({"day", "week", "month", "none"})
@@ -108,6 +110,7 @@ _CRITERIA = {
     "forecast": "A future value projection",
     "simulation": "A hypothetical / what-if scenario",
     "causal_investigation": "A causal claim requiring refutation/sensitivity checks",
+    "advisory": "High-level strategic questions (e.g., 'what is the business state', 'what should we scale', 'how are we doing') requiring reasoning over business data rather than a simple data dump",
 }
 
 # score criteria is an ordinal ARRAY, low → high; Jev returns a float `score`

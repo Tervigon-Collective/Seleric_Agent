@@ -154,13 +154,10 @@ class AzureOpenAICompatibleAdapter:
 
     @staticmethod
     def _wrap_tracing(client: Any) -> tuple[Any, bool]:
-        try:
-            from langfuse.openai import register_tracing
+        # Once per process — a register_tracing() per client stacked wrappers.
+        from seleric_swarm.observability.tracing import ensure_openai_tracing
 
-            register_tracing()
-            return client, True
-        except Exception:
-            return client, False
+        return client, ensure_openai_tracing()
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         # Model-to-model fallback is handled by LLMGateway, which swaps

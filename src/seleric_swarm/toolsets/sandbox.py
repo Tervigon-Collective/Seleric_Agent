@@ -162,7 +162,7 @@ async def run_python(
             retryable=False,
         )
 
-    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal
 

@@ -1151,3 +1151,97 @@ def test_search_shortlist_omits_summary_without_description() -> None:
     from seleric_swarm.toolsets.semantic import _slim_match
 
     assert "summary" not in _slim_match({"id": "x", "display_name": "X"})
+
+
+@pytest.mark.asyncio
+async def test_parallel_searches_in_one_step_are_one_round():
+    # Live 2026-10-06 MS3-6a09be7996: 11 parallel searches (one per metric of a
+    # broad comparison) in ONE model step; counting calls withdrew the tool after
+    # 5 and 6 metrics were never resolved.
+    from seleric_swarm.agent.limits import withdrawn_tools
+
+    mcp = FakeMcpClient({"seleric.catalogue_search_metrics": {"matches": [{"id": "ad_spend"}]}})
+    ctx = FakeRunContext(_deps(mcp))
+    ctx.run_step = 2
+    terms = ["spend", "revenue", "roas", "orders", "cpa", "ctr", "cpc", "cpm", "clicks", "lpv", "cvr"]
+    results = [await semantic.search_semantics(ctx, t) for t in terms]
+    assert all(r.success for r in results)
+    assert "search_semantics" not in withdrawn_tools(ctx.deps)
+
+
+@pytest.mark.asyncio
+async def test_sequential_search_rounds_still_trip_the_breaker():
+    from seleric_swarm.agent.limits import withdrawn_tools
+
+    mcp = FakeMcpClient({"seleric.catalogue_search_metrics": {"matches": [{"id": "x"}]}})
+    ctx = FakeRunContext(_deps(mcp))
+    for step in range(1, semantic._MAX_SEARCHES + 1):
+        ctx.run_step = step
+        assert (await semantic.search_semantics(ctx, f"returns {step}")).success is True
+    ctx.run_step = semantic._MAX_SEARCHES + 1
+    over = await semantic.search_semantics(ctx, "returns again")
+    assert over.error_code == "SEMANTIC_RESOLUTION_LOOP"
+    assert "search_semantics" in withdrawn_tools(ctx.deps)
+
+
+@pytest.mark.asyncio
+async def test_two_unmodelled_concepts_in_one_step_do_not_withdraw_search():
+    from seleric_swarm.agent.limits import withdrawn_tools
+
+    mcp = FakeMcpClient({"seleric.catalogue_search_metrics": {"matches": []}})
+    ctx = FakeRunContext(_deps(mcp))
+    ctx.run_step = 3
+    await semantic.search_semantics(ctx, "inventory turnover")
+    await semantic.search_semantics(ctx, "warehouse stock")
+    assert "search_semantics" not in withdrawn_tools(ctx.deps)
+
+
+# ---- semantic_sql (Cube Semantic SQL) --------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_semantic_sql_writes_citable_evidence_per_numeric_cell():
+    data = [
+        {"order_date": "2026-09-01T00:00:00", "ns": 78164.1, "ma7": 78164.1},
+        {"order_date": "2026-09-02T00:00:00", "ns": 95321.52, "ma7": 86742.81},
+    ]
+    mcp = FakeMcpClient(
+        {"seleric.semantic_sql": {"data": data, "columns": ["order_date", "ns", "ma7"], "row_count": 2, "query_sha": "abc"}}
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.semantic_sql(ctx, "WITH d AS (...) SELECT ...", "2026-09-01", "2026-09-02")
+    assert result.success is True
+    assert len(result.artifact_ids) == 4
+    assert mcp.calls[0][1]["brand_id"] == "20"  # default brand scope sent to the MCP
+    payload = ctx.deps.artifact_store.get(result.artifact_ids[0]).payload
+    assert payload["metric_id"] == "ns"
+    assert payload["grain"] == "day"
+    assert payload["period_start"].startswith("2026-09-01")
+    assert payload["dimensions"] == {"order_date": "2026-09-01"}
+    assert "95321.5" in result.summary
+    applied = result.provenance.source_metadata["filters_applied"]
+    assert applied == [{"dimension": "brand_id", "operator": "equals", "values": ["20"]}]
+
+
+@pytest.mark.asyncio
+async def test_semantic_sql_aggregate_row_uses_the_declared_window():
+    mcp = FakeMcpClient({"seleric.semantic_sql": {"data": [{"total": 1724507.93}], "query_sha": "x"}})
+    ctx = FakeRunContext(_deps(mcp))
+    result = await semantic.semantic_sql(ctx, "SELECT MEASURE(x) FROM order_pnl", "2026-09-01", "2026-09-30", brand_id="28")
+    payload = ctx.deps.artifact_store.get(result.artifact_ids[0]).payload
+    assert payload["grain"] == "none"
+    assert payload["period_start"].startswith("2026-09-01")
+    assert payload["period_end"].startswith("2026-09-30")
+    assert mcp.calls[0][1]["brand_id"] == "28"
+
+
+@pytest.mark.asyncio
+async def test_semantic_sql_requires_a_window_and_surfaces_errors():
+    mcp = FakeMcpClient({"seleric.semantic_sql": {"error": "validation: blocked keyword: DROP"}})
+    ctx = FakeRunContext(_deps(mcp))
+    bad_window = await semantic.semantic_sql(ctx, "SELECT 1", "last month", "now")
+    assert bad_window.success is False and not mcp.calls
+    failed = await semantic.semantic_sql(ctx, "DROP x", "2026-09-01", "2026-09-30")
+    assert failed.success is False
+    assert failed.error_code == "SEMANTIC_SQL_ERROR"
+    assert "DROP" in failed.summary

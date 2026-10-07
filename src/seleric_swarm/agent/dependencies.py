@@ -104,7 +104,7 @@ class SelericDeps:
     # Per-mission mutable tool-call tallies (e.g. how many times search_semantics
     # ran) so a tool can break a paraphrase-search loop the exact-arg query_cache
     # can't see. One dict per SelericDeps — never shared across missions.
-    call_counts: dict[str, int] = field(default_factory=dict)
+    call_counts: dict[str, Any] = field(default_factory=dict)
     # Per-run working memory — an auto-maintained ledger of established facts
     # (values a successful query_metrics returned) rendered back into the prompt
     # each turn so the model stops re-fetching the same thing. Not evidence

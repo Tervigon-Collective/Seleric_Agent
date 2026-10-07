@@ -312,3 +312,79 @@ def test_named_weekday_is_its_last_completed_occurrence() -> None:
     assert (w.start, w.end) == ("2026-09-28", "2026-09-28")
     # Two weekday names are a comparison, not a single day.
     assert window_from_query("Monday vs Tuesday orders", "Asia/Kolkata", "2026-10-04") is None
+
+
+# -- two named windows joined by a comparison -----------------------------------
+#
+# Live 2026-10-06 (MS3-167d9f4838): the priority chain returned on its first
+# match, so "the last 3 days versus today" resolved to the 3-day window alone and
+# `today` was dropped. The mission fetched, analysed and shipped only the first
+# window as `completed`. These lock the comparison down AND its precision: a
+# second window must be *bound* to a comparison, not merely present.
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        # The incident itself.
+        (
+            "Analyze the last 3 days' best-performing campaigns versus today",
+            ("2026-10-03", "2026-10-05", "2026-10-06", "2026-10-06"),
+        ),
+        ("revenue yesterday versus today", ("2026-10-05", "2026-10-05", "2026-10-06", "2026-10-06")),
+        ("this week vs last week", ("2026-10-05", "2026-10-06", "2026-09-28", "2026-10-04")),
+        ("last month vs this month", ("2026-09-01", "2026-09-30", "2026-10-01", "2026-10-06")),
+    ],
+)
+def test_two_named_windows_become_a_comparison(query: str, expected: tuple[str, ...]) -> None:
+    from seleric_swarm.services.time_range import window_from_query
+
+    w = window_from_query(query, "Asia/Kolkata", "2026-10-06")
+    assert w is not None, query
+    assert w.kind == "comparison", query
+    assert (w.start, w.end, w.start_b, w.end_b) == expected, query
+    # The token is what `_resolved_window_line` gates on to tell the model the
+    # dates at all — an unpinned comparison silently loses both windows again.
+    assert w.relative_token, query
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # One window and a NON-temporal comparison: not a period comparison. This
+        # is the exact case the `_RELATIVE_COMPARE` comment warns about.
+        "for last month, how did this channel compare to the site average",
+        # The same window twice names no comparison.
+        "spend in the last 7 days vs the last 7 days",
+        # A second window that is not joined to the first.
+        "spend last 30 days across all channels vs target",
+        # Single window, unchanged.
+        "total ad spend in the last 7 days",
+        "how many orders came in today",
+    ],
+)
+def test_one_named_window_is_not_turned_into_a_comparison(query: str) -> None:
+    from seleric_swarm.services.time_range import window_from_query
+
+    w = window_from_query(query, "Asia/Kolkata", "2026-10-06")
+    assert w is not None, query
+    assert w.kind == "absolute", query
+    assert w.start_b is None and w.end_b is None, query
+
+
+def test_required_scope_carries_both_windows_of_a_comparison() -> None:
+    from seleric_swarm.agent.scope import required_windows_from_resolved
+    from seleric_swarm.services.time_range import window_from_query
+
+    windows = required_windows_from_resolved(
+        window_from_query("the last 3 days versus today", "Asia/Kolkata", "2026-10-06")
+    )
+    assert [str(w) for w in windows] == ["2026-10-03..2026-10-05", "2026-10-06"]
+    # A single-window question still yields exactly one, never zero: an empty
+    # window list would silently disable the coverage gate.
+    single = required_windows_from_resolved(
+        window_from_query("total ad spend in the last 7 days", "Asia/Kolkata", "2026-10-06")
+    )
+    assert [str(w) for w in single] == ["2026-09-29..2026-10-05"]
+    # Fail-open on anything undated.
+    assert required_windows_from_resolved(None) == ()

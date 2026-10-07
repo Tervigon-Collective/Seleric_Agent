@@ -53,6 +53,7 @@ TOOLS = (
     "modules_list",
     "metrics_query",
     "metrics_drilldown",
+    "semantic_sql",
     # Meta/Google ad-platform tools are not listed: they are third-party APIs
     # outside the certified Cube serve views and the gateway no longer exposes
     # them by default (SELERIC_MCP_ADS_TOOLS).

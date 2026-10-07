@@ -26,8 +26,9 @@ structured refusal rather than a number it cannot stand behind — see
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from collections.abc import Callable
 from typing import Literal, cast
 
 from pydantic_ai import RunContext
@@ -81,11 +82,69 @@ def _provenance(evidence_ids: list[str]) -> ArtifactProvenance:
     return ArtifactProvenance(evidence_ids=list(evidence_ids), calculation_version=CALCULATION_VERSION)
 
 
-def _refuse(summary: str, *, error_code: str, retryable: bool = False) -> ToolResult:
-    return ToolResult(success=False, summary=summary, error_code=error_code, retryable=retryable)
+def _refuse(
+    summary: str, *, error_code: str, retryable: bool = False, warnings: Sequence[str] = ()
+) -> ToolResult:
+    return ToolResult(
+        success=False,
+        summary=summary,
+        error_code=error_code,
+        retryable=retryable,
+        warnings=list(warnings),
+    )
 
 
 _AVAILABLE_EVIDENCE_SHOWN = 60
+# Shortest id fragment accepted as a repair candidate. Long enough that a
+# coincidental prefix collision across a mission's evidence is implausible,
+# short enough to catch the dropped-trailing-character transcription.
+_MIN_ID_PREFIX_CHARS = 8
+
+
+def _repair_ids(ctx: RunContext[SelericDeps], requested: list[str]) -> tuple[list[str], dict[str, str]]:
+    """Repair mistyped artifact ids, and say which id each request resolved to.
+
+    ``evidence_ids`` is an opaque-40-char-token channel: the model must echo back
+    the exact ids a previous tool returned, and at real cardinality it
+    mis-transcribes them (live 2026-10-06 MS3-167d9f4838: 47 ids copied into
+    ``run_python``, one character dropped from one of them, and the whole
+    computation lost). ``instructions.py`` already forbids this pattern and the
+    model did it anyway, because the signature *mandates* it — so the repair
+    belongs here, where a dropped character is recoverable by construction.
+
+    A repair is applied only when it is **unambiguous**: exactly one evidence
+    artifact in this mission has the requested id as a prefix (or is a prefix of
+    it, for a spurious trailing character). Two candidates resolve to nothing —
+    guessing between them is how a finding ends up citing the wrong evidence
+    (non-negotiable rule 6).
+    """
+    resolved = list(requested)
+    known = ctx.deps.artifact_store.get_many(list(requested))
+    found = {a.id for a in known}
+    repairs: dict[str, str] = {}
+    missing = [aid for aid in requested if aid not in found]
+    if not missing:
+        return resolved, repairs
+
+    evidence_ids_in_mission = [
+        a.id
+        for a in ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id)
+        if a.artifact_type == "evidence"
+    ]
+    for aid in missing:
+        if len(aid) < _MIN_ID_PREFIX_CHARS:
+            continue
+        candidates = [
+            candidate
+            for candidate in evidence_ids_in_mission
+            if candidate.startswith(aid) or aid.startswith(candidate)
+        ]
+        if len(candidates) == 1:
+            repairs[aid] = candidates[0]
+    if not repairs:
+        return resolved, repairs
+    resolved = [repairs.get(aid, aid) for aid in requested]
+    return resolved, repairs
 
 
 def _available_evidence(ctx: RunContext[SelericDeps]) -> str:
@@ -114,40 +173,102 @@ def _available_evidence(ctx: RunContext[SelericDeps]) -> str:
     return " Evidence available in this mission: " + "; ".join(rows[:_AVAILABLE_EVIDENCE_SHOWN]) + more
 
 
-def _load_evidence(ctx: RunContext[SelericDeps], evidence_ids: list[str]) -> tuple[list[EvidenceArtifact], ToolResult | None]:
+def _load_evidence(
+    ctx: RunContext[SelericDeps], evidence_ids: list[str], *, warnings: Sequence[str] = ()
+) -> tuple[list[EvidenceArtifact], list[str], ToolResult | None]:
     """Resolve artifact ids to typed evidence, or a refusal explaining why not.
+
+    Returns ``(evidence, resolved_ids, refusal)``. ``resolved_ids`` is what the
+    request actually became — the same length and order as the input, so callers
+    can rebind over ``evidence_ids`` and have every downstream ``zip`` and
+    ``_write_finding`` cite the artifact that was really read. Passing the
+    *original* list back would cite an id that does not exist the moment a
+    mistyped one is repaired.
 
     A missing id is reported rather than skipped: silently computing over a
     subset of what the agent asked for is how a finding ends up citing
     evidence that didn't back it (non-negotiable rule 6).
+
+    ``retryable=True`` on an input-shaped refusal is deliberate and load-bearing.
+    A wrong or mistyped id is the most recoverable error class there is — the
+    fix is a corrected call, not a replay — but ``ToolResult.retryable``
+    defaults to ``False`` and ``instructions.py`` tells the model "a
+    non-retryable error does not justify replaying the same call". Live
+    2026-10-06 (MS3-167d9f4838): one dropped character produced
+    ``retryable=False``, the model correctly declined to re-call, abandoned the
+    mission, and shipped half the question as ``completed``. ``repeat_guard``
+    keys off this same flag to re-execute rather than replay, so a corrected id
+    is a real retry, not a loop.
     """
     if not evidence_ids:
-        return [], _refuse("no evidence_ids supplied", error_code="INSUFFICIENT_EVIDENCE")
+        return (
+            [],
+            [],
+            _refuse(
+                "no evidence_ids supplied",
+                error_code="INSUFFICIENT_EVIDENCE",
+                retryable=True,
+                warnings=warnings,
+            ),
+        )
 
-    artifacts = ctx.deps.artifact_store.get_many(list(evidence_ids))
+    resolved_ids, repairs = _repair_ids(ctx, list(evidence_ids))
+    artifacts = ctx.deps.artifact_store.get_many(resolved_ids)
     found = {a.id for a in artifacts}
-    missing = [aid for aid in evidence_ids if aid not in found]
+    missing = [aid for aid in resolved_ids if aid not in found]
     if missing:
-        return [], _refuse(
-            f"evidence not found in store: {', '.join(missing)}." + _available_evidence(ctx),
-            error_code="INSUFFICIENT_EVIDENCE",
+        return (
+            [],
+            [],
+            _refuse(
+                f"evidence not found in store: {', '.join(missing)}." + _available_evidence(ctx),
+                error_code="INSUFFICIENT_EVIDENCE",
+                retryable=True,
+                warnings=warnings,
+            ),
         )
 
     evidence: list[EvidenceArtifact] = []
     for artifact in artifacts:
         if artifact.artifact_type != "evidence":
-            return [], _refuse(
-                f"artifact {artifact.id} is artifact_type={artifact.artifact_type!r}, not evidence",
-                error_code="INSUFFICIENT_EVIDENCE",
+            return (
+                [],
+                [],
+                _refuse(
+                    f"artifact {artifact.id} is artifact_type={artifact.artifact_type!r}, not evidence",
+                    error_code="INSUFFICIENT_EVIDENCE",
+                    warnings=warnings,
+                ),
             )
         try:
             evidence.append(EvidenceArtifact.model_validate(artifact.payload))
         except Exception as exc:  # never raise across the tool boundary
-            return [], _refuse(
-                f"artifact {artifact.id} payload is not a valid EvidenceArtifact: {exc}",
-                error_code="INSUFFICIENT_EVIDENCE",
+            return (
+                [],
+                [],
+                _refuse(
+                    f"artifact {artifact.id} payload is not a valid EvidenceArtifact: {exc}",
+                    error_code="INSUFFICIENT_EVIDENCE",
+                    warnings=warnings,
+                ),
             )
-    return evidence, None
+    if repairs:
+        # Say what was repaired: a silent substitution would leave the model
+        # reasoning about ids that were never in its hands.
+        _note_repaired_ids(
+            ctx, "; ".join(f"{bad} -> {good}" for bad, good in sorted(repairs.items()))
+        )
+    return evidence, resolved_ids, None
+
+
+def _note_repaired_ids(ctx: RunContext[SelericDeps], note: str) -> None:
+    """Record a repaired-id substitution on the mission scratchpad.
+
+    Best-effort: the scratchpad is a working note, not part of the evidence
+    chain, so a failure here must never fail the load it was describing.
+    """
+    with contextlib.suppress(Exception):
+        ctx.deps.scratchpad.note(f"[evidence ids auto-repaired] {note}")
 
 
 def _write_finding(
@@ -213,7 +334,7 @@ async def compare_periods(ctx: RunContext[SelericDeps], evidence_ids: list[str])
     Metrics present in only one period are skipped, not zero-filled — an
     absent measurement is not a measurement of zero.
     """
-    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal
 
@@ -309,7 +430,7 @@ async def detect_anomalies(
             error_code="METHOD_NOT_AVAILABLE",
         )
 
-    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal
 
@@ -422,7 +543,7 @@ async def contribution_analysis(
     bucket never reaches us. Shares are therefore shares *of the observed
     parts*; a warning says so rather than letting them read as exact.
     """
-    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal
 
@@ -549,7 +670,7 @@ async def segment_decomposition(
     if not dimensions:
         return _refuse("no dimensions supplied", error_code="INSUFFICIENT_EVIDENCE")
 
-    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal
 
@@ -643,7 +764,7 @@ async def funnel_decomposition(
     A reading that divides by the base without being a share of it — an average
     depth, a cost per unit — is named in ``warnings`` rather than positioned.
     """
-    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal
 
@@ -724,7 +845,7 @@ async def cohort_analysis(ctx: RunContext[SelericDeps], evidence_ids: list[str])
     The summary says which of the two it did, because they answer different
     questions.
     """
-    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal
 
@@ -799,7 +920,7 @@ async def generate_visualization(
     
     Do NOT use this tool for single numbers or simple KPI requests.
     """
-    evidence, refusal = _load_evidence(ctx, evidence_ids)
+    evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal
         
