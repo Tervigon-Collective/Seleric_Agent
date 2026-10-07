@@ -11,7 +11,6 @@ from seleric_swarm.agent.runner import (
     _answer_period,
     _closing_offer,
     _followup_hint,
-    _is_affirmation,
     _names_a_period,
     _prior_window,
     _render_turn_record,
@@ -24,13 +23,6 @@ ANSWER = (
     "Period: 2026-09-28 to 2026-10-03 · Data as of 2026-10-04\n\n"
     "Would you like me to dig into channel or landing-page-level behaviour next?"
 )
-
-
-def test_affirmations_are_short_grammar_only():
-    for q in ("yes", "Yes!", "sure, go ahead", "ok do it", "yes please", "haan"):
-        assert _is_affirmation(q), q
-    for q in ("", "yes by channel for last month", "no", "show meta sales", "yes meta"):
-        assert not _is_affirmation(q), q
 
 
 def test_answer_period_and_offer_are_read_from_the_answer():

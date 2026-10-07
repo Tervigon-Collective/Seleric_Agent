@@ -83,22 +83,114 @@ def _change(before: float | None, after: float | None) -> float | None:
     return (after - before) / abs(before) * 100
 
 
+_SINGLE_WINDOW_SHAPES = frozenset({"lookup", "trend", "breakdown", "other"})
+
+
 async def execute_plan(
     plan: MissionPlan | None,
     deps: SelericDeps,
     *,
     windows: list[tuple[date, date]],
     as_of: datetime,
+    grain: str | None = None,
 ) -> Prefetch | None:
-    """Run the plan's data steps when its shape has a deterministic template."""
-    if plan is None or plan.shape not in ("entity_comparison", "period_comparison") or len(windows) < 2:
+    """Run the plan's data steps when its shape has a deterministic template.
+
+    Two-window comparisons run the rank-then-compare template. Single-window shapes
+    (lookup, trend, breakdown) fetch every planned metric at the planned breakdown in
+    parallel, so the agent's first turn already holds the numbers and only writes
+    the answer. Diagnosis and funnels are one composite tool call each and are left
+    to the agent."""
+    if plan is None:
         return None
     started = time.perf_counter()
     try:
-        return await _execute(plan, deps, windows=windows, as_of=as_of, started=started)
+        if plan.shape in ("entity_comparison", "period_comparison") and len(windows) >= 2:
+            return await _execute(plan, deps, windows=windows, as_of=as_of, started=started)
+        if plan.shape in _SINGLE_WINDOW_SHAPES:
+            window = windows[0] if windows else (as_of.date(), as_of.date())
+            return await _execute_single(plan, deps, window=window, as_of=as_of, grain=grain, started=started)
     except Exception:
         _log.warning("plan_execution_failed", exc_info=True)
+    return None
+
+
+async def _execute_single(
+    plan: MissionPlan,
+    deps: SelericDeps,
+    *,
+    window: tuple[date, date],
+    as_of: datetime,
+    grain: str | None,
+    started: float,
+) -> Prefetch | None:
+    step = next((s for s in plan.steps if s.tool == "query_metrics" and s.metric_ids), None)
+    if step is None:
         return None
+    if plan.shape == "trend":
+        grain = grain if grain in ("day", "week", "month") else "day"
+    elif grain not in ("day", "week", "month"):
+        grain = "none"
+    gate = asyncio.Semaphore(_PARALLEL)
+    metrics = list(dict.fromkeys(step.metric_ids))
+    jobs = []
+    for metric in metrics:
+        supported = set(deps.catalogue.supported_dimensions_for(metric))
+        dims = {d: "" for d in step.dimensions if not supported or d in supported}
+        jobs.append(
+            _query(
+                deps, gate, metric_id=metric, dimensions=dims or None, grain=grain,
+                period_start=_at(window[0], as_of), period_end=_at(window[1], as_of),
+            )
+        )
+    results = await asyncio.gather(*jobs, return_exceptions=True)
+    evidence_ids: list[str] = []
+    derived: dict[str, float] = {}
+    lines: list[str] = []
+    failed: list[str] = []
+    for metric, result in zip(metrics, results, strict=True):
+        if isinstance(result, BaseException) or not getattr(result, "success", False):
+            reason = "" if isinstance(result, BaseException) else f" ({str(result.summary)[:160]})"
+            failed.append(f"{metric}{reason}")
+            continue
+        evidence_ids += result.artifact_ids
+        lines.append(f"- {result.summary}")
+        for payload in _payloads(deps, result.artifact_ids):
+            if payload.get("value") is None:
+                continue
+            labels = [f"{k}={v}" for k, v in (payload.get("dimensions") or {}).items() if k != ELAPSED_KEY]
+            if grain != "none":
+                labels.append(str(payload.get("period_start", ""))[:10])
+            derived[" | ".join([metric, *labels])] = round(float(payload["value"]), 4)
+    if not lines:
+        return None
+    finding_id = _store_finding(
+        deps, evidence_ids, derived, None,
+        finding_type="prefetched_lookup",
+        statement=f"Values fetched by the planner's executor for {window[0]}..{window[1]}.",
+    )
+    head = [
+        "[prefetched data — already fetched by the planner's executor; do not re-fetch it]",
+        f"Window {window[0]}..{window[1]}" + (f", grain={grain}" if grain != "none" else "") + ":",
+    ]
+    tail = []
+    if failed:
+        tail.append("Could not fetch: " + "; ".join(failed) + " — say so, or fetch them another way.")
+    if finding_id:
+        tail.append(f"Cite finding_ids=[{finding_id}] for every figure above; it links all the evidence.")
+    stats = {
+        "queries": len(jobs),
+        "rows": len(derived),
+        "failed": len(failed),
+        "latency_ms": round((time.perf_counter() - started) * 1000),
+    }
+    _log.info("plan_executed %s", stats)
+    return Prefetch(
+        text="\n".join([*head, *lines, *tail]),
+        evidence_ids=list(dict.fromkeys(evidence_ids)),
+        finding_id=finding_id,
+        stats=stats,
+    )
 
 
 async def _execute(
@@ -310,12 +402,20 @@ async def _mapping(
     return lines if len(lines) > 1 else []
 
 
-def _store_finding(deps: SelericDeps, evidence_ids: list[str], derived: dict[str, float], entity: str | None) -> str | None:
+def _store_finding(
+    deps: SelericDeps,
+    evidence_ids: list[str],
+    derived: dict[str, float],
+    entity: str | None,
+    *,
+    finding_type: str = "prefetched_comparison",
+    statement: str | None = None,
+) -> str | None:
     if not evidence_ids or not derived:
         return None
     finding = Finding(
-        finding_type="prefetched_comparison",
-        statement=(
+        finding_type=finding_type,
+        statement=statement or (
             f"Per-day comparison{' by ' + entity if entity else ''} computed from the planner's "
             "prefetched evidence (additive metrics per day over the same elapsed hours; ratios as reported)."
         ),

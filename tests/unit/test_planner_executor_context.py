@@ -108,10 +108,58 @@ async def test_the_executor_ranks_then_compares_the_same_entities_over_the_same_
     assert "elapsed_only" in out.text and f"finding_ids=[{out.finding_id}]" in out.text
 
 
+class _RecordingMcp:
+    def __init__(self) -> None:
+        self.args: list[dict] = []
+
+    async def call(self, *, agent_id: str, capability: str, arguments: dict) -> dict:
+        self.args.append(arguments)
+        measure = arguments["measures"][0]
+        if arguments.get("dimensions"):
+            rows = [{"camp": c, measure: "5"} for c in ("A", "B")]
+        else:
+            rows = [{measure: "7"}]
+        return {"rows": rows, "provenance": {"query_id": "q"}}
+
+
 @pytest.mark.asyncio
-async def test_the_executor_leaves_other_shapes_to_the_agent() -> None:
-    plan = MissionPlan(shape="lookup", steps=[PlanStep(tool="query_metrics", metric_ids=["spend"], purpose="fetch it")])
-    assert await executor.execute_plan(plan, _deps(), windows=[], as_of=TODAY) is None
+async def test_a_lookup_is_fetched_in_parallel_before_the_loop() -> None:
+    mcp = _RecordingMcp()
+    plan = MissionPlan(shape="lookup", steps=[PlanStep(tool="query_metrics", metric_ids=["spend", "ret"], purpose="fetch")])
+    out = await executor.execute_plan(plan, _deps(mcp), windows=[], as_of=TODAY)
+    assert out is not None and out.finding_id and out.stats["queries"] == 2
+    assert sorted(a["measures"][0] for a in mcp.args) == ["ret", "spend"]
+    # No window named: the tool's own default, the mission day.
+    assert {a["time_range"]["start"] for a in mcp.args} == {"2026-10-07"}
+    assert "spend=7.0" in out.text and f"finding_ids=[{out.finding_id}]" in out.text
+
+
+@pytest.mark.asyncio
+async def test_a_breakdown_only_asks_each_metric_for_dimensions_it_supports() -> None:
+    mcp = _RecordingMcp()
+    plan = MissionPlan(
+        shape="breakdown",
+        steps=[PlanStep(tool="query_metrics", metric_ids=["spend"], dimensions=["camp", "nope"], purpose="by camp")],
+    )
+    out = await executor.execute_plan(plan, _deps(mcp), windows=[(date(2026, 10, 1), date(2026, 10, 6))], as_of=TODAY)
+    assert out is not None
+    assert mcp.args[0]["dimensions"] == ["camp"]
+    assert (mcp.args[0]["time_range"]["start"], mcp.args[0]["time_range"]["end"]) == ("2026-10-01", "2026-10-06")
+
+
+@pytest.mark.asyncio
+async def test_a_trend_defaults_to_daily_buckets() -> None:
+    mcp = _RecordingMcp()
+    plan = MissionPlan(shape="trend", steps=[PlanStep(tool="query_metrics", metric_ids=["spend"], purpose="trend")])
+    await executor.execute_plan(plan, _deps(mcp), windows=[(date(2026, 10, 1), date(2026, 10, 6))], as_of=TODAY)
+    assert mcp.args[0].get("granularity") == "day"
+
+
+@pytest.mark.asyncio
+async def test_the_executor_leaves_diagnosis_and_funnels_to_the_agent() -> None:
+    for shape, tool in (("why_single_metric", "diagnose_metric_change"), ("funnel", "query_metrics")):
+        plan = MissionPlan(shape=shape, steps=[PlanStep(tool=tool, metric_ids=["spend"], purpose="leave it")])
+        assert await executor.execute_plan(plan, _deps(_RecordingMcp()), windows=[], as_of=TODAY) is None
 
 
 def test_old_tool_returns_collapse_to_their_digest_and_the_tail_stays_verbatim() -> None:

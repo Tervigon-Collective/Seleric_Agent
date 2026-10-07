@@ -443,6 +443,26 @@ async def build_plan(
         _log.warning("plan_step_failed", exc_info=True)
         stats.update(status="failed", error=type(exc).__name__)
         return PlanOutcome(stats=_finish(stats, started))
+    return await plan_from_slots(
+        slots, catalogue=catalogue, tool_names=tool_names, resolver=resolver,
+        windows=windows, as_of=as_of, stats=stats, started=started,
+    )
+
+
+async def plan_from_slots(
+    slots: PlanSlots,
+    *,
+    catalogue: CatalogueSnapshot,
+    tool_names: frozenset[str] = frozenset(),
+    resolver: TermResolver | None = None,
+    windows: Sequence[tuple[date, date]] = (),
+    as_of: datetime | None = None,
+    stats: dict[str, Any] | None = None,
+    started: float | None = None,
+) -> PlanOutcome:
+    """The plan from slots already read (``agent/understand.py``) — code only, no LLM."""
+    stats = {} if stats is None else stats
+    started = time.perf_counter() if started is None else started
     metric_ids, notes = await _resolve_metrics(slots.metrics, resolver, catalogue)
     rank_id = None
     if slots.rank_by is not None:

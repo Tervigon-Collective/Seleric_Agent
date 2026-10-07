@@ -122,25 +122,11 @@ async def test_endpoint_falls_back_to_agent_loop_when_stale(monkeypatch):
     assert out["source"] == "agent_loop"
 
 
-@pytest.mark.parametrize(
-    ("query", "expected"),
-    [
-        ("How is the business doing?", True),
-        ("how's business", True),
-        ("give me an overview", True),
-        ("what is net sales today", False),          # specific metric → not hijacked
-        ("why did CAC increase last week", False),   # diagnostic → not hijacked
-        ("how are we doing on refunds returns cac and everything else too", False),  # too long
-    ],
-)
-def test_high_level_query_gate(query, expected):
-    from seleric_swarm.agent.runner import _is_high_level_business_query
-
-    assert _is_high_level_business_query(query) is expected
-
-
-def test_high_level_gate_kill_switch(monkeypatch):
+def test_overview_fast_path_kill_switch(monkeypatch):
+    # Routing is by the understand call's kind == "overview", not by phrases; the
+    # env kill switch still turns the snapshot answer off.
     from seleric_swarm.agent import runner
 
+    assert runner._business_state_fast_path_enabled() is True
     monkeypatch.setenv("BUSINESS_STATE_FAST_PATH", "0")
-    assert runner._is_high_level_business_query("How is the business doing?") is False
+    assert runner._business_state_fast_path_enabled() is False

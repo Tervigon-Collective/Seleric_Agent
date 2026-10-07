@@ -64,28 +64,6 @@ async def _close_component(component: object | None, method: str = "close") -> N
         await result
 
 
-async def _warmup(runtime: Any) -> None:
-    """Fire-and-forget: warm Laya/JEV once at boot so the first real query
-    doesn't eat its model cold-start (first call can take >12s). Laya is shared
-    server-side, so warming from the api process also benefits the recovery
-    worker. Never raises — a warmup failure must not affect startup."""
-    try:
-        from seleric_swarm.agent.intent import classify_query
-
-        s = runtime.settings
-        base = getattr(s, "jev_base_url", "")
-        if not base:
-            return
-        await classify_query(
-            "warmup",
-            base_url=base,
-            api_key=getattr(s, "jev_api_key", ""),
-            timeout=float(getattr(s, "jev_timeout_s", 20.0)),
-        )
-    except Exception:  # noqa: S110 - warmup is best-effort
-        pass
-
-
 async def _warmup_catalogue(runtime: Any) -> None:
     """Fire-and-forget: warm the catalogue bootstrap at startup so the first
     mission doesn't pay the cold-start MCP call. Never raises."""
@@ -139,7 +117,6 @@ async def lifespan(_app: FastAPI):
     checkpoint_setup = getattr(checkpoint_provider, "setup", None)
     if checkpoint_setup is not None:
         await checkpoint_setup()
-    asyncio.create_task(_warmup(_runtime))
     asyncio.create_task(_warmup_catalogue(_runtime))
     asyncio.create_task(_business_state_refresh_loop(_runtime))
     try:
