@@ -21,7 +21,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -70,7 +70,27 @@ def _payloads(deps: SelericDeps, artifact_ids: list[str], *, elapsed: bool = Fal
     return out
 
 
+def _with_named_values(deps: SelericDeps, metric_id: str, dimensions: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The values the question names (the scope's value_filters, kept by the understanding) constrain every
+    pre-fetched query, on a dimension of the value that the metric carries — query_metrics fits a conformed
+    sibling or grain twin. A dimension the step already breaks down or filters by is left alone. Live
+    2026-10-08: "Which Meta campaigns performed best…" ranked every campaign, Google's first, and the answer
+    waived the value instead of filtering."""
+    dims = dict(dimensions or {})
+    catalogue = deps.catalogue
+    for vf in getattr(deps.required_scope, "value_filters", ()) or ():
+        if not vf.values or any(d in dims for d in vf.dimensions):
+            continue
+        supported = set(catalogue.supported_dimensions_for(metric_id))
+        ordered = sorted(vf.dimensions, key=lambda d: (d not in supported, d))
+        dim = next((d for d in ordered if catalogue.carries(metric_id, d)), None)
+        if dim is not None:
+            dims[dim] = vf.values[0] if len(vf.values) == 1 else list(vf.values)
+    return dims or None
+
+
 async def _query(deps: SelericDeps, gate: asyncio.Semaphore, **kwargs: Any) -> Any:
+    kwargs["dimensions"] = _with_named_values(deps, kwargs["metric_id"], kwargs.get("dimensions"))
     async with gate:
         return await semantic.query_metrics(_ctx(deps), **kwargs)
 
@@ -297,19 +317,42 @@ async def _execute(
                     ),
                 )
             )
-    results = await asyncio.gather(*(job for _, _, job in jobs), return_exceptions=True)
+    results = list(await asyncio.gather(*(job for _, _, job in jobs), return_exceptions=True))
+    # A metric with no hourly series cannot count the elapsed hours (live 2026-10-08 golden Q6: net profit sits on
+    # the daily P&L and dropped out of "this month vs the same days last month"). Over a period to date it is
+    # compared on the complete days of both windows instead — today, still running, left out of both.
+    def _ok(result: Any) -> bool:
+        return not isinstance(result, BaseException) and bool(getattr(result, "success", False))
+
+    complete_days: dict[str, tuple[tuple[date, date], tuple[date, date]]] = {}
+    if to_date and reference[0] < reference[1]:
+        short = ((reference[0], reference[1] - timedelta(days=1)), (comparison[0], comparison[1] - timedelta(days=1)))
+        for metric in metrics:
+            idx = [i for i, (m, _, _) in enumerate(jobs) if m == metric]
+            if catalogue.aggregation_for(metric) == "additive" and not all(_ok(results[i]) for i in idx):
+                retry = await asyncio.gather(*(
+                    _query(deps, gate, metric_id=metric, dimensions=dims_for(),
+                           period_start=_at(start, as_of), period_end=_at(end, as_of))
+                    for start, end in short
+                ), return_exceptions=True)
+                for i, result in zip(idx, retry, strict=True):
+                    results[i] = result
+                complete_days[metric] = short
     values: dict[tuple[str, str, str], float] = {}
     failed: list[str] = []
     ref_days = (reference[1] - reference[0]).days + 1
     cmp_days = (comparison[1] - comparison[0]).days + 1
     for (metric, label, _), result in zip(jobs, results, strict=True):
-        if isinstance(result, BaseException) or not getattr(result, "success", False):
+        if not _ok(result):
             failed.append(f"{metric} ({label})")
             continue
         evidence_ids += result.artifact_ids
         additive = catalogue.aggregation_for(metric) == "additive"
         days = ref_days if label == "ref" else cmp_days
-        for payload in _payloads(deps, result.artifact_ids, elapsed=bool(additive and today_running)):
+        if metric in complete_days:
+            days -= 1
+        elapsed_rows = bool(additive and today_running and metric not in complete_days)
+        for payload in _payloads(deps, result.artifact_ids, elapsed=elapsed_rows):
             if payload.get("value") is None:
                 continue
             key = str(payload["dimensions"].get(entity, "")) if entity else ""
@@ -359,6 +402,9 @@ async def _execute(
     else:
         basis = "Additive metrics are shown per day; ratios are as reported."
     basis += f" change = {comparison[0]}..{comparison[1]} against {reference[0]}..{reference[1]}."
+    for metric, ((r0, r1), (c0, c1)) in complete_days.items():
+        basis += (f" {metric} has no hourly series: compared over the complete days {r0}..{r1} vs {c0}..{c1} "
+                  "(today left out of both).")
     head = [
         "[prefetched data — already fetched by the planner's executor; do not re-fetch it]",
         f"Reference window {reference[0]}..{reference[1]} vs {comparison[0]}..{comparison[1]}. {basis}",

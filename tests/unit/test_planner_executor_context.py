@@ -242,3 +242,83 @@ async def test_a_period_comparison_judges_the_later_window_against_the_earlier_o
     assert "2026-09-01..2026-09-03 (per day) | 2026-10-01..2026-10-03 (per day)" in out.text
     assert "| spend | 100.00 | 150.00 | +50.0% |" in out.text
     assert "change = 2026-10-01..2026-10-03 against 2026-09-01..2026-09-03" in out.text
+
+
+class _FilterMcp:
+    """Records every query; no hourly series for the daily-only metric 'np'."""
+
+    def __init__(self) -> None:
+        self.args: list[dict] = []
+
+    async def call(self, *, agent_id: str, capability: str, arguments: dict) -> dict:
+        self.args.append(arguments)
+        measure = arguments["measures"][0]
+        if arguments.get("granularity") == "hour":
+            if measure == "np":
+                return {"error": "no hourly series"}
+            day = arguments["time_range"]["start"][:8]
+            rows = [{"x.hour": f"{day}{d:02d}T{h:02d}:00:00.000", measure: "1"} for d in range(1, 4) for h in range(24)]
+            return {"rows": rows, "provenance": {"query_id": "q"}}
+        return {"rows": [{measure: "30"}], "provenance": {"query_id": "q"}}
+
+
+def _scoped(deps: SelericDeps, **scope) -> SelericDeps:
+    import dataclasses
+
+    from seleric_swarm.agent.scope import RequiredScope
+
+    return dataclasses.replace(deps, required_scope=RequiredScope(**scope))
+
+
+@pytest.mark.asyncio
+async def test_the_questions_named_values_constrain_every_prefetched_query() -> None:
+    # Live 2026-10-08 "Which Meta campaigns performed best…": the executor ranked every campaign (Google's first)
+    # and the answer waived "meta" instead of filtering.
+    from seleric_swarm.agent.scope import ValueFilter
+
+    mcp = _RecordingMcp()
+    deps = _scoped(
+        _deps(mcp),
+        value_filters=(ValueFilter(term="meta", dimensions=frozenset({"plat", "other_dim"}), values=("meta",)),),
+    )
+    deps = dataclasses_replace_catalogue(deps)
+    plan = MissionPlan(shape="breakdown", steps=[PlanStep(tool="query_metrics", metric_ids=["spend"], dimensions=["camp"], purpose="breakdown")])
+    await executor.execute_plan(plan, deps, windows=[(date(2026, 10, 1), date(2026, 10, 6))], as_of=TODAY)
+    filters = [f for a in mcp.args for f in (a.get("filters") or [])]
+    assert {"dimension": "plat", "operator": "equals", "values": ["meta"]} in [
+        {k: f[k] for k in ("dimension", "operator", "values")} for f in filters
+    ]
+
+
+def dataclasses_replace_catalogue(deps: SelericDeps) -> SelericDeps:
+    import dataclasses
+
+    catalogue = CatalogueSnapshot(
+        metrics=(
+            CatalogueMetricMeta(id="spend", label="Spend", supported_dimensions=["camp", "plat"], raw={"aggregation": "additive"}),
+            CatalogueMetricMeta(id="np", label="Profit", supported_dimensions=["camp", "plat"], raw={"aggregation": "additive"}),
+        ),
+        dimensions=("camp", "plat"),
+    )
+    return dataclasses.replace(deps, catalogue=catalogue)
+
+
+@pytest.mark.asyncio
+async def test_a_metric_with_no_hourly_series_compares_complete_days_over_a_period_to_date(monkeypatch) -> None:
+    # Live 2026-10-08 golden Q6: net profit (daily P&L) dropped out of "this month vs the same days last month".
+    from seleric_swarm.agent.scope import RequiredWindow
+
+    monkeypatch.setattr(elapsed, "now_in", lambda tz: datetime(2026, 10, 3, 12, 30, tzinfo=IST))
+    mcp = _FilterMcp()
+    as_of = datetime(2026, 10, 3, tzinfo=IST)
+    windows = [(date(2026, 9, 1), date(2026, 9, 3)), (date(2026, 10, 1), date(2026, 10, 3))]
+    deps = _scoped(dataclasses_replace_catalogue(_deps(mcp)),
+                   windows=tuple(RequiredWindow(a, b) for a, b in windows))
+    import dataclasses
+
+    deps = dataclasses.replace(deps, as_of=as_of)
+    plan = MissionPlan(shape="period_comparison", steps=[PlanStep(tool="query_metrics", metric_ids=["spend", "np"], purpose="cmp")])
+    out = await executor.execute_plan(plan, deps, windows=windows, as_of=as_of)
+    assert out is not None and "Could not fetch" not in out.text
+    assert "np has no hourly series: compared over the complete days 2026-09-01..2026-09-02 vs 2026-10-01..2026-10-02" in out.text
+    assert "| np | 15.00 | 15.00 | +0.0% |" in out.text
