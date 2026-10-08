@@ -205,6 +205,39 @@ def ragged_table(text: str) -> str | None:
     return None
 
 
+def realign_markdown_tables(text: str) -> str:
+    """Put an unescaped ``|`` inside a label back into that cell.
+
+    Google campaign names are stored as ``[Google Build] Brand Search | 5th March``.
+    Written into a Markdown table, the pipe adds a column, so the date is read as
+    ad spend and the last metric falls off the row. Rows wider than their header
+    are folded back into the first cell and the pipe is escaped.
+    """
+    lines = text.splitlines()
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        if "|" in lines[i] and i + 1 < len(lines) and _TABLE_DELIM.match(lines[i + 1]) and "|" in lines[i + 1]:
+            width = len(table_cells(lines[i]))
+            out.append(lines[i])
+            out.append(lines[i + 1])
+            i += 2
+            while i < len(lines) and "|" in lines[i] and lines[i].strip():
+                cells = table_cells(lines[i])
+                if width and len(cells) > width:
+                    extra = len(cells) - width
+                    cells = [" | ".join(cells[: extra + 1]), *cells[extra + 1 :]]
+                if any("|" in cell for cell in cells):
+                    out.append("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
+                else:
+                    out.append(lines[i])
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "\n".join(out)
+
+
 def _table_columns(text: str, label_columns: frozenset[str] = frozenset()) -> list[list[float]]:
     return [values for values, _ in _table_columns_with_rounding(text, label_columns)]
 

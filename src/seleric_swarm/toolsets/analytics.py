@@ -1158,7 +1158,8 @@ async def merge_evidence_breakdowns(
             *[_fmt_merge_value(row_vals.get(m)) for m in metrics],
             *[_fmt_merge_value(derived.get(c)) for c in derived_cols],
         ]
-        lines.append("| " + " | ".join(display) + " |")
+        # Campaign names from Google often contain "|", which would split the row.
+        lines.append("| " + " | ".join(cell.replace("|", "\\|") for cell in display) + " |")
         # Index derived numbers for citation / unbacked checks
         entity = "|".join(key_vals)
         for m, v in row_vals.items():

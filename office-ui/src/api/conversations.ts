@@ -7,6 +7,7 @@ import type {
   MemoryPreference,
   MemoryScope,
   MemoryType,
+  MetricDefinitionView,
   SubmitMessageRequest,
   SubmitMessageResponse,
   Thread,
@@ -174,6 +175,9 @@ export class ConversationApi {
   }
   listRunMemories(runId: string): Promise<MemoryItem[]> {
     return this.http.request(`/v1/runs/${enc(runId)}/memories`);
+  }
+  listMetricDefinitions(): Promise<MetricDefinitionView[]> {
+    return this.http.request("/v1/metrics/definitions");
   }
 }
 

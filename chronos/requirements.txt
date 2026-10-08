@@ -1,0 +1,25 @@
+# Pinned deps for Chronos-2 CPU service.
+# torch is installed separately from the PyTorch CPU wheel index in the Dockerfile.
+chronos-forecasting==2.3.2
+accelerate==1.6.0
+einops==0.8.1
+numpy==2.2.4
+pandas==2.2.3
+pyarrow==19.0.1
+transformers==4.51.3
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+pydantic==2.11.3
+httpx==0.28.1
+psutil==7.0.0
+safetensors==0.5.3
+huggingface_hub==0.30.2
+tokenizers==0.21.1
+filelock==3.18.0
+fsspec==2025.3.2
+packaging==24.2
+PyYAML==6.0.2
+regex==2024.11.6
+requests==2.32.3
+tqdm==4.67.1
+typing_extensions==4.13.2

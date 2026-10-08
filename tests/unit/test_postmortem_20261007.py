@@ -574,6 +574,24 @@ def test_a_pipe_inside_a_cell_does_not_shift_the_columns():
     from seleric_swarm.agent.validation.answer_audit import table_cells, total_mismatch
 
     assert table_cells(r"| Brand Search \| 5th March | -3,558.22 |") == ["Brand Search | 5th March", "-3,558.22"]
+    from seleric_swarm.agent.validation.answer_audit import realign_markdown_tables
+
+    shifted = (
+        "| Campaign | Ad spend (INR) | Net ROAS | Orders | Product gross sale (INR) |\n"
+        "| --- | ---: | ---: | ---: | ---: |\n"
+        "| [Google Build] PMax - Seasonal New | 27th May | 21,776.21 | 2.15 | 41 | 46,819.05 |\n"
+        "| TH-149-SCRATCHLOUNGE-6OCT | 8,145.42 | 1.46 | 9 | 19,694.94 |\n"
+    )
+    fixed = realign_markdown_tables(shifted)
+    assert r"[Google Build] PMax - Seasonal New \| 27th May" in fixed
+    assert table_cells(fixed.splitlines()[2]) == [
+        "[Google Build] PMax - Seasonal New | 27th May",
+        "21,776.21",
+        "2.15",
+        "41",
+        "46,819.05",
+    ]
+    assert realign_markdown_tables(fixed) == fixed
     escaped = (
         "The three campaigns lost INR -9,767.0 in total.\n\n| Campaign | Net profit |\n| --- | ---: |\n"
         "| Brand Search \\| 5th March | -3,558.22 |\n| TH-383-SUSPENDER-26SEP-ADV+ | -3,122.10 |\n"

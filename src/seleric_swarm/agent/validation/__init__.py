@@ -86,6 +86,7 @@ from seleric_swarm.agent.validation.answer_audit import (
     ends_in_offer,
     header_key,
     leaked_metric_ids,
+    realign_markdown_tables,
     replace_metric_ids,
     total_mismatch,
     without_mismatched_totals,
@@ -186,9 +187,9 @@ def _label_columns(deps: SelericDeps) -> frozenset[str]:
 def _humanize_metric_ids(result: MissionResult, deps: SelericDeps) -> MissionResult:
     """Replace internal metric ids in the prose with their catalogue display names."""
     catalogue = getattr(deps, "catalogue", None)
-    text = result.final_response or ""
+    text = realign_markdown_tables(result.final_response or "")
     if catalogue is None or "_" not in text:
-        return result
+        return result if text == (result.final_response or "") else result.model_copy(update={"final_response": text})
     # A metric without a display name of its own is written as its words: leaving the
     # id cost a revision each time (conversion_rate, product_net_revenue, live 2026-10-08).
     labels = {
@@ -196,7 +197,7 @@ def _humanize_metric_ids(result: MissionResult, deps: SelericDeps) -> MissionRes
         for m in getattr(catalogue, "metrics", ())
     }
     fixed = replace_metric_ids(text, labels)
-    return result if fixed == text else result.model_copy(update={"final_response": fixed})
+    return result if fixed == (result.final_response or "") else result.model_copy(update={"final_response": fixed})
 
 
 def _escape_table_labels(result: MissionResult, deps: SelericDeps) -> MissionResult:

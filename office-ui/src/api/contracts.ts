@@ -147,3 +147,16 @@ export interface MemoryPreference {
   opted_out: boolean;
   updated_at: string;
 }
+
+export interface MetricDefinitionView {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  formula: string;
+  unit: string | null;
+  grain: string;
+  domain: string;
+  version: number;
+  aliases: string[];
+}

@@ -603,6 +603,52 @@ def list_run_memories(run_id: str, request: Request) -> list[MemoryItem]:
     )
 
 
+class MetricDefinitionView(BaseModel):
+    """Governed metric definition for the evidence inspector.
+
+    Read-only projection of the runtime MetricRegistry (live catalogue when
+    warm, YAML overlay otherwise). The frontend matches thread evidence
+    against ``key``/``aliases`` and renders one card per distinct metric.
+    """
+
+    id: str
+    key: str
+    name: str
+    description: str = ""
+    formula: str = ""
+    unit: str | None = None
+    grain: str = "day"
+    domain: str = ""
+    version: int = 1
+    aliases: list[str] = Field(default_factory=list)
+
+
+@router.get("/metrics/definitions")
+def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
+    _authenticated_principal(request)
+    registry = getattr(_runtime(request), "metrics", None)
+    if registry is None:
+        raise HTTPException(status_code=503, detail="metric registry is not configured")
+    views: list[MetricDefinitionView] = []
+    for definition in registry.all():
+        key = definition.catalogue_metric or definition.id.removeprefix("metric.")
+        views.append(
+            MetricDefinitionView(
+                id=definition.id,
+                key=key,
+                name=key.replace("_", " "),
+                description=definition.description,
+                formula=definition.formula,
+                unit=definition.unit,
+                grain=definition.grain,
+                domain=definition.domain,
+                version=definition.version,
+                aliases=sorted({*definition.aliases, key.replace("_", " ")}),
+            )
+        )
+    return views
+
+
 @router.post(
     "/threads/{thread_id}/attachments",
     status_code=status.HTTP_201_CREATED,

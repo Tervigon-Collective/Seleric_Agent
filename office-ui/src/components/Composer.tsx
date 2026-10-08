@@ -7,6 +7,7 @@ import {
 import { useVoiceStore, type VoiceStatus } from "../stores/voice";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { attachAutoCorrect, type AutoCorrectItem } from "../utils/autocorrect";
+import { MicIcon, PaperclipIcon, SendIcon, StopIcon } from "./icons";
 
 const VOICE_LABEL: Record<VoiceStatus, string> = {
   idle: "Talk to Seleric",
@@ -31,7 +32,7 @@ function VoiceControls() {
         title={VOICE_LABEL[status]}
         disabled={status === "connecting" || live}
         onClick={() => void start()}
-      >🎙</button>
+      ><MicIcon size={15} /></button>
     </div>
   );
 }
@@ -145,38 +146,48 @@ export function Composer() {
   }, [corrections, text]);
 
   return (
-    <ComposerPrimitive.Root className="composer" aria-label="Message composer">
-      <ComposerPrimitive.AddAttachment className="attach-btn" aria-label="Choose attachments">＋</ComposerPrimitive.AddAttachment>
-      <div className="composer-input-wrapper">
-        <div className="composer-backdrop" aria-hidden="true" ref={backdropRef}>
-          {renderBackdrop(text, activeCorrections)}
-        </div>
-        <ComposerPrimitive.Input
-          ref={inputRef}
-          placeholder="Ask Seleric…"
-          aria-label="Message"
-          rows={2}
-        />
+    <div className="composer-wrap">
+      <div className="composer-inner">
+        <ComposerPrimitive.Root className="composer" aria-label="Message composer">
+          <ComposerPrimitive.AddAttachment className="attach-btn" aria-label="Choose attachments" title="Attach a file">
+            <PaperclipIcon size={16} />
+          </ComposerPrimitive.AddAttachment>
+          <div className="composer-input-wrapper">
+            <div className="composer-backdrop" aria-hidden="true" ref={backdropRef}>
+              {renderBackdrop(text, activeCorrections)}
+            </div>
+            <ComposerPrimitive.Input
+              ref={inputRef}
+              placeholder="Ask about sales, marketing, products…"
+              aria-label="Message"
+              rows={2}
+            />
+          </div>
+          <AuiIf condition={(state) => !state.thread.isRunning}>
+            <ComposerPrimitive.Send className="send-btn" aria-label="Send message" title="Send (Enter)">
+              <SendIcon size={15} />
+            </ComposerPrimitive.Send>
+          </AuiIf>
+          <AuiIf condition={(state) => state.thread.isRunning}>
+            <ComposerPrimitive.Cancel className="send-btn cancel-btn" aria-label="Cancel run" title="Stop generating">
+              <StopIcon size={13} />
+            </ComposerPrimitive.Cancel>
+          </AuiIf>
+          <div className="upload-list" aria-live="polite">
+            <ComposerPrimitive.Attachments>
+              {({ attachment }) => (
+                <AttachmentPrimitive.Root>
+                  <AttachmentPrimitive.Name />
+                  <span> · {attachment.status.type}</span>
+                  <AttachmentPrimitive.Remove aria-label={`Remove ${attachment.name}`}>×</AttachmentPrimitive.Remove>
+                </AttachmentPrimitive.Root>
+              )}
+            </ComposerPrimitive.Attachments>
+          </div>
+          <VoiceControls />
+          <small className="hint">Enter to send · Shift+Enter for a new line</small>
+        </ComposerPrimitive.Root>
       </div>
-      <AuiIf condition={(state) => !state.thread.isRunning}>
-        <ComposerPrimitive.Send className="send-btn" aria-label="Send message">↑</ComposerPrimitive.Send>
-      </AuiIf>
-      <AuiIf condition={(state) => state.thread.isRunning}>
-        <ComposerPrimitive.Cancel className="send-btn cancel-btn" aria-label="Cancel run" title="Cancel run">■</ComposerPrimitive.Cancel>
-      </AuiIf>
-      <div className="upload-list" aria-live="polite">
-        <ComposerPrimitive.Attachments>
-          {({ attachment }) => (
-            <AttachmentPrimitive.Root>
-              <AttachmentPrimitive.Name />
-              <span> · {attachment.status.type}</span>
-              <AttachmentPrimitive.Remove aria-label={`Remove ${attachment.name}`}>×</AttachmentPrimitive.Remove>
-            </AttachmentPrimitive.Root>
-          )}
-        </ComposerPrimitive.Attachments>
-      </div>
-      <VoiceControls />
-      <small>Enter to send · Shift+Enter for a new line</small>
-    </ComposerPrimitive.Root>
+    </div>
   );
 }

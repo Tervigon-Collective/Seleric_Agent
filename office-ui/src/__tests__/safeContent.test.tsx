@@ -46,12 +46,55 @@ describe("SafeContent markdown", () => {
     expect(items[0].textContent).toBe("first item continued here");
   });
 
+  it("keeps a pipe inside a Google campaign name in the campaign cell", () => {
+    const el = render(
+      [
+        "| Campaign | Ad spend (INR) | Net ROAS | Orders | Product gross sale (INR) |",
+        "| --- | ---: | ---: | ---: | ---: |",
+        "| [Google Build] PMax - Seasonal New | 27th May | 21,776.21 | 2.15 | 41 | 46,819.05 |",
+        "| [Google Build] Brand Search \\| 5th March | 31,438.97 | 1.15 | 24 | 36,154.81 |",
+        "| TH-149-SCRATCHLOUNGE-6OCT | 8,145.42 | 1.46 | 9 | 19,694.94 |",
+      ].join("\n"),
+    );
+    const rows = [...el.querySelectorAll("tbody tr")].map((tr) =>
+      [...tr.querySelectorAll("td")].map((td) => td.textContent),
+    );
+    expect(rows[0]).toEqual([
+      "[Google Build] PMax - Seasonal New | 27th May",
+      "21,776.21",
+      "2.15",
+      "41",
+      "46,819.05",
+    ]);
+    expect(rows[1][0]).toBe("[Google Build] Brand Search | 5th March");
+    expect(rows[1][1]).toBe("31,438.97");
+    expect(rows[2][0]).toBe("TH-149-SCRATCHLOUNGE-6OCT");
+    expect(rows[2][3]).toBe("9");
+    expect(el.querySelectorAll("thead th")).toHaveLength(5);
+  });
+
   it("renders GFM tables with header and body cells", () => {
     const el = render("| Metric | Value |\n| --- | ---: |\n| CAC | **412** |\n| CPM | 88 |");
     expect(el.querySelectorAll("thead th")).toHaveLength(2);
     expect(el.querySelectorAll("tbody tr")).toHaveLength(2);
     expect(el.querySelector("tbody td strong")?.textContent).toBe("412");
     expect(el.textContent).not.toContain("---");
+  });
+
+  it("marks numeric columns so currency values stay on one line", () => {
+    const el = render(
+      [
+        "| Period | Ad spend (Meta) | Net ROAS |",
+        "| --- | ---: | ---: |",
+        "| 2026-09-08..2026-10-07 (last 30d) | ₹845,847.12 | 1.01 |",
+        "| 2026-08-09..2026-09-07 (previous 30d) | ₹1,560,612.52 | 0.72 |",
+      ].join("\n"),
+    );
+    const th = [...el.querySelectorAll("thead th")].map((n) => n.className);
+    const firstRow = [...el.querySelectorAll("tbody tr:first-child td")].map((n) => n.className);
+    expect(th).toEqual(["", "num", "num"]);
+    expect(firstRow).toEqual(["", "num", "num"]);
+    expect(el.querySelector("td.num")?.textContent).toBe("₹845,847.12");
   });
 
   it("renders blockquotes and rules", () => {

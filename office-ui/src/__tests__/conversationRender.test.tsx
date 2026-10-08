@@ -57,7 +57,7 @@ describe("conversation shell rendering and accessibility", () => {
     expect(container.textContent).not.toContain("Stale activity");
   });
 
-  it("renders thread sources and supports arrow-key tab navigation", () => {
+  it("renders thread evidence and supports arrow-key tab navigation", () => {
     useConversationStore.setState({
       selectedThreadId: "t1",
       threads: [{
@@ -78,13 +78,13 @@ describe("conversation shell rendering and accessibility", () => {
     act(() => root.render(<DetailPanel />));
     const activity = container.querySelector('[role="tab"][aria-selected="true"]') as HTMLButtonElement;
     act(() => activity.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
-    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Context");
-    act(() => (container.querySelector("#detail-tab-sources") as HTMLButtonElement).click());
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Memory");
+    act(() => (container.querySelector("#detail-tab-evidence") as HTMLButtonElement).click());
     expect(container.textContent).toContain("Quarterly report");
     expect(container.textContent).toContain("Revenue increased.");
   });
 
-  it("shows prior user asks in the Context tab for follow-ups", () => {
+  it("shows prior user asks in the Evidence tab for follow-ups", () => {
     useConversationStore.setState({
       selectedThreadId: "t1",
       threads: [{
@@ -116,11 +116,10 @@ describe("conversation shell rendering and accessibility", () => {
       },
     });
     act(() => root.render(<DetailPanel />));
-    act(() => (container.querySelector("#detail-tab-context") as HTMLButtonElement).click());
+    act(() => (container.querySelector("#detail-tab-evidence") as HTMLButtonElement).click());
     expect(container.textContent).toContain("gross sale");
     expect(container.textContent).toContain("Prior asks");
     expect(container.textContent).toContain("gross sales today");
-    act(() => (container.querySelector("#detail-tab-sources") as HTMLButtonElement).click());
     expect(container.textContent).toContain("4789.73 for 2026-09-18");
   });
 

@@ -5,9 +5,11 @@ import {
   ThreadPrimitive,
   type DataMessagePartProps,
 } from "@assistant-ui/react";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import type { MessagePart } from "../api/contracts";
 import { useConversationStore } from "../stores/conversation";
+import { useShellStore } from "../stores/shell";
+import { ArrowDownIcon, CheckIcon, CopyIcon } from "./icons";
 import { MessagePartRenderer } from "./MessagePartRenderer";
 import { SafeContent } from "./SafeContent";
 
@@ -49,11 +51,86 @@ const parts = {
   },
 };
 
+const SUGGESTION_GROUPS: { label: string; questions: string[] }[] = [
+  { label: "Marketing", questions: [
+    "Which campaigns contributed the most revenue last week?",
+    "Why did ROAS decline compared with last week?",
+  ] },
+  { label: "Sales & revenue", questions: [
+    "Where did our sales come from yesterday?",
+    "Compare marketing spend, revenue, and profitability.",
+  ] },
+  { label: "Products & conversion", questions: [
+    "Which products are losing money after ads and returns?",
+    "What changed in checkout conversion over the last 7 days?",
+  ] },
+];
+
+function SuggestionList() {
+  const submit = useConversationStore((s) => s.submit);
+  return (
+    <div role="list" aria-label="Suggested starting questions" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 560 }}>
+      {SUGGESTION_GROUPS.map((group) => (
+        <div key={group.label} role="listitem">
+          <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 650, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-faint)" }}>
+            {group.label}
+          </p>
+          <div className="empty-suggestions" style={{ justifyContent: "center" }}>
+            {group.questions.map((question) => (
+              <button key={question} onClick={() => void submit(question)}>
+                {question}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CopyButton() {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  return (
+    <button
+      type="button"
+      className={copied ? "copied" : ""}
+      aria-label={copied ? "Copied" : "Copy response"}
+      title="Copy response"
+      onClick={(event) => {
+        const root = (event.currentTarget as HTMLElement).closest(".message");
+        const text = root?.querySelector(".message-body")?.textContent?.trim() ?? "";
+        if (!text) return;
+        void navigator.clipboard?.writeText(text).then(() => {
+          setCopied(true);
+          if (timer.current) window.clearTimeout(timer.current);
+          timer.current = window.setTimeout(() => setCopied(false), 1600);
+        }).catch(() => undefined);
+      }}
+    >
+      {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
+function DetailsButton() {
+  const openInspector = useShellStore((s) => s.openInspector);
+  return (
+    <button type="button" aria-label="Open evidence inspector" title="Evidence and run details" onClick={() => openInspector("Evidence")}>
+      Details
+    </button>
+  );
+}
+
 function UserMessage() {
   return (
     <MessagePrimitive.Root className="message user" aria-label="user message">
-      <div className="message-avatar" aria-hidden="true">Y</div>
-      <div className="message-body"><header>You</header><MessagePrimitive.Parts components={parts} /></div>
+      <div className="message-body">
+        <div className="message-meta">You</div>
+        <MessagePrimitive.Parts components={parts} />
+      </div>
     </MessagePrimitive.Root>
   );
 }
@@ -61,21 +138,26 @@ function UserMessage() {
 function RunningLine() {
   const progress = useConversationStore((state) => state.progress);
   const cancelRun = useConversationStore((state) => state.cancelRun);
+  const openInspector = useShellStore((state) => state.toggleDetails);
+  const detailsOpen = useShellStore((state) => state.detailsOpen);
   return (
-    <div className="running-row">
-      <p className="running" aria-live="polite"><span className="pulse-dot" /> {progress ?? "Working on it…"}</p>
-      <button type="button" className="running-cancel" onClick={() => void cancelRun()}>Cancel</button>
+    <div className="run-status" aria-live="polite">
+      <span className="spinner" aria-hidden="true" />
+      <span>{progress ?? "Working on it…"}</span>
+      <button type="button" className="view-activity" onClick={() => { if (!detailsOpen) openInspector(); else useShellStore.getState().setDetailTab("Activity"); }}>
+        View activity
+      </button>
+      <button type="button" onClick={() => void cancelRun()}>Stop</button>
     </div>
   );
 }
 
-/** Streams the model's reasoning live, in a collapsible details block. */
+/** Streams the model's reasoning live, in a collapsed-by-default block. */
 function ThinkingBubble() {
   const thinkingText = useConversationStore((state) => state.thinkingText);
   const submitting = useConversationStore((state) => state.submitting);
   const bodyRef = useRef<HTMLPreElement>(null);
 
-  // Auto-scroll the thinking pane as text streams in
   useEffect(() => {
     if (bodyRef.current) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
@@ -87,10 +169,8 @@ function ThinkingBubble() {
   return (
     <details className="thinking-bubble" open={submitting} aria-label="Model thinking process">
       <summary className="thinking-bubble-summary">
-        <span className="thinking-bubble-icon" aria-hidden="true">🧠</span>
-        {submitting
-          ? <><span className="pulse-dot" aria-hidden="true" /> Thinking…</>
-          : "Thought process"}
+        {submitting && <span className="pulse-dot" aria-hidden="true" />}
+        {submitting ? "Thinking…" : "Thought process"}
       </summary>
       <pre
         ref={bodyRef}
@@ -107,9 +187,8 @@ function ThinkingBubble() {
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="message assistant" aria-label="assistant message">
-      <div className="message-avatar" aria-hidden="true">S</div>
       <div className="message-body">
-        <header>Seleric</header>
+        <header className="assistant-head"><span className="assistant-mark" aria-hidden="true">S</span> Seleric</header>
         <ThinkingBubble />
         <MessagePrimitive.Parts components={parts} />
         <AuiIf condition={(state) => state.thread.isRunning}>
@@ -119,6 +198,8 @@ function AssistantMessage() {
         </AuiIf>
         <AuiIf condition={(state) => !state.thread.isRunning}>
           <ActionBarPrimitive.Root className="message-actions">
+            <CopyButton />
+            <DetailsButton />
             <ActionBarPrimitive.Reload aria-label="Retry response">Retry</ActionBarPrimitive.Reload>
           </ActionBarPrimitive.Root>
         </AuiIf>
@@ -140,8 +221,40 @@ function VoicePendingMessage() {
   if (!text) return null;
   return (
     <div className="message user pending" aria-label="user message (speaking)" aria-live="polite">
-      <div className="message-avatar" aria-hidden="true">Y</div>
-      <div className="message-body"><header>You · voice</header><p>{text}</p></div>
+      <div className="message-body"><div className="message-meta">You · voice</div><p style={{ margin: 0 }}>{text}</p></div>
+    </div>
+  );
+}
+
+function ThreadContextBar() {
+  const threadId = useConversationStore((s) => s.selectedThreadId);
+  const thread = useConversationStore((s) => s.threads.find((item) => item.id === threadId));
+  const count = useConversationStore((s) => (threadId ? s.messages[threadId]?.length ?? 0 : 0));
+  if (!threadId || !thread) return null;
+  return (
+    <div className="thread-context" style={{ marginBottom: 20 }}>
+      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 650, letterSpacing: "-0.02em" }}>
+        {thread.title || "Untitled conversation"}
+      </h2>
+      {count > 0 && (
+        <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--text-dim)" }}>
+          {Math.ceil(count / 2)} exchange{Math.ceil(count / 2) === 1 ? "" : "s"} · evidence stays attached below
+        </p>
+      )}
+    </div>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div aria-label="Loading conversation" role="status">
+      <div className="skeleton-block skeleton-title" />
+      <div className="skeleton-block skeleton-line" style={{ width: "38%" }} />
+      <div className="skeleton-block skeleton-user" />
+      <div className="skeleton-block skeleton-line" style={{ width: "92%" }} />
+      <div className="skeleton-block skeleton-line" style={{ width: "78%" }} />
+      <div className="skeleton-block skeleton-table" />
+      <div className="skeleton-block skeleton-line" style={{ width: "64%" }} />
     </div>
   );
 }
@@ -149,14 +262,37 @@ function VoicePendingMessage() {
 export function Transcript() {
   const threadId = useConversationStore((state) => state.selectedThreadId);
   const loading = useConversationStore((state) => state.loading);
+  const cachedCount = useConversationStore((state) => (threadId ? state.messages[threadId]?.length ?? 0 : 0));
+  const showSkeleton = loading && !!threadId && cachedCount === 0;
   return (
     <ThreadPrimitive.Root className="thread-root">
       <ThreadPrimitive.Viewport className="transcript" aria-label="Conversation transcript" aria-busy={loading}>
-        {!threadId && <div className="empty-state"><h1>What can Seleric help with?</h1><p>Type a message below to start a conversation.</p></div>}
-        {threadId && <ThreadPrimitive.Empty><div className="empty-state"><h1>What should we investigate?</h1><p>Ask a question about your metrics and Seleric will investigate.</p></div></ThreadPrimitive.Empty>}
-        <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage, SystemMessage }} />
-        <VoicePendingMessage />
-        <ThreadPrimitive.ScrollToBottom aria-label="Scroll to latest message" className="scroll-latest">↓</ThreadPrimitive.ScrollToBottom>
+        {/* Key re-triggers the view-enter fade so browsing conversations feels fluid. */}
+        <div className="transcript-inner view-enter" key={threadId ?? "empty"}>
+          {showSkeleton && <LoadingSkeleton />}
+          {!threadId && (
+            <div className="empty-state">
+              <h1>Where should we begin?</h1>
+              <p>Ask about marketing, sales, products, or operations — Seleric investigates your metrics and shows its evidence.</p>
+              <SuggestionList />
+            </div>
+          )}
+          {threadId && (
+            <ThreadPrimitive.Empty>
+              <div className="empty-state">
+                <h1>What should we investigate?</h1>
+                <p>Ask a question about your metrics and Seleric will investigate.</p>
+                <SuggestionList />
+              </div>
+            </ThreadPrimitive.Empty>
+          )}
+          {threadId && <ThreadContextBar />}
+          <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage, SystemMessage }} />
+          <VoicePendingMessage />
+        </div>
+        <ThreadPrimitive.ScrollToBottom aria-label="Scroll to latest message" className="scroll-latest">
+          <ArrowDownIcon size={14} />
+        </ThreadPrimitive.ScrollToBottom>
       </ThreadPrimitive.Viewport>
     </ThreadPrimitive.Root>
   );

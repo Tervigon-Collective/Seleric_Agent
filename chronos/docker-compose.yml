@@ -1,0 +1,62 @@
+# Standalone Chronos-2 service for the Seleric Agent host.
+# Uses its own Compose project name so it does NOT reconcile/replace
+# existing seleric_agent services. Attaches to seleric_agent_default only.
+#
+# Start:
+#   docker compose -p seleric_chronos -f docker-compose.yml up -d --build
+#
+# Stop:
+#   docker compose -p seleric_chronos -f docker-compose.yml stop chronos
+#   docker compose -p seleric_chronos -f docker-compose.yml rm -f chronos
+
+name: seleric_chronos
+
+services:
+  chronos:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: seleric_agent-chronos:latest
+    container_name: seleric_agent-chronos-1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8112:8112"
+    environment:
+      MODEL_ID: amazon/chronos-2
+      DEVICE_MAP: cpu
+      TORCH_DTYPE: float32
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      NUMEXPR_NUM_THREADS: "2"
+      TORCH_NUM_THREADS: "2"
+      HF_HOME: /models
+      HF_HUB_CACHE: /models/hub
+      CUDA_VISIBLE_DEVICES: ""
+      BATCH_SIZE: "1"
+      MAX_SERIES_PER_REQUEST: "10"
+    volumes:
+      - chronos_model_cache:/models
+    networks:
+      - seleric_agent_default
+    # Hard caps for the 2-vCPU / 4-GiB target budget
+    cpus: 2.0
+    mem_limit: 4g
+    memswap_limit: 4g
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8112/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+
+networks:
+  seleric_agent_default:
+    external: true
+    name: seleric_agent_default
+
+volumes:
+  chronos_model_cache:
+    external: true
+    name: seleric_agent_chronos_model_cache
