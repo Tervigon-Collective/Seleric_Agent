@@ -174,6 +174,58 @@ def _available_evidence(ctx: RunContext[SelericDeps]) -> str:
     return " Evidence available in this mission: " + "; ".join(rows[:_AVAILABLE_EVIDENCE_SHOWN]) + more
 
 
+def _finding_backing_ids(artifact: Artifact) -> list[str]:
+    """Evidence ids a finding cites, preferring the artifact-level chain.
+
+    Findings are derived summaries; their ``evidence_ids`` (or payload copy)
+    point at the measurements that still have to be loaded for any chart or
+    calculation. Empty when the row is not a finding or cites nothing.
+    """
+    if artifact.artifact_type != "finding":
+        return []
+    ids = list(artifact.evidence_ids or [])
+    if ids:
+        return ids
+    payload = artifact.payload if isinstance(artifact.payload, dict) else {}
+    raw = payload.get("evidence_ids") or []
+    return [str(x) for x in raw if x]
+
+
+def _unwrap_findings_to_evidence_ids(
+    ctx: RunContext[SelericDeps], requested: list[str]
+) -> tuple[list[str], dict[str, list[str]]]:
+    """Replace finding ids with the evidence they cite; leave evidence as-is.
+
+    Live 2026-10-08 (MS3-7748dee188): the model called ``generate_visualization``
+    with a ``prefetched_lookup`` finding id. Charts need the backing measurements,
+    not the derived summary — expanding here is the same class of recovery as
+    ``_repair_ids`` (opaque id channel, model held the wrong token). Analytics
+    tools that *score* evidence must not use this: scoring a finding as if it
+    were a measurement is the bug ``test_a_finding_is_not_valid_input_evidence``
+    guards.
+    """
+    if not requested:
+        return [], {}
+    known = {a.id: a for a in ctx.deps.artifact_store.get_many(list(requested))}
+    expanded: list[str] = []
+    replacements: dict[str, list[str]] = {}
+    for aid in requested:
+        artifact = known.get(aid)
+        if artifact is None:
+            expanded.append(aid)
+            continue
+        backing = _finding_backing_ids(artifact)
+        if not backing:
+            expanded.append(aid)
+            continue
+        replacements[aid] = backing
+        expanded.extend(backing)
+    # Preserve first-seen order: a finding that cites the same evidence as an
+    # earlier id must not double-plot the series.
+    deduped = list(dict.fromkeys(expanded))
+    return deduped, replacements
+
+
 def _load_evidence(
     ctx: RunContext[SelericDeps], evidence_ids: list[str], *, warnings: Sequence[str] = ()
 ) -> tuple[list[EvidenceArtifact], list[str], ToolResult | None]:
@@ -232,12 +284,22 @@ def _load_evidence(
     evidence: list[EvidenceArtifact] = []
     for artifact in artifacts:
         if artifact.artifact_type != "evidence":
+            backing = _finding_backing_ids(artifact)
+            hint = (
+                f" Use its backing evidence_ids instead: {', '.join(backing)}."
+                if backing
+                else _available_evidence(ctx)
+            )
             return (
                 [],
                 [],
                 _refuse(
-                    f"artifact {artifact.id} is artifact_type={artifact.artifact_type!r}, not evidence",
+                    f"artifact {artifact.id} is artifact_type={artifact.artifact_type!r}, not evidence."
+                    + hint,
                     error_code="INSUFFICIENT_EVIDENCE",
+                    # Finding-for-evidence is recoverable the same way a mistyped
+                    # id is: next call with the backing evidence_ids.
+                    retryable=bool(backing),
                     warnings=warnings,
                 ),
             )
@@ -920,7 +982,18 @@ async def generate_visualization(
     - Showing compositions (pie/donut)
     
     Do NOT use this tool for single numbers or simple KPI requests.
+
+    ``evidence_ids`` may include finding artifacts: they are expanded to the
+    measurements they cite before the chart is built (charts plot evidence,
+    not derived summaries).
     """
+    evidence_ids, finding_unwraps = _unwrap_findings_to_evidence_ids(ctx, list(evidence_ids))
+    if finding_unwraps:
+        _note_repaired_ids(
+            ctx,
+            "findings unwrapped for chart: "
+            + "; ".join(f"{fid} -> [{', '.join(eids)}]" for fid, eids in sorted(finding_unwraps.items())),
+        )
     evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal

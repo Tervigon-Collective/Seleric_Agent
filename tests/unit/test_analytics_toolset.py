@@ -396,6 +396,12 @@ async def test_a_finding_is_not_valid_input_evidence():
     assert result.success is False
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
     assert "not evidence" in result.summary
+    # Refusal names the backing ids so the next call can be corrected (same
+    # recovery class as a mistyped id). Charts unwrap findings themselves;
+    # scoring tools must still refuse.
+    assert result.retryable is True
+    for eid in ids:
+        assert eid in result.summary
 
 
 # ---- merge companion metric breakdowns --------------------------------------

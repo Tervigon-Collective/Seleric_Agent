@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import pytest
 
-from seleric_swarm.agent.artifacts import EvidenceArtifact
+from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.analytics.visualization import generate_visualization_spec
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance, ContextBundle, Principal
@@ -151,6 +151,49 @@ async def test_generate_visualization_tool():
     assert chart_artifact.artifact_type == "chart_spec"
     assert chart_artifact.classification == "derived"
     assert chart_artifact.payload["chart_type"] == "line"
+
+
+@pytest.mark.asyncio
+async def test_generate_visualization_unwraps_finding_to_backing_evidence():
+    """Live MS3-7748dee188: model passed a prefetched_lookup finding id; charts
+    need the measurements that finding cites, not the derived summary."""
+    store = InMemoryArtifactStore()
+    deps = _deps(store)
+    ctx = FakeRunContext(deps)
+
+    id1 = _put_evidence(
+        store, _make_evidence("metric.net_profit", "2026-10-01T00:00:00", "2026-10-01T23:59:59", 100.0)
+    )
+    id2 = _put_evidence(
+        store, _make_evidence("metric.net_profit", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 200.0)
+    )
+    finding = Finding(
+        finding_type="prefetched_lookup",
+        statement="Values fetched by the planner's executor for 2026-10-01..2026-10-02.",
+        evidence_ids=[id1, id2],
+        metrics={"net_profit | 2026-10-01": 100.0, "net_profit | 2026-10-02": 200.0},
+    )
+    finding_id = store.put(
+        Artifact(
+            workspace_id="ws1",
+            artifact_type="finding",
+            payload=finding.model_dump(mode="json"),
+            classification="derived",
+            evidence_ids=[id1, id2],
+            provenance=ArtifactProvenance(evidence_ids=[id1, id2], calculation_version="executor.v1"),
+            mission_id=deps.mission_id,
+        )
+    ).id
+
+    result = await analytics.generate_visualization(
+        ctx, evidence_ids=[finding_id], intent="trend", title="Net profit"
+    )
+    assert result.success is True, result.summary
+    chart = store.get(result.artifact_ids[0])
+    assert chart is not None
+    assert chart.artifact_type == "chart_spec"
+    assert set(chart.evidence_ids) == {id1, id2}
+    assert chart.payload["chart_type"] == "line"
 
 
 def test_visualization_spec_varying_dimensions_exclude_constant_filter():
