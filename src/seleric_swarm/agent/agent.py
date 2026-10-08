@@ -24,11 +24,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.capabilities import PrepareTools
+from pydantic_ai.capabilities import PrepareTools, ProcessHistory
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 
+from seleric_swarm.agent.context import compact_history
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.instructions import INSTRUCTIONS, OUTPUT_CONTRACT
 from seleric_swarm.agent.output import MissionResult
@@ -57,11 +58,10 @@ from seleric_swarm.toolsets.semantic import LIVE_DATA_UNAVAILABLE
 # introspects all 26). Narrowing the annotation here is honest about a
 # real typing-system limitation, not a suppression of a real bug.
 TOOLS: list[Any] = [
-    semantic.resolve_concept,
-    semantic.search_semantics,
-    semantic.list_metrics,
+    # Metric discovery: one call resolves every measure the question names
+    # (concept resolver, glossary search fallback, or the full listing).
+    semantic.find_metrics,
     semantic.resolve_brand,
-    semantic.get_metric_definition,
     semantic.get_metric_definitions,
     semantic.query_metrics,
     semantic.semantic_sql,
@@ -70,33 +70,61 @@ TOOLS: list[Any] = [
     # registered: those are third-party surfaces outside the certified Cube
     # serve views, and the gateway no longer exposes them by default. Meta ad
     # delivery numbers stay reachable through query_metrics (meta_ad_performance).
-    analytics.compare_periods,
-    analytics.detect_anomalies,
-    analytics.contribution_analysis,
-    analytics.segment_decomposition,
-    analytics.funnel_decomposition,
-    analytics.cohort_analysis,
+    # The six calculations over fetched evidence share one tool (method=...).
+    analytics.analyze,
     analytics.generate_visualization,
     sandbox.run_python,
     diagnosis.diagnose_metric_change,
     exploration.explore_data,
+    # estimate_effect runs its refuters itself; refute_estimate only re-ran them.
     causal.estimate_effect,
-    causal.refute_estimate,
     models.forecast,
-    models.predict_ltv,
-    models.predict_propensity,
+    # propose_action validates and previews; validate/preview only re-read it.
     actions.propose_action,
-    actions.validate,
-    actions.preview,
     actions.commit_action,
     knowledge.search_knowledge,
     experiments.get_experiment_history,
     experiments.estimate_sample_size,
     experiments.evaluate_experiment,
 ]
+# predict_ltv / predict_propensity are not registered: no approved model exists
+# (config/model_registry.yaml), so they could only refuse — and LTV as a metric
+# is reachable through query_metrics (unit_economics).
 
 
-def capability_manifest() -> str:
+def unbacked_tools(*, allow_writes: bool) -> frozenset[str]:
+    """Registered tools with nothing behind them in this deployment, read from the
+    same registries the tools themselves consult — so the model is not offered a
+    tool that can only refuse. Adding an approved forecast model, an experiment, a
+    knowledge document or enabling writes brings the tool back with no code change."""
+    hidden: set[str] = set()
+    if not allow_writes:
+        hidden |= {"propose_action", "commit_action"}
+    try:
+        registry = models._registry()
+        approved = {
+            rec.model_type for rec in (registry.get(i) for i in registry.ids()) if rec and rec.status == "approved"
+        }
+        if "forecast" not in approved:
+            hidden.add("forecast")
+    except Exception:  # noqa: S110 - availability is advisory; the tool still refuses on its own
+        pass
+    try:
+        if len(experiments._registry()) == 0:
+            hidden |= {"get_experiment_history", "evaluate_experiment"}
+    except Exception:  # noqa: S110
+        pass
+    try:
+        from seleric_swarm.knowledge.corpus import load_corpus
+
+        if not load_corpus():
+            hidden.add("search_knowledge")
+    except Exception:  # noqa: S110
+        pass
+    return frozenset(hidden)
+
+
+def capability_manifest(tools: list[Any] | None = None) -> str:
     """One line per registered tool (name + first docstring line).
 
     Derived from the ``TOOLS`` list so a newly-registered tool shows up here
@@ -104,7 +132,7 @@ def capability_manifest() -> str:
     against instead of discovering tools one schema at a time.
     """
     lines = ["Tools available to you (call by name):"]
-    for fn in TOOLS:
+    for fn in TOOLS if tools is None else tools:
         name = getattr(fn, "__name__", str(fn))
         doc = (getattr(fn, "__doc__", "") or "").strip()
         summary = doc.splitlines()[0].strip() if doc else ""
@@ -143,16 +171,28 @@ def _stub_test_model() -> TestModel:
 
 
 CONVERSATIONAL = "conversational"
+# Set on deps.call_counts when the planner's executor already fetched the plan's
+# data (agent/executor.py): the agent then sees only the tools it may still need,
+# not all of them (~6k tokens of schemas on every step).
+PREFETCHED = "plan_prefetched"
+_PREFETCHED_TOOLS = frozenset(
+    {
+        "query_metrics",
+        "semantic_sql",
+        "drilldown",
+        "get_metric_definitions",
+        "find_metrics",
+        "analyze",
+        "run_python",
+        "generate_visualization",
+    }
+)
 
 _STILL_AVAILABLE_WITHOUT_LIVE_DATA = frozenset(
     {
-        "resolve_concept",
-        "search_semantics",
-        "get_metric_definition",
+        "find_metrics",
         "get_metric_definitions",
         "search_knowledge",
-        "predict_ltv",
-        "predict_propensity",
     }
 )
 
@@ -172,20 +212,26 @@ async def _withdraw_data_tools(
         return []
     if counts.get(LIVE_DATA_UNAVAILABLE):
         tool_defs = [t for t in tool_defs if t.name in _STILL_AVAILABLE_WITHOUT_LIVE_DATA]
+    if counts.get(PREFETCHED):
+        tool_defs = [t for t in tool_defs if t.name in _PREFETCHED_TOOLS]
     withdrawn = withdrawn_tools(ctx.deps)
     return [t for t in tool_defs if t.name not in withdrawn]
 
 
-def build_seleric_agent(*, model: Model | str | None = None) -> Agent[SelericDeps, MissionResult]:
-    """Construct the agent with every implemented toolset registered."""
+def build_seleric_agent(
+    *, model: Model | str | None = None, hidden: frozenset[str] = frozenset()
+) -> Agent[SelericDeps, MissionResult]:
+    """Construct the agent with every implemented toolset registered, minus
+    ``hidden`` (``unbacked_tools``: tools with nothing behind them here)."""
+    tools = [fn for fn in TOOLS if getattr(fn, "__name__", "") not in hidden]
     agent = Agent(
         model=model or _stub_test_model(),
         deps_type=SelericDeps,
         output_type=MissionResult,
-        instructions=INSTRUCTIONS + "\n\n" + capability_manifest(),
+        instructions=INSTRUCTIONS + "\n\n" + capability_manifest(tools),
         name="seleric_agent",
-        tools=TOOLS,
-        capabilities=[PrepareTools(_withdraw_data_tools), RepeatCallGuard()],
+        tools=tools,
+        capabilities=[PrepareTools(_withdraw_data_tools), RepeatCallGuard(), ProcessHistory(compact_history)],
     )
 
     @agent.instructions

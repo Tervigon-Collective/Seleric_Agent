@@ -93,6 +93,13 @@ class MissionResult(BaseModel):
             "you MUST list the word in not_values to reject the incorrect dimension mapping."
         ),
     )
+    next_step: str = Field(
+        default="",
+        description=(
+            "The one next step this answer ends by proposing (the same step as its closing 'Next' "
+            "line), in one sentence; '' when it proposes none. A reply of 'yes' runs exactly this."
+        ),
+    )
     error_code: str | None = None
     trace: dict[str, Any] = Field(default_factory=dict)
 

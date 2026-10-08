@@ -215,6 +215,7 @@ def _parse_segments(result: dict[str, Any], metric_id: str, dimension: str) -> d
 def _evidence_rows(
     ctx: RunContext[SelericDeps], metric_id: str, values: dict[date, float], days: list[date],
     args: dict[str, Any], index: dict[str, str], tz: Any, dimensions: dict[str, str] | None = None,
+    unit: str | None = None,
 ) -> list[str]:
     ids: list[str] = []
     for d in days:
@@ -223,7 +224,7 @@ def _evidence_rows(
         start = datetime(d.year, d.month, d.day, tzinfo=tz)
         ev = EvidenceArtifact(
             metric_id=metric_id, dimensions=dict(dimensions or {}), grain="day", as_of=ctx.deps.as_of,
-            period_start=start, period_end=start, value=values[d], source_query=args,
+            period_start=start, period_end=start, value=values[d], unit=unit, source_query=args,
         )
         ids.append(semantic._put_evidence(
             ctx, ev, index=index, raw_id=f"raw:{metric_id}:{d}:{d}",
@@ -274,6 +275,15 @@ def _finding_metrics(report: engine.DiagnosisReport) -> dict[str, float]:
             put(f"decomposition.{t.metric}.{k}", getattr(t, k))
         if abs(t.reference) > 1e-12:
             put(f"decomposition.{t.metric}.pct_change", t.event / t.reference - 1)
+    for t in report.bridge:
+        for k in ("event", "reference", "contribution", "share_of_change", "previous", "contribution_vs_previous"):
+            put(f"bridge.{t.metric}.{k}", getattr(t, k))
+        if abs(t.reference) > 1e-12:
+            put(f"bridge.{t.metric}.pct_change", t.event / t.reference - 1)
+        if t.previous and abs(t.previous) > 1e-12 and t.contribution_vs_previous is not None:
+            put(f"bridge.{t.metric}.pct_change_vs_previous", t.sign * t.contribution_vs_previous / t.previous)
+    put("bridge.residual", report.bridge_residual)
+    put("bridge.residual_vs_previous", report.bridge_residual_vs_previous)
     for t in report.chain:
         for k in ("event", "reference", "contribution", "share_of_change"):
             put(f"chain.{t.metric}.{k}", getattr(t, k))
@@ -403,7 +413,7 @@ async def diagnose_metric_change(
     likely_contributor / correlation / insufficient_evidence. Report those
     labels faithfully; do not upgrade them.
     """
-    if (unknown := semantic._reject_unknown_metric(ctx, metric_id)) is not None:
+    if (unknown := await semantic._reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     tz = ctx.deps.as_of.tzinfo
     today = ctx.deps.as_of.date()
@@ -431,7 +441,7 @@ async def diagnose_metric_change(
     if n_event > _MAX_EVENT_DAYS:
         return _refuse(
             f"event window {ev_start}..{ev_end} is {n_event} days; diagnose at most {_MAX_EVENT_DAYS} days at a time "
-            "(compare_periods suits longer periods)", error_code="UNSUPPORTED_QUERY",
+            "(analyze(method=\"compare\") suits longer periods)", error_code="UNSUPPORTED_QUERY",
         )
     event_days = [ev_start + timedelta(days=i) for i in range(n_event)]
     # Days still in progress cannot be compared with complete ones. Drop them
@@ -481,7 +491,17 @@ async def diagnose_metric_change(
         async with sem:
             return await coro
 
-    series_ids = list(dict.fromkeys([metric_id, *identity_metrics, *chain_metrics, *drivers]))
+    # Accounting-bridge candidates: every additive metric in the outcome's unit
+    # (only quantities of one unit can sum to it). The engine keeps a signed sum
+    # only if it reproduces the outcome on every history day.
+    bridge_pool: list[str] = []
+    if out_meta.additive and out_meta.unit:
+        bridge_pool = [
+            m for m, meta in lineage.items()
+            if m != metric_id and meta.additive and meta.unit == out_meta.unit
+            and ctx.deps.catalogue.has_metric(m) and _supports_brand(ctx, m)
+        ]
+    series_ids = list(dict.fromkeys([metric_id, *identity_metrics, *chain_metrics, *drivers, *bridge_pool]))
     series_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters)) for m in series_ids))
     seg_jobs = [(metric_id, d) for d in dims] + ([(weight, d) for d in dims] if weight else [])
     seg_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters, dimension=d)) for m, d in seg_jobs))
@@ -489,6 +509,9 @@ async def diagnose_metric_change(
     quality: list[str] = []
     series: dict[str, dict[date, float]] = {}
     args_by_metric: dict[str, dict[str, Any]] = {}
+    # The currency the data source reports per metric (as query_metrics records it),
+    # so diagnosis evidence carries its unit like every other figure.
+    units: dict[str, str] = {}
     for m, (res, args) in zip(series_ids, series_results, strict=True):
         if args is None:
             if m == metric_id:
@@ -496,11 +519,17 @@ async def diagnose_metric_change(
             quality.append(f"{m}: fetch failed ({str(res.get('error'))[:120]})")
             continue
         if res.get("_dropped_filters"):
+            if m in bridge_pool and m not in (metric_id, *identity_metrics, *chain_metrics, *drivers):
+                # An unfiltered total cannot be a term of a filtered outcome.
+                bridge_pool.remove(m)
+                continue
             quality.append(f"{m} cannot be filtered by {', '.join(res['_dropped_filters'])}; used unfiltered")
         parsed = _parse_series(res, m)
         if parsed:
             series[m] = parsed
             args_by_metric[m] = args
+            if currency := str((res.get("provenance") or {}).get("currency") or "").strip():
+                units[m] = currency
     if metric_id not in series:
         return _refuse(f"no daily data for {metric_id} over {hist_start}..{ev_end}")
     segments: dict[str, dict[str, dict[str, dict[date, float]]]] = {}
@@ -545,6 +574,7 @@ async def diagnose_metric_change(
         candidate_drivers=[d for d in drivers if d in series], partial_days=partial,
         claimed_direction=claimed_direction, denominators=({metric_id: weight} if weight else {}),
         scope_tokens=frozenset(t for d in _scope_dimensions(ctx) for t in d.lower().split("_") if t),
+        bridge_candidates=[m for m in bridge_pool if m in series],
     )
     for _ in inp.candidate_drivers:
         if not ctx.deps.budget.consume("causal_queries").ok:
@@ -559,11 +589,12 @@ async def diagnose_metric_change(
         cited_days = sorted({*cited_days, *(date.fromisoformat(x) for x in report.event.previous_period["days"])})
     evidence_ids: list[str] = []
     per_metric_ids: dict[str, list[str]] = {}
-    cited_metrics = [metric_id, *(t.metric for t in report.decomposition), *(t.metric for t in report.chain),
+    cited_metrics = [metric_id, *(t.metric for t in report.decomposition), *(t.metric for t in report.bridge),
+                     *(t.metric for t in report.chain),
                      *(f.driver for f in report.drivers if f.status in ("implicated", "ruled_out") and f.driver in series)]
     for m in dict.fromkeys(cited_metrics):
         if m in series:
-            ids = _evidence_rows(ctx, m, series[m], cited_days, args_by_metric[m], index, tz)
+            ids = _evidence_rows(ctx, m, series[m], cited_days, args_by_metric[m], index, tz, unit=units.get(m))
             per_metric_ids[m] = ids
             evidence_ids += ids
     chain_pair = tuple(t.metric for t in report.chain)
@@ -573,7 +604,7 @@ async def diagnose_metric_change(
                 if (m, dim.dimension) in seg_args:
                     evidence_ids += _evidence_rows(
                         ctx, m, segments[m][dim.dimension].get(s.segment, {}), cited_days, seg_args[(m, dim.dimension)],
-                        index, tz, {dim.dimension: s.segment},
+                        index, tz, {dim.dimension: s.segment}, unit=units.get(m),
                     )
     for dim in report.dimensions[:3]:
         for s in dim.top[:3]:
@@ -581,7 +612,8 @@ async def diagnose_metric_change(
                 if m and (m, dim.dimension) in seg_args:
                     vals = segments[m][dim.dimension].get(s.segment, {})
                     evidence_ids += _evidence_rows(
-                        ctx, m, vals, cited_days, seg_args[(m, dim.dimension)], index, tz, {dim.dimension: s.segment}
+                        ctx, m, vals, cited_days, seg_args[(m, dim.dimension)], index, tz, {dim.dimension: s.segment},
+                        unit=units.get(m),
                     )
     if not evidence_ids:
         return _refuse(f"diagnosis of {metric_id} produced no citable evidence")

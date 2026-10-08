@@ -111,14 +111,56 @@ def _to_float(token: str) -> float | None:
         return None
 
 
+def _inside_identifier(text: str, start: int, end: int) -> bool:
+    """A number that is part of a name ("TH-383-SUSPENDER", "BN520_TM099") is a label,
+    not a figure: it touches a letter, digit or a joiner that leads into one.
+
+    Used by the total audit too: the campaign "TH-383-SUSPENDER-UGC" read as a stated
+    -383 next to the word "total", and every revision was rejected for it until the
+    mission failed (live 2026-10-07 MS3-b7e85ea9bd)."""
+    def joined(index: int, step: int) -> bool:
+        if not 0 <= index < len(text):
+            return False
+        ch = text[index]
+        if ch.isalnum():
+            return True
+        if ch in "-_/":
+            nxt = index + step
+            return 0 <= nxt < len(text) and text[nxt].isalnum()
+        return False
+
+    return joined(start - 1, -1) or joined(end, 1)
+
+
+def ascii_minus(text: str) -> str:
+    """The typographic minus (U+2212) as "-", same length so spans are unchanged.
+
+    Models write losses and deductions as "−18,586.67". Read as unsigned, a
+    correct reconciled P&L bridge (live 2026-10-08, net profit change −18,586.67)
+    was rejected as summing to +82,950 and revised into a non-answer."""
+    return text.replace("\u2212", "-")
+
+
+def _figures(text: str) -> list[re.Match[str]]:
+    """Number tokens in ``text`` that are figures (identifier digits excluded)."""
+    text = ascii_minus(text)
+    return [m for m in _NUMBER.finditer(text) if not _inside_identifier(text, m.start(), m.end())]
+
+
 def _numbers_in(text: str) -> list[float]:
     stripped = _ISO_DATE.sub(" ", text)
     out = []
-    for match in _NUMBER.finditer(stripped):
+    for match in _figures(stripped):
         value = _to_float(match.group(0))
         if value is not None:
             out.append(value)
     return out
+
+
+def table_cells(line: str) -> list[str]:
+    """A Markdown table row's cells, split on unescaped pipes ("\\|" stays in its cell)."""
+    marker = "\x00"
+    return [c.replace(marker, "|").strip() for c in line.replace("\\|", marker).strip().strip("|").split("|")]
 
 
 def _table_columns(text: str, label_columns: frozenset[str] = frozenset()) -> list[list[float]]:
@@ -148,11 +190,16 @@ def _table_columns_with_rounding(
     i = 0
     while i < len(lines) - 1:
         if "|" in lines[i] and _TABLE_DELIM.match(lines[i + 1]) and "|" in lines[i + 1]:
-            header = [header_key(c) for c in lines[i].strip().strip("|").split("|")]
+            header = [header_key(c) for c in table_cells(lines[i])]
             rows: list[list[str]] = []
             i += 2
             while i < len(lines) and "|" in lines[i] and lines[i].strip():
-                rows.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
+                cells = table_cells(lines[i])
+                # A row wider than its header has an unescaped "|" inside a value
+                # (live 2026-10-08: "[Google Build] Brand Search | 5th March"); its
+                # cells no longer line up with their columns, so it is not summed.
+                if len(cells) == len(header):
+                    rows.append(cells)
                 i += 1
             width = max((len(r) for r in rows), default=0)
             for col in range(width):
@@ -164,7 +211,7 @@ def _table_columns_with_rounding(
                     if col >= len(row):
                         continue
                     cell = _ISO_DATE.sub(" ", row[col])
-                    found = _NUMBER.findall(cell)
+                    found = [m.group(0) for m in _figures(cell)]
                     # One number per cell, else it is a label, not a measure.
                     if len(found) == 1:
                         value = _to_float(found[0])
@@ -196,6 +243,7 @@ def _claim_candidates(sentence: str) -> list[tuple[float, float, int, int]]:
     carry their own scale; period counts, ranks and percentages are dropped."""
     out: list[tuple[float, float, int, int]] = []
     consumed: list[tuple[int, int]] = []
+    sentence = ascii_minus(sentence)
     for match in _SUFFIXED.finditer(sentence):
         value = _to_float(match.group(1))
         if value is None:
@@ -204,7 +252,7 @@ def _claim_candidates(sentence: str) -> list[tuple[float, float, int, int]]:
         scale = _SUFFIX_SCALE[match.group(2).lower()]
         out.append((value * scale, _precision_tolerance(match.group(1), scale), *match.span()))
     stripped = _ISO_DATE.sub(lambda m: " " * len(m.group(0)), sentence)
-    for match in _NUMBER.finditer(stripped):
+    for match in _figures(stripped):
         if any(start <= match.start() < end for start, end in consumed):
             continue
         after, before = stripped[match.end():], stripped[: match.start()]
@@ -282,6 +330,14 @@ def _reconciles(claim: float, tolerance: float, values: list[float], cell_roundi
     return any(abs(abs(claim) - abs(candidate)) <= slack for candidate in candidates)
 
 
+def _row_difference(claim: float, tolerance: float, values: list[float]) -> bool:
+    """``claim`` is the change between two rows of one column (either order)."""
+    if len(values) > _MAX_WINDOW_ROWS:
+        return False
+    slack = max(tolerance, 0.01)
+    return any(abs(abs(claim) - abs(a - b)) <= slack for i, a in enumerate(values) for b in values[i + 1 :])
+
+
 def _blend_of_rows(claim: float, tolerance: float, values: list[float]) -> bool:
     """An overall level between the rows, or an overall change between two of
     them ("overall CTR fell 0.0020")."""
@@ -314,6 +370,11 @@ def total_mismatch(text: str, label_columns: frozenset[str] = frozenset()) -> st
                 if claim == 0:
                     continue
                 if any(_reconciles(claim, tolerance, values, cell) for values, cell in rounded):
+                    continue
+                # The total change between two printed rows ("the total change in net
+                # profit, −18,586.67" over an event-day row and a previous-day row) is
+                # the table's own arithmetic (live 2026-10-08, Q15 bridge).
+                if any(_row_difference(claim, max(tolerance, cell), values) for values, cell in rounded):
                     continue
                 if word in _BLEND_WORDS and any(_blend_of_rows(claim, tolerance, c) for c in columns):
                     continue

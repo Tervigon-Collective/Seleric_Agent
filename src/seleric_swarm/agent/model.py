@@ -25,25 +25,29 @@ from seleric_swarm.config.settings import Settings, configured_chat_model
 AGENT_LLM_TIMEOUT_S = float(os.getenv("AGENT_LLM_TIMEOUT_S", "45"))
 
 
-def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
+def resolve_v3_model(
+    settings: Settings,
+    *,
+    prefer_fast: bool = False,
+    role_tuning: bool = True,
+    reasoning_effort: str = "",
+) -> Model:
     """Live OpenAI-compatible model when configured; otherwise the stub TestModel.
 
     Wraps every configured model (``AZURE_OPENAI_MODELS``, primary first) in a
     ``FallbackModel`` so a rate-limited/erroring model doesn't fail the mission
     outright — pydantic-ai tries the next candidate on any ``ModelAPIError``
-    (429s included).
+    (429s included). With one model (the 2026-10-07 setup: gpt-5-nano only) the
+    chain is that model alone, and ``PatientModel`` waits out its 429s / timeouts
+    instead of failing the mission.
 
     ``prefer_fast`` (set by the runner for simple read-only intents) puts
     ``AZURE_OPENAI_FAST_MODEL`` first in the chain when it is configured, so a
     lookup runs on the cheaper/faster deployment while the strong models stay
     behind it as reliability fallbacks. No-op when no fast model is set.
 
-    Every model above shares one ``AsyncOpenAI`` client against
-    ``AZURE_OPENAI_ENDPOINT``, so an endpoint-level 429 (the whole resource is
-    throttled, not just one deployment) takes all of them out together. If
-    ``AZURE_OPENAI_ENDPOINT_2``/``AZURE_OPENAI_API_KEY_2`` are set, that
-    second resource's models are appended to the same chain — a genuinely
-    separate quota to fall back to once the primary resource is exhausted.
+    Every model shares one client against ``AZURE_OPENAI_ENDPOINT`` (one resource,
+    one quota); there is no second resource or third-party tail.
     """
     model_name = configured_chat_model(settings)
     if settings.llm_provider == "fake" or not model_name or not settings.azure_openai_api_key.strip():
@@ -86,7 +90,9 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
     # e.g. "low"/"medium"). DeepSeek-V4-Pro accepts reasoning_effort; unset leaves
     # the provider default so this can't regress reasoning quality or break the
     # fallback chain unless explicitly opted in.
-    strong_effort = os.getenv("AZURE_OPENAI_STRONG_REASONING_EFFORT", "").strip()
+    strong_effort = reasoning_effort.strip() or (
+        os.getenv("AZURE_OPENAI_STRONG_REASONING_EFFORT", "").strip() if role_tuning else ""
+    )
     strong_settings = (
         OpenAIChatModelSettings(openai_reasoning_effort=strong_effort)
         if strong_effort
@@ -106,35 +112,24 @@ def resolve_v3_model(settings: Settings, *, prefer_fast: bool = False) -> Model:
         for name in model_names
     ]
 
-    if settings.azure_openai_endpoint_2.strip() and settings.azure_openai_api_key_2.strip():
-        settings_2 = settings.model_copy(
-            update={
-                "azure_openai_endpoint": settings.azure_openai_endpoint_2,
-                "azure_openai_api_key": settings.azure_openai_api_key_2,
-                "azure_openai_models": settings.azure_openai_models_2,
-                "azure_openai_model1": "",
-                "azure_openai_model2": "",
-                "azure_openai_model": "",
-            }
-        )
-        adapter_2 = AzureOpenAICompatibleAdapter(settings_2)
-        provider_2 = OpenAIProvider(openai_client=adapter_2.async_client)
-        models.extend(chat(name, provider_2, "azure2") for name in settings_2.resolved_models())
-
-    # Independent-provider tail fallback: after every Azure resource is
-    # exhausted, fall through to OpenRouter's separate provider pool. Additive —
-    # unset OpenRouter env leaves the chain exactly as above.
-    from seleric_swarm.llm.openrouter import (
-        build_openrouter_provider,
-        resolved_openrouter_models,
-    )
-
-    or_models = resolved_openrouter_models(settings)
-    if or_models and settings.openrouter_api_key.strip():
-        or_provider = build_openrouter_provider(settings)
-        or_cap = int(getattr(settings, "openrouter_max_tokens", 0) or 0)
-        or_settings = OpenAIChatModelSettings(max_tokens=or_cap) if or_cap > 0 else None
-        models.extend(chat(name, or_provider, "openrouter", or_settings) for name in or_models)
-
     chain: Model = models[0] if len(models) == 1 else FallbackModel(*models)
     return PatientModel(chain, health=MODEL_HEALTH)
+
+
+def resolve_planner_model(settings: Settings) -> Model:
+    """The planner's model: AZURE_OPENAI_PLANNER_MODEL on the same endpoint, else the
+    agent's chain. The agent's reasoning-effort tuning is a per-deployment choice and
+    is not carried over; AZURE_OPENAI_PLANNER_REASONING_EFFORT sets the planner's own
+    (empty = provider default). Measured 2026-10-08 on 27 questions: gpt-5-mini at
+    "low" read the same slots as grok-4.20-reasoning in 5.0s mean (max 8.6s) against
+    11.8s (max 40.7s); "minimal" misread why-questions and once hung 92s."""
+    name = (getattr(settings, "azure_openai_planner_model", "") or "").strip()
+    if not name:
+        return resolve_v3_model(settings)
+    import json
+
+    only = settings.model_copy(
+        update={"azure_openai_models": json.dumps([name]), "azure_openai_fast_model": ""}
+    )
+    effort = (getattr(settings, "azure_openai_planner_reasoning_effort", "") or "").strip()
+    return resolve_v3_model(only, role_tuning=False, reasoning_effort=effort)

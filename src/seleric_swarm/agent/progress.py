@@ -32,16 +32,14 @@ ProgressSink = Any
 _SINKS: dict[str, ProgressSink] = {}
 
 _TOOL_LABELS: dict[str, str] = {
-    "search_semantics": "Searching the metric catalogue",
-    "list_metrics": "Listing the available metrics",
+    "find_metrics": "Finding the metrics in the catalogue",
     "get_metric_definitions": "Reading metric definitions",
     "query_metrics": "Fetching metric data",
+    "semantic_sql": "Running a governed calculation",
     "drilldown": "Drilling into segments",
-    "compare_periods": "Comparing periods",
-    "detect_anomalies": "Checking for anomalies",
+    "analyze": "Analysing the fetched data",
     "diagnose_metric_change": "Diagnosing what changed and why",
     "estimate_effect": "Estimating causal effect",
-    "refute_estimate": "Stress-testing the estimate",
     "forecast": "Forecasting",
     "search_knowledge": "Searching the knowledge base",
 }

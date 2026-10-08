@@ -91,13 +91,8 @@ def mission_trace(mission_id: str, **attributes: Any) -> Iterator[Any]:
             if value is None:
                 continue
             handle_wrapper.set_attribute(key, value)
-        try:
-            yield handle_wrapper
-        finally:
-            try:
-                from langfuse import get_client
-
-                get_client().flush()
-            except Exception:
-                pass
+        # No flush here: Langfuse exports spans in the background and flushes
+        # at process exit. A per-mission flush blocked the event loop for
+        # ~3s at the end of every mission.
+        yield handle_wrapper
 

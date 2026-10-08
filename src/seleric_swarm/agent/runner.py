@@ -10,15 +10,15 @@ stores the office gateway falls back to.
 from __future__ import annotations
 
 import dataclasses
-import json
 
 import asyncio
+import functools
 import logging
 import os
 import re
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -28,9 +28,10 @@ from pydantic_ai.exceptions import ModelHTTPError
 
 from seleric_swarm.agent.agent import (
     CONVERSATIONAL,
+    PREFETCHED,
     build_seleric_agent,
-    capability_manifest,
     registered_tool_names,
+    unbacked_tools,
 )
 from seleric_swarm.agent.dependencies import (
     ExecutionLimits,
@@ -38,14 +39,16 @@ from seleric_swarm.agent.dependencies import (
     NullMcpClient,
     SelericDeps,
 )
-from seleric_swarm.agent.intent import QueryClassification, classify_query, stated_grain
+from seleric_swarm.agent.intent import QueryClassification, stated_grain
 from seleric_swarm.api.status import is_terminal_status
-from seleric_swarm.agent.model import resolve_v3_model
+from seleric_swarm.agent.model import resolve_planner_model, resolve_v3_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
-from seleric_swarm.agent.plan import PlanOutcome, build_plan, plan_adherence
+from seleric_swarm.agent.executor import execute_plan
+from seleric_swarm.agent.plan import PlanOutcome, plan_adherence, plan_from_slots
+from seleric_swarm.agent.progress import emit_progress, tool_label
+from seleric_swarm.agent.understand import classification_from, understand
 from seleric_swarm.agent.scope import (
     RequiredScope,
-    ValueFilter,
     build_required_scope,
     question_axes_from_resolution,
     required_windows_from_resolved,
@@ -73,12 +76,10 @@ from seleric_swarm.conversations.contracts import (
 from seleric_swarm.observability.traces import mission_trace
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
-from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
+from seleric_swarm.services.insights import insight_block
 from seleric_swarm.contracts.lookup import TimeRangeV1
-from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.services.time_range import as_of_date, window_from_query
 from seleric_swarm.state.missions import Mission
-from seleric_swarm.toolsets.semantic import query_metrics
 
 _log = logging.getLogger("seleric.agent.runner")
 
@@ -92,35 +93,12 @@ _LOOKUP_STATUSES = {
     "prototype_completed",
 }
 
-_ALIAS_REGISTRY: MetricRegistry | None = None
 
+# --- Routing from the understand call (latency optimizations) -----------------
 
-def _alias_registry() -> MetricRegistry:
-    global _ALIAS_REGISTRY
-    if _ALIAS_REGISTRY is None:
-        _ALIAS_REGISTRY = MetricRegistry("config/metric_registry.yaml")
-    return _ALIAS_REGISTRY
-
-
-def _lookup_alias(query: str) -> MetricDefinition | None:
-    """Exact YAML overlay only (``ns``/``np``/``adsp``/``gs``).
-
-    Lives on the runner, not ``query_metrics``: Profile B requires two
-    spellings of one metric to stay independently attributed at the tool.
-    """
-    return _alias_registry().resolve_alias(query)
-
-
-# --- Jev-driven routing (latency optimizations) --------------------------------
-
-# Intents whose answers genuinely benefit from an upfront plan. Simple lookups
-# already have the full catalogue + capability manifest in context.
-_PLAN_INTENTS = frozenset(
-    {"diagnostic", "causal_investigation", "simulation", "forecast", "comparison", "advisory"}
-)
 
 # Per-intent tool-call ceilings. These sit under Settings.max_tool_calls.
-# Unknown intent (Jev down) keeps the configured ceiling, never tightening
+# Unknown intent (understand call unavailable) keeps the configured ceiling, never tightening
 # on missing signal. Headroom is large on purpose: a lookup still does
 # search→resolve→query→synthesis, and a diagnostic/causal run fans out.
 _TOOL_BUDGET_BY_INTENT: dict[str, int] = {
@@ -140,11 +118,6 @@ _TOOL_BUDGET_BY_INTENT: dict[str, int] = {
 _FAST_MODEL_INTENTS = frozenset({"conversation", "lookup", "aggregation", "trend"})
 # Intents answered by toolsets/diagnosis.py::diagnose_metric_change.
 _DIAGNOSTIC_INTENTS = frozenset({"diagnostic", "causal_investigation"})
-
-
-def _should_plan(classification: QueryClassification) -> bool:
-    """#1: plan only for multi-step work (by intent) or when Jev rates it complex."""
-    return classification.intent in _PLAN_INTENTS or classification.complexity == "complex"
 
 
 def _tool_budget(intent: str | None, ceiling: int) -> int:
@@ -268,65 +241,6 @@ async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[s
     return result
 
 
-_VALUE_SENSE_PROMPT = (
-    "A business question was matched word-by-word against values recorded in the data. For each "
-    "listed word, decide whether the question uses it to NAME that value (the user wants the data "
-    "filtered to it, e.g. 'whatsapp' in 'orders from whatsapp', 'meta' in 'meta spend') or as "
-    "ordinary language (e.g. 'other' in 'compared to other days', 'new' in 'any new ideas'). "
-    "When unsure, the word names the value. Reply with JSON only: "
-    '{"ordinary": ["<word>", ...]} listing only the ordinary-language words.'
-)
-
-
-async def _confirm_value_filters(
-    runtime: SwarmRuntime, query: str, filters: tuple[ValueFilter, ...]
-) -> tuple[tuple[ValueFilter, ...], frozenset[str]]:
-    """Drop value filters whose word the question uses as plain language.
-
-    An exact data match is not intent: "compared to OTHER days" matched
-    payment_method = other, the coverage gate made it required, and the model —
-    told the data records it — kept filtering by it (live thread_e75c2615, still
-    after the not_values waiver). One fast-model call reads each word in context,
-    before the loop. Fail-open toward the filter (an error keeps every filter, so
-    a named "meta" is never dropped by an outage)."""
-    llm = getattr(runtime, "llm", None)
-    if not filters or llm is None:
-        return filters, frozenset()
-    settings = runtime.settings
-    model = (getattr(settings, "azure_openai_fast_model", "") or "").strip() or settings.azure_openai_model
-    listing = "\n".join(
-        f'- "{vf.term}": {" / ".join(sorted(vf.dimensions))} = {", ".join(vf.values)}' for vf in filters
-    )
-    try:
-        response = await asyncio.wait_for(
-            llm.complete(
-                LLMRequest(
-                    messages=[
-                        ChatMessage(role="system", content=_VALUE_SENSE_PROMPT),
-                        ChatMessage(role="user", content=f"Question: {query}\n\nWords:\n{listing}"),
-                    ],
-                    model=model,
-                    temperature=0,
-                    max_tokens=1500,  # reasoning models spend hidden tokens first
-                    timeout_s=8.0,
-                    metadata=LLMRequestMetadata(agent_id="value_sense", query_class="scope"),
-                    tags=["value_sense"],
-                )
-            ),
-            timeout=10.0,
-        )
-        found = re.search(r"\{.*\}", response.text or "", re.DOTALL)
-        words = json.loads(found.group(0)).get("ordinary", []) if found else []
-    except Exception:
-        _log.warning("value_sense_failed", exc_info=True)
-        return filters, frozenset()
-    named = {vf.term.lower() for vf in filters}
-    ordinary = frozenset(str(w).strip().lower() for w in words if str(w).strip().lower() in named)
-    if ordinary:
-        _log.info("value_filters_dropped_as_ordinary terms=%s", sorted(ordinary))
-    return tuple(vf for vf in filters if vf.term.lower() not in ordinary), ordinary
-
-
 def _without_terms(resolution: dict[str, Any], terms: frozenset[str]) -> dict[str, Any]:
     if not terms or not resolution:
         return resolution
@@ -441,37 +355,9 @@ def _question_window(query: str, timezone: str, as_of: str):
         return None
 
 
-# A bare acceptance of the prior answer's closing offer ("yes", "sure, go ahead").
-# Grammar words only — never metric or domain words.
-_AFFIRMATION_WORDS = frozenset(
-    "yes yeah yep yup sure ok okay go ahead please do it that proceed haan ha ji".split()
-)
-# Social turns: answered directly, no tools, no classifier round trip. "thanks"
-# is here, not an acceptance — it used to re-run the previous answer's offer.
-# Live 2026-10-05: Jev labelled "hi" as a trend AND a follow-up (it labels every
-# message "trend"); in a thread the greeting kept its tools, the zero-tool gate
-# rejected the greeting twice, and the user got "Net sales were ₹87,998.05".
-_SMALL_TALK_WORDS = frozenset(
-    "hi hii hiii hello helo hey heya hiya yo namaste hola there good morning afternoon "
-    "evening night thanks thank you thx ty tysm cheers bye goodbye see later great cool "
-    "nice awesome how are r u doing whats what's up sup seleric team ok okay".split()
-)
 _PERIOD_LINE = re.compile(
     r"Period:\s*(\d{4}-\d{2}-\d{2})(?:\s*(?:to|through|\.\.|–|—|-)\s*(\d{4}-\d{2}-\d{2}))?"
 )
-
-
-def _is_affirmation(query: str) -> bool:
-    words = re.sub(r"[^a-z ]", " ", query.lower()).split()
-    return 0 < len(words) <= 5 and all(w in _AFFIRMATION_WORDS for w in words)
-
-
-def _is_small_talk(query: str) -> bool:
-    if re.search(r"\d", query):
-        return False
-    words = re.sub(r"[^a-z' ]", " ", query.lower()).split()
-    # A bare "ok"/"okay" accepts the previous offer; that stays a follow-up.
-    return 0 < len(words) <= 6 and all(w in _SMALL_TALK_WORDS for w in words) and not _is_affirmation(query)
 
 
 def _answer_period(final_response: str) -> tuple[str, str] | None:
@@ -761,6 +647,52 @@ def _part_text(message: dict[str, Any]) -> str:
     return "\n".join(chunks)
 
 
+class _ConceptResolver:
+    """Map the planner's metric phrases to catalogue ids with the catalogue's own
+    concept resolver (the same call the resolve_concept tool makes), in parallel.
+    Remembers each id's bound filter so the mission can start with it applied
+    (``prime``) instead of re-resolving every concept in an LLM turn.
+    A phrase the resolver cannot place maps to None; errors fail open."""
+
+    def __init__(self, mcp: Any, scope: RequiredScope) -> None:
+        self._mcp = mcp
+        self._axes = dict(getattr(scope, "question_axes", ()) or ())
+        self.filters: dict[str, dict[str, Any]] = {}
+
+    async def _one(self, text: str) -> str | None:
+        try:
+            result = await asyncio.wait_for(
+                self._mcp.call(
+                    agent_id="planner",
+                    capability="seleric.catalogue_resolve_concept",
+                    arguments={"text": text, "axes": self._axes},
+                ),
+                timeout=5.0,
+            )
+        except Exception:
+            return None
+        result = dict(result or {})
+        if result.get("kind") != "resolved_concept":
+            return None
+        metric_id = result.get("metric_id")
+        if metric_id and isinstance(result.get("filter"), dict) and result["filter"]:
+            self.filters[metric_id] = result["filter"]
+        return metric_id
+
+    async def __call__(self, texts: list[str]) -> dict[str, str | None]:
+        found = await asyncio.gather(*(self._one(t) for t in texts))
+        return dict(zip(texts, found, strict=True))
+
+    def prime(self, deps: SelericDeps) -> None:
+        """Apply the bound filters exactly as resolve_concept would have."""
+        for metric_id, bound in self.filters.items():
+            deps.query_cache.set(f"concept_filter:{metric_id}", bound)
+
+
+def _concept_resolver(mcp: Any, scope: RequiredScope) -> _ConceptResolver:
+    return _ConceptResolver(mcp, scope)
+
+
 def _plan_trace(outcome: PlanOutcome | None, steps: list[dict[str, Any]] | None) -> dict[str, Any] | None:
     """Planner telemetry for the mission trace: status, latency, tokens, shape, and
     how much of the plan the mission actually followed."""
@@ -768,7 +700,8 @@ def _plan_trace(outcome: PlanOutcome | None, steps: list[dict[str, Any]] | None)
         return None
     trace = dict(outcome.stats)
     if outcome.plan is not None:
-        trace["adherence"] = plan_adherence(outcome.plan, steps)
+        # Prefetched plans were executed by code, not by the agent's tool calls.
+        trace["adherence"] = "prefetched" if "prefetch" in trace else plan_adherence(outcome.plan, steps)
     return trace
 
 
@@ -849,98 +782,44 @@ def _lookup_status(status: str) -> str:
     return status if status in _LOOKUP_STATUSES else "partial"
 
 
-class _ToolCtx:
-    def __init__(self, deps: SelericDeps) -> None:
-        self.deps = deps
+def _prefetch_windows(scope: RequiredScope, prior_window: Any) -> list[tuple[date, date]]:
+    """The windows the question names; for a follow-up that names none, the prior
+    answer's period (the same default the follow-up hint gives the agent)."""
+    windows = [(w.start, w.end) for w in scope.windows]
+    if windows or prior_window is None:
+        return windows
+    try:
+        return [(date.fromisoformat(prior_window.start), date.fromisoformat(prior_window.end))]
+    except (TypeError, ValueError):
+        return []
 
 
-def _format_amount(value: Any) -> str:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return str(value)
-    if float(value).is_integer() or abs(value) >= 100:
-        return f"{value:,.0f}"
-    return f"{value:,.4g}"
+@functools.cache
+def _headline_registry_ids() -> tuple[str, ...]:
+    """domain_health_profiles.yaml's headline, read once per process (the config is
+    baked into the image; parsing it cost ~25ms on every mission)."""
+    from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles
+
+    return tuple(DomainHealthProfiles().headline_metrics())
 
 
-async def _alias_lookup_result(
-    deps: SelericDeps,
-    *,
-    query: str,
-    definition: Any,
-    request_id: str,
-    thread_id: str,
-    intent: str | None = None,
-) -> V3MissionResult:
-    """Live Cube lookup for an exact YAML alias — no LLM, no invented metric id."""
-    catalogue_id = str(definition.catalogue_metric or definition.id.removeprefix("metric."))
-    catalogue_filters = dict(getattr(definition, "catalogue_filters", None) or {})
-    tool = await query_metrics(
-        _ToolCtx(deps), metric_id=catalogue_id, dimensions=catalogue_filters or None, pool_listed_values=True  # type: ignore[arg-type]
-    )
-    value = None
-    if tool.artifact_ids:
-        artifact = deps.artifact_store.get(tool.artifact_ids[0])
-        if artifact is not None and isinstance(artifact.payload, dict):
-            value = artifact.payload.get("value")
-    label = next(iter(definition.aliases), definition.id.removeprefix("metric."))
-    unit = str(getattr(definition, "unit", "") or "").strip()
-    if tool.success and value is not None:
-        amount = _format_amount(value)
-        answer = f"{label}: {amount} {unit}".strip()
-        status = "completed"
-        error_code = None
-    else:
-        answer = tool.summary or f"No live data for {label}."
-        status = "failed"
-        error_code = tool.error_code or "INSUFFICIENT_EVIDENCE"
-    return V3MissionResult(
-        mission_id=deps.mission_id,
-        status=status,
-        query=query,
-        as_of=deps.as_of,
-        final_response=answer,
-        evidence_ids=list(tool.artifact_ids),
-        limitations=[] if tool.success else [error_code or "INSUFFICIENT_EVIDENCE"],
-        error_code=error_code,
-        trace={
-            "request_id": request_id,
-            "session_id": thread_id,
-            "lookup": "alias",
-            "intent": intent,
-        },
-    )
+def _headline_metric_ids(runtime: SwarmRuntime) -> list[str]:
+    """The configured business headline (domain_health_profiles.yaml) as catalogue ids."""
+    try:
+        registry = getattr(runtime, "metrics", None)
+        out: list[str] = []
+        for registry_id in _headline_registry_ids():
+            definition = registry.get(registry_id) if registry is not None else None
+            out.append((definition.catalogue_metric if definition is not None else None) or registry_id)
+        return list(dict.fromkeys(out))
+    except Exception:
+        _log.warning("headline_metrics_unavailable", exc_info=True)
+        return []
 
 
-# Broad "how's the business" overviews the ready-store fast path can answer from
-# a pre-computed snapshot. Kept deliberately narrow (whole-question overviews, no
-# specific metric) so a targeted lookup never gets hijacked onto the 10-metric
-# headline snapshot. Stale/missing snapshot -> None -> normal agent loop.
-_HIGH_LEVEL_PHRASES = (
-    "how's the business",
-    "how is the business",
-    "how's business",
-    "how is business",
-    "how are we doing",
-    "how are we performing",
-    "how's it going",
-    "how's the company",
-    "state of the business",
-    "business overview",
-    "business health",
-    "overall performance",
-    "give me an overview",
-    "how are things",
-)
-
-
-def _is_high_level_business_query(query: str) -> bool:
-    if os.getenv("BUSINESS_STATE_FAST_PATH", "1").strip() in {"0", "false", "no"}:
-        return False
-    norm = re.sub(r"[^a-z0-9\s']", " ", (query or "").lower())
-    norm = re.sub(r"\s+", " ", norm).strip()
-    if not norm or len(norm.split()) > 8:
-        return False
-    return any(phrase in norm for phrase in _HIGH_LEVEL_PHRASES)
+def _business_state_fast_path_enabled() -> bool:
+    """Kill switch for the snapshot answer to whole-business overview questions."""
+    return os.getenv("BUSINESS_STATE_FAST_PATH", "1").strip().lower() not in {"0", "false", "no"}
 
 
 async def _business_state_fast_answer(
@@ -961,6 +840,16 @@ async def _business_state_fast_answer(
     try:
         snapshot = await SnapshotStore().aget_latest("business")
         if snapshot is None or snapshot.status == "UNAVAILABLE" or is_stale(snapshot):
+            return None
+        # The snapshot holds one day (its as_of) against the day before. A question
+        # that names any other period is not answerable from it: "the last 7
+        # completed days" was answered with 10-06 alone and a footer claiming
+        # 09-30..10-06 (live 2026-10-07 MS3-e81cbc105a, golden Q4).
+        day = snapshot.as_of
+        if any(
+            (w.start.isoformat(), w.end.isoformat()) != (day, day)
+            for w in deps.required_scope.windows
+        ):
             return None
         answer = await format_business_state(
             runtime, question=query, snapshot=snapshot, request_id=request_id, session_id=thread_id
@@ -1094,7 +983,11 @@ def _write_turn_record(
             "metric_labels": metric_labels[:10],
             "top_items": entities[:5],
             "evidence_ids": (result.evidence_ids or [])[:8],
-            "offer": _closing_offer(result.final_response or ""),
+            # The step the answer proposed, as the agent stated it: next steps are
+            # written as statements, so a closing question alone left "yes" with
+            # nothing to accept (live 2026-10-08 replay of thread_5235dd2c).
+            "offer": (getattr(result, "next_step", "") or "").strip()[:300]
+            or _closing_offer(result.final_response or ""),
             "mission_id": mission_id,
             "as_of": as_of_dt.date().isoformat(),
         }
@@ -1163,37 +1056,65 @@ async def run_v3_mission(
         )
 
     mcp = getattr(runtime, "mcp", None) or NullMcpClient()
-    small_talk = _is_small_talk(query)
-    # Jev answers in ~6s (measured 2026-10-05) and was awaited before anything
-    # else; it now runs alongside the catalogue / value resolution it never
-    # depended on. Small talk needs neither.
-    classifying = (
-        None
-        if small_talk
-        else asyncio.ensure_future(
-            classify_query(
-                query,
-                base_url=getattr(runtime.settings, "jev_base_url", ""),
-                api_key=getattr(runtime.settings, "jev_api_key", ""),
-                timeout=float(getattr(runtime.settings, "jev_timeout_s", 5.0)),
-            )
-        )
+    # Reading the question and prefetching run before the agent loop, which is the
+    # first place tool progress is reported: without these the UI showed nothing
+    # for the first ~20s of a mission.
+    emit_progress(mission_id, "agent.stage", "Reading your question", {"stage": "understand"})
+    stages: dict[str, int] = {}
+    stage_started = time.perf_counter()
+
+    def _stage(name: str) -> None:
+        nonlocal stage_started
+        now = time.perf_counter()
+        stages[name] = round((now - stage_started) * 1000)
+        stage_started = now
+
+    # The previous turn's record (period, offer, question) is a cheap read and
+    # feeds both the understand call (is this a follow-up / an acceptance?) and the
+    # follow-up hint. Loaded for every turn: a thread's next question that names no
+    # period continues the prior one by default (live 2026-10-05 MS3-a93b7a3eb0).
+    prior_turn_record: dict[str, Any] | None = None
+    try:
+        prior_turn_record = _latest_turn_record(get_v3_artifact_store(), thread_id=thread_id)
+    except Exception:
+        _log.warning("prior_turn_record_load_failed", exc_info=True)
+    # Catalogue and value resolution are independent MCP reads: run them together.
+    catalogue, values = await asyncio.gather(
+        _catalogue_snapshot(runtime), _resolve_values(runtime, mcp, query)
     )
-    catalogue = await _catalogue_snapshot(runtime)
-    values = {} if small_talk else await _resolve_values(runtime, mcp, query)
-    classification = (
-        QueryClassification(intent="conversation", depends_on_prior=False)
-        if classifying is None
-        else await classifying
+    _stage("catalogue_values_ms")
+    # One structured LLM reading replaces Jev's classifier, the value-sense helper,
+    # the planner's slot reader and the small-talk / acceptance / overview word lists.
+    understood = await understand(
+        resolve_planner_model(runtime.settings),
+        query,
+        catalogue=catalogue,
+        value_words=[vf.term for vf in value_filters_from_resolution(values)],
+        value_meanings={
+            vf.term: f"{' / '.join(sorted(vf.dimensions))} = {', '.join(vf.values[:3])}"
+            for vf in value_filters_from_resolution(values)
+        },
+        prior_question=str((prior_turn_record or {}).get("query") or ""),
+        prior_offer=str((prior_turn_record or {}).get("offer") or ""),
     )
+    _stage("understand_ms")
+    understanding = understood.understanding
+    classification = classification_from(understanding)
     if (grain := stated_grain(query)) and grain != classification.grain:
         classification = dataclasses.replace(classification, grain=grain)  # type: ignore[arg-type]
     intent = classification.intent
-    if intent == "conversation":
+    small_talk = understanding is not None and understanding.kind == "conversation" and not (
+        understanding.follows_prior or understanding.accepts_offer
+    )
+    if small_talk:
         values = {}
+        prior_turn_record = None
+    affirmation = bool(understanding and understanding.accepts_offer)
+    is_followup = not small_talk and classification.depends_on_prior is True
+    ordinary_words = frozenset(w.strip().lower() for w in (understanding.ordinary_words if understanding else []))
     required_scope = _required_scope(runtime, query, temporal_grain=classification.grain)
-    value_filters, ordinary_words = await _confirm_value_filters(
-        runtime, query, value_filters_from_resolution(values)
+    value_filters = tuple(
+        vf for vf in value_filters_from_resolution(values) if vf.term.lower() not in ordinary_words
     )
     values = _without_terms(values, ordinary_words)
     question_axes = question_axes_from_resolution(values)
@@ -1201,21 +1122,6 @@ async def run_v3_mission(
         required_scope = dataclasses.replace(
             required_scope, value_filters=value_filters, question_axes=question_axes
         )
-    # Detect a follow-up and load the last turn's grounding record. Jev's
-    # depends_on_prior misses bare acceptances ("yes"), so those always count.
-    affirmation = _is_affirmation(query)
-    is_followup = not small_talk and (classification.depends_on_prior is True or affirmation)
-    prior_turn_record: dict[str, Any] | None = None
-    # Loaded for every analytical turn, not only flagged follow-ups: Jev called
-    # "Now can you give me a breakdown by the ad, gross and net sale" (right
-    # after a last-7-days report) standalone, and the agent picked 2026-09-07..
-    # 10-04 on its own (live 2026-10-05 MS3-a93b7a3eb0). A thread's next
-    # question that names no period continues the prior one by default.
-    if not small_talk:
-        try:
-            prior_turn_record = _latest_turn_record(get_v3_artifact_store(), thread_id=thread_id)
-        except Exception:
-            _log.warning("prior_turn_record_load_failed", exc_info=True)
     resolved_window = _resolved_window(query, timezone, as_of_dt.date().isoformat())
     # A comparison question ("the last 3 days versus today") resolves to TWO dated
     # periods. Carry both into the scope, or ``check_scope_coverage`` has nothing
@@ -1261,20 +1167,11 @@ async def run_v3_mission(
         ),
         required_scope=required_scope,
     )
-    # An exact alias ("ns", "mer") is a metric name however short; the classifier
-    # can read it as small talk or trend (live: Jev classifies "ns" as "trend"),
-    # so the alias check runs for every intent. A verified YAML alias always takes
-    # the deterministic Cube path; no model needed.
-    alias_def = _lookup_alias(query)
-    # Small talk gets no tools at all. Exception: an elliptical follow-up
-    # (depends_on_prior) continues a prior analytical turn — "yes" confirming a
-    # pending breakdown, "and for brand X?" — and stripping its tools made the
-    # continuation impossible (live 2026-09-30, thread_14d713b4: "yes" narrated
-    # "Running queries..." through final_result and failed
-    # INSUFFICIENT_EVIDENCE). Tool availability is not tool invocation: true
-    # small talk can still be answered without calling anything.
-    if intent == "conversation" and alias_def is None and not is_followup:
-        deps.call_counts[CONVERSATIONAL] = 1  # small talk: the agent gets no tools at all
+    # Small talk gets no tools at all (and is answered from the understand call's
+    # reply below). An elliptical follow-up ("yes", "and for brand X?") keeps its
+    # tools: it continues a prior analytical turn (live 2026-09-30, thread_14d713b4).
+    if small_talk:
+        deps.call_counts[CONVERSATIONAL] = 1
     started = time.perf_counter()
     with mission_trace(
         mission_id,
@@ -1295,40 +1192,81 @@ async def run_v3_mission(
                     runtime, deps=deps, query=query, request_id=request_id,
                     thread_id=thread_id, intent=intent,
                 )
-                if alias_def is None and _is_high_level_business_query(query)
+                if understanding is not None
+                and understanding.kind == "overview"
+                # The snapshot is one day against the day before: a question that
+                # names its own period ("the last 7 completed days", which the date
+                # parser does not read) is answered by the agent (golden Q4, 2026-10-08).
+                and not understanding.names_period
+                and _business_state_fast_path_enabled()
                 else None
             )
-            if fast_result is not None:
-                result = fast_result
-            elif alias_def is not None:
-                result = await _alias_lookup_result(
-                    deps,
+            if small_talk and understanding is not None and understanding.reply.strip():
+                result = V3MissionResult(
+                    mission_id=mission_id,
+                    status="completed",
                     query=query,
-                    definition=alias_def,
-                    request_id=request_id,
-                    thread_id=thread_id,
-                    intent=intent,
+                    as_of=as_of_dt,
+                    final_response=understanding.reply.strip(),
+                    trace={"request_id": request_id, "session_id": thread_id, "intent": intent},
                 )
+            elif fast_result is not None:
+                result = fast_result
             else:
                 model = resolve_v3_model(
                     runtime.settings, prefer_fast=_prefer_fast_model(classification)
                 )
-                agent = build_seleric_agent(model=model)
-                # #1: only pay for an upfront plan on genuinely multi-step work;
-                # a simple lookup already has the full catalogue + manifest.
+                agent = build_seleric_agent(
+                    model=model,
+                    hidden=unbacked_tools(
+                        allow_writes=bool(getattr(runtime.settings, "allow_write_actions", False))
+                    ),
+                )
+                # The plan is built in code from the understand call's slots — no
+                # second LLM call. An accepted offer ("yes") is not re-planned: the
+                # follow-up hint tells the agent to do exactly what it offered.
+                resolver = _concept_resolver(mcp, deps.required_scope)
                 plan_outcome = (
-                    await build_plan(
-                        model,
-                        query=query,
-                        intent=intent,
-                        manifest=capability_manifest(),
+                    await plan_from_slots(
+                        understanding,
                         catalogue=catalogue,
                         tool_names=registered_tool_names(),
+                        resolver=resolver,
+                        windows=[(w.start, w.end) for w in deps.required_scope.windows],
+                        as_of=as_of_dt,
+                        headline_metric_ids=_headline_metric_ids(runtime),
                     )
-                    if _should_plan(classification)
+                    if understanding is not None and not small_talk and not affirmation
                     else None
                 )
+                _stage("plan_ms")
+                resolver.prime(deps)
                 plan = plan_outcome.text if plan_outcome is not None else None
+                # The plan's data and the business-health signals around it are
+                # independent reads: fetch them together.
+                asked_metrics = list((plan_outcome.stats.get("metrics") if plan_outcome else None) or [])
+                prefetch, (insights, insight_stats) = await asyncio.gather(
+                    execute_plan(
+                        # Only a plain analysis is prefetched: a prefetch narrows the
+                        # agent's tools to the data tools, and a forecast, what-if or
+                        # action question needs the tool its kind names.
+                        plan_outcome.plan
+                        if plan_outcome is not None and understanding is not None and understanding.kind == "analysis"
+                        else None,
+                        deps,
+                        windows=_prefetch_windows(deps.required_scope, prior_window),
+                        as_of=as_of_dt,
+                        grain=classification.grain,
+                    ),
+                    insight_block(deps, asked_metrics),
+                )
+                _stage("prefetch_ms")
+                if prefetch is not None:
+                    emit_progress(mission_id, "agent.stage", tool_label("analyze"), {"stage": "answer"})
+                    plan = f"{plan}\n\n{prefetch.text}" if plan else prefetch.text
+                    deps.call_counts[PREFETCHED] = 1
+                    if plan_outcome is not None:
+                        plan_outcome.stats["prefetch"] = prefetch.stats
                 if plan_outcome is not None and plan_outcome.stats.get("status") != "skipped":
                     _store_plan_artifact(deps, plan=plan or "", intent=intent, outcome=plan_outcome)
                 # prior_turn_record / is_followup were loaded before deps (the
@@ -1349,7 +1287,8 @@ async def run_v3_mission(
                     plan=plan,
                     hint=_values_block(values)
                     + _routing_hint(classification)
-                    + _followup_hint(prior_turn_record, affirmation=affirmation, window=prior_window),
+                    + _followup_hint(prior_turn_record, affirmation=affirmation, window=prior_window)
+                    + insights,
                     is_followup=is_followup,
                     prior_turn_record=prior_turn_record,
                 )
@@ -1357,6 +1296,7 @@ async def run_v3_mission(
                     run_validated_mission(agent, deps, prompt, on_stream=on_stream),
                     timeout=deps.limits.max_runtime_seconds,
                 )
+                _stage("agent_loop_ms")
                 result = v3_result.model_copy(
                     update={
                         "mission_id": mission_id,
@@ -1380,6 +1320,9 @@ async def run_v3_mission(
                             # validator by hand.
                             "validation": v3_result.trace.get("validation"),
                             "plan": _plan_trace(plan_outcome, v3_result.trace.get("steps")),
+                            "understand": understood.stats,
+                            "insights": insight_stats,
+                            "stages_ms": dict(stages),
                         },
                     }
                 )

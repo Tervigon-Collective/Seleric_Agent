@@ -432,48 +432,14 @@ async def test_week_buckets_cut_short_by_the_period_are_labelled_partial():
     assert "(PARTIAL week: only 2026-09-21..2026-09-24)" in result.summary
 
 
-# --- value sense: an exact data match on an ordinary word is dropped before the loop -------------------
+# --- ordinary words: the understand call names them, the runner drops their terms ----------------
 
-from types import SimpleNamespace  # noqa: E402
-
-from seleric_swarm.agent.runner import _confirm_value_filters, _without_terms  # noqa: E402
+from seleric_swarm.agent.runner import _without_terms
 
 
-class _SenseLLM:
-    def __init__(self, text: str | Exception) -> None:
-        self.text = text
-        self.requests: list[Any] = []
-
-    async def complete(self, request: Any) -> Any:
-        self.requests.append(request)
-        if isinstance(self.text, Exception):
-            raise self.text
-        return SimpleNamespace(text=self.text)
-
-
-def _runtime(llm: Any) -> Any:
-    return SimpleNamespace(llm=llm, settings=SimpleNamespace(azure_openai_fast_model="fast", azure_openai_model="main"))
-
-
-async def test_ordinary_word_is_dropped_and_named_value_kept():
-    filters = value_filters_from_resolution(_OTHER) + value_filters_from_resolution(_META)
-    llm = _SenseLLM('{"ordinary": ["Other"]}')
-    kept, ordinary = await _confirm_value_filters(
-        _runtime(llm), "why was meta lower than other days", filters
-    )
-    assert [vf.term for vf in kept] == ["meta"] and ordinary == frozenset({"other"})
-    assert llm.requests[0].model == "fast"
-    assert [t["term"] for t in _without_terms(_OTHER, ordinary)["terms"]] == []
-
-
-async def test_value_sense_fails_open_toward_the_filter():
-    filters = value_filters_from_resolution(_META)
-    for llm in (_SenseLLM(RuntimeError("429")), _SenseLLM("no json here"), None):
-        kept, ordinary = await _confirm_value_filters(_runtime(llm), "meta spend", filters)
-        assert kept == filters and not ordinary
-
-
-async def test_value_sense_never_drops_a_word_it_was_not_asked_about():
-    filters = value_filters_from_resolution(_META)
-    kept, ordinary = await _confirm_value_filters(_runtime(_SenseLLM('{"ordinary": ["days"]}')), "meta", filters)
-    assert kept == filters and not ordinary
+def test_ordinary_word_terms_are_dropped_from_the_resolution():
+    # "why was meta lower than other days": the understand call lists "other" as an
+    # ordinary word; its value terms leave the resolution, "meta" stays.
+    assert [t["term"] for t in _without_terms(_OTHER, frozenset({"other"}))["terms"]] == []
+    assert _without_terms(_META, frozenset({"other"})) == _META
+    assert _without_terms(_META, frozenset()) is _META

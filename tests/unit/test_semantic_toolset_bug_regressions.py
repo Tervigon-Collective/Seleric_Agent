@@ -790,15 +790,18 @@ async def test_order_grain_metric_by_product_redirects_to_its_grain_twin():
             CatalogueMetricMeta(id="product_gross_sale", supported_dimensions=prod_dims),
         )),
     )
-    with pytest.raises(ModelRetry) as exc:
-        await semantic.query_metrics(
-            FakeRunContext(deps), metric_id="gross_sales", dimensions={"sku": ""},
-            period_start=datetime(2026, 9, 1, tzinfo=UTC), period_end=datetime(2026, 9, 30, tzinfo=UTC),
-        )
-    msg = str(exc.value)
-    assert "metric_id='product_gross_sale'" in msg
-    assert "event_count" not in msg and "product_net_revenue" not in msg
-    assert not mcp.calls
+    # 2026-10-08: the declared twin is answered directly (no ModelRetry round trip) and named in the summary
+    mcp = ByMeasureMcpClient({"product_gross_sale": {"product_gross_sale": 10.0, "sku": "A"}})
+    deps = replace(deps, mcp_client=mcp)
+    result = await semantic.query_metrics(
+        FakeRunContext(deps), metric_id="gross_sales", dimensions={"sku": ""},
+        period_start=datetime(2026, 9, 1, tzinfo=UTC), period_end=datetime(2026, 9, 30, tzinfo=UTC),
+    )
+    assert result.success, result.summary
+    assert [a["measures"] for _, a in mcp.calls] == [["product_gross_sale"]]
+    assert "grain twin 'product_gross_sale'" in result.summary
+    assert "event_count" not in result.summary and "product_net_revenue" not in result.summary
+    assert ModelRetry  # still the path when no twin carries the slice (see the conformance tests)
 
 
 def test_redirect_alternatives_rank_by_shared_id_words():

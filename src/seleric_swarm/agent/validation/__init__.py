@@ -72,6 +72,12 @@ from seleric_swarm.agent.validation.signals import (
 )
 from seleric_swarm.agent.validation.trust import TrustResult, score_trust
 from seleric_swarm.agent.validation.answer_audit import (
+    _SENTENCE_END,
+    _inside_identifier,
+    _reconciles,
+    _table_columns_with_rounding,
+    _claim_candidates,
+    _numbers_in,
     cut_off,
     ends_in_offer,
     header_key,
@@ -108,6 +114,13 @@ _log = logging.getLogger("seleric.agent.validation")
 _PLACEHOLDER_ANSWERS = frozenset({"placeholder", "todo", "tbd", "n/a", "na", "none", "null", "answer"})
 # A limitation is one sentence; the longest legitimate ones seen live were ~330 chars.
 _MAX_LIMITATION_CHARS = 600
+# Fewest words an answer may have ("Net sales yesterday were ₹1.2L." is five).
+_MIN_ANSWER_WORDS = 4
+
+
+def _word_count(text: str) -> int:
+    """Words with at least one letter: figures, dates and table rules are not words."""
+    return sum(1 for token in (text or "").split() if any(ch.isalpha() for ch in token))
 
 
 @dataclass
@@ -261,6 +274,187 @@ def _unequal_window_change(result: MissionResult, deps: SelericDeps) -> str | No
     return None
 
 
+def _mission_values(deps: SelericDeps) -> list[float]:
+    """Every number the mission fetched or derived: evidence values and the numeric
+    entries of findings (the executor's per-day figures and changes, run_python output)."""
+    values: list[float] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, bool):
+            return
+        if isinstance(node, (int, float)):
+            values.append(float(node))
+        elif isinstance(node, dict):
+            for item in node.values():
+                walk(item)
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                walk(item)
+
+    # Roll-ups of fetched rows along their own dimensions: rows fetched at
+    # channel × sub-channel grain, reported per channel and in total, were
+    # rejected as unbacked until the mission failed (live 2026-10-08, golden Q17:
+    # 925,892 total, 373,160 Meta, 354,872 unattributed — all exact row sums).
+    rollups: dict[tuple[Any, ...], float] = {}
+    for artifact in deps.artifact_store.list_for_mission(deps.mission_id):
+        payload = getattr(artifact, "payload", None)
+        if not isinstance(payload, dict):
+            continue
+        if artifact.artifact_type == "evidence":
+            walk(payload.get("value"))
+            value, dims = payload.get("value"), payload.get("dimensions")
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and isinstance(dims, dict) and dims:
+                query = (payload.get("metric_id"), payload.get("period_start"), payload.get("period_end"),
+                         payload.get("grain"), tuple(sorted(dims)))
+                rollups[(*query, None, None)] = rollups.get((*query, None, None), 0.0) + float(value)
+                for key, member in dims.items():
+                    group = (*query, key, member)
+                    rollups[group] = rollups.get(group, 0.0) + float(value)
+        elif artifact.artifact_type == "finding":
+            walk(payload.get("metrics"))
+        elif artifact.artifact_type == "signal":
+            walk(payload.get("signals"))
+    values.extend(rollups.values())
+    return values
+
+
+def _figures(text: str) -> list[tuple[float, float, bool]]:
+    """(value, rounding tolerance, is_percent) for each figure the prose states."""
+    out: list[tuple[float, float, bool]] = []
+    for line in (text or "").splitlines():
+        pieces = line.strip().strip("|").split("|") if "|" in line else _SENTENCE_END.split(line)
+        for piece in pieces:
+            for value, tolerance, start, end in _claim_candidates(piece):
+                if _inside_identifier(piece, start, end):
+                    continue
+                out.append((value, tolerance, False))
+            for token in piece.replace("(", " ").replace(")", " ").split():
+                word = token.strip(".,;:!?*`'\"")
+                if word.endswith("%"):
+                    number = word[:-1].lstrip("+-−~≈").replace(",", "")
+                    try:
+                        decimals = len(number.partition(".")[2])
+                        out.append((abs(float(number)), 0.5 * 10**-decimals, True))
+                    except ValueError:
+                        continue
+    return out
+
+
+def _backed(value: float, tolerance: float, percent: bool, pool: list[float]) -> bool:
+    for known in pool:
+        slack = max(tolerance, 0.006 * abs(known), 0.005)
+        if abs(abs(value) - abs(known)) <= slack:
+            return True
+        if percent and abs(abs(value) - abs(known) * 100) <= max(tolerance, 0.006 * abs(known) * 100, 0.05):
+            return True
+    return False
+
+
+# Figures that are never data: small counts of days, hours, ranks and steps.
+_SMALL_COUNT = 31
+_MIN_UNBACKED = 3
+
+
+def _mission_labels(deps: SelericDeps) -> set[float]:
+    """Numeric dimension values the mission returned (ad ids, campaign ids): labels.
+
+    Live 2026-10-08 the gate called ad_id 120250695088280783 an unbacked figure
+    ("1.20251e+17") — an entity the diagnosis itself had named as where the change
+    concentrated — and the revision dropped the finding."""
+    labels: set[float] = set()
+
+    def add(token: Any) -> None:
+        text = str(token).strip()
+        if text and text.lstrip("-").replace(".", "", 1).isdigit():
+            try:
+                labels.add(float(text))
+            except ValueError:
+                pass
+
+    for artifact in deps.artifact_store.list_for_mission(deps.mission_id):
+        payload = getattr(artifact, "payload", None)
+        if not isinstance(payload, dict):
+            continue
+        for value in (payload.get("dimensions") or {}).values() if isinstance(payload.get("dimensions"), dict) else ():
+            add(value)
+        metrics = payload.get("metrics") if artifact.artifact_type == "finding" else None
+        if isinstance(metrics, dict):
+            for key in metrics:
+                for part in str(key).split("."):
+                    add(part)
+    return labels
+
+
+def _unbacked_figures(result: MissionResult, deps: SelericDeps) -> tuple[list[str], float]:
+    """Figures in the answer no fetched or derived value accounts for, and their share.
+    Live 2026-10-07 (gpt-5-nano) a row of plausible numbers was written for a day the
+    mission never fetched, and an "INR 4,431.03" appeared with no query behind it."""
+    pool = _mission_values(deps)
+    if not pool:
+        return [], 0.0
+    query_numbers = {abs(v) for v, _t, _p in _figures(result.query or "")}
+    labels = _mission_labels(deps)
+    figures = [
+        (v, t, pct)
+        for v, t, pct in _figures(result.final_response)
+        if not (not pct and float(v).is_integer() and abs(v) <= _SMALL_COUNT)
+        and abs(v) not in query_numbers
+        and not (not pct and v in labels)
+    ]
+    if not figures:
+        return [], 0.0
+    backed = [v for v, t, pct in figures if not pct and _backed(v, t, pct, pool)]
+    # The backed cells of each column: a table's own "Total" row is not in the pool
+    # itself, and requiring every cell to be backed rejected the column it totals
+    # (live 2026-10-08, golden Q17: 373,160 over eight backed rows).
+    columns = []
+    for values, rounding in _table_columns_with_rounding(result.final_response, _label_columns(deps)):
+        kept = [x for x in values if _backed(x, rounding, False, pool)]
+        if len(kept) >= 2:
+            columns.append((kept, rounding))
+    unbacked = [
+        f"{v:g}{'%' if pct else ''}"
+        for v, t, pct in figures
+        if not _backed(v, t, pct, pool) and not _derived_from_shown(v, t, pct, backed, columns)
+    ]
+    return unbacked, len(unbacked) / len(figures)
+
+
+def _derived_from_shown(
+    value: float,
+    tolerance: float,
+    percent: bool,
+    backed: list[float],
+    columns: list[tuple[list[float], float]],
+) -> bool:
+    """Arithmetic on figures the answer shows and the mission backs is backed too.
+
+    Live 2026-10-07 (MS3-dbb04d8eac, MS3-892f8fceba) the gate rejected the sum of the
+    two rows a table printed ("11,896.34") and one row's share of it ("64%"), and the
+    revisions that followed dropped the total the user asked for. A sum of a backed
+    column (the total audit's own reconciliation), a share of two backed figures or
+    the change between them is not an invented number.
+    """
+    if not percent:
+        if any(_reconciles(value, tolerance, values, rounding) for values, rounding in columns):
+            return True
+        # The change between two backed figures the answer shows (a bridge line,
+        # "down 22,553.8 from …").
+        # Within the figure's own rounding only: pairwise differences are many, and a
+        # proportional slack would let an invented number match one by chance.
+        slack = max(tolerance, 0.01)
+        return any(abs(abs(value) - abs(a - b)) <= slack for i, a in enumerate(backed) for b in backed[i + 1:])
+    candidates = [abs(x) for x in backed if x]
+    slack = max(tolerance, 0.05)
+    for a in candidates:
+        for b in candidates:
+            if a == b:
+                continue
+            if abs(value - 100 * a / b) <= slack or abs(value - 100 * abs(a - b) / b) <= slack:
+                return True
+    return False
+
+
 def _mission_has_evidence(deps: SelericDeps) -> bool:
     """True once the mission holds fetched evidence or a derived finding."""
     return any(
@@ -341,6 +535,19 @@ class EvidenceValidator:
                 ok=False,
                 reason="final_response is a placeholder, not an answer; write the real answer",
             )
+        conversational = bool((deps.call_counts or {}).get(CONVERSATIONAL))
+        data_mission = not conversational and _mission_has_evidence(deps)
+        if data_mission and _word_count(result.final_response) < _MIN_ANSWER_WORDS:
+            # Live 2026-10-07 (MS3-258bf5e8bb, gpt-5-nano): a 13-tool-call comparison
+            # shipped final_response="4431.03" as completed.
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    "final_response is a bare value, not an answer. Write the answer: a lead "
+                    "sentence that answers the question, the table or figures behind it, and "
+                    "what they mean"
+                ),
+            )
         if (dangling := cut_off(result.final_response)) is not None:
             return ValidationOutcome(
                 ok=False,
@@ -385,7 +592,7 @@ class EvidenceValidator:
                     "final_result was called before any other tool: 0 tool calls and "
                     "0 evidence, so the response is a plan or progress note, not an "
                     "answer. Do the tool work first — resolve the metric with "
-                    "get_metric_definitions/search_semantics, fetch the values with "
+                    "find_metrics/get_metric_definitions, fetch the values with "
                     "query_metrics — then call final_result once with the real answer "
                     "and its evidence_ids."
                 ),
@@ -401,6 +608,33 @@ class EvidenceValidator:
         # is never shipped either (not even as an exhausted loop's partial).
         if unequal := _unequal_window_change(result, deps):
             return ValidationOutcome(ok=False, reason=unequal, self_contradicting=True)
+        unbacked, share = _unbacked_figures(result, deps) if data_mission else ([], 0.0)
+        if len(unbacked) >= _MIN_UNBACKED:
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    f"these figures in final_response match nothing this mission fetched or derived: "
+                    f"{', '.join(unbacked[:8])}. Report only values from the tool results (or compute "
+                    "derived values with run_python so they are recorded); never estimate or fill in a figure"
+                ),
+                # Mostly invented numbers are never shipped, not even as a partial.
+                self_contradicting=share > 0.5,
+            )
+        if (
+            data_mission
+            and result.status in ("completed", "partial")
+            and not result.evidence_ids
+            and not result.finding_ids
+            and _numbers_in(result.final_response)
+        ):
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    "final_response states figures but cites no evidence_ids, although this "
+                    "mission fetched evidence. Put the artifact ids behind every figure you report "
+                    "in evidence_ids (they are in the tool results above)"
+                ),
+            )
         leaked = leaked_metric_ids(result.final_response, _evidence_metric_ids(result, deps))
         if leaked:
             return ValidationOutcome(

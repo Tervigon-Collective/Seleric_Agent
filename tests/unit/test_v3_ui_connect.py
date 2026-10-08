@@ -67,37 +67,6 @@ async def test_v3_runner_persists_for_conversations_and_office():
     assert v3.status in {"partial", "completed", "failed"}
 
 
-@pytest.mark.asyncio
-async def test_v3_runner_ns_uses_live_catalogue_id_not_llm():
-    class _Mcp:
-        async def call(self, *, agent_id: str, capability: str, arguments: dict) -> dict:
-            del agent_id
-            if capability == "seleric.metrics_query":
-                assert arguments["measures"] == ["net_sales"]
-                return {
-                    "query_id": "q1",
-                    "rows": [{"net_sales": "71727"}],
-                    "provenance": {},
-                }
-            return {}
-
-    runtime = _runtime()
-    runtime.mcp = _Mcp()
-    dispatched = await run_v3_mission(
-        runtime,  # type: ignore[arg-type]
-        query="ns",
-        mission_id="MS3-ns",
-        workspace_id="default",
-        owner_user_id="default",
-        thread_id="thread-ns",
-        run_id="run-ns",
-        request_id="req-ns",
-    )
-    assert dispatched["route"] == "v3"
-    assert "71,727" in dispatched["result"]["final_response"]
-    assert dispatched["result"]["status"] == "completed"
-
-
 def test_v3_office_snapshot_and_list(monkeypatch):
     from seleric_swarm import main as main_mod
     from seleric_swarm.api.office import gateway

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import time
+import weakref
 from typing import Any
 
 from openai import (
@@ -44,6 +46,13 @@ from seleric_swarm.llm.tracing import (
 
 # model -> learned request fixes ("max_completion_tokens", "drop_temperature").
 _LEARNED_PARAM_FIXES: dict[str, set[str]] = {}
+# One SDK client per event loop and connection settings. A client per mission
+# (agent, planner and helper models each built one) paid a fresh TLS handshake to
+# the endpoint (~170ms measured) on every call path; the client's pool keeps
+# connections warm instead. Keyed by loop: an httpx pool cannot cross loops.
+_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def _unsupported_param_fix(exc: APIStatusError) -> str | None:
@@ -127,6 +136,25 @@ class AzureOpenAICompatibleAdapter:
 
     @staticmethod
     def _build_client(settings: Settings, api_key: str) -> Any:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return AzureOpenAICompatibleAdapter._new_client(settings, api_key)
+        key = (
+            settings.azure_auth_style,
+            settings.azure_openai_endpoint,
+            settings.azure_openai_api_version,
+            api_key,
+            settings.llm_timeout_s,
+        )
+        clients = _CLIENTS.setdefault(loop, {})
+        client = clients.get(key)
+        if client is None or client.is_closed():
+            client = clients[key] = AzureOpenAICompatibleAdapter._new_client(settings, api_key)
+        return client
+
+    @staticmethod
+    def _new_client(settings: Settings, api_key: str) -> Any:
         endpoint = settings.azure_openai_endpoint.rstrip("/")
         # `*.services.ai.azure.com` is Azure AI Inference (OpenAI-compatible), which
         # does not use classic Azure "deployment name" routing. Default to the

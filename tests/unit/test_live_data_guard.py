@@ -65,7 +65,7 @@ async def test_data_tools_disappear_after_the_first_unavailable_fetch():
     assert deps.call_counts.get(semantic.LIVE_DATA_UNAVAILABLE) == 1
     assert offered[1] == offered[1] & _STILL_AVAILABLE_WITHOUT_LIVE_DATA
     assert "query_metrics" not in offered[1]
-    assert "search_semantics" in offered[1]
+    assert "find_metrics" in offered[1]
 
 
 @pytest.mark.asyncio

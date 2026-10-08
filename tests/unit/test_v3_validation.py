@@ -197,7 +197,7 @@ async def test_run_validated_mission_streams_tool_progress_when_a_sink_is_regist
     agent = Agent(model=model, deps_type=SelericDeps, output_type=MissionResult)
 
     @agent.tool_plain
-    def search_semantics() -> str:
+    def find_metrics() -> str:
         return "5 metrics"
 
     seen: list[tuple[str, str]] = []
@@ -209,8 +209,8 @@ async def test_run_validated_mission_streams_tool_progress_when_a_sink_is_regist
 
     assert result.status == "completed"
     assert result.final_response == "a valid answer"
-    assert ("agent.tool_started", "Searching the metric catalogue") in seen
-    assert ("agent.tool_completed", "Searching the metric catalogue — done") in seen
+    assert ("agent.tool_started", "Finding the metrics in the catalogue") in seen
+    assert ("agent.tool_completed", "Finding the metrics in the catalogue — done") in seen
     assert seen[-1] == ("agent.answering", "Writing the answer")
 
 
@@ -274,7 +274,9 @@ def test_validate_passes_causal_artifact_with_valid_classification() -> None:
     )
     _put_derived(store, deps.mission_id, "causal", causal.model_dump(mode="json"), evidence_ids)
 
-    outcome = EvidenceValidator().validate(_result(), deps=deps)
+    outcome = EvidenceValidator().validate(
+        _result(final_response="t and o moved together; that is an association, not a cause."), deps=deps
+    )
 
     assert outcome.ok, outcome.reason
     # Both signals present and independent — the #12 property.
@@ -306,7 +308,9 @@ def test_validate_fails_causal_artifact_with_legacy_classification() -> None:
             mission_id=deps.mission_id,
         )
     )
-    outcome = EvidenceValidator().validate(_result(), deps=deps)
+    outcome = EvidenceValidator().validate(
+        _result(final_response="t and o moved together; that is an association, not a cause."), deps=deps
+    )
     assert not outcome.ok
     assert "evidence_classification" in (outcome.reason or "")
 

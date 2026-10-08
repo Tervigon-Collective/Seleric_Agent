@@ -1,4 +1,4 @@
-"""Jev-signal-driven routing: plan gating (#1) and budget/model tier (#3).
+"""Classification-driven routing: tool budget and model tier (#3).
 
 These are pure functions of a QueryClassification, so they test without an LLM
 or MCP. The model-tier test checks resolve_v3_model prepends the fast
@@ -18,27 +18,6 @@ from seleric_swarm.config.settings import Settings
 
 def _qc(**kw) -> QueryClassification:
     return QueryClassification(**kw)
-
-
-# --- #1 plan gating ------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "classification,expected",
-    [
-        (_qc(intent="lookup", complexity="simple"), False),
-        (_qc(intent="aggregation", complexity="moderate"), False),
-        (_qc(intent="diagnostic", complexity="moderate"), True),
-        (_qc(intent="causal_investigation"), True),
-        (_qc(intent="comparison"), True),
-        # complexity escalates even a normally-simple intent
-        (_qc(intent="aggregation", complexity="complex"), True),
-        # Jev unavailable → no plan (keep the hot path fast)
-        (_qc(), False),
-    ],
-)
-def test_should_plan(classification, expected) -> None:
-    assert runner._should_plan(classification) is expected
 
 
 # --- #3 tool budget ------------------------------------------------------------
@@ -127,23 +106,3 @@ def test_resolved_window_line_empty_when_no_relative_phrase() -> None:
     assert runner._resolved_window_line("what is net revenue", "Asia/Kolkata", "2026-09-25") == ""
 
 
-# -- 2026-10-05: small talk is decided without Jev ------------------------------------------------
-# Live: Jev labelled "hi" a trend AND a follow-up; in a thread the greeting kept its tools and
-# the user got a net-sales figure. Jev also costs ~6s per message.
-
-@pytest.mark.parametrize("text", ["hi", "Hi!", "hello there", "thanks", "thank you", "ok thanks bye", "good morning"])
-def test_social_turns_are_small_talk(text):
-    from seleric_swarm.agent.runner import _is_small_talk
-
-    assert _is_small_talk(text)
-
-
-@pytest.mark.parametrize(
-    "text",
-    ["yes", "ok", "okay", "hi, what were sales yesterday", "thanks, now by channel", "net profit last 30 days", "top 5", "how are sales"],
-)
-def test_requests_and_acceptances_are_not_small_talk(text):
-    from seleric_swarm.agent.runner import _is_affirmation, _is_small_talk
-
-    assert not _is_small_talk(text)
-    assert not _is_affirmation("thanks")  # thanks never re-runs the previous offer

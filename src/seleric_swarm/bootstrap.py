@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
-from seleric_swarm.api.v3_state import configure_v3_persistence
+from seleric_swarm.api.v3_state import configure_v3_persistence, configure_v3_postgres
 from seleric_swarm.cancellation import build_cancellation_backend
 from seleric_swarm.checkpointing import build_checkpoint_provider
 from seleric_swarm.config.settings import Settings, get_settings
@@ -84,6 +84,8 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         if settings.persistence_backend == "postgres"
         else None
     )
+    if database_engine is not None:
+        configure_v3_postgres(database_engine)
     conversations = build_conversation_repositories(
         settings.persistence_backend,
         settings.database_url,

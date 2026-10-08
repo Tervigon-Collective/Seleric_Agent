@@ -292,7 +292,9 @@ async def test_query_metrics_rejects_fabricated_metric_without_calling_cube():
     assert result.success is False
     assert result.retryable is False  # no loop: not a transient failure
     assert result.error_code == "UNSUPPORTED_QUERY"
-    assert len(mcp.calls) == 0  # rejected before any Cube call
+    # Rejected before any Cube call; only the catalogue's concept resolver was asked
+    # whether the word names a modelled concept (it does not).
+    assert [c for c, _ in mcp.calls] == ["seleric.catalogue_resolve_concept"]
 
 
 @pytest.mark.asyncio
@@ -1245,3 +1247,15 @@ async def test_semantic_sql_requires_a_window_and_surfaces_errors():
     assert failed.success is False
     assert failed.error_code == "SEMANTIC_SQL_ERROR"
     assert "DROP" in failed.summary
+    assert failed.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_semantic_sql_scopes_the_rate_limit_to_the_mission_and_retries_schema_errors():
+    mcp = FakeMcpClient(
+        {"seleric.semantic_sql": {"error": "validation: column 'net_sale' ... Did you mean: net_sales?", "retryable": True}}
+    )
+    ctx = FakeRunContext(_deps(mcp))
+    failed = await semantic.semantic_sql(ctx, "SELECT MEASURE(net_sale) FROM order_pnl", "2026-09-01", "2026-09-30")
+    assert mcp.calls[0][1]["session_key"] == ctx.deps.mission_id
+    assert failed.retryable is True and "net_sales" in failed.summary

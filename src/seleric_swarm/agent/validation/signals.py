@@ -550,6 +550,13 @@ def check_scope_coverage(
             if isinstance(applied, dict) and (dim := applied.get("dimension")):
                 filtered.add(str(dim))
                 own.add(str(dim))
+        # a conformed sibling is the same slice (the tools answer "platform" with finance_channel on a P&L
+        # metric, "ad_platform" with acquisition_platform on customers): it covers its whole family
+        family_members = getattr(catalogue, "family_members", None)
+        if family_members is not None:
+            own = {m for d in own for m in family_members(d)}
+            grouped.update(m for d in list(grouped) for m in family_members(d))
+            filtered.update(m for d in list(filtered) for m in family_members(d))
         if parsed is not None and parsed.metric_id:
             scoped_by_metric.setdefault(parsed.metric_id, set()).update(own)
             if artifact.id in cited_ids:
@@ -734,7 +741,9 @@ def check_scope_coverage(
     return CheckOutcome(check="scope_coverage", status=status, gaps=gaps)
 
 
-_NON_CLAIM_ARTIFACT_TYPES = frozenset({"plan"})
+# A plan is observability; a signal is context from the hourly snapshots
+# (services/insights.py), not this mission's claim.
+_NON_CLAIM_ARTIFACT_TYPES = frozenset({"plan", "signal"})
 
 
 def run_checks(

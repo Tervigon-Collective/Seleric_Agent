@@ -157,7 +157,7 @@ async def explore_data(
     """
     filters = {k: v for k, v in (filters or {}).items() if v not in (None, "", [])}
     for m in metric_ids or []:
-        if (unknown := semantic._reject_unknown_metric(ctx, m)) is not None:
+        if (unknown := await semantic._reject_unknown_metric(ctx, m)) is not None:
             return unknown
     n_metrics, n_dims, top_k = P.EXPLORE_DEPTH.get(depth, P.EXPLORE_DEPTH["focus"])
     notes: list[str] = []

@@ -15,14 +15,17 @@ independently-attributed evidence).
 
 from __future__ import annotations
 
+import asyncio
 import calendar
 import difflib
 import json
 import re
 from collections.abc import Awaitable
+from datetime import date as _date
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
+from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry, RunContext
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
@@ -112,6 +115,21 @@ _GROUPBY_MARKERS = frozenset({"*", "all", "any", "each", "every", "group_by", "g
 # (live: WhatsApp orders are utm_medium in {whatsapp, wa} — one value per filter
 # forced two queries and a hand-summed answer).
 DimensionValue = str | list[str]
+
+FilterOperator = Literal[
+    "equals", "notEquals", "contains", "notContains", "startsWith", "endsWith",
+    "gt", "gte", "lt", "lte", "set", "notSet",
+]
+
+
+class MetricFilter(BaseModel):
+    """One structured filter. ``dimension`` is a catalogue dimension id — or a metric id of the same view,
+    which filters the aggregated value (comparison operators only: keep the entities of a breakdown whose
+    metric is above / below a number). ``set`` / ``notSet`` take no values."""
+
+    dimension: str
+    operator: FilterOperator = "equals"
+    values: list[str] = Field(default_factory=list)
 
 
 def _sanitize_dimensions(
@@ -513,7 +531,7 @@ def _empty_search_verdict(ctx: RunContext[SelericDeps]) -> ToolResult | None:
         success=True,
         summary=(
             "No catalogue metric matches this concept after repeated searches — it is "
-            "not modelled. search_semantics is now disabled for this mission: do not "
+            "not modelled. Catalogue search is now disabled for this mission: do not "
             "search again; tell the user this data is not available."
         ),
         provenance=ArtifactProvenance(source_metadata={"matches": []}),
@@ -521,12 +539,14 @@ def _empty_search_verdict(ctx: RunContext[SelericDeps]) -> ToolResult | None:
 
 def _fmt_value(value: float) -> str:
     """Compact number for a summary line: integers without ".0", amounts to 2 decimals, small ratios
-    to 6 significant digits (so a CTR of 0.020819 is not rounded away)."""
+    to 4 significant digits (a CTR of 0.020819 reads 0.02082, not 0). The model copies summary numbers
+    verbatim, so raw Cube floats ("261300.63999999932") reached answers (golden 2026-10-08); evidence keeps
+    the precise value and the provenance check allows print-precision rounding."""
     if value.is_integer():
         return str(int(value))
     if abs(value) >= 1:
         return f"{value:.2f}"
-    return f"{value:.6g}"
+    return f"{value:.4g}"
 
 
 # Cap the per-row values echoed into the tool summary. Top-N already limits
@@ -709,7 +729,7 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
         return ToolResult(
             success=False,
             summary=(
-                "SEMANTIC_RESOLUTION_LOOP: search_semantics is disabled for this "
+                "SEMANTIC_RESOLUTION_LOOP: catalogue search is disabled for this "
                 "mission (budget exhausted). Call query_metrics with the best metric "
                 "id from your earlier search results — for a product/SKU question use "
                 "a product_* metric (e.g. product_net_revenue, product_return_revenue, "
@@ -906,7 +926,9 @@ async def semantic_sql(
     the workspace brand), not by your WHERE clause; a cube that has no brand
     cannot be queried here. Every numeric cell becomes a citable evidence
     artifact (cite the returned ids in evidence_ids). Single SELECT/WITH
-    statement, read-only, rows capped, 30s timeout."""
+    statement, read-only, rows capped, 30s timeout. Tables and columns are checked
+    against the views before anything runs: an unknown name comes back with that
+    view's columns."""
     brand = str(brand_id or DEFAULT_BRAND_ID)
     try:
         start = datetime.fromisoformat(period_start[:10]).replace(tzinfo=ctx.deps.as_of.tzinfo)
@@ -922,17 +944,21 @@ async def semantic_sql(
         result = await ctx.deps.mcp_client.call(
             agent_id=_AGENT_ID,
             capability="seleric.semantic_sql",
-            arguments={"sql": sql, "max_rows": max_rows, "brand_id": brand},
+            arguments={"sql": sql, "max_rows": max_rows, "brand_id": brand, "session_key": ctx.deps.mission_id},
         )
     except Exception as exc:
         return _mcp_error_result(exc)
     result = dict(result or {})
     if result.get("error"):
+        # A schema rejection names the valid columns: correct the SQL once with
+        # those names. Anything else (rate limit, Cube failure) is not retryable.
+        correctable = bool(result.get("retryable"))
         return ToolResult(
             success=False,
-            summary=f"semantic_sql failed: {result['error']}",
+            summary=f"semantic_sql failed: {result['error']}"
+            + (" — fix the SQL with the names listed and call once more." if correctable else ""),
             error_code="SEMANTIC_SQL_ERROR",
-            retryable=False,
+            retryable=correctable,
             provenance=ArtifactProvenance(source_metadata=result),
         )
     rows = [r for r in (result.get("data") or []) if isinstance(r, dict)]
@@ -1077,7 +1103,7 @@ async def resolve_concept(
         return ToolResult(
             success=False,
             summary=f"'{concept}' unsupported at those axes: {result.get('reason', '')}"
-            + (f" — nearest: {nearest}" if nearest else "") + ". Try search_semantics.",
+            + (f" — nearest: {nearest}" if nearest else "") + ". Try find_metrics with the user's other words.",
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
             provenance=ArtifactProvenance(source_metadata=result),
@@ -1086,10 +1112,63 @@ async def resolve_concept(
     return ToolResult(
         success=False,
         summary=f"no concept matched '{concept}'"
-        + (f" — did you mean: {sugg}?" if sugg else "") + " Use search_semantics.",
+        + (f" — did you mean: {sugg}?" if sugg else "") + "",
         error_code="INSUFFICIENT_EVIDENCE",
         retryable=False,
         provenance=ArtifactProvenance(source_metadata=result),
+    )
+
+
+async def find_metrics(
+    ctx: RunContext[SelericDeps],
+    phrases: list[str] | None = None,
+    axes: dict[str, str] | None = None,
+    domain: str | None = None,
+) -> ToolResult:
+    """Find the catalogue metric id for every measure the question names — one call.
+
+    Pass each measure in the user's own words (``phrases=["net sales", "ad spend",
+    "roas"]``), measure words only: breakdowns, periods and filters belong in
+    ``query_metrics``. Each phrase goes to the catalogue's deterministic concept
+    resolver (axes the user's words imply may be passed in ``axes``); a phrase it
+    cannot place falls back to the glossary-backed search, which returns ranked
+    candidates. A resolved concept may bind a filter: pass it to ``query_metrics``
+    unchanged. With no phrases, lists every metric you can query (optionally one
+    ``domain``) — for "what data do you have". Resolution only: no values."""
+    wanted = [p.strip() for p in (phrases or []) if p and p.strip()]
+    if not wanted:
+        return await list_metrics(ctx, domain)
+    wanted = list(dict.fromkeys(wanted))
+    resolved = await asyncio.gather(*(resolve_concept(ctx, p, axes) for p in wanted))
+    misses = [p for p, r in zip(wanted, resolved, strict=True) if not r.success]
+    searched = dict(zip(misses, await asyncio.gather(*(search_semantics(ctx, p) for p in misses)), strict=True))
+    lines: list[str] = []
+    warnings: list[str] = []
+    found: dict[str, Any] = {}
+    for phrase, result in zip(wanted, resolved, strict=True):
+        if result.success:
+            lines.append(f"- {result.summary}")
+            warnings += [f"{phrase}: {w}" for w in result.warnings]
+            found[phrase] = result.provenance.source_metadata
+            continue
+        fallback = searched[phrase]
+        if fallback.success:
+            lines.append(f"- '{phrase}' has no single concept; closest catalogue metrics: {fallback.summary}")
+            found[phrase] = fallback.provenance.source_metadata
+        else:
+            lines.append(f"- '{phrase}': {result.summary} / {fallback.summary}")
+    if not found:
+        return ToolResult(
+            success=False,
+            summary="no catalogue metric found:\n" + "\n".join(lines),
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=False,
+        )
+    return ToolResult(
+        success=True,
+        summary="\n".join(lines),
+        warnings=warnings,
+        provenance=ArtifactProvenance(source_metadata={"resolved": found}),
     )
 
 
@@ -1136,6 +1215,16 @@ def _pin_to_resolved_window(
         pinnable.add((window.start_b, window.end_b))
     if asked in pinnable:
         return None
+    # Drift is a miscomputed version of the named period, so it overlaps it ("last
+    # month" fetched as 08-01..08-30). A window that shares no day with any named
+    # period is a different period on purpose — the baseline of "compare to the last
+    # 7 days", the previous week of a trend, the history a "why" needs. Pulling it
+    # back made every comparison unfetchable: the model asked for 09-23..09-29 seven
+    # times, got 09-30..10-06 each time, was told ALREADY FETCHED and answered "the
+    # previous window could not be retrieved" (live 2026-10-07 MS3-d13b253ea0, and
+    # golden Q5 "last 7 days versus the previous 7 days").
+    if all(asked[1] < start or asked[0] > end for start, end in pinnable):
+        return None
     token = (window.relative_token or "").replace("_", " ")
     tz = period_start.tzinfo
     return (
@@ -1148,7 +1237,7 @@ def _pin_to_resolved_window(
     )
 
 
-def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult | None:
+async def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> ToolResult | None:
     """Gate an id against the warmed catalogue snapshot before any Cube call.
     Validation only — never rewrites the id to a guess (rule 1 / the
     no-alias-table warning in this module's docstring).
@@ -1173,11 +1262,23 @@ def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> Tool
             f"{', '.join(candidates)}. Pick the exact id from the [catalogue] "
             f"listing and retry."
         )
+    # A business word passed as an id ("spend", "revenue") is not an unmodelled
+    # concept: the catalogue's own concept resolver names its id. Without this the
+    # model was told "not modelled — tell the user it is not available" and printed
+    # spend and revenue as "No data available" for every campaign (live 2026-10-08,
+    # golden Q9). Resolution only — the id comes from the catalogue, not this code.
+    concept = await resolve_concept(ctx, metric_id.replace("_", " "))
+    resolved = (concept.provenance.source_metadata or {}).get("metric_id") if concept.success and concept.provenance else None
+    if resolved and resolved != metric_id and catalogue.has_metric(resolved):
+        raise ModelRetry(
+            f"'{metric_id}' is a business term, not a metric id: the catalogue resolves it to "
+            f"'{resolved}' ({concept.summary}). Retry with metric_id='{resolved}'."
+        )
     return ToolResult(
         success=False,
         summary=(
             f"'{metric_id}' is not a catalogue metric and no similar metric exists — "
-            f"this concept is not modelled. Confirm with search_semantics if unsure; "
+            f"this concept is not modelled. Confirm with find_metrics if unsure; "
             f"otherwise tell the user it is not available. Do not guess another id."
         ),
         error_code="UNSUPPORTED_QUERY",
@@ -1185,54 +1286,153 @@ def _reject_unknown_metric(ctx: RunContext[SelericDeps], metric_id: str) -> Tool
     )
 
 
-def _reject_incompatible_dimensions(
-    ctx: RunContext[SelericDeps], metric_id: str, dimensions: dict[str, DimensionValue]
-) -> None:
-    """Fail fast when *metric_id* can't carry a requested dimension, pointing at
-    metrics that can (live 2026-09-22 MS3: "top returned products" tried to
-    break the order-grain ``refunded_orders`` down by ``product_title`` — an
-    incompatible pairing — and wandered through metric after metric instead of
-    switching to a product-grain one). Deterministic redirect, not a rewrite:
-    the model still re-picks the id (rule 1).
+def _period_from_time_values(value: DimensionValue) -> tuple[_date, _date] | None:
+    """A time-dimension FILTER value read as the period it names (``"2026-10-01"`` or a list of dates →
+    first..last). None when a value is not an ISO date."""
+    try:
+        days = sorted(_date.fromisoformat(str(v)[:10]) for v in (value if isinstance(value, list) else [value]))
+    except ValueError:
+        return None
+    return (days[0], days[-1]) if days else None
 
-    Fail-open: skipped when the snapshot is empty, the metric carries no
-    ``supported_dimensions`` in the snapshot, or nothing else supports the
-    dimension either (a real capability gap Cube should answer, not a bad pick).
-    """
-    catalogue = ctx.deps.catalogue
-    if not catalogue.metrics:
-        return
+
+def _fit_to_metric(
+    catalogue: Any, metric_id: str, dimensions: dict[str, DimensionValue], filters: list[MetricFilter]
+) -> tuple[
+    dict[str, DimensionValue], list[MetricFilter], dict[str, str], list[str], tuple[_date, _date] | None, list[str]
+]:
+    """Map a request onto *metric_id*'s own slicing surface, catalogue-driven:
+
+    * a time dimension of another view is this metric's own time axis — as a breakdown it is the grain
+      (folded later), as a filter it names the period;
+    * a dimension the metric's view lacks is answered by its conformed sibling (catalogue ``family``: e.g.
+      platform → finance_channel on the P&L, ad_platform → acquisition_platform on customers) when the
+      sibling's declared values hold the requested ones.
+
+    Returns (dimensions, filters, renames {asked: used}, keys still unsupported, period named by a time
+    filter). Nothing is guessed: a key with no catalogue mapping is reported, not dropped. A key whose family
+    IS on this view but cannot hold the value (a traffic platform that is no P&L channel) is reported as
+    ``"<key>=<values>"`` — a value gap, which no other grain of the same measure fixes."""
     supported = set(catalogue.supported_dimensions_for(metric_id))
-    if not supported:
-        return  # snapshot doesn't describe this metric's dims — let Cube decide
-    missing = [k for k in dimensions if k not in supported]
-    # Grain twin first (catalogue concepts' scope axis): an order-level metric cannot be split by
-    # product, but its product-line twin answers the same question at that grain (net_sales ->
-    # product_net_revenue). Live 2026-10-04 the model got an alphabetical list instead and answered
-    # "gross sales by product" with net revenue, and "COGS of these products" with the brand total.
-    twins = [
-        t for t in catalogue.grain_twins_for(metric_id)
-        if missing and set(missing) <= set(catalogue.supported_dimensions_for(t))
-    ]
-    if twins:
-        twin = twins[0]
-        raise ModelRetry(
-            f"'{metric_id}' is not stored at the grain of {', '.join(repr(k) for k in missing)}. The same "
-            f"measure at that grain is '{twin}'"
-            + (f" (also: {', '.join(twins[1:])})" if len(twins) > 1 else "")
-            + f". Retry query_metrics with metric_id='{twin}' and the same dimensions, and name the metric "
-            f"'{twin}' in the answer (its definition may differ in detail, e.g. ex-GST)."
+    renames: dict[str, str] = {}
+    missing: list[str] = []
+    value_gaps: list[str] = []
+    period: tuple[_date, _date] | None = None
+
+    def place(key: str, values: list[str] | None) -> str | None:
+        if not supported or key in supported or key == metric_id or catalogue.has_metric(key):
+            return key
+        sib = catalogue.conformed_sibling(key, supported, values)
+        if sib is not None:
+            renames[key] = sib
+            return sib
+        if values and catalogue.conformed_sibling(key, supported) is not None:
+            value_gaps.append(f"{key}={','.join(values)}")
+        return None
+
+    out: dict[str, DimensionValue] = {}
+    for key, value in dimensions.items():
+        if catalogue.is_time_dimension(key):
+            if not value:
+                out[key] = value  # a date breakdown is the grain on any axis (folded in query_metrics)
+            elif (named := _period_from_time_values(value)) is not None:
+                period = named  # a date filter on any time axis is the period this metric reads
+            else:
+                missing.append(key)
+            continue
+        values = None if not value else (list(value) if isinstance(value, list) else [value])
+        used = place(key, values)
+        if used is None:
+            missing.append(key)
+        else:
+            out[used] = value
+    fitted: list[MetricFilter] = []
+    for f in filters:
+        used = place(f.dimension, f.values if f.operator in ("equals", "notEquals") else None)
+        if used is None:
+            missing.append(f.dimension)
+        else:
+            fitted.append(f.model_copy(update={"dimension": used}))
+    return out, fitted, renames, list(dict.fromkeys(missing)), period, value_gaps
+
+
+def _fold_equals_filters(
+    ctx: RunContext[SelericDeps], dimensions: dict[str, DimensionValue], filters: list[MetricFilter]
+) -> list[MetricFilter]:
+    """An equals filter on a dimension is a dimension value (pooled, never an entity list): fold it into
+    *dimensions* so evidence and the scope-coverage check see it exactly as a ``dimensions`` filter. The
+    other operators (and metric-value filters) stay structured and travel in the query."""
+    kept: list[MetricFilter] = []
+    for f in filters:
+        if f.operator == "equals" and f.values and not ctx.deps.catalogue.has_metric(f.dimension) \
+                and not dimensions.get(f.dimension):
+            dimensions[f.dimension] = f.values[0] if len(f.values) == 1 else list(f.values)
+        else:
+            kept.append(f)
+    return kept
+
+
+def _conform_dimensions(
+    ctx: RunContext[SelericDeps],
+    metric_id: str,
+    dimensions: dict[str, DimensionValue],
+    filters: list[MetricFilter] | None = None,
+) -> tuple[str, dict[str, DimensionValue], list[MetricFilter], dict[str, str], list[str], tuple[_date, _date] | None]:
+    """Fit a request to the catalogue instead of refusing it (live 2026-10-07: "Meta campaigns ranked by
+    spend, revenue, ROAS, CAC, CTR, … LPVs, purchases" sent the Meta scope as ad_platform to orders,
+    net_sales and page_views and as finance_channel to ad_spend / ctr / clicks; seven ModelRetry bounces in
+    one step and the answer shipped with net ROAS only).
+
+    1. The metric itself, with conformed siblings for dimensions its view lacks (``_fit_to_metric``).
+    2. Else its catalogue grain twin (the concepts' ``scope`` axis: the same measure at the grain that
+       carries the slice — page_views → session_page_views, cac → channel_cac, orders → product_orders) —
+       answered directly and named in the summary. The twin is declared by the catalogue, never guessed.
+    3. Else, when other metrics carry the dimension, ModelRetry naming them (a different concept: the model
+       picks). When nothing carries it, Cube decides (a real capability gap, not a bad pick).
+
+    Returns (metric id to query, dimensions, filters, renamed dimensions {asked: used}, notes for the
+    summary, period named by a time filter). Fail-open on an empty snapshot."""
+    catalogue = ctx.deps.catalogue
+    filters = list(filters or [])
+    if not catalogue.metrics or not catalogue.supported_dimensions_for(metric_id):
+        return metric_id, dimensions, filters, {}, [], None
+
+    def notes_for(renames: dict[str, str]) -> list[str]:
+        return [f"'{a}' is answered by its conformed dimension '{b}' (same values on this metric's view)."
+                for a, b in renames.items()]
+
+    fitted, fitted_filters, renames, missing, period, value_gaps = _fit_to_metric(
+        catalogue, metric_id, dimensions, filters
+    )
+    if not missing:
+        return metric_id, fitted, fitted_filters, renames, notes_for(renames), period
+    # a grain twin answers a slice this view does not have — never a value its own slice cannot hold (that
+    # twin would be a different measure answering a different question: live harness, net_profit for an
+    # email platform went to the product-line gross profit)
+    for twin in [] if value_gaps else catalogue.grain_twins_for(metric_id):
+        t_dims, t_filters, t_renames, t_missing, t_period, _ = _fit_to_metric(catalogue, twin, dimensions, filters)
+        if t_missing:
+            continue
+        t_filters = [f.model_copy(update={"dimension": twin}) if f.dimension == metric_id else f for f in t_filters]
+        label = catalogue.label_for(twin) or twin
+        note = (
+            f"'{metric_id}' is not stored at the grain of {', '.join(repr(k) for k in missing)}, so this is its "
+            f"catalogue grain twin '{twin}' ({label}) — the same measure at that grain (its definition may differ "
+            f"in detail; see get_metric_definition). Name it '{twin}' in the answer."
         )
+        return twin, t_dims, t_filters, t_renames, [note, *notes_for(t_renames)], t_period
+    supported = set(catalogue.supported_dimensions_for(metric_id))
     for key in missing:
         alternatives = [m for m in catalogue.metrics_supporting_dimension(key, like=metric_id) if m != metric_id]
         if not alternatives:
-            continue  # nothing supports it — not a wrong-pick, don't block
+            continue  # nothing supports it — not a wrong pick, Cube decides
         raise ModelRetry(
             f"'{metric_id}' does not support the '{key}' dimension (it supports: "
             f"{', '.join(sorted(supported))}). For a breakdown/filter by '{key}', "
             f"use one of these metrics instead: {', '.join(alternatives)}. "
             f"Re-resolve and retry with a compatible metric."
         )
+    return metric_id, fitted, fitted_filters, renames, notes_for(renames), period
 
 
 # Entities kept when an unranked categorical breakdown crossed with a time grain is too large to
@@ -1417,7 +1617,7 @@ async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) ->
         )
     if (spent := _definition_budget_spent(ctx)) is not None:
         return spent
-    if (unknown := _reject_unknown_metric(ctx, metric_id)) is not None:
+    if (unknown := await _reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     try:
         result = await ctx.deps.mcp_client.call(
@@ -1799,6 +1999,7 @@ async def query_metrics(
     ctx: RunContext[SelericDeps],
     metric_id: str,
     dimensions: dict[str, DimensionValue] | None = None,
+    filters: list[MetricFilter] | None = None,
     grain: str = "none",
     period_start: datetime | None = None,
     period_end: datetime | None = None,
@@ -1821,6 +2022,17 @@ async def query_metrics(
     Set ``pool_listed_values=True`` only when the listed values are spellings of ONE
     group (``utm_medium`` whatsapp/wa) and you want a single pooled number.
 
+    ``filters`` are structured conditions beyond "equals": ``{"dimension": d, "operator": op,
+    "values": [...]}`` with op one of equals, notEquals (exclude), contains, notContains,
+    startsWith, endsWith, gt, gte, lt, lte, set (has a value), notSet (empty). A filter whose
+    ``dimension`` is this metric's own id (or another metric of its view) keeps only the rows
+    whose aggregated value passes the comparison — e.g. entities of a breakdown above a threshold.
+
+    Dimensions are conformed across views: the same dimension id (a platform, a channel, a
+    campaign) works on every metric that can carry it; when a metric's own view stores it under a
+    sibling name, or only its catalogue grain twin carries the slice, the tool answers there and says
+    so in the summary — use the metric id the summary names.
+
     For a time series (monthly/weekly/daily trend) set ``grain`` — do NOT pass
     the date dimension (``refund_date``/``report_date``/…) as a breakdown; that
     is the time axis and ``grain`` already buckets it. Never sum a returned
@@ -1838,7 +2050,7 @@ async def query_metrics(
     states the per-day average for a multi-day period. Additive metrics only;
     for a ratio, compare its additive parts this way.
     """
-    if (unknown := _reject_unknown_metric(ctx, metric_id)) is not None:
+    if (unknown := await _reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     dimensions = _sanitize_dimensions(dimensions)
     # Only lists the model wrote compare entities; a concept's bound filter is
@@ -1849,7 +2061,21 @@ async def query_metrics(
             for k, v in bound_filter.items():
                 if k not in dimensions:
                     dimensions[k] = v
-    _reject_incompatible_dimensions(ctx, metric_id, dimensions)
+    asked_metric = metric_id
+    metric_id, dimensions, structured_filters, renamed, conform_notes, named_period = _conform_dimensions(
+        ctx, metric_id, dimensions, [MetricFilter.model_validate(f) for f in (filters or [])]
+    )
+    asked_lists = {renamed.get(k, k) for k in asked_lists}  # a renamed list is still the model's entity list
+    structured_filters = _fold_equals_filters(ctx, dimensions, structured_filters)
+    # the twin answers under its own id: an earlier concept filter bound to it applies as well
+    twin_filter = ctx.deps.query_cache.peek(f"concept_filter:{metric_id}") if metric_id != asked_metric else None
+    if isinstance(twin_filter, dict):
+        for k, v in twin_filter.items():
+            dimensions.setdefault(k, v)
+    if named_period is not None and period_start is None and period_end is None:
+        tz = ctx.deps.as_of.tzinfo
+        period_start = datetime.combine(named_period[0], datetime.min.time(), tz)
+        period_end = datetime.combine(named_period[1], datetime.min.time(), tz)
     window_note: str | None = None
     if (pinned := _pin_to_resolved_window(ctx, period_start, period_end)) is not None:
         period_start, period_end, window_note = pinned
@@ -1895,8 +2121,9 @@ async def query_metrics(
     filters = [
         {"dimension": k, "operator": "equals", "values": list(v) if isinstance(v, list) else [v]}
         for k, v in dimensions.items()
-        if v
+        if v and not ctx.deps.catalogue.is_time_dimension(k)
     ]
+    filters += [f.model_dump() for f in structured_filters]
     # Rows with an empty breakdown value are dropped when evidence is written (below), so exclude them
     # in the query: otherwise a ranked limit is spent on them first (live 2026-10-06: net_profit by
     # campaign_name x sub_channel, limit=5 -> 4 of the top 5 had no campaign, 1 row survived).
@@ -2198,11 +2425,14 @@ async def query_metrics(
         # expects for a lookup. Multiple rows → the actual per-row values, so
         # the model reports them verbatim instead of inventing a series. These
         # ARE the numbers; do not restate them from memory.
+        # The unit, so the model never guesses the currency (golden 2026-10-08: INR answered as "$" / "USD"):
+        # the query's currency when the catalogue says the metric is in it, never for counts or ratios.
+        unit = f" {currency}" if currency and ctx.deps.catalogue.unit_for(metric_id) == currency else ""
         if len(series) == 1:
-            summary = f"{metric_id}={series[0]['value']} over {period_start.date()}..{period_end.date()}"
+            summary = f"{metric_id}={_fmt_value(series[0]['value'])}{unit} over {period_start.date()}..{period_end.date()}"
         else:
             shown = series[:_MAX_SERIES_IN_SUMMARY]
-            body = "; ".join(f"{s['label']}={s['value']}" for s in shown)
+            body = "; ".join(f"{s['label']}={_fmt_value(s['value'])}{unit}" for s in shown)
             more = "" if len(series) <= _MAX_SERIES_IN_SUMMARY else f"; …(+{len(series) - _MAX_SERIES_IN_SUMMARY} more rows in evidence)"
             summary = (
                 f"{metric_id} over {period_start.date()}..{period_end.date()} "
@@ -2211,6 +2441,8 @@ async def query_metrics(
             )
         if rank_note:
             summary = f"{rank_note} {summary}"
+        if conform_notes:
+            summary = f"[{' '.join(conform_notes)}] {summary}"
         if note := _in_progress_note(ctx, metric_id, period_start, period_end, same_hours=same_hours):
             summary = f"{summary} {note}"
         prov = ArtifactProvenance(
@@ -2337,10 +2569,17 @@ async def drilldown(
     period_end: datetime,
     hierarchy: str | None = None,
     within: dict[str, str] | None = None,
+    filters: list[MetricFilter] | None = None,
     order: str | None = None,
     limit: int | None = None,
 ) -> ToolResult:
     """Breakdown of ``metric_id`` by ``dimension`` over a period.
+
+    ``filters`` scope the drill with structured conditions (same shape and operators as
+    ``query_metrics``: notEquals to exclude, contains / startsWith, gt / lt on a metric's value, …).
+    Dimensions are conformed across views like in ``query_metrics``: a dimension stored under a sibling
+    name on this metric's view, or carried only by its catalogue grain twin, is answered there and the
+    summary names what was used.
 
     Ranked drill: ``order`` ("desc" | "asc") with an optional ``limit`` returns the top / bottom
     rows by the metric itself (server-side sort + limit); rows with no activity (value 0) are left
@@ -2350,9 +2589,10 @@ async def drilldown(
     items can share) is grouped by key AND label, so same-named items stay separate rows.
 
     Hierarchy drill (semantic v2): pass ``hierarchy`` (traffic: platform → channel → sub_channel;
-    geo; product; ``ad``: ad_platform → campaign_name → adset_name → ad_name, for AD metrics —
-    spend, impressions, clicks, CTR, CPC, ROAS; ``campaign``: orders/sessions by their
-    last-touch campaign, NOT ad metrics — see the catalogue ontology) with ``dimension="next"`` to go one
+    geo; product; ``ad``: ad_platform → campaign_name → adset_name → ad_name; ``campaign``:
+    campaign_name → adset_name → ad_name — both on every view that carries those levels, ad
+    delivery and orders / sessions / refunds alike; the catalogue lists each hierarchy's views) with
+    ``dimension="next"`` to go one
     level below what ``within`` pins (e.g. ``within={"platform": "meta"}`` → channels of Meta), or
     with ``dimension`` = a level of that hierarchy to jump to it. ``within`` values are equals
     filters on the coarser levels and scope the parent query.
@@ -2371,6 +2611,20 @@ async def drilldown(
     # it. Catalogue-driven; empty snapshot -> no guard (fail-open, Cube decides).
     within = {str(k): str(v) for k, v in (within or {}).items()}
     next_level = bool(hierarchy) and dimension in ("", "next")
+    # Fit the drill to the catalogue first (conformed siblings, then the grain twin) — the same path as
+    # query_metrics, so a drill never refuses a slice the warehouse can answer.
+    probe: dict[str, DimensionValue] = {**within, **({} if next_level else {dimension: ""})}
+    try:
+        metric_id, _fitted, structured, renamed, conform_notes, _ = _conform_dimensions(
+            ctx, metric_id, probe, [MetricFilter.model_validate(f) for f in (filters or [])]
+        )
+    except ModelRetry as exc:
+        # a drill names the metrics that carry the slice as a result, not a retry (its caller re-plans)
+        return ToolResult(success=False, summary=str(exc), error_code="UNSUPPORTED_QUERY", retryable=False)
+    if not next_level:
+        dimension = renamed.get(dimension, dimension)
+    within = {renamed.get(k, k): str(v) for k, v in within.items()}
+    structured = _fold_equals_filters(ctx, within, structured)  # type: ignore[arg-type]
     supported = ctx.deps.catalogue.supported_dimensions_for(metric_id)
     if supported and not next_level and dimension not in supported:
         alts = ctx.deps.catalogue.metrics_supporting_dimension(dimension)
@@ -2401,7 +2655,8 @@ async def drilldown(
         measure=metric_id,
         start=period_start.date().isoformat(),
         end=period_end.date().isoformat(),
-        filters=[{"dimension": k, "operator": "equals", "values": [v]} for k, v in within.items()] or None,
+        filters=[{"dimension": k, "operator": "equals", "values": list(v) if isinstance(v, list) else [v]}
+                 for k, v in within.items()] + [f.model_dump() for f in structured] or None,
         sort=[{"field": metric_id, "direction": direction}] if direction else None,
         limit=limit if limit and limit > 0 else None,
     )
@@ -2483,7 +2738,7 @@ async def drilldown(
         values.append(float(value))
         evidence = EvidenceArtifact(
             metric_id=metric_id,
-            dimensions={**within, **row_dims},
+            dimensions={**{k: ",".join(v) if isinstance(v, list) else v for k, v in within.items()}, **row_dims},
             grain="none",
             as_of=ctx.deps.as_of,
             period_start=period_start,
@@ -2518,6 +2773,8 @@ async def drilldown(
         f"({len(artifact_ids)} rows{ranking}) — use these exact values: {'; '.join(shown)}{more}."
         + _series_stats(ctx, metric_id, values)
     )
+    if conform_notes:
+        summary = f"[{' '.join(conform_notes)}] {summary}"
     ctx.deps.scratchpad.note(summary)
     return ToolResult(
         success=True,

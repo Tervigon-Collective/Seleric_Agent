@@ -118,6 +118,15 @@ class DomainStateResolver:
         self._business_state = business_state
         self._profiles = profiles or DomainHealthProfiles()
 
+    def _timezone(self, block: dict[str, Any]) -> str:
+        """The timezone the domain's metrics are resolved in (their registry entries)."""
+        registry = getattr(getattr(self._business_state, "_runtime", None), "metrics", None)
+        for entry in block.get("metrics", []):
+            definition = registry.get(entry["metric_id"]) if registry is not None else None
+            if definition is not None and getattr(definition, "timezone", None):
+                return str(definition.timezone)
+        return "UTC"
+
     async def resolve(
         self,
         domain: str,
@@ -135,7 +144,10 @@ class DomainStateResolver:
         # Resolved here once, display-only; per-metric fetching below still
         # goes through facade.get_metric_state's own (per-metric-timezone)
         # resolution unchanged.
-        resolved_range = resolve_time_range(time_range, "UTC", None)
+        # In the metrics' own timezone: resolved in UTC, a snapshot computed between
+        # 00:00 and 05:30 IST was labelled with the day before the one its values
+        # are for (live 2026-10-08: 10-07 figures stamped "as of 2026-10-06").
+        resolved_range = resolve_time_range(time_range, self._timezone(block), None)
         previous = await store.aget_latest(domain) if store else None
         previous_by_metric = {m.metric_id: m for m in previous.metrics} if previous else {}
 

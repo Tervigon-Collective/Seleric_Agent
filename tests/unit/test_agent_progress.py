@@ -30,14 +30,14 @@ async def test_tool_calls_and_results_are_reported_with_human_labels():
     seen: list[tuple[str, str]] = []
     progress.set_progress_sink("m1", lambda et, summary, payload: seen.append((et, summary)))
 
-    call = FunctionToolCallEvent(ToolCallPart("search_semantics", {"query": "cac"}, "c1"))
-    result = FunctionToolResultEvent(ToolReturnPart("search_semantics", "ok", "c1"))
+    call = FunctionToolCallEvent(ToolCallPart("find_metrics", {"phrases": ["cac"]}, "c1"))
+    result = FunctionToolResultEvent(ToolReturnPart("find_metrics", "ok", "c1"))
     final = FinalResultEvent(tool_name="final_result", tool_call_id="c2")
     await progress.progress_handler("m1")(None, _events(call, result, final))  # type: ignore[arg-type]
 
     assert seen == [
-        ("agent.tool_started", "Searching the metric catalogue"),
-        ("agent.tool_completed", "Searching the metric catalogue — done"),
+        ("agent.tool_started", "Finding the metrics in the catalogue"),
+        ("agent.tool_completed", "Finding the metrics in the catalogue — done"),
         ("agent.answering", "Writing the answer"),
     ]
 

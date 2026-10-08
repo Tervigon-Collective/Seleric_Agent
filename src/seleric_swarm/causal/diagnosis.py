@@ -376,6 +376,186 @@ def discover_identities(
     return sorted(found.values(), key=lambda i: (any(m in desc for m, _ in i.factors), i.dispersion, len(i.factors)))
 
 
+class _BridgeSpace:
+    """Every candidate's daily vector, plus random projections of every signed sum
+    of up to three of them, built once per diagnosis.
+
+    An exact identity ``target = Σ sign × metric`` (up to six terms) is found by
+    meeting in the middle: the projection of one signed sum of ≤3 terms must equal
+    the target's projection minus another's. Exhaustive, not greedy — greedy
+    searches were tried first and failed live: ranking partial sums by what is left
+    fails on a small difference of large quantities (net profit), and ranking by
+    least-squares fit never reached net COGS behind the many collinear revenue
+    measures. Every projected match is verified on the full daily vectors.
+    """
+
+    _GROUP = 3  # terms per half: identities of up to 2 × _GROUP terms
+
+    def __init__(self, names: list[str], days: list[date], series: dict[str, Series]) -> None:
+        import numpy as np
+
+        self.np = np
+        self.days = days
+        self.names = names
+        self.X = np.column_stack([
+            np.array([float(series[c][d]) if _finite(series.get(c, {}).get(d)) else 0.0 for d in days])
+            for c in names
+        ]) if names else np.zeros((len(days), 0))
+        rng = np.random.default_rng(20261007)  # fixed: the same data give the same answer
+        # Four projections: the first orders the search, the other three reject
+        # coincidental matches in bulk before any per-candidate check.
+        self.W = rng.normal(size=(len(days), 4))
+        self.px = self.X.T @ self.W  # (k, 4)
+        self.groups: dict[int, tuple[Any, Any, Any]] = {}
+        k = len(names)
+        for size in range(1, self._GROUP + 1):
+            combos = np.array(list(combinations(range(k), size)), dtype=int).reshape(-1, size)
+            signs = np.array(list(_sign_patterns(size)), dtype=float)
+            if not len(combos):
+                continue
+            idx = np.repeat(combos, len(signs), axis=0)
+            sg = np.tile(signs, (len(combos), 1))
+            proj = np.einsum("ns,nsk->nk", sg, self.px[idx])
+            order = np.argsort(proj[:, 0])
+            self.groups[size] = (idx[order], sg[order], proj[order])
+
+    def find(
+        self, y: Any, tol: float, allowed: Any, max_terms: int, *, positive_only: bool = False,
+        deadline: float | None = None,
+    ) -> list[tuple[int, float]] | None:
+        """The smallest exact identity for ``y`` over candidates where ``allowed``
+        (a plain sum of parts when ``positive_only``); None past ``deadline``."""
+        import time
+
+        np = self.np
+        py = y @ self.W
+        # A residual of at most ``tol`` a day projects to about tol × ‖w‖₂; 4σ.
+        eps = 4.0 * tol * np.linalg.norm(self.W, axis=0) + 1e-6
+        for total in range(2, max_terms + 1):
+            best: tuple[float, list[tuple[int, float]]] | None = None
+            for a in range(1, min(self._GROUP, total - 1) + 1):
+                b = total - a
+                if b < a or b > self._GROUP or a not in self.groups or b not in self.groups:
+                    continue
+                ia, sa, pa = self.groups[a]
+                ib, sb, pb = self.groups[b]
+                if positive_only:
+                    keep = (sb > 0).all(axis=1)
+                    ib, sb, pb = ib[keep], sb[keep], pb[keep]
+                okA = allowed[ia].all(axis=1) & ((sa > 0).all(axis=1) if positive_only else True)
+                okB = allowed[ib].all(axis=1)
+                ib, sb, pb = ib[okB], sb[okB], pb[okB]
+                ia, sa, pa = ia[okA], sa[okA], pa[okA]
+                if not len(ia) or not len(ib):
+                    continue
+                want = py[None, :] - pa
+                lo = np.searchsorted(pb[:, 0], want[:, 0] - eps[0])
+                counts = np.searchsorted(pb[:, 0], want[:, 0] + eps[0]) - lo
+                rows = np.nonzero(counts)[0]
+                for chunk in np.array_split(rows, max(1, int(counts[rows].sum() // 200_000) + 1)):
+                    if deadline is not None and time.monotonic() > deadline:
+                        return None
+                    c = counts[chunk]
+                    if not c.sum():
+                        continue
+                    ra = np.repeat(chunk, c)
+                    jb = np.repeat(lo[chunk], c) + (np.arange(int(c.sum())) - np.repeat(np.cumsum(c) - c, c))
+                    close = np.all(np.abs(pb[jb, 1:] - want[ra, 1:]) <= eps[1:], axis=1)
+                    for r, j in zip(ra[close], jb[close], strict=True):
+                        terms = list(ia[r]) + list(ib[j])
+                        if len(set(terms)) != total:
+                            continue
+                        signs = list(sa[r]) + list(sb[j])
+                        worst = float(np.max(np.abs(y - self.X[:, terms] @ np.array(signs))))
+                        if worst <= tol and (best is None or worst < best[0]):
+                            best = (worst, [(int(t), float(g)) for t, g in zip(terms, signs, strict=True)])
+            if best is not None:
+                return best[1]
+        return None
+
+
+def _sign_patterns(size: int) -> list[tuple[float, ...]]:
+    out: list[tuple[float, ...]] = [()]
+    for _ in range(size):
+        out = [(*p, s) for p in out for s in (1.0, -1.0)]
+    return out
+
+
+def discover_bridge_tree(
+    target: str, candidates: list[str], series: dict[str, Series], days: list[date], depth: int | None = None,
+) -> dict[str, list[tuple[str, float]]]:
+    """``{metric: its verified terms}`` for the target and, one level at a time, for
+    each term that is itself an exact sum of the remaining candidates.
+
+    Candidates are proposed, the data decide: a signed sum counts only if it
+    reproduces the metric on every history day to within DIAG_BRIDGE_TOLERANCE of
+    its typical size, which a coincidence cannot do over weeks of days. A
+    candidate equal to the metric on its own is a twin, not a component.
+
+    Netting happens only at the top. Every identity can be rearranged (ad spend
+    = gross sales − gross profit − gross COGS holds because gross profit is defined
+    net of ad spend; gross sales = gross profit + gross COGS + P&L margin − P&L
+    profit holds too, live 2026-10-08), and the data alone cannot tell a part from
+    a whole that contains it. So a P&L is read the way it is built: the outcome and
+    a term that adds to it may be revenue minus deductions (profit = margin − ad
+    spend; margin = gross sales − discounts − returns − COGS); every other line —
+    and any term that is deducted, a cost — is split only into a plain sum of its
+    parts (net COGS = product cost + operating cost; operating cost = shipping +
+    packaging + gateway fees + RTO).
+    """
+    import numpy as np
+
+    use = [d for d in days if _finite(series.get(target, {}).get(d))]
+    if len(use) < P.MIN_OBSERVATION_ROWS:
+        return {}
+    names = [
+        c for c in dict.fromkeys([target, *candidates])
+        if sum(1 for d in use if _finite(series.get(c, {}).get(d))) >= P.MIN_OBSERVATION_ROWS
+    ]
+    if target not in names:
+        return {}
+    space = _BridgeSpace(names, use, series)
+    index = {n: i for i, n in enumerate(names)}
+    limit = P.DIAG_BRIDGE_MAX_TERMS
+
+    def tol_of(i: int) -> float:
+        return max(1.0, P.DIAG_BRIDGE_TOLERANCE * float(np.median(np.abs(space.X[:, i]))))
+
+    def allowed_for(i: int, excluded: set[int]) -> Any:
+        y = space.X[:, i]
+        mask = np.ones(len(names), dtype=bool)
+        for j in excluded | {i}:
+            mask[j] = False
+        for j in range(len(names)):
+            col = space.X[:, j]
+            if not col.any() or float(np.max(np.abs(col - y))) <= tol_of(i):
+                mask[j] = False  # empty, or a twin of the metric
+        return mask
+
+    import time
+
+    deadline = time.monotonic() + P.DIAG_BRIDGE_BUDGET_S
+    tree: dict[str, list[tuple[str, float]]] = {}
+    frontier = [(index[target], 1.0)]
+    seen = {index[target]}
+    for level in range(P.DIAG_BRIDGE_DEPTH if depth is None else depth):
+        nxt: list[tuple[int, float]] = []
+        for node, effective in frontier:
+            allowed = allowed_for(node, seen)
+            y, tol = space.X[:, node], tol_of(node)
+            terms = space.find(y, tol, allowed, limit, positive_only=True, deadline=deadline) if level > 0 else None
+            if terms is None and (level == 0 or (level == 1 and effective > 0)):
+                terms = space.find(y, tol, allowed, limit, deadline=deadline)
+            if not terms:
+                continue
+            tree[names[node]] = [(names[t], g) for t, g in terms]
+            for t, g in terms:
+                seen.add(t)
+                nxt.append((t, effective * g))
+        frontier = nxt
+    return tree
+
+
 def shapley(f: Any, x0: list[float], x1: list[float]) -> list[float]:
     """Exact Shapley attribution of ``f(x1) - f(x0)`` to each input."""
     n = len(x0)
@@ -779,6 +959,22 @@ class DecompositionTerm:
 
 
 @dataclass
+class BridgeTerm:
+    """One term of the exact additive bridge: ``parent = Σ sign × metric``."""
+
+    metric: str
+    parent: str
+    sign: float
+    depth: int
+    event: float
+    reference: float
+    contribution: float  # sign × (event − reference): its signed share of the parent's change
+    share_of_change: float | None  # of the OUTCOME's change vs the reference
+    previous: float | None = None
+    contribution_vs_previous: float | None = None
+
+
+@dataclass
 class SegmentMove:
     segment: str
     event: float
@@ -855,6 +1051,11 @@ class DiagnosisReport:
     event: EventSummary | None
     identities: list[str] = field(default_factory=list)
     decomposition: list[DecompositionTerm] = field(default_factory=list)
+    # Exact additive bridge (accounting identity), every level, data-verified.
+    bridge_identity: list[str] = field(default_factory=list)
+    bridge: list[BridgeTerm] = field(default_factory=list)
+    bridge_residual: float | None = None
+    bridge_residual_vs_previous: float | None = None
     # Next link down: the dominant additive component rebuilt as rate x base
     # (approximate, data-verified), and where that rate moved.
     chain_identity: str = ""
@@ -895,6 +1096,8 @@ class DiagnosisInput:
     claimed_direction: Direction | None = None
     denominators: dict[str, str] = field(default_factory=dict)  # rate metric -> weight metric
     scope_tokens: frozenset[str] = frozenset()  # grain tokens naming the tenant scope, not a unit
+    # Same-unit additive metrics that may sum to the outcome (verified on the data).
+    bridge_candidates: list[str] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- engine
@@ -1360,6 +1563,49 @@ def _chain_step(
     ]
 
 
+def _bridge(
+    inp: DiagnosisInput, window: EventWindow, history: list[date], prev_days: list[date], total: float,
+    total_vs_previous: float | None,
+) -> tuple[list[BridgeTerm], list[str], float | None, float | None]:
+    """The exact additive bridge, every level, against the reference and the day(s) before."""
+    tree = discover_bridge_tree(inp.outcome, inp.bridge_candidates, inp.series, history)
+    if inp.outcome not in tree:
+        return [], [], None, None
+    terms: list[BridgeTerm] = []
+
+    def walk(node: str, depth: int, outer: float) -> None:
+        for m, sign in tree.get(node, []):
+            ser = inp.series.get(m, {})
+            ev, rf = _additive_window(ser, window, missing_as_zero=True)
+            if ev is None or rf is None:
+                continue
+            prev = sum(float(ser[d]) if _finite(ser.get(d)) else 0.0 for d in prev_days)
+            ev_days = sum(float(ser[d]) if _finite(ser.get(d)) else 0.0 for d in window.event_days)
+            effective = outer * sign
+            terms.append(BridgeTerm(
+                metric=m, parent=node, sign=sign, depth=depth, event=ev, reference=rf,
+                contribution=sign * (ev - rf),
+                share_of_change=(effective * (ev - rf) / total) if abs(total) > 1e-12 else None,
+                previous=prev, contribution_vs_previous=sign * (ev_days - prev),
+            ))
+            walk(m, depth + 1, effective)
+
+    walk(inp.outcome, 1, 1.0)
+    top = [t for t in terms if t.depth == 1]
+    residual = total - sum(t.contribution for t in top)
+    residual_prev = (
+        total_vs_previous - sum(t.contribution_vs_previous or 0.0 for t in top)
+        if total_vs_previous is not None else None
+    )
+    described = [
+        f"{node} = " + " ".join(
+            f"{'' if i == 0 and sign > 0 else ('+ ' if sign > 0 else '− ')}{m}" for i, (m, sign) in enumerate(parts)
+        )
+        for node, parts in tree.items()
+    ]
+    return terms, described, residual, residual_prev
+
+
 def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     y = inp.outcome
     ys = inp.series.get(y, {})
@@ -1499,10 +1745,21 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     # ---- layer 2: decomposition ---------------------------------------------------
     if identity is not None:
         report.decomposition = _decompose(inp, window, identity, y_ev, y_rf)
+    # ---- layer 2a: exact additive bridge (accounting identity) ---------------------
+    if meta_y.additive and inp.bridge_candidates:
+        report.bridge, report.bridge_identity, report.bridge_residual, report.bridge_residual_vs_previous = _bridge(
+            inp, window, history, prev_days, delta, previous.get("delta")
+        )
 
     # ---- layer 2b: next link — dominant additive component as rate x base ----------
     chain_target, t_ev, t_rf = (y, y_ev, y_rf) if meta_y.additive else (None, None, None)
     additive_terms = [t for t in report.decomposition if inp.lineage.get(t.metric, MetricMeta(t.metric)).additive]
+    if not additive_terms and report.bridge:
+        # The bridge term (at any level) that moved the outcome most, never one it splits further.
+        parents = {t.parent for t in report.bridge}
+        leaves = [t for t in report.bridge if t.metric not in parents]
+        lead_b = max(leaves, key=lambda t: abs(t.share_of_change or 0.0))
+        chain_target, t_ev, t_rf = lead_b.metric, lead_b.event, lead_b.reference
     if additive_terms:
         lead = max(additive_terms, key=lambda t: abs(t.contribution))
         chain_target, t_ev, t_rf = lead.metric, lead.event, lead.reference
@@ -1551,6 +1808,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     excluded: dict[str, str] = {}
     desc = descendants(y, inp.lineage)
     identity_factors = {m for m, _ in identity.factors} if identity else set()
+    identity_factors |= {t.metric for t in report.bridge}
     for c in inp.candidate_drivers:
         if c == y:
             excluded[c] = "is the outcome itself"
@@ -1582,6 +1840,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     components = list(dict.fromkeys([
         *(t.metric for t in report.decomposition),
         *(m for ident in identities for m, _ in ident.factors),
+        *(t.metric for t in report.bridge),
     ]))
     components = [m for m in components if m != y and inp.lineage.get(m, MetricMeta(m)).additive]
     for c in list(drivers):
@@ -1802,11 +2061,11 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
         report.verdict = "explained" if (report.unexplained_share is not None and abs(report.unexplained_share) < 0.5) else "partially_explained"
     elif implicated:
         report.verdict = "partially_explained"
-    elif report.decomposition or report.chain or any(d.localised or d.simpsons_paradox for d in (*dims, *report.chain_dimensions)):
+    elif report.decomposition or report.bridge or report.chain or any(d.localised or d.simpsons_paradox for d in (*dims, *report.chain_dimensions)):
         report.verdict = "located_cause_not_identified"
     else:
         report.verdict = "root_cause_not_identified"
-    cited = [y, *(t.metric for t in report.decomposition), *(t.metric for t in report.chain),
+    cited = [y, *(t.metric for t in report.decomposition), *(t.metric for t in report.bridge), *(t.metric for t in report.chain),
              *(f.driver for f in report.drivers if f.status in ("implicated", "ruled_out"))]
     for m in dict.fromkeys(cited):
         add = inp.lineage.get(m, MetricMeta(m)).additive
@@ -1887,6 +2146,14 @@ def _headline(r: DiagnosisReport) -> str:
     if r.decomposition:
         lead = max(r.decomposition, key=lambda t: abs(t.contribution))
         parts.append(f"Arithmetically, {lead.metric} accounts for {_pct(lead.share_of_change).lstrip('+')} of the change.")
+    if r.bridge:
+        parents = {t.parent for t in r.bridge}
+        leaves = sorted((t for t in r.bridge if t.metric not in parents), key=lambda t: -abs(t.share_of_change or 0.0))
+        parts.append(
+            "Exactly (accounting identity " + "; ".join(r.bridge_identity) + "): "
+            + ", ".join(f"{t.metric} {_pct(t.share_of_change)}" for t in leaves[:4])
+            + " of the change."
+        )
     if r.chain:
         lead_c = max(r.chain, key=lambda t: abs(t.contribution))
         other = next(t for t in r.chain if t is not lead_c)
@@ -1922,6 +2189,54 @@ def _headline(r: DiagnosisReport) -> str:
 
 
 # --------------------------------------------------------------------------- plain-language skeleton
+def _bridge_lines(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
+    """The exact accounting bridge, both comparisons, reconciled to the total."""
+    e = r.event
+    assert e is not None
+    name = _label(r.outcome, lineage)
+    prev_total = e.previous_period.get("delta")
+
+    def term(t: BridgeTerm) -> str:
+        indent = "  " * (t.depth - 1)
+        verb = "adds" if t.sign > 0 else "subtracts"
+        vs_prev = (
+            f"; vs the day before {_val(t.previous, t.metric, lineage)} → {_val(t.contribution_vs_previous, t.metric, lineage)} "
+            "effect on " + _label(t.parent, lineage)
+            if t.previous is not None and t.contribution_vs_previous is not None else ""
+        )
+        return (
+            f"{indent}- {_label(t.metric, lineage)} ({verb}; part of {_label(t.parent, lineage)}): usual "
+            f"{_val(t.reference, t.metric, lineage)} → {_val(t.event, t.metric, lineage)}, effect "
+            f"{_val(t.contribution, t.metric, lineage)} on {_label(t.parent, lineage)} "
+            f"({_share(t.share_of_change)} of the {name} change){vs_prev}"
+        )
+
+    by_parent: dict[str, list[BridgeTerm]] = {}
+    for t in r.bridge:
+        by_parent.setdefault(t.parent, []).append(t)
+    ordered: list[str] = []
+
+    def walk(node: str) -> None:
+        for t in by_parent.get(node, []):
+            ordered.append(term(t))
+            walk(t.metric)
+
+    walk(r.outcome)
+    recon = f"Reconciles to the {name} change within {_val(abs(r.bridge_residual or 0.0), r.outcome, lineage)}"
+    if prev_total is not None and r.bridge_residual_vs_previous is not None:
+        recon += (
+            f" (vs the usual) and within {_val(abs(r.bridge_residual_vs_previous), r.outcome, lineage)} "
+            f"(vs the day before, total change {_val(prev_total, r.outcome, lineage)})"
+        )
+    return [
+        "WHAT CHANGED — EXACT BRIDGE (accounting identity verified on every history day; arithmetic, not a "
+        "cause — report these as the components of the change, never as 'not explaining' it): "
+        + "; ".join(r.bridge_identity) + ".",
+        *ordered,
+        recon + ".",
+    ]
+
+
 def _label(metric: str, lineage: dict[str, MetricMeta]) -> str:
     meta = lineage.get(metric)
     return (meta.label if meta and meta.label and meta.label != metric else metric.replace("_", " ")).strip()
@@ -1978,6 +2293,8 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
     if e.premise == "not_unusual" and abs(e.delta_pct or 0.0) < 0.10:
         happened += " Against its usual level it was essentially flat."
     out.append(happened)
+    if r.bridge:
+        out.extend(_bridge_lines(r, lineage))
     if r.decomposition and e.strength == "none":
         # Shares of a change that is within noise are meaningless (they explode as
         # the total nears zero); state the component moves only.
@@ -2037,7 +2354,9 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
         else:
             txt = (
                 f"WHERE: by {where.dimension.replace('_', ' ')}, {s0.segment} went from {_val(s0.reference, where_metric, lineage)} "
-                f"to {_val(s0.event, where_metric, lineage)}, about {_share(s0.share_of_change)} of the change."
+                f"to {_val(s0.event, where_metric, lineage)}, about {_share(s0.share_of_change)} of the change "
+                "versus the usual level (its usual, not the day before — never apply this share to the "
+                "day-before change)."
             )
         out.append(txt)
     elif (full := [d for d in r.dimensions if _covers_whole(d)][:3]) and all(d.broad_based for d in full):

@@ -69,6 +69,10 @@ domains:
       - { metric_id: metric.packaging_cost, features: [period_delta_pct] }
       - { metric_id: metric.payment_gateway_fees, features: [period_delta_pct] }
       - { metric_id: metric.gross_profit, features: [period_delta_pct] }
+      # Order-date twins: the headline's basis (same as net sales and orders).
+      - { metric_id: metric.net_profit_order, features: [period_delta_pct, rolling_mean_7d], anomaly: true }
+      - { metric_id: metric.mer_order, features: [period_delta_pct, rolling_mean_7d], anomaly: true }
+      - { metric_id: metric.contribution_margin_pct_order, features: [period_delta_pct], anomaly: true }
     health_signals:
       - { id: net_profit_drop, metric_id: metric.net_profit, rule: period_delta_pct_below, threshold: -15 }
 
@@ -157,14 +161,15 @@ domains:
 # The 10 cross-domain headline metrics for "How's the business?" — assembled
 # post-resolve into a `business` snapshot by scheduler.build_headline_snapshot
 # (picked from the domain snapshots above, no re-fetch). Order = display order.
+# One date basis across the headline: order date, like net sales and orders.
 headline_metrics:
   - metric.net_sales
-  - metric.net_profit
-  - metric.mer
+  - metric.net_profit_order
+  - metric.mer_order
   - metric.net_roas
   - metric.spend
   - metric.cac
   - metric.orders
   - metric.purchase_cvr
   - metric.repeat_rate
-  - metric.contribution_margin_pct
+  - metric.contribution_margin_pct_order

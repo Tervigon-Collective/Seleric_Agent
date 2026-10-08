@@ -1,6 +1,6 @@
 """Sprint 4 Profile A: the agent actually has every implemented toolset.
 
-This is a wiring test, not an integration test — it proves all 26 real tool
+This is a wiring test, not an integration test — it proves every real tool
 functions register on ``SelericAgent`` without a schema error (the bug this
 test guards: ``RunContext[SelericDeps]`` annotations that only resolved
 under ``TYPE_CHECKING`` blew up at real tool-registration time with
@@ -11,66 +11,61 @@ that path before this wiring existed). It does not call any tool for real
 
 from __future__ import annotations
 
-from seleric_swarm.agent.agent import TOOLS, build_seleric_agent
+from seleric_swarm.agent.agent import TOOLS, build_seleric_agent, unbacked_tools
 
 
-def test_every_frozen_function_is_registered() -> None:
-    """26 = the 23 CONTRACTS.md §4 functions, ``sandbox.run_python`` (the
-    python sandbox added on top of the frozen analytics surface),
-    ``semantic.get_metric_definitions`` (batch of the frozen singular one) and
-    ``semantic.resolve_brand`` (brand→brand_id resolution) and
-    ``semantic.resolve_concept`` (business concept→metric id). The read-only ad
-    surfaces in ``ads.py`` are deliberately unregistered (third-party APIs,
-    not certified Cube views).
+def test_every_tool_is_registered() -> None:
+    """18 tools (was 31). Same-purpose tools were merged (2026-10-07): metric discovery is
+    ``find_metrics`` (concept resolver + glossary search + listing), the six
+    calculations over fetched evidence are ``analyze(method=...)``; refute_estimate,
+    actions.validate/preview and the always-refusing predict_ltv/predict_propensity
+    are not registered. The read-only ad surfaces in ``ads.py`` stay unregistered.
 
     Counting here is what stops a toolset being written and then silently left
     unregistered — the test suite would stay green, because a tool nobody
     registers is a tool nobody tests.
     """
-    assert len(TOOLS) == 32  # + diagnosis.diagnose_metric_change, semantic.list_metrics, semantic.semantic_sql, exploration.explore_data
+    assert len(TOOLS) == 19  # + exploration.explore_data
+
+
+_ALL = {
+    "find_metrics",
+    "resolve_brand",
+    "get_metric_definitions",
+    "query_metrics",
+    "semantic_sql",
+    "drilldown",
+    "analyze",
+    "generate_visualization",
+    "run_python",
+    "diagnose_metric_change",
+    "explore_data",
+    "estimate_effect",
+    "forecast",
+    "propose_action",
+    "commit_action",
+    "search_knowledge",
+    "get_experiment_history",
+    "estimate_sample_size",
+    "evaluate_experiment",
+}
 
 
 def test_all_tools_register_on_the_agent() -> None:
     agent = build_seleric_agent()
+    assert set(agent._function_toolset.tools.keys()) == _ALL
+
+
+def test_tools_with_nothing_behind_them_are_not_offered() -> None:
+    # This deployment: writes off, no experiments registered, empty knowledge
+    # corpus; the four approved forecast models keep forecast.
+    hidden = unbacked_tools(allow_writes=False)
+    assert hidden == {"propose_action", "commit_action", "get_experiment_history", "evaluate_experiment", "search_knowledge"}
+    assert "propose_action" not in unbacked_tools(allow_writes=True)
+    agent = build_seleric_agent(hidden=hidden)
     names = set(agent._function_toolset.tools.keys())
-    assert names == {
-        "search_semantics",
-        "semantic_sql",
-        "list_metrics",
-        "resolve_brand",
-        "resolve_concept",
-        "get_metric_definition",
-        "get_metric_definitions",
-        "query_metrics",
-        "drilldown",
-        "compare_periods",
-        "detect_anomalies",
-        "diagnose_metric_change",
-        "explore_data",
-        "estimate_effect",
-        "refute_estimate",
-        "forecast",
-        "predict_ltv",
-        "predict_propensity",
-        "propose_action",
-        "validate",
-        "preview",
-        "commit_action",
-        # Sprint 4 Profile C — the four greenfield analytics functions...
-        "contribution_analysis",
-        "segment_decomposition",
-        "funnel_decomposition",
-        "cohort_analysis",
-        # Intelligent visualization
-        "generate_visualization",
-        # Python sandbox — arbitrary aggregation over already-fetched evidence.
-        "run_python",
-        # ...and the two toolsets that had no module at all before Sprint 4.
-        "search_knowledge",
-        "get_experiment_history",
-        "estimate_sample_size",
-        "evaluate_experiment",
-    }
+    assert names == _ALL - hidden
+    assert "estimate_sample_size" in names and "forecast" in names
 
 
 async def test_stub_model_still_calls_zero_tools() -> None:

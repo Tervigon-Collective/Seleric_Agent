@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sqlalchemy.engine import Engine
+
 from seleric_swarm.persistence.file_store import FileV3ArtifactStore, FileV3MissionStore, file_paths
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.state.missions import InMemoryMissionStore
@@ -19,6 +21,7 @@ from seleric_swarm.state.missions import InMemoryMissionStore
 _mission_store: InMemoryMissionStore | None = None
 _artifact_store: InMemoryArtifactStore | None = None
 _persist_dir: Path | None = None
+_artifact_engine: Engine | None = None
 
 
 def configure_v3_persistence(persist_path: str | Path | None) -> None:
@@ -26,6 +29,13 @@ def configure_v3_persistence(persist_path: str | Path | None) -> None:
     global _persist_dir, _mission_store, _artifact_store
     _persist_dir = Path(persist_path) if persist_path else None
     _mission_store = None
+    _artifact_store = None
+
+
+def configure_v3_postgres(engine: Engine | None) -> None:
+    """Persist V3 artifacts to Postgres when ``PERSISTENCE_BACKEND=postgres``."""
+    global _artifact_engine, _artifact_store
+    _artifact_engine = engine
     _artifact_store = None
 
 
@@ -42,7 +52,11 @@ def get_v3_mission_store() -> InMemoryMissionStore:
 def get_v3_artifact_store() -> InMemoryArtifactStore:
     global _artifact_store
     if _artifact_store is None:
-        if _persist_dir is not None:
+        if _artifact_engine is not None:
+            from seleric_swarm.persistence.v3_artifacts import PostgresV3ArtifactStore
+
+            _artifact_store = PostgresV3ArtifactStore(_artifact_engine)
+        elif _persist_dir is not None:
             _artifact_store = FileV3ArtifactStore(file_paths(_persist_dir).v3_artifacts)
         else:
             _artifact_store = InMemoryArtifactStore()
@@ -51,7 +65,8 @@ def get_v3_artifact_store() -> InMemoryArtifactStore:
 
 def reset_v3_stores() -> None:
     """Test helper — drop the process-level V3 stores."""
-    global _mission_store, _artifact_store, _persist_dir
+    global _mission_store, _artifact_store, _persist_dir, _artifact_engine
     _persist_dir = None
+    _artifact_engine = None
     _mission_store = InMemoryMissionStore()
     _artifact_store = InMemoryArtifactStore()

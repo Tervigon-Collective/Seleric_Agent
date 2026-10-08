@@ -1,0 +1,173 @@
+                 pydantic-ai v2.45.0 • Python 3.12.13
+
+      / \        agent: seleric_agent
+     /   \         model: fallback:openai:gpt-5-mini,openai:DeepSeek-V4-Pro,openai:DeepSeek-V3.2
+   /___.___\       output: MissionResult • tools: 25 • capabilities: 0
+  /    |    \
+/      |      \  observability: off — see every model and tool call live, with cost
+`---.._|_..---'    set it up free with Logfire and a GitHub login: https://pydantic.dev/ai-setup.md
+                   or use any OpenTelemetry backend: https://pydantic.dev/docs/ai/logfire/#otel
+
+                 goes away once observability is on — or PYDANTIC_AI_NO_BANNER=1
+v3_agent_failed
+Traceback (most recent call last):
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\tool_manager.py", line 1056, in _raw_execute
+    tool_result = await self.toolset.call_tool(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\toolsets\combined.py", line 99, in call_tool
+    return await tool.source_toolset.call_tool(name, tool_args, ctx, tool.source_tool)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\toolsets\_tool_search.py", line 437, in call_tool
+    return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\toolsets\wrapper.py", line 70, in call_tool
+    return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\toolsets\combined.py", line 99, in call_tool
+    return await tool.source_toolset.call_tool(name, tool_args, ctx, tool.source_tool)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\toolsets\function.py", line 711, in call_tool
+    return await tool.call_func(tool_args, ctx)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_function_schema.py", line 85, in call
+    return await function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\src\seleric_swarm\toolsets\semantic.py", line 728, in query_metrics
+    raise ModelRetry(
+pydantic_ai.exceptions.ModelRetry: You have already fetched this exact query and have all its values above. Do NOT call query_metrics again — call final_result now with the values you already have.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\src\seleric_swarm\agent\runner.py", line 549, in run_v3_mission
+    v3_result = await asyncio.wait_for(
+                ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gaurav\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\asyncio\tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\src\seleric_swarm\agent\validation\__init__.py", line 254, in run_validated_mission
+    result = await _run_agent(agent, deps, query)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\src\seleric_swarm\agent\validation\__init__.py", line 216, in _run_agent
+    await agent.run(
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\agent\abstract.py", line 664, in run
+    node = await agent_run.next(node)  # pyright: ignore[reportArgumentType]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\run.py", line 554, in next
+    return await self._run_node_with_hooks(node, self._stream_and_advance)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\run.py", line 476, in _run_node_with_hooks
+    return await self._wrap_and_advance(run_context, node, step_fn)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\run.py", line 422, in _wrap_and_advance
+    result = await step_fn(node)
+             ^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\run.py", line 568, in _stream_and_advance
+    return await self._advance_graph(node)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\run.py", line 396, in _advance_graph
+    task = await self._graph_run.next(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_graph\graph_builder.py", line 584, in next
+    return await anext(self)
+           ^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_graph\graph_builder.py", line 561, in __anext__
+    raise self._next.error
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_graph\graph_builder.py", line 860, in _run_tracked_task
+    result = await self._run_task(t_)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_graph\graph_builder.py", line 911, in _run_task
+    output = await node.call(step_context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_graph\step.py", line 253, in _call_node
+    return await node.run(GraphRunContext(state=ctx.state, deps=ctx.deps))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 2023, in run
+    async with self.stream(ctx):
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\Gaurav\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\Lib\contextlib.py", line 217, in __aexit__
+    await anext(self.gen)
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 2044, in stream
+    async for _event in stream:
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\combined.py", line 615, in wrap_run_event_stream
+    async for event in stream:
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\abstract.py", line 862, in wrap_run_event_stream
+    async for event in stream:
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\abstract.py", line 862, in wrap_run_event_stream
+    async for event in stream:
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_run_context.py", line 98, in dispatch_event_stream
+    async for event in stream:
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 209, in _with_event_stream_buffer
+    async for event in stream:
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 2248, in _run_stream
+    async for event in _run_stream():
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 2213, in _run_stream
+    async for event in self._handle_tool_calls(ctx, tool_calls, response_output=response_output):
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_agent_graph.py", line 2334, in _handle_tool_calls
+    async for event in process_tool_calls(
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_tool_execution.py", line 371, in process_tool_calls
+    async for event in processor.run():
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_tool_execution.py", line 504, in run
+    async for event in self._run_strategy():
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_tool_execution.py", line 1158, in _run_strategy
+    async for event in flush_pending():
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_tool_execution.py", line 1146, in flush_pending
+    async for event in self._run_function_calls(batch):
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_tool_execution.py", line 690, in _run_function_calls
+    async for event in self._call_tools(
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_tool_execution.py", line 871, in _call_tools
+    if event := await handle_call_or_result(item, index_by_task[item]):
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_tool_execution.py", line 811, in handle_call_or_result
+    (await coro_or_task) if inspect.isawaitable(coro_or_task) else coro_or_task.result()
+     ^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\_tool_execution.py", line 725, in _call_tool
+    tool_result = await self.tool_manager.execute_tool_call(validated)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\tool_manager.py", line 780, in execute_tool_call
+    return await self._execute_tool_call_impl(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\tool_manager.py", line 1028, in _execute_tool_call_impl
+    tool_result = await self._run_execute_hooks(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\tool_manager.py", line 519, in _run_execute_hooks
+    tool_result = await cap.on_tool_execute_error(ctx, call=call, tool_def=tool_def, args=args, error=e)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\combined.py", line 809, in on_tool_execute_error
+    raise error
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\combined.py", line 804, in on_tool_execute_error
+    return await capability.on_tool_execute_error(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\abstract.py", line 1125, in on_tool_execute_error
+    raise error
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\combined.py", line 804, in on_tool_execute_error
+    return await capability.on_tool_execute_error(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\abstract.py", line 1125, in on_tool_execute_error
+    raise error
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\tool_manager.py", line 511, in _run_execute_hooks
+    tool_result = await cap.wrap_tool_execute(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\combined.py", line 788, in wrap_tool_execute
+    return await chain(args)
+           ^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\combined.py", line 1032, in wrapped
+    return await cap.wrap_tool_execute(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\abstract.py", line 1093, in wrap_tool_execute
+    return await handler(args)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\combined.py", line 1032, in wrapped
+    return await cap.wrap_tool_execute(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\capabilities\abstract.py", line 1093, in wrap_tool_execute
+    return await handler(args)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\tool_manager.py", line 496, in do_execute
+    return await self._raw_execute(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\tool_manager.py", line 1069, in _raw_execute
+    self._check_max_retries(name, validated.tool.max_retries, e)
+  File "C:\SpacePeppers\SpacePeppers\Seleric_Agent\.venv\Lib\site-packages\pydantic_ai\tool_manager.py", line 305, in _check_max_retries
+    raise UnexpectedModelBehavior(
+pydantic_ai.exceptions.UnexpectedModelBehavior: Tool 'query_metrics' exceeded max retries count of 2. Consider raising the retry limit, or see the docs on tool retries: https://pydantic.dev/docs/ai/tools-toolsets/tools-advanced/#tool-retries

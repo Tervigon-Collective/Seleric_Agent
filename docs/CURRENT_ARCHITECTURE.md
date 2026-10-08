@@ -101,7 +101,7 @@ old values are read-only compatibility, not a live creation path.
   `analytics/`, `knowledge/`, `experiments/`, `models/`, `causal/`,
   `services/` (catalogue bootstrap, evidence, ontology, claim gate, numeric
   audit, business-state, domain-health), `llm/` (provider factory/gateway,
-  metering, circuit breaker, OpenRouter), `protocols/mcp/gateway.py`
+  metering, circuit breaker; one Azure resource — gpt-5-nano since 2026-10-07), `protocols/mcp/gateway.py`
   (`MCPGateway`).
 - Every agent loop is bounded (`max_tool_calls`, `max_llm_calls`, etc. in
   `config/settings.py`) and the bound is enforced, not a no-op. Repeat/

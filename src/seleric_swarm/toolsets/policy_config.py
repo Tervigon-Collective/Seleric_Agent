@@ -29,6 +29,13 @@ DIAG_EVENT_Z: float = 2.0              # |z| at/above which the event is unusual
 DIAG_EVENT_Z_NOTABLE: float = 1.5      # |z| at/above which it is notable (diagnosed, flagged moderate)
 DIAG_OUTLIER_Z: float = 3.0            # robust z marking a history day abnormal (excluded from references)
 DIAG_IDENTITY_TOLERANCE: float = 0.01  # relative dispersion allowed in a verified identity
+# Additive accounting bridge (outcome = signed sum of same-unit additive metrics):
+# every history day must reproduce within this share of the outcome's typical size.
+DIAG_BRIDGE_TOLERANCE: float = 0.005
+DIAG_BRIDGE_MAX_TERMS: int = 6         # terms in one level of the bridge
+DIAG_BRIDGE_BEAM: int = 16             # partial sums kept per search step
+DIAG_BRIDGE_BUDGET_S: float = 8.0       # wall-clock cap on the whole bridge search
+DIAG_BRIDGE_DEPTH: int = 4             # levels: outcome -> terms -> their terms -> …
 DIAG_APPROX_IDENTITY_TOLERANCE: float = 0.1  # ... in an approximate (cross-system) identity
 DIAG_COMEASURE_CV: float = 0.02        # X/Y this stable => same quantity, not a cause
 DIAG_TREATMENT_CLUSTER_R: float = 0.9  # |r| grouping candidate treatments as inseparable
