@@ -190,3 +190,38 @@ WARN_UNKNOWN_EXPERIMENT: str = "policy:unknown_experiment"
 WARN_NO_EXPERIMENT_RECORDS: str = "policy:no_experiment_records"
 WARN_MISSING_VARIANT_EVIDENCE: str = "policy:missing_variant_evidence"
 WARN_INVALID_RATE: str = "policy:invalid_rate"
+
+# ---- Exploration engine (exploration/engine.py) -----------------------------
+# Statistical conventions for open-ended exploration. As with the diagnosis
+# numbers above, nothing here names a metric, dimension or business threshold:
+# they decide how much evidence makes a pattern worth reporting.
+EXPLORE_FDR: float = 0.10                 # Benjamini-Hochberg level across every test a run performs
+EXPLORE_HISTORY_WINDOWS: int = 6          # equal-length windows before the current one (the "normal" variation)
+EXPLORE_MAX_SPAN_DAYS: int = 400          # cap on fetched history (windows x window length)
+EXPLORE_DEFAULT_WINDOW_DAYS: int = 7      # window when the question names no period
+EXPLORE_MAX_WINDOW_DAYS: int = 92
+EXPLORE_MIN_RELATIVE_CHANGE: float = 0.03  # smallest window-over-window change worth reporting
+EXPLORE_MIN_TREND_PER_WEEK: float = 0.01   # smallest trend (share of level per week) worth reporting
+EXPLORE_MIN_SHIFT: float = 0.05            # smallest level shift worth reporting
+EXPLORE_MIN_SHARE_MOVE: float = 0.02     # smallest change in a segment's share of the total worth reporting
+EXPLORE_MIN_TOP_SHARE: float = 0.3         # an "outstanding" segment must carry this share of the total
+EXPLORE_MIN_ABS_CORRELATION: float = 0.4   # weakest day-to-day co-movement worth reporting
+EXPLORE_ADTRIBUTOR_T_EEP: float = 0.1      # per-segment share of the change (Adtributor T_EEP)
+EXPLORE_ADTRIBUTOR_T_EP: float = 0.67      # cumulative share the set must explain (Adtributor T_EP)
+EXPLORE_MAX_SEGMENT_ROWS: int = 6000       # skip a breakdown whose daily rows exceed this
+# Ranking prior per insight kind: what moved now outranks a structural fact the
+# operator already knows ("the biggest channel is the biggest").
+EXPLORE_KIND_PRIOR: dict[str, float] = {
+    "period_change": 1.0,
+    "distribution_shift": 1.0,
+    "change_point": 0.9,
+    "trend": 0.8,
+    "co_movement": 0.6,
+    "outstanding": 0.5,
+}
+# depth -> (headline metrics, dimensions per metric, insights reported)
+EXPLORE_DEPTH: dict[str, tuple[int, int, int]] = {
+    "scan": (3, 2, 5),
+    "focus": (5, 3, 8),
+    "deep": (8, 5, 12),
+}

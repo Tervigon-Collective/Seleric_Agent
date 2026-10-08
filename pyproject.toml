@@ -86,6 +86,8 @@ module = [
   "numpy",
   "numpy.*",
   "statsmodels.*",
+  "scipy",
+  "scipy.*",
   "livekit.*",
 ]
 ignore_missing_imports = true

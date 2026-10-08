@@ -89,7 +89,11 @@ old values are read-only compatibility, not a live creation path.
   refutation), `models.py` (forecasting), `actions.py` (Meta write actions
   only, gated by the propose→confirm→commit flow — Google Ads action
   execution is explicitly out of scope), `knowledge.py`, `experiments.py`,
-  `sandbox.py` (registered Python-execution tool, `sandbox.run_python`).
+  `sandbox.py` (registered Python-execution tool, `sandbox.run_python`),
+  `exploration.py` (`explore_data`: open-ended exploration — tests window
+  changes, trends, step changes, segment shifts, outstanding segments and
+  co-movement under false-discovery control; engine in `exploration/`, model
+  in `docs/EXPLORATION_MODEL.md`).
   Helper modules that are *not* tool surfaces: `catalogue_index.py`,
   `policy_config.py`, `ads.py` (defined but deliberately unregistered —
   see §11.2).

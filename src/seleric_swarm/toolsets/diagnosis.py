@@ -42,6 +42,7 @@ from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal import diagnosis as engine
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+from seleric_swarm.exploration import space
 from seleric_swarm.services.mcp_query import build_metrics_query_args, dimension_value, row_date
 from seleric_swarm.toolsets import policy_config as P
 from seleric_swarm.toolsets import semantic
@@ -51,7 +52,6 @@ _DEFINITION_BATCH = 10
 _DEFINITIONS_TTL_S = 900.0
 _MAX_EVENT_DAYS = 14
 _MAX_SEGMENT_ROWS = 6000
-_SCOPE_DIM_SHARE = 0.8
 
 # Process-wide cache of full catalogue definitions (lineage lives only there).
 _definitions_cache: dict[str, Any] = {"at": 0.0, "ids": frozenset(), "defs": {}}
@@ -95,16 +95,7 @@ async def _all_definitions(ctx: RunContext[SelericDeps]) -> dict[str, dict[str, 
 
 def _scope_dimensions(ctx: RunContext[SelericDeps]) -> set[str]:
     """Dimensions carried by (nearly) every view — tenant/scope keys, not join paths."""
-    views: dict[str, set[str]] = {}
-    for m in ctx.deps.catalogue.metrics:
-        views.setdefault(m.view, set()).update(m.supported_dimensions or [])
-    if not views:
-        return set()
-    counts: dict[str, int] = {}
-    for dims in views.values():
-        for d in dims:
-            counts[d] = counts.get(d, 0) + 1
-    return {d for d, c in counts.items() if c >= _SCOPE_DIM_SHARE * len(views)}
+    return space.scope_dimensions(ctx.deps.catalogue)
 
 
 def _plan_drivers(
@@ -152,24 +143,7 @@ def _plan_drivers(
 
 
 def _plan_dimensions(ctx: RunContext[SelericDeps], outcome: str, cap: int) -> list[str]:
-    cat = ctx.deps.catalogue
-    scope = _scope_dimensions(ctx)
-    views_per_dim: dict[str, int] = {}
-    for m in cat.metrics:
-        for d in m.supported_dimensions or []:
-            views_per_dim[d] = views_per_dim.get(d, 0) + 1
-    ranked: list[tuple[tuple[int, int, str], str]] = []
-    for d in cat.supported_dimensions_for(outcome):
-        if d in scope or cat.is_time_dimension(d):
-            continue
-        level = cat.dimension_fact(d, "hierarchy_level")
-        enumerated = cat.dimension_fact(d, "n_allowed") > 1
-        # Hierarchy roots first (the coarsest business axes), then enumerated
-        # (known low-cardinality) dims, then the rest by how widely they are modelled.
-        tier = 0 if level == 1 else 1 if enumerated else 2 if level == 0 else 3
-        ranked.append(((tier, -views_per_dim.get(d, 0), d), d))
-    ranked.sort()
-    return [d for _, d in ranked][:cap]
+    return space.plan_dimensions(ctx.deps.catalogue, outcome, cap)
 
 
 # --------------------------------------------------------------------------- fetching
