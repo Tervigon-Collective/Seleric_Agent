@@ -443,3 +443,22 @@ def test_ordinary_word_terms_are_dropped_from_the_resolution():
     assert [t["term"] for t in _without_terms(_OTHER, frozenset({"other"}))["terms"]] == []
     assert _without_terms(_META, frozenset({"other"})) == _META
     assert _without_terms(_META, frozenset()) is _META
+
+
+def test_a_phrase_inside_values_names_them_on_the_best_dimension():
+    # live 2026-10-08 MS3-2390789248: "from which ads did the Suspender boot sale came from" ranked a global top 10
+    # by ad and filtered names in prose (39 of 45) — the phrase never became a filter.
+    resolution = {"terms": [{
+        "term": "suspender boot", "catalogue_vocabulary": False, "best_match": "contains",
+        "dimensions": [
+            {"dimension": "product_title", "values": [
+                {"value": "Pawveralls Suspender Boots", "match": "contains"},
+                {"value": "Pawveralls Pro Suspender Boots", "match": "contains"},
+                {"value": "Suspender Boot Socks", "match": "fuzzy"}]},
+            {"dimension": "ad_name", "values": [{"value": "TH-445-PROSUSPENDERBOOTS", "match": "contains"}]},
+        ],
+    }]}
+    assert value_filters_from_resolution(resolution) == (
+        ValueFilter(term="suspender boot", dimensions=frozenset({"product_title"}),
+                    values=("Pawveralls Suspender Boots", "Pawveralls Pro Suspender Boots")),
+    )

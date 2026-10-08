@@ -44,6 +44,7 @@ from seleric_swarm.analytics.grain import CALCULATION_VERSION, validate_grain_se
 from seleric_swarm.analytics.visualization import generate_visualization_spec
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.business_state.detectors import robust_zscore
+from seleric_swarm.services.markdown import table_cell
 from seleric_swarm.toolsets import policy_config as policy
 
 # Median+MAD. "mad" and "robust_zscore" name the same estimator in this
@@ -1034,7 +1035,38 @@ def _fmt_merge_value(value: float | None) -> str:
         return "—"
     if abs(value - round(value)) < 1e-9 and abs(value) >= 1:
         return f"{int(round(value)):,}"
-    return f"{value:,.4g}"
+    # plain figures: "2.178e+04" for 21,776.21 is read as a different number (live 2026-10-08, MS3-ed23dd03e2)
+    if abs(value) >= 100:
+        return f"{value:,.2f}"
+    return f"{value:.4g}"
+
+
+def _with_query_rows(
+    ctx: RunContext[SelericDeps], evidence: list[EvidenceArtifact], evidence_ids: list[str]
+) -> tuple[list[EvidenceArtifact], list[str]]:
+    """Each cited row brings every row of the query that fetched it: a breakdown is one result, and citing one
+    artifact id per metric merged two of 32 campaigns (live 2026-10-08, MS3-ed23dd03e2)."""
+    queries = {(e.metric_id, _query_key(e.source_query)) for e in evidence if e.source_query}
+    if not queries:
+        return evidence, evidence_ids
+    out, ids = list(evidence), list(evidence_ids)
+    seen = set(ids)
+    for artifact in ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id):
+        if artifact.id in seen or artifact.artifact_type != "evidence":
+            continue
+        try:
+            item = EvidenceArtifact.model_validate(artifact.payload)
+        except Exception:
+            continue
+        if item.source_query and (item.metric_id, _query_key(item.source_query)) in queries:
+            out.append(item)
+            ids.append(artifact.id)
+            seen.add(artifact.id)
+    return out, ids
+
+
+def _query_key(query: dict) -> str:
+    return repr(sorted((str(k), repr(v)) for k, v in (query or {}).items()))
 
 
 async def merge_evidence_breakdowns(
@@ -1051,6 +1083,7 @@ async def merge_evidence_breakdowns(
     evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal
+    evidence, evidence_ids = _with_query_rows(ctx, evidence, evidence_ids)
 
     join_keys = _infer_join_keys(evidence, [d for d in (dimensions or []) if d])
     if not join_keys:
@@ -1121,7 +1154,7 @@ async def merge_evidence_breakdowns(
             if num is not None and den is not None and den != 0:
                 derived[label] = num / den
         display = [
-            *key_vals,
+            *(table_cell(v) for v in key_vals),
             *[_fmt_merge_value(row_vals.get(m)) for m in metrics],
             *[_fmt_merge_value(derived.get(c)) for c in derived_cols],
         ]

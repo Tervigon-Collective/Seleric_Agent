@@ -74,6 +74,8 @@ from seleric_swarm.agent.validation.signals import (
 )
 from seleric_swarm.agent.validation.trust import TrustResult, score_trust
 from seleric_swarm.agent.validation.answer_audit import (
+    escape_labels_in_tables,
+    ragged_table,
     _SENTENCE_END,
     _inside_identifier,
     _reconciles,
@@ -194,6 +196,22 @@ def _humanize_metric_ids(result: MissionResult, deps: SelericDeps) -> MissionRes
         for m in getattr(catalogue, "metrics", ())
     }
     fixed = replace_metric_ids(text, labels)
+    return result if fixed == text else result.model_copy(update={"final_response": fixed})
+
+
+def _escape_table_labels(result: MissionResult, deps: SelericDeps) -> MissionResult:
+    """Escape, inside the answer's table rows, every fetched dimension value that holds "|" — a known wording slip
+    fixed in place instead of costing a revision (``ragged_table`` catches what this cannot)."""
+    text = result.final_response or ""
+    if "|" not in text:
+        return result
+    labels: set[str] = set()
+    for artifact in deps.artifact_store.list_for_mission(deps.mission_id):
+        payload = getattr(artifact, "payload", None)
+        dims = payload.get("dimensions") if isinstance(payload, dict) else None
+        if isinstance(dims, dict):
+            labels.update(str(v) for v in dims.values() if isinstance(v, str) and "|" in v)
+    fixed = escape_labels_in_tables(text, labels)
     return result if fixed == text else result.model_copy(update={"final_response": fixed})
 
 
@@ -685,6 +703,8 @@ class EvidenceValidator:
         # -- deterministic prose audits (see validation/answer_audit) --------
         # The response contract forbids both of these in plain words; live runs
         # on v0.1.24 shipped them anyway. Checked, not asserted.
+        if ragged := ragged_table(result.final_response):
+            return ValidationOutcome(ok=False, reason=ragged, self_contradicting=True)
         arithmetic = total_mismatch(result.final_response, _label_columns(deps), _fetched_check(deps))
         if arithmetic:
             return ValidationOutcome(ok=False, reason=arithmetic, self_contradicting=True)
@@ -1127,7 +1147,7 @@ async def _validated(
     )
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
-    result = _repair_citations(_humanize_metric_ids(result, deps), deps)
+    result = _repair_citations(_escape_table_labels(_humanize_metric_ids(result, deps), deps), deps)
     outcome = validator.validate(result, deps=deps)
     revisions: list[dict[str, Any]] = []
     # The latest rejected draft that is still a real answer, with its own
@@ -1207,7 +1227,7 @@ async def _validated(
             return _exhausted(result, outcome, best, deps, revisions, code="MODEL_UNAVAILABLE")
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
-        result = _repair_citations(_humanize_metric_ids(result, deps), deps)
+        result = _repair_citations(_escape_table_labels(_humanize_metric_ids(result, deps), deps), deps)
         previous = (outcome.reason, _figures(rejected or ""))
         outcome = validator.validate(result, deps=deps)
         if not outcome.ok and (outcome.reason, _figures(result.final_response or "")) == previous:

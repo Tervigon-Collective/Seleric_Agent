@@ -175,12 +175,33 @@ class RequiredScope:
         return dict(self.question_axes).get(name)
 
 
+# Resolver match kinds that place a phrase inside values (fuzzy / abbreviation stay hints, never filters).
+_PARTIAL_MATCHES = frozenset({"token", "contains"})
+
+
 def value_filters_from_resolution(resolution: dict | None) -> tuple[ValueFilter, ...]:
-    """Confident value filters from a ``catalogue_resolve_values`` payload:
-    non-vocabulary terms with an exact match only."""
+    """Value filters from a ``catalogue_resolve_values`` payload, for terms the catalogue does not own.
+
+    An exact match names the value on every dimension that holds it. A partial match (a phrase inside the values:
+    "Suspender boot" in "Pawveralls Suspender Boots" / "Pawveralls Pro Suspender Boots") names the values of the
+    resolver's best-ranked dimension that match the same way, for a phrase of two or more words — without it the question ranked a global top 10 by
+    ad and filtered the names in prose, missing the smaller ones (live 2026-10-08 MS3-2390789248: 39 of 45). The
+    understanding still drops a phrase meant as ordinary language (``ordinary_words``)."""
     filters: list[ValueFilter] = []
     for term in (resolution or {}).get("terms") or []:
-        if term.get("catalogue_vocabulary") or term.get("best_match") != "exact":
+        if term.get("catalogue_vocabulary"):
+            continue
+        if term.get("best_match") != "exact":
+            # one word inside a value ("month" in "CAT MONTH-7SEP") is a hint, never a filter
+            if len(str(term.get("term") or "").split()) < 2:
+                continue
+            best = next(iter(term.get("dimensions") or []), None)
+            matches = (best or {}).get("values") or []
+            if best is None or not matches or matches[0].get("match") not in _PARTIAL_MATCHES:
+                continue
+            values = tuple(dict.fromkeys(str(v.get("value")) for v in matches if v.get("match") == matches[0].get("match")))
+            filters.append(ValueFilter(term=str(term.get("term")), dimensions=frozenset({str(best.get("dimension"))}),
+                                       values=values))
             continue
         dims: set[str] = set()
         values: list[str] = []

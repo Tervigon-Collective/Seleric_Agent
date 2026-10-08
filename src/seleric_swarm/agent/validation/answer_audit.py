@@ -24,10 +24,12 @@ answer printed.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 import re
 from itertools import combinations
+
+from seleric_swarm.services.markdown import table_cell
 
 _NUMBER = re.compile(r"[-+]?\d[\d,]*(?:\.\d+)?")
 _ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
@@ -163,6 +165,44 @@ def table_cells(line: str) -> list[str]:
     """A Markdown table row's cells, split on unescaped pipes ("\\|" stays in its cell)."""
     marker = "\x00"
     return [c.replace(marker, "|").strip() for c in line.replace("\\|", marker).strip().strip("|").split("|")]
+
+
+def escape_labels_in_tables(text: str, labels: Iterable[str]) -> str:
+    """``text`` with every known label that holds "|" escaped inside table rows, so it stays one cell (live
+    2026-10-08 MS3-ed23dd03e2: "[Google Build] PMax - Seasonal New | 27th May" written raw shifted every later
+    column of its row). The labels are the dimension values the mission actually fetched."""
+    piped = sorted({str(label) for label in labels if "|" in str(label)}, key=len, reverse=True)
+    if not piped:
+        return text
+    out = []
+    for line in text.splitlines(keepends=True):
+        if line.lstrip().startswith("|"):
+            for label in piped:
+                line = line.replace(label, table_cell(label))
+        out.append(line)
+    return "".join(out)
+
+
+def ragged_table(text: str) -> str | None:
+    """A table row whose cell count differs from its header's: its values sit under the wrong columns."""
+    header: int | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            header = None
+            continue
+        cells = table_cells(stripped)
+        if header is None:
+            header = len(cells)
+            continue
+        if all(set(c) <= set("-: ") for c in cells):
+            continue
+        if len(cells) != header:
+            return (
+                f"a table row has {len(cells)} cells under a {header}-column header, so its values sit under the "
+                f"wrong columns: {stripped[:120]} — a value holding '|' must be written as \\| inside its cell"
+            )
+    return None
 
 
 def _table_columns(text: str, label_columns: frozenset[str] = frozenset()) -> list[list[float]]:

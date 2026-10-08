@@ -459,7 +459,11 @@ def format_spoken_summary(text: str) -> str:
         line = re.sub(r"^(?:[-*+]|\d+[.)])\s+", "", line)
         line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)
         line = re.sub(r"[*_`]{1,3}", "", line)
-        line = ", ".join(cell.strip() for cell in line.strip("|").split("|") if cell.strip())
+        line = ", ".join(
+            cell.strip()
+            for cell in line.replace("\\|", "\x00").strip("|").split("|")
+            if cell.strip()
+        ).replace("\x00", "|")
         if line:
             lines.append(line if line[-1] in ".!?:\u0964" else line + ".")
     cleaned = " ".join(" ".join(lines).split())

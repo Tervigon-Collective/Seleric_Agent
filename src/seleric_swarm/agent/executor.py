@@ -31,6 +31,7 @@ from seleric_swarm.agent.plan import MissionPlan
 from seleric_swarm.agent.progress import emit_progress, tool_label
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.elapsed import ELAPSED_KEY, completed_hours, covers_in_progress_day, same_span
+from seleric_swarm.services.markdown import table_cell
 from seleric_swarm.toolsets import semantic
 
 _log = logging.getLogger("seleric.agent.executor")
@@ -411,7 +412,7 @@ async def _execute(
                 if number is not None:
                     derived[f"{label} | {name}"] = round(number, 4)
             table.append(
-                f"| {label} | {_fmt(before)} | {_fmt(after)} | "
+                f"| {f'{table_cell(key)} | {metric}' if entity else metric} | {_fmt(before)} | {_fmt(after)} | "
                 f"{'n/a' if change is None else f'{change:+.1f}%'} |"
             )
     if len(table) <= 2:
