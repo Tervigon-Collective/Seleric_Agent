@@ -1148,7 +1148,7 @@ async def _validated(
     )
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
-    result = _repair_citations(_escape_table_labels(_humanize_metric_ids(result, deps), deps), deps)
+    result = _repair_citations(_humanize_metric_ids(_escape_table_labels(result, deps), deps), deps)
     outcome = validator.validate(result, deps=deps)
     revisions: list[dict[str, Any]] = []
     # The latest rejected draft that is still a real answer, with its own
@@ -1228,7 +1228,7 @@ async def _validated(
             return _exhausted(result, outcome, best, deps, revisions, code="MODEL_UNAVAILABLE")
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
-        result = _repair_citations(_escape_table_labels(_humanize_metric_ids(result, deps), deps), deps)
+        result = _repair_citations(_humanize_metric_ids(_escape_table_labels(result, deps), deps), deps)
         previous = (outcome.reason, _figures(rejected or ""))
         outcome = validator.validate(result, deps=deps)
         if not outcome.ok and (outcome.reason, _figures(result.final_response or "")) == previous:

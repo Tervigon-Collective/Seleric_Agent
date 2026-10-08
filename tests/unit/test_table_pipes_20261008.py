@@ -66,3 +66,27 @@ async def test_rows_with_no_breakdown_value_are_counted_not_dropped_silently(mon
     )
     assert result.success, result.summary
     assert "has no ad_name value and is not listed above" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_a_companion_fetched_as_its_own_top_n_is_fetched_again_not_reported_missing() -> None:
+    # live 2026-10-08 MS3-3b022d8647: net profit by campaign (its own top 10) left 9 of the top 10 by net sales empty
+    store = InMemoryArtifactStore()
+    ids = []
+    for name, value in (("A", 100.0), ("B", 90.0)):
+        ids.append(_put_evidence(store, metric="net_sales", grain="none", start="2026-10-01", end="2026-10-07",
+                                 value=value, dimensions={"campaign_name": name}))
+    from seleric_swarm.agent.artifacts import EvidenceArtifact
+    from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+    from datetime import UTC, datetime
+
+    profit = EvidenceArtifact(metric_id="net_profit", dimensions={"campaign_name": "A"}, grain="none",
+                              as_of=datetime(2026, 10, 8, tzinfo=UTC), period_start=datetime(2026, 10, 1, tzinfo=UTC),
+                              period_end=datetime(2026, 10, 7, tzinfo=UTC), value=5.0,
+                              source_query={"measure": "net_profit", "limit": 10})
+    ids.append(store.put(Artifact(workspace_id="ws1", artifact_type="evidence", payload=profit.model_dump(mode="json"),
+                                  classification="factual", evidence_ids=["raw:p"], provenance=ArtifactProvenance(),
+                                  mission_id="mission-1")).id)
+    out = await analytics.merge_evidence_breakdowns(FakeRunContext(_deps(store)), ids)
+    assert not out.success and out.retryable
+    assert "own top 10" in out.summary and "'B'" in out.summary

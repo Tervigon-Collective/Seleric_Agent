@@ -1129,6 +1129,31 @@ async def merge_evidence_breakdowns(
             retryable=True,
         )
 
+    # A companion fetched as its own top N is a different entity set, not missing values (live 2026-10-08
+    # MS3-3b022d8647: net profit by campaign was the 10 most PROFITABLE campaigns, so 9 of the top 10 by net sales
+    # read "no data" — they had lost money). The first cited metric's entities define the table; a ranked companion
+    # that misses some of them is fetched again for exactly those.
+    anchor = evidence[0].metric_id
+    anchor_entities = {slot[2] for slot, row in cells.items() if anchor in row}
+    for metric in metrics:
+        ranked = next((e for e in evidence if e.metric_id == metric and (e.source_query or {}).get("limit")), None)
+        if metric == anchor or ranked is None:
+            continue
+        holding = {slot[2] for slot, row in cells.items() if metric in row}
+        missing = sorted(anchor_entities - holding)
+        if missing:
+            names = [k[0] if len(k) == 1 else list(k) for k in missing][:25]
+            dim = join_keys[0] if len(join_keys) == 1 else join_keys
+            return _refuse(
+                f"{metric} was fetched as its own top {ranked.source_query['limit']} by {dim}, so {len(missing)} of "
+                f"the {len(anchor_entities)} {anchor} entities have no {metric} here — not a missing value. Fetch "
+                f"{metric} for exactly these entities: query_metrics({metric}, dimensions={{{dim!r}: {names!r}}}) "
+                "with no order / limit, then merge again.",
+                error_code="INSUFFICIENT_EVIDENCE",
+                retryable=True,
+            )
+        cells = {slot: row for slot, row in cells.items() if slot[2] in anchor_entities}
+
     # Stable sort: first join key label, then period start
     sorted_slots = sorted(cells.keys(), key=lambda s: (s[2], s[0], s[1]))
 
@@ -1158,8 +1183,7 @@ async def merge_evidence_breakdowns(
             *[_fmt_merge_value(row_vals.get(m)) for m in metrics],
             *[_fmt_merge_value(derived.get(c)) for c in derived_cols],
         ]
-        # Campaign names from Google often contain "|", which would split the row.
-        lines.append("| " + " | ".join(cell.replace("|", "\\|") for cell in display) + " |")
+        lines.append("| " + " | ".join(display) + " |")  # cells escaped by table_cell above
         # Index derived numbers for citation / unbacked checks
         entity = "|".join(key_vals)
         for m, v in row_vals.items():
