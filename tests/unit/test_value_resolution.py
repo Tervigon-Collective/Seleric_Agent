@@ -457,6 +457,11 @@ def test_a_phrase_inside_values_names_them_on_the_best_dimension():
                 {"value": "Suspender Boot Socks", "match": "fuzzy"}]},
             {"dimension": "ad_name", "values": [{"value": "TH-445-PROSUSPENDERBOOTS", "match": "contains"}]},
         ],
+    }, {
+        # words scattered through a value name nothing
+        "term": "for with", "catalogue_vocabulary": False, "best_match": "token",
+        "dimensions": [{"dimension": "product_title", "values": [
+            {"value": "ScrubEase Bath Brush With 80ml Shampoo Dispenser For Dogs", "match": "token"}]}],
     }]}
     assert value_filters_from_resolution(resolution) == (
         ValueFilter(term="suspender boot", dimensions=frozenset({"product_title"}),

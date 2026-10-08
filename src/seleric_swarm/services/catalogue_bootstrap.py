@@ -130,6 +130,12 @@ class CatalogueSnapshot:
                 return member
         return None
 
+    def family_head(self, dimension: str) -> str:
+        """The first-ranked member of *dimension*'s conformed family (itself without a family)."""
+        fam = next((f for d, f, _ in self.dimension_families if d == dimension), None)
+        heads = sorted((rank, d) for d, f, rank in self.dimension_families if f == fam) if fam else []
+        return heads[0][1] if heads else dimension
+
     def family_members(self, dimension: str) -> frozenset[str]:
         """*dimension* and every dimension of its conformed family (just itself without a family)."""
         fam = next((f for d, f, _ in self.dimension_families if d == dimension), None)

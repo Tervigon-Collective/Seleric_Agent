@@ -175,8 +175,10 @@ class RequiredScope:
         return dict(self.question_axes).get(name)
 
 
-# Resolver match kinds that place a phrase inside values (fuzzy / abbreviation stay hints, never filters).
-_PARTIAL_MATCHES = frozenset({"token", "contains"})
+# Resolver match kinds that place a phrase inside values: only a contiguous one ("contains"). Words scattered
+# through a value ("for" … "with" in "Bath Brush With … For Dogs", a "token" match) name nothing (live 2026-10-08:
+# "… for each campaign … with ad spend" became a required product filter). Fuzzy / abbreviation stay hints.
+_PARTIAL_MATCHES = frozenset({"contains"})
 
 
 def value_filters_from_resolution(resolution: dict | None) -> tuple[ValueFilter, ...]:

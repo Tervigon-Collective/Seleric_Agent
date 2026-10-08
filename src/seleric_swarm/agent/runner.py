@@ -1113,8 +1113,13 @@ async def run_v3_mission(
     is_followup = not small_talk and classification.depends_on_prior is True
     ordinary_words = frozenset(w.strip().lower() for w in (understanding.ordinary_words if understanding else []))
     required_scope = _required_scope(runtime, query, temporal_grain=classification.grain)
+    # A named value is named on its family's first member too: the resolver ranked "orders containing the
+    # product" (basket_product_title) above product_title for "Suspender boot sale", and the answer counted orders
+    # with touchpoints instead of the product's own orders (live 2026-10-08).
     value_filters = tuple(
-        vf for vf in value_filters_from_resolution(values) if vf.term.lower() not in ordinary_words
+        dataclasses.replace(vf, dimensions=vf.dimensions | {catalogue.family_head(d) for d in vf.dimensions})
+        for vf in value_filters_from_resolution(values)
+        if vf.term.lower() not in ordinary_words
     )
     values = _without_terms(values, ordinary_words)
     question_axes = question_axes_from_resolution(values)
