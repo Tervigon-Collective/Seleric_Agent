@@ -45,3 +45,24 @@ async def test_the_merge_reads_every_row_of_the_cited_queries_and_escapes_names(
     rows = [line for line in out.summary.splitlines() if line.startswith("| ") and "---" not in line][1:]
     assert len(rows) == 2 and ragged_table(out.summary) is None
     assert any(table_cells(r)[0] == PMAX and table_cells(r)[1:3] == ["21,776.21", "2.15"] for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_rows_with_no_breakdown_value_are_counted_not_dropped_silently(monkeypatch) -> None:
+    # live 2026-10-08: 7 Suspender Boots orders came from ads missing from the ad dimension; the answer never said so
+    from seleric_swarm.toolsets import semantic
+    from tests.unit.test_postmortem_20261007 import IST, _Ctx, _deps as _pm_deps
+    from datetime import datetime
+
+    class _Mcp:
+        async def call(self, *, agent_id, capability, arguments):
+            rows = [{"ad_name": "TH-383-SUSPENDER-UGC", "ad_spend": "12"}, {"ad_name": None, "ad_spend": "7"}]
+            return {"rows": rows, "provenance": {"query_id": "q", "currency": "INR"}}
+
+    deps = _pm_deps(mcp=_Mcp())
+    result = await semantic.query_metrics(
+        _Ctx(deps), "ad_spend", dimensions={"ad_name": ""},
+        period_start=datetime(2026, 10, 1, tzinfo=IST), period_end=datetime(2026, 10, 7, tzinfo=IST),
+    )
+    assert result.success, result.summary
+    assert "has no ad_name value and is not listed above" in result.summary

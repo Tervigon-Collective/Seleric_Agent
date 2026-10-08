@@ -647,6 +647,25 @@ def _part_text(message: dict[str, Any]) -> str:
     return "\n".join(chunks)
 
 
+def _measure_phrases(understanding: Any) -> list[str]:
+    """The measure phrases the understanding read from the question (rank_by and metrics)."""
+    if understanding is None:
+        return []
+    slots = [*([understanding.rank_by] if getattr(understanding, "rank_by", None) else []),
+             *(getattr(understanding, "metrics", None) or [])]
+    return [str(slot.words) for slot in slots if getattr(slot, "words", "")]
+
+
+def _outside_measures(query: str, phrases: list[str]) -> str:
+    """``query`` without the measure phrases it holds verbatim (case-insensitive); a phrase the understanding
+    reworded is left in place, so its axes still count as context."""
+    text = query
+    for phrase in sorted({p.strip() for p in phrases if p.strip()}, key=len, reverse=True):
+        while (at := text.lower().find(phrase.lower())) >= 0:
+            text = f"{text[:at]} {text[at + len(phrase):]}"
+    return text
+
+
 class _ConceptResolver:
     """Map the planner's metric phrases to catalogue ids with the catalogue's own
     concept resolver (the same call the resolve_concept tool makes), in parallel.
@@ -1123,6 +1142,14 @@ async def run_v3_mission(
     )
     values = _without_terms(values, ordinary_words)
     question_axes = question_axes_from_resolution(values)
+    # Axes are the question's context, not another measure's words: "net ROAS, ad spend … and product gross sale"
+    # read scope=product from "product gross sale" and turned spend and ROAS into the product-allocated metrics
+    # (live 2026-10-08). Read them from the question without the measure phrases; each phrase keeps its own words.
+    context = _outside_measures(query, _measure_phrases(understanding))
+    if question_axes and context != query:
+        context_values = await _resolve_values(runtime, mcp, context)
+        if context_values:
+            question_axes = question_axes_from_resolution(_without_terms(context_values, ordinary_words))
     if value_filters or question_axes:
         required_scope = dataclasses.replace(
             required_scope, value_filters=value_filters, question_axes=question_axes

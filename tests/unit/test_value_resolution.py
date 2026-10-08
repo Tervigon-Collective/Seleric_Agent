@@ -467,3 +467,12 @@ def test_a_phrase_inside_values_names_them_on_the_best_dimension():
         ValueFilter(term="suspender boot", dimensions=frozenset({"product_title"}),
                     values=("Pawveralls Suspender Boots", "Pawveralls Pro Suspender Boots")),
     )
+
+
+def test_question_axes_come_from_outside_the_measure_phrases():
+    # live 2026-10-08: "product gross sale" made net ROAS and ad spend product-level
+    from seleric_swarm.agent.runner import _outside_measures
+
+    q = "Rank campaigns by net ROAS with ad spend, orders and Product Gross Sale on the P&L"
+    out = _outside_measures(q, ["net ROAS", "ad spend", "orders", "product gross sale", "landing page views"])
+    assert "product" not in out.lower() and "on the P&L" in out and "campaigns" in out

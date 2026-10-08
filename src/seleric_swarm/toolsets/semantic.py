@@ -2364,6 +2364,7 @@ async def query_metrics(
         # (live 2026-09-22 MS3-ad0fe7c8a2: 7 daily net-sales values invented,
         # none matching the stored evidence). Return the real values.
         series: list[dict[str, Any]] = []
+        unlabelled = 0.0
         for row, bucket_date in zip(rows, per_row_dates, strict=True):
             value = row.get(metric_id)
             if value is None:
@@ -2398,6 +2399,7 @@ async def query_metrics(
                 # rather than letting them leak into labels or aggregate under
                 # a false "None" category. Applies to any breakdown dimension.
                 if raw in ("", "None", "null", "none", "NULL"):
+                    unlabelled += last_value
                     break
                 row_dimensions[key] = raw
             else:
@@ -2465,6 +2467,13 @@ async def query_metrics(
                 f"{metric_id} over {period_start.date()}..{period_end.date()} "
                 f"({len(series)} rows) — use these exact values: {body}{more}."
                 + _series_stats(ctx, metric_id, [float(s["value"]) for s in series])
+            )
+        if unlabelled and breakdown:
+            # Rows with no value for the breakdown are not listed; their total is (live 2026-10-08: 7 Suspender
+            # Boots orders came from ads missing from the ad dimension and the answer never said so).
+            summary += (
+                f" {_fmt_value(unlabelled)}{unit} of {metric_id} has no {' / '.join(breakdown)} value and is not "
+                "listed above — a missing name is not a missing value; say so when it matters to the answer."
             )
         if rank_note:
             summary = f"{rank_note} {summary}"
