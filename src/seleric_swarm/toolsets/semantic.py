@@ -28,7 +28,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry, RunContext
 
-from seleric_swarm.agent.artifacts import EvidenceArtifact
+from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.limits import withdraw_tool
 from seleric_swarm.agent.output import ToolResult
@@ -1356,6 +1356,73 @@ def _fit_to_metric(
     return out, fitted, renames, list(dict.fromkeys(missing)), period, value_gaps
 
 
+# Groups listed per breakdown dimension in a subtotal line (the finding keeps every group).
+_MAX_SUBTOTAL_GROUPS = 8
+
+
+def _breakdown_subtotals(
+    ctx: RunContext[SelericDeps],
+    metric_id: str,
+    breakdown: list[str],
+    series: list[dict[str, Any]],
+    evidence_ids: list[str],
+    unit: str,
+) -> str:
+    """Subtotals and shares of an additive breakdown by each of its dimensions, recorded as a finding so they are
+    fetched facts. Live 2026-10-08 (golden Q17): sales by channel × sub-channel × campaign came back as rows, the
+    model added them up and divided by hand ("21.9 % unattributed") and the provenance gate rejected the mission."""
+    if len(series) < 2 or ctx.deps.catalogue.aggregation_for(metric_id) != "additive":
+        return ""
+    keys = [k for k in breakdown if not ctx.deps.catalogue.is_time_dimension(k)]
+    if not keys:
+        return ""
+    total = sum(float(s["value"]) for s in series)
+    derived: dict[str, float] = {f"{metric_id} | total": round(total, 4)}
+    parts: list[str] = []
+    for key in keys:
+        groups: dict[str, float] = {}
+        for s in series:
+            member = (s.get("dims") or {}).get(key)
+            if member is not None:
+                groups[member] = groups.get(member, 0.0) + float(s["value"])
+        if len(groups) < 2 and len(keys) > 1:
+            continue
+        ranked = sorted(groups.items(), key=lambda kv: -kv[1])
+        for member, value in ranked:
+            derived[f"{metric_id} | {key}={member}"] = round(value, 4)
+            if total:
+                derived[f"{metric_id} | {key}={member} | share_pct"] = round(value / total * 100, 2)
+        shown = "; ".join(
+            f"{member}={_fmt_value(value)}{unit}" + (f" ({value / total * 100:.1f}%)" if total else "")
+            for member, value in ranked[:_MAX_SUBTOTAL_GROUPS]
+        )
+        more = f"; …(+{len(ranked) - _MAX_SUBTOTAL_GROUPS} more in the finding)" if len(ranked) > _MAX_SUBTOTAL_GROUPS else ""
+        parts.append(f"by {key}: {shown}{more}")
+    if not parts:
+        return ""
+    finding = Finding(
+        finding_type="breakdown_subtotals",
+        statement=f"Subtotals and shares of {metric_id} by each breakdown dimension, summed from the fetched rows.",
+        evidence_ids=list(dict.fromkeys(evidence_ids)),
+        metrics=derived,
+    )
+    artifact = ctx.deps.artifact_store.put(
+        Artifact(
+            workspace_id=ctx.deps.principal.workspace_id,
+            artifact_type="finding",
+            payload=finding.model_dump(mode="json"),
+            classification="derived",
+            evidence_ids=list(dict.fromkeys(evidence_ids)),
+            provenance=ArtifactProvenance(evidence_ids=list(dict.fromkeys(evidence_ids)), calculation_version="semantic.subtotals.v1"),
+            mission_id=ctx.deps.mission_id,
+        )
+    )
+    return (
+        f"Subtotals (share of the {_fmt_value(total)}{unit} total) — use these instead of adding rows: "
+        + " | ".join(parts) + f". Cite finding {artifact.id} for them."
+    )
+
+
 def _fold_equals_filters(
     ctx: RunContext[SelericDeps], dimensions: dict[str, DimensionValue], filters: list[MetricFilter]
 ) -> list[MetricFilter]:
@@ -2462,7 +2529,7 @@ async def query_metrics(
                     if not ctx.deps.catalogue.is_time_dimension(k)
                 )
                 label = " | ".join(p for p in (time_label, dim_label) if p) or f"{bucket_start.date()}..{bucket_end.date()}"
-                series.append({"label": label, "value": last_value})
+                series.append({"label": label, "value": last_value, "dims": dict(row_dimensions)})
         if not artifact_ids:
             return ToolResult(
                 success=False,
@@ -2488,6 +2555,8 @@ async def query_metrics(
                 f"({len(series)} rows) — use these exact values: {body}{more}."
                 + _series_stats(ctx, metric_id, [float(s["value"]) for s in series])
             )
+        if (subtotals := _breakdown_subtotals(ctx, metric_id, breakdown, series, artifact_ids, unit)):
+            summary += f" {subtotals}"
         if unlabelled and breakdown:
             # Rows with no value for the breakdown are not listed; their total is (live 2026-10-08: 7 Suspender
             # Boots orders came from ads missing from the ad dimension and the answer never said so).
