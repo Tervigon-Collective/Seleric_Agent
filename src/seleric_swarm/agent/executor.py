@@ -70,7 +70,27 @@ def _payloads(deps: SelericDeps, artifact_ids: list[str], *, elapsed: bool = Fal
     return out
 
 
+def _with_named_values(deps: SelericDeps, metric_id: str, dimensions: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The values the question names (the scope's value_filters, kept by the understanding) constrain every
+    pre-fetched query, on a dimension of the value that the metric carries — query_metrics fits a conformed
+    sibling or grain twin. A dimension the step already breaks down or filters by is left alone. Live
+    2026-10-08: "Which Meta campaigns performed best…" ranked every campaign, Google's first, and the answer
+    waived the value instead of filtering."""
+    dims = dict(dimensions or {})
+    catalogue = deps.catalogue
+    for vf in getattr(deps.required_scope, "value_filters", ()) or ():
+        if not vf.values or any(d in dims for d in vf.dimensions):
+            continue
+        supported = set(catalogue.supported_dimensions_for(metric_id))
+        ordered = sorted(vf.dimensions, key=lambda d: (d not in supported, d))
+        dim = next((d for d in ordered if catalogue.carries(metric_id, d)), None)
+        if dim is not None:
+            dims[dim] = vf.values[0] if len(vf.values) == 1 else list(vf.values)
+    return dims or None
+
+
 async def _query(deps: SelericDeps, gate: asyncio.Semaphore, **kwargs: Any) -> Any:
+    kwargs["dimensions"] = _with_named_values(deps, kwargs["metric_id"], kwargs.get("dimensions"))
     async with gate:
         return await semantic.query_metrics(_ctx(deps), **kwargs)
 

@@ -243,3 +243,63 @@ async def test_a_period_comparison_judges_the_later_window_against_the_earlier_o
     assert "| metric | 2026-09-01..2026-09-03 | 2026-10-01..2026-10-03 | change |" in out.text
     assert "| spend | 300.00 | 450.00 | +50.0% |" in out.text
     assert "Earlier window 2026-09-01..2026-09-03 vs later window 2026-10-01..2026-10-03" in out.text
+
+
+class _FilterMcp:
+    """Records every query; no hourly series for the daily-only metric 'np'."""
+
+    def __init__(self) -> None:
+        self.args: list[dict] = []
+
+    async def call(self, *, agent_id: str, capability: str, arguments: dict) -> dict:
+        self.args.append(arguments)
+        measure = arguments["measures"][0]
+        if arguments.get("granularity") == "hour":
+            if measure == "np":
+                return {"error": "no hourly series"}
+            day = arguments["time_range"]["start"][:8]
+            rows = [{"x.hour": f"{day}{d:02d}T{h:02d}:00:00.000", measure: "1"} for d in range(1, 4) for h in range(24)]
+            return {"rows": rows, "provenance": {"query_id": "q"}}
+        return {"rows": [{measure: "30"}], "provenance": {"query_id": "q"}}
+
+
+def _scoped(deps: SelericDeps, **scope) -> SelericDeps:
+    import dataclasses
+
+    from seleric_swarm.agent.scope import RequiredScope
+
+    return dataclasses.replace(deps, required_scope=RequiredScope(**scope))
+
+
+@pytest.mark.asyncio
+async def test_the_questions_named_values_constrain_every_prefetched_query() -> None:
+    # Live 2026-10-08 "Which Meta campaigns performed best…": the executor ranked every campaign (Google's first)
+    # and the answer waived "meta" instead of filtering.
+    from seleric_swarm.agent.scope import ValueFilter
+
+    mcp = _RecordingMcp()
+    deps = _scoped(
+        _deps(mcp),
+        value_filters=(ValueFilter(term="meta", dimensions=frozenset({"plat", "other_dim"}), values=("meta",)),),
+    )
+    deps = dataclasses_replace_catalogue(deps)
+    plan = MissionPlan(shape="breakdown", steps=[PlanStep(tool="query_metrics", metric_ids=["spend"], dimensions=["camp"], purpose="breakdown")])
+    await executor.execute_plan(plan, deps, windows=[(date(2026, 10, 1), date(2026, 10, 6))], as_of=TODAY)
+    filters = [f for a in mcp.args for f in (a.get("filters") or [])]
+    assert {"dimension": "plat", "operator": "equals", "values": ["meta"]} in [
+        {k: f[k] for k in ("dimension", "operator", "values")} for f in filters
+    ]
+
+
+def dataclasses_replace_catalogue(deps: SelericDeps) -> SelericDeps:
+    import dataclasses
+
+    catalogue = CatalogueSnapshot(
+        metrics=(
+            CatalogueMetricMeta(id="spend", label="Spend", supported_dimensions=["camp", "plat"], raw={"aggregation": "additive"}),
+            CatalogueMetricMeta(id="np", label="Profit", supported_dimensions=["camp", "plat"], raw={"aggregation": "additive"}),
+        ),
+        dimensions=("camp", "plat"),
+    )
+    return dataclasses.replace(deps, catalogue=catalogue)
+
