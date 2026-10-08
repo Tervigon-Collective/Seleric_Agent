@@ -454,3 +454,29 @@ def test_every_reported_metric_must_carry_the_named_value():
     spend_meta = _metric_evidence(store, "ad_spend", {"ad_platform": "meta"})
     out = check_scope_coverage(store.list_for_mission(_MISSION), scope, catalogue, cited=[orders, spend_meta])
     assert out.status == "OK", out.gaps
+
+
+def test_values_compared_side_by_side_are_rows_not_a_scope():
+    """Live 2026-10-09 MS3-c0f21457ca: "across Meta, Google, organic …" — each value is
+    a row of the comparison, so totals beside them are not a scope leak; a value that
+    appears nowhere in the evidence still blocks."""
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    store = InMemoryArtifactStore()
+    meta = _metric_evidence(store, "orders", {"platform": "meta"})
+    google = _metric_evidence(store, "orders", {"platform": "google"})
+    total = _metric_evidence(store, "ad_spend", {})
+    catalogue = CatalogueSnapshot(
+        metrics=(
+            CatalogueMetricMeta(id="orders", view="commerce", supported_dimensions=["platform"]),
+            CatalogueMetricMeta(id="ad_spend", view="paid_media", supported_dimensions=["platform"]),
+        )
+    )
+    named = lambda term: ValueFilter(term=term, dimensions=frozenset({"platform"}), values=(term,))  # noqa: E731
+    scope = RequiredScope(value_filters=(named("meta"), named("google")))
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, catalogue, cited=[meta, google, total])
+    assert out.status == "OK", out.gaps
+
+    scope = RequiredScope(value_filters=(named("meta"), named("google"), named("whatsapp")))
+    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, catalogue, cited=[meta, google, total])
+    assert out.status == "INSUFFICIENT" and "whatsapp" in out.gaps[0].description

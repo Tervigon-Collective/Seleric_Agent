@@ -279,6 +279,23 @@ def check_provenance(artifacts: list[Artifact]) -> CheckOutcome:
     return out
 
 
+def _holds_value(artifacts: list[Artifact], vf: Any) -> bool:
+    """Some evidence row carries one of the named value's values on one of its dimensions."""
+    wanted = {str(v).strip().lower() for v in vf.values}
+    for artifact in artifacts:
+        if artifact.artifact_type != "evidence":
+            continue
+        ev = _payload(artifact, EvidenceArtifact)
+        if ev is None:
+            continue
+        for dim in vf.dimensions:
+            held = ev.dimensions.get(dim)
+            held_values = held if isinstance(held, list) else [held]
+            if any(str(h).strip().lower() in wanted for h in held_values if h is not None):
+                return True
+    return False
+
+
 def _filters_of(ev: EvidenceArtifact) -> str:
     """The query filters an evidence row was fetched under. Rows with the same labels
     but different filters measure different things: Suspender Boots orders by ad vs all
@@ -624,6 +641,15 @@ def check_scope_coverage(
     # it in. Otherwise the answer is a total that ignores what was asked.
     supported_for = getattr(catalogue, "supported_dimensions_for", None)
     for vf in value_filters:
+        # Several values of one kind ("across Meta, Google, organic, WhatsApp") are the
+        # rows being compared, not a scope: the whole and its other parts belong in the
+        # answer, so each value only has to appear in the evidence (live 2026-10-09
+        # MS3-c0f21457ca: every metric was demanded filtered to Meta, partial).
+        compared = any(
+            other is not vf and set(other.dimensions) & set(vf.dimensions) for other in value_filters
+        )
+        if compared and _holds_value(artifacts, vf):
+            continue
         if (grouped | filtered) & set(vf.dimensions):
             # Covered somewhere — but every metric the answer reports that CAN
             # carry the value must carry it. Live 2026-10-05 MS3-c97c9fea15: a
