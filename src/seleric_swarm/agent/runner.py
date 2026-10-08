@@ -221,7 +221,7 @@ async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[s
     if cache_key in _VALUE_RESOLUTION_CACHE:
         return _VALUE_RESOLUTION_CACHE[cache_key]
     
-    timeout = float(getattr(runtime.settings, "value_resolve_timeout_s", 6.0))
+    timeout = float(getattr(runtime.settings, "value_resolve_timeout_s", 15.0))
     try:
         result = await asyncio.wait_for(
             mcp.call(
@@ -645,6 +645,23 @@ def _part_text(message: dict[str, Any]) -> str:
         if isinstance(content, str) and content.strip():
             chunks.append(content.strip())
     return "\n".join(chunks)
+
+
+async def _context_axes(mcp: Any, text: str) -> tuple[tuple[str, str], ...] | None:
+    """The axes *text*'s own words set (the gateway's axes-only read, no value matching); None on any failure, so
+    the caller keeps the whole question's axes."""
+    try:
+        result = await asyncio.wait_for(
+            mcp.call(agent_id="v3_agent", capability="seleric.catalogue_resolve_values",
+                     arguments={"text": text, "axes_only": True}),
+            timeout=3.0,
+        )
+    except Exception:
+        _log.warning("context_axes_failed", exc_info=True)
+        return None
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        return None
+    return question_axes_from_resolution(result)
 
 
 def _measure_phrases(understanding: Any) -> list[str]:
@@ -1146,10 +1163,8 @@ async def run_v3_mission(
     # read scope=product from "product gross sale" and turned spend and ROAS into the product-allocated metrics
     # (live 2026-10-08). Read them from the question without the measure phrases; each phrase keeps its own words.
     context = _outside_measures(query, _measure_phrases(understanding))
-    if question_axes and context != query:
-        context_values = await _resolve_values(runtime, mcp, context)
-        if context_values:
-            question_axes = question_axes_from_resolution(_without_terms(context_values, ordinary_words))
+    if question_axes and context != query and (context_axes := await _context_axes(mcp, context)) is not None:
+        question_axes = context_axes
     if value_filters or question_axes:
         required_scope = dataclasses.replace(
             required_scope, value_filters=value_filters, question_axes=question_axes
