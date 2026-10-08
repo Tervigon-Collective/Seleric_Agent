@@ -117,5 +117,88 @@ describe("autocorrect", () => {
     detach();
     document.body.removeChild(textarea);
   });
+
+  it("restores the original word when Backspace is pressed after a correction", () => {
+    const textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+
+    let undoDetail: AutoCorrectItem | null = null;
+    textarea.addEventListener("autocorrect-undo", (e: Event) => {
+      undoDetail = (e as CustomEvent<AutoCorrectItem>).detail;
+    });
+
+    const detach = attachAutoCorrect(textarea);
+
+    textarea.value = "give me teh";
+    textarea.selectionStart = 11;
+    textarea.selectionEnd = 11;
+
+    const space = new KeyboardEvent("keydown", {
+      key: " ",
+      bubbles: true,
+      cancelable: true,
+    });
+    textarea.dispatchEvent(space);
+
+    expect(textarea.value).toBe("give me ten ");
+    expect(textarea.selectionStart).toBe(12);
+
+    const backspace = new KeyboardEvent("keydown", {
+      key: "Backspace",
+      bubbles: true,
+      cancelable: true,
+    });
+    textarea.dispatchEvent(backspace);
+
+    expect(backspace.defaultPrevented).toBe(true);
+    expect(textarea.value).toBe("give me teh ");
+    expect(textarea.selectionStart).toBe(12);
+    expect(undoDetail).toEqual(
+      expect.objectContaining({
+        original: "teh",
+        corrected: "ten",
+      })
+    );
+
+    detach();
+    document.body.removeChild(textarea);
+  });
+
+  it("does not undo after the cursor moves away from the correction", () => {
+    const textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+
+    const detach = attachAutoCorrect(textarea);
+
+    textarea.value = "teh";
+    textarea.selectionStart = 3;
+    textarea.selectionEnd = 3;
+
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: " ",
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+    expect(textarea.value).toBe("ten ");
+
+    // Move cursor into the middle of the corrected word.
+    textarea.selectionStart = 1;
+    textarea.selectionEnd = 1;
+
+    const backspace = new KeyboardEvent("keydown", {
+      key: "Backspace",
+      bubbles: true,
+      cancelable: true,
+    });
+    textarea.dispatchEvent(backspace);
+
+    expect(backspace.defaultPrevented).toBe(false);
+    expect(textarea.value).toBe("ten ");
+
+    detach();
+    document.body.removeChild(textarea);
+  });
 });
 

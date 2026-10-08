@@ -1428,9 +1428,11 @@ def _conform_dimensions(
             continue  # nothing supports it — not a wrong pick, Cube decides
         raise ModelRetry(
             f"'{metric_id}' does not support the '{key}' dimension (it supports: "
-            f"{', '.join(sorted(supported))}). For a breakdown/filter by '{key}', "
-            f"use one of these metrics instead: {', '.join(alternatives)}. "
-            f"Re-resolve and retry with a compatible metric."
+            f"{', '.join(sorted(supported))}). "
+            f"It cannot be sliced by '{key}' at its grain — for a breakdown/filter by "
+            f"'{key}', retry with one of these related metrics that can "
+            f"(definitions may differ; they are not the same number): "
+            f"{', '.join(alternatives)}."
         )
     return metric_id, fitted, fitted_filters, renames, notes_for(renames), period
 

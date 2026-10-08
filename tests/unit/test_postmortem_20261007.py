@@ -446,9 +446,43 @@ def test_a_bare_value_from_a_data_mission_is_sent_back() -> None:
     assert not outcome.ok and "bare value" in (outcome.reason or "")
 
 
-def test_figures_without_any_citation_are_sent_back() -> None:
+def test_figures_without_any_citation_are_auto_cited_from_mission_store() -> None:
+    """Forgotten cites must not burn revisions when the mission already holds evidence.
+
+    Live 2026-10-07 (cbe854 run_e568): figures were correct but evidence_ids empty
+    → REVISE loop → INSUFFICIENT_EVIDENCE. Auto-cite fills ids from the store.
+    """
     store = InMemoryArtifactStore()
-    _evidence(store, "ad_spend", TODAY, TODAY, 4431.03)
+    aid = _evidence(store, "ad_spend", TODAY, TODAY, 4431.03)
+    result = MissionResult(
+        mission_id="MS3-pm",
+        status="completed",
+        query="q",
+        as_of=TODAY,
+        final_response="Ad spend today is INR 4,431.03 so far.",
+    )
+    outcome = EvidenceValidator().validate(result, deps=_deps(store))
+    assert outcome.ok or "cites no evidence_ids" not in (outcome.reason or "")
+    assert aid in result.evidence_ids
+
+
+def test_figures_without_citation_still_fail_when_store_has_no_evidence() -> None:
+    """Auto-cite only applies when mission evidence exists; otherwise keep the gate."""
+    store = InMemoryArtifactStore()
+    # finding alone still makes data_mission true via _WORK_ARTIFACT_TYPES, but
+    # auto-cite only fills artifact_type=evidence — so the gate must still fire
+    # when there are no evidence rows to attach.
+    store.put(
+        Artifact(
+            workspace_id="ws-1",
+            artifact_type="finding",
+            payload={"finding_type": "note", "statement": "x", "evidence_ids": ["raw:x"], "metrics": {}},
+            classification="derived",
+            evidence_ids=["raw:x"],
+            provenance=ArtifactProvenance(calculation_version="test"),
+            mission_id="MS3-pm",
+        )
+    )
     result = MissionResult(
         mission_id="MS3-pm",
         status="completed",

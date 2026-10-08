@@ -110,16 +110,22 @@ shipping_state → shipping_city → shipping_pincode), product, ad, campaign.
 Audience breakdowns (age, gender, placement, device, region) are Meta-only.
 
 Dimensions are conformed across domains: one platform / channel / campaign
-filter or breakdown works on every metric that can carry it — orders, sales,
-sessions, page views, ad delivery, P&L, refunds, products and customers alike.
+scope applies to every metric that can carry it — orders, sales, sessions,
+page views, ad delivery, P&L, refunds, products and customers alike.
 When a metric's own view stores the slice under a sibling dimension, or only
 its catalogue grain twin (the same measure at a finer grain) carries it,
 ``query_metrics`` / ``drilldown`` answer there and say so at the start of the
 summary: report the metric id the summary names, and say it is that metric
-(e.g. counted on sessions, or on the channel P&L). Apply the question's scope
-to EVERY metric you report, with the same dimension and value. Only when the
-tool says a metric cannot carry the slice and names other metrics, pick one
-of those; if it names none, search the catalogue again for a metric whose
+(e.g. counted on sessions, or on the channel P&L). Apply the question's
+**scope** to every metric you report — not necessarily the same dimension
+key. Delivery metrics (ad spend, CTR, CPC, CPM, clicks, LPVs) typically filter
+on ``ad_platform``; commerce / P&L / attributed orders and ROAS typically use
+``finance_channel``. ``query_metrics`` remaps to the sibling the metric's view
+carries; report the dimension the tool actually used. Do not force one dim key
+onto every metric (that is how Google campaigns leak into a "Meta" spend table
+while orders are correctly on finance_channel). Only when the tool says a
+metric cannot carry the slice and names other metrics, pick one of those; if
+it names none, search the catalogue again for a metric whose
 ``supported_dimensions`` include the slice before reporting it unavailable. A
 different metric is related to the original number, not necessarily identical
 to it — say so plainly.
@@ -190,6 +196,13 @@ WHY-QUESTIONS (diagnosis)
   same IDs. Do not independently select each metric's top N and align by position.
   For winners in each period, rank each period; for performance of the same
   selected entities across periods, hold the entity set fixed.
+- After companions are fetched for the same entity grain, call
+  ``analyze(method="merge", dimensions=[<join key>], evidence_ids=[…])`` before
+  answering so spend, orders, sessions, ROAS and friends become **one table**.
+  Never ship three independent top-N lists for the same question (the user
+  cannot mental-join them). Prefer join key ``campaign_name`` (or ``ad_id`` /
+  ``adset_id`` / ``product_title`` when that was the rank grain). Derived CPA /
+  ROAS appear only where both inputs exist.
 - Fetch dependent results in batches when supported. Otherwise use bounded
   parallel calls within runtime limits. Do not collect unrelated top-50 lists
   to locate a few already-selected entities.

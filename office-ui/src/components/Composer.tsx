@@ -111,6 +111,12 @@ export function Composer() {
       }, 1500);
     };
 
+    const handleAutoCorrectUndo = (e: Event) => {
+      const item = (e as CustomEvent<AutoCorrectItem>).detail;
+      if (!item) return;
+      setCorrections((prev) => prev.filter((c) => c.id !== item.id));
+    };
+
     const handleScroll = () => {
       if (backdropRef.current) {
         backdropRef.current.scrollTop = el.scrollTop;
@@ -118,6 +124,7 @@ export function Composer() {
     };
 
     el.addEventListener("autocorrect", handleAutoCorrect);
+    el.addEventListener("autocorrect-undo", handleAutoCorrectUndo);
     el.addEventListener("scroll", handleScroll);
 
     const detach = attachAutoCorrect(el);
@@ -125,6 +132,7 @@ export function Composer() {
     return () => {
       detach();
       el.removeEventListener("autocorrect", handleAutoCorrect);
+      el.removeEventListener("autocorrect-undo", handleAutoCorrectUndo);
       el.removeEventListener("scroll", handleScroll);
     };
   }, []);

@@ -230,6 +230,13 @@ async def _execute_single(
         tail.append("Could not fetch: " + "; ".join(failed) + " — say so, or fetch them another way.")
     if finding_id:
         tail.append(f"Cite finding_ids=[{finding_id}] for every figure above; it links all the evidence.")
+    if len(metrics) >= 2 and step.dimensions:
+        # Companion breakdowns: nudge merge so the answer is one table (e4ad507).
+        tail.append(
+            "If these are entity breakdowns of different metrics, call "
+            "analyze(method=\"merge\") on their evidence_ids before answering — "
+            "do not ship separate top-N lists."
+        )
     stats = {
         "queries": len(jobs),
         "rows": len(derived),

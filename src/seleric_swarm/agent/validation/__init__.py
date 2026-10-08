@@ -711,14 +711,27 @@ class EvidenceValidator:
             and not result.finding_ids
             and _numbers_in(result.final_response)
         ):
-            return ValidationOutcome(
-                ok=False,
-                reason=(
-                    "final_response states figures but cites no evidence_ids, although this "
-                    "mission fetched evidence. Put the artifact ids behind every figure you report "
-                    "in evidence_ids (they are in the tool results above)"
-                ),
-            )
+            # Live 2026-10-07 (cbe854 run_e568): daily series were fetched, viz/python
+            # ran, then the answer stated figures but left evidence_ids empty — three
+            # REVISE loops and INSUFFICIENT_EVIDENCE. Grounding and _exhausted already
+            # fall back to mission evidence; auto-cite here so a forgotten cite does
+            # not burn revisions. Unbacked-figure checks still catch invented numbers.
+            mission_evidence = [
+                a.id
+                for a in deps.artifact_store.list_for_mission(deps.mission_id)
+                if a.artifact_type == "evidence"
+            ]
+            if mission_evidence:
+                result.evidence_ids = list(mission_evidence)
+            else:
+                return ValidationOutcome(
+                    ok=False,
+                    reason=(
+                        "final_response states figures but cites no evidence_ids, although this "
+                        "mission fetched evidence. Put the artifact ids behind every figure you report "
+                        "in evidence_ids (they are in the tool results above)"
+                    ),
+                )
         leaked = leaked_metric_ids(result.final_response, _evidence_metric_ids(result, deps))
         if leaked:
             return ValidationOutcome(

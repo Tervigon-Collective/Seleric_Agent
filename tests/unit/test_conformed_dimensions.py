@@ -230,3 +230,53 @@ async def test_two_measures_collapsing_onto_one_id_are_reported():
         [MetricSlot(words="purchases", metric_id=""), MetricSlot(words="checkouts", metric_id="")], resolver, SNAP)
     assert ids == ["orders"]
     assert any("'checkouts' resolved to orders, like an earlier measure" in n for n in notes)
+
+
+def _spend_sub_channel_snap() -> CatalogueSnapshot:
+    sub = ["brand_id", "order_date", "sub_channel", "finance_channel"]
+    return replace(
+        SNAP,
+        metrics=(
+            CatalogueMetricMeta(
+                id="ad_spend",
+                supported_dimensions=["brand_id", "report_date", "ad_platform", "campaign_name"],
+                view="paid_media",
+                raw={"unit": "INR"},
+            ),
+            CatalogueMetricMeta(id="channel_cac", supported_dimensions=sub, raw={"unit": "INR"}),
+            CatalogueMetricMeta(id="cost_per_order", supported_dimensions=sub, raw={"unit": "INR"}),
+            CatalogueMetricMeta(id="mer", supported_dimensions=sub, raw={"unit": "ratio"}),
+            CatalogueMetricMeta(id="event_count", supported_dimensions=["brand_id", "event_date", "sub_channel"]),
+            CatalogueMetricMeta(
+                id="event_add_to_carts", supported_dimensions=["brand_id", "event_date", "sub_channel"]
+            ),
+            *(m for m in SNAP.metrics if m.id not in {"ad_spend", "channel_cac"}),
+        ),
+    )
+
+
+def test_ad_spend_sub_channel_alternatives_prefer_pnl_companions():
+    """Live 2026-10-08: ModelRetry for ad_spend×sub_channel listed unrelated event_*
+    metrics first. Prefer channel_cac / cost_per_order / mer over event noise."""
+    snap = _spend_sub_channel_snap()
+    alts = snap.metrics_supporting_dimension("sub_channel", like="ad_spend")
+    assert "channel_cac" in alts
+    assert "cost_per_order" in alts or "mer" in alts
+    assert alts.index("channel_cac") < alts.index("event_count")
+
+
+@pytest.mark.asyncio
+async def test_ad_spend_by_sub_channel_model_retry_names_related_metrics():
+    snap = _spend_sub_channel_snap()
+    with pytest.raises(ModelRetry) as exc:
+        await semantic.query_metrics(
+            FakeRunContext(replace(_deps(RecordingMcp()), catalogue=snap)),
+            "ad_spend",
+            dimensions={"sub_channel": ""},
+            **SEP,
+        )
+    msg = str(exc.value)
+    assert "does not support the 'sub_channel' dimension" in msg
+    assert "related metrics" in msg
+    assert "channel_cac" in msg
+    assert "not the same number" in msg

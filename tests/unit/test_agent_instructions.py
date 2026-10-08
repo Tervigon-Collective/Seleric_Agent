@@ -270,3 +270,21 @@ async def test_conversational_turn_is_told_it_has_no_tools() -> None:
 async def test_normal_turn_is_not_told_that_tools_are_missing() -> None:
     prompt = await _prompt_for_run({})
     assert "NO TOOLS ARE AVAILABLE THIS TURN" not in prompt
+
+
+def test_agent_is_told_to_merge_companion_breakdowns_before_answering():
+    """Live 2026-10-08 (e4ad507): three independent top-10 tables for spend /
+    sessions / orders — user could not join them. Prefer analyze(method=merge)."""
+    lowered = INSTRUCTIONS.lower()
+    assert 'method="merge"' in lowered
+    assert "never ship three independent top-n lists" in lowered
+    assert "one table" in lowered
+
+
+def test_agent_applies_scope_via_conformed_siblings_not_same_dim_key():
+    """Live 2026-10-08: 'same dimension and value' forced finance_channel onto
+    ad_spend and leaked Google campaigns into Meta answers."""
+    lowered = INSTRUCTIONS.lower()
+    assert "same dimension and value" not in lowered
+    assert "ad_platform" in lowered and "finance_channel" in lowered
+    assert "do not force one dim key" in lowered

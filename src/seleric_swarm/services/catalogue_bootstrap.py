@@ -41,6 +41,20 @@ DEFAULT_TTL_SECONDS: int = 900  # 15 minutes
 _BOOTSTRAP_CAP = "seleric.catalogue_bootstrap"
 _LIST_METRICS_CAP = "seleric.catalogue_list_metrics"
 
+# Delivery metrics that cannot carry traffic hierarchy leaves like sub_channel /
+# product_title; ModelRetry should prefer these P&L companions instead of event_*.
+_DELIVERY_METRICS = frozenset({
+    "ad_spend", "clicks", "impressions", "ctr", "cpc", "cpm",
+    "landing_page_views", "link_clicks", "cost_per_landing_page_view",
+    "cost_per_link_click", "thruplays", "hook_rate", "hold_rate_15s",
+    "video_completion_rate",
+})
+_SPEND_SLICE_COMPANIONS = frozenset({
+    "channel_cac", "cost_per_order", "mer", "net_roas", "gross_roas", "be_roas",
+    "channel_orders", "channel_new_customers", "net_profit", "operating_cost",
+    "pnl_mer", "pnl_net_roas", "pnl_be_roas",
+})
+
 
 @dataclass
 class CatalogueMetricMeta:
@@ -195,13 +209,39 @@ class CatalogueSnapshot:
         breakdown/filter. Empty when nothing supports it (a real capability gap,
         not a bad pick).
 
-        Ranked by how many id words they share with *like* (the metric that could not
-        carry it), then alphabetically: alphabetical alone offered event_count /
-        events_per_session for "net_sales by product_title" (live 2026-10-04)."""
+        Ranked for a useful retry, not alphabetically: grain twins of *like*,
+        same catalogue concept, known P&L companions for delivery metrics
+        (``ad_spend`` × ``sub_channel`` → ``channel_cac`` / ``cost_per_order`` /
+        ``mer``…), then word overlap. Alphabetical alone offered ``event_count``
+        for "net_sales by product_title" (live 2026-10-04) and noise for
+        ``ad_spend`` × ``sub_channel`` (live 2026-10-08)."""
         target = dimension.strip()
-        hits = [m.id for m in self.metrics if target in (m.supported_dimensions or [])]
-        words = set((like or "").lower().split("_")) - {""}
-        return sorted(hits, key=lambda h: (-len(words & set(h.split("_"))), h))[:n]
+        hits = [m for m in self.metrics if target in (m.supported_dimensions or [])]
+        if not hits:
+            return []
+
+        like_id = (like or "").strip()
+        words = set(like_id.lower().split("_")) - {""}
+        twins = set(self.grain_twins_for(like_id)) if like_id else set()
+        like_meta = next((m for m in self.metrics if m.id == like_id), None)
+        like_concept = str((like_meta.raw or {}).get("concept") or "").strip() if like_meta else ""
+        like_view = (like_meta.view or str((like_meta.raw or {}).get("view") or "")).strip() if like_meta else ""
+        delivery_like = like_id in _DELIVERY_METRICS or like_view in {"paid_media", "meta_ads", "google_ads"}
+        traffic_slice = target in {"sub_channel", "channel", "product_title", "sku"}
+
+        def score(meta: CatalogueMetricMeta) -> tuple[int, int, int, int, int, str]:
+            mid = meta.id
+            # Sort key: higher score first → negate in sorted via negative ints
+            twin_hit = 1 if mid in twins else 0
+            concept = str((meta.raw or {}).get("concept") or "").strip()
+            same_concept = 1 if like_concept and concept and concept == like_concept else 0
+            companion = 1 if delivery_like and traffic_slice and mid in _SPEND_SLICE_COMPANIONS else 0
+            overlap = len(words & set(mid.split("_")))
+            # Deprioritize event-grain noise when the ask was a delivery/P&L metric
+            event_penalty = 1 if delivery_like and mid.startswith(("event_", "events_")) else 0
+            return (-twin_hit, -same_concept, -companion, event_penalty, -overlap, mid)
+
+        return [m.id for m in sorted(hits, key=score)[:n]]
 
     def grain_twins_for(self, metric_id: str) -> list[str]:
         """The catalogue's ``grain_twins`` of a metric: the same concept selection at another grain

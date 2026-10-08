@@ -964,7 +964,208 @@ async def generate_visualization(
     )
 
 
-AnalysisMethod = Literal["compare", "anomaly", "contribution", "segments", "funnel", "cohort"]
+# Join keys preferred when merging companion metric breakdowns (e4ad507: three
+# independent top-10s for spend/sessions/orders never aligned on campaign_name).
+_PREFERRED_JOIN_KEYS = (
+    "campaign_name",
+    "campaign_id",
+    "ad_id",
+    "ad_name",
+    "adset_id",
+    "adset_name",
+    "product_title",
+    "sku",
+    "sub_channel",
+    "channel",
+    "finance_channel",
+    "ad_platform",
+    "platform",
+)
+
+# Derived ratios only when both source metric ids are present on a joined row.
+# (label, numerator_metric_id, denominator_metric_id)
+_MERGE_DERIVED: tuple[tuple[str, str, str], ...] = (
+    ("cpa", "ad_spend", "orders"),
+    ("roas", "net_sales", "ad_spend"),
+    ("roas", "total_sales", "ad_spend"),
+)
+
+_MAX_MERGE_TABLE_ROWS = 40
+
+
+def _infer_join_keys(
+    evidence: list[EvidenceArtifact],
+    requested: list[str],
+) -> list[str] | None:
+    """Pick join dimensions: caller list if every key appears on some row with a
+    value; else the highest-preference key that appears on at least two different
+    metrics (so companions can align)."""
+    if requested:
+        present = {k for item in evidence for k, v in item.dimensions.items() if k and v}
+        missing = [k for k in requested if k not in present]
+        if missing:
+            return None
+        return list(requested)
+
+    # metric_id → keys that have a non-empty value on at least one of its rows
+    by_metric: dict[str, set[str]] = {}
+    for item in evidence:
+        keys = {k for k, v in item.dimensions.items() if k and str(v).strip()}
+        by_metric.setdefault(item.metric_id, set()).update(keys)
+    if len(by_metric) < 2:
+        return None
+    shared = set.intersection(*by_metric.values()) if by_metric else set()
+    if not shared:
+        # Prefer a key that appears on ≥2 metrics even if not on every metric
+        # (outer-join leaves holes for metrics that lack the entity).
+        counts: dict[str, int] = {}
+        for keys in by_metric.values():
+            for k in keys:
+                counts[k] = counts.get(k, 0) + 1
+        shared = {k for k, n in counts.items() if n >= 2}
+    if not shared:
+        return None
+    ordered = [k for k in _PREFERRED_JOIN_KEYS if k in shared]
+    return ordered[:1] or sorted(shared)[:1]
+
+
+def _fmt_merge_value(value: float | None) -> str:
+    if value is None:
+        return "—"
+    if abs(value - round(value)) < 1e-9 and abs(value) >= 1:
+        return f"{int(round(value)):,}"
+    return f"{value:,.4g}"
+
+
+async def merge_evidence_breakdowns(
+    ctx: RunContext[SelericDeps],
+    evidence_ids: list[str],
+    dimensions: list[str] | None = None,
+) -> ToolResult:
+    """Outer-join companion metric breakdowns on shared entity dimensions.
+
+    Turns separate ``query_metrics`` results (spend by campaign, orders by
+    campaign, …) into one table so the answer can reason about efficiency
+    instead of shipping independent top-N lists. Never fetches.
+    """
+    evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
+    if refusal is not None:
+        return refusal
+
+    join_keys = _infer_join_keys(evidence, [d for d in (dimensions or []) if d])
+    if not join_keys:
+        return _refuse(
+            "merge needs a shared entity dimension across the evidence "
+            f"(prefer one of: {', '.join(_PREFERRED_JOIN_KEYS[:6])}). "
+            "Pass dimensions=[<join key>] after fetching breakdowns that stamp that key, "
+            "or rank once and fetch companions for the same entity ids.",
+            error_code="INVALID_ARGUMENT",
+            retryable=True,
+        )
+
+    metrics = sorted({item.metric_id for item in evidence})
+    if len(metrics) < 2:
+        return _refuse(
+            "merge needs evidence from at least two different metrics; "
+            "fetch companion metrics for the same entities first",
+            error_code="INVALID_ARGUMENT",
+            retryable=True,
+        )
+
+    # (period, join_tuple) → metric_id → value; keep first evidence id per cell
+    cells: dict[tuple[datetime, datetime, tuple[str, ...]], dict[str, float]] = {}
+    cell_refs: dict[tuple[datetime, datetime, tuple[str, ...]], list[str]] = {}
+    for aid, item in zip(evidence_ids, evidence, strict=True):
+        if item.value is None:
+            continue
+        key_vals = tuple(str(item.dimensions.get(k) or "").strip() for k in join_keys)
+        if any(not v for v in key_vals):
+            continue
+        slot = (item.period_start, item.period_end, key_vals)
+        cells.setdefault(slot, {})
+        # One value per metric per entity: keep the first (stable with prefetch order)
+        if item.metric_id not in cells[slot]:
+            cells[slot][item.metric_id] = float(item.value)
+            cell_refs.setdefault(slot, []).append(aid)
+
+    if not cells:
+        return _refuse(
+            f"no evidence rows carry all join keys {join_keys!r} with values; "
+            "fetch breakdowns that stamp those dimensions",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=True,
+        )
+
+    # Stable sort: first join key label, then period start
+    sorted_slots = sorted(cells.keys(), key=lambda s: (s[2], s[0], s[1]))
+
+    derived_cols: list[str] = []
+    for label, num_id, den_id in _MERGE_DERIVED:
+        if num_id in metrics and den_id in metrics and label not in derived_cols:
+            derived_cols.append(label)
+
+    header = [*join_keys, *metrics, *derived_cols]
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join(["---"] * len(join_keys) + [":---:"] * (len(metrics) + len(derived_cols))) + " |",
+    ]
+    finding_metrics: dict[str, float] = {}
+    for slot in sorted_slots[:_MAX_MERGE_TABLE_ROWS]:
+        _period_start, _period_end, key_vals = slot
+        row_vals = cells[slot]
+        derived: dict[str, float | None] = {label: None for label in derived_cols}
+        for label, num_id, den_id in _MERGE_DERIVED:
+            if label not in derived_cols or derived[label] is not None:
+                continue
+            num, den = row_vals.get(num_id), row_vals.get(den_id)
+            if num is not None and den is not None and den != 0:
+                derived[label] = num / den
+        display = [
+            *key_vals,
+            *[_fmt_merge_value(row_vals.get(m)) for m in metrics],
+            *[_fmt_merge_value(derived.get(c)) for c in derived_cols],
+        ]
+        lines.append("| " + " | ".join(display) + " |")
+        # Index derived numbers for citation / unbacked checks
+        entity = "|".join(key_vals)
+        for m, v in row_vals.items():
+            finding_metrics[f"{m}.{entity}"] = v
+        for label, value in derived.items():
+            if value is not None:
+                finding_metrics[f"{label}.{entity}"] = value
+
+    more = ""
+    if len(sorted_slots) > _MAX_MERGE_TABLE_ROWS:
+        more = f" (showing {_MAX_MERGE_TABLE_ROWS} of {len(sorted_slots)} entities)"
+
+    table = "\n".join(lines)
+    join_label = ", ".join(join_keys)
+    statement = (
+        f"Merged {len(metrics)} metrics on {join_label} across {len(sorted_slots)} entities"
+        f"{more}.\n\n{table}"
+    )
+    finding_id = _write_finding(
+        ctx,
+        finding_type="merge",
+        statement=statement,
+        evidence_ids=list(evidence_ids),
+        metrics=finding_metrics,
+    )
+    return ToolResult(
+        success=True,
+        artifact_ids=[finding_id],
+        summary=(
+            f"Merged metrics [{', '.join(metrics)}] on {join_label} "
+            f"({len(sorted_slots)} entities{more}). "
+            f"Use finding {finding_id} — one table, not separate top-N lists. "
+            f"Derived columns ({', '.join(derived_cols) or 'none'}) only where both inputs exist.\n\n"
+            f"{table}"
+        ),
+        provenance=_provenance(list(evidence_ids)),
+    )
+
+
+AnalysisMethod = Literal["compare", "anomaly", "contribution", "segments", "funnel", "cohort", "merge"]
 
 
 async def analyze(
@@ -984,6 +1185,9 @@ async def analyze(
     - ``segments``: the same metric broken down across several ``dimensions`` at once.
     - ``funnel``: step-to-step conversion and drop-off (one base count + its rates).
     - ``cohort``: compare cohorts (dimension values or windows) with their median.
+    - ``merge``: outer-join companion metric breakdowns on shared entity dimensions
+      (e.g. campaign_name) into one table with derived CPA/ROAS when both sides exist.
+      Pass ``dimensions`` as the join key(s), or omit to infer (prefers campaign_name).
 
     Every result is a citable Finding."""
     dims = [d for d in (dimensions or []) if d]
@@ -1003,4 +1207,6 @@ async def analyze(
         return await funnel_decomposition(ctx, evidence_ids)
     if method == "cohort":
         return await cohort_analysis(ctx, evidence_ids)
+    if method == "merge":
+        return await merge_evidence_breakdowns(ctx, evidence_ids, dims or None)
     return _refuse(f"unknown method {method!r}", error_code="INVALID_ARGUMENT")

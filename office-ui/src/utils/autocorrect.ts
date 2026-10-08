@@ -27,6 +27,28 @@ export interface AutoCorrectItem {
   end: number;
 }
 
+function setTextareaValue(inputElement: HTMLTextAreaElement, newText: string) {
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+    typeof window !== 'undefined'
+      ? window.HTMLTextAreaElement?.prototype
+      : HTMLTextAreaElement.prototype,
+    'value'
+  )?.set;
+  if (nativeInputValueSetter) {
+    nativeInputValueSetter.call(inputElement, newText);
+  } else {
+    inputElement.value = newText;
+  }
+}
+
+interface PendingUndo {
+  item: AutoCorrectItem;
+  /** Cursor position immediately after the correction (includes trigger suffix). */
+  cursorAfter: number;
+  /** Trigger character appended after the corrected word (space, punctuation, etc.). */
+  suffix: string;
+}
+
 export function attachAutoCorrect(
   inputElement: HTMLTextAreaElement,
   onCorrect?: (item: AutoCorrectItem) => void,
@@ -35,8 +57,66 @@ export function attachAutoCorrect(
     'Tab', ' ', '.', ',', '!', '?', ';', ':', 'Enter',
   ]);
 
+  let pendingUndo: PendingUndo | null = null;
+
+  const clearUndo = () => {
+    pendingUndo = null;
+  };
+
+  const undoCorrection = (e: KeyboardEvent) => {
+    if (!pendingUndo) return false;
+
+    const { item, cursorAfter, suffix } = pendingUndo;
+    const cursorPos = inputElement.selectionStart ?? 0;
+    const selectionEnd = inputElement.selectionEnd ?? cursorPos;
+    if (cursorPos !== selectionEnd) return false;
+    if (cursorPos !== cursorAfter) return false;
+
+    const fullText = inputElement.value;
+    // Guard: text must still match what we wrote when correcting.
+    if (fullText.slice(item.start, item.end) !== item.corrected) {
+      clearUndo();
+      return false;
+    }
+    if (suffix && fullText.slice(item.end, item.end + suffix.length) !== suffix) {
+      clearUndo();
+      return false;
+    }
+
+    e.preventDefault();
+
+    const restored =
+      fullText.slice(0, item.start) + item.original + suffix + fullText.slice(cursorAfter);
+    setTextareaValue(inputElement, restored);
+
+    const newCursorPos = item.start + item.original.length + suffix.length;
+    inputElement.setSelectionRange(newCursorPos, newCursorPos);
+    clearUndo();
+
+    inputElement.dispatchEvent(
+      new CustomEvent('autocorrect-undo', {
+        bubbles: true,
+        detail: item,
+      })
+    );
+    inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  };
+
   const listener = (e: KeyboardEvent) => {
-    if (!spellChecker || !triggerKeys.has(e.key)) return;
+    if (e.key === 'Backspace') {
+      if (undoCorrection(e)) return;
+      clearUndo();
+      return;
+    }
+
+    if (!spellChecker || !triggerKeys.has(e.key)) {
+      // Any other edit invalidates undo of the last correction.
+      if (e.key.length === 1 || e.key === 'Delete' || e.key === 'Enter') {
+        clearUndo();
+      }
+      return;
+    }
 
     const cursorPos = inputElement.selectionStart ?? inputElement.value.length;
     const fullText = inputElement.value;
@@ -75,17 +155,7 @@ export function attachAutoCorrect(
         const newText =
           fullText.slice(0, wordStartIndex) + replacement + textAfterCursor;
 
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-          typeof window !== 'undefined'
-            ? window.HTMLTextAreaElement?.prototype
-            : HTMLTextAreaElement.prototype,
-          'value'
-        )?.set;
-        if (nativeInputValueSetter) {
-          nativeInputValueSetter.call(inputElement, newText);
-        } else {
-          inputElement.value = newText;
-        }
+        setTextareaValue(inputElement, newText);
 
         const newCursorPos = wordStartIndex + replacement.length;
         inputElement.setSelectionRange(newCursorPos, newCursorPos);
@@ -96,6 +166,12 @@ export function attachAutoCorrect(
           corrected: bestMatch,
           start: wordStartIndex,
           end: wordStartIndex + bestMatch.length,
+        };
+
+        pendingUndo = {
+          item,
+          cursorAfter: newCursorPos,
+          suffix,
         };
 
         if (onCorrect) {
@@ -111,12 +187,15 @@ export function attachAutoCorrect(
 
         inputElement.dispatchEvent(new Event('input', { bubbles: true }));
       }
+    } else {
+      clearUndo();
     }
   };
 
   inputElement.addEventListener('keydown', listener);
 
   return () => {
+    clearUndo();
     inputElement.removeEventListener('keydown', listener);
   };
 }

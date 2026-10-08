@@ -396,3 +396,86 @@ async def test_a_finding_is_not_valid_input_evidence():
     assert result.success is False
     assert result.error_code == "INSUFFICIENT_EVIDENCE"
     assert "not evidence" in result.summary
+
+
+# ---- merge companion metric breakdowns --------------------------------------
+
+
+def _breakdown_row(
+    store: InMemoryArtifactStore,
+    *,
+    metric: str,
+    campaign: str,
+    value: float,
+    day: str = "2026-09-16",
+) -> str:
+    return _put_evidence(
+        store,
+        metric=metric,
+        grain="none",
+        start=day,
+        end=day,
+        value=value,
+        dimensions={"campaign_name": campaign},
+    )
+
+
+@pytest.mark.asyncio
+async def test_merge_joins_companion_metrics_on_campaign_name():
+    store = InMemoryArtifactStore()
+    ids = [
+        _breakdown_row(store, metric="ad_spend", campaign="A", value=100.0),
+        _breakdown_row(store, metric="ad_spend", campaign="B", value=50.0),
+        _breakdown_row(store, metric="orders", campaign="A", value=10.0),
+        _breakdown_row(store, metric="orders", campaign="C", value=4.0),  # spend-only hole for C
+        _breakdown_row(store, metric="net_sales", campaign="A", value=200.0),
+    ]
+    ctx = FakeRunContext(_deps(store))
+    result = await analytics.analyze(ctx, ids, method="merge", dimensions=["campaign_name"])
+
+    assert result.success is True
+    assert len(result.artifact_ids) == 1
+    assert "campaign_name" in result.summary
+    assert "cpa" in result.summary.lower() or "| cpa |" in result.summary
+    # A has spend+orders → CPA 10; outer-join keeps B (spend only) and C (orders only)
+    assert "A" in result.summary and "B" in result.summary and "C" in result.summary
+    finding = store.get(result.artifact_ids[0]).payload
+    assert finding["finding_type"] == "merge"
+    assert finding["metrics"]["cpa.A"] == pytest.approx(10.0)
+    assert finding["metrics"]["roas.A"] == pytest.approx(2.0)
+
+
+@pytest.mark.asyncio
+async def test_merge_infers_campaign_name_when_dimensions_omitted():
+    store = InMemoryArtifactStore()
+    ids = [
+        _breakdown_row(store, metric="ad_spend", campaign="X", value=80.0),
+        _breakdown_row(store, metric="orders", campaign="X", value=8.0),
+    ]
+    result = await analytics.analyze(FakeRunContext(_deps(store)), ids, method="merge")
+    assert result.success is True
+    assert "campaign_name" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_merge_refuses_without_join_key():
+    store = InMemoryArtifactStore()
+    ids = _daily(store, {"2026-09-16": 100.0, "2026-09-17": 110.0}, metric="ad_spend")
+    ids += _daily(store, {"2026-09-16": 10.0, "2026-09-17": 11.0}, metric="orders")
+    result = await analytics.analyze(FakeRunContext(_deps(store)), ids, method="merge")
+    assert result.success is False
+    assert result.error_code == "INVALID_ARGUMENT"
+
+
+@pytest.mark.asyncio
+async def test_merge_refuses_single_metric():
+    store = InMemoryArtifactStore()
+    ids = [
+        _breakdown_row(store, metric="ad_spend", campaign="A", value=100.0),
+        _breakdown_row(store, metric="ad_spend", campaign="B", value=50.0),
+    ]
+    result = await analytics.analyze(
+        FakeRunContext(_deps(store)), ids, method="merge", dimensions=["campaign_name"]
+    )
+    assert result.success is False
+    assert "two different metrics" in result.summary
