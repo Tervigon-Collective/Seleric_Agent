@@ -303,3 +303,21 @@ def dataclasses_replace_catalogue(deps: SelericDeps) -> SelericDeps:
     )
     return dataclasses.replace(deps, catalogue=catalogue)
 
+
+
+@pytest.mark.asyncio
+async def test_several_named_values_of_one_kind_are_broken_down_not_intersected() -> None:
+    # golden Q17 2026-10-08: "sales by Meta campaign, Google sub-channel, organic, WhatsApp" filtered to Meta only
+    from seleric_swarm.agent.scope import ValueFilter
+
+    mcp = _RecordingMcp()
+    deps = _scoped(dataclasses_replace_catalogue(_deps(mcp)), value_filters=(
+        ValueFilter(term="meta", dimensions=frozenset({"plat"}), values=("meta",)),
+        ValueFilter(term="google", dimensions=frozenset({"plat"}), values=("google",)),
+    ))
+    plan = MissionPlan(shape="breakdown", steps=[PlanStep(tool="query_metrics", metric_ids=["spend"], dimensions=["camp"], purpose="breakdown")])
+    await executor.execute_plan(plan, deps, windows=[(date(2026, 10, 1), date(2026, 10, 6))], as_of=TODAY)
+    args = mcp.args[0]
+    assert "plat" in (args.get("dimensions") or []) and not [
+        f for f in args.get("filters") or [] if f["dimension"] == "plat" and f["operator"] == "equals"
+    ]

@@ -76,13 +76,26 @@ def _with_named_values(deps: SelericDeps, metric_id: str, dimensions: dict[str, 
     pre-fetched query, on a dimension of the value that the metric carries — query_metrics fits a conformed
     sibling or grain twin. A dimension the step already breaks down or filters by is left alone. Live
     2026-10-08: "Which Meta campaigns performed best…" ranked every campaign, Google's first, and the answer
-    waived the value instead of filtering."""
+    waived the value instead of filtering.
+
+    Several named values of one kind ("sales by Meta campaign, Google sub-channel, organic, WhatsApp…") are
+    compared, not intersected: the query breaks down by that family instead (golden Q17 filtered to Meta only and
+    reported the other channels as no data)."""
     dims = dict(dimensions or {})
     catalogue = deps.catalogue
+    supported = set(catalogue.supported_dimensions_for(metric_id))
+    groups: dict[str, list[Any]] = {}
     for vf in getattr(deps.required_scope, "value_filters", ()) or ():
         if not vf.values or any(d in dims for d in vf.dimensions):
             continue
-        supported = set(catalogue.supported_dimensions_for(metric_id))
+        groups.setdefault(min(catalogue.family_head(d) for d in vf.dimensions), []).append(vf)
+    for head, named in groups.items():
+        if len({vf.term for vf in named}) > 1:
+            dim = head if head in supported else catalogue.conformed_sibling(head, supported)
+            if dim is not None and dim not in dims:
+                dims[dim] = ""
+            continue
+        vf = named[0]
         ordered = sorted(vf.dimensions, key=lambda d: (d not in supported, d))
         dim = next((d for d in ordered if catalogue.carries(metric_id, d)), None)
         if dim is not None:
