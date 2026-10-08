@@ -181,3 +181,19 @@ def test_exclusive_midnight_end_and_partial_today_are_handled():
     report = res.provenance.source_metadata["diagnosis"]
     assert report["event_window"] == ["2026-10-02"]
     assert any("in progress" in n for n in report["data_quality"])
+
+
+def test_any_window_length_is_diagnosed_as_a_period_comparison():
+    """Live: "event window ... is 30 days; diagnose at most 14 days at a time" failed
+    a why-question. No length is refused; a long window is compared with the
+    equal-length period just before it."""
+    mcp = FakeMcp()
+    ctx = Ctx(_deps(mcp))
+    start = datetime(2026, 9, 3, tzinfo=UTC)
+    end = datetime(2026, 10, 2, 23, 59, tzinfo=UTC)
+    res = asyncio.run(diagnosis.diagnose_metric_change(ctx, "zz_revenue", event_start=start, event_end=end))  # type: ignore[arg-type]
+    assert res.success, res.summary
+    event = res.provenance.source_metadata["diagnosis"]["event"]
+    assert event["reference_kind"] == "the comparison period"
+    refs = sorted({r for v in event["reference_days"].values() for r in v})
+    assert refs[0] == "2026-08-04" and refs[-1] == "2026-09-02"

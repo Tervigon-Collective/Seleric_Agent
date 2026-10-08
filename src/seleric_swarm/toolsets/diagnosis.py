@@ -50,8 +50,9 @@ from seleric_swarm.toolsets import semantic
 _CALCULATION_VERSION = "diagnosis.v1"
 _DEFINITION_BATCH = 10
 _DEFINITIONS_TTL_S = 900.0
+# Longer than this, an event is compared with the equal-length period before it
+# (a period comparison) instead of with "usual" days. Not a limit.
 _MAX_EVENT_DAYS = 14
-_MAX_PERIOD_DAYS = 92
 _MAX_SEGMENT_ROWS = 6000
 _UNSET_SEGMENT = "(not set)"
 
@@ -460,7 +461,7 @@ async def diagnose_metric_change(
 
     Period comparisons ("this month vs last month", "vs the previous period"):
     pass ``compare_start``/``compare_end`` for the period compared with (same
-    length as the event window). A window longer than two weeks is always
+    length as the event window). Any length works; a window longer than two weeks is always
     compared with the equal-length period just before it. The result then
     splits the difference between the two periods exactly by component and by
     segment; upstream drivers are not estimated for period comparisons.
@@ -484,11 +485,6 @@ async def diagnose_metric_change(
     if ev_end < ev_start:
         ev_start, ev_end = ev_end, ev_start
     n_event = (ev_end - ev_start).days + 1
-    if n_event > _MAX_PERIOD_DAYS:
-        return _refuse(
-            f"event window {ev_start}..{ev_end} is {n_event} days; compare at most {_MAX_PERIOD_DAYS} days at a time",
-            error_code="UNSUPPORTED_QUERY",
-        )
     event_days = [ev_start + timedelta(days=i) for i in range(n_event)]
     # Days still in progress cannot be compared with complete ones. Drop them
     # when complete days remain; the engine refuses a window that is all partial.
