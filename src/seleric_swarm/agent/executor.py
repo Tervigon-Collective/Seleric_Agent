@@ -21,7 +21,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -30,7 +30,7 @@ from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.plan import MissionPlan
 from seleric_swarm.agent.progress import emit_progress, tool_label
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
-from seleric_swarm.services.elapsed import ELAPSED_KEY, covers_in_progress_day
+from seleric_swarm.services.elapsed import ELAPSED_KEY, completed_hours, covers_in_progress_day, same_span
 from seleric_swarm.toolsets import semantic
 
 _log = logging.getLogger("seleric.agent.executor")
@@ -230,15 +230,24 @@ async def _execute(
 ) -> Prefetch | None:
     catalogue = deps.catalogue
     gate = asyncio.Semaphore(_PARALLEL)
-    # The earlier window is the baseline, the later one the period judged — whatever order the question named
-    # them in. Live 2026-10-08 golden Q6, "Compare this month to the same number of days last month": this month
-    # came first, became the reference, and every change read September against October ("net sales fell ~9 %"
-    # while they rose 10 % a day; ROAS "dropped 34 %" while it rose from 0.69 to 1.05).
+    # Entities are ranked in the window the question names first; the change always
+    # runs from the earlier window to the later one. "This week compared to last week"
+    # resolves to [this week, last week], and measuring last week against this week
+    # inverted every sign (live 2026-10-08 MS3-18085c0092: "net sales fell from
+    # 696,778 to 767,584", MER "dropped 34%" while it rose 1.11 -> 1.70).
+    rank_window = windows[0]
     reference, comparison = sorted(windows[:2])
     today_running = covers_in_progress_day(comparison[0], comparison[1], as_of)
-    # A period to date (this week / month, the last N days through today) cuts only each window's last day at
-    # the elapsed hours (query_metrics elapsed_only); a one-day "today" cuts every reference day.
-    to_date = today_running and comparison[0] < comparison[1]
+    cmp_days = (comparison[1] - comparison[0]).days + 1
+    # A period to date against the period before it compares the same span
+    # (``same_span``). Counting only the elapsed hours of EVERY day kept 16 of 24
+    # hours of six full days.
+    span = same_span(reference, comparison, as_of)
+    to_date = span is not None
+    if span is not None:
+        reference = span
+    ref_days = (reference[1] - reference[0]).days + 1
+    per_day = ref_days != cmp_days
     entity_step = plan.steps[0] if plan.shape == "entity_comparison" else None
     entity = entity_step.dimensions[0] if entity_step and entity_step.dimensions else None
     compare_step = next((s for s in plan.steps if s.uses_entities_from_step or plan.shape == "period_comparison"), None)
@@ -258,7 +267,7 @@ async def _execute(
             # volume first, then rank those by the ratio.
             by_volume = await _query(
                 deps, gate, metric_id=volume, dimensions=dims,
-                period_start=_at(reference[0], as_of), period_end=_at(reference[1], as_of),
+                period_start=_at(rank_window[0], as_of), period_end=_at(rank_window[1], as_of),
                 order="desc", limit=limit * _CANDIDATE_FACTOR,
             )
             evidence_ids += by_volume.artifact_ids
@@ -266,7 +275,7 @@ async def _execute(
             dims = {entity: [p for p in pool if p]}
         ranked = await _query(
             deps, gate, metric_id=rank, dimensions=dims,
-            period_start=_at(reference[0], as_of), period_end=_at(reference[1], as_of),
+            period_start=_at(rank_window[0], as_of), period_end=_at(rank_window[1], as_of),
             **({} if volume else {"order": "desc", "limit": limit}),
         )
         evidence_ids += ranked.artifact_ids
@@ -282,47 +291,85 @@ async def _execute(
     def dims_for() -> dict[str, Any] | None:
         return {entity: entities} if entity else None
 
+    def parts(start: date, end: date, additive: bool) -> list[tuple[date, date, bool]]:
+        """(start, end, elapsed) queries whose sum is the window's value on the basis."""
+        if not additive or not today_running:
+            return [(start, end, False)]
+        if not to_date:
+            return [(start, end, True)]
+        whole = [(start, end - timedelta(days=1), False)] if end > start else []
+        return [*whole, (end, end, True)]
+
     jobs = []
     for metric in metrics:
         additive = catalogue.aggregation_for(metric) == "additive"
         for label, (start, end) in (("ref", reference), ("cmp", comparison)):
-            jobs.append(
-                (
-                    metric,
-                    label,
-                    _query(
-                        deps, gate, metric_id=metric, dimensions=dims_for(),
-                        period_start=_at(start, as_of), period_end=_at(end, as_of),
-                        elapsed_only=bool(additive and today_running),
-                    ),
+            for part_start, part_end, elapsed in parts(start, end, additive):
+                jobs.append(
+                    (
+                        metric,
+                        label,
+                        elapsed,
+                        _query(
+                            deps, gate, metric_id=metric, dimensions=dims_for(),
+                            period_start=_at(part_start, as_of), period_end=_at(part_end, as_of),
+                            elapsed_only=elapsed,
+                        ),
+                    )
                 )
-            )
-    results = await asyncio.gather(*(job for _, _, job in jobs), return_exceptions=True)
+    results = await asyncio.gather(*(job for *_, job in jobs), return_exceptions=True)
     values: dict[tuple[str, str, str], float] = {}
-    failed: list[str] = []
-    ref_days = (reference[1] - reference[0]).days + 1
-    cmp_days = (comparison[1] - comparison[0]).days + 1
-    for (metric, label, _), result in zip(jobs, results, strict=True):
+    broken: set[tuple[str, str]] = set()
+    for (metric, label, elapsed, _), result in zip(jobs, results, strict=True):
         if isinstance(result, BaseException) or not getattr(result, "success", False):
-            failed.append(f"{metric} ({label})")
+            broken.add((metric, label))
             continue
         evidence_ids += result.artifact_ids
-        additive = catalogue.aggregation_for(metric) == "additive"
-        days = ref_days if label == "ref" else cmp_days
-        for payload in _payloads(deps, result.artifact_ids, elapsed=bool(additive and today_running)):
+        for payload in _payloads(deps, result.artifact_ids, elapsed=elapsed):
             if payload.get("value") is None:
                 continue
             key = str(payload["dimensions"].get(entity, "")) if entity else ""
-            value = float(payload["value"])
-            # Additive totals become per-day figures, so windows of any length compare.
-            values[(key, metric, label)] = value / days if additive else value
+            values[(key, metric, label)] = values.get((key, metric, label), 0.0) + float(payload["value"])
+    # A window with a failed part has no value: half a span is not the span.
+    values = {k: v for k, v in values.items() if (k[1], k[2]) not in broken}
+    # A metric without an hourly series cannot be cut to the hour: compare it over
+    # the span's whole days and say so (live 2026-10-08: net profit came back
+    # "unavailable" for both months rather than on whole days).
+    whole_days: list[str] = []
+    if to_date:
+        retry = sorted({metric for metric, _label in broken if catalogue.aggregation_for(metric) == "additive"})
+        fallback = await asyncio.gather(*(
+            _query(deps, gate, metric_id=metric, dimensions=dims_for(),
+                   period_start=_at(start, as_of), period_end=_at(end, as_of))
+            for metric in retry for start, end in (reference, comparison)
+        ), return_exceptions=True)
+        for i, metric in enumerate(retry):
+            pair = fallback[2 * i: 2 * i + 2]
+            if any(isinstance(r, BaseException) or not getattr(r, "success", False) for r in pair):
+                continue
+            for label, result in zip(("ref", "cmp"), pair, strict=True):
+                evidence_ids += result.artifact_ids
+                broken.discard((metric, label))
+                for payload in _payloads(deps, result.artifact_ids):
+                    if payload.get("value") is not None:
+                        key = str(payload["dimensions"].get(entity, "")) if entity else ""
+                        values[(key, metric, label)] = float(payload["value"])
+            whole_days.append(metric)
+    failed = [f"{metric} ({label})" for metric, label in sorted(broken)]
+    if per_day:
+        # Windows of different length compare per day.
+        for (key, metric, label), value in list(values.items()):
+            if catalogue.aggregation_for(metric) == "additive":
+                values[(key, metric, label)] = value / (ref_days if label == "ref" else cmp_days)
 
-    mapping_lines = await _mapping(plan, deps, gate, entity, entities, comparison, as_of, today_running, evidence_ids)
+    mapping_lines = await _mapping(
+        plan, deps, gate, entity, entities, comparison, as_of, today_running and not to_date, evidence_ids
+    )
 
     keys = entities if entity else [""]
-    cmp_label = "today so far" if today_running and not to_date else f"{comparison[0]}..{comparison[1]}"
+    per = " (per day)" if per_day else ""
     table = ["| " + (f"{entity} | " if entity else "")
-             + f"metric | {reference[0]}..{reference[1]} (per day) | {cmp_label} (per day) | change |",
+             + f"metric | {reference[0]}..{reference[1]}{per} | {comparison[0]}..{comparison[1]}{per} | change |",
              "| " + ("--- | " if entity else "") + "--- | ---: | ---: | ---: |"]
     derived: dict[str, float] = {}
     for key in keys:
@@ -342,26 +389,34 @@ async def _execute(
             )
     if len(table) <= 2:
         return None
-    finding_id = _store_finding(deps, evidence_ids, derived, entity)
+    hours = completed_hours(as_of)
     if to_date:
         basis = (
-            f"Additive metrics count every complete day and, on each window's last day, only the hours elapsed "
-            f"today (query_metrics elapsed_only), shown per day — like for like. Ratios are as reported "
-            f"({comparison[1]} is still running), so explain ratio moves from the additive columns."
+            f"Same span, like for like: the earlier window is cut to the {cmp_days} days the later one "
+            f"has run, its last day counted to {hours:02d}:00 like today; additive metrics are totals "
+            "over that span. Ratios are as reported over whole days (today only the hours so far)."
         )
     elif today_running:
         basis = (
             "Additive metrics count only the hours elapsed today on every day "
-            "(query_metrics elapsed_only) and are shown per day — like for like. Ratios are as "
-            "reported: the reference ratio covers full days, today's only the hours so far, so "
-            "explain ratio moves from the additive columns, not from the ratio alone."
+            f"(query_metrics elapsed_only){' and are shown per day' if per_day else ''} — like for like. "
+            "Ratios are as reported: the earlier window's ratio covers full days, today's only the hours "
+            "so far, so explain ratio moves from the additive columns, not from the ratio alone."
         )
     else:
-        basis = "Additive metrics are shown per day; ratios are as reported."
-    basis += f" change = {comparison[0]}..{comparison[1]} against {reference[0]}..{reference[1]}."
+        basis = f"Additive metrics are shown {'per day' if per_day else 'as totals'}; ratios are as reported."
+    finding_id = _store_finding(
+        deps, evidence_ids, derived, entity,
+        statement=(
+            f"Comparison{' by ' + entity if entity else ''} computed from the planner's prefetched evidence: "
+            f"ref = {reference[0]}..{reference[1]}, cmp = {comparison[0]}..{comparison[1]}, "
+            f"change_pct = (cmp - ref) / |ref|. {basis}"
+        ),
+    )
     head = [
         "[prefetched data — already fetched by the planner's executor; do not re-fetch it]",
-        f"Reference window {reference[0]}..{reference[1]} vs {comparison[0]}..{comparison[1]}. {basis}",
+        f"Earlier window {reference[0]}..{reference[1]} vs later window {comparison[0]}..{comparison[1]}; "
+        f"change is from the earlier to the later. {basis}",
     ]
     if entity:
         head.append(f"Entities: the top {len(entities)} {entity} values (planner step 1), in rank order.")
@@ -371,6 +426,11 @@ async def _execute(
         tail.append(f"(+{len(table) - _MAX_TABLE_ROWS - 2} more rows in finding {finding_id})")
     if mapping_lines:
         tail += ["", *mapping_lines]
+    if whole_days:
+        tail.append(
+            f"{', '.join(whole_days)}: no hourly series, so compared over the span's whole days — "
+            f"the earlier window's last day is complete while today is not; say so beside these rows."
+        )
     if failed:
         tail.append("Could not fetch: " + ", ".join(failed) + " — say so, or fetch them another way.")
     # One id to cite: the finding carries every evidence id behind it. Listing dozens of

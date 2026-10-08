@@ -41,6 +41,8 @@ joint decision.
 
 from __future__ import annotations
 
+import dataclasses
+import difflib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -84,6 +86,7 @@ from seleric_swarm.agent.validation.answer_audit import (
     leaked_metric_ids,
     replace_metric_ids,
     total_mismatch,
+    without_mismatched_totals,
 )
 from seleric_swarm.agent.validation.verdict import decide_verdict
 from seleric_swarm.api.status import is_terminal_status
@@ -184,9 +187,90 @@ def _humanize_metric_ids(result: MissionResult, deps: SelericDeps) -> MissionRes
     text = result.final_response or ""
     if catalogue is None or "_" not in text:
         return result
-    labels = {m.id: (m.label or "") for m in getattr(catalogue, "metrics", ())}
+    # A metric without a display name of its own is written as its words: leaving the
+    # id cost a revision each time (conversion_rate, product_net_revenue, live 2026-10-08).
+    labels = {
+        m.id: (m.label if m.label and m.label.strip() != m.id else m.id.replace("_", " "))
+        for m in getattr(catalogue, "metrics", ())
+    }
     fixed = replace_metric_ids(text, labels)
     return result if fixed == text else result.model_copy(update={"final_response": fixed})
+
+
+# Similarity above which a cited id that resolves to nothing is taken as a mis-copy
+# of a mission artifact id (a dropped or doubled hex digit, a cut-off tail).
+_ID_MATCH_CUTOFF = 0.9
+
+
+def _fetched_check(deps: SelericDeps) -> Callable[[float, float], bool] | None:
+    """``(value, tolerance) -> bool``: the mission fetched or derived that value, within
+    the value's own print rounding only — a total a few units off the fetched one is
+    still the arithmetic slip the total audit exists for."""
+    pool = _mission_values(deps)
+    if not pool:
+        return None
+    return lambda value, tolerance: any(abs(abs(value) - abs(k)) <= max(tolerance, 0.01) for k in pool)
+
+
+def _salvage(
+    result: MissionResult,
+    best: tuple[MissionResult, ValidationOutcome] | None,
+    deps: SelericDeps,
+    validator: EvidenceValidator,
+) -> tuple[MissionResult, ValidationOutcome] | None:
+    """The answer an exhausted loop can still ship: the best draft, else the last one
+    without the sentences stating a total its own table cannot produce — provided
+    that leaves a draft that passes, or fails only for a fixable reason."""
+    if best is not None or not is_terminal_status(result.status) or result.status == "failed":
+        return best
+    text = without_mismatched_totals(result.final_response or "", _label_columns(deps), _fetched_check(deps))
+    if not text:
+        return None
+    repaired = _repair_citations(result.model_copy(update={"final_response": text}), deps)
+    outcome = validator.validate(repaired, deps=deps)
+    if not (outcome.ok or _is_answer(repaired, outcome)):
+        return None
+    note = "a stated total that did not reconcile with the table was removed"
+    return repaired, dataclasses.replace(outcome, reason="; ".join(filter(None, [note, outcome.reason])))
+
+
+def _repair_citations(result: MissionResult, deps: SelericDeps) -> MissionResult:
+    """Map each cited id that resolves to nothing onto the mission artifact it was
+    copied from, or drop it.
+
+    A mis-copied id is a transcription slip, not a gap in the answer: live 2026-10-08
+    (MS3-c731cf60a4, MS3-f0f314a19c, 15 runs in a week) a 31-digit copy of a
+    32-digit id cost a full revision, three in a row in some. An id is repaired
+    when exactly one mission artifact starts with it, or is its single close match;
+    anything else (a placeholder like "artifact_... (multiple)") is dropped. When
+    no cited id survives, the mission's own work is cited — grounding falls back
+    to it anyway."""
+    store = deps.artifact_store
+    cited = [*result.evidence_ids, *result.finding_ids]
+    if all(store.get(aid) is not None for aid in cited):
+        return result
+    mission = {a.id: a.artifact_type for a in store.list_for_mission(deps.mission_id)}
+
+    def resolve(aid: str) -> str | None:
+        if store.get(aid) is not None:
+            return aid
+        stem = aid.strip().rstrip(".…").strip()
+        prefixed = [m for m in mission if stem and (m.startswith(stem) or stem.startswith(m))]
+        if len(prefixed) == 1:
+            return prefixed[0]
+        close = difflib.get_close_matches(stem, list(mission), n=2, cutoff=_ID_MATCH_CUTOFF)
+        return close[0] if len(close) == 1 else None
+
+    evidence_ids = list(dict.fromkeys(r for r in map(resolve, result.evidence_ids) if r))
+    finding_ids = list(dict.fromkeys(r for r in map(resolve, result.finding_ids) if r))
+    if not evidence_ids and not finding_ids:
+        evidence_ids = [aid for aid, kind in mission.items() if kind == "evidence"]
+        finding_ids = [aid for aid, kind in mission.items() if kind == "finding"]
+    _log.info(
+        "v3_citations_repaired mission=%s cited=%d kept=%d",
+        deps.mission_id, len(cited), len(evidence_ids) + len(finding_ids),
+    )
+    return result.model_copy(update={"evidence_ids": evidence_ids, "finding_ids": finding_ids})
 
 
 def _stated_percents(text: str) -> list[float]:
@@ -601,7 +685,7 @@ class EvidenceValidator:
         # -- deterministic prose audits (see validation/answer_audit) --------
         # The response contract forbids both of these in plain words; live runs
         # on v0.1.24 shipped them anyway. Checked, not asserted.
-        arithmetic = total_mismatch(result.final_response, _label_columns(deps))
+        arithmetic = total_mismatch(result.final_response, _label_columns(deps), _fetched_check(deps))
         if arithmetic:
             return ValidationOutcome(ok=False, reason=arithmetic, self_contradicting=True)
         # A change computed between incomparable windows is a wrong headline, so it
@@ -1030,7 +1114,7 @@ async def _validated(
     )
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
-    result = _humanize_metric_ids(result, deps)
+    result = _repair_citations(_humanize_metric_ids(result, deps), deps)
     outcome = validator.validate(result, deps=deps)
     revisions: list[dict[str, Any]] = []
     # The latest rejected draft that is still a real answer, with its own
@@ -1068,13 +1152,14 @@ async def _validated(
             )
         verdict = tracker.consume("validation_revisions")
         if not verdict.ok:
-            return _exhausted(result, outcome, best, deps, revisions)
+            return _exhausted(result, outcome, _salvage(result, best, deps, validator), deps, revisions)
         emit_progress(
             deps.mission_id,
             "agent.revising",
             f"Revising the answer — {_short(outcome.reason)}",
             {"revision": len(revisions), "verdict": outcome.verdict},
         )
+        rejected = result.final_response
         revision_prompt = (
             f"Your previous answer was rejected: {outcome.reason}. Revise it: fix exactly "
             "that problem, reuse the evidence and artifacts you already fetched (their ids "
@@ -1109,8 +1194,19 @@ async def _validated(
             return _exhausted(result, outcome, best, deps, revisions, code="MODEL_UNAVAILABLE")
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
-        result = _humanize_metric_ids(result, deps)
+        result = _repair_citations(_humanize_metric_ids(result, deps), deps)
+        previous = (outcome.reason, _figures(rejected or ""))
         outcome = validator.validate(result, deps=deps)
+        if not outcome.ok and (outcome.reason, _figures(result.final_response or "")) == previous:
+            # The revision printed the same figures and failed for the same reason: the
+            # model cannot fix it from what it holds, and another round costs ~10 s for
+            # the same draft (live 2026-10-08 MS3-f23af5a954: four identical rejections).
+            revisions.append({"revision": len(revisions), "verdict": outcome.verdict, "reason": outcome.reason})
+            if _is_answer(result, outcome):
+                best = (result, outcome)
+            return _exhausted(
+                result, outcome, _salvage(result, best, deps, validator), deps, revisions, code="VALIDATION_STALLED"
+            )
 
     # Attach validation telemetry to trace for observability
     validation_trace = {

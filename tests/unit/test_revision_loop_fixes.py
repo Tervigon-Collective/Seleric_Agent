@@ -204,35 +204,52 @@ async def test_revision_continues_the_conversation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_exhausted_loop_ships_the_last_draft_not_proven_wrong() -> None:
+async def test_a_miscopied_citation_is_repaired_without_a_revision() -> None:
+    """Live 2026-10-08: a cited id that resolves to nothing cost a full revision (15
+    runs in a week). An id with no close mission artifact is dropped, and an answer
+    left citing nothing cites the mission's own evidence."""
     store = InMemoryArtifactStore()
     _seed(store)
     good = "Spend totalled " + f"{sum(DAILY):,.2f}.\n\n" + _table()
-    wrong = "Spend totalled 1,252,927.\n\n" + _table()
-    drafts = iter([_final(good, ["artifact_does_not_exist"]), _final(wrong)])
+    calls = 0
 
-    agent = Agent(FunctionModel(lambda _m, _i: next(drafts)), deps_type=SelericDeps, output_type=MissionResult)
-    result = await run_validated_mission(agent, _deps(store), "q")
+    def model(_m: list, _i: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return _final(good, ["artifact_does_not_exist"])
 
-    assert result.status == "partial"
-    assert result.final_response == good.strip()
-    assert result.evidence_ids == []  # the unresolvable citation is dropped, not shipped
-    assert "1,252,927" not in result.final_response
-    assert len(result.trace["validation"]["revisions"]) == 2
+    agent = Agent(FunctionModel(model), deps_type=SelericDeps, output_type=MissionResult)
+    deps = _deps(store)
+    result = await run_validated_mission(agent, deps, "q")
+
+    assert result.status == "completed"
+    assert calls == 1
+    assert "artifact_does_not_exist" not in result.evidence_ids
+    assert set(result.evidence_ids) == {a.id for a in store.list_for_mission(deps.mission_id) if a.artifact_type == "evidence"}
 
 
 @pytest.mark.asyncio
-async def test_exhausted_loop_never_ships_a_self_contradicting_draft() -> None:
+async def test_a_stalled_revision_ships_the_draft_without_its_wrong_total() -> None:
+    """The same figures rejected for the same reason twice: the loop stops instead of
+    spending more revisions, and ships the table without the mis-added total rather
+    than failing the mission (live 2026-10-08 MS3-28737df764)."""
     store = InMemoryArtifactStore()
     _seed(store)
-    agent = Agent(
-        FunctionModel(lambda _m, _i: _final("Spend totalled 1,252,927.\n\n" + _table())),
-        deps_type=SelericDeps,
-        output_type=MissionResult,
-    )
+    calls = 0
+
+    def model(_m: list, _i: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return _final("Spend totalled 1,252,927.\n\n" + _table())
+
+    agent = Agent(FunctionModel(model), deps_type=SelericDeps, output_type=MissionResult)
     result = await run_validated_mission(agent, _deps(store), "q")
-    assert result.status == "failed"
+    assert calls == 2
+    assert result.status == "partial"
     assert "1,252,927" not in result.final_response
+    assert _table().strip().splitlines()[0] in result.final_response
+    assert "VALIDATION_STALLED" in result.limitations
+    assert any("did not reconcile" in item for item in result.limitations)
 
 
 # -- progress ------------------------------------------------------------------

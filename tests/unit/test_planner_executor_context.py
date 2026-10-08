@@ -239,6 +239,7 @@ async def test_a_period_comparison_judges_the_later_window_against_the_earlier_o
         as_of=TODAY,
     )
     assert out is not None
-    assert "2026-09-01..2026-09-03 (per day) | 2026-10-01..2026-10-03 (per day)" in out.text
-    assert "| spend | 100.00 | 150.00 | +50.0% |" in out.text
-    assert "change = 2026-10-01..2026-10-03 against 2026-09-01..2026-09-03" in out.text
+    # Windows of equal length compare as totals.
+    assert "| metric | 2026-09-01..2026-09-03 | 2026-10-01..2026-10-03 | change |" in out.text
+    assert "| spend | 300.00 | 450.00 | +50.0% |" in out.text
+    assert "Earlier window 2026-09-01..2026-09-03 vs later window 2026-10-01..2026-10-03" in out.text

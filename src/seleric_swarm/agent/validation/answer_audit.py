@@ -24,6 +24,8 @@ answer printed.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import re
 from itertools import combinations
 
@@ -351,23 +353,72 @@ def _blend_of_rows(claim: float, tolerance: float, values: list[float]) -> bool:
     )
 
 
-def total_mismatch(text: str, label_columns: frozenset[str] = frozenset()) -> str | None:
+def total_mismatch(
+    text: str,
+    label_columns: frozenset[str] = frozenset(),
+    fetched: Callable[[float, float], bool] | None = None,
+) -> str | None:
     """A stated total that no column of the answer's own table can produce.
 
     Returns a reason string for the revision loop, or None when the answer is
     internally consistent (which includes: no table, or no total claimed).
     ``label_columns``: header keys of label (dimension) columns, never summed.
+    ``fetched(value, tolerance)``: True when the mission fetched or derived that
+    value. A total the data itself holds is not the table's arithmetic: "total
+    product revenue 484,826.60" beside a table of the attributed part of it
+    (golden Q17), or a total of a measure the table does not show.
     """
+    for _sentence, claim, sums in _mismatched_totals(text, label_columns, fetched):
+        return (
+            f"the answer states a total of {claim:,.2f} but the table it prints "
+            f"sums to {sums} — recompute the total from the rows shown, or drop it"
+        )
+    return None
+
+
+def without_mismatched_totals(
+    text: str,
+    label_columns: frozenset[str] = frozenset(),
+    fetched: Callable[[float, float], bool] | None = None,
+) -> str | None:
+    """``text`` with every sentence that states an irreconcilable total removed, or
+    None when there is none. The table rows stay: they are the fetched data; the
+    sentence is the model's own arithmetic on them. What an exhausted loop ships in
+    place of "I could not back this answer" (live 2026-10-08 MS3-28737df764: today's
+    top campaigns, every row backed, failed over one mis-added total)."""
+    bad = list(dict.fromkeys(sentence for sentence, _c, _s in _mismatched_totals(text, label_columns, fetched)))
+    if not bad:
+        return None
+    lines = []
+    for line in text.splitlines():
+        if "|" not in line:
+            for sentence in bad:
+                line = line.replace(sentence, "")
+            if not line.strip() and lines and not lines[-1].strip():
+                continue
+        lines.append(line.rstrip())
+    return "\n".join(lines).strip()
+
+
+def _mismatched_totals(
+    text: str,
+    label_columns: frozenset[str],
+    fetched: Callable[[float, float], bool] | None,
+):
+    """(sentence, claimed total, column sums) for each stated total no column of the
+    answer's table produces."""
     rounded = _table_columns_with_rounding(text, label_columns)
     columns = [values for values, _ in rounded]
     if not columns:
-        return None
+        return
     for line in text.splitlines():
         if "|" in line:
             continue
         for sentence in _SENTENCE_END.split(line):
             for word, claim, tolerance in _claims_on(sentence):
                 if claim == 0:
+                    continue
+                if fetched is not None and fetched(claim, tolerance):
                     continue
                 if any(_reconciles(claim, tolerance, values, cell) for values, cell in rounded):
                     continue
@@ -378,12 +429,8 @@ def total_mismatch(text: str, label_columns: frozenset[str] = frozenset()) -> st
                     continue
                 if word in _BLEND_WORDS and any(_blend_of_rows(claim, tolerance, c) for c in columns):
                     continue
-                sums = ", ".join(f"{sum(c):,.2f}" for c in columns)
-                return (
-                    f"the answer states a total of {claim:,.2f} but the table it prints "
-                    f"sums to {sums} — recompute the total from the rows shown, or drop it"
-                )
-    return None
+                yield sentence, claim, ", ".join(f"{sum(c):,.2f}" for c in columns)
+                break
 
 
 def leaked_metric_ids(text: str, metric_ids: set[str]) -> list[str]:

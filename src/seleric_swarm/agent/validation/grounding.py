@@ -106,6 +106,34 @@ def _date_parts(periods: set[tuple[date, date]]) -> set[float]:
     return parts
 
 
+_HELD_PER_METRIC = 3
+
+
+def _held(metric_ids: list[str], cited: set[str], evidence: dict[str, EvidenceArtifact]) -> str:
+    """What the cited evidence holds for each metric, so a revision can print it
+    instead of guessing which number the check wanted."""
+    out = []
+    for mid in metric_ids:
+        rows = sorted(
+            (evidence[e] for e in cited if evidence[e].metric_id == mid and evidence[e].grain == "none"
+             and evidence[e].value is not None),
+            key=lambda ev: (ev.period_start, sorted(ev.dimensions.items())),
+        )[:_HELD_PER_METRIC]
+        if rows:
+            out.append(f"{mid}: " + ", ".join(
+                f"{ev.value:,.2f} for {_period(ev)[0]}..{_period(ev)[1]}"
+                + (f" {', '.join(f'{k}={v}' for k, v in ev.dimensions.items())}" if ev.dimensions else "")
+                for ev in rows
+            ))
+    return "; ".join(out) or "see the evidence"
+
+
+def _held_in(periods: list[tuple[date, date]], cited: set[str], evidence: dict[str, EvidenceArtifact]) -> str:
+    """What the cited evidence holds for each period, metric by metric."""
+    metrics = sorted({evidence[e].metric_id for e in cited if _period(evidence[e]) in periods})
+    return _held(metrics, {e for e in cited if _period(evidence[e]) in periods}, evidence)
+
+
 def check_answer_grounding(artifacts: list[Artifact], result: MissionResult | None) -> CheckOutcome:
     if result is None or not (result.final_response or "").strip():
         return CheckOutcome(check="answer_grounding", status="NOT_APPLICABLE")
@@ -163,13 +191,36 @@ def check_answer_grounding(artifacts: list[Artifact], result: MissionResult | No
         if len(periods) == 1 and next(iter(periods)) in period_values:
             period_values[next(iter(periods))].extend(vals)
 
+    # Evidence the answer shows through a finding computed from it: a per-day figure,
+    # a span total summed from parts, a change. A finding names the metric each of its
+    # figures belongs to in the figure's key ("ad_spend | ref"), so the figure stands
+    # for that metric's evidence. Live 2026-10-08 (MS3-f23af5a954): the executor's
+    # per-day ad spend and orders were reported exactly, yet "cites evidence for
+    # ad_spend, orders but shows no value from it" spent three revisions.
+    represented: set[str] = set()
+    for fid in cited_findings:
+        f = findings[fid]
+        by_metric: dict[str, list[str]] = {}
+        for eid in f.evidence_ids:
+            if eid in evidence:
+                by_metric.setdefault(evidence[eid].metric_id, []).append(eid)
+        for key, value in f.metrics.items():
+            named = {part.strip() for part in str(key).split("|")}
+            named |= {part.split(".", 1)[0] for part in named}
+            hits = [mid for mid in by_metric if mid in named]
+            if hits and any(_matches(num, value) for num in numbers):
+                for mid in hits:
+                    represented.update(by_metric[mid])
+    shown_periods = {_period(evidence[eid]) for eid in represented}
+    shown_metrics = {evidence[eid].metric_id for eid in represented}
+
     uncovered = [
         p for p, vals in sorted(period_values.items())
-        if not any(_matches(num, v) for num in numbers for v in vals)
+        if p not in shown_periods and not any(_matches(num, v) for num in numbers for v in vals)
     ]
     silent_metrics = [
         mid for mid, vals in sorted(metric_values.items())
-        if not any(_matches(num, v) for num in numbers for v in vals)
+        if mid not in shown_metrics and not any(_matches(num, v) for num in numbers for v in vals)
     ]
     date_parts = _date_parts({_period(evidence[e]) for e in cited})
     ungrounded = [
@@ -183,8 +234,8 @@ def check_answer_grounding(artifacts: list[Artifact], result: MissionResult | No
         spans = ", ".join(f"{s}..{e}" if s != e else f"{s}" for s, e in uncovered)
         detail = (
             f"the answer cites evidence for {spans} but shows no value from it — report "
-            f"the values the evidence holds for that period (or drop that period's evidence "
-            f"if it is not part of the answer)"
+            f"the values the evidence holds for that period ({_held_in(uncovered, cited, evidence)}), "
+            f"or drop that period's evidence if it is not part of the answer"
         )
         if ungrounded:
             detail += f"; numbers in the answer not found in any evidence: {', '.join(ungrounded)}"
@@ -196,9 +247,9 @@ def check_answer_grounding(artifacts: list[Artifact], result: MissionResult | No
             EvidenceGap(
                 description=(
                     f"the answer cites evidence for {', '.join(silent_metrics)} but shows no "
-                    f"value from it — report that metric's own values, or drop its evidence "
-                    f"and say the figure is unavailable rather than showing another metric's "
-                    f"number in its place"
+                    f"value from it — report that metric's own values ({_held(silent_metrics, cited, evidence)}), "
+                    f"or drop its evidence and say the figure is unavailable rather than showing "
+                    f"another metric's number in its place"
                 ),
                 blocking=True,
                 priority=8,

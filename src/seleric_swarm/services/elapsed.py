@@ -10,7 +10,7 @@ the reference days.
 
 from __future__ import annotations
 
-from datetime import date, datetime, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 
 # Evidence dimension carried by a same-elapsed-hours value ("12:00" = hours 00-11 of each day).
 ELAPSED_KEY = "elapsed_through"
@@ -35,3 +35,20 @@ def covers_in_progress_day(start: date, end: date, as_of: datetime) -> bool:
     """True when the window [start, end] includes today while today is still running."""
     today = in_progress_day(as_of)
     return today is not None and start <= today <= end
+
+
+def same_span(earlier: tuple[date, date], later: tuple[date, date], as_of: datetime) -> tuple[date, date] | None:
+    """The part of ``earlier`` a period to date compares with, or None when the
+    windows compare as they are.
+
+    When ``later`` runs to today over more than one day (this week, this month, the
+    last N days with today) and ``earlier`` is at least as long, the like-for-like
+    comparison is the same span: ``earlier`` cut to as many days as ``later`` has
+    run, its last day counted to the hour today has reached. A single running day
+    (today against the days before) compares per day over the same hours instead."""
+    later_days = (later[1] - later[0]).days + 1
+    if not covers_in_progress_day(later[0], later[1], as_of) or later_days < 2:
+        return None
+    if (earlier[1] - earlier[0]).days + 1 < later_days or earlier[1] >= later[0]:
+        return None
+    return earlier[0], earlier[0] + timedelta(days=later_days - 1)

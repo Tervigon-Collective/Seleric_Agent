@@ -36,6 +36,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
+
+from seleric_swarm.services.elapsed import same_span
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
@@ -465,6 +467,7 @@ def check_scope_coverage(
     catalogue: Any = None,
     not_values: Any = (),
     cited: Any = (),
+    as_of: datetime | None = None,
 ) -> CheckOutcome:
     """Executed evidence must cover the breakdowns and named values the query demanded.
 
@@ -711,11 +714,20 @@ def check_scope_coverage(
     # satisfies the range. Per mission rather than per metric — requiring every
     # metric to cover both windows would flag a correct answer that compares
     # windows on the metrics it could and states the rest as unavailable.
-    for window in windows:
-        win_start = getattr(window, "start", None)
-        win_end = getattr(window, "end", None)
-        if not isinstance(win_start, date) or not isinstance(win_end, date):
-            continue
+    #
+    # A period compared with a period to date is covered by its same span (the
+    # executor fetches exactly that); asking for the rest of it sent the model back
+    # to fetch the whole week and compare 7 days with 4 (live 2026-10-08).
+    dated = [
+        (w.start, w.end) for w in windows
+        if isinstance(getattr(w, "start", None), date) and isinstance(getattr(w, "end", None), date)
+    ]
+    for win_start, win_end in dated:
+        if as_of is not None:
+            for other in dated:
+                if (span := same_span((win_start, win_end), other, as_of)) is not None:
+                    win_start, win_end = span
+                    break
         if _spans_contain(_merged_spans(evidence_periods), win_start, win_end):
             continue
         gaps.append(
@@ -781,6 +793,7 @@ def run_checks(
             getattr(deps, "catalogue", None),
             not_values=getattr(result, "not_values", None) or (),
             cited=getattr(result, "evidence_ids", None) or (),
+            as_of=getattr(deps, "as_of", None),
         ),
         check_answer_grounding(artifacts, result),
     ]
