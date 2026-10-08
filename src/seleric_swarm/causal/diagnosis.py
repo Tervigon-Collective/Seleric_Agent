@@ -782,6 +782,27 @@ def _has_weekly_pattern(series: Series, pool: set[date]) -> bool:
     return bool(math.isfinite(p) and p < P.DIAG_ALPHA)
 
 
+_PERIOD_KIND = "the comparison period"
+
+
+def _period_shift_z(series: Series, event_days: list[date], baseline: list[date]) -> tuple[float, float | None]:
+    """Signed z (and p) of a rank test between the two periods' daily values."""
+    from scipy import stats
+
+    ev = [float(series[d]) for d in event_days if _finite(series.get(d))]
+    rf = [float(series[d]) for d in baseline if _finite(series.get(d))]
+    if len(ev) < 3 or len(rf) < 3:
+        return 0.0, None
+    try:
+        p = float(stats.mannwhitneyu(ev, rf, alternative="two-sided").pvalue)
+    except ValueError:
+        return 0.0, None
+    if not math.isfinite(p):
+        return 0.0, None
+    z = float(stats.norm.isf(max(p, 1e-12) / 2.0))
+    return (z if _median(ev) >= _median(rf) else -z), p
+
+
 def _reference_kind(profile: SeasonalProfile) -> str:
     return "same weekday, level-adjusted" if profile.same_weekday else "nearest normal days, level-adjusted"
 
@@ -1162,6 +1183,9 @@ class DiagnosisInput:
     claimed_direction: Direction | None = None
     denominators: dict[str, str] = field(default_factory=dict)  # rate metric -> weight metric
     numerators: dict[str, str] = field(default_factory=dict)  # ratio metric -> its verified numerator
+    # Period comparison: the window the event is compared with, day for day (same
+    # length as ``event_days``). Empty = compare with the metric's usual level.
+    baseline_days: list[date] = field(default_factory=list)
     scope_tokens: frozenset[str] = frozenset()  # grain tokens naming the tenant scope, not a unit
     # Same-unit additive metrics that may sum to the outcome (verified on the data).
     bridge_candidates: list[str] = field(default_factory=list)
@@ -1175,7 +1199,7 @@ def _event_value(
     meta = inp.lineage.get(metric)
     series = inp.series.get(metric, {})
     if meta is None or meta.additive:
-        ev, rf = _additive_window(series, window, missing_as_zero=False)
+        ev, rf = _additive_window(series, window, missing_as_zero=window.reference_kind == _PERIOD_KIND)
         return ev, rf, ""
     if identity is not None and all(inp.lineage.get(m, MetricMeta(m)).additive for m, _ in identity.factors):
         vals = _additive_factor_values(inp, window, identity)
@@ -1214,7 +1238,9 @@ def _additive_factor_values(
             inp.series.get(m, {}), window.history_days, window.event_days, additive=True,
             kind=window.reference_kind, extra_outliers=linked,
         )
-        out[m] = _additive_window(inp.series.get(m, {}), own or window, missing_as_zero=False)
+        out[m] = _additive_window(
+            inp.series.get(m, {}), own or window, missing_as_zero=window.reference_kind == _PERIOD_KIND
+        )
     return out
 
 
@@ -1678,7 +1704,11 @@ def _own_window(
 
     ``extra_outliers``: days abnormal for a linked metric (the outcome or a
     partner component describe the same events), excluded here too.
+    A period comparison has one shared reference (the comparison period), so
+    every series uses the caller's window there (None = use it).
     """
+    if kind == _PERIOD_KIND:
+        return None, None
     prof = seasonal_profile(series, history, len(event_days), additive=additive)
     if prof is None:
         return None, None
@@ -1711,7 +1741,9 @@ def _chain_step(
         inp.series.get(base, {}), window.history_days, window.event_days, additive=True,
         kind=window.reference_kind, extra_outliers=linked,
     )
-    b_ev, b_rf = _additive_window(inp.series.get(base, {}), own or window, missing_as_zero=False)
+    b_ev, b_rf = _additive_window(
+        inp.series.get(base, {}), own or window, missing_as_zero=window.reference_kind == _PERIOD_KIND
+    )
     if b_ev is None or b_rf is None or b_ev <= 0 or b_rf <= 0:
         return []
     r_ev, r_rf = f_ev / (ident.k * b_ev), f_rf / (ident.k * b_rf)
@@ -1800,6 +1832,14 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             event=None, data_quality=quality,
         )
     missing_event = [d for d in event_days if not _finite(ys.get(d))]
+    # A period ratio is rebuilt from its components' totals, so a day where the
+    # ratio is undefined (no spend that day) still counts; a short event cannot.
+    if missing_event and inp.baseline_days and len(missing_event) < len(event_days):
+        quality.append(
+            f"{y} is undefined on {len(missing_event)} day(s) of the period (its denominator was zero); the period "
+            "value is rebuilt from its components' totals"
+        )
+        missing_event = []
     if missing_event:
         return DiagnosisReport(
             outcome=y, event_window=window_label, verdict="insufficient_data",
@@ -1814,8 +1854,16 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     meta_y = inp.lineage.get(y, MetricMeta(y))
     n_ev = len(event_days)
     weight_metric = inp.denominators.get(y)
-    profile = seasonal_profile(ys, history, n_ev, additive=meta_y.additive)
-    if profile is None:
+    baseline = sorted(inp.baseline_days)
+    if baseline and len(baseline) != n_ev:
+        return DiagnosisReport(
+            outcome=y, event_window=window_label, verdict="insufficient_data",
+            headline="The comparison period must be as long as the period asked about.", event=None, data_quality=quality,
+        )
+    if baseline and (missing_base := [d for d in baseline if not _finite(ys.get(d))]):
+        quality.append(f"{y} has no value on {len(missing_base)} day(s) of the comparison period")
+    profile = seasonal_profile(ys, history, n_ev if not baseline else 1, additive=meta_y.additive)
+    if profile is None and not baseline:
         return DiagnosisReport(
             outcome=y, event_window=window_label, verdict="insufficient_data",
             headline=(
@@ -1824,18 +1872,28 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             ),
             event=None, data_quality=quality,
         )
-    outliers = profile.outliers
-    referencer = profile.referencer
-    refs = {d: referencer.refs(d) for d in event_days}
-    ref_kind = _reference_kind(profile)
-    if any(len(v) < 2 for v in refs.values()):
-        refs, ref_kind = reference_days(event_days, history, outliers, P.DIAG_REFERENCE_WEEKS)
-        factors = {}
+    same_weekday = bool(profile and profile.same_weekday)
+    if baseline:
+        # Day i of the event is referenced on day i of the comparison period, so
+        # every sum (and every ratio of sums) is exactly the comparison period's.
+        outliers: set[date] = set()
+        refs = {d: [b] for d, b in zip(event_days, baseline, strict=True)}
+        ref_kind = _PERIOD_KIND
+        window = EventWindow(event_days, history, refs, [], ref_kind, {})
     else:
-        factors = {}
-        for d in event_days:
-            refs[d], factors[d] = referencer.trimmed(start, refs[d])
-    window = EventWindow(event_days, history, refs, sorted(outliers), ref_kind, factors)
+        assert profile is not None
+        outliers = profile.outliers
+        referencer = profile.referencer
+        refs = {d: referencer.refs(d) for d in event_days}
+        ref_kind = _reference_kind(profile)
+        if any(len(v) < 2 for v in refs.values()):
+            refs, ref_kind = reference_days(event_days, history, outliers, P.DIAG_REFERENCE_WEEKS)
+            factors = {}
+        else:
+            factors = {}
+            for d in event_days:
+                refs[d], factors[d] = referencer.trimmed(start, refs[d])
+        window = EventWindow(event_days, history, refs, sorted(outliers), ref_kind, factors)
     if outliers:
         quality.append(
             f"{len(outliers)} abnormal history day(s) excluded from the reference: "
@@ -1852,13 +1910,18 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             headline=f"Could not form a reference for {y} from comparable past days.", event=None, data_quality=quality,
         )
     delta = y_ev - y_rf
-    rel_err = _err(y_ev, y_rf, profile.use_log, profile.offset * (n_ev if meta_y.additive else 1))
-    if rel_err is None:
-        return DiagnosisReport(
-            outcome=y, event_window=window_label, verdict="insufficient_data",
-            headline=f"{y} cannot be compared with its reference on a common scale.", event=None, data_quality=quality,
-        )
-    z = profile.z(rel_err)
+    if baseline:
+        z, p_period = _period_shift_z(ys, event_days, baseline)
+        rel_err = None
+    else:
+        assert profile is not None
+        rel_err = _err(y_ev, y_rf, profile.use_log, profile.offset * (n_ev if meta_y.additive else 1))
+        if rel_err is None:
+            return DiagnosisReport(
+                outcome=y, event_window=window_label, verdict="insufficient_data",
+                headline=f"{y} cannot be compared with its reference on a common scale.", event=None, data_quality=quality,
+            )
+        z = profile.z(rel_err)
     unusual = abs(z) >= P.DIAG_EVENT_Z and _sign(delta) == _sign(z)
     notable = not unusual and abs(z) >= P.DIAG_EVENT_Z_NOTABLE and _sign(delta) == _sign(z)
     direction: Direction | None = None if _sign(delta) == 0 else ("up" if delta > 0 else "down")
@@ -1867,7 +1930,8 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     previous: dict[str, Any] = {"days": [d.isoformat() for d in prev_days]}
     if all(_finite(v) for v in prev_vals):
         pv = sum(float(v) for v in prev_vals) if meta_y.additive else _mean([float(v) for v in prev_vals])
-        ev_simple = sum(float(ys[d]) for d in event_days) if meta_y.additive else _mean([float(ys[d]) for d in event_days])
+        ev_vals = [float(ys[d]) for d in event_days if _finite(ys.get(d))]
+        ev_simple = sum(ev_vals) if meta_y.additive else _mean(ev_vals)
         previous.update({"value": pv, "delta": ev_simple - pv, "delta_pct": _rel(ev_simple - pv, pv)})
     prev_direction: Direction | None = None
     if previous.get("delta") and abs(previous.get("delta_pct") or 0.0) >= 0.05:
@@ -1899,26 +1963,36 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
         reference_days={d.isoformat(): [r.isoformat() for r in refs[d]] for d in event_days},
         level_factors={d.isoformat(): {r.isoformat(): round(f, 4) for r, f in window.factors.get(d, {}).items()} for d in event_days},
         excluded_outlier_days=[d.isoformat() for d in sorted(outliers)], aggregation_note=agg_note,
-        sampling={
+        sampling=({
+            "test": "two-sample rank test of the daily values in the two periods", "p_value": p_period,
+            **sampling_extra,
+        } if baseline else {
             "typical_deviation": profile.scale, "scale": "log" if profile.use_log else "relative", "history_windows": len(profile.errors),
             "percentile_vs_history": profile.percentile(rel_err),
             **sampling_extra,
-        },
+        }),
     )
 
     report = DiagnosisReport(
         outcome=y, event_window=window_label, verdict="root_cause_not_identified", headline="",
         event=event, identities=[i.describe() for i in identities], data_quality=quality,
     )
-    report.assumptions.append(
-        f"Reference = {ref_kind} (whichever predicted this metric's own history better): "
-        + (f"the {P.DIAG_REFERENCE_WEEKS} most recent normal same-weekday days" if profile.same_weekday
-           else "the 7 most recent normal days")
-        + ", each scaled by how "
-        "the trailing 7-normal-day level changed since then, highest and lowest dropped, the rest averaged; "
-        "significance = how far the event sits from its reference compared with how far every past day sat from "
-        "its own reference (median/MAD of those deviations)."
-    )
+    if baseline:
+        report.assumptions.append(
+            f"Reference = the comparison period {baseline[0].isoformat()}..{baseline[-1].isoformat()} as booked; "
+            "significance = a rank test of the two periods' daily values (days are not independent, so treat it as "
+            "a guide)."
+        )
+    else:
+        report.assumptions.append(
+            f"Reference = {ref_kind} (whichever predicted this metric's own history better): "
+            + (f"the {P.DIAG_REFERENCE_WEEKS} most recent normal same-weekday days" if same_weekday
+               else "the 7 most recent normal days")
+            + ", each scaled by how "
+            "the trailing 7-normal-day level changed since then, highest and lowest dropped, the rest averaged; "
+            "significance = how far the event sits from its reference compared with how far every past day sat from "
+            "its own reference (median/MAD of those deviations)."
+        )
 
     # ---- layer 2: decomposition ---------------------------------------------------
     if identity is not None:
@@ -1948,7 +2022,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             report.chain_identity = ident_c.describe() + f" (agrees within {ident_c.dispersion:.0%} on a typical day)"
             report.chain = _chain_step(inp, window, ident_c, t_ev, t_rf)
             rate_m, base_m = ident_c.factors[0][0], ident_c.factors[1][0]
-            r_window, _ = _own_window(inp.series[rate_m], history, event_days, additive=False, kind=ref_kind)
+            r_window = window if baseline else _own_window(inp.series[rate_m], history, event_days, additive=False, kind=ref_kind)[0]
             for dim, seg in (inp.segments.get(rate_m) or {}).items():
                 if r_window is None or dim not in (inp.segments.get(base_m) or {}):
                     continue
@@ -1962,7 +2036,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     for dim, seg in (inp.segments.get(y) or {}).items():
         finding: DimensionFinding | None = None
         if meta_y.additive:
-            finding = _analyse_additive_dimension(dim, seg, window, delta, y_rf, profile.same_weekday)
+            finding = _analyse_additive_dimension(dim, seg, window, delta, y_rf, same_weekday)
         elif weight_metric and dim in (inp.segments.get(weight_metric) or {}):
             finding = _analyse_rate_dimension(
                 dim, seg, inp.segments[weight_metric][dim], window, ys, inp.series.get(weight_metric)
@@ -1988,17 +2062,30 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             f"its segments add up to {f.volume_coverage:.0%} of {y} (units counted more than once), so its "
             "shares are not shares of the change"
         )
-    full.sort(key=lambda f: (not f.simpsons_paradox, not f.localised, f.broad_based, -abs(f.hot_share or 0.0)))
+    if not baseline:
+        # A short event leads with where it concentrated; a period comparison keeps
+        # the planned order (the business hierarchy, coarsest first) so the
+        # difference is walked top-down.
+        full.sort(key=lambda f: (not f.simpsons_paradox, not f.localised, f.broad_based, -abs(f.hot_share or 0.0)))
     partial.sort(key=lambda f: (not f.localised, -abs(f.hot_share or 0.0)))
     dims = full + partial
     report.dimensions = dims
 
     # ---- layer 4: drivers --------------------------------------------------------------
+    # A daily causal estimate explains a short event against normal days; it does
+    # not apportion a whole period against another, so period comparisons stop at
+    # what changed and where (decomposition and segments).
+    candidates = [] if baseline else list(inp.candidate_drivers)
+    if baseline and inp.candidate_drivers:
+        report.assumptions.append(
+            "Upstream drivers are estimated for short events only; a period comparison is explained by its "
+            "components and segments."
+        )
     excluded: dict[str, str] = {}
     desc = descendants(y, inp.lineage)
     identity_factors = {m for m, _ in identity.factors} if identity else set()
     identity_factors |= {t.metric for t in report.bridge}
-    for c in inp.candidate_drivers:
+    for c in candidates:
         if c == y:
             excluded[c] = "is the outcome itself"
         elif c in desc:
@@ -2008,7 +2095,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
         elif c not in inp.series or len([d for d in history if _finite(inp.series[c].get(d))]) < P.MIN_OBSERVATION_ROWS:
             excluded[c] = "has too little history in the window"
     y_units = meta_y.entity_tokens(inp.scope_tokens)
-    for c in inp.candidate_drivers:
+    for c in candidates:
         if c in excluded:
             continue
         shared_units = y_units & inp.lineage.get(c, MetricMeta(c)).entity_tokens(inp.scope_tokens)
@@ -2017,7 +2104,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
                 f"is measured on the same units as {y} ({', '.join(sorted(shared_units))}), so it describes the "
                 "same events rather than causing them — see the decomposition and segments instead"
             )
-    drivers = [c for c in inp.candidate_drivers if c not in excluded]
+    drivers = [c for c in candidates if c not in excluded]
     numerator: Series = {}
     if weight_metric and weight_metric in inp.series:
         wser = inp.series[weight_metric]
@@ -2034,15 +2121,15 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     components = [m for m in components if m != y and inp.lineage.get(m, MetricMeta(m)).additive]
     for c in list(drivers):
         twin = next(
-            (m for m in components if m in inp.series and (rc := _lockstep_correlation(inp.series[c], inp.series[m], history, outliers, profile.same_weekday)) is not None and abs(rc) >= P.DIAG_COMEASURE_R),
+            (m for m in components if m in inp.series and (rc := _lockstep_correlation(inp.series[c], inp.series[m], history, outliers, same_weekday)) is not None and abs(rc) >= P.DIAG_COMEASURE_R),
             None,
         )
         if twin is not None:
             excluded[c] = f"counts the same events as {twin}, a component of {y} (lockstep on normal days); not a cause"
             drivers.remove(c)
             continue
-        r = _lockstep_correlation(inp.series[c], ys, history, outliers, profile.same_weekday)
-        rn = _lockstep_correlation(inp.series[c], numerator, history, outliers, profile.same_weekday) if numerator else None
+        r = _lockstep_correlation(inp.series[c], ys, history, outliers, same_weekday)
+        rn = _lockstep_correlation(inp.series[c], numerator, history, outliers, same_weekday) if numerator else None
         if rn is not None and abs(rn) >= P.DIAG_COMEASURE_R:
             excluded[c] = (
                 f"moves in lockstep with the events {y} counts (rate × {weight_metric}, r={rn:.2f}); it measures "
@@ -2252,7 +2339,9 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
                 "Driver contributions are estimated one driver at a time; when drivers are linked they overlap "
                 "and should not be summed."
             )
-    if not (unusual or notable):
+    # A period comparison asks what made the two totals differ: the accounting
+    # below answers that even when the daily values overlap.
+    if not (unusual or notable) and not baseline:
         report.verdict = "no_unusual_change"
     elif any(f.classification == "supported_cause" for f in implicated):
         report.verdict = "explained" if (report.unexplained_share is not None and abs(report.unexplained_share) < 0.5) else "partially_explained"
@@ -2321,7 +2410,8 @@ def _headline(r: DiagnosisReport) -> str:
     e = r.event
     if e is None:
         return r.headline
-    move = f"{r.outcome} was {_fmt(e.actual)} vs a usual {_fmt(e.reference)} ({_pct(e.delta_pct)}, z={_fmt(e.z_score)})"
+    vs = "vs the comparison period's" if e.reference_kind == _PERIOD_KIND else "vs a usual"
+    move = f"{r.outcome} was {_fmt(e.actual)} {vs} {_fmt(e.reference)} ({_pct(e.delta_pct)}, z={_fmt(e.z_score)})"
     if r.verdict == "no_unusual_change":
         claim = ""
         if e.premise == "contradicted":
@@ -2496,6 +2586,10 @@ def _usual_blend(e: EventSummary) -> str:
     return "recent same weekdays" if _same_weekday(e) else "the most recent normal days"
 
 
+def _reference_words(e: EventSummary) -> str:
+    return "the comparison period" if e.reference_kind == _PERIOD_KIND else "the usual level"
+
+
 def _previous_label(r: DiagnosisReport) -> str:
     n = len(r.event_window)
     return "the day before" if n == 1 else f"the previous {n} days"
@@ -2530,7 +2624,10 @@ def _ratio_segment_text(s: SegmentMove, d: DimensionFinding, metric: str, lineag
     )
     if s.rate_reference is not None and s.rate_event is not None:
         txt += f" ({_label(metric, lineage)} {_val(s.rate_reference, metric, lineage)} → {_val(s.rate_event, metric, lineage)})"
-    return txt + f", about {_share(s.share_of_change)} of the change"
+    share = s.share_of_change
+    if share is not None and share < 0:
+        return txt + f", offsetting about {_share(-share)} of the change"
+    return txt + f", about {_share(share)} of the change"
 
 
 def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
@@ -2540,13 +2637,21 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
     name = _label(r.outcome, lineage)
     when = r.event_window[0] if len(r.event_window) == 1 else f"{r.event_window[0]} to {r.event_window[-1]}"
     out: list[str] = []
-    happened = (
-        f"WHAT HAPPENED: {name} was {_val(e.actual, r.outcome, lineage)} on {when}, against a usual "
-        f"{_val(e.reference, r.outcome, lineage)}{_usual_for(e)} ({_chg(e.actual, e.reference)}; 'usual' blends "
-        f"{_usual_blend(e)} and is not any single day's value)."
-    )
-    if e.previous_period.get("value") is not None:
-        happened += f" Versus {_previous_label(r)} it was {_chg(e.actual, e.previous_period['value'])}."
+    if e.reference_kind == _PERIOD_KIND:
+        base = sorted({x for v in e.reference_days.values() for x in v})
+        happened = (
+            f"WHAT HAPPENED: {name} was {_val(e.actual, r.outcome, lineage)} on {when}, against "
+            f"{_val(e.reference, r.outcome, lineage)} in the comparison period {base[0]} to {base[-1]} "
+            f"({_chg(e.actual, e.reference)})."
+        )
+    else:
+        happened = (
+            f"WHAT HAPPENED: {name} was {_val(e.actual, r.outcome, lineage)} on {when}, against a usual "
+            f"{_val(e.reference, r.outcome, lineage)}{_usual_for(e)} ({_chg(e.actual, e.reference)}; 'usual' blends "
+            f"{_usual_blend(e)} and is not any single day's value)."
+        )
+        if e.previous_period.get("value") is not None:
+            happened += f" Versus {_previous_label(r)} it was {_chg(e.actual, e.previous_period['value'])}."
     if e.premise == "contradicted":
         happened += f" Note: it went {e.direction}, not {'down' if e.direction == 'up' else 'up'} as the question assumes."
     elif e.premise == "vs_previous_only":
@@ -2555,17 +2660,23 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
             f"usual level it went {e.direction}: LEAD with both comparisons — never say it did not go "
             f"{_opposite(e.direction)}."
         )
-    happened += {
+    happened += ({
+        "strong": " The daily values of the two periods clearly differ, so this is a real shift.",
+        "moderate": " The daily values of the two periods differ somewhat — a notable shift, not a clear one.",
+        "none": " The daily values of the two periods overlap a lot, so the shift is not clear-cut; the parts "
+                "below show what moved.",
+    } if e.reference_kind == _PERIOD_KIND else {
         "strong": " That is well outside its normal day-to-day range.",
         "moderate": " That is a larger swing than most normal days, but not extreme — a notable change, not a clear anomaly.",
         "none": " That is within its normal day-to-day range, so there is no unusual change to explain.",
-    }[e.strength]
+    })[e.strength]
     if e.premise == "not_unusual" and abs(e.delta_pct or 0.0) < 0.10:
         happened += " Against its usual level it was essentially flat."
     out.append(happened)
     if r.bridge:
         out.extend(_bridge_lines(r, lineage))
-    if r.decomposition and e.strength == "none":
+    if r.decomposition and e.strength == "none" and e.reference_kind != _PERIOD_KIND:
+        # A period comparison is exact accounting, so its shares stay meaningful.
         # Shares of a change that is within noise are meaningless (they explode as
         # the total nears zero); state the component moves only.
         out.append(
@@ -2604,8 +2715,12 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
             )
             + f", so {_label(lead_c.metric, lineage)} carries about {_share(lead_c.share_of_change)} of it."
         )
+    period = e.reference_kind == _PERIOD_KIND
     where = next((d for d in r.chain_dimensions if _covers_whole(d) and (d.localised or d.simpsons_paradox)), None)
     where_metric = r.chain[0].metric if where is not None and r.chain else None
+    if period:
+        where = next((d for d in r.dimensions if _covers_whole(d) and d.top and d.n_segments >= 2), None)
+        where_metric = r.outcome if where is not None else None
     if where is None:
         where = next((d for d in r.dimensions if _covers_whole(d) and (d.localised or d.simpsons_paradox)), None)
         where_metric = r.outcome if where is not None else None
@@ -2631,25 +2746,29 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
         elif where.kind == "ratio" and where.numerator and where.denominator:
             txt = f"WHERE: by {where.dimension.replace('_', ' ')}, " + "; ".join(
                 _ratio_segment_text(s, where, where_metric, lineage)
-                for s in where.top[:3] if _sign(s.share_of_change or 0.0) > 0
+                for s in where.top[:3] if period or _sign(s.share_of_change or 0.0) > 0
             ) + (
-                " (shares are of the change versus the usual level; each is what the segment added to "
+                f" (shares are of the change versus {_reference_words(e)}; each is what the segment added to "
                 f"{_label(where.numerator, lineage).lower()} beyond the usual return on what it added to "
                 f"{_label(where.denominator, lineage).lower()})."
             )
-            # A coarser level of the same split names the parent (campaign above an ad).
+            # A coarser level of the same split names the parent (campaign above an
+            # ad); a period comparison walks one level down instead.
             also = [
                 d for d in r.dimensions
-                if d is not where and d.kind == "ratio" and d.top and d.n_segments < where.n_segments
-                and _covers_whole(d) and d.localised
+                if d is not where and d.kind == "ratio" and d.top and _covers_whole(d)
+                and ((d.n_segments > where.n_segments) if period else (d.n_segments < where.n_segments and d.localised))
             ][:1]
             if also:
-                txt += f" By {also[0].dimension.replace('_', ' ')}: " + _ratio_segment_text(also[0].top[0], also[0], where_metric, lineage) + "."
+                shown = also[0].top[:3] if period else also[0].top[:1]
+                txt += f" By {also[0].dimension.replace('_', ' ')}: " + "; ".join(
+                    _ratio_segment_text(x, also[0], where_metric, lineage) for x in shown
+                ) + "."
         else:
             txt = (
                 f"WHERE: by {where.dimension.replace('_', ' ')}, {s0.segment} went from {_val(s0.reference, where_metric, lineage)} "
                 f"to {_val(s0.event, where_metric, lineage)}, about {_share(s0.share_of_change)} of the change "
-                "versus the usual level (its usual, not the day before — never apply this share to the "
+                f"versus {_reference_words(e)} (not the day before — never apply this share to the "
                 "day-before change)."
             )
         out.append(txt)
@@ -2685,6 +2804,12 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
                 f"(95% range {_val(lo, r.outcome, lineage)} to {_val(hi, r.outcome, lineage)}), roughly "
                 f"{_share(f.share_of_change)} of the change. Basis: {f.reason}."
             )
+    elif e.reference_kind == _PERIOD_KIND:
+        out.append(
+            "WHY: this compares two periods, so the answer is the parts above — which components and which "
+            "segments account for the difference. Upstream causes are not estimated across whole periods; "
+            "diagnosing a short window inside the period tests those."
+        )
     else:
         out.append(
             "WHY: no upstream cause could be identified from the data — the figures above show what and where it "
@@ -2711,6 +2836,15 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
     if parts:
         out.append("RULED OUT: " + "; ".join(parts) + ".")
     refuted = any(not rr.get("passed") for f in causes for rr in f.refutations)
+    if e.reference_kind == _PERIOD_KIND:
+        out.append(
+            "CONFIDENCE: the period totals and their split are exact accounting from the data; "
+            + {"strong": "the daily values of the two periods clearly differ",
+               "moderate": "the daily values of the two periods differ somewhat",
+               "none": "the daily values of the two periods overlap a lot"}[e.strength]
+            + "."
+        )
+        return out
     out.append(
         "CONFIDENCE: "
         + {"strong": "the change itself is clearly real", "moderate": "the change is notable but within the range of rare normal days", "none": "the change is within normal variation"}[e.strength]

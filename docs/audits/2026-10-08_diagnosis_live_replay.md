@@ -57,3 +57,16 @@ Open tasks:
 - (b) Gate a why-plan that never called the diagnosis tool.
 - (c) Map "campaign performance" to the campaign's efficiency set (ROAS, spend, orders) instead of inheriting the prior metric or resolving to a payment metric. Derive it from the catalogue, not hardcoded names.
 - (d) UI: reset `missionId` when the thread changes.
+
+## Period comparisons (thread_6e8788b0, MS3-809247dd65) — fixed
+
+"Why did ROAS change versus the previous period?" (30 days vs 30 days) got a restated 0.72 → 1.01 and no breakdown. `diagnose_metric_change` refused every window longer than 14 days, and the agent fell back to two totals. (The UI link carried MS3-ed23dd03e2 from another thread: the stale-missionId bug, task (d) above.)
+
+Ground truth (CH `serve.order_pnl_daily`): net ROAS 0.716 → 1.005. Spend 2.20M → 1.11M (−50%), contribution margin 1.58M → 1.11M (−29%). Exact ratio-of-sums split by platform: Meta +89% of the change (spend −715k, margin −226k, ROAS 0.54x → 0.73x), Google +43% (0.58x → 0.90x), unattributed margin −101k offsetting −32%. At campaign level, PMax Seasonal spend went 286k → 95k (ROAS 0.61x → 1.12x). The last window includes the 8 zero-spend outage days (Sep 14–22).
+
+Fix: a **period mode**. Windows longer than 14 days, or `compare_start`/`compare_end`, are compared with an equal-length comparison period, day for day. Totals are exact: ratios are rebuilt from their components, and an additive day with no row counts as zero. Significance comes from a rank test of the two periods' daily values. Segments are walked in hierarchy order (platform, then campaign), with offsetting segments shown. Drivers are not estimated, and WHY/CONFIDENCE wording says so. Days where the ratio is undefined (zero spend) no longer block the diagnosis. The live replay matches CH to the rupee. Test: `test_period_comparison_splits_a_long_window_against_the_previous_one`.
+
+Open:
+- No agent E2E replay of this question yet.
+- Period mode does not attribute the change to an outage vs a deliberate cut. It should flag zero-denominator days in either window as a separate component.
+- `_MAX_SEGMENT_ROWS` (6000) can drop the finest dims (ad level) for 60–90-day period pairs.

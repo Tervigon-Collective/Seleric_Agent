@@ -51,6 +51,7 @@ _CALCULATION_VERSION = "diagnosis.v1"
 _DEFINITION_BATCH = 10
 _DEFINITIONS_TTL_S = 900.0
 _MAX_EVENT_DAYS = 14
+_MAX_PERIOD_DAYS = 92
 _MAX_SEGMENT_ROWS = 6000
 _UNSET_SEGMENT = "(not set)"
 
@@ -423,6 +424,15 @@ def _summary(report: engine.DiagnosisReport, lineage: dict[str, engine.MetricMet
     return "\n".join(lines)
 
 
+def _inclusive_days(start_dt: datetime, end_dt: datetime) -> tuple[date, date]:
+    """First and last day of a window; "2026-10-02T00:00 .. 2026-10-03T00:00" is one
+    day with an exclusive end."""
+    start, end = start_dt.date(), end_dt.date()
+    if end > start and (end_dt.hour, end_dt.minute, end_dt.second, end_dt.microsecond) == (0, 0, 0, 0):
+        end -= timedelta(days=1)
+    return (start, end) if start <= end else (end, start)
+
+
 # --------------------------------------------------------------------------- the tool
 async def diagnose_metric_change(
     ctx: RunContext[SelericDeps],
@@ -432,6 +442,8 @@ async def diagnose_metric_change(
     claimed_direction: Direction | None = None,
     filters: dict[str, str | list[str]] | None = None,
     search_breadth: Literal[0, 1, 2] = 0,
+    compare_start: datetime | None = None,
+    compare_end: datetime | None = None,
 ) -> ToolResult:
     """Explain why a metric changed: event size, what/where it changed, and evidence-ranked causes.
 
@@ -445,6 +457,13 @@ async def diagnose_metric_change(
     drivers estimated with DoWhy + refuters, each classified supported_cause /
     likely_contributor / correlation / insufficient_evidence. Report those
     labels faithfully; do not upgrade them.
+
+    Period comparisons ("this month vs last month", "vs the previous period"):
+    pass ``compare_start``/``compare_end`` for the period compared with (same
+    length as the event window). A window longer than two weeks is always
+    compared with the equal-length period just before it. The result then
+    splits the difference between the two periods exactly by component and by
+    segment; upstream drivers are not estimated for period comparisons.
     """
     if (unknown := await semantic._reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
@@ -461,20 +480,14 @@ async def diagnose_metric_change(
         if (pinned := semantic._pin_to_resolved_window(ctx, start_dt, end_dt)) is not None:
             start_dt, end_dt, note = pinned
             notes.append(note)
-        ev_start, ev_end = start_dt.date(), end_dt.date()
-        # "2026-10-02T00:00 .. 2026-10-03T00:00" is one day with an exclusive end.
-        if (
-            end_dt.date() > start_dt.date()
-            and (end_dt.hour, end_dt.minute, end_dt.second, end_dt.microsecond) == (0, 0, 0, 0)
-        ):
-            ev_end = end_dt.date() - timedelta(days=1)
+        ev_start, ev_end = _inclusive_days(start_dt, end_dt)
     if ev_end < ev_start:
         ev_start, ev_end = ev_end, ev_start
     n_event = (ev_end - ev_start).days + 1
-    if n_event > _MAX_EVENT_DAYS:
+    if n_event > _MAX_PERIOD_DAYS:
         return _refuse(
-            f"event window {ev_start}..{ev_end} is {n_event} days; diagnose at most {_MAX_EVENT_DAYS} days at a time "
-            "(analyze(method=\"compare\") suits longer periods)", error_code="UNSUPPORTED_QUERY",
+            f"event window {ev_start}..{ev_end} is {n_event} days; compare at most {_MAX_PERIOD_DAYS} days at a time",
+            error_code="UNSUPPORTED_QUERY",
         )
     event_days = [ev_start + timedelta(days=i) for i in range(n_event)]
     # Days still in progress cannot be compared with complete ones. Drop them
@@ -484,7 +497,26 @@ async def diagnose_metric_change(
         event_days = complete
         ev_start, ev_end = event_days[0], event_days[-1]
     partial = {d for d in event_days if d >= today}
+    # Period comparison: an explicit comparison window, or the equal-length
+    # period just before a window too long to compare with "usual" days.
+    baseline: list[date] = []
+    if compare_start is not None or compare_end is not None:
+        c_start, c_end = _inclusive_days(compare_start or compare_end, compare_end or compare_start)  # type: ignore[arg-type]
+        c_days = [c_start + timedelta(days=i) for i in range((c_end - c_start).days + 1)]
+        if len(c_days) != len(event_days):
+            notes.append(
+                f"the comparison period {c_start}..{c_end} has {len(c_days)} days and the period asked about "
+                f"{len(event_days)}; compared with the {len(event_days)} days ending {c_end} so totals are like for like"
+            )
+            c_days = [c_end - timedelta(days=i) for i in range(len(event_days) - 1, -1, -1)]
+        baseline = c_days
+    elif len(event_days) > _MAX_EVENT_DAYS:
+        baseline = [d - timedelta(days=len(event_days)) for d in event_days]
+    if baseline and max(baseline) >= ev_start:
+        return _refuse(f"the comparison period must end before {ev_start}", error_code="UNSUPPORTED_QUERY")
     hist_start = ev_start - timedelta(days=P.DIAG_HISTORY_DAYS)
+    if baseline:
+        hist_start = min(hist_start, baseline[0] - timedelta(days=_MAX_EVENT_DAYS))
     filters = dict(filters or {})
 
     definitions = await _all_definitions(ctx)
@@ -605,6 +637,7 @@ async def diagnose_metric_change(
         claimed_direction=claimed_direction, denominators=({metric_id: weight} if weight else {}),
         numerators=({metric_id: numerator} if numerator and weight else {}),
         scope_tokens=frozenset(t for d in _scope_dimensions(ctx) for t in d.lower().split("_") if t),
+        baseline_days=baseline,
         bridge_candidates=[m for m in bridge_pool if m in series],
     )
     for _ in inp.candidate_drivers:

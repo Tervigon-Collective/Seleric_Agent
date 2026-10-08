@@ -174,3 +174,45 @@ def test_unattributed_rows_are_kept_as_one_segment():
     segs = tool._parse_segments({"rows": rows}, "m", "dim_a")
     assert segs["a"][date(2026, 10, 1)] == 2.0
     assert segs[tool._UNSET_SEGMENT][date(2026, 10, 1)] == 4.0
+
+
+def test_period_comparison_splits_a_long_window_against_the_previous_one():
+    """MS3-809247dd65: "why did ROAS change versus the previous period?" over 30
+    days was refused (14-day cap) and the answer restated two totals."""
+    rng = np.random.default_rng(12)
+    n = 30
+    days = [date(2026, 7, 1) + timedelta(days=i) for i in range(4 * n)]
+    event, base = days[-n:], days[-2 * n : -n]
+    den_a = 4000 * np.exp(rng.normal(0, 0.1, len(days)))
+    den_b = 2000 * np.exp(rng.normal(0, 0.1, len(days)))
+    num_a = den_a * 0.6 * np.exp(rng.normal(0, 0.1, len(days)))
+    num_b = den_b * 0.6 * np.exp(rng.normal(0, 0.1, len(days)))
+    num_u = 800 * np.exp(rng.normal(0, 0.1, len(days)))
+    den_a[-n:] *= 0.4  # segment a's spend was cut; its return per unit cut was low
+    num_a[-n:] *= 0.8
+    den_a[-5:] = 0.0  # an outage: no denominator at all on some days
+    num, den = num_a + num_b + num_u, den_a + den_b
+    s = lambda a: {d: float(v) for d, v in zip(days, a, strict=True)}
+    ratio = {d: float(x / y) for d, x, y in zip(days, num, den, strict=True) if y > 0}
+    seg_ratio = lambda nn, dd: {d: float(x / y) for d, x, y in zip(days, nn, dd, strict=True) if y > 0}
+    lineage = {"m_ret": R("m_ret", "v1", ("m_num", "m_den")), "m_num": A("m_num", "v2"), "m_den": A("m_den", "v3")}
+    r = diagnose(DiagnosisInput(
+        outcome="m_ret", event_days=event, baseline_days=base, lineage=lineage,
+        series={"m_ret": ratio, "m_num": s(num), "m_den": {d: v for d, v in s(den).items() if v > 0}},
+        segments={
+            "m_ret": {"dim_a": {"a": seg_ratio(num_a, den_a), "b": seg_ratio(num_b, den_b)}},
+            "m_den": {"dim_a": {"a": {d: v for d, v in s(den_a).items() if v > 0}, "b": s(den_b)}},
+            "m_num": {"dim_a": {"a": s(num_a), "b": s(num_b), "(not set)": s(num_u)}},
+        },
+        denominators={"m_ret": "m_den"}, numerators={"m_ret": "m_num"}, candidate_drivers=["m_num"],
+    ))
+    exact_ev = sum(num[-n:]) / sum(den[-n:])
+    exact_rf = sum(num[-2 * n : -n]) / sum(den[-2 * n : -n])
+    assert r.event.actual == pytest.approx(exact_ev, rel=1e-9)
+    assert r.event.reference == pytest.approx(exact_rf, rel=1e-9)
+    assert r.verdict != "no_unusual_change" and not [f for f in r.drivers if f.status == "implicated"]
+    dim = next(d for d in r.dimensions if d.dimension == "dim_a")
+    assert dim.kind == "ratio" and dim.coverage == pytest.approx(1.0, abs=1e-6)
+    assert dim.top[0].segment == "a"
+    text = "\n".join(r.narrative)
+    assert "comparison period" in text and "offsetting" in text  # segments against the total are shown too
