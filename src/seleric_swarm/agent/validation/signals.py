@@ -35,6 +35,7 @@ deflates the score. V3 currently has no temporal-order or graph-path check
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from datetime import UTC, date, datetime, timedelta
 
 from seleric_swarm.services.elapsed import same_span
@@ -278,6 +279,16 @@ def check_provenance(artifacts: list[Artifact]) -> CheckOutcome:
     return out
 
 
+def _filters_of(ev: EvidenceArtifact) -> str:
+    """The query filters an evidence row was fetched under. Rows with the same labels
+    but different filters measure different things: Suspender Boots orders by ad vs all
+    orders by ad (live 2026-10-08 MS3-f528c2cde3 / MS3-6d88e04cc7: "product_orders on
+    2026-10-01 reported as 15 and 16" spent three revisions the model could not fix)."""
+    query = ev.source_query if isinstance(ev.source_query, dict) else {}
+    filters = query.get("filters") or []
+    return json.dumps(sorted(json.dumps(f, sort_keys=True, default=str) for f in filters))
+
+
 def check_contradiction(artifacts: list[Artifact]) -> CheckOutcome:
     """Two evidence rows for the same metric and period must agree.
 
@@ -292,12 +303,12 @@ def check_contradiction(artifacts: list[Artifact]) -> CheckOutcome:
     for artifact, ev in rows:
         if ev is None or ev.value is None:
             continue
-        key = (ev.metric_id, ev.period_start, ev.period_end, tuple(sorted(ev.dimensions.items())))
+        key = (ev.metric_id, ev.period_start, ev.period_end, tuple(sorted(ev.dimensions.items())), _filters_of(ev))
         series.setdefault(key, []).append((artifact.id, float(ev.value)))
 
     out = CheckOutcome(check="contradiction")
     worst = 0.0
-    for (metric_id, start, _end, _dims), points in series.items():
+    for (metric_id, start, _end, _dims, _filters), points in series.items():
         if len(points) < 2:
             continue
         values = [v for _, v in points]

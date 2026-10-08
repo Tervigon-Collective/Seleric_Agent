@@ -129,3 +129,32 @@ def test_the_same_span_is_cut_only_for_a_running_period_to_date(monkeypatch) -> 
     assert elapsed.same_span(last_week, (date(2026, 10, 8), date(2026, 10, 8)), as_of) is None
     # Two complete windows compare as they are.
     assert elapsed.same_span((date(2026, 9, 21), date(2026, 9, 27)), last_week, as_of) is None
+
+
+def test_rows_fetched_under_different_filters_never_contradict() -> None:
+    """Suspender Boots orders by ad vs all orders by ad share labels, not scope (live
+    2026-10-08 MS3-f528c2cde3: three revisions over "reported as 15 and 16")."""
+    from seleric_swarm.agent.validation.signals import check_contradiction
+
+    def ev(value: float, filters: list[dict]) -> Artifact:
+        return _artifact("evidence", EvidenceArtifact(
+            metric_id="spend", dimensions={"camp": "A"}, grain="none", as_of=TODAY, period_start=TODAY,
+            period_end=TODAY, value=value, source_query={"filters": filters},
+        ).model_dump(mode="json"))
+
+    scoped = [{"dimension": "product", "operator": "contains", "values": ["boots"]}]
+    assert not check_contradiction([ev(15.0, scoped), ev(16.0, [])]).challenges
+    assert check_contradiction([ev(15.0, scoped), ev(30.0, scoped)]).challenges
+
+
+def test_the_users_own_numbers_are_not_unbacked_figures() -> None:
+    from seleric_swarm.agent.validation import _unbacked_figures, _with_query
+
+    deps = _deps(store=None)
+    deps.artifact_store.put(_artifact("evidence", EvidenceArtifact(
+        metric_id="spend", dimensions={}, grain="none", as_of=TODAY, period_start=TODAY,
+        period_end=TODAY, value=120000.0, source_query={},
+    ).model_dump(mode="json")))
+    answer = MissionResult(status="completed", final_response="Of the extra 50,000 a day, keep 120,000 base spend.")
+    unbacked, _share = _unbacked_figures(_with_query(answer, "If I add 50000 INR/day of budget"), deps)
+    assert unbacked == []

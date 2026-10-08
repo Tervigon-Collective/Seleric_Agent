@@ -243,6 +243,15 @@ def _strip_tables_when_charted(result: MissionResult, deps: SelericDeps) -> Miss
 _ID_MATCH_CUTOFF = 0.9
 
 
+def _with_query(result: MissionResult, query: str) -> MissionResult:
+    """The user's question on the result the validator judges. The agent's output
+    leaves ``query`` empty, so the user's own numbers ("If I add 50000 INR/day")
+    were judged as unbacked figures; the revision then dropped the allocation the
+    question asked for and answered a period comparison instead (live 2026-10-09
+    MS3-9357d69324)."""
+    return result if (result.query or "").strip() else result.model_copy(update={"query": query})
+
+
 def _fetched_check(deps: SelericDeps) -> Callable[[float, float], bool] | None:
     """``(value, tolerance) -> bool``: the mission fetched or derived that value, within
     the value's own print rounding only — a total a few units off the fetched one is
@@ -534,7 +543,9 @@ def _unbacked_figures(result: MissionResult, deps: SelericDeps) -> tuple[list[st
     ]
     if not figures:
         return [], 0.0
-    backed = [v for v, t, pct in figures if not pct and _backed(v, t, pct, pool)]
+    # The user's own numbers anchor derivations too: a share of the budget they named,
+    # or what is left of it, is arithmetic on the question, not an invented figure.
+    backed = [v for v, t, pct in figures if not pct and _backed(v, t, pct, pool)] + sorted(query_numbers)
     # The backed cells of each column: a table's own "Total" row is not in the pool
     # itself, and requiring every cell to be backed rejected the column it totals
     # (live 2026-10-08, golden Q17: 373,160 over eight backed rows).
@@ -1177,7 +1188,7 @@ async def _validated(
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
     result = _repair_citations(
-        _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(result, deps), deps), deps),
+        _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_with_query(result, query), deps), deps), deps),
         deps,
     )
     outcome = validator.validate(result, deps=deps)
@@ -1260,7 +1271,7 @@ async def _validated(
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
         result = _repair_citations(
-            _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(result, deps), deps), deps),
+            _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_with_query(result, query), deps), deps), deps),
             deps,
         )
         previous = (outcome.reason, _figures(rejected or ""))
