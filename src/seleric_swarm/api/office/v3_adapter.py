@@ -146,7 +146,12 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
         if getattr(artifact, "artifact_type", None) != "chart_spec" or not isinstance(artifact.payload, dict):
             continue
         payload = artifact.payload
-        chart_type = str(payload.get("chart_type") or "bar")
+        # The spec always names a canonical form (see chart_vocabulary). Only a
+        # payload that somehow lost it falls back here, and it says so.
+        chart_type = payload.get("chart_type")
+        if not chart_type:
+            _log.warning("chart_spec %s has no chart_type; defaulting to bar", artifact.id)
+            chart_type = "bar"
         metrics_key = tuple(sorted(payload.get("metrics") or []))
         key = (chart_type, metrics_key) if metrics_key else frozenset(getattr(artifact, "evidence_ids", None) or [artifact.id])
         prior = latest_chart.get(key)
@@ -154,11 +159,11 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
             latest_chart[key] = artifact
     charts = [
         {
-            "chart_type": (artifact.payload or {}).get("chart_type", "bar"),
-            "artifact_id": artifact.id,
-            "data": artifact.payload,
+            "chart_type": chart.payload["chart_type"],
+            "artifact_id": chart.id,
+            "data": chart.payload,
         }
-        for artifact in sorted(latest_chart.values(), key=lambda a: a.created_at)
+        for chart in sorted(latest_chart.values(), key=lambda a: a.created_at)
     ]
 
     return {
