@@ -1728,6 +1728,16 @@ def _compares_with_today(ctx: RunContext[SelericDeps]) -> bool:
     return any(covers_in_progress_day(w.start, w.end, ctx.deps.as_of) for w in windows)
 
 
+def _period_to_date(ctx: RunContext[SelericDeps]) -> bool:
+    """The question's in-progress window is longer than today — this week / this month / the last N days through
+    today. Like for like is then each compared period's complete days plus its LAST day through the hours elapsed
+    today, not every day cut at that hour (that answers "today vs each earlier day"). Live 2026-10-08 golden Q6,
+    "this month vs the same number of days last month": every September day was cut at 16:00, so Sep 1-8 read
+    465,132 against 696,778 of complete days and the answer had nothing like for like to compare."""
+    windows = getattr(ctx.deps.required_scope, "windows", ()) or ()
+    return any(w.start < w.end and covers_in_progress_day(w.start, w.end, ctx.deps.as_of) for w in windows)
+
+
 def _same_hours_applies(
     ctx: RunContext[SelericDeps],
     metric_id: str,
@@ -1813,7 +1823,9 @@ async def _elapsed_metrics(
 ) -> ToolResult:
     """``query_metrics(elapsed_only=True)``: each day of the period counted only
     over the hours already elapsed today, so complete days compare like for like
-    with today. One hourly Cube query; the tool, not the model, adds the hours."""
+    with today — or, when the question's running window is a period to date
+    (``_period_to_date``), only the period's last day is cut at that hour. One hourly
+    Cube query; the tool, not the model, adds the hours."""
     as_of = ctx.deps.as_of
     aggregation = ctx.deps.catalogue.aggregation_for(metric_id)
     if aggregation != "additive":
@@ -1866,13 +1878,16 @@ async def _elapsed_metrics(
             retryable=False,
         )
     first_day, last_day = period_start.date(), period_end.date()
+    cut_every_day = not _period_to_date(ctx)
     by_day = grain == "day"
     totals: dict[tuple[str, tuple[str, ...]], float] = {}
     unlabelled = 0.0
     for row in result.get("rows") or []:
         hour = _row_hour(row)
         value = row.get(metric_id)
-        if hour is None or value is None or hour.hour >= cutoff:
+        if hour is None or value is None:
+            continue
+        if hour.hour >= cutoff and (cut_every_day or hour.date() == last_day):
             continue
         if not first_day <= hour.date() <= last_day:
             continue
@@ -1932,12 +1947,22 @@ async def _elapsed_metrics(
         label = " | ".join(p for p in (day, ", ".join(f"{k}={v}" for k, v in zip(breakdown, labels, strict=True))) if p)
         per_day = "" if day or n_days == 1 else f" (per-day average {total / n_days:.2f} over {n_days} days)"
         parts.append(f"{label or 'total'}={total}{per_day}")
+    counted = (
+        f"counting only 00:00-{through} of each day (the hours elapsed today), so every day is comparable "
+        "with today"
+        if cut_every_day
+        else f"counting every complete day and {last_day} only 00:00-{through} (the hours elapsed today), so "
+        "the period compares like for like with the period to date ending today"
+    )
     summary = (
-        f"{metric_id} over {first_day}..{last_day}, counting only 00:00-{through} of each day "
-        f"(the hours elapsed today), so every day is comparable with today — use these exact "
+        f"{metric_id} over {first_day}..{last_day}, {counted} — use these exact "
         f"values: {'; '.join(parts[:_MAX_SERIES_IN_SUMMARY])}"
         + (f"; …(+{len(parts) - _MAX_SERIES_IN_SUMMARY} more rows in evidence)" if len(parts) > _MAX_SERIES_IN_SUMMARY else "")
-        + ". Compare per-day figures, never a multi-day total with one day."
+        + (
+            ". Compare per-day figures, never a multi-day total with one day."
+            if cut_every_day
+            else ". Compare it with the period to date (the same number of days and hours)."
+        )
     )
     if unlabelled:
         # Live 2026-10-07 (MS3-5bb148f278): net sales broken down by campaign AND ad set

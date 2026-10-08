@@ -218,3 +218,27 @@ def test_the_planner_gets_a_compact_catalogue() -> None:
     compact = _catalogue().render_compact()
     assert "- spend: Spend" in compact and "Dimensions: camp" in compact
     assert len(compact) < len(_catalogue().render())
+
+
+class _WindowMcp:
+    """One total per window: 300 over Sep 1-3, 450 over Oct 1-3."""
+
+    async def call(self, *, agent_id: str, capability: str, arguments: dict) -> dict:
+        measure = arguments["measures"][0]
+        value = 450.0 if arguments["time_range"]["start"].startswith("2026-10") else 300.0
+        return {"rows": [{measure: str(value)}], "provenance": {"query_id": "q"}}
+
+
+@pytest.mark.asyncio
+async def test_a_period_comparison_judges_the_later_window_against_the_earlier_one() -> None:
+    # Live 2026-10-08 golden Q6 "Compare this month to the same number of days last month": this month was named
+    # first, became the reference, and every change read backwards ("net sales fell" while they rose).
+    plan = MissionPlan(shape="period_comparison", steps=[PlanStep(tool="query_metrics", metric_ids=["spend"], purpose="cmp")])
+    out = await executor.execute_plan(
+        plan, _deps(_WindowMcp()), windows=[(date(2026, 10, 1), date(2026, 10, 3)), (date(2026, 9, 1), date(2026, 9, 3))],
+        as_of=TODAY,
+    )
+    assert out is not None
+    assert "2026-09-01..2026-09-03 (per day) | 2026-10-01..2026-10-03 (per day)" in out.text
+    assert "| spend | 100.00 | 150.00 | +50.0% |" in out.text
+    assert "change = 2026-10-01..2026-10-03 against 2026-09-01..2026-09-03" in out.text

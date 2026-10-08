@@ -579,3 +579,33 @@ def test_a_rollup_of_fetched_rows_along_their_own_dimension_is_backed():
     assert any(abs(v - 357445.92) < 0.01 for v in values)  # Meta = its two rows
     assert any(abs(v - 526801.93) < 0.01 for v in values)  # every row of the query
     assert not any(abs(v - 430656.65) < 0.01 for v in values)  # ig_feed + pmax: no shared dimension value
+
+
+@pytest.mark.asyncio
+async def test_a_period_to_date_cuts_only_the_last_day_at_the_elapsed_hours(at_noon) -> None:
+    # Live 2026-10-08 golden Q6 "this month vs the same number of days last month": every reference day was cut
+    # at the current hour (Sep 1-8: 465,132 vs 696,778 of complete days). Like for like for a period to date is
+    # the complete days plus the last day through the elapsed hours.
+    import dataclasses
+
+    from seleric_swarm.agent.scope import RequiredScope, RequiredWindow
+
+    deps = dataclasses.replace(
+        _deps(mcp=_Mcp(_hour_rows())),
+        required_scope=RequiredScope(windows=(
+            RequiredWindow(TODAY.date().replace(day=5), TODAY.date()),
+            RequiredWindow(TODAY.date().replace(day=2), TODAY.date().replace(day=4)),
+        )),
+    )
+    result = await semantic.query_metrics(
+        _Ctx(deps),
+        "ad_spend",
+        period_start=datetime(2026, 10, 4, tzinfo=IST),
+        period_end=datetime(2026, 10, 6, tzinfo=IST),
+        elapsed_only=True,
+    )
+    assert result.success, result.summary
+    # Oct 4 and 5 complete (240 each) + Oct 6 through 12:00 (120).
+    assert "total=600.0" in result.summary
+    assert "counting every complete day and 2026-10-06 only 00:00-12:00" in result.summary
+    assert "period to date" in result.summary

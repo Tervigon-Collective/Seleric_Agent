@@ -230,8 +230,15 @@ async def _execute(
 ) -> Prefetch | None:
     catalogue = deps.catalogue
     gate = asyncio.Semaphore(_PARALLEL)
-    reference, comparison = windows[0], windows[1]
+    # The earlier window is the baseline, the later one the period judged — whatever order the question named
+    # them in. Live 2026-10-08 golden Q6, "Compare this month to the same number of days last month": this month
+    # came first, became the reference, and every change read September against October ("net sales fell ~9 %"
+    # while they rose 10 % a day; ROAS "dropped 34 %" while it rose from 0.69 to 1.05).
+    reference, comparison = sorted(windows[:2])
     today_running = covers_in_progress_day(comparison[0], comparison[1], as_of)
+    # A period to date (this week / month, the last N days through today) cuts only each window's last day at
+    # the elapsed hours (query_metrics elapsed_only); a one-day "today" cuts every reference day.
+    to_date = today_running and comparison[0] < comparison[1]
     entity_step = plan.steps[0] if plan.shape == "entity_comparison" else None
     entity = entity_step.dimensions[0] if entity_step and entity_step.dimensions else None
     compare_step = next((s for s in plan.steps if s.uses_entities_from_step or plan.shape == "period_comparison"), None)
@@ -313,7 +320,9 @@ async def _execute(
     mapping_lines = await _mapping(plan, deps, gate, entity, entities, comparison, as_of, today_running, evidence_ids)
 
     keys = entities if entity else [""]
-    table = ["| " + (f"{entity} | " if entity else "") + "metric | reference (per day) | today | change |",
+    cmp_label = "today so far" if today_running and not to_date else f"{comparison[0]}..{comparison[1]}"
+    table = ["| " + (f"{entity} | " if entity else "")
+             + f"metric | {reference[0]}..{reference[1]} (per day) | {cmp_label} (per day) | change |",
              "| " + ("--- | " if entity else "") + "--- | ---: | ---: | ---: |"]
     derived: dict[str, float] = {}
     for key in keys:
@@ -334,14 +343,22 @@ async def _execute(
     if len(table) <= 2:
         return None
     finding_id = _store_finding(deps, evidence_ids, derived, entity)
-    basis = (
-        "Additive metrics count only the hours elapsed today on every day "
-        "(query_metrics elapsed_only) and are shown per day — like for like. Ratios are as "
-        "reported: the reference ratio covers full days, today's only the hours so far, so "
-        "explain ratio moves from the additive columns, not from the ratio alone."
-        if today_running
-        else "Additive metrics are shown per day; ratios are as reported."
-    )
+    if to_date:
+        basis = (
+            f"Additive metrics count every complete day and, on each window's last day, only the hours elapsed "
+            f"today (query_metrics elapsed_only), shown per day — like for like. Ratios are as reported "
+            f"({comparison[1]} is still running), so explain ratio moves from the additive columns."
+        )
+    elif today_running:
+        basis = (
+            "Additive metrics count only the hours elapsed today on every day "
+            "(query_metrics elapsed_only) and are shown per day — like for like. Ratios are as "
+            "reported: the reference ratio covers full days, today's only the hours so far, so "
+            "explain ratio moves from the additive columns, not from the ratio alone."
+        )
+    else:
+        basis = "Additive metrics are shown per day; ratios are as reported."
+    basis += f" change = {comparison[0]}..{comparison[1]} against {reference[0]}..{reference[1]}."
     head = [
         "[prefetched data — already fetched by the planner's executor; do not re-fetch it]",
         f"Reference window {reference[0]}..{reference[1]} vs {comparison[0]}..{comparison[1]}. {basis}",
