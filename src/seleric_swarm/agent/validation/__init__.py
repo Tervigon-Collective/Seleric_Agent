@@ -76,6 +76,7 @@ from seleric_swarm.agent.validation.trust import TrustResult, score_trust
 from seleric_swarm.agent.validation.answer_audit import (
     escape_labels_in_tables,
     ragged_table,
+    strip_markdown_tables,
     _SENTENCE_END,
     _inside_identifier,
     _reconciles,
@@ -213,6 +214,27 @@ def _escape_table_labels(result: MissionResult, deps: SelericDeps) -> MissionRes
         if isinstance(dims, dict):
             labels.update(str(v) for v in dims.values() if isinstance(v, str) and "|" in v)
     fixed = escape_labels_in_tables(text, labels)
+    return result if fixed == text else result.model_copy(update={"final_response": fixed})
+
+
+def _strip_tables_when_charted(result: MissionResult, deps: SelericDeps) -> MissionResult:
+    """Drop Markdown tables when this mission already wrote a chart_spec.
+
+    The Chart widget's Table tab shows the same rows; keeping both doubles the
+    series in the transcript (live 2026-10-08). Deterministic repair — not a
+    revision — so a model that still emits a table under the old contract does
+    not ship a duplicate.
+    """
+    text = result.final_response or ""
+    if "|" not in text:
+        return result
+    has_chart = any(
+        getattr(a, "artifact_type", None) == "chart_spec"
+        for a in deps.artifact_store.list_for_mission(deps.mission_id)
+    )
+    if not has_chart:
+        return result
+    fixed = strip_markdown_tables(text)
     return result if fixed == text else result.model_copy(update={"final_response": fixed})
 
 
@@ -1154,7 +1176,10 @@ async def _validated(
     )
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
-    result = _repair_citations(_humanize_metric_ids(_escape_table_labels(result, deps), deps), deps)
+    result = _repair_citations(
+        _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(result, deps), deps), deps),
+        deps,
+    )
     outcome = validator.validate(result, deps=deps)
     revisions: list[dict[str, Any]] = []
     # The latest rejected draft that is still a real answer, with its own
@@ -1234,7 +1259,10 @@ async def _validated(
             return _exhausted(result, outcome, best, deps, revisions, code="MODEL_UNAVAILABLE")
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
-        result = _repair_citations(_humanize_metric_ids(_escape_table_labels(result, deps), deps), deps)
+        result = _repair_citations(
+            _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(result, deps), deps), deps),
+            deps,
+        )
         previous = (outcome.reason, _figures(rejected or ""))
         outcome = validator.validate(result, deps=deps)
         if not outcome.ok and (outcome.reason, _figures(result.final_response or "")) == previous:

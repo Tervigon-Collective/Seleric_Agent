@@ -7,6 +7,11 @@ to random live. Jev (``openjev``, a fast typed-decision service) is still used
 inside tools for typed judgments over text — a write action's blast radius
 (``classify_action_risk``) and a knowledge passage's relevance
 (``judge_relevance``). Both fail open to ``None``.
+
+Chart forms are deliberately *not* decided here. The vocabulary lives in
+``analytics/chart_vocabulary.py`` and is shared with the UI, so a form is the
+caller's explicit choice or a structural default from the evidence — never the
+output of a prompt.
 """
 
 from __future__ import annotations
@@ -244,5 +249,3 @@ async def judge_relevance(
     if not answers:
         return None
     return _normalize_bool(_answer_value(answers, "relevant"))
-
-

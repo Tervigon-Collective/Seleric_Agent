@@ -205,6 +205,47 @@ def ragged_table(text: str) -> str | None:
     return None
 
 
+def strip_markdown_tables(text: str) -> str:
+    """Remove GFM Markdown tables from prose, leaving surrounding sentences.
+
+    Live 2026-10-08: when a chart_spec is attached the UI already shows the same
+    rows under the Chart widget's Table tab, so a Markdown table in
+    ``final_response`` rendered the data twice. Stripping is deterministic —
+    the model is still free to keep a lead sentence and interpretation.
+    """
+    if not text:
+        return text
+    lines = text.splitlines()
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        if "|" in line and _TABLE_DELIM.match(nxt) and "|" in nxt:
+            i += 2
+            while i < len(lines) and "|" in lines[i] and lines[i].strip():
+                i += 1
+            # Drop a single blank line that only existed to separate the table.
+            if out and out[-1].strip() == "" and i < len(lines) and lines[i].strip() == "":
+                i += 1
+            continue
+        out.append(line)
+        i += 1
+    # Collapse runs of blank lines left where tables were removed.
+    collapsed: list[str] = []
+    blank = False
+    for line in out:
+        if not line.strip():
+            if blank:
+                continue
+            blank = True
+            collapsed.append("")
+            continue
+        blank = False
+        collapsed.append(line)
+    return "\n".join(collapsed).strip()
+
+
 def realign_markdown_tables(text: str) -> str:
     """Put an unescaped ``|`` inside a label back into that cell.
 

@@ -86,7 +86,7 @@ def test_visualization_spec_trend():
         _make_evidence("metric.net_sales", "2026-09-01T00:00:00", "2026-09-01T23:59:59", 100.0),
         _make_evidence("metric.net_sales", "2026-09-02T00:00:00", "2026-09-02T23:59:59", 150.0),
     ]
-    spec = generate_visualization_spec(evidence, "trend over time", title="Sales Trend")
+    spec = generate_visualization_spec(evidence, title="Sales Trend", chart_type="line")
     assert spec["chart_type"] == "line"
     assert spec["title"] == "Sales Trend"
     assert spec["xAxis"]["type"] == "category"
@@ -94,6 +94,37 @@ def test_visualization_spec_trend():
     assert spec["data"][0]["time"] == "2026-09-01"
     assert len(spec["series"]) == 1
     assert spec["series"][0]["type"] == "line"
+
+
+def test_visualization_spec_bar_over_time():
+    """Per-day bars must keep each day as its own category — not sum into one bar."""
+    evidence = [
+        _make_evidence("metric.net_profit", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 6944.0),
+        _make_evidence("metric.net_profit", "2026-10-03T00:00:00", "2026-10-03T23:59:59", -12889.0),
+        _make_evidence("metric.net_profit", "2026-10-04T00:00:00", "2026-10-04T23:59:59", 11483.0),
+    ]
+    spec = generate_visualization_spec(
+        evidence,
+        intent="stacked bar graph for the net profit waterfall",
+        title="Net profit waterfall",
+        chart_type="bar",
+    )
+    assert spec["chart_type"] == "bar"
+    assert spec["xAxis"]["key"] == "time"
+    assert len(spec["data"]) == 3
+    assert spec["data"][0]["time"] == "2026-10-02"
+    assert spec["series"][0]["type"] == "bar"
+
+
+def test_visualization_spec_ignores_intent_keywords_without_chart_type():
+    """Without an explicit/Jev chart_type, multi-period evidence defaults to line
+    even when the intent string contains 'bar' — no keyword matching."""
+    evidence = [
+        _make_evidence("metric.net_profit", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 100.0),
+        _make_evidence("metric.net_profit", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 200.0),
+    ]
+    spec = generate_visualization_spec(evidence, intent="stacked bar waterfall per day")
+    assert spec["chart_type"] == "line"
 
 
 def test_visualization_spec_composition_pie():
@@ -109,7 +140,7 @@ def test_visualization_spec_composition_pie():
         )
         for val, ch in [(50, "meta"), (30, "google"), (20, "direct")]
     ]
-    spec = generate_visualization_spec(evidence, "share of orders", title="Channel Share")
+    spec = generate_visualization_spec(evidence, title="Channel Share", chart_type="pie")
     assert spec["chart_type"] == "pie"
     assert len(spec["data"]) == 3
     assert spec["series"][0]["type"] == "pie"
@@ -122,7 +153,7 @@ def test_visualization_spec_multi_axis_units():
         _make_evidence("metric.net_sales", "2026-09-02T00:00:00", "2026-09-02T23:59:59", 1200.0, unit="inr"),
         _make_evidence("metric.conversion_rate", "2026-09-02T00:00:00", "2026-09-02T23:59:59", 3.1, unit="pct"),
     ]
-    spec = generate_visualization_spec(evidence, "trend", title="Sales vs Conversion")
+    spec = generate_visualization_spec(evidence, title="Sales vs Conversion", chart_type="line")
     assert len(spec["yAxis"]) == 2
     assert spec["yAxis"][0]["position"] == "left"
     assert spec["yAxis"][1]["position"] == "right"
@@ -150,7 +181,57 @@ async def test_generate_visualization_tool():
     assert chart_artifact is not None
     assert chart_artifact.artifact_type == "chart_spec"
     assert chart_artifact.classification == "derived"
+    # Jev unconfigured → structural default for multi-period evidence is line
     assert chart_artifact.payload["chart_type"] == "line"
+
+
+@pytest.mark.asyncio
+async def test_generate_visualization_uses_jev_chart_choice(monkeypatch):
+    from seleric_swarm.agent.dependencies import JevConfig
+
+    store = InMemoryArtifactStore()
+    deps = _deps(store)
+    deps = SelericDeps(
+        mission_id=deps.mission_id,
+        as_of=deps.as_of,
+        principal=deps.principal,
+        thread_id=deps.thread_id,
+        run_id=deps.run_id,
+        trace_id=deps.trace_id,
+        context=deps.context,
+        mcp_client=deps.mcp_client,
+        artifact_store=store,
+        limits=deps.limits,
+        jev=JevConfig(base_url="http://jev.test", api_key="k", timeout=1.0),
+    )
+    ctx = FakeRunContext(deps)
+
+    id1 = _put_evidence(
+        store, _make_evidence("metric.net_profit", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 100.0)
+    )
+    id2 = _put_evidence(
+        store, _make_evidence("metric.net_profit", "2026-10-03T00:00:00", "2026-10-03T23:59:59", -50.0)
+    )
+
+    async def _fake_select(intent, **kwargs):
+        assert "stacked bar" in intent
+        assert "time_periods=2" in kwargs["data_shape"]
+        return "bar"
+
+    monkeypatch.setattr(analytics, "select_chart_type", _fake_select)
+
+    result = await analytics.generate_visualization(
+        ctx,
+        evidence_ids=[id1, id2],
+        intent="stacked bar graph for the net profit waterfall for the last 7 days per day",
+        title="Net profit waterfall",
+    )
+    assert result.success is True, result.summary
+    chart = store.get(result.artifact_ids[0])
+    assert chart is not None
+    assert chart.payload["chart_type"] == "bar"
+    assert chart.payload["series"][0]["type"] == "bar"
+    assert chart.payload["xAxis"]["key"] == "time"
 
 
 @pytest.mark.asyncio
@@ -217,7 +298,7 @@ def test_visualization_spec_varying_dimensions_exclude_constant_filter():
             dimensions={"campaign_name": "Snugboo", "platform": "meta", "account_id": "12345"},
         ),
     ]
-    spec = generate_visualization_spec(evidence, "trend", title="Campaign CTR")
+    spec = generate_visualization_spec(evidence, title="Campaign CTR", chart_type="line")
     assert spec["chart_type"] == "line"
     series_names = [s["name"] for s in spec["series"]]
     assert series_names == ["Dog Harness", "Snugboo"]
@@ -244,7 +325,7 @@ def test_visualization_spec_multimetric_with_varying_dimensions():
             dimensions={"campaign_name": "Snugboo", "platform": "meta"}, unit="inr",
         ),
     ]
-    spec = generate_visualization_spec(evidence, "trend", title="CTR and CPA")
+    spec = generate_visualization_spec(evidence, title="CTR and CPA", chart_type="line")
     series_names = [s["name"] for s in spec["series"]]
     assert "Ctr (Dog Harness)" in series_names
     assert "Cpa (Dog Harness)" in series_names

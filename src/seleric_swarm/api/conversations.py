@@ -1098,8 +1098,19 @@ async def stream_thread_events(
 
 
 def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]:
-    """Transcript TEXT plus SOURCE rows so the office UI can show lookup evidence."""
-    parts = [MessagePart(type=MessagePartType.TEXT, content=final_response)]
+    """Transcript TEXT plus SOURCE rows so the office UI can show lookup evidence.
+
+    When charts are attached, Markdown tables are stripped from the TEXT part:
+    the Chart widget already exposes the same rows on its Table tab, so keeping
+    both rendered the series twice (live 2026-10-08 stacked-bar thread).
+    """
+    from seleric_swarm.agent.validation.answer_audit import strip_markdown_tables
+
+    text = final_response
+    raw_charts = raw.get("charts")
+    if isinstance(raw_charts, list) and any(isinstance(c, dict) for c in raw_charts):
+        text = strip_markdown_tables(final_response)
+    parts = [MessagePart(type=MessagePartType.TEXT, content=text)]
     raw_evidence = raw.get("evidence")
     evidence: list[Any]
     if isinstance(raw_evidence, list):
@@ -1147,7 +1158,6 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
                 },
             )
         )
-    raw_charts = raw.get("charts")
     if isinstance(raw_charts, list):
         for chart in raw_charts:
             if not isinstance(chart, dict):

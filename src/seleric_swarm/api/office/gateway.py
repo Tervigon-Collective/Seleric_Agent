@@ -5,6 +5,7 @@ Routes (all GET, no side effects):
 * ``GET /v1/office/missions``            — recent mission ids + light headers
 * ``GET /v1/office/missions/{id}/snapshot`` — full :class:`OfficeSnapshot`
 * ``GET /v1/office/missions/{id}/stream``   — SSE: ``snapshot`` then ``events`` / ``heartbeat``
+* ``GET /v1/office/chart-types``        — the chart vocabulary the backend can emit
 
 The stream is a poll-and-diff bridge over the existing persistence layer: it
 never touches orchestration. When the backend later grows a native event bus,
@@ -20,6 +21,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from seleric_swarm.analytics.chart_vocabulary import chart_type_catalog
 from seleric_swarm.api.mission_access import (
     can_access_mission,
     request_principal,
@@ -52,6 +54,20 @@ def _raw(mission_id: str) -> dict[str, Any] | None:
         # Not a swarm_v2 mission id -- check the V3 store before 404ing.
         raw = v3_raw_snapshot(mission_id)
     return raw
+
+
+@router.get("/chart-types")
+def office_chart_types() -> dict[str, Any]:
+    """The chart vocabulary the backend can emit, for the UI to render against.
+
+    The UI validates every incoming ``chart_spec`` against this list, so the
+    two sides cannot drift: a form the backend added and the UI cannot render
+    fails loudly instead of drawing a blank frame.
+    """
+    return {
+        "chart_types": chart_type_catalog(),
+        "default_chart_type": "bar",
+    }
 
 
 @router.get("/missions")

@@ -41,7 +41,11 @@ from seleric_swarm.analytics import funnel as funnel_math
 from seleric_swarm.analytics.breakdown import Segment, contributions, shares
 from seleric_swarm.analytics.comparison import MetricPoint, period_deltas
 from seleric_swarm.analytics.grain import CALCULATION_VERSION, validate_grain_set
-from seleric_swarm.analytics.visualization import generate_visualization_spec
+from seleric_swarm.analytics.visualization import (
+    describe_evidence_shape,
+    generate_visualization_spec,
+    reconcile_chart_type,
+)
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.business_state.detectors import robust_zscore
 from seleric_swarm.services.markdown import table_cell
@@ -977,16 +981,34 @@ async def cohort_analysis(ctx: RunContext[SelericDeps], evidence_ids: list[str])
     )
 
 async def generate_visualization(
-    ctx: RunContext[SelericDeps], evidence_ids: list[str], intent: str, title: str = "Visualization"
+    ctx: RunContext[SelericDeps],
+    evidence_ids: list[str],
+    intent: str,
+    title: str = "Visualization",
+    chart_type: str | None = None,
 ) -> ToolResult:
     """Generate a visualization specification for a given set of evidence.
-    
+
     This tool should only be used when:
     - Comparing > 3 categories
     - Showing trends over time (time series)
     - Showing compositions (pie/donut)
-    
+    - Showing distributions or relationships
+
     Do NOT use this tool for single numbers or simple KPI requests.
+
+    ``chart_type`` selects the form. Supported forms are::
+
+        line, area, bar, stacked_bar, grouped_bar, pie, donut,
+        funnel, scatter, radar, heatmap
+
+    Pass the form the user asked for, matching that list ("stacked bar" and
+    "stackedBar" both resolve to ``stacked_bar``). Omit it to get the form the
+    evidence shape supports best. An unknown form is refused, never silently
+    replaced.
+
+    ``intent`` is a short description of what the chart should show; it never
+    selects the form.
 
     ``evidence_ids`` may include finding artifacts: they are expanded to the
     measurements they cite before the chart is built (charts plot evidence,
@@ -1002,9 +1024,14 @@ async def generate_visualization(
     evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal
-        
-    spec = generate_visualization_spec(evidence, intent, title)
-    
+
+    # The form is the caller's explicit choice (validated against the shared
+    # vocabulary), otherwise the structural default from the evidence shape.
+    # Nothing is guessed from the intent wording.
+    shape = describe_evidence_shape(evidence)
+    resolved, chart_warnings = reconcile_chart_type(chart_type, shape)
+    spec = generate_visualization_spec(evidence, intent, title, chart_type=resolved)
+
     if "error" in spec:
         return _refuse(spec["error"], error_code="VISUALIZATION_FAILED")
 
@@ -1040,6 +1067,7 @@ async def generate_visualization(
             "do not call generate_visualization again for the same evidence."
         ),
         provenance=_provenance(evidence_ids),
+        warnings=[f"chart adjusted: {w}" for w in chart_warnings],
     )
 
 

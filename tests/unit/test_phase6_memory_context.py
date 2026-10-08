@@ -323,6 +323,38 @@ def test_answer_parts_attach_lookup_sources_for_ui():
     assert parts[1].content["excerpt"] == "4,789.73 for 2026-09-18"
 
 
+def test_answer_parts_strip_markdown_table_when_chart_attached():
+    """Chart widget Table tab already shows the series — don't duplicate it in TEXT."""
+    prose = (
+        "Net profit totaled ₹20,442.45.\n\n"
+        "| Date | Net profit (INR) |\n"
+        "| --- | ---: |\n"
+        "| 2026-10-02 | -12,889.36 |\n"
+        "| 2026-10-03 | 11,483.77 |\n\n"
+        "Losses concentrated on 2026-10-02.\n\n"
+        "Period: 2026-10-02..2026-10-08 · Currency: INR · Data as of 2026-10-08"
+    )
+    parts = conversations_api._answer_parts(
+        prose,
+        {
+            "charts": [
+                {
+                    "chart_type": "bar",
+                    "artifact_id": "artifact_chart_1",
+                    "data": {"chart_type": "bar", "data": [{"time": "2026-10-02", "Net Profit": -12889.36}]},
+                }
+            ]
+        },
+    )
+    text = parts[0].content
+    assert parts[0].type.value == "TEXT"
+    assert "| Date |" not in text
+    assert "| --- |" not in text
+    assert "Net profit totaled" in text
+    assert "Losses concentrated" in text
+    assert parts[-1].type.value == "CHART"
+
+
 def test_only_a_completed_run_is_a_genuine_answer():
     """Regression: V3's failure paths (rate-limited/timeout/insufficient-
     evidence) all populate a real, non-empty ``final_response`` -- gating

@@ -80,16 +80,21 @@ AUTHORITY AND SAFETY
   then pass those evidence ids to `analyze(method="funnel")`, which orders the
   stages itself. A rate that divides by the base without being a share of it
   (an average or a cost per unit) is reported, not positioned.
-- Intelligent visualization: You have `generate_visualization(evidence_ids, intent, title)`.
-  Call it ONLY when the query genuinely benefits from a chart:
-  * Multi-period trend over time (time series with >2 points) -> intent="trend" or "area"
-  * Category comparison (>3 entities, e.g. top products, channels, brands) -> intent="compare"
-  * Composition or share of a whole -> intent="composition"
-  * Funnel stage transitions -> intent="funnel"
-  * Multi-metric performance comparison across entities
-  Do NOT call it for single-number answers, single-date KPI queries (e.g. "What was yesterday's revenue?",
-  "How many orders today?", "Current ROAS"), or simple binary questions. Answer those with text/tables.
-  Never invent chart data or output raw chart JSON / fenced ```chart blocks in final_response.
+- Intelligent visualization: You have
+  `generate_visualization(evidence_ids, intent, title, chart_type)`.
+  Call it ONLY when the query genuinely benefits from a chart (multi-period trends, category
+  comparisons with >3 entities, compositions, funnels, multi-metric entity comparisons).
+  You choose the form with ``chart_type``: one of `line`, `area`, `bar`, `stacked_bar`,
+  `grouped_bar`, `pie`, `donut`, `funnel`, `scatter`, `radar`, `heatmap`. A stacked bar is
+  `stacked_bar`; side-by-side bars per series are `grouped_bar`. Honour the form the user
+  asked for when the data can support it, and omit ``chart_type`` only when you have no
+  preference — then the form the evidence supports best is used. Any other value is
+  refused, so do not invent form names.
+  Put a short free-text description in ``intent`` (what the chart shows) and a human title
+  in ``title``. Do NOT call it for single-number answers, single-date KPI
+  queries (e.g. "What was yesterday's revenue?", "How many orders today?", "Current ROAS"), or
+  simple binary questions. Answer those with text/tables. Never invent chart data or output raw
+  chart JSON / fenced ```chart blocks in final_response.
 
 For a breakdown by anything other than time (top product, by brand, by
 channel, etc.), you have a limited number of tool calls — do not guess the
@@ -351,13 +356,15 @@ plumbing. Structure every analytical answer like this:
    rounded for readability, with the metric's own unit or currency and normal
    digit grouping. No preamble.
 2. Show the evidence compactly. Whenever the answer covers more than one
-   period, entity or segment, put it in a Markdown table — one row per period
-   or entity, one column per measure, header row included. Never emit a bare
-   sequence of "label: value" lines for a series. Use a few bullets only when
-   there is a single measure and no natural second axis. Carry only the values
-   that matter to the answer. When a value is missing, write
-   "No data available" in plain language; never print "null" and never
-   invent a replacement.
+   period, entity or segment and you did not call `generate_visualization` for
+   that series, put it in a Markdown table — one row per period or entity, one
+   column per measure, header row included. When a chart was generated for the
+   same series, do not also paste those rows as a Markdown table (the chart
+   widget already shows them). Never emit a bare sequence of "label: value" lines for a series.
+   Use a few bullets only when there is a single measure and no natural second
+   axis. Carry only the values that matter to the answer. When a value is
+   missing, write "No data available" in plain language; never print "null" and
+   never invent a replacement.
 3. Say what the numbers mean, not only what they are. Give the total or the
    comparison the question implies, name the direction of change, and call out
    any row that dominates or reverses the trend. If a value is implausible or
@@ -427,10 +434,14 @@ say plainly that it is before advertising cost, and lead with net profit.
 # contract compressed to its checkable rules, anchored next to generation.
 OUTPUT_CONTRACT = """\
 BEFORE YOU CALL final_result, CHECK final_response AGAINST THIS:
-- More than one period, entity or segment? For data-fetching queries, it MUST be a Markdown table with a
-  header row and a `| --- |` delimiter row. Bullet or "label: value" lines for a
-  series are wrong. A "|" inside a cell value (campaign names often contain one) is written
-  "\\|", or it splits the row into extra columns. A single value needs no table. (Exception: For advisory or strategic queries, you may use fluid prose or bullet points to summarize data).
+- More than one period, entity or segment? For data-fetching queries without a chart,
+  use a Markdown table with a header row and a `| --- |` delimiter row. Bullet or
+  "label: value" lines for a series are wrong. A "|" inside a cell value (campaign
+  names often contain one) is written "\\|", or it splits the row into extra columns.
+  A single value needs no table. Advisory/strategic queries may use prose or bullets.
+- If `generate_visualization` produced a chart for the same series, do NOT also paste
+  that series as a Markdown table — lead sentence + interpretation only; the chart
+  widget already shows the rows.
 - Interpretation: For data queries, one or two sentences noting the total, direction of change, and dominating rows. For advisory queries, provide a longer strategic synthesis.
 - Mark an incomplete period in its own row label, and never trend or total it
   against complete ones as if it were like-for-like.
