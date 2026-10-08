@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from itertools import combinations, permutations
 from typing import Any, Literal
@@ -651,6 +651,11 @@ class Referencer:
         now = self.level_before(anchor)
         out: dict[date, float] = {}
         for r in refs:
+            if not self.same_weekday and (anchor - r).days <= _LEVEL_DAYS:
+                # A reference inside the anchor's own level window already IS the
+                # current level; scaling it again extrapolates the recent trend.
+                out[r] = 1.0
+                continue
             then = self.level_before(r)
             if now is None or then is None or then <= 0 or now < 0:
                 return {r: 1.0 for r in refs}
@@ -730,11 +735,64 @@ class SeasonalProfile:
 def seasonal_profile(
     series: Series, history: list[date], n_window: int, *, additive: bool, weeks: int = 0,
 ) -> SeasonalProfile | None:
+    """Normal-day behaviour of a series, referenced the way its history supports.
+
+    A same-weekday reference suits a series with a weekly pattern; one without
+    (a rate whose level shifts) is predicted better by its nearest normal days,
+    and forcing same-weekday on it widens "normal" until a real drop hides
+    (live 2026-10-04: a halved click-through rate scored z=-1.3 against
+    same-weekday references and z=-5 against the nearest days). The history
+    decides: same-weekday only when it shows a weekday pattern.
+    """
+    pool = {d for d in history if _finite(series.get(d))}
+    if len(pool) < P.MIN_OBSERVATION_ROWS:
+        return None
+    long_enough = (max(pool) - min(pool)).days + 1 >= 21
+    same_weekday = long_enough and _has_weekly_pattern(series, pool)
+    return _seasonal_profile(series, history, n_window, additive=additive, weeks=weeks, same_weekday=same_weekday)
+
+
+def _has_weekly_pattern(series: Series, pool: set[date]) -> bool:
+    """Whether the weekday explains a series' day-to-day deviations from its local level.
+
+    Each day is compared with the median of the centred 7-day window around it
+    (one of each weekday, so the local level carries no weekday effect), on the
+    log scale for non-negative series; a Kruskal-Wallis test across weekdays
+    then asks whether those deviations differ by weekday. Ranks keep a few
+    abnormal days (an outage, a sale) from creating or hiding a pattern.
+    """
+    from scipy import stats
+
+    use_log, offset = _transform(series, pool)
+    by_weekday: dict[int, list[float]] = {}
+    for d in pool:
+        around = [float(series[d + timedelta(days=j)]) for j in range(-3, 4) if d + timedelta(days=j) in pool]
+        if len(around) < 7:
+            continue
+        e = _err(float(series[d]), _median(around), use_log, offset)
+        if e is not None:
+            by_weekday.setdefault(d.weekday(), []).append(e)
+    groups = [g for g in by_weekday.values() if len(g) >= 2]
+    if len(groups) < 7:
+        return True  # too little to tell: keep the conservative weekly reference
+    try:
+        _, p = stats.kruskal(*groups)
+    except ValueError:  # every value identical
+        return False
+    return bool(math.isfinite(p) and p < P.DIAG_ALPHA)
+
+
+def _reference_kind(profile: SeasonalProfile) -> str:
+    return "same weekday, level-adjusted" if profile.same_weekday else "nearest normal days, level-adjusted"
+
+
+def _seasonal_profile(
+    series: Series, history: list[date], n_window: int, *, additive: bool, weeks: int, same_weekday: bool,
+) -> SeasonalProfile | None:
     weeks = weeks or P.DIAG_REFERENCE_WEEKS
     pool = {d for d in history if _finite(series.get(d))}
     if len(pool) < P.MIN_OBSERVATION_ROWS:
         return None
-    same_weekday = (max(pool) - min(pool)).days + 1 >= 21
     use_log, offset = _transform(series, pool)
     # Seed: deviation from the centred median of the same weekday ±3 weeks
     # (prior-only references are contaminated for weeks after an outage).
@@ -859,9 +917,11 @@ class EventWindow:
         return self.factors.get(d, {}).get(r, 1.0)
 
 
-def _ref_value(series: Series, refs: list[date], factors: dict[date, float] | None = None) -> float | None:
+def _ref_value(
+    series: Series, refs: list[date], factors: dict[date, float] | None = None, *, min_days: int = 1,
+) -> float | None:
     vals = [float(series[r]) * (factors or {}).get(r, 1.0) for r in refs if r in series and _finite(series[r])]
-    return _mean(vals) if vals else None
+    return _mean(vals) if len(vals) >= max(1, min_days) else None
 
 
 def _additive_window(series: Series, window: EventWindow, *, missing_as_zero: bool) -> tuple[float | None, float | None]:
@@ -987,12 +1047,16 @@ class SegmentMove:
     mix_effect: float | None = None
     z_score: float | None = None
     significant: bool | None = None
+    volume_share_event: float | None = None
+    volume_share_reference: float | None = None
+    numerator_event: float | None = None
+    numerator_reference: float | None = None
 
 
 @dataclass
 class DimensionFinding:
     dimension: str
-    kind: Literal["additive", "rate"]
+    kind: Literal["additive", "rate", "ratio"]
     n_segments: int
     coverage: float | None
     specificity: float | None
@@ -1006,6 +1070,8 @@ class DimensionFinding:
     note: str = ""
     volume_coverage: float | None = None  # share of the outcome's reference the segments add up to
     hot_share: float | None = None  # share of the change carried by segments beyond their own noise
+    numerator: str | None = None  # kind "ratio": the metrics the ratio divides
+    denominator: str | None = None
 
 
 @dataclass
@@ -1095,6 +1161,7 @@ class DiagnosisInput:
     partial_days: set[date] = field(default_factory=set)
     claimed_direction: Direction | None = None
     denominators: dict[str, str] = field(default_factory=dict)  # rate metric -> weight metric
+    numerators: dict[str, str] = field(default_factory=dict)  # ratio metric -> its verified numerator
     scope_tokens: frozenset[str] = frozenset()  # grain tokens naming the tenant scope, not a unit
     # Same-unit additive metrics that may sum to the outcome (verified on the data).
     bridge_candidates: list[str] = field(default_factory=list)
@@ -1378,7 +1445,13 @@ def _analyse_rate_dimension(
     moves: list[SegmentMove] = []
     mix_total = rate_total = 0.0
     for s in segs:
-        mix = (s1[s] - s0[s]) * (r0[s] + r1[s]) / 2.0
+        # Mix is priced against the overall reference rate: shares sum to one, so
+        # the totals are unchanged, but a segment that GAINED volume at a low rate
+        # carries the mix effect, not the segments whose share it took (live
+        # 2026-10-04: an awareness campaign with ~0 clicks took half the
+        # impressions; the plain (r0+r1)/2 form pinned the fall on the sales
+        # campaigns, whose rate had held).
+        mix = (s1[s] - s0[s]) * ((r0[s] + r1[s]) / 2.0 - R0)
         rate_eff = (r1[s] - r0[s]) * (s0[s] + s1[s]) / 2.0
         mix_total += mix
         rate_total += rate_eff
@@ -1393,7 +1466,7 @@ def _analyse_rate_dimension(
             segment=s, event=w1[s], reference=w0[s], delta=w1[s] - w0[s],
             share_of_change=((mix + rate_eff) / dR) if abs(dR) > 1e-12 else None,
             rate_event=r1[s], rate_reference=r0[s], rate_effect=rate_eff, mix_effect=mix,
-            z_score=z, significant=sig,
+            z_score=z, significant=sig, volume_share_event=s1[s], volume_share_reference=s0[s],
         ))
     moves.sort(key=lambda m: -abs((m.rate_effect or 0.0) + (m.mix_effect or 0.0)))
     # Simpson: the aggregate moves one way while the within-segment rates move
@@ -1406,7 +1479,16 @@ def _analyse_rate_dimension(
     hot_share = sum((m.rate_effect or 0) + (m.mix_effect or 0) for m in hot) / dR if abs(dR) > 1e-12 else 0.0
     hot_mass = sum(s0[m.segment] for m in hot)
     rate_localised = bool(hot) and hot_share >= 0.5 and hot_mass < 0.5
+    # Mix-driven: the shift in volume between segments carries most of the change
+    # while the rates within them held (Simpson's paradox is the special case
+    # where they moved the other way).
+    mix_driven = (
+        not simpson and abs(dR) > 1e-12 and _sign(mix_total) == _sign(dR)
+        and abs(mix_total) >= 0.5 * abs(dR) and abs(mix_total) > abs(rate_total)
+    )
     note = ""
+    if mix_driven:
+        note = "the overall rate moved mainly because the mix shifted between segments; rates within them held"
     if rate_localised:
         note = (
             f"{len(hot)} segment(s) holding {hot_mass:.0%} of the volume carry {hot_share:.0%} of the change "
@@ -1419,12 +1501,105 @@ def _analyse_rate_dimension(
         )
     return DimensionFinding(
         dimension=dim, kind="rate", n_segments=len(segs), coverage=((mix_total + rate_total) / dR) if abs(dR) > 1e-12 else None,
-        specificity=spec, typical_specificity=None, localised=simpson or rate_localised,
-        broad_based=not (simpson or rate_localised) and spec is not None and spec <= P.DIAG_BROAD_BASED_MAX,
+        specificity=spec, typical_specificity=None, localised=simpson or rate_localised or mix_driven,
+        broad_based=not (simpson or rate_localised or mix_driven) and spec is not None and spec <= P.DIAG_BROAD_BASED_MAX,
         top=moves[: P.DIAG_MAX_SEGMENTS_REPORTED], mix_effect=mix_total, rate_effect=rate_total,
         simpsons_paradox=simpson, note=note,
         volume_coverage=_rate_coverage(w0, total_weight, window),
         hot_share=hot_share,
+    )
+
+
+def _analyse_ratio_dimension(
+    dim: str, num: dict[str, Series], den: dict[str, Series], window: EventWindow, total_rate: Series,
+    total_den: Series | None = None,
+) -> DimensionFinding | None:
+    """Exact split of a ratio of two sums (R = N / D) across one dimension.
+
+    A weighted average of segment rates only rebuilds R when every unit of N
+    sits in a segment with some D; sales on a campaign with no spend in the
+    window break it, and the dimension used to vanish from the diagnosis. The
+    ratio-of-sums split always holds: with R0 = N0 / D0,
+    R1 - R0 = sum_s (dN_s - R0 * dD_s) / D1, so each segment contributes what
+    it added to N beyond the reference return on what it added to D.
+    """
+    if _is_identifier_like(den) and _is_identifier_like(num):
+        return None
+    segs = sorted(set(num) | set(den))
+    if len(segs) < 2:
+        return None
+    # The split must rebuild the reported ratio on reference days before it is trusted.
+    check: list[float] = []
+    for d in {r for refs in window.reference.values() for r in refs}:
+        n_t = sum(float(num.get(s, {}).get(d, 0.0)) for s in segs)
+        d_t = sum(float(den.get(s, {}).get(d, 0.0)) for s in segs)
+        if d_t > 0 and _finite(total_rate.get(d)) and abs(total_rate[d]) > 1e-12:
+            check.append(abs(n_t / d_t - total_rate[d]) / abs(total_rate[d]))
+    if not check or _median(check) > 5 * P.DIAG_IDENTITY_TOLERANCE:
+        return None
+
+    def agg(series: dict[str, Series], scaled: bool) -> tuple[dict[str, float], dict[str, float]]:
+        ev: dict[str, float] = {}
+        rf: dict[str, float] = {}
+        for s in segs:
+            v = series.get(s, {})
+            ev[s] = sum(float(v.get(d, 0.0)) for d in window.event_days)
+            # The outcome's level factor scales the ratio, so it rides on N only.
+            rf[s] = sum(
+                _mean([float(v.get(r, 0.0)) * (window.factor(d, r) if scaled else 1.0) for r in window.reference[d]])
+                if window.reference[d] else 0.0
+                for d in window.event_days
+            )
+        return ev, rf
+
+    n1, n0 = agg(num, True)
+    d1, d0 = agg(den, False)
+    N1, N0, D1, D0 = sum(n1.values()), sum(n0.values()), sum(d1.values()), sum(d0.values())
+    if D1 <= 0 or D0 <= 0:
+        return None
+    R0, R1 = N0 / D0, N1 / D1
+    dR = R1 - R0
+    moves: list[SegmentMove] = []
+    num_total = den_total = 0.0
+    for s in segs:
+        num_eff = (n1[s] - n0[s]) / D1
+        den_eff = -R0 * (d1[s] - d0[s]) / D1
+        num_total += num_eff
+        den_total += den_eff
+        moves.append(SegmentMove(
+            segment=s, event=d1[s], reference=d0[s], delta=d1[s] - d0[s],
+            share_of_change=((num_eff + den_eff) / dR) if abs(dR) > 1e-12 else None,
+            rate_event=(n1[s] / d1[s]) if d1[s] > 0 else None, rate_reference=(n0[s] / d0[s]) if d0[s] > 0 else None,
+            rate_effect=num_eff, mix_effect=den_eff,
+            volume_share_event=d1[s] / D1, volume_share_reference=d0[s] / D0,
+            numerator_event=n1[s], numerator_reference=n0[s],
+        ))
+    moves.sort(key=lambda m: -abs((m.rate_effect or 0.0) + (m.mix_effect or 0.0)))
+    # Localised: the fewest segments (largest first) that carry half the change,
+    # in its direction, hold a minority of the reference volume.
+    hot: list[SegmentMove] = []
+    carried = 0.0
+    for m in moves:
+        c = (m.rate_effect or 0.0) + (m.mix_effect or 0.0)
+        if abs(dR) <= 1e-12 or _sign(c) != _sign(dR) or carried / dR >= 0.5:
+            break
+        hot.append(m)
+        carried += c
+    hot_share = carried / dR if abs(dR) > 1e-12 else 0.0
+    hot_mass = sum(abs(m.reference) for m in hot) / (sum(abs(v) for v in d0.values()) or 1.0)
+    localised = bool(hot) and hot_share >= 0.5 and hot_mass < 0.5
+    note = (
+        f"{len(hot)} segment(s) holding {hot_mass:.0%} of the reference volume carry {hot_share:.0%} of the change"
+        if localised else ""
+    )
+    spec = _specificity({s: n1[s] for s in segs}, {s: n0[s] for s in segs})
+    return DimensionFinding(
+        dimension=dim, kind="ratio", n_segments=len(segs),
+        coverage=((num_total + den_total) / dR) if abs(dR) > 1e-12 else None,
+        specificity=spec, typical_specificity=None, localised=localised,
+        broad_based=not localised and spec is not None and spec <= P.DIAG_BROAD_BASED_MAX,
+        top=moves[: P.DIAG_MAX_SEGMENTS_REPORTED], mix_effect=den_total, rate_effect=num_total,
+        note=note, volume_coverage=_rate_coverage(d0, total_den, window), hot_share=hot_share,
     )
 
 
@@ -1517,7 +1692,7 @@ def _own_window(
     start = min(event_days)
     for d in event_days:
         refs[d], fac[d] = prof.referencer.trimmed(start, refs[d])
-    return EventWindow(event_days, history, refs, sorted(prof.outliers), kind, fac), prof
+    return EventWindow(event_days, history, refs, sorted(prof.outliers), _reference_kind(prof), fac), prof
 
 
 def _chain_step(
@@ -1652,7 +1827,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     outliers = profile.outliers
     referencer = profile.referencer
     refs = {d: referencer.refs(d) for d in event_days}
-    ref_kind = "same weekday, level-adjusted" if profile.same_weekday else "nearest normal days (too little history for a same-weekday reference)"
+    ref_kind = _reference_kind(profile)
     if any(len(v) < 2 for v in refs.values()):
         refs, ref_kind = reference_days(event_days, history, outliers, P.DIAG_REFERENCE_WEEKS)
         factors = {}
@@ -1736,7 +1911,10 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
         event=event, identities=[i.describe() for i in identities], data_quality=quality,
     )
     report.assumptions.append(
-        f"Reference = {ref_kind}: the {P.DIAG_REFERENCE_WEEKS} most recent normal same-weekday days, each scaled by how "
+        f"Reference = {ref_kind} (whichever predicted this metric's own history better): "
+        + (f"the {P.DIAG_REFERENCE_WEEKS} most recent normal same-weekday days" if profile.same_weekday
+           else "the 7 most recent normal days")
+        + ", each scaled by how "
         "the trailing 7-normal-day level changed since then, highest and lowest dropped, the rest averaged; "
         "significance = how far the event sits from its reference compared with how far every past day sat from "
         "its own reference (median/MAD of those deviations)."
@@ -1789,15 +1967,26 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             finding = _analyse_rate_dimension(
                 dim, seg, inp.segments[weight_metric][dim], window, ys, inp.series.get(weight_metric)
             )
+            num_metric = inp.numerators.get(y)
+            if finding is None and num_metric and dim in (inp.segments.get(num_metric) or {}):
+                finding = _analyse_ratio_dimension(
+                    dim, inp.segments[num_metric][dim], inp.segments[weight_metric][dim], window, ys,
+                    inp.series.get(weight_metric),
+                )
+                if finding is not None:
+                    finding.numerator, finding.denominator = num_metric, weight_metric
         if finding is not None:
             dims.append(finding)
     # Dimensions whose segments do not add back up to the whole (attribution
     # fields populated for a subset of rows) describe a slice, not the change.
-    full = [f for f in dims if f.volume_coverage is None or f.volume_coverage >= P.DIAG_MIN_DIMENSION_COVERAGE]
+    full = [f for f in dims if _covers_whole(f)]
     partial = [f for f in dims if f not in full]
     for f in partial:
         f.note = (f.note + "; " if f.note else "") + (
             f"its segments cover only {f.volume_coverage:.0%} of {y}, so it describes a slice of the change"
+            if (f.volume_coverage or 0.0) < 1.0 else
+            f"its segments add up to {f.volume_coverage:.0%} of {y} (units counted more than once), so its "
+            "shares are not shares of the change"
         )
     full.sort(key=lambda f: (not f.simpsons_paradox, not f.localised, f.broad_based, -abs(f.hot_share or 0.0)))
     partial.sort(key=lambda f: (not f.localised, -abs(f.hot_share or 0.0)))
@@ -1897,6 +2086,13 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
         # How far did the driver itself move at the event, against its own reference?
         x_meta = inp.lineage.get(c, MetricMeta(c))
         x_prof = seasonal_profile(xs, history, n_ev, additive=x_meta.additive)
+        if x_prof is None:
+            # Without its own normal range there is no telling whether it moved.
+            report.drivers.append(DriverFinding(
+                driver=c, classification="insufficient_evidence", status="insufficient_evidence",
+                reason=f"{c} has too little history to know its normal day-to-day range",
+            ))
+            continue
         x_window = window
         if x_prof is not None:
             x_refs = {d: x_prof.referencer.refs(d) for d in event_days}
@@ -1907,7 +2103,8 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
                 x_window = EventWindow(event_days, history, x_refs, sorted(x_prof.outliers), ref_kind, x_fac)
         per_day_dx: list[float] = []
         for d in event_days:
-            xr = _ref_value(xs, x_window.reference[d], x_window.factors.get(d))
+            # Same bar as the outcome's own reference: at least two observed days.
+            xr = _ref_value(xs, x_window.reference[d], x_window.factors.get(d), min_days=2)
             xv = xs.get(d)
             if xr is None or not _finite(xv):
                 per_day_dx = []
@@ -2074,8 +2271,23 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             if all(_finite(v) for v in vals):
                 into[m] = sum(float(v) for v in vals) if add else _mean([float(v) for v in vals])
     report.headline = _headline(report)
-    report.narrative = _narrative(report, inp.lineage)
+    report.narrative = _narrative(report, _display_lineage(inp.lineage, inp.series))
     return report
+
+
+def _display_lineage(lineage: dict[str, MetricMeta], series: dict[str, Series]) -> dict[str, MetricMeta]:
+    """Lineage with ratio units the data show are multiples, not shares.
+
+    A catalogue "ratio" is a share (clicks per impression) when every observed
+    value lies in [0, 1] and a multiple (sales per unit of spend) otherwise;
+    a multiple printed as a percent reads "116%" for 1.16x.
+    """
+    out = dict(lineage)
+    for m, meta in lineage.items():
+        vals = [float(v) for v in series.get(m, {}).values() if _finite(v)]
+        if meta.unit.lower() in _SHARE_UNITS and vals and max(abs(v) for v in vals) > 1.0:
+            out[m] = replace(meta, unit=_MULTIPLE_UNIT)
+    return out
 
 
 def _fmt(v: float | None) -> str:
@@ -2094,8 +2306,11 @@ def _pct(v: float | None) -> str:
 
 
 def _covers_whole(d: DimensionFinding) -> bool:
-    """Segments that add back up to the metric (attribution-only fields describe a slice)."""
-    return d.volume_coverage is None or d.volume_coverage >= P.DIAG_MIN_DIMENSION_COVERAGE
+    """Segments that add back up to the metric: attribution-only fields cover a
+    slice (too little); a dimension from a finer breakdown table counts each
+    unit once per breakdown row (too much)."""
+    lo = P.DIAG_MIN_DIMENSION_COVERAGE
+    return d.volume_coverage is None or lo <= d.volume_coverage <= 1.0 / lo
 
 
 def _opposite(direction: str | None) -> str:
@@ -2134,7 +2349,7 @@ def _headline(r: DiagnosisReport) -> str:
     elif e.premise == "vs_previous_only":
         parts.insert(0, (
             f"{r.outcome} went {_opposite(e.direction)} versus the day before "
-            f"({_pct(e.previous_period.get('delta_pct'))}) but {e.direction} versus its usual level for that weekday."
+            f"({_pct(e.previous_period.get('delta_pct'))}) but {e.direction} versus its usual level{_usual_for(e)}."
         ))
     if e.strength == "moderate":
         pct = e.sampling.get("percentile_vs_history", math.nan)
@@ -2242,11 +2457,17 @@ def _label(metric: str, lineage: dict[str, MetricMeta]) -> str:
     return (meta.label if meta and meta.label and meta.label != metric else metric.replace("_", " ")).strip()
 
 
+_SHARE_UNITS = frozenset({"ratio", "percent", "%"})
+_MULTIPLE_UNIT = "multiple"
+
+
 def _val(v: float | None, metric: str, lineage: dict[str, MetricMeta]) -> str:
     if v is None or not math.isfinite(v):
         return "n/a"
     unit = (lineage.get(metric).unit if lineage.get(metric) else "") or ""
-    if unit.lower() in ("ratio", "percent", "%"):
+    if unit == _MULTIPLE_UNIT:
+        return f"{v:.2f}x"
+    if unit.lower() in _SHARE_UNITS:
         return f"{v * 100:.2f}%"
     if unit.isalpha() and unit.isupper() and len(unit) == 3:  # ISO currency code
         return f"{unit} {_fmt(v)}"
@@ -2263,6 +2484,55 @@ def _share(v: float | None) -> str:
     return "n/a" if v is None or not math.isfinite(v) else f"{abs(v) * 100:.0f}%"
 
 
+def _same_weekday(e: EventSummary) -> bool:
+    return e.reference_kind.startswith("same weekday")
+
+
+def _usual_for(e: EventSummary) -> str:
+    return " for that weekday" if _same_weekday(e) else ""
+
+
+def _usual_blend(e: EventSummary) -> str:
+    return "recent same weekdays" if _same_weekday(e) else "the most recent normal days"
+
+
+def _previous_label(r: DiagnosisReport) -> str:
+    n = len(r.event_window)
+    return "the day before" if n == 1 else f"the previous {n} days"
+
+
+def _rate_segment_text(s: SegmentMove, metric: str, lineage: dict[str, MetricMeta]) -> str:
+    """One segment of a rate split: its own rate, plus its volume share when the mix carried it."""
+    txt = (
+        f"the {_label(metric, lineage).lower()} for {s.segment} went from {_val(s.rate_reference, metric, lineage)} "
+        f"to {_val(s.rate_event, metric, lineage)}" + (" — beyond its own normal range" if s.significant else "")
+    )
+    if (
+        s.volume_share_reference is not None and s.volume_share_event is not None
+        and abs(s.mix_effect or 0.0) > abs(s.rate_effect or 0.0)
+    ):
+        txt += (
+            f", while its share of the volume went from {s.volume_share_reference:.0%} to {s.volume_share_event:.0%}"
+        )
+        if s.reference <= 0.01 * s.event:
+            txt += " (it had almost no volume on the usual days, so it is new in this period)"
+        elif s.event <= 0.01 * s.reference:
+            txt += " (it stopped in this period)"
+    return txt
+
+
+def _ratio_segment_text(s: SegmentMove, d: DimensionFinding, metric: str, lineage: dict[str, MetricMeta]) -> str:
+    num, den = d.numerator or "", d.denominator or ""
+    txt = (
+        f"{s.segment}: {_label(num, lineage)} {_val(s.numerator_reference, num, lineage)} → "
+        f"{_val(s.numerator_event, num, lineage)}, {_label(den, lineage)} {_val(s.reference, den, lineage)} → "
+        f"{_val(s.event, den, lineage)}"
+    )
+    if s.rate_reference is not None and s.rate_event is not None:
+        txt += f" ({_label(metric, lineage)} {_val(s.rate_reference, metric, lineage)} → {_val(s.rate_event, metric, lineage)})"
+    return txt + f", about {_share(s.share_of_change)} of the change"
+
+
 def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
     e = r.event
     if e is None:
@@ -2272,11 +2542,11 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
     out: list[str] = []
     happened = (
         f"WHAT HAPPENED: {name} was {_val(e.actual, r.outcome, lineage)} on {when}, against a usual "
-        f"{_val(e.reference, r.outcome, lineage)} for that weekday ({_chg(e.actual, e.reference)}; 'usual' blends "
-        "recent same weekdays and is not any single day's value)."
+        f"{_val(e.reference, r.outcome, lineage)}{_usual_for(e)} ({_chg(e.actual, e.reference)}; 'usual' blends "
+        f"{_usual_blend(e)} and is not any single day's value)."
     )
     if e.previous_period.get("value") is not None:
-        happened += f" Versus the day before it was {_chg(e.actual, e.previous_period['value'])}."
+        happened += f" Versus {_previous_label(r)} it was {_chg(e.actual, e.previous_period['value'])}."
     if e.premise == "contradicted":
         happened += f" Note: it went {e.direction}, not {'down' if e.direction == 'up' else 'up'} as the question assumes."
     elif e.premise == "vs_previous_only":
@@ -2342,15 +2612,39 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
     if where is not None and where.top and where_metric is not None:
         s0 = where.top[0]
         if where.kind == "rate":
-            txt = (
-                f"WHERE: by {where.dimension.replace('_', ' ')}, the {_label(where_metric, lineage).lower()} for "
-                f"{s0.segment} went from {_val(s0.rate_reference, where_metric, lineage)} to "
-                f"{_val(s0.rate_event, where_metric, lineage)}"
-                + (" — beyond its own normal range" if s0.significant else "")
-                + "."
-            )
+            txt = f"WHERE: by {where.dimension.replace('_', ' ')}, {_rate_segment_text(s0, where_metric, lineage)}."
             if where.simpsons_paradox:
-                txt += " The overall rate moved because the traffic mix shifted, while rates within each group moved the other way (Simpson's paradox)."
+                txt += (
+                    " The overall rate moved because the mix shifted, while rates within each group moved "
+                    "the other way (Simpson's paradox)."
+                )
+            elif abs(where.mix_effect or 0.0) > abs(where.rate_effect or 0.0):
+                txt += " The overall rate moved mainly because the mix shifted, while rates within each group held."
+            also = [
+                d for d in (*r.chain_dimensions, *r.dimensions)
+                if d is not where and d.kind == "rate" and d.top and _covers_whole(d) and (d.localised or d.simpsons_paradox)
+            ][:2]
+            if also:
+                txt += " The same shift shows " + "; ".join(
+                    f"by {d.dimension.replace('_', ' ')}: {_rate_segment_text(d.top[0], where_metric, lineage)}" for d in also
+                ) + "."
+        elif where.kind == "ratio" and where.numerator and where.denominator:
+            txt = f"WHERE: by {where.dimension.replace('_', ' ')}, " + "; ".join(
+                _ratio_segment_text(s, where, where_metric, lineage)
+                for s in where.top[:3] if _sign(s.share_of_change or 0.0) > 0
+            ) + (
+                " (shares are of the change versus the usual level; each is what the segment added to "
+                f"{_label(where.numerator, lineage).lower()} beyond the usual return on what it added to "
+                f"{_label(where.denominator, lineage).lower()})."
+            )
+            # A coarser level of the same split names the parent (campaign above an ad).
+            also = [
+                d for d in r.dimensions
+                if d is not where and d.kind == "ratio" and d.top and d.n_segments < where.n_segments
+                and _covers_whole(d) and d.localised
+            ][:1]
+            if also:
+                txt += f" By {also[0].dimension.replace('_', ' ')}: " + _ratio_segment_text(also[0].top[0], also[0], where_metric, lineage) + "."
         else:
             txt = (
                 f"WHERE: by {where.dimension.replace('_', ' ')}, {s0.segment} went from {_val(s0.reference, where_metric, lineage)} "

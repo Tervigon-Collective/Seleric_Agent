@@ -16,23 +16,20 @@ from __future__ import annotations
 from seleric_swarm.causal import diagnosis as engine
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 
-# A dimension carried by at least this share of views is a tenant/scope key, not
-# a business axis (every view has it, so splitting by it says nothing).
-SCOPE_DIM_SHARE = 0.8
 
 
 def scope_dimensions(catalogue: CatalogueSnapshot) -> set[str]:
-    """Dimensions carried by (nearly) every view — tenant/scope keys, not join paths."""
-    views: dict[str, set[str]] = {}
-    for m in catalogue.metrics:
-        views.setdefault(m.view, set()).update(m.supported_dimensions or [])
-    if not views:
-        return set()
-    counts: dict[str, int] = {}
-    for dims in views.values():
-        for d in dims:
-            counts[d] = counts.get(d, 0) + 1
-    return {d for d, c in counts.items() if c >= SCOPE_DIM_SHARE * len(views)}
+    """The tenant key every query is scoped to (the runtime injects it), never a split.
+
+    "Carried by nearly every view" stopped meaning tenant key once the business
+    axes (platform, campaign, channel) were conformed onto every view: campaign
+    was then dropped from every localisation and its words from every grain
+    (live 2026-10-08, an ads diagnosis that never looked at campaigns).
+    """
+    from seleric_swarm.services.mcp_query import _BRAND_DIM_KEYS
+
+    dims = set(catalogue.dimensions) | {d for m in catalogue.metrics for d in (m.supported_dimensions or [])}
+    return {d for d in dims if d.lower() in _BRAND_DIM_KEYS}
 
 
 def plan_dimensions(
@@ -44,16 +41,18 @@ def plan_dimensions(
     for m in catalogue.metrics:
         for d in m.supported_dimensions or []:
             views_per_dim[d] = views_per_dim.get(d, 0) + 1
-    ranked: list[tuple[tuple[int, int, str], str]] = []
+    ranked: list[tuple[tuple[int, int, int, str], str]] = []
     for d in catalogue.supported_dimensions_for(metric_id):
         if d in scope or d in exclude or catalogue.is_time_dimension(d):
             continue
         level = catalogue.dimension_fact(d, "hierarchy_level")
         enumerated = catalogue.dimension_fact(d, "n_allowed") > 1
-        # Hierarchy roots first (the coarsest business axes), then enumerated
-        # (known low-cardinality) dims, then the rest by how widely they are modelled.
-        tier = 0 if level == 1 else 1 if enumerated else 2 if level == 0 else 3
-        ranked.append(((tier, -views_per_dim.get(d, 0), d), d))
+        # The business hierarchy first, coarsest level first (its deeper levels
+        # are where a launch, a pause or a budget move shows up), then
+        # enumerated (known low-cardinality) dims, then the rest by how widely
+        # they are modelled.
+        tier = 0 if level >= 1 else 1 if enumerated else 2
+        ranked.append(((tier, level if level >= 1 else 0, -views_per_dim.get(d, 0), d), d))
     ranked.sort()
     return [d for _, d in ranked][:cap]
 

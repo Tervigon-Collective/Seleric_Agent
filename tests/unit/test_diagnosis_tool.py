@@ -40,9 +40,9 @@ DEFS: dict[str, dict[str, Any]] = {
     "zz_cost_per_visit": {"aggregation": "ratio", "grain": "placement_day", "cube_mapping": {"view": "media"}, "formula": {"depends_on": ["zz_budget", "zz_visits"]}},
 }
 DIMS = {
-    "shop": ["tenant_key", "zz_source"],
-    "site": ["tenant_key", "zz_source"],
-    "media": ["tenant_key"],
+    "shop": ["brand_id", "zz_source"],
+    "site": ["brand_id", "zz_source"],
+    "media": ["brand_id"],
 }
 
 
@@ -107,7 +107,7 @@ def _deps(mcp: FakeMcp) -> SelericDeps:
         principal=Principal(principal_id="p", workspace_id="ws", user_id="u"),
         thread_id="t", run_id="r", trace_id="tr", context=ContextBundle(), mcp_client=mcp,
         artifact_store=InMemoryArtifactStore(), limits=ExecutionLimits(),
-        catalogue=CatalogueSnapshot(metrics=metrics, dimensions=("tenant_key", "zz_source")),
+        catalogue=CatalogueSnapshot(metrics=metrics, dimensions=("brand_id", "zz_source")),
     )
 
 
@@ -134,7 +134,7 @@ def test_tool_plans_from_metadata_and_grounds_every_number():
     lead = max(report["chain"], key=lambda t: abs(t["contribution"]))
     assert lead["metric"] == "zz_buy_rate"
     # the scope key carried by every view is never used as a segment dimension
-    assert all(q.get("dimensions") != ["tenant_key"] for q in mcp.queries)
+    assert all(q.get("dimensions") != ["brand_id"] for q in mcp.queries)
     # partial "today" never enters the history
     assert report["event_window"] == [EVENT.isoformat()]
 

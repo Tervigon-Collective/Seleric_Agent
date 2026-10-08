@@ -33,10 +33,10 @@ DEFS: dict[str, dict[str, Any]] = {
     "yy_footfall": {"aggregation": "additive", "grain": "entry", "cube_mapping": {"view": "door"}, "formula": {"depends_on": []}},
     "yy_conversion": {"aggregation": "ratio", "grain": "entry", "cube_mapping": {"view": "door"},
                       "formula": {"depends_on": ["yy_baskets", "yy_footfall"]}},
-    # a view without the zone axis: tenant_key is on every view (a scope key), yy_zone is not
+    # a view without the zone axis: brand_id is on every view (a scope key), yy_zone is not
     "yy_rent": {"aggregation": "additive", "grain": "lease_day", "cube_mapping": {"view": "ledger"}, "formula": {"depends_on": []}},
 }
-DIMS = {"till": ["tenant_key", "yy_zone"], "door": ["tenant_key", "yy_zone"], "ledger": ["tenant_key"]}
+DIMS = {"till": ["brand_id", "yy_zone"], "door": ["brand_id", "yy_zone"], "ledger": ["brand_id"]}
 ZONES = {"north": 0.55, "south": 0.3, "east": 0.15}
 
 
@@ -97,7 +97,7 @@ def _deps(mcp: FakeMcp) -> SelericDeps:
         principal=Principal(principal_id="p", workspace_id="ws", user_id="u"),
         thread_id="t", run_id="r", trace_id="tr", context=ContextBundle(), mcp_client=mcp,
         artifact_store=InMemoryArtifactStore(), limits=ExecutionLimits(),
-        catalogue=CatalogueSnapshot(metrics=metrics, dimensions=("tenant_key", "yy_zone")),
+        catalogue=CatalogueSnapshot(metrics=metrics, dimensions=("brand_id", "yy_zone")),
     )
 
 
@@ -124,7 +124,7 @@ def test_open_exploration_plans_from_metadata_and_grounds_every_finding():
     assert explored[:2] == ["yy_baskets", "yy_footfall"]
     assert report["window"][0] == WINDOW[0].isoformat() and report["window"][-1] == YESTERDAY.isoformat()
     # the scope key is never screened as a breakdown; today never enters a window
-    assert all(q.get("dimensions") != ["tenant_key"] for q in mcp.queries)
+    assert all(q.get("dimensions") != ["brand_id"] for q in mcp.queries)
     assert all(q["time_range"]["end"] <= YESTERDAY.isoformat() for q in mcp.queries)
     kinds = {(i["kind"], i["metric"]) for i in report["insights"]}
     assert ("period_change", "yy_takings") in kinds

@@ -52,6 +52,7 @@ _DEFINITION_BATCH = 10
 _DEFINITIONS_TTL_S = 900.0
 _MAX_EVENT_DAYS = 14
 _MAX_SEGMENT_ROWS = 6000
+_UNSET_SEGMENT = "(not set)"
 
 # Process-wide cache of full catalogue definitions (lineage lives only there).
 _definitions_cache: dict[str, Any] = {"at": 0.0, "ids": frozenset(), "defs": {}}
@@ -146,6 +147,31 @@ def _plan_dimensions(ctx: RunContext[SelericDeps], outcome: str, cap: int) -> li
     return space.plan_dimensions(ctx.deps.catalogue, outcome, cap)
 
 
+def _rate_parts(
+    metric_id: str, lineage: dict[str, engine.MetricMeta], series: dict[str, dict[date, float]], days: list[date],
+) -> tuple[str | None, str | None]:
+    """The volume a rate is averaged over: its denominator, as the data verify it.
+
+    Lineage lists a ratio's components but not which one divides; weighting the
+    segments by the numerator (clicks for a click-through rate) mixes the
+    segments on the wrong volume and breaks the mix/rate split. A verified
+    ``outcome = a / b`` identity names ``b``; a one-component rate is "per" that
+    component. The numerator comes back only from a verified ``a / b``.
+    """
+    meta = lineage.get(metric_id, engine.MetricMeta(metric_id))
+    # Components may live in other views (spend and sales of a return on spend);
+    # the engine only trusts a split whose segments rebuild the total on the data.
+    additive = {d for d in meta.depends_on if lineage.get(d, engine.MetricMeta(d)).additive}
+    for ident in engine.discover_identities(metric_id, lineage, series, days):
+        den = [m for m, e in ident.factors if e < 0]
+        num = [m for m, e in ident.factors if e > 0]
+        if len(ident.factors) == 2 and len(den) == 1 and den[0] in additive:
+            return (num[0] if num and num[0] in additive else None), den[0]
+    if len(meta.depends_on) == 1 and meta.depends_on[0] in additive:
+        return None, meta.depends_on[0]
+    return None, None
+
+
 # --------------------------------------------------------------------------- fetching
 def _filters_for(ctx: RunContext[SelericDeps], metric_id: str, filters: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     supported = set(ctx.deps.catalogue.supported_dimensions_for(metric_id))
@@ -198,14 +224,21 @@ def _parse_series(result: dict[str, Any], metric_id: str) -> dict[date, float]:
 
 
 def _parse_segments(result: dict[str, Any], metric_id: str, dimension: str) -> dict[str, dict[date, float]]:
+    """metric per segment per day. Rows with no value for the dimension are kept as
+    one explicit segment: dropping them made a split stop adding up to the total
+    (unattributed sales vanished from a sales-per-spend split by campaign)."""
     out: dict[str, dict[date, float]] = {}
     for row in result.get("rows") or []:
         ts, raw = row_date(row), row.get(metric_id)
         seg = dimension_value(row, dimension)
-        if ts is None or raw is None or seg in (None, "", "None", "null"):
+        if ts is None or raw is None:
             continue
+        if seg in (None, "", "None", "null"):
+            seg = _UNSET_SEGMENT
         try:
-            out.setdefault(str(seg), {})[date.fromisoformat(ts)] = float(raw)
+            day = date.fromisoformat(ts)
+            bucket = out.setdefault(str(seg), {})
+            bucket[day] = bucket.get(day, 0.0) + float(raw)
         except (TypeError, ValueError):
             continue
     return out
@@ -479,10 +512,6 @@ async def diagnose_metric_change(
     cap = P.DIAG_MAX_DRIVERS + 2 * int(search_breadth)
     drivers = _plan_drivers(ctx, metric_id, lineage, set(identity_metrics), cap)
     dims = _plan_dimensions(ctx, metric_id, P.DIAG_MAX_DIMENSIONS + 4 * int(search_breadth))
-    weight = None
-    if not out_meta.additive:
-        weight = next((d for d in out_meta.depends_on if lineage.get(d, engine.MetricMeta(d)).additive
-                       and lineage[d].view == out_meta.view), None)
 
     # ---- fetch ---------------------------------------------------------------------------
     sem = asyncio.Semaphore(6)
@@ -503,8 +532,6 @@ async def diagnose_metric_change(
         ]
     series_ids = list(dict.fromkeys([metric_id, *identity_metrics, *chain_metrics, *drivers, *bridge_pool]))
     series_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters)) for m in series_ids))
-    seg_jobs = [(metric_id, d) for d in dims] + ([(weight, d) for d in dims] if weight else [])
-    seg_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters, dimension=d)) for m, d in seg_jobs))
 
     quality: list[str] = []
     series: dict[str, dict[date, float]] = {}
@@ -532,6 +559,10 @@ async def diagnose_metric_change(
                 units[m] = currency
     if metric_id not in series:
         return _refuse(f"no daily data for {metric_id} over {hist_start}..{ev_end}")
+    history_days = sorted(d for d in series[metric_id] if d < ev_start and d not in partial)
+    numerator, weight = (None, None) if out_meta.additive else _rate_parts(metric_id, lineage, series, history_days)
+    seg_jobs = [(metric_id, d) for d in dims] + [(m, d) for m in (weight, numerator) if m for d in dims]
+    seg_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters, dimension=d)) for m, d in seg_jobs))
     segments: dict[str, dict[str, dict[str, dict[date, float]]]] = {}
     seg_args: dict[tuple[str, str], dict[str, Any]] = {}
     for (m, d), (res, args) in zip(seg_jobs, seg_results, strict=True):
@@ -545,7 +576,6 @@ async def diagnose_metric_change(
     # Phase B: segments for every chain rate the data actually verify (the
     # engine picks which component leads; fetching for each verified chain
     # avoids re-implementing that choice here).
-    history_days = sorted(d for d in series[metric_id] if d < ev_start and d not in partial)
     targets = [metric_id] if out_meta.additive else []
     for ident in engine.discover_identities(metric_id, lineage, series, history_days)[:1]:
         targets += [m for m, _ in ident.factors if lineage.get(m, engine.MetricMeta(m)).additive]
@@ -573,6 +603,7 @@ async def diagnose_metric_change(
         outcome=metric_id, event_days=event_days, series=series, lineage=lineage, segments=segments,
         candidate_drivers=[d for d in drivers if d in series], partial_days=partial,
         claimed_direction=claimed_direction, denominators=({metric_id: weight} if weight else {}),
+        numerators=({metric_id: numerator} if numerator and weight else {}),
         scope_tokens=frozenset(t for d in _scope_dimensions(ctx) for t in d.lower().split("_") if t),
         bridge_candidates=[m for m in bridge_pool if m in series],
     )
@@ -608,7 +639,7 @@ async def diagnose_metric_change(
                     )
     for dim in report.dimensions[:3]:
         for s in dim.top[:3]:
-            for m in (metric_id, weight):
+            for m in (metric_id, weight, numerator):
                 if m and (m, dim.dimension) in seg_args:
                     vals = segments[m][dim.dimension].get(s.segment, {})
                     evidence_ids += _evidence_rows(
