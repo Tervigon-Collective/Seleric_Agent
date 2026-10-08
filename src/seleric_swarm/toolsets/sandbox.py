@@ -36,7 +36,13 @@ from pydantic_ai import ModelRetry, RunContext
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.paths import repo_root
-from seleric_swarm.toolsets.analytics import _load_evidence, _provenance, _write_finding
+from seleric_swarm.toolsets.analytics import (
+    _load_evidence,
+    _note_repaired_ids,
+    _provenance,
+    _unwrap_findings_to_evidence_ids,
+    _write_finding,
+)
 
 _DEFAULT_TIMEOUT_S = 10.0
 # Inline size of the serialized result/stdout returned to the model. Larger
@@ -129,7 +135,9 @@ async def run_python(
     Use this for computation the fixed analytics tools don't cover (custom
     ratios, rankings, multi-step arithmetic). It never fetches data — pass the
     ``evidence_ids`` returned by ``query_metrics``/``drilldown`` and read them
-    inside the script.
+    inside the script. A finding id (e.g. a prefetched table's) is read as the
+    evidence rows it cites. Sum or roll up rows here, never in the answer's prose:
+    a total computed here is recorded and can be cited.
 
     In scope, the script sees:
       - ``evidence``: list of dicts, one per evidence id (metric_id, value,
@@ -162,6 +170,18 @@ async def run_python(
             retryable=False,
         )
 
+    # A script computes over measurements, so a finding or chart passed in is read as
+    # the evidence it cites — the result then cites those rows, not the summary. Live
+    # 2026-10-07/08: run_python refused the prefetch finding holding the very table a
+    # channel reconciliation had to sum; the model summed in prose instead and the
+    # unrecorded totals failed grounding until the mission did (4 of 6 failures).
+    evidence_ids, unwrapped = _unwrap_findings_to_evidence_ids(ctx, list(evidence_ids))
+    if unwrapped:
+        _note_repaired_ids(
+            ctx,
+            "derived artifacts read as the evidence they cite: "
+            + "; ".join(f"{aid} -> {len(eids)} evidence rows" for aid, eids in sorted(unwrapped.items())),
+        )
     evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
     if refusal is not None:
         return refusal

@@ -174,6 +174,18 @@ def _user_facing_agent_failure(exc: BaseException) -> tuple[str, str]:
     )
 
 
+def _failure_detail(exc: BaseException) -> list[str]:
+    """What actually failed, kept on the mission so a V3_AGENT_FAILED is diagnosable after
+    the worker's container logs rotate (live 2026-10-07/08: two failed attempts left no
+    exception text anywhere). Exception types and HTTP status codes only — never a
+    provider response body, which can reach the UI."""
+    out = []
+    for cause in _flatten_exceptions(exc)[:6]:
+        status = getattr(cause, "status_code", None)
+        out.append(f"{type(cause).__name__}{f' {status}' if status else ''}")
+    return out
+
+
 def _as_of_datetime(as_of: str | None, timezone: str = "Asia/Kolkata") -> datetime:
     """Anchor as_of on the mission calendar day, not UTC-now (which can lag IST)."""
     day = as_of_date(as_of, timezone)
@@ -1409,6 +1421,7 @@ async def run_v3_mission(
                     "session_id": thread_id,
                     "elapsed_seconds": round(time.perf_counter() - started, 3),
                     "intent": intent,
+                    "failure": _failure_detail(exc),
                 },
             )
         finally:

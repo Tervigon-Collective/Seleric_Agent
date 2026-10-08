@@ -1401,6 +1401,7 @@ def _conform_dimensions(
         return [f"'{a}' is answered by its conformed dimension '{b}' (same values on this metric's view)."
                 for a, b in renames.items()]
 
+    _reject_metric_as_dimension(catalogue, metric_id, [*dimensions, *(f.dimension for f in filters)])
     fitted, fitted_filters, renames, missing, period, value_gaps = _fit_to_metric(
         catalogue, metric_id, dimensions, filters
     )
@@ -1435,6 +1436,25 @@ def _conform_dimensions(
             f"{', '.join(alternatives)}."
         )
     return metric_id, fitted, fitted_filters, renames, notes_for(renames), period
+
+
+def _reject_metric_as_dimension(catalogue: Any, metric_id: str, keys: list[str]) -> None:
+    """A breakdown or filter key that is another view's METRIC cannot slice this one.
+
+    Cube refuses it ("Filter dimension 'ad_spend' is not valid on view 'order_pnl'") only
+    after a round trip, and the model kept retrying variants (live 2026-10-07/08: ad_spend
+    x4, new_customers x1 on net-profit and unit-economics queries). A metric on the same
+    view stays allowed: that is a measure filter Cube supports."""
+    views = {m.id: m.view for m in catalogue.metrics}
+    own = views.get(metric_id)
+    for key in dict.fromkeys(keys):
+        if key == metric_id or key not in views or views[key] == own:
+            continue
+        raise ModelRetry(
+            f"'{key}' is a metric, not a dimension of '{metric_id}', so it cannot break down or filter it. "
+            f"Fetch '{key}' with its own query_metrics call over the same period and breakdown, then combine "
+            f"the two with analyze or run_python."
+        )
 
 
 # Entities kept when an unranked categorical breakdown crossed with a time grain is too large to

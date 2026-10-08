@@ -174,14 +174,19 @@ def _available_evidence(ctx: RunContext[SelericDeps]) -> str:
     return " Evidence available in this mission: " + "; ".join(rows[:_AVAILABLE_EVIDENCE_SHOWN]) + more
 
 
-def _finding_backing_ids(artifact: Artifact) -> list[str]:
-    """Evidence ids a finding cites, preferring the artifact-level chain.
+# Derived artifacts that cite the measurements they were built from.
+_DERIVED_TYPES = frozenset({"finding", "chart_spec"})
 
-    Findings are derived summaries; their ``evidence_ids`` (or payload copy)
+
+def _finding_backing_ids(artifact: Artifact) -> list[str]:
+    """Evidence ids a derived artifact (finding, chart spec) cites, preferring the
+    artifact-level chain.
+
+    Findings and chart specs are derived; their ``evidence_ids`` (or payload copy)
     point at the measurements that still have to be loaded for any chart or
-    calculation. Empty when the row is not a finding or cites nothing.
+    calculation. Empty when the row is not derived or cites nothing.
     """
-    if artifact.artifact_type != "finding":
+    if artifact.artifact_type not in _DERIVED_TYPES:
         return []
     ids = list(artifact.evidence_ids or [])
     if ids:

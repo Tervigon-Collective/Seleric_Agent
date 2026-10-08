@@ -399,6 +399,10 @@ def _mission_values(deps: SelericDeps) -> list[float]:
     # rejected as unbacked until the mission failed (live 2026-10-08, golden Q17:
     # 925,892 total, 373,160 Meta, 354,872 unattributed — all exact row sums).
     rollups: dict[tuple[Any, ...], float] = {}
+    # How many rows a fetched breakdown returned is itself a fetched fact: "AOV and COD
+    # orders for all 173 products" was rejected as a total of 173 against the revenue
+    # column (live 2026-10-08 MS3-8c381f3641, evidence for every product in hand).
+    row_counts: dict[tuple[Any, ...], int] = {}
     for artifact in deps.artifact_store.list_for_mission(deps.mission_id):
         payload = getattr(artifact, "payload", None)
         if not isinstance(payload, dict):
@@ -410,6 +414,7 @@ def _mission_values(deps: SelericDeps) -> list[float]:
                 query = (payload.get("metric_id"), payload.get("period_start"), payload.get("period_end"),
                          payload.get("grain"), tuple(sorted(dims)))
                 rollups[(*query, None, None)] = rollups.get((*query, None, None), 0.0) + float(value)
+                row_counts[query] = row_counts.get(query, 0) + 1
                 for key, member in dims.items():
                     group = (*query, key, member)
                     rollups[group] = rollups.get(group, 0.0) + float(value)
@@ -418,6 +423,7 @@ def _mission_values(deps: SelericDeps) -> list[float]:
         elif artifact.artifact_type == "signal":
             walk(payload.get("signals"))
     values.extend(rollups.values())
+    values.extend(float(n) for n in row_counts.values() if n > 1)
     return values
 
 
