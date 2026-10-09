@@ -9,7 +9,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { isWalkable } from "../office/navmesh";
-import { blankAgents } from "../office/agents";
+import { blankAgents, blankLegacyAgents } from "../office/agents";
 import { useShellStore } from "../stores/shell";
 
 // --- minimal 2D context stub ------------------------------------------------
@@ -90,11 +90,12 @@ describe("render smoke", () => {
     },
   );
 
-  it("agent roster is complete and stable", () => {
-    const ids = blankAgents().map((a) => a.agentId);
-    expect(ids).toHaveLength(14);
+  it("agent roster is the V3 single agent (legacy roster kept for old snapshots)", () => {
+    expect(blankAgents().map((a) => a.agentId)).toEqual(["seleric_agent"]);
+    const legacy = blankLegacyAgents().map((a) => a.agentId);
+    expect(legacy).toHaveLength(14);
     for (const need of ["coordinator", "performance_agent", "skeptic_agent", "technical_agent"]) {
-      expect(ids).toContain(need);
+      expect(legacy).toContain(need);
     }
   });
 });

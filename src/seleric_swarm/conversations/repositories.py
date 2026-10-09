@@ -18,6 +18,7 @@ from seleric_swarm.conversations.contracts import (
     MemoryItem,
     MemoryPreference,
     Message,
+    MessageFeedback,
     RollbackRecord,
     Run,
     RunAttempt,
@@ -260,6 +261,19 @@ class ApprovalRepository(Protocol):
     def list_due(self, now: datetime) -> list[ApprovalRequest]: ...
 
 
+class FeedbackRepository(Protocol):
+    """Append-only answer feedback. A re-vote supersedes the prior row for
+    the same message; rows are never edited in place."""
+
+    def submit(self, feedback: MessageFeedback) -> MessageFeedback: ...
+    def latest_for_message(
+        self, message_id: str, workspace_id: str, owner_user_id: str
+    ) -> MessageFeedback | None: ...
+    def list_for_thread(
+        self, thread_id: str, workspace_id: str, owner_user_id: str, *, limit: int = 100
+    ) -> list[MessageFeedback]: ...
+
+
 class EpisodicEventRepository(Protocol):
     def create(self, event: EpisodicEvent) -> EpisodicEvent: ...
     def get(
@@ -295,6 +309,7 @@ class ConversationRepositories:
     thread_summaries: ThreadSummaryRepository
     search: SearchRepository
     approvals: ApprovalRepository
+    feedback: FeedbackRepository
     # Optional: only the postgres backend wires this today; nothing reads it yet.
     # None-default so the file/in-memory builders construct without it.
     episodic_events: EpisodicEventRepository | None = None

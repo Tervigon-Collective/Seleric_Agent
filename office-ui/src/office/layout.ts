@@ -51,17 +51,23 @@ const Z = (
   door,
 });
 
-/** Fewer zone labels — only major bays, so the floor stays readable. */
+/** Fewer zone labels — only major bays, so the floor stays readable.
+ *
+ * V3 (current system): the zones are capability stations for the single
+ * `seleric_agent` loop — same ids/geometry as the retired swarm map (the
+ * 25×25 collision grid is unchanged), relabelled to the toolsets that
+ * actually run there. See `stateMachine.stationForTool` for the mapping.
+ */
 export const ZONES: Zone[] = [
   Z("coordinator", "Mission Control", 3, 3, 5, 5, "coord", "office", "S"),
-  Z("performance", "Performance", 8, 4, 5, 4, "perf", "bay", "S"),
-  Z("ops_floor", "Operations", 3, 8, 5, 5, "domain", "bay", "E"),
-  Z("funnel", "Funnel", 9, 8, 5, 5, "funnel", "bay", "S"),
-  Z("technical", "Tech", 14, 7, 4, 5, "tech", "bay", "W"),
-  Z("diagnostic_lab", "Diagnostics", 3, 14, 5, 4, "diag", "lab", "N"),
-  Z("handoff_room", "Handoff", 6, 15, 4, 3, "neutral", "room", "N"),
-  Z("skeptic_room", "Skeptic", 2, 18, 4, 3, "skeptic", "room", "N"),
-  Z("lounge", "Lounge", 14, 18, 6, 4, "neutral", "commons", "N"),
+  Z("performance", "Semantic", 8, 4, 5, 4, "perf", "bay", "S"),
+  Z("ops_floor", "Metrics", 3, 8, 5, 5, "domain", "bay", "E"),
+  Z("funnel", "Analytics", 9, 8, 5, 5, "funnel", "bay", "S"),
+  Z("technical", "Causal · Forecast", 14, 7, 4, 5, "tech", "bay", "W"),
+  Z("diagnostic_lab", "Diagnosis", 3, 14, 5, 4, "diag", "lab", "N"),
+  Z("handoff_room", "Actions", 6, 15, 4, 3, "neutral", "room", "N"),
+  Z("skeptic_room", "Validation", 2, 18, 4, 3, "skeptic", "room", "N"),
+  Z("lounge", "Knowledge", 14, 18, 6, 4, "neutral", "commons", "N"),
 ];
 
 export const ZONE_BY_ID: Record<string, Zone> = Object.fromEntries(ZONES.map((z) => [z.id, z]));
@@ -71,10 +77,32 @@ export const SPOTS: Record<string, Vec> = {
   mission_room: T(6, 7),
   handoff_area: T(7, 16),
   skeptic_desk: T(2, 19),
+  /** The validator reviews claims where the skeptic desk was. */
+  validation_desk: T(2, 19),
   data_terminal: T(9, 13),
   lounge: T(6, 21),
   coffee: T(10, 9),
   break_coffee: T(6, 19),
+  // V3 capability stations — every coordinate is a former validated agent
+  // home / known-walkable spot, so no new collision risk.
+  /** find_metrics · resolve_brand · get_metric_definitions */
+  semantic_station: T(7, 3),
+  /** query_metrics · semantic_sql · drilldown */
+  metrics_station: T(11, 5),
+  /** analyze · generate_visualization · run_python */
+  analytics_station: T(5, 11),
+  /** diagnose_metric_change · explore_data */
+  diagnosis_station: T(4, 15),
+  /** estimate_effect */
+  causal_station: T(15, 7),
+  /** forecast */
+  forecast_station: T(15, 11),
+  /** search_knowledge */
+  knowledge_station: T(6, 21),
+  /** get_experiment_history · estimate_sample_size · evaluate_experiment */
+  experiments_station: T(8, 17),
+  /** propose_action · commit_action (phase7 preview flow) */
+  actions_station: T(7, 16),
 };
 
 export const MEETING_SLOTS: Record<string, [Vec, Vec]> = {
@@ -95,6 +123,9 @@ export interface DeskDef {
  * Spread across the whole walkable office so agents don't clump in one bay.
  */
 export const DESKS: DeskDef[] = [
+  // V3 home: the single agent desks in Mission Control.
+  { agentId: "seleric_agent", zone: "coordinator", home: T(6, 7) },
+  // Retired swarm homes — kept so old snapshots still spawn on open floor.
   { agentId: "coordinator", zone: "coordinator", home: T(6, 7) },
   { agentId: "inventory_agent", zone: "coordinator", home: T(3, 3) },
   { agentId: "commerce_agent", zone: "performance", home: T(7, 3) },

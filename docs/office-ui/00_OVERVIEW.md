@@ -23,9 +23,11 @@ mission event.
 > reference architecture, office layout, agent states, event protocol,
 > leadership/diagnostic/skeptic visualizations, mission lifecycle walkthrough,
 > demo mode) described the retired swarm_v2 agent roster and were removed
-> during the V3 cleanup. See `docs/CURRENT_ARCHITECTURE.md` for the current
-> system; the event vocabulary this UI renders will need updating for
-> whatever V3's `api/office/gateway.py` actually emits.
+> during the V3 cleanup. The office itself is V3-native since: one
+> `seleric_agent` walking capability stations (see `office-ui/src/office/`,
+> `src/seleric_swarm/api/office/normalize.py`), with the 14-character roster
+> kept only so old persisted `route=swarm` records still render. See
+> `docs/CURRENT_ARCHITECTURE.md` for the current system.
 
 1. [`06_REALTIME_ARCHITECTURE.md`](06_REALTIME_ARCHITECTURE.md) — snapshot + stream, reconnection, dedupe.
 2. [`13_PERFORMANCE.md`](13_PERFORMANCE.md) — canvas rendering / perf notes.

@@ -53,6 +53,7 @@ from seleric_swarm.conversations.contracts import (
     MemoryStatus,
     MemoryType,
     Message,
+    MessageFeedback,
     MessagePage,
     MessagePart,
     MessagePartType,
@@ -417,6 +418,50 @@ def list_messages_paginated(
     if next_cursor:
         response.headers["X-Next-Cursor"] = next_cursor
     return MessagePage(items=items, next_cursor=next_cursor, has_more=next_cursor is not None)
+
+
+class SubmitFeedbackRequest(BaseModel):
+    rating: Literal["up", "down"]
+    note: str = ""
+    run_id: str | None = None
+
+
+@router.post(
+    "/threads/{thread_id}/messages/{message_id}/feedback",
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_message_feedback(
+    thread_id: str, message_id: str, body: SubmitFeedbackRequest, request: Request
+) -> MessageFeedback:
+    principal = _authenticated_principal(request)
+    repositories = _repositories(_runtime(request))
+    _owned_thread(repositories, principal, thread_id)
+    message = repositories.messages.get(message_id)
+    if message is None or message.thread_id != thread_id:
+        raise HTTPException(status_code=404, detail="message not found")
+    return repositories.feedback.submit(
+        MessageFeedback(
+            workspace_id=principal.workspace_id,
+            owner_user_id=principal.user_id,
+            thread_id=thread_id,
+            message_id=message_id,
+            run_id=body.run_id,
+            rating=body.rating,
+            note=(body.note or "")[:2000],
+        )
+    )
+
+
+@router.get("/threads/{thread_id}/messages/{message_id}/feedback")
+def get_message_feedback(
+    thread_id: str, message_id: str, request: Request
+) -> MessageFeedback | None:
+    principal = _authenticated_principal(request)
+    repositories = _repositories(_runtime(request))
+    _owned_thread(repositories, principal, thread_id)
+    return repositories.feedback.latest_for_message(
+        message_id, principal.workspace_id, principal.user_id
+    )
 
 
 @router.get("/memories")

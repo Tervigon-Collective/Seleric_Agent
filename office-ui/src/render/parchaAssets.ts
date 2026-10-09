@@ -137,8 +137,20 @@ export interface ParchaAssets {
 let cache: ParchaAssets | null = null;
 let loading: Promise<ParchaAssets> | null = null;
 /** Bump when prerender math changes so HMR rebuilds the map canvas. */
-const RENDER_REV = 5;
+const RENDER_REV = 6;
 let builtRev = 0;
+
+/**
+ * Base-aware asset URL. The bundle is served under `/ui/` in production
+ * (`vite build --base=/ui/`, FastAPI mounts `dist/` at `/ui`), so absolute
+ * `/assets/...` URLs 404 there (and the canvas falls back to the flat
+ * "Loading Parcha office tiles…" plate). `import.meta.env.BASE_URL` is `/`
+ * in dev and `/ui/` in the built bundle.
+ */
+function assetUrl(name: string): string {
+  const base = import.meta.env?.BASE_URL ?? "/";
+  return `${base.replace(/\/?$/, "/")}assets/${name}`;
+}
 
 function emptyCanvas(): HTMLCanvasElement {
   if (typeof document !== "undefined") return document.createElement("canvas");
@@ -198,8 +210,8 @@ export function loadParchaAssets(): Promise<ParchaAssets> {
   loading = (async () => {
     try {
       const [tileset, chars] = await Promise.all([
-        loadImage("/assets/rpg-tileset.png"),
-        loadImage("/assets/OfficeSpriteSet.png"),
+        loadImage(assetUrl("rpg-tileset.png")),
+        loadImage(assetUrl("OfficeSpriteSet.png")),
       ]);
       base.tileset = tileset;
       base.chars = chars;

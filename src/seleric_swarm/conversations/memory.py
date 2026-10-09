@@ -20,6 +20,7 @@ from seleric_swarm.conversations.contracts import (
     MemoryPreference,
     MemoryStatus,
     Message,
+    MessageFeedback,
     Run,
     RunAttempt,
     RunAttemptStatus,
@@ -1038,6 +1039,49 @@ class InMemoryMemoryRepository:
             return preference
 
 
+class InMemoryFeedbackRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, MessageFeedback] = {}
+        self._lock = RLock()
+
+    def submit(self, feedback: MessageFeedback) -> MessageFeedback:
+        with self._lock:
+            prior = self.latest_for_message(
+                feedback.message_id, feedback.workspace_id, feedback.owner_user_id
+            )
+            if prior is not None:
+                feedback.supersedes_id = prior.id
+            self._items[feedback.id] = feedback
+            return feedback
+
+    def latest_for_message(
+        self, message_id: str, workspace_id: str, owner_user_id: str
+    ) -> MessageFeedback | None:
+        with self._lock:
+            matches = [
+                item
+                for item in self._items.values()
+                if item.message_id == message_id
+                and item.workspace_id == workspace_id
+                and item.owner_user_id == owner_user_id
+            ]
+        return max(matches, key=lambda item: item.created_at) if matches else None
+
+    def list_for_thread(
+        self, thread_id: str, workspace_id: str, owner_user_id: str, *, limit: int = 100
+    ) -> list[MessageFeedback]:
+        with self._lock:
+            matches = [
+                item
+                for item in self._items.values()
+                if item.thread_id == thread_id
+                and item.workspace_id == workspace_id
+                and item.owner_user_id == owner_user_id
+            ]
+        matches.sort(key=lambda item: item.created_at, reverse=True)
+        return matches[:limit]
+
+
 class InMemoryThreadSummaryRepository:
     def __init__(self) -> None:
         self._items: dict[str, ThreadSummary] = {}
@@ -1117,6 +1161,7 @@ def build_in_memory_repositories(
             query_embedder=query_embedder,
         ),
         approvals=InMemoryApprovalRepository(),
+        feedback=InMemoryFeedbackRepository(),
         unit_of_work=unit_of_work,
     )
     return repositories

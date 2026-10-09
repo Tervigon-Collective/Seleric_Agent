@@ -16,6 +16,7 @@ from seleric_swarm.conversations.contracts import (
     MemoryItem,
     MemoryPreference,
     Message,
+    MessageFeedback,
     RollbackRecord,
     Run,
     RunAttempt,
@@ -46,6 +47,7 @@ _MUTATING = frozenset(
         "put",
         "record_usage",
         "set_preference",
+        "submit",
         "transition",
         "transition_failed_attempt",
         "update",
@@ -111,6 +113,7 @@ def snapshot_conversations(repositories: ConversationRepositories) -> dict[str, 
         "approvals": _dump_models(getattr(approvals, "_items", {})),
         "approval_events": _dump_model_lists(getattr(approvals, "_events", {})),
         "approval_rollbacks": _dump_models(getattr(approvals, "_rollbacks", {})),
+        "feedback": _dump_models(getattr(repositories.feedback, "_items", {})),
     }
 
 
@@ -150,6 +153,7 @@ def restore_conversations(repositories: ConversationRepositories, payload: dict[
     repositories.approvals._rollbacks = _load_models(  # type: ignore[attr-defined]
         RollbackRecord, payload.get("approval_rollbacks")
     )
+    repositories.feedback._items = _load_models(MessageFeedback, payload.get("feedback"))  # type: ignore[attr-defined]
 
 
 class _SavingProxy:
@@ -208,5 +212,6 @@ def build_file_repositories(
         thread_summaries=_SavingProxy(inner.thread_summaries, save, deferring),  # type: ignore[arg-type]
         search=inner.search,
         approvals=_SavingProxy(inner.approvals, save, deferring),  # type: ignore[arg-type]
+        feedback=_SavingProxy(inner.feedback, save, deferring),  # type: ignore[arg-type]
         unit_of_work=unit_of_work,
     )

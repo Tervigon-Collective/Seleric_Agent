@@ -20,9 +20,10 @@ export function groupActivityPhases(events: SwarmUIEvent[], route: string | null
   const fallback = route === "v3" ? "Seleric" : "Swarm";
   const out: ActivityPhase[] = [];
   for (const event of rows) {
-    const summary = event.summary || event.eventType.replaceAll("_", " ");
-    const agent = event.agentId?.replace(/_agent$/, "") || fallback;
-    const title = `${event.eventType} · #${event.seq}`;
+    const eventType = typeof event.eventType === "string" && event.eventType ? event.eventType : "unknown_event";
+    const summary = (typeof event.summary === "string" && event.summary) || eventType.replaceAll("_", " ");
+    const agent = (typeof event.agentId === "string" ? event.agentId.replace(/_agent$/, "") : "") || fallback;
+    const title = `${eventType} · #${Number.isFinite(Number(event.seq)) ? event.seq : "?"}`;
     const last = out[out.length - 1];
     if (last && last.agent === agent) {
       last.count += 1;
@@ -39,8 +40,8 @@ export function groupActivityPhases(events: SwarmUIEvent[], route: string | null
 
 const TABS: DetailTab[] = ["Evidence", "Definitions", "Activity", "Memory", "Artifacts"];
 
-function dotClass(summary: string): string {
-  const text = summary.toLowerCase();
+function dotClass(summary: unknown): string {
+  const text = typeof summary === "string" ? summary.toLowerCase() : "";
   if (/fail|error|cancel|retry/.test(text)) return "activity-dot fail";
   if (/wait|retry|validat|check/.test(text)) return "activity-dot warn";
   if (/complet|done|answer|finish/.test(text)) return "activity-dot ok";

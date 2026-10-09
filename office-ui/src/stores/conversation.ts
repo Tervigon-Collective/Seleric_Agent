@@ -122,7 +122,7 @@ export const toOfficeEvent = (event: ActivityEvent): SwarmUIEvent => {
       asText(event.actor_id)
       ?? optionalString(payload.agent_id)
       ?? optionalString(payload.agent)
-      ?? (optionalString(payload.route) === "v3" ? "coordinator" : undefined),
+      ?? (optionalString(payload.route) === "v3" ? "seleric_agent" : undefined),
     eventType,
     summary:
       asText(event.summary)
@@ -516,7 +516,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (submission !== demoSubmission || cancelledSubmissions.delete(generation)) return;
       const reply = textMessage(
         threadId, "ASSISTANT",
-        "Demo mode is active. The office is replaying a representative swarm run; switch to Live to submit this request to Seleric.",
+        "Demo mode is active. The office is replaying a representative run; switch to Live to submit this request to Seleric.",
         `demo_reply_${Date.now()}`,
       );
       set((s) => ({ submitting: false, messages: { ...s.messages, [threadId]: [...(s.messages[threadId] ?? []), reply] } }));
@@ -814,7 +814,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       return;
     }
     useOffice.getState().ingestEvent(toOfficeEvent(event));
-    const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
     if (event.event_type === "agent.thinking_delta") {
       const delta = typeof payload.delta === "string" ? payload.delta : "";
       if (delta) {
@@ -836,13 +835,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const route = incomingRoute ?? office.route;
       const status = terminal ? event.event_type.replace("run.", "") : office.status;
       office.hydrate({
-        missionId: optionalString(event.payload.mission_id) ?? office.missionId ?? event.run_id ?? "conversation",
-        query: optionalString(event.payload.query) ?? office.query,
+        missionId: optionalString(payload.mission_id) ?? office.missionId ?? asText(event.run_id) ?? "conversation",
+        query: optionalString(payload.query) ?? office.query,
         status,
         route,
         stage: status || office.stage,
         leadershipEpoch: office.leadershipEpoch,
-        lastSeq: event.sequence,
+        lastSeq: Number.isFinite(Number(event.sequence)) ? Number(event.sequence) : office.lastSeq,
         agents: [],
         board: { steps: office.board },
         handoffs: office.handoffs,
@@ -854,7 +853,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       });
     }
     if (streamedAnswer && (event.event_type === "answer.completed" || terminal)) {
-      const evidence = Array.isArray(event.payload.evidence) ? event.payload.evidence : [];
+      const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
       const parts: Message["parts"] = [{ type: "TEXT", content: streamedAnswer }];
       for (const row of evidence) {
         if (!row || typeof row !== "object") continue;
@@ -872,7 +871,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         });
       }
       const answer: Message = {
-        id: optionalString(event.payload.message_id) ?? `answer_${event.run_id ?? event.id}`,
+        id: optionalString(payload.message_id) ?? `answer_${asText(event.run_id) ?? asText(event.id) ?? "run"}`,
         thread_id: event.thread_id,
         workspace_id: event.workspace_id,
         user_id: null,

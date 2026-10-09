@@ -61,7 +61,7 @@ async def test_v3_runner_persists_for_conversations_and_office():
     raw = runtime.store.get_raw("MS3-ui-1")
     assert raw is not None
     assert raw["route"] == "v3"
-    assert raw["mission_lead"] == "coordinator"
+    assert raw["mission_lead"] == "seleric_agent"
     v3 = get_v3_mission_store().get("MS3-ui-1")
     assert v3 is not None
     assert v3.status in {"partial", "completed", "failed"}
@@ -102,8 +102,9 @@ def test_v3_office_snapshot_and_list(monkeypatch):
     assert snap["missionId"] == "MS3-ui-2"
     assert snap["route"] == "v3"
     assert snap["finalResponse"]
-    coordinator = next(a for a in snap["agents"] if a["agentId"] == "coordinator")
-    assert coordinator["missionLead"] is True
+    assert [a["agentId"] for a in snap["agents"]] == ["seleric_agent"]
+    assert snap["agents"][0]["missionLead"] is True
+    assert snap["leadAgentId"] == "seleric_agent"
 
 
 def test_post_missions_uses_v3_when_enabled(monkeypatch):

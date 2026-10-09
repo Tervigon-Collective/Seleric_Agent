@@ -21,7 +21,7 @@ const partText = (part: MessagePart) =>
   typeof part.content === "string" ? part.content : JSON.stringify(part.content);
 
 // SOURCE parts collapse into one trailing disclosure so evidence rows don't
-// crowd the answer text.
+// crowd the answer text. A feedback part pins reader verdicts to the message.
 const assistantContent = (message: Message) => {
   const sources = message.parts.filter((part) => part.type === "SOURCE");
   const content = message.parts
@@ -31,9 +31,21 @@ const assistantContent = (message: Message) => {
     ? [...content, { type: "data-seleric-sources" as const, data: sources }]
     : content;
   const elapsedMs = responseTimeMs(message);
+  const withFeedback = [
+    ...withSources,
+    {
+      type: "data-seleric-feedback" as const,
+      data: {
+        messageId: message.id,
+        threadId: message.thread_id,
+        runId: message.run_id,
+        final: Boolean(message.updated_at),
+      },
+    },
+  ];
   return elapsedMs === null
-    ? withSources
-    : [...withSources, { type: "data-seleric-response-time" as const, data: { elapsedMs } }];
+    ? withFeedback
+    : [...withFeedback, { type: "data-seleric-response-time" as const, data: { elapsedMs } }];
 };
 
 // Streaming drafts and in-flight placeholders carry no updated_at (or an empty

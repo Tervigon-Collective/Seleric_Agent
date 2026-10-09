@@ -14,8 +14,23 @@ from typing import Any
 # --------------------------------------------------------------------------- #
 # Agent roster — the persistent "characters" in the office.                   #
 # --------------------------------------------------------------------------- #
+# V3 (current system, docs/CURRENT_ARCHITECTURE.md): a single
+# ``seleric_agent`` loop over capability toolsets — no coordinator/domain/
+# specialist multi-agent roster. The office shows that one agent walking
+# between capability stations (see office-ui layout zones + stateMachine
+# stationForTool). ``OFFICE_AGENTS`` below is the retired swarm_v2 roster,
+# kept so old persisted ``route=swarm`` records still render; new V3
+# missions snapshot to ``V3_OFFICE_AGENTS`` only.
 
-# role: coordinator | specialist | domain
+#: The one live character.
+V3_AGENT_ID = "seleric_agent"
+
+V3_OFFICE_AGENTS: list[dict[str, str]] = [
+    {"agentId": V3_AGENT_ID, "name": "Seleric", "role": "coordinator"},
+]
+
+# role: coordinator | specialist | domain (retired swarm_v2 roster — read-only
+# compat for old persisted records, not a live creation path).
 OFFICE_AGENTS: list[dict[str, str]] = [
     {"agentId": "coordinator", "name": "Coordinator", "role": "coordinator"},
     {"agentId": "observer_agent", "name": "Observer", "role": "specialist"},
@@ -32,8 +47,9 @@ OFFICE_AGENTS: list[dict[str, str]] = [
     {"agentId": "procurement_agent", "name": "Procurement", "role": "domain", "domain": "procurement"},
     {"agentId": "technical_agent", "name": "Technical", "role": "domain", "domain": "technical"},
 ]
-_AGENT_IDS = {a["agentId"] for a in OFFICE_AGENTS}
+_AGENT_IDS = {a["agentId"] for a in OFFICE_AGENTS} | {V3_AGENT_ID}
 _BY_ID = {a["agentId"]: a for a in OFFICE_AGENTS}
+_BY_ID[V3_AGENT_ID] = V3_OFFICE_AGENTS[0]
 
 # Persisted control-plane kind -> normalized UI event type.
 KIND_TO_UI: dict[str, str] = {
@@ -67,6 +83,16 @@ KIND_TO_UI: dict[str, str] = {
     # the backend emits them as discrete events.
     "evidence_requested": "evidence_requested",
     "evidence_received": "evidence_received",
+    # V3 single-agent loop (agent/progress.py + agent/validation/): tool calls
+    # and thinking/answering beats. The office renders them as the one agent
+    # walking between capability stations (currentTool drives the desk).
+    "agent.tool_started": "tool_started",
+    "agent.tool_completed": "tool_completed",
+    "agent.tool_revising": "tool_started",
+    "agent.thinking_delta": "agent_thinking",
+    "agent.answering": "answering",
+    "tool_started": "tool_started",
+    "tool_completed": "tool_completed",
 }
 
 _ARTIFACT_BUCKET_OWNER = {
@@ -158,6 +184,25 @@ def normalize_events(
 
 
 def _event_agent_and_status(kind: str, ev: dict[str, Any]) -> tuple[str | None, str | None]:
+    if kind in {"agent.tool_started", "tool_started", "agent.tool_revising"}:
+        return V3_AGENT_ID, "tool_running"
+    if kind in {"agent.tool_completed", "tool_completed"}:
+        return V3_AGENT_ID, "working"
+    if kind == "agent.thinking_delta":
+        return V3_AGENT_ID, "thinking"
+    if kind == "agent.answering":
+        return V3_AGENT_ID, "working"
+    # V3-synthesized lifecycle events (v3_adapter tags route=v3): the one
+    # agent owns them, never the retired coordinator/domain roster.
+    if ev.get("route") == "v3":
+        if kind == "mission_created":
+            return V3_AGENT_ID, "planning"
+        if kind in {"mission_completed", "mission_partial", "mission_cancelled"}:
+            return V3_AGENT_ID, "completed"
+        if kind == "mission_failed":
+            return V3_AGENT_ID, "failed"
+        if kind == "mission_budget_exhausted":
+            return V3_AGENT_ID, "blocked"
     if kind == "mission_created":
         return "coordinator", "planning"
     if kind in {"decomposition_created", "decomposition_refined", "task_plan_created"}:
@@ -192,6 +237,19 @@ def _event_agent_and_status(kind: str, ev: dict[str, Any]) -> tuple[str | None, 
 
 
 def _event_summary(kind: str, ev: dict[str, Any]) -> str:
+    if kind in {"agent.tool_started", "tool_started"}:
+        return f"Running {ev.get('tool') or ev.get('tool_name') or 'tool'}"
+    if kind in {"agent.tool_completed", "tool_completed"}:
+        tool = ev.get("tool") or ev.get("tool_name") or "tool"
+        if ev.get("success", True) is False:
+            return f"{tool} — failed"
+        return f"{tool} — done"
+    if kind == "agent.tool_revising":
+        return f"Revising {ev.get('tool') or ev.get('tool_name') or 'tool'}"
+    if kind == "agent.thinking_delta":
+        return "Thinking…"
+    if kind == "agent.answering":
+        return "Writing the answer"
     if kind == "mission_created":
         return "Mission received — planning investigation"
     if kind == "decomposition_created":
@@ -256,6 +314,60 @@ _BOARD_STEPS = [
     ("skeptic", "Skeptic review"),
 ]
 
+#: V3 mission board — the single-agent pipeline, not swarm handoffs.
+_V3_BOARD_STEPS = [
+    ("understand", "Understand question"),
+    ("fetch", "Fetch metrics"),
+    ("analyze", "Analyze"),
+    ("diagnose", "Diagnose cause"),
+    ("forecast", "Forecast impact"),
+    ("validate", "Validate & answer"),
+]
+
+
+def _v3_stage(kinds: list[str], status: str, art_counts: dict[str, int]) -> str:
+    if status in {"completed", "prototype_completed"}:
+        return "complete"
+    if status == "failed":
+        return "failed"
+    if status in {"blocked", "partial"}:
+        return "blocked"
+    if art_counts.get("prediction") or art_counts.get("causal") or art_counts.get("hypothesis"):
+        return "diagnosing"
+    if art_counts.get("evidence"):
+        return "analyzing"
+    if "task_wave_executed" in kinds or "tool_completed" in kinds:
+        return "fetching"
+    if "mission_created" in kinds:
+        return "planning"
+    return "intake"
+
+
+def _v3_board_state(art_counts: dict[str, int], status: str) -> list[dict[str, str]]:
+    done: set[str] = set()
+    if art_counts.get("evidence") or art_counts.get("anomaly"):
+        done |= {"understand", "fetch"}
+    elif status not in {"running"}:
+        done.add("understand")
+    if art_counts.get("hypothesis"):
+        done.add("analyze")
+    if art_counts.get("causal"):
+        done |= {"analyze", "diagnose"}
+    if art_counts.get("prediction"):
+        done.add("forecast")
+    if status in {"completed", "prototype_completed", "partial"}:
+        done = {s for s, _ in _V3_BOARD_STEPS}
+
+    steps: list[dict[str, str]] = []
+    for sid, label in _V3_BOARD_STEPS:
+        steps.append({"id": sid, "label": label, "state": "done" if sid in done else "pending"})
+    if status not in {"completed", "prototype_completed", "partial"}:
+        for s in steps:
+            if s["state"] == "pending":
+                s["state"] = "active"
+                break
+    return steps
+
 
 def _langfuse_trace_url(request_id: str | None) -> str | None:
     """Best-effort deep link into Langfuse for this mission's traces."""
@@ -307,6 +419,14 @@ def build_office_snapshot(raw: dict[str, Any] | None, *, mission_id: str) -> dic
     agents = {a["agentId"]: _blank_agent(a) for a in OFFICE_AGENTS}
     status = str(raw.get("status") or "running")
     mission_lead = raw.get("mission_lead")
+    # V3 missions render the live single-agent roster, never the retired
+    # swarm headcount: one Seleric character walking capability stations.
+    # Old V3 records reported ``"coordinator"`` as a stand-in lead — fold
+    # those onto the real agent id too.
+    is_v3 = str(raw.get("route") or "") == "v3"
+    if is_v3:
+        agents = {a["agentId"]: _blank_agent(a) for a in V3_OFFICE_AGENTS}
+        mission_lead = V3_AGENT_ID
     initial_lead = raw.get("initial_mission_lead") or raw.get("initial_lead")
 
     # Fold the event stream.
@@ -367,8 +487,34 @@ def build_office_snapshot(raw: dict[str, Any] | None, *, mission_id: str) -> dic
             if a["status"] in {"working", "thinking", "planning", "reviewing", "handoff"}:
                 a["status"] = "completed" if status.endswith("completed") else "idle"
 
+    if is_v3:
+        # V3 terminal states are explicit (the generic loop above maps
+        # "partial" to idle, but a partial answer is still done work).
+        me = agents[V3_AGENT_ID]
+        if status in {"completed", "prototype_completed", "partial"}:
+            if me["status"] != "failed":
+                me["status"] = "completed"
+        elif status in {"failed", "cancelled"}:
+            me["status"] = "failed"
+            if raw.get("final_response"):
+                me["error"] = str(raw.get("final_response"))
+        elif status == "blocked":
+            me["status"] = "blocked"
+        elif me["status"] in {"idle", "offline"}:
+            me["status"] = "planning"
+            me["currentAction"] = "Planning the investigation"
+        if status == "running" and not me.get("currentAction"):
+            if art_counts.get("prediction"):
+                me["currentAction"] = "Forecasting impact"
+            elif art_counts.get("causal"):
+                me["currentAction"] = "Estimating causal effect"
+            elif art_counts.get("hypothesis"):
+                me["currentAction"] = "Analyzing findings"
+            elif art_counts.get("evidence"):
+                me["currentAction"] = "Analyzing evidence"
+
     last_ev = events[-1] if events else None
-    stage = _derive_stage(kinds, status)
+    stage = _v3_stage(kinds, status, art_counts) if is_v3 else _derive_stage(kinds, status)
 
     raw_trace = raw.get("trace")
     trace: dict[str, Any] = raw_trace if isinstance(raw_trace, dict) else {}
@@ -393,7 +539,13 @@ def build_office_snapshot(raw: dict[str, Any] | None, *, mission_id: str) -> dic
         "lastEventAt": last_ev.get("ts") if last_ev else None,
         "lastSeq": int(last_ev.get("seq") or 0) if last_ev else 0,
         "agents": list(agents.values()),
-        "board": {"steps": _board_state(kinds, art_counts, status)},
+        "board": {
+            "steps": (
+                _v3_board_state(art_counts, status)
+                if is_v3
+                else _board_state(kinds, art_counts, status)
+            )
+        },
         "handoffs": _handoffs(raw, events),
         "parallelTasks": parallel_tasks,
         "artifacts": art_counts,
@@ -415,6 +567,25 @@ def _apply_event_to_agents(agents: dict[str, dict[str, Any]], kind: str, ev: dic
 
     if kind == "mission_created":
         touch("coordinator", status="planning", currentAction="Planning the investigation")
+        touch(V3_AGENT_ID, status="planning", currentAction="Planning the investigation")
+    elif kind in {"agent.tool_started", "tool_started", "agent.tool_revising"}:
+        tool = ev.get("tool") or ev.get("tool_name")
+        action = f"Running {tool}" if tool else "Running a tool"
+        patch: dict[str, Any] = {"status": "tool_running", "currentAction": action}
+        if tool:
+            patch["currentTool"] = str(tool)
+        touch(V3_AGENT_ID, **patch)
+    elif kind in {"agent.tool_completed", "tool_completed"}:
+        tool = ev.get("tool") or ev.get("tool_name")
+        action = f"{tool} — done" if tool else "Tool done"
+        patch = {"status": "working", "currentAction": action}
+        if tool:
+            patch["currentTool"] = str(tool)
+        touch(V3_AGENT_ID, **patch)
+    elif kind == "agent.thinking_delta":
+        touch(V3_AGENT_ID, status="thinking", currentAction="Thinking…")
+    elif kind == "agent.answering":
+        touch(V3_AGENT_ID, status="working", currentAction="Writing the answer")
     elif kind == "decomposition_created":
         touch("coordinator", status="planning", currentAction="Decomposing the question")
     elif kind == "decomposition_refined":

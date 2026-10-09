@@ -186,7 +186,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
     // leadership ring follows the freshest transfer
     let leadAgentId = s.leadAgentId;
     let missionLead = s.missionLead;
-    if (ev.eventType === "leadership_transferred" && ev.agentId) {
+    if (ev.eventType === "leadership_transferred" && typeof ev.agentId === "string" && ev.agentId) {
       leadAgentId = ev.agentId;
       missionLead = ev.agentId.replace(/_agent$/, "");
     }

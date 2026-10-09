@@ -596,6 +596,31 @@ class MemoryPreference(ContractModel):
     updated_at: datetime = Field(default_factory=_utc_now)
 
 
+class MessageFeedback(ContractModel):
+    """A reader's verdict on one assistant answer (thumbs up/down + optional
+    note). Members MUST match the DB CHECK constraint in
+    migrations/011_message_feedback.sql. Append-only: a re-vote supersedes the
+    previous row for the same message rather than editing it."""
+
+    id: str = Field(default_factory=lambda: _id("feedback"))
+    workspace_id: str
+    owner_user_id: str
+    thread_id: str
+    message_id: str
+    run_id: str | None = None
+    rating: Literal["up", "down"]
+    note: str = Field(default="")
+    supersedes_id: str | None = None
+    created_at: datetime = Field(default_factory=_utc_now)
+
+    @field_validator("note")
+    @classmethod
+    def note_is_bounded(cls, value: str) -> str:
+        if len(value) > 2000:
+            raise ValueError("feedback note must be 2000 characters or fewer")
+        return value
+
+
 class EpisodicEventType(StrEnum):
     """What kind of thing happened. Members MUST match the DB CHECK constraint
     in migrations/012_episodic_events.sql — adding one here requires the same

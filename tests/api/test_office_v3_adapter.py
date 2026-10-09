@@ -83,8 +83,19 @@ def test_v3_mission_snapshot_renders(client: TestClient) -> None:
     assert body["finalResponse"] == "net sales: 123"
     assert body["artifacts"]["evidence"] == 1
     assert body["trace"] == {"requestId": "run-1", "sessionId": "thread-1"}
-    coordinator = next(a for a in body["agents"] if a["agentId"] == "coordinator")
-    assert coordinator["missionLead"] is True
+    # V3-native roster: the single agent owns the mission, not a swarm stand-in.
+    assert [a["agentId"] for a in body["agents"]] == ["seleric_agent"]
+    agent = body["agents"][0]
+    assert agent["missionLead"] is True
+    assert body["leadAgentId"] == "seleric_agent"
+    assert [s["id"] for s in body["board"]["steps"]] == [
+        "understand", "fetch", "analyze", "diagnose", "forecast", "validate",
+    ]
+    # The evidence the loop fetched surfaces as a tool beat on the timeline.
+    assert any(
+        e["eventType"] == "tool_completed" and e["agentId"] == "seleric_agent"
+        for e in body["timeline"]
+    )
 
 
 def test_unknown_mission_id_still_404s(client: TestClient) -> None:

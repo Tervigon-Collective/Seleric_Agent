@@ -6,7 +6,7 @@
   "description": "Seleric AI Office — spatial real-time visualization of the Seleric intelligence swarm.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build --base=/ui/",
+    "build": "tsc -p tsconfig.build.json && vite build --base=/ui/",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

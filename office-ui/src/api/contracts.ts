@@ -69,6 +69,19 @@ export interface Message {
   updated_at?: string;
 }
 
+export interface MessageFeedback {
+  id: string;
+  workspace_id: string;
+  owner_user_id: string;
+  thread_id: string;
+  message_id: string;
+  run_id: string | null;
+  rating: "up" | "down";
+  note: string;
+  supersedes_id: string | null;
+  created_at: string;
+}
+
 export interface SubmitMessageRequest {
   parts: MessagePart[];
   parent_message_id?: string | null;

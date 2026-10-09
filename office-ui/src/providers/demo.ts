@@ -7,7 +7,8 @@ import {
   demoInitialSnapshot,
 } from "./demoScenario";
 
-/** Beats that spawn walk-meet-return scenes — wait for the floor to free up. */
+/** Beats that spawn walk-meet-return scenes — wait for the floor to free up.
+ * (Legacy swarm vocabulary only; the V3 tool-walk needs no gating.) */
 const MEETING_EVENT_TYPES = new Set([
   "leadership_transferred",
   "skeptic_review_started",
@@ -54,13 +55,13 @@ export class DemoEventProvider implements SwarmEventProvider {
 
   async listMissions(): Promise<MissionRef[]> {
     return [
-      { missionId: DEMO_MISSION_ID, query: DEMO_QUERY, status: "running", route: "swarm", missionLead: null, lastSeq: 0 },
+      { missionId: DEMO_MISSION_ID, query: DEMO_QUERY, status: "running", route: "v3", missionLead: null, lastSeq: 0 },
       {
         missionId: "MS-demo-inv",
         query: "Which SKUs will stock out before the promo?",
         status: "completed",
-        route: "swarm",
-        missionLead: "inventory",
+        route: "v3",
+        missionLead: "seleric_agent",
         lastSeq: 12,
       },
     ];
@@ -79,17 +80,15 @@ export class DemoEventProvider implements SwarmEventProvider {
       query: "Which SKUs will stock out before the promo?",
       status: "completed",
       stage: "complete",
-      missionLead: "inventory",
-      leadAgentId: "inventory_agent",
+      missionLead: "seleric_agent",
+      leadAgentId: "seleric_agent",
       board: {
         steps: s.board.steps.map((st) => ({ ...st, state: "done" as const })),
       },
       agents: s.agents.map((a) =>
-        a.agentId === "inventory_agent"
+        a.agentId === "seleric_agent"
           ? { ...a, status: "completed", missionLead: true, currentAction: "Delivered stock-out forecast" }
-          : a.agentId === "coordinator"
-            ? { ...a, status: "completed" }
-            : a,
+          : a,
       ),
       finalResponse:
         "7 SKUs are projected to stock out before the promo window; 3 are high-velocity. Recommended: expedite POs for SKU-4412 / SKU-8890 / SKU-2201 and cap promo depth on the rest.",

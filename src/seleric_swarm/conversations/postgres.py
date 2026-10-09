@@ -20,6 +20,7 @@ from seleric_swarm.conversations.contracts import (
     MemoryItem,
     MemoryPreference,
     Message,
+    MessageFeedback,
     Run,
     RunAttempt,
     RunAttemptStatus,
@@ -1675,6 +1676,74 @@ class PostgresThreadSummaryRepository(_PostgresRepository):
         return ThreadSummary.model_validate(row) if row else None
 
 
+class PostgresFeedbackRepository(_PostgresRepository):
+    def submit(self, feedback: MessageFeedback) -> MessageFeedback:
+        with self.engine.begin() as conn:
+            prior = conn.execute(
+                text(
+                    """SELECT * FROM message_feedback WHERE message_id=:message_id
+                    AND workspace_id=:workspace_id AND owner_user_id=:owner_user_id
+                    ORDER BY created_at DESC LIMIT 1"""
+                ),
+                {
+                    "message_id": feedback.message_id,
+                    "workspace_id": feedback.workspace_id,
+                    "owner_user_id": feedback.owner_user_id,
+                },
+            ).mappings().first()
+            if prior is not None and feedback.supersedes_id is None:
+                feedback.supersedes_id = str(prior["id"])
+            conn.execute(
+                text(
+                    """INSERT INTO message_feedback
+                    (id, workspace_id, owner_user_id, thread_id, message_id, run_id,
+                     rating, note, supersedes_id, created_at)
+                    VALUES (:id, :workspace_id, :owner_user_id, :thread_id, :message_id,
+                     :run_id, :rating, :note, :supersedes_id, :created_at)
+                    ON CONFLICT (id) DO NOTHING"""
+                ),
+                feedback.model_dump(),
+            )
+        return feedback
+
+    def latest_for_message(
+        self, message_id: str, workspace_id: str, owner_user_id: str
+    ) -> MessageFeedback | None:
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """SELECT * FROM message_feedback WHERE message_id=:message_id
+                    AND workspace_id=:workspace_id AND owner_user_id=:owner_user_id
+                    ORDER BY created_at DESC LIMIT 1"""
+                ),
+                {
+                    "message_id": message_id,
+                    "workspace_id": workspace_id,
+                    "owner_user_id": owner_user_id,
+                },
+            ).mappings().first()
+        return MessageFeedback.model_validate(row) if row else None
+
+    def list_for_thread(
+        self, thread_id: str, workspace_id: str, owner_user_id: str, *, limit: int = 100
+    ) -> list[MessageFeedback]:
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """SELECT * FROM message_feedback WHERE thread_id=:thread_id
+                    AND workspace_id=:workspace_id AND owner_user_id=:owner_user_id
+                    ORDER BY created_at DESC LIMIT :limit"""
+                ),
+                {
+                    "thread_id": thread_id,
+                    "workspace_id": workspace_id,
+                    "owner_user_id": owner_user_id,
+                    "limit": limit,
+                },
+            ).mappings().all()
+        return [MessageFeedback.model_validate(row) for row in rows]
+
+
 class PostgresEpisodicEventRepository(_PostgresRepository):
     @staticmethod
     def _params(event: EpisodicEvent) -> dict[str, Any]:
@@ -1815,6 +1884,7 @@ def build_conversation_repositories(
             episodic_events=PostgresEpisodicEventRepository(database),
             search=PostgresSearchRepository(database, query_embedder=query_embedder),  # type: ignore[arg-type]
             approvals=PostgresApprovalRepository(database),  # type: ignore[arg-type]
+            feedback=PostgresFeedbackRepository(database),
             unit_of_work=unit_of_work if not transactional else None,
         )
 

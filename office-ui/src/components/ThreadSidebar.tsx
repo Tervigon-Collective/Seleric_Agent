@@ -17,7 +17,7 @@ function groupLabel(date: Date, now: Date): string {
 /** Development/evaluation runs (e.g. "GOLDEN Q18") live apart from ordinary conversations. */
 export function isEvalThread(title: string | null | undefined): boolean {
   if (!title) return false;
-  return /^\s*golden\b/i.test(title) || /eval(uation)?\s*(run|set|suite)/i.test(title);
+  return /^\s*golden[\s\-_]*q\d+/i.test(title) || /eval(uation)?\s*(run|set|suite)/i.test(title);
 }
 
 function shortDate(value: string): string {

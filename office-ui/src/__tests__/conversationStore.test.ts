@@ -360,6 +360,6 @@ describe("conversation store submit", () => {
       created_at: "2026-09-19T06:00:00Z",
     });
     expect(useOffice.getState().route).toBe("v3");
-    expect(useOffice.getState().timeline[0]?.agentId).toBe("coordinator");
+    expect(useOffice.getState().timeline[0]?.agentId).toBe("seleric_agent");
   });
 });

@@ -962,8 +962,8 @@ def _to_lookup(
         mission_id=result.mission_id,
         status=_lookup_status(result.status),  # type: ignore[arg-type]
         query_class=str(intent) if intent else None,
-        mission_lead="coordinator",
-        initial_mission_lead="coordinator",
+        mission_lead="seleric_agent",
+        initial_mission_lead="seleric_agent",
         evidence=evidence,
         limitations=list(result.limitations),
         final_response=result.final_response,

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Composer } from "./components/Composer";
 import { DetailPanel } from "./components/DetailPanel";
+import { PanelErrorBoundary } from "./components/ErrorBoundary";
 import { OfficeWorkspace } from "./components/OfficeWorkspace";
 import { ThreadSidebar } from "./components/ThreadSidebar";
 import { Transcript } from "./components/Transcript";
@@ -9,12 +10,43 @@ import { CommandSearch } from "./components/CommandSearch";
 import { AdminDiagnostics } from "./components/AdminDiagnostics";
 import { PromptRegistryModal } from "./components/PromptRegistryModal";
 import {
-  MenuIcon, MoonIcon, PanelRightIcon, PromptsIcon, SearchIcon, SlidersIcon, SunIcon,
+  CheckIcon, LinkIcon, MenuIcon, MoonIcon, PanelRightIcon, PromptsIcon, SearchIcon, SlidersIcon, SunIcon,
 } from "./components/icons";
 import { SelericAssistantRuntimeProvider } from "./providers/SelericAssistantRuntime";
 import { useConversationStore } from "./stores/conversation";
 import { useShellStore } from "./stores/shell";
 import { readRoute, writeRoute } from "./routing";
+
+/** Copy-link sharing: the URL already encodes the thread, so the link reopens it. */
+function ShareButton({ threadId }: { threadId: string | null }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  if (!threadId) return null;
+  return (
+    <button
+      className="search-trigger"
+      aria-label={copied ? "Link copied" : "Copy link to this conversation"}
+      title="Copy link to this conversation"
+      onClick={() => {
+        const url = location.href;
+        const done = () => {
+          setCopied(true);
+          if (timer.current) window.clearTimeout(timer.current);
+          timer.current = window.setTimeout(() => setCopied(false), 1600);
+        };
+        if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(url).then(done).catch(() => undefined);
+        else {
+          window.prompt("Copy this link:", url);
+          done();
+        }
+      }}
+    >
+      {copied ? <CheckIcon size={14} /> : <LinkIcon size={14} />}
+      <span className="label">{copied ? "Copied" : "Share"}</span>
+    </button>
+  );
+}
 
 export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -67,6 +99,12 @@ export default function App() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault(); setSearchOpen(true);
       }
+      // Modals handle their own Escape; this only folds the side panels.
+      if (event.key === "Escape" && !searchOpen && !promptsOpen && !diagnosticsOpen) {
+        const shell = useShellStore.getState();
+        if (shell.detailsOpen) shell.toggleDetails();
+        else if (shell.sidebarOpen) shell.toggleSidebar();
+      }
     };
     const openPrompts = () => setPromptsOpen(true);
     const result = (event: Event) => {
@@ -92,7 +130,7 @@ export default function App() {
       window.removeEventListener("seleric:open-prompts", openPrompts);
       window.removeEventListener("popstate", popstate);
     };
-  }, [clearSelection, selectThread, setWorkspace]);
+  }, [clearSelection, selectThread, setWorkspace, searchOpen, promptsOpen, diagnosticsOpen]);
 
   if (workspace === "office") {
     return (
@@ -138,6 +176,7 @@ export default function App() {
           aria-keyshortcuts="Control+K Meta+K" aria-label="Search conversations">
           <SearchIcon size={14} /><span className="label">Search</span><kbd>⌘K</kbd>
         </button>
+        <ShareButton threadId={selectedThreadId} />
         <button
           className="icon-btn"
           aria-label="Toggle conversation details"
@@ -153,16 +192,22 @@ export default function App() {
       </header>
       <main className="conversation-layout">
         {(sidebarOpen || detailsOpen) && <button className="mobile-panel-backdrop" aria-label="Close open panel" onClick={closePanels} tabIndex={-1} />}
-        {sidebarOpen && <ThreadSidebar />}
+        <PanelErrorBoundary name="sidebar">
+          {sidebarOpen && <ThreadSidebar />}
+        </PanelErrorBoundary>
         <div className="conversation-main">
           {error && <div className="error-banner" role="alert">{error}</div>}
-          <SelericAssistantRuntimeProvider>
-            <Transcript />
-            <Composer />
-            <PromptRegistryModal open={promptsOpen} onClose={() => setPromptsOpen(false)} />
-          </SelericAssistantRuntimeProvider>
+          <PanelErrorBoundary name="transcript">
+            <SelericAssistantRuntimeProvider>
+              <Transcript />
+              <Composer />
+              <PromptRegistryModal open={promptsOpen} onClose={() => setPromptsOpen(false)} />
+            </SelericAssistantRuntimeProvider>
+          </PanelErrorBoundary>
         </div>
-        {detailsOpen && <DetailPanel />}
+        <PanelErrorBoundary name="inspector">
+          {detailsOpen && <DetailPanel />}
+        </PanelErrorBoundary>
       </main>
       <CommandSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
       <VoiceOverlay />

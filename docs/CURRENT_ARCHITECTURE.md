@@ -191,11 +191,10 @@ principles — least privilege, audit, secrets handling). As implemented:
 `v3_adapter.py`) — a read-only SSE snapshot/event-stream gateway over the
 same mission stores. Reusable docs: `docs/office-ui/06_REALTIME_ARCHITECTURE.md`
 (snapshot/stream/reconnect/dedupe mechanics), `13_PERFORMANCE.md`,
-`14_ACCESSIBILITY.md`, `16_PRODUCTION_READINESS.md`. The event *vocabulary*
-those docs assume (leadership transfer, per-specialist office zones) was
-swarm_v2-specific and its docs were removed — the gateway mechanics are
-unchanged, but the front-end's event mapping will need updating for
-whatever vocabulary V3 actually emits (see `docs/office-ui/00_OVERVIEW.md`).
+`14_ACCESSIBILITY.md`, `16_PRODUCTION_READINESS.md`. The front-end renders
+the V3 vocabulary natively (one `seleric_agent` over capability stations;
+`route=swarm` records keep the retired 14-character view) — the swarm_v2
+event docs that assumed per-specialist zones were removed.
 
 ## 9. Deployment & operations
 
@@ -239,8 +238,8 @@ consolidation that only existed because swarm_v2's `HybridMcpDataProvider`
 existed). Two small items worth tracking separately, found during this
 cleanup pass (see the audit doc for detail):
 
-- The Office UI's event vocabulary (§8) needs updating for V3's actual
-  event kinds — currently undocumented for the new architecture.
+- The Office UI's event vocabulary (§8) is V3-native (single agent +
+  tool beats; legacy swarm records keep their old view).
 - Follow-up query time/metric inheritance (e.g. "gross sales today" → "gross
   sale" inheriting the time range) had an implementation
   (`coordinator/intake/conversation_context.py`) that was never wired into

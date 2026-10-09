@@ -37,7 +37,7 @@ WORKDIR /ui
 COPY office-ui/package.json office-ui/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY office-ui/ ./
-RUN npx tsc -b && npx vite build --base=/ui/
+RUN npx tsc -p tsconfig.build.json && npx vite build --base=/ui/
 
 FROM python:3.12-slim-bookworm AS runtime
 

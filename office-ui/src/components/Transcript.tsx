@@ -5,11 +5,14 @@ import {
   ThreadPrimitive,
   type DataMessagePartProps,
 } from "@assistant-ui/react";
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useMemo, useState } from "react";
 import type { MessagePart } from "../api/contracts";
+import { useOffice } from "../store";
 import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
-import { ArrowDownIcon, CheckIcon, CopyIcon } from "./icons";
+import { deriveRunPhases } from "../api/runPhases";
+import { ArrowDownIcon, CheckIcon, CopyIcon, ThumbDownIcon, ThumbUpIcon } from "./icons";
+import { conversationsApi } from "../api/conversations";
 import { MessagePartRenderer } from "./MessagePartRenderer";
 import { PromptRegistry } from "./PromptRegistry";
 import { SafeContent } from "./SafeContent";
@@ -41,6 +44,88 @@ function SelericResponseTime({ data }: DataMessagePartProps) {
   return <p className="message-response-time">Responded in {formatResponseTime(elapsedMs)}</p>;
 }
 
+type FeedbackData = { messageId: string; threadId: string; runId: string | null; final: boolean };
+
+export function SelericFeedback({ data }: DataMessagePartProps) {
+  const { messageId, threadId, runId, final } = data as FeedbackData;
+  const [vote, setVote] = useState<"up" | "down" | null>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!final) return;
+    let alive = true;
+    conversationsApi.getFeedback(threadId, messageId)
+      .then((existing) => { if (alive && existing) setVote(existing.rating); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [final, threadId, messageId]);
+
+  // Draft/streaming messages carry a transient id — no voting until final.
+  if (!final) return null;
+
+  const cast = (rating: "up" | "down", text?: string) => {
+    setSaving(true);
+    setFailed(false);
+    conversationsApi.submitFeedback(threadId, messageId, { rating, note: text ?? "", runId: runId ?? undefined })
+      .then(() => {
+        setVote(rating);
+        if (rating === "up" || text !== undefined) setNoteOpen(false);
+      })
+      .catch(() => setFailed(true))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <div className="message-feedback">
+      <span className="feedback-prompt">Was this helpful?</span>
+      <button
+        type="button"
+        className={vote === "up" ? "active" : ""}
+        aria-label="Mark answer helpful"
+        aria-pressed={vote === "up"}
+        disabled={saving}
+        onClick={() => cast("up")}
+      ><ThumbUpIcon size={13} /></button>
+      <button
+        type="button"
+        className={vote === "down" ? "active" : ""}
+        aria-label="Report a problem with this answer"
+        aria-pressed={vote === "down"}
+        disabled={saving}
+        onClick={() => (vote === "down" ? setNoteOpen((open) => !open) : cast("down"))}
+      ><ThumbDownIcon size={13} /></button>
+      {vote === "down" && !noteOpen && (
+        <button type="button" className="feedback-note-toggle" onClick={() => setNoteOpen(true)}>
+          Add detail
+        </button>
+      )}
+      {failed && <span className="feedback-error" role="alert">Couldn’t save — retry.</span>}
+      {noteOpen && (
+        <form
+          className="feedback-note"
+          onSubmit={(event) => {
+            event.preventDefault();
+            cast("down", note.trim());
+          }}
+        >
+          <label className="sr-only" htmlFor={`feedback-note-${messageId}`}>What was wrong?</label>
+          <input
+            id={`feedback-note-${messageId}`}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="What was wrong? (optional)"
+            maxLength={2000}
+          />
+          <button type="submit" disabled={saving}>Send</button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 const parts = {
   Text: ({ text }: { text: string }) => <SafeContent text={text} />,
   data: {
@@ -48,6 +133,7 @@ const parts = {
       "seleric-part": SelericPart,
       "seleric-sources": SelericSources,
       "seleric-response-time": SelericResponseTime,
+      "seleric-feedback": SelericFeedback,
     },
   },
 };
@@ -102,12 +188,28 @@ function UserMessage() {
 function RunningLine() {
   const progress = useConversationStore((state) => state.progress);
   const cancelRun = useConversationStore((state) => state.cancelRun);
+  const timeline = useOffice((state) => state.timeline);
   const openInspector = useShellStore((state) => state.toggleDetails);
   const detailsOpen = useShellStore((state) => state.detailsOpen);
+  const phases = useMemo(() => deriveRunPhases(timeline), [timeline]);
   return (
     <div className="run-status" aria-live="polite">
       <span className="spinner" aria-hidden="true" />
-      <span>{progress ?? "Working on it…"}</span>
+      <div className="run-status-body">
+        <span>{progress ?? "Working on it…"}</span>
+        <ol className="run-phases" aria-label="Run progress">
+          {phases.map((phase) => (
+            <li
+              key={phase.key}
+              className={`run-phase ${phase.state}`}
+              aria-current={phase.state === "active" ? "step" : undefined}
+            >
+              <span className="run-phase-dot" aria-hidden="true" />
+              <span className="run-phase-label">{phase.label}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
       <button type="button" className="view-activity" onClick={() => { if (!detailsOpen) openInspector(); else useShellStore.getState().setDetailTab("Activity"); }}>
         View activity
       </button>

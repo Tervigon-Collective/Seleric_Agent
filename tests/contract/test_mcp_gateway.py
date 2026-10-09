@@ -12,11 +12,13 @@ async def test_gateway_allowlist_and_live_seleric(runtime):
             capability="seleric.actions_propose",
             arguments={},
         )
+    # commerce_net_revenue_daily was retired by semantic v2; pnl_net_sales
+    # is the live id the service itself suggests as the replacement.
     row = await gw.call(
         agent_id="v3_agent",
         capability="seleric.metrics_query",
         arguments={
-            "measures": ["commerce_net_revenue_daily"],
+            "measures": ["pnl_net_sales"],
             "time_range": {"start": "2026-08-01", "end": "2026-08-01"},
         },
     )
