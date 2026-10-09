@@ -2238,14 +2238,16 @@ async def query_metrics(
         if v and not ctx.deps.catalogue.is_time_dimension(k)
     ]
     filters += [f.model_dump() for f in structured_filters]
-    # Rows with an empty breakdown value are dropped when evidence is written (below), so exclude them
-    # in the query: otherwise a ranked limit is spent on them first (live 2026-10-06: net_profit by
-    # campaign_name x sub_channel, limit=5 -> 4 of the top 5 had no campaign, 1 row survived).
-    filters += [
-        {"dimension": k, "operator": "set", "values": []}
-        for k in breakdown
-        if not ctx.deps.catalogue.is_time_dimension(k) and _normalize_dim_token(k) not in _BRAND_DIM_KEYS
-    ]
+    # A ranked limit excludes rows with an empty breakdown value in the query: otherwise it is spent on them first
+    # (live 2026-10-06: net_profit by campaign_name x sub_channel, limit=5 -> 4 of the top 5 had no campaign). An
+    # unranked breakdown keeps them, so their total is reported and subtotalled instead of vanishing (golden Q17
+    # 2026-10-09: channel x campaign dropped every order without a campaign — the whole unattributed channel).
+    if order and limit:
+        filters += [
+            {"dimension": k, "operator": "set", "values": []}
+            for k in breakdown
+            if not ctx.deps.catalogue.is_time_dimension(k) and _normalize_dim_token(k) not in _BRAND_DIM_KEYS
+        ]
     sort = _top_n_sort(metric_id, order)
     # Only scope to the default brand for metrics that actually carry a brand
     # dimension (catalogue-driven, not a hardcoded metric list): injecting a
@@ -2452,6 +2454,7 @@ async def query_metrics(
         # none matching the stored evidence). Return the real values.
         series: list[dict[str, Any]] = []
         unlabelled = 0.0
+        partial: list[dict[str, Any]] = []  # rows missing a breakdown value: listed by subtotals, not as rows
         for row, bucket_date in zip(rows, per_row_dates, strict=True):
             value = row.get(metric_id)
             if value is None:
@@ -2487,6 +2490,10 @@ async def query_metrics(
                 # a false "None" category. Applies to any breakdown dimension.
                 if raw in ("", "None", "null", "none", "NULL"):
                     unlabelled += last_value
+                    partial.append({"value": last_value, "dims": {
+                        k: (v if (v := str(dimension_value(row, k))) not in _EMPTY_LABELS else f"(no {k})")
+                        for k in breakdown
+                    }})
                     break
                 row_dimensions[key] = raw
             else:
@@ -2555,7 +2562,7 @@ async def query_metrics(
                 f"({len(series)} rows) — use these exact values: {body}{more}."
                 + _series_stats(ctx, metric_id, [float(s["value"]) for s in series])
             )
-        if (subtotals := _breakdown_subtotals(ctx, metric_id, breakdown, series, artifact_ids, unit)):
+        if (subtotals := _breakdown_subtotals(ctx, metric_id, breakdown, [*series, *partial], artifact_ids, unit)):
             summary += f" {subtotals}"
         if unlabelled and breakdown:
             # Rows with no value for the breakdown are not listed; their total is (live 2026-10-08: 7 Suspender

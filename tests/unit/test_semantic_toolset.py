@@ -190,9 +190,8 @@ async def test_query_metrics_wildcard_dimension_value_becomes_a_breakdown():
     # default brand (no brand named, and the metric carries brand_id).
     # no dead equals-filter on the breakdown; only "has a value" (rows without one are not reported)
     assert sent.get("filters") == [
-        {"dimension": "product_title", "operator": "set", "values": []},
         {"dimension": "brand_id", "operator": "equals", "values": ["20"]},
-    ]
+    ]  # unranked: rows without a value are kept and reported, not excluded (2026-10-09)
 
 
 @pytest.mark.asyncio

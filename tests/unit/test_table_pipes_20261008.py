@@ -116,3 +116,33 @@ async def test_a_multi_dimension_breakdown_reports_subtotals_and_shares_as_a_fin
     assert "by finance_channel: meta=80" in result.summary and "(80.0%)" in result.summary
     findings = [a for a in deps.artifact_store.list_for_mission(deps.mission_id) if a.artifact_type == "finding"]
     assert findings and findings[0].payload["metrics"]["ad_spend | finance_channel=meta | share_pct"] == 80.0
+
+
+@pytest.mark.asyncio
+async def test_rows_without_one_breakdown_value_stay_in_the_subtotals() -> None:
+    # golden Q17 2026-10-09: channel x campaign dropped every order without a campaign (the unattributed channel)
+    from datetime import datetime
+
+    from seleric_swarm.toolsets import semantic
+    from tests.unit.test_postmortem_20261007 import IST, _Ctx, _deps as _pm_deps
+
+    class _Mcp:
+        def __init__(self):
+            self.args = []
+
+        async def call(self, *, agent_id, capability, arguments):
+            self.args.append(arguments)
+            rows = [{"finance_channel": "meta", "campaign_name": "A", "ad_spend": "60"},
+                    {"finance_channel": "unattributed", "campaign_name": None, "ad_spend": "40"}]
+            return {"rows": rows, "provenance": {"query_id": "q", "currency": "INR"}}
+
+    mcp = _Mcp()
+    deps = _pm_deps(mcp=mcp)
+    result = await semantic.query_metrics(
+        _Ctx(deps), "ad_spend", dimensions={"finance_channel": "", "campaign_name": ""},
+        period_start=datetime(2026, 10, 1, tzinfo=IST), period_end=datetime(2026, 10, 7, tzinfo=IST),
+    )
+    assert result.success, result.summary
+    assert not [f for f in mcp.args[0].get("filters") or [] if f["operator"] == "set"]  # unranked: empties kept
+    assert "unattributed=40" in result.summary and "(40.0%)" in result.summary
+    assert "campaign_name value and is not listed" in result.summary

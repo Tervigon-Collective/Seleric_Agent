@@ -195,9 +195,8 @@ async def test_dimension_value_equal_to_its_key_becomes_a_breakdown_not_a_dead_f
     # only filter is the injected default brand.
     # no dead equals-filter on the breakdown; only "has a value" (rows without one are not reported)
     assert query_call[1].get("filters") == [
-        {"dimension": "product_title", "operator": "set", "values": []},
         {"dimension": "brand_id", "operator": "equals", "values": ["20"]},
-    ]
+    ]  # unranked: rows without a value are kept and reported, not excluded (2026-10-09)
     assert result.success is True
 
 
