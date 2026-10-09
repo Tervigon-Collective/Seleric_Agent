@@ -544,6 +544,17 @@ def _same_metric_arithmetic(deps: SelericDeps) -> list[float]:
         total = sum(vals)
         if key[4] and len(vals) > 1 and total:
             out.extend(v / total for v in vals)
+    # Two metrics of one slice over one period divided ("spend per order", "orders per 1,000 sessions" scale aside):
+    # the quotient of fetched values the answer states in prose. Period totals only, and few metrics per slice, so
+    # the pairs stay bounded and an invented figure still finds nothing.
+    by_cell: dict[tuple[Any, ...], dict[Any, float]] = {}
+    for metric, grain, dims, start, end, value in rows:
+        if grain == "none":
+            by_cell.setdefault((dims, start, end), {})[metric] = value
+    for cell in by_cell.values():
+        if 1 < len(cell) <= 12:
+            vals = list(cell.values())
+            out.extend(a / b for i, a in enumerate(vals) for j, b in enumerate(vals) if i != j and b)
     return out
 
 

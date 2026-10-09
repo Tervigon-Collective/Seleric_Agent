@@ -425,3 +425,45 @@ async def test_a_threshold_on_another_views_metric_is_refused_with_the_views_own
         _Ctx(deps), "net_roas", [semantic.MetricFilter(dimension="order_pnl_ad_spend", operator="gt", values=["0"])]
     )
     assert same is None
+
+
+async def test_label_words_the_user_never_wrote_are_dropped_before_resolving() -> None:
+    """The understanding copies catalogue labels into slots ('P&L net profit', 'Product CAC (allocated)'); the
+    words of the matched label the user did not write name a variant they never asked for."""
+    from seleric_swarm.agent.runner import _ConceptResolver
+    from seleric_swarm.agent.scope import RequiredScope
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+
+    cat = CatalogueSnapshot(metrics=(
+        CatalogueMetricMeta(id="cac", label="CAC", view="unit_economics"),
+        CatalogueMetricMeta(id="product_cac", label="Product CAC (allocated)", view="product_pnl"),
+    ))
+
+    class Gateway:
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if capability.endswith("resolve_concept"):
+                mid = "product_cac" if "product" in arguments["text"].lower() else "cac"
+                return {"kind": "resolved_concept", "metric_id": mid, "filter": {}}
+            return {"status": "ok", "axes": {}}
+
+    # the runner passes the question without the words read as dimensions ("product mix" -> product_type)
+    from seleric_swarm.agent.runner import _outside_measures
+
+    q = _outside_measures("Why did CAC increase yesterday? Was it product mix?", ["product type"])
+    r = _ConceptResolver(Gateway(), RequiredScope(), cat, q)
+    assert (await r(["Product CAC (allocated)"]))["Product CAC (allocated)"] == "cac"
+    asked = _ConceptResolver(Gateway(), RequiredScope(), cat, "What was product CAC by product type?")
+    assert (await asked(["product CAC"]))["product CAC"] == "product_cac"
+
+
+def test_a_quotient_of_two_metrics_of_one_slice_and_period_is_backed() -> None:
+    from seleric_swarm.agent.validation import _backed, _mission_values
+    from tests.unit.test_failures_20261008 import _deps as fdeps
+    from tests.unit.test_failures_20261008 import _row
+
+    store = InMemoryArtifactStore()
+    _row(store, "meta", 69847.63, metric="ad_spend")
+    _row(store, "meta", 40.0, metric="new_customers")
+    pool = _mission_values(fdeps(store))
+    assert _backed(1746.19, 0.005, False, pool)      # spend per new customer
+    assert not _backed(1912.40, 0.005, False, pool)

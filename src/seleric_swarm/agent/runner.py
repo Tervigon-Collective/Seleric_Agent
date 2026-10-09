@@ -728,11 +728,27 @@ class _ConceptResolver:
     (``prime``) instead of re-resolving every concept in an LLM turn.
     A phrase the resolver cannot place maps to None; errors fail open."""
 
-    def __init__(self, mcp: Any, scope: RequiredScope, catalogue: Any = None) -> None:
+    def __init__(self, mcp: Any, scope: RequiredScope, catalogue: Any = None, question: str = "") -> None:
         self._mcp = mcp
         self._axes = dict(getattr(scope, "question_axes", ()) or ())
         self._catalogue = catalogue
+        self._question_words = {w.strip(_WORD_EDGE).lower() for w in question.split()} - {""}
         self.filters: dict[str, dict[str, Any]] = {}
+
+    def _label_words_the_user_did_not_say(self, text: str, metric_id: str) -> list[str]:
+        """Words of the slot that come from the matched metric's catalogue label but not from the question.
+
+        The understanding sometimes copies a catalogue label into a slot ("P&L net profit", "Product CAC
+        (allocated)"); every word of such a label that the user never wrote names a variant they did not ask for
+        (a date basis, a product allocation, a channel)."""
+        if not self._question_words:
+            return []
+        label = next((m.label for m in getattr(self._catalogue, "metrics", ()) or () if m.id == metric_id), "")
+        label_words = {w.strip(_WORD_EDGE).lower() for w in str(label).split()} - {""}
+        return [
+            w for w in text.split()
+            if (k := w.strip(_WORD_EDGE).lower()) and k in label_words and k not in self._question_words
+        ]
 
     async def _basis_the_user_named(self, text: str, metric_id: str) -> str:
         """The metric, or its date twin when the phrase sets a date basis the question itself does not.
@@ -766,6 +782,11 @@ class _ConceptResolver:
         if result.get("kind") != "resolved_concept":
             return None
         metric_id = result.get("metric_id")
+        if metric_id and (extra := self._label_words_the_user_did_not_say(text, metric_id)):
+            # Resolve the slot again in the user's own words: what is left once the copied label words go.
+            plain = " ".join(w for w in text.split() if w not in extra).strip()
+            if plain and plain != text and (again := await self._one(plain)):
+                return again
         if metric_id:
             metric_id = await self._basis_the_user_named(text, metric_id)
         if metric_id and isinstance(result.get("filter"), dict) and result["filter"]:
@@ -782,8 +803,8 @@ class _ConceptResolver:
             deps.query_cache.set(f"concept_filter:{metric_id}", bound)
 
 
-def _concept_resolver(mcp: Any, scope: RequiredScope, catalogue: Any = None) -> _ConceptResolver:
-    return _ConceptResolver(mcp, scope, catalogue)
+def _concept_resolver(mcp: Any, scope: RequiredScope, catalogue: Any = None, question: str = "") -> _ConceptResolver:
+    return _ConceptResolver(mcp, scope, catalogue, question)
 
 
 def _plan_trace(outcome: PlanOutcome | None, steps: list[dict[str, Any]] | None) -> dict[str, Any] | None:
@@ -1240,6 +1261,9 @@ async def run_v3_mission(
         if d
     ]
     context = _outside_measures(query, [*_measure_phrases(understanding), *dimension_words])
+    # The words the user wrote about measures (dimension words left out): what a copied catalogue label is checked
+    # against when a slot is resolved.
+    measure_wording = _outside_measures(query, dimension_words)
     if question_axes and context != query and (context_axes := await _context_axes(mcp, context)) is not None:
         question_axes = context_axes
     if value_filters or question_axes:
@@ -1349,7 +1373,7 @@ async def run_v3_mission(
                 # The plan is built in code from the understand call's slots — no
                 # second LLM call. An accepted offer ("yes") is not re-planned: the
                 # follow-up hint tells the agent to do exactly what it offered.
-                resolver = _concept_resolver(mcp, deps.required_scope, catalogue)
+                resolver = _concept_resolver(mcp, deps.required_scope, catalogue, measure_wording)
                 plan_outcome = (
                     await plan_from_slots(
                         understanding,
