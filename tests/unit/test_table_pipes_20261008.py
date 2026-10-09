@@ -146,3 +146,23 @@ async def test_rows_without_one_breakdown_value_stay_in_the_subtotals() -> None:
     assert not [f for f in mcp.args[0].get("filters") or [] if f["operator"] == "set"]  # unranked: empties kept
     assert "unattributed=40" in result.summary and "(40.0%)" in result.summary
     assert "campaign_name value and is not listed" in result.summary
+
+
+def test_an_entity_the_rank_metric_cannot_carry_falls_back_to_an_asked_breakdown() -> None:
+    # golden Q16 2026-10-09: "which campaigns, products and channels contributed" ranked net profit by entity_name
+    from datetime import date
+
+    from seleric_swarm.agent.plan import MetricSlot, PlanSlots, compose_plan
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    catalogue = CatalogueSnapshot(
+        metrics=(CatalogueMetricMeta(id="np", label="Net profit", supported_dimensions=["campaign_name", "channel"],
+                                     raw={"aggregation": "additive"}),),
+        dimensions=("campaign_name", "channel", "entity_name"),
+    )
+    slots = PlanSlots(shape="entity_comparison", entity_dimension="entity_name", rank_by=MetricSlot(words="net profit"),
+                      metrics=[MetricSlot(words="net profit")], breakdown_dimensions=["campaign_name", "channel"])
+    windows = [(date(2026, 10, 1), date(2026, 10, 1)), (date(2026, 10, 2), date(2026, 10, 2))]
+    plan, notes = compose_plan(slots, metric_ids=["np"], rank_id="np", windows=windows, catalogue=catalogue, as_of=None)
+    assert plan is not None and plan.steps[0].dimensions == ["campaign_name"]
+    assert any("ranked by campaign_name instead" in n for n in notes)

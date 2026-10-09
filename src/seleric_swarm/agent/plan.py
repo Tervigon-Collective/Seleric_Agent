@@ -221,6 +221,14 @@ def compose_plan(
         notes.append("the window includes today, which is still running: compared instead of diagnosed")
         shape = "period_comparison"
     entity = slots.entity_dimension.strip()
+    # The entities are ranked by the rank metric: an entity dimension it cannot carry is a mis-pick (golden Q16
+    # 2026-10-09: "which campaigns, products and channels contributed" ranked net profit by entity_name, a field of
+    # the ad change log only). Rank by the first breakdown the user asked for that the rank metric carries.
+    ranker = rank_id or (metric_ids[0] if metric_ids else None)
+    if entity and ranker and dim_ok(entity) and not catalogue.carries(ranker, entity):
+        if alt := next((d for d in breakdowns if d != entity and catalogue.carries(ranker, d)), None):
+            notes.append(f"entity '{entity}' is not a slice of {ranker}: ranked by {alt} instead")
+            entity = alt
     # The slots decide, not the label: an entity dimension plus a "best by" measure across
     # two windows is an entity comparison even when the model called it a period
     # comparison (live 2026-10-07, gpt-5-nano, 2 of 4 runs).
