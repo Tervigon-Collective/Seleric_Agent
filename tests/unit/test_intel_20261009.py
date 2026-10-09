@@ -313,3 +313,25 @@ async def test_a_composition_plan_runs_the_bridge_from_the_earlier_period(defs: 
     out = await execute_plan(plan, _deps(mcp), windows=[(date(2026, 10, 2), date(2026, 10, 2)),
                                                        (date(2026, 10, 1), date(2026, 10, 1))], as_of=AS_OF)
     assert out is not None and "change -30.00" in out.text and out.finding_id
+
+
+async def test_a_composition_total_follows_the_basis_the_question_names() -> None:
+    """Golden Q22 (2026-10-09): 'net profit waterfall for September' — the understanding worded the slot 'P&L net
+    profit', the resolver gave the event-date twin, and the waterfall reconciled −1.53M instead of −170k. The
+    question's own reading (order date, the default) wins over a twin the user never asked for."""
+    from seleric_swarm.agent.plan import MetricSlot, PlanSlots, plan_from_slots
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+
+    cat = CatalogueSnapshot(metrics=(
+        CatalogueMetricMeta(id="net_profit", view="order_pnl", raw={"date_basis": "order", "date_twin": "pnl_net_profit"}),
+        CatalogueMetricMeta(id="pnl_net_profit", view="pnl", raw={"date_basis": "finance", "date_twin": "net_profit"}),
+    ))
+    q = "give me a net profit breakdown, waterfall for September 2026"
+
+    async def resolver(texts: list[str]) -> dict[str, str | None]:
+        return {t: ("pnl_net_profit" if "P&L" in t else "net_profit") for t in texts}
+
+    slots = PlanSlots(shape="composition", metrics=[MetricSlot(words="P&L net profit", metric_id="pnl_net_profit")])
+    out = await plan_from_slots(slots, catalogue=cat, resolver=resolver, question=q,
+                                windows=[(date(2026, 9, 1), date(2026, 9, 30))], as_of=AS_OF)
+    assert out.plan is not None and out.plan.steps[0].metric_ids == ["net_profit"]

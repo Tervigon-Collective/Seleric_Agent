@@ -510,17 +510,22 @@ async def plan_from_slots(
             if (not catalogue.metrics or catalogue.has_metric(m)) and catalogue.carries(m, entity)
         ]
         notes.append(f"no measure named: compared the headline measures that carry {entity}")
-    if slots.shape == "why_single_metric" and len(metric_ids) > 1 and resolver is not None and question.strip():
-        # One outcome is diagnosed. The understanding sometimes reads one named measure as several variants
-        # ("ROAS" as gross and net, live 2026-10-09: gross ROAS was diagnosed for a net ROAS question); the
-        # catalogue's own reading of the question names the measure asked about when it is one of them.
+    if slots.shape in ("why_single_metric", "composition") and metric_ids and resolver is not None and question.strip():
+        # One outcome is diagnosed / broken down. The understanding sometimes reads one named measure as several
+        # variants ("ROAS" as gross and net: gross ROAS was diagnosed for a net ROAS question), or words a slot
+        # with qualifiers the user never said ("P&L net profit": a September waterfall on the event-date Finance
+        # P&L, −1.53M, instead of the order-date default, −170k — regression 2026-10-09 golden Q22). The
+        # catalogue's own reading of the question names the measure asked about when it is one of them or the
+        # same measure on the other date basis.
         try:
             asked = (await resolver([question.strip()])).get(question.strip())
         except Exception:
             asked = None
-        if asked in metric_ids and asked != metric_ids[0]:
-            metric_ids = [asked, *[m for m in metric_ids if m != asked]]
-            notes.append(f"diagnosed {asked}: the measure the question itself names")
+        twins = {m: catalogue.date_basis_for(m)[1] for m in metric_ids}
+        if asked and asked != metric_ids[0] and (asked in metric_ids or asked == twins.get(metric_ids[0])):
+            replaced = metric_ids[0] if asked == twins.get(metric_ids[0]) else None
+            metric_ids = [asked, *[m for m in metric_ids if m not in (asked, replaced)]]
+            notes.append(f"the outcome is {asked}: the measure the question itself names")
     rank_id = None
     if slots.rank_by is not None:
         rank_ids, rank_notes = await _resolve_metrics([slots.rank_by], resolver, catalogue)
