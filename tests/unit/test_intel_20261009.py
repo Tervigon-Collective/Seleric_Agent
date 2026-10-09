@@ -586,3 +586,23 @@ async def test_companions_of_a_breakdown_are_fetched_for_the_anchors_entities() 
     assert rate_calls and any(
         f.get("dimension") == "product_title" and set(f.get("values") or []) == {"A", "B"} for f in rate_calls[0].get("filters") or []
     )
+
+
+async def test_a_breakdown_split_by_a_dimension_reconciles_per_segment(defs: None) -> None:
+    class Split(_Mcp):
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            self.calls.append(arguments)
+            if arguments.get("dimensions"):
+                return {"rows": [
+                    {"finance_channel": "meta", "np": -30.0, "cm": 50.0, "ns": 60.0, "cogs": 10.0, "ad": 80.0},
+                    {"finance_channel": "organic", "np": 10.0, "cm": 30.0, "ns": 40.0, "cogs": 10.0, "ad": 20.0},
+                ], "provenance": {}}
+            return {"rows": [{"np": -20.0, "cm": 80.0, "ns": 100.0, "cogs": 20.0, "ad": 100.0}], "provenance": {}}
+
+    mcp = Split({})
+    res = await composition.break_down_metric(
+        _Ctx(_deps(mcp)), "np", period_start=datetime(2026, 9, 1, tzinfo=UTC), by="finance_channel"
+    )
+    assert res.success
+    assert "By finance_channel" in res.summary and "every segment's lines reconcile" in res.summary
+    assert "| meta |" in res.summary and "| organic |" in res.summary

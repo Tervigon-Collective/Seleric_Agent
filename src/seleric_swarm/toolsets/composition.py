@@ -25,7 +25,7 @@ from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import ArtifactProvenance
-from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID
+from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID, dimension_value
 from seleric_swarm.toolsets import diagnosis, semantic
 from seleric_swarm.toolsets.analytics import _refuse
 
@@ -116,11 +116,22 @@ async def _totals(
     ctx: RunContext[SelericDeps], metrics: list[str], start: date, end: date, filters: dict[str, Any]
 ) -> tuple[dict[str, float], dict[str, Any] | None, list[str], str | None, str | None]:
     """Every line's total over [start, end] in one query (same view, same filters)."""
+    values, args, dropped, error, currency, _ = await _totals_by(ctx, metrics, start, end, filters, None)
+    return values, args, dropped, error, currency
+
+
+async def _totals_by(
+    ctx: RunContext[SelericDeps], metrics: list[str], start: date, end: date, filters: dict[str, Any],
+    by: str | None,
+) -> tuple[dict[str, float], dict[str, Any] | None, list[str], str | None, str | None, dict[str, dict[str, float]]]:
+    """Totals, and with ``by`` every line per value of that dimension (one query either way)."""
     flt, dropped = diagnosis._filters_for(ctx, metrics[0], filters)
     args: dict[str, Any] = {
         "measures": list(metrics),
         "time_range": {"start": start.isoformat(), "end": end.isoformat()},
     }
+    if by:
+        args["dimensions"] = [by]
     flt = list(flt)
     if diagnosis._supports_brand(ctx, metrics[0]) and not any(f.get("dimension") == "brand_id" for f in flt):
         flt.append({"dimension": "brand_id", "operator": "equals", "values": [DEFAULT_BRAND_ID]})
@@ -128,15 +139,19 @@ async def _totals(
         args["filters"] = flt
     result = await semantic._cached_metrics_query(ctx, args)
     if result.get("error"):
-        return {}, None, dropped, str(result.get("error")), None
+        return {}, None, dropped, str(result.get("error")), None, {}
     values: dict[str, float] = {}
+    segments: dict[str, dict[str, float]] = {}
     for row in result.get("rows") or []:
+        seg = str(dimension_value(row, by)) if by else ""
         for m in metrics:
             v = _num(row.get(m))
             if v is not None:
                 values[m] = values.get(m, 0.0) + v
+                if by:
+                    segments.setdefault(seg, {})[m] = segments.get(seg, {}).get(m, 0.0) + v
     currency = str((result.get("provenance") or {}).get("currency") or "").strip() or None
-    return values, args, dropped, None, currency
+    return values, args, dropped, None, currency, segments
 
 
 def _reconcile(node: _Node, values: dict[str, float]) -> list[str]:
@@ -167,6 +182,7 @@ async def break_down_metric(
     compare_end: datetime | None = None,
     filters: dict[str, str | list[str]] | None = None,
     depth: int = _MAX_DEPTH,
+    by: str | None = None,
 ) -> ToolResult:
     """Break a metric into the lines it is built from — a P&L / waterfall / cost breakdown, or a bridge between two periods.
 
@@ -178,7 +194,9 @@ async def break_down_metric(
     the total exactly; the result says so, or names any gap. ``period_start``/``period_end`` default to the
     question's period. Pass ``compare_start``/``compare_end`` for a bridge: each line's change and its signed
     contribution to the total's change. ``filters`` scopes every line alike (e.g. one channel). ``depth``
-    limits how many levels are expanded.
+    limits how many levels are expanded. ``by`` (a dimension id the total's view carries) also splits every line
+    by that dimension — a line the user asks to see apart (returns vs cancellations inside a deductions line, the
+    P&L per channel) — each segment reconciling on its own.
 
     Present the lines in the order returned (top line first, deductions with their sign) and the subtotals as
     given; do not add lines from other metrics — they are on another basis and will not reconcile.
@@ -330,6 +348,44 @@ async def break_down_metric(
             )
             + f" (the effects of all leaves sum to {_fmt(total_change)})"
         )
+    if by:
+        carried = set(ctx.deps.catalogue.supported_dimensions_for(metric_id)) if ctx.deps.catalogue.metrics else {by}
+        if by not in carried:
+            notes.append(f"{metric_id} cannot be split by {by} on its view; lines shown in total only")
+        else:
+            _, s_args, _, s_err, _, segs = await _totals_by(ctx, metrics, start, end, filt, by)
+            if s_args is not None and segs:
+                cols = [n for n in nodes if not n.children] + [root]
+                head = f"| {by} | " + " | ".join(_label(definitions, n.metric) for n in cols) + " |"
+                rows_txt = [head, "|" + " --- |" + " ---: |" * len(cols)]
+                seg_gaps = 0
+                tz = ctx.deps.as_of.tzinfo
+                for seg, vals in sorted(segs.items(), key=lambda kv: -abs(kv[1].get(metric_id, 0.0))):
+                    rows_txt.append(f"| {seg} | " + " | ".join(_fmt(vals.get(n.metric, 0.0)) for n in cols) + " |")
+                    seg_gaps += bool(_reconcile(root, vals))
+                    for n in cols:
+                        if n.metric in vals:
+                            metrics_out[f"{n.metric} | {by}={seg}"] = vals[n.metric]
+                            ev = EvidenceArtifact(
+                                metric_id=n.metric, dimensions={by: seg}, grain="none", as_of=ctx.deps.as_of,
+                                period_start=datetime(start.year, start.month, start.day, tzinfo=tz),
+                                period_end=datetime(end.year, end.month, end.day, tzinfo=tz),
+                                value=vals[n.metric], unit=currency, source_query=s_args,
+                            )
+                            evidence_ids.append(semantic._put_evidence(
+                                ctx, ev, index=index, raw_id=f"raw:{n.metric}:{start}:{end}:{by}={seg}",
+                                provenance=ArtifactProvenance(
+                                    calculation_version=_CALCULATION_VERSION,
+                                    source_metadata={"filters_applied": [f for f in (s_args.get("filters") or []) if isinstance(f, dict)]},
+                                ),
+                            ))
+                summary_parts.append(
+                    f"By {by} ({start}..{end}; every segment's lines "
+                    + ("reconcile" if not seg_gaps else f"do NOT reconcile in {seg_gaps} segment(s)") + "):\n"
+                    + "\n".join(rows_txt)
+                )
+            elif s_err:
+                notes.append(f"the split by {by} failed: {s_err[:160]}")
     if dropped_any:
         notes.append(f"filters not carried by this view were not applied: {', '.join(sorted(set(dropped_any)))}")
     if notes:

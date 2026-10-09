@@ -206,7 +206,9 @@ BREAKDOWNS, WATERFALLS AND RECONCILIATIONS
   `break_down_metric` for the total asked about (with compare_start/compare_end
   for a change between periods). Its lines come from the catalogue's verified
   composition on the total's own date basis and reconcile exactly; present them
-  in its order with its subtotals. Never assemble such a table from separately
+  in its order with its subtotals. When the user asks to see what is inside a
+  line (returns vs cancellations) or the breakdown per channel / product,
+  pass `by` with the dimension that splits it. Never assemble such a table from separately
   fetched metrics — a line from another view or date basis (a refund-date
   refund, an order-date net sales of a different definition) does not belong
   to the total and leaves a false "residual". If the tool says the metric has
