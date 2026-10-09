@@ -606,3 +606,28 @@ async def test_a_breakdown_split_by_a_dimension_reconciles_per_segment(defs: Non
     assert res.success
     assert "By finance_channel" in res.summary and "every segment's lines reconcile" in res.summary
     assert "| meta |" in res.summary and "| organic |" in res.summary
+
+
+async def test_a_line_the_semantic_layer_splits_is_opened_into_its_parts(monkeypatch: pytest.MonkeyPatch) -> None:
+    defs = {
+        "ns": {"display_name": "Net sales", "formula": {"composition": [
+            {"metric": "gs", "sign": 1}, {"metric": "disc", "sign": -1}, {"metric": "ded", "sign": -1}]}},
+        "gs": {"display_name": "Gross sales"}, "disc": {"display_name": "Discounts"},
+        "ded": {"display_name": "Deductions", "split_by": "refund_class"},
+    }
+
+    async def all_definitions(ctx: Any) -> dict[str, Any]:
+        return defs
+
+    monkeypatch.setattr(diagnosis, "_all_definitions", all_definitions)
+
+    class Split(_Mcp):
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            self.calls.append(arguments)
+            if arguments.get("dimensions") == ["refund_class"]:
+                return {"rows": [{"refund_class": "RETURN", "ded": 12.0}, {"refund_class": "CANCELLATION", "ded": 8.0}],
+                        "provenance": {}}
+            return {"rows": [{"ns": 70.0, "gs": 100.0, "disc": 10.0, "ded": 20.0}], "provenance": {}}
+
+    res = await composition.break_down_metric(_Ctx(_deps(Split({}))), "ns", period_start=datetime(2026, 9, 1, tzinfo=UTC))
+    assert "Inside Deductions (20.00) by refund_class: RETURN 12.00; CANCELLATION 8.00." in res.summary

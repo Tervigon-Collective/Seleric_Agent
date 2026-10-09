@@ -348,6 +348,42 @@ async def break_down_metric(
             )
             + f" (the effects of all leaves sum to {_fmt(total_change)})"
         )
+    # A line the semantic layer declares a natural split for (Cube meta.split_by: deductions by refund class) is
+    # opened into its parts under the line, the parts checked to sum to it — "how much went to returns and
+    # cancellations" was answered with one deductions line.
+    for n in nodes:
+        split = (definitions.get(n.metric) or {}).get("split_by")
+        if not split or n.metric not in values_by["period"] or split == by:
+            continue
+        _, p_args, _, _, _, parts = await _totals_by(ctx, [n.metric], start, end, filt, str(split))
+        if p_args is None or len(parts) < 2:
+            continue
+        line_total = values_by["period"][n.metric]
+        part_sum = sum(v.get(n.metric, 0.0) for v in parts.values())
+        tz = ctx.deps.as_of.tzinfo
+        shown = []
+        for seg, vals in sorted(parts.items(), key=lambda kv: -abs(kv[1].get(n.metric, 0.0))):
+            v = vals.get(n.metric, 0.0)
+            shown.append(f"{seg} {_fmt(v)}")
+            metrics_out[f"{n.metric} | {split}={seg}"] = v
+            ev = EvidenceArtifact(
+                metric_id=n.metric, dimensions={str(split): seg}, grain="none", as_of=ctx.deps.as_of,
+                period_start=datetime(start.year, start.month, start.day, tzinfo=tz),
+                period_end=datetime(end.year, end.month, end.day, tzinfo=tz),
+                value=v, unit=currency, source_query=p_args,
+            )
+            evidence_ids.append(semantic._put_evidence(
+                ctx, ev, index=index, raw_id=f"raw:{n.metric}:{start}:{end}:{split}={seg}",
+                provenance=ArtifactProvenance(
+                    calculation_version=_CALCULATION_VERSION,
+                    source_metadata={"filters_applied": [f for f in (p_args.get("filters") or []) if isinstance(f, dict)]},
+                ),
+            ))
+        summary_parts.append(
+            f"Inside {_label(definitions, n.metric)} ({_fmt(line_total)}) by {split}: " + "; ".join(shown)
+            + ("." if abs(part_sum - line_total) <= _TOLERANCE else f" — parts sum to {_fmt(part_sum)}, NOT the line.")
+            + " Show these parts under the line."
+        )
     if by:
         carried = set(ctx.deps.catalogue.supported_dimensions_for(metric_id)) if ctx.deps.catalogue.metrics else {by}
         if by not in carried:
