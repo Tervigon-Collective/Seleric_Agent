@@ -11,6 +11,7 @@ import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
 import { ArrowDownIcon, CheckIcon, CopyIcon } from "./icons";
 import { MessagePartRenderer } from "./MessagePartRenderer";
+import { PromptRegistry } from "./PromptRegistry";
 import { SafeContent } from "./SafeContent";
 
 function SelericPart({ data }: DataMessagePartProps) {
@@ -50,43 +51,6 @@ const parts = {
     },
   },
 };
-
-const SUGGESTION_GROUPS: { label: string; questions: string[] }[] = [
-  { label: "Marketing", questions: [
-    "Which campaigns contributed the most revenue last week?",
-    "Why did ROAS decline compared with last week?",
-  ] },
-  { label: "Sales & revenue", questions: [
-    "Where did our sales come from yesterday?",
-    "Compare marketing spend, revenue, and profitability.",
-  ] },
-  { label: "Products & conversion", questions: [
-    "Which products are losing money after ads and returns?",
-    "What changed in checkout conversion over the last 7 days?",
-  ] },
-];
-
-function SuggestionList() {
-  const submit = useConversationStore((s) => s.submit);
-  return (
-    <div role="list" aria-label="Suggested starting questions" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 560 }}>
-      {SUGGESTION_GROUPS.map((group) => (
-        <div key={group.label} role="listitem">
-          <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 650, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-faint)" }}>
-            {group.label}
-          </p>
-          <div className="empty-suggestions" style={{ justifyContent: "center" }}>
-            {group.questions.map((question) => (
-              <button key={question} onClick={() => void submit(question)}>
-                {question}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function CopyButton() {
   const [copied, setCopied] = useState(false);
@@ -231,15 +195,18 @@ function ThreadContextBar() {
   const thread = useConversationStore((s) => s.threads.find((item) => item.id === threadId));
   const count = useConversationStore((s) => (threadId ? s.messages[threadId]?.length ?? 0 : 0));
   if (!threadId || !thread) return null;
+  // Compact context line: the question itself lives in the user bubble and the
+  // compact title in the header — no large duplicate heading here.
+  const exchanges = Math.ceil(count / 2);
   return (
-    <div className="thread-context" style={{ marginBottom: 20 }}>
-      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 650, letterSpacing: "-0.02em" }}>
+    <div className="thread-context">
+      <span className="thread-context-name" title={thread.title || "Untitled conversation"}>
         {thread.title || "Untitled conversation"}
-      </h2>
+      </span>
       {count > 0 && (
-        <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--text-dim)" }}>
-          {Math.ceil(count / 2)} exchange{Math.ceil(count / 2) === 1 ? "" : "s"} · evidence stays attached below
-        </p>
+        <span className="thread-context-meta">
+          {exchanges} exchange{exchanges === 1 ? "" : "s"} · evidence stays attached below
+        </span>
       )}
     </div>
   );
@@ -274,7 +241,7 @@ export function Transcript() {
             <div className="empty-state">
               <h1>Where should we begin?</h1>
               <p>Ask about marketing, sales, products, or operations — Seleric investigates your metrics and shows its evidence.</p>
-              <SuggestionList />
+              <PromptRegistry />
             </div>
           )}
           {threadId && (
@@ -282,7 +249,7 @@ export function Transcript() {
               <div className="empty-state">
                 <h1>What should we investigate?</h1>
                 <p>Ask a question about your metrics and Seleric will investigate.</p>
-                <SuggestionList />
+                <PromptRegistry />
               </div>
             </ThreadPrimitive.Empty>
           )}

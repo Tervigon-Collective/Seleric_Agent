@@ -102,3 +102,11 @@ export const ResetZoomIcon = (p: IconProps) => (
 export const ImageIcon = (p: IconProps) => (
   <Base {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.5-3.5a2 2 0 0 0-2.8 0L6 20" /></Base>
 );
+export const PromptsIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    <line x1="8" y1="7" x2="16" y2="7" />
+    <line x1="8" y1="11" x2="14" y2="11" />
+  </Base>
+);

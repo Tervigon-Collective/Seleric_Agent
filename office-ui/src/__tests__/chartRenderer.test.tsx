@@ -108,4 +108,44 @@ describe("chart option builders", () => {
   it("returns null for a form it cannot render so the UI fails loudly", () => {
     expect(renderChartOption(specFor({ chart_type: "sparkline" }))).toBeNull();
   });
+
+  it("switches a bar spec to lines without stacking", () => {
+    const option = renderChartOption(
+      specFor({
+        chart_type: "stacked_bar",
+        series: [
+          { key: "meta", name: "meta", type: "bar", stack: "total", yAxisIndex: 0 },
+          { key: "google", name: "google", type: "bar", stack: "total", yAxisIndex: 0 },
+        ],
+        data: [
+          { time: "2026-10-02", meta: 300, google: 200 },
+          { time: "2026-10-03", meta: 400, google: 100 },
+        ],
+      }),
+      undefined,
+      { mark: "line" },
+    ) as { series: Array<Record<string, unknown>> };
+    expect(option.series.every((s) => s.type === "line")).toBe(true);
+    expect(option.series.every((s) => s.stack === undefined)).toBe(true);
+  });
+
+  it("keeps the backend stack when the mark override is bars", () => {
+    const option = renderChartOption(
+      specFor({
+        chart_type: "stacked_bar",
+        series: [
+          { key: "meta", name: "meta", type: "bar", stack: "total", yAxisIndex: 0 },
+          { key: "google", name: "google", type: "bar", stack: "total", yAxisIndex: 0 },
+        ],
+        data: [
+          { time: "2026-10-02", meta: 300, google: 200 },
+          { time: "2026-10-03", meta: 400, google: 100 },
+        ],
+      }),
+      undefined,
+      { mark: "bar" },
+    ) as { series: Array<Record<string, unknown>> };
+    expect(option.series.every((s) => s.type === "bar")).toBe(true);
+    expect(option.series.every((s) => s.stack === "total")).toBe(true);
+  });
 });

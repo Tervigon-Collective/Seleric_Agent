@@ -1,11 +1,13 @@
 import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { useShellStore } from '../../stores/shell';
+import { useConversationStore } from '../../stores/conversation';
 import { CheckIcon, CopyIcon, DownloadIcon, ExpandIcon, ShrinkIcon, ResetZoomIcon, ImageIcon } from '../icons';
 import {
   normalizeChartType,
   type ChartType,
 } from '../../api/chartContract';
+import { buildFollowUp, buildPointContext } from '../../api/drillContext';
 
 export interface ChartSeries {
   key: string;
@@ -190,8 +192,17 @@ function exportToCsv(data: any[], filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export function SelectionInsight({ columns, row, onClose }: {
-  columns: string[]; row: Record<string, unknown>; onClose: () => void;
+export interface DrillActions {
+  /** Chart only: jump to the table view with this row selected. */
+  onShowData?: () => void;
+  /** Submit a follow-up pinned to this point's exact values. */
+  onAsk: () => void;
+  /** Submit a previous-period comparison for this point. */
+  onCompare: () => void;
+}
+
+export function SelectionInsight({ columns, row, onClose, drill }: {
+  columns: string[]; row: Record<string, unknown>; onClose: () => void; drill?: DrillActions;
 }) {
   const [copied, setCopied] = useState(false);
   const openInspector = useShellStore((s) => s.openInspector);
@@ -214,6 +225,21 @@ export function SelectionInsight({ columns, row, onClose }: {
         ))}
       </dl>
       <div className="insight-actions">
+        {drill?.onShowData && (
+          <button type="button" onClick={drill.onShowData} aria-label="Show underlying data">
+            Data
+          </button>
+        )}
+        {drill && (
+          <>
+            <button type="button" onClick={drill.onAsk} aria-label="Ask Seleric about this point">
+              Ask about this
+            </button>
+            <button type="button" onClick={drill.onCompare} aria-label="Compare this point with the previous period">
+              Compare previous
+            </button>
+          </>
+        )}
         <button type="button" onClick={copy} aria-label="Copy selected values">
           {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
           {copied ? "Copied" : "Copy"}
@@ -232,8 +258,12 @@ export function SelectionInsight({ columns, row, onClose }: {
 
 type ChartOption = Record<string, unknown>;
 
+export type CartesianMark = 'bar' | 'line';
+
 interface RenderOpts {
   expanded?: boolean;
+  /** Client-side mark override for cartesian forms; stacks are dropped for lines. */
+  mark?: CartesianMark;
 }
 
 function baseOption(
@@ -381,12 +411,28 @@ function withCartesianAxes(
   return option;
 }
 
+/** Distinct unit names across the spec's y axes (empty when single-unit). */
+export function mixedUnitAxes(spec: ChartSpec): string[] {
+  const names = (spec.yAxis ?? [])
+    .map((a) => String((a as Record<string, unknown>).name ?? '').trim().toLowerCase())
+    .filter(Boolean);
+  return [...new Set(names)];
+}
+
+/** A stacked form over multiple units is misleading — render it unstacked. */
+export function mustUnstack(spec: ChartSpec): boolean {
+  if (spec.chart_type !== 'stacked_bar') return false;
+  if (!Array.isArray(spec.series) || spec.series.length < 2) return false;
+  return mixedUnitAxes(spec).length > 1;
+}
+
 /** Series drawn from a dataset: bar, line/area, stacked and grouped all land here. */
-function cartesianSeries(spec: ChartSpec): Array<Record<string, unknown>> {
-  const flatMarks = FLAT_MARK_FORMS.has(spec.chart_type);
+function cartesianSeries(spec: ChartSpec, mark?: CartesianMark): Array<Record<string, unknown>> {
+  const flatMarks = mark ? mark === 'bar' : FLAT_MARK_FORMS.has(spec.chart_type);
+  const unstack = mustUnstack(spec);
   return (spec.series ?? []).map((s) => ({
     ...s,
-    type: s.type ?? 'bar',
+    type: mark ?? s.type ?? 'bar',
     name: s.name ?? s.key,
     encode: { x: spec.xAxis?.key, y: s.key },
     itemStyle: {
@@ -394,7 +440,10 @@ function cartesianSeries(spec: ChartSpec): Array<Record<string, unknown>> {
       borderColor: flatMarks ? 'transparent' : undefined,
     },
     // The backend already emits `stack: "total"` for stacked forms; never restack.
-    stack: s.stack,
+    // Defense in depth: a stacked spec over mixed units (e.g. ₹ + counts from
+    // an older backend) renders unstacked so values compare side-by-side.
+    // A line override never stacks: summed lines mislead like mixed bars do.
+    stack: mark === 'line' ? undefined : unstack ? undefined : s.stack,
     areaStyle: spec.chart_type === 'area' ? { opacity: 0.12 } : s.areaStyle,
     lineStyle: flatMarks ? undefined : { width: 2 },
     symbolSize: 5,
@@ -410,7 +459,7 @@ function renderCartesian(spec: ChartSpec, theme: ChartThemeColors, opts: RenderO
     dimensions: spec.xAxis?.key ? [spec.xAxis.key, ...(spec.series ?? []).map((s) => s.key)] : undefined,
     source: spec.data,
   };
-  option.series = cartesianSeries(spec);
+  option.series = cartesianSeries(spec, opts.mark);
   return option;
 }
 
@@ -581,6 +630,16 @@ export function renderChartOption(
   const chartType = normalizeChartType(spec?.chart_type);
   if (!chartType) return null;
   const resolved = theme ?? getChartThemeColors();
+  if (mustUnstack(spec) && !(spec.warnings ?? []).some((w) => w.includes('matching units'))) {
+    spec = {
+      ...spec,
+      warnings: [
+        ...(spec.warnings ?? []),
+        `These series use different units (${mixedUnitAxes(spec).join(' + ')}), ` +
+          `so they are shown side-by-side instead of stacked.`,
+      ],
+    };
+  }
   return RENDERERS[chartType](spec, resolved, opts ?? {});
 }
 
@@ -649,13 +708,18 @@ function ChartModal({ title, onClose, children, actions }: {
   );
 }
 
+/** Cartesian forms whose mark the viewer may switch without a new query. */
+export const MARK_SWITCHABLE: ReadonlySet<string> = new Set(['line', 'bar', 'stacked_bar', 'grouped_bar']);
+
 export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
   const [view, setView] = useState<'chart' | 'table'>('chart');
   const [selected, setSelected] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [mark, setMark] = useState<'auto' | CartesianMark>('auto');
   const chartRef = useRef<EChartsInstance | null>(null);
   const modalChartRef = useRef<EChartsInstance | null>(null);
   const theme = useChartThemeColors();
+  const submit = useConversationStore((s) => s.submit);
 
   const rows = useMemo(
     () => (Array.isArray(spec.data) ? spec.data.filter((r) => r && typeof r === 'object') : []),
@@ -665,11 +729,29 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
   const dimensionCol = spec.xAxis?.key && dataColumns.includes(spec.xAxis.key) ? spec.xAxis.key : dataColumns[0];
 
   const chartType = useMemo(() => normalizeChartType(spec?.chart_type), [spec?.chart_type]);
-  const options = useMemo(() => (chartType ? renderChartOption(spec, theme) : null), [spec, chartType, theme]);
-  const expandedOptions = useMemo(
-    () => (chartType ? renderChartOption(spec, theme, { expanded: true }) : null),
-    [spec, chartType, theme],
+  const markOverride = mark === 'auto' ? undefined : mark;
+  const canSwitchMark = chartType !== null && MARK_SWITCHABLE.has(chartType);
+  const options = useMemo(
+    () => (chartType ? renderChartOption(spec, theme, { mark: markOverride }) : null),
+    [spec, chartType, theme, markOverride],
   );
+  const expandedOptions = useMemo(
+    () => (chartType ? renderChartOption(spec, theme, { expanded: true, mark: markOverride }) : null),
+    [spec, chartType, theme, markOverride],
+  );
+
+  // Follow-ups pinned to the selected point's exact values.
+  const askAbout = useCallback((kind: 'ask' | 'compare', row: Record<string, unknown>) => {
+    const ctx = buildPointContext({
+      chartTitle: spec.title,
+      dimensionKey: dimensionCol,
+      row,
+      series: (spec.series ?? []).map((s) => ({ key: s.key, name: s.name })),
+      columns: dataColumns,
+    });
+    const question = buildFollowUp(kind, ctx);
+    if (question) void submit(question);
+  }, [spec.title, spec.series, dimensionCol, dataColumns, submit]);
 
   // Keep the chart highlight in sync with the shared selection.
   useEffect(() => {
@@ -753,6 +835,20 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
             >Table</button>
           </div>
           <span className="chart-name">{spec.title || 'Visualization'}</span>
+          {canSwitchMark && view === 'chart' && (
+            <div className="segmented" role="tablist" aria-label="Chart mark">
+              {(['auto', 'bar', 'line'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  role="tab"
+                  aria-selected={mark === mode}
+                  className={mark === mode ? 'active' : ''}
+                  title={mode === 'auto' ? 'Backend-chosen form' : `Show as ${mode} chart`}
+                  onClick={() => setMark(mode)}
+                >{mode === 'auto' ? 'Auto' : mode === 'bar' ? 'Bars' : 'Lines'}</button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="chart-head-actions">
           <button
@@ -830,6 +926,11 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
           columns={dataColumns}
           row={selectedRow}
           onClose={() => setSelected(null)}
+          drill={{
+            onShowData: view === 'chart' ? () => setView('table') : undefined,
+            onAsk: () => askAbout('ask', selectedRow),
+            onCompare: () => askAbout('compare', selectedRow),
+          }}
         />
       )}
       {!selectedRow && dimensionCol && (

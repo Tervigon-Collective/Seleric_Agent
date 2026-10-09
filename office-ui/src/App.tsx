@@ -7,8 +7,9 @@ import { Transcript } from "./components/Transcript";
 import { VoiceOverlay } from "./components/VoiceOverlay";
 import { CommandSearch } from "./components/CommandSearch";
 import { AdminDiagnostics } from "./components/AdminDiagnostics";
+import { PromptRegistryModal } from "./components/PromptRegistryModal";
 import {
-  MenuIcon, MoonIcon, PanelRightIcon, SearchIcon, SlidersIcon, SunIcon,
+  MenuIcon, MoonIcon, PanelRightIcon, PromptsIcon, SearchIcon, SlidersIcon, SunIcon,
 } from "./components/icons";
 import { SelericAssistantRuntimeProvider } from "./providers/SelericAssistantRuntime";
 import { useConversationStore } from "./stores/conversation";
@@ -17,6 +18,7 @@ import { readRoute, writeRoute } from "./routing";
 
 export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
+  const [promptsOpen, setPromptsOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [routingReady, setRoutingReady] = useState(false);
   const [dark, setDark] = useState(() => {
@@ -66,6 +68,7 @@ export default function App() {
         event.preventDefault(); setSearchOpen(true);
       }
     };
+    const openPrompts = () => setPromptsOpen(true);
     const result = (event: Event) => {
       const detail = (event as CustomEvent<{ thread_id?: string }>).detail;
       if (detail?.thread_id) { setWorkspace("conversation"); void selectThread(detail.thread_id); }
@@ -81,10 +84,12 @@ export default function App() {
     };
     window.addEventListener("keydown", keyboard);
     window.addEventListener("seleric:search-result", result);
+    window.addEventListener("seleric:open-prompts", openPrompts);
     window.addEventListener("popstate", popstate);
     return () => {
       window.removeEventListener("keydown", keyboard);
       window.removeEventListener("seleric:search-result", result);
+      window.removeEventListener("seleric:open-prompts", openPrompts);
       window.removeEventListener("popstate", popstate);
     };
   }, [clearSelection, selectThread, setWorkspace]);
@@ -121,6 +126,14 @@ export default function App() {
         </div>
         {currentTitle && <span className="thread-context-title" title={currentTitle}>{currentTitle}</span>}
         <span className="header-spacer" />
+        <button
+          className="search-trigger"
+          onClick={() => setPromptsOpen(true)}
+          aria-label="Open prompt registry"
+          title="Prompt registry"
+        >
+          <PromptsIcon size={14} /><span className="label">Prompts</span>
+        </button>
         <button className="search-trigger" onClick={() => setSearchOpen(true)}
           aria-keyshortcuts="Control+K Meta+K" aria-label="Search conversations">
           <SearchIcon size={14} /><span className="label">Search</span><kbd>⌘K</kbd>
@@ -146,6 +159,7 @@ export default function App() {
           <SelericAssistantRuntimeProvider>
             <Transcript />
             <Composer />
+            <PromptRegistryModal open={promptsOpen} onClose={() => setPromptsOpen(false)} />
           </SelericAssistantRuntimeProvider>
         </div>
         {detailsOpen && <DetailPanel />}

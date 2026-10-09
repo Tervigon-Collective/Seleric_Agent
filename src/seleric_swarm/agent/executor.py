@@ -109,9 +109,13 @@ async def _query(deps: SelericDeps, gate: asyncio.Semaphore, **kwargs: Any) -> A
         return await semantic.query_metrics(_ctx(deps), **kwargs)
 
 
-def _fmt(value: float | None) -> str:
+def _fmt(value: float | None, *, metric_id: str = "") -> str:
     if value is None:
         return "n/a"
+    from seleric_swarm.services.metrics import format_metric_value, is_percent_share_metric
+
+    if metric_id and is_percent_share_metric(metric_id):
+        return format_metric_value(value, metric_id=metric_id)
     if abs(value) >= 1000:
         return f"{value:,.0f}"
     return f"{value:,.2f}" if abs(value) >= 1 else f"{value:.4f}"
@@ -428,7 +432,8 @@ async def _execute(
                 if number is not None:
                     derived[f"{label} | {name}"] = round(number, 4)
             table.append(
-                f"| {f'{table_cell(key)} | {metric}' if entity else metric} | {_fmt(before)} | {_fmt(after)} | "
+                f"| {f'{table_cell(key)} | {metric}' if entity else metric} | "
+                f"{_fmt(before, metric_id=metric)} | {_fmt(after, metric_id=metric)} | "
                 f"{'n/a' if change is None else f'{change:+.1f}%'} |"
             )
     if len(table) <= 2:

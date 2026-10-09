@@ -1163,9 +1163,17 @@ def _infer_join_keys(
     return None
 
 
-def _fmt_merge_value(value: float | None) -> str:
+def _fmt_merge_value(value: float | None, *, metric_id: str = "") -> str:
+    """Cell text for a merged table. Missing companions are ``n/a`` (not "No data
+    available") — often CTR with zero impressions, not a warehouse gap. Share
+    metrics print as percent points so the model does not re-scale them.
+    """
     if value is None:
-        return "—"
+        return "n/a"
+    from seleric_swarm.services.metrics import format_metric_value, is_percent_share_metric
+
+    if is_percent_share_metric(metric_id):
+        return format_metric_value(value, metric_id=metric_id)
     if abs(value - round(value)) < 1e-9 and abs(value) >= 1:
         return f"{int(round(value)):,}"
     # plain figures: "2.178e+04" for 21,776.21 is read as a different number (live 2026-10-08, MS3-ed23dd03e2)
@@ -1351,8 +1359,8 @@ async def merge_evidence_breakdowns(
             # one cell, not an unpacked iterable: a bucket label is a single string
             *([table_cell(_bucket_label(period_start, period_end))] if date_col else []),
             *(table_cell(v) for v in key_vals),
-            *[_fmt_merge_value(row_vals.get(m)) for m in metrics],
-            *[_fmt_merge_value(derived.get(c)) for c in derived_cols],
+            *[_fmt_merge_value(row_vals.get(m), metric_id=m) for m in metrics],
+            *[_fmt_merge_value(derived.get(c), metric_id=c) for c in derived_cols],
         ]
         lines.append("| " + " | ".join(display) + " |")  # cells escaped by table_cell above
         # Index derived numbers for citation / unbacked checks
@@ -1373,9 +1381,16 @@ async def merge_evidence_breakdowns(
 
     table = "\n".join(lines)
     join_label = ", ".join([*([date_col] if date_col else []), *join_keys])
+    holes = sum(1 for slot in sorted_slots for m in metrics if m not in cells[slot])
+    hole_note = (
+        f" {holes} cells are n/a (that metric was not returned for the entity — often CTR with "
+        "no impressions, not a warehouse outage); do not write \"No data available\" for them."
+        if holes
+        else ""
+    )
     statement = (
         f"Merged {len(metrics)} metrics on {join_label} across {len(sorted_slots)} {unit_word}"
-        f"{more}.\n\n{table}"
+        f"{more}.{hole_note}\n\n{table}"
     )
     finding_id = _write_finding(
         ctx,
@@ -1503,7 +1518,7 @@ async def derive_metric(
             null_rows += 1
             cell = "n/a"
         else:
-            cell = _fmt_merge_value(value)
+            cell = _fmt_merge_value(value, metric_id=name if operator == "ratio" else "")
             metrics_index[f"{name}.{_join_stamp(slot, join_keys, is_series)}"] = value
         stamp = _join_stamp(slot, join_keys, is_series)
         metrics_index[f"{numerator_metric}.{stamp}"] = num
@@ -1511,8 +1526,8 @@ async def derive_metric(
         cells_display = [
             *([table_cell(_bucket_label(slot[0], slot[1]))] if is_series else []),
             *(table_cell(v) for v in slot[2]),
-            _fmt_merge_value(num),
-            _fmt_merge_value(den),
+            _fmt_merge_value(num, metric_id=numerator_metric),
+            _fmt_merge_value(den, metric_id=denominator_metric),
             cell,
         ]
         table_rows.append("| " + " | ".join(cells_display) + " |")

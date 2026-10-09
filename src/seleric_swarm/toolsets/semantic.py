@@ -537,16 +537,16 @@ def _empty_search_verdict(ctx: RunContext[SelericDeps]) -> ToolResult | None:
         provenance=ArtifactProvenance(source_metadata={"matches": []}),
     )
 
-def _fmt_value(value: float) -> str:
-    """Compact number for a summary line: integers without ".0", amounts to 2 decimals, small ratios
-    to 4 significant digits (a CTR of 0.020819 reads 0.02082, not 0). The model copies summary numbers
-    verbatim, so raw Cube floats ("261300.63999999932") reached answers (golden 2026-10-08); evidence keeps
-    the precise value and the provenance check allows print-precision rounding."""
-    if value.is_integer():
-        return str(int(value))
-    if abs(value) >= 1:
-        return f"{value:.2f}"
-    return f"{value:.4g}"
+def _fmt_value(value: float, *, metric_id: str = "", unit: str | None = None) -> str:
+    """Compact number for a summary line. Share metrics (CTR, conversion rate, …)
+    print as percent points (``2.38%``) so the model copies a finished percent and
+    never ÷100 again; Cube stores them as 0–1. Other values: integers without
+    ``.0``, amounts to 2 decimals, small non-share ratios to 4 significant digits.
+    Evidence keeps the precise raw value; provenance allows print-precision rounding.
+    """
+    from seleric_swarm.services.metrics import format_metric_value
+
+    return format_metric_value(value, metric_id=metric_id, unit=unit)
 
 
 # Cap the per-row values echoed into the tool summary. Top-N already limits
@@ -574,12 +574,16 @@ def _series_stats(ctx: RunContext[SelericDeps], metric_id: str, values: list[flo
             aggregation = catalogue.aggregation_for(candidate)
             if aggregation:
                 break
-    span = f"min={_fmt_value(min(values))}, max={_fmt_value(max(values))}"
+    cat_unit = catalogue.unit_for(metric_id) if catalogue is not None and hasattr(catalogue, "unit_for") else None
+    span = (
+        f"min={_fmt_value(min(values), metric_id=metric_id, unit=cat_unit)}, "
+        f"max={_fmt_value(max(values), metric_id=metric_id, unit=cat_unit)}"
+    )
     if aggregation == "additive":
         total = sum(values)
         return (
-            f" Computed over all {len(values)} rows: total={_fmt_value(total)}, "
-            f"average per row={_fmt_value(total / len(values))}, {span}. "
+            f" Computed over all {len(values)} rows: total={_fmt_value(total, metric_id=metric_id, unit=cat_unit)}, "
+            f"average per row={_fmt_value(total / len(values), metric_id=metric_id, unit=cat_unit)}, {span}. "
             "Quote these figures; do not re-add the rows."
         )
     if aggregation == "ratio":
@@ -2498,6 +2502,9 @@ async def query_metrics(
                 row_dimensions[key] = raw
             else:
                 # Only build evidence/label when all breakdown values resolved
+                # Catalogue unit (ratio / INR / count…); currency only when it is the metric's unit.
+                cat_unit = ctx.deps.catalogue.unit_for(metric_id)
+                evidence_unit = currency if cat_unit and cat_unit == currency else (cat_unit or currency or None)
                 evidence = EvidenceArtifact(
                     metric_id=metric_id,
                     dimensions=row_dimensions,
@@ -2506,7 +2513,7 @@ async def query_metrics(
                     period_start=bucket_start,
                     period_end=bucket_end,
                     value=last_value,
-                    unit=currency or None,
+                    unit=evidence_unit,
                     source_query=args,
                 )
                 artifact_ids.append(
@@ -2550,12 +2557,26 @@ async def query_metrics(
         # ARE the numbers; do not restate them from memory.
         # The unit, so the model never guesses the currency (golden 2026-10-08: INR answered as "$" / "USD"):
         # the query's currency when the catalogue says the metric is in it, never for counts or ratios.
-        unit = f" {currency}" if currency and ctx.deps.catalogue.unit_for(metric_id) == currency else ""
+        # Share metrics already print with a trailing "%" from _fmt_value — no extra unit suffix.
+        cat_unit = ctx.deps.catalogue.unit_for(metric_id)
+        from seleric_swarm.services.metrics import is_percent_share_metric
+
+        unit = (
+            ""
+            if is_percent_share_metric(metric_id, cat_unit)
+            else (f" {currency}" if currency and cat_unit == currency else "")
+        )
         if len(series) == 1:
-            summary = f"{metric_id}={_fmt_value(series[0]['value'])}{unit} over {period_start.date()}..{period_end.date()}"
+            summary = (
+                f"{metric_id}={_fmt_value(series[0]['value'], metric_id=metric_id, unit=cat_unit)}"
+                f"{unit} over {period_start.date()}..{period_end.date()}"
+            )
         else:
             shown = series[:_MAX_SERIES_IN_SUMMARY]
-            body = "; ".join(f"{s['label']}={_fmt_value(s['value'])}{unit}" for s in shown)
+            body = "; ".join(
+                f"{s['label']}={_fmt_value(s['value'], metric_id=metric_id, unit=cat_unit)}{unit}"
+                for s in shown
+            )
             more = "" if len(series) <= _MAX_SERIES_IN_SUMMARY else f"; …(+{len(series) - _MAX_SERIES_IN_SUMMARY} more rows in evidence)"
             summary = (
                 f"{metric_id} over {period_start.date()}..{period_end.date()} "
@@ -2568,7 +2589,8 @@ async def query_metrics(
             # Rows with no value for the breakdown are not listed; their total is (live 2026-10-08: 7 Suspender
             # Boots orders came from ads missing from the ad dimension and the answer never said so).
             summary += (
-                f" {_fmt_value(unlabelled)}{unit} of {metric_id} has no {' / '.join(breakdown)} value and is not "
+                f" {_fmt_value(unlabelled, metric_id=metric_id, unit=cat_unit)}{unit} of {metric_id} has no "
+                f"{' / '.join(breakdown)} value and is not "
                 "listed above — a missing name is not a missing value; say so when it matters to the answer."
             )
         if rank_note:
@@ -2866,7 +2888,11 @@ async def drilldown(
         if direction and float(value) == 0:
             continue  # no activity: not a member of a top / bottom ranking
         row_dims = {d: str(dimension_value(row, d)) for d in targets}
-        lines.append(f"{', '.join(f'{d}={v}' for d, v in row_dims.items())} -> {_fmt_value(float(value))}")
+        cat_unit = ctx.deps.catalogue.unit_for(metric_id)
+        lines.append(
+            f"{', '.join(f'{d}={v}' for d, v in row_dims.items())} -> "
+            f"{_fmt_value(float(value), metric_id=metric_id, unit=cat_unit)}"
+        )
         values.append(float(value))
         evidence = EvidenceArtifact(
             metric_id=metric_id,
@@ -2876,6 +2902,7 @@ async def drilldown(
             period_start=period_start,
             period_end=period_end,
             value=float(value),
+            unit=cat_unit,
             source_query={"parent_query_id": parent["query_id"], "target_dimensions": list(targets),
                           **({"hierarchy": hierarchy, "within": within} if hierarchy else {})},
         )

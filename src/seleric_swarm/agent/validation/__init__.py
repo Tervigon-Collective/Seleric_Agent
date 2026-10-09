@@ -90,6 +90,7 @@ from seleric_swarm.agent.validation.answer_audit import (
     realign_markdown_tables,
     replace_metric_ids,
     total_mismatch,
+    unescape_literal_newlines,
     without_mismatched_totals,
 )
 from seleric_swarm.agent.validation.verdict import decide_verdict
@@ -188,7 +189,7 @@ def _label_columns(deps: SelericDeps) -> frozenset[str]:
 def _humanize_metric_ids(result: MissionResult, deps: SelericDeps) -> MissionResult:
     """Replace internal metric ids in the prose with their catalogue display names."""
     catalogue = getattr(deps, "catalogue", None)
-    text = realign_markdown_tables(result.final_response or "")
+    text = realign_markdown_tables(unescape_literal_newlines(result.final_response or ""))
     if catalogue is None or "_" not in text:
         return result if text == (result.final_response or "") else result.model_copy(update={"final_response": text})
     # A metric without a display name of its own is written as its words: leaving the
@@ -1222,6 +1223,12 @@ async def _validated(
     )
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
+    # Unescape literal ``\n`` before any table repair: a model-escaped table is
+    # one physical line until newlines are restored (live 2026-10-09).
+    if result.final_response and "\\n" in result.final_response:
+        result = result.model_copy(
+            update={"final_response": unescape_literal_newlines(result.final_response)}
+        )
     result = _repair_citations(
         _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_strip_artifact_ids(_with_query(result, query), deps), deps), deps), deps),
         deps,

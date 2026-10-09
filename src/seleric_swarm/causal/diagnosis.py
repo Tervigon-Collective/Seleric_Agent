@@ -2557,8 +2557,15 @@ def _val(v: float | None, metric: str, lineage: dict[str, MetricMeta]) -> str:
     unit = (lineage.get(metric).unit if lineage.get(metric) else "") or ""
     if unit == _MULTIPLE_UNIT:
         return f"{v:.2f}x"
-    if unit.lower() in _SHARE_UNITS:
-        return f"{v * 100:.2f}%"
+    from seleric_swarm.services.metrics import is_percent_share_metric, percent_points
+
+    # Share ratios (CTR, CVR, …): percent points, never double-scaled when the
+    # source already stored 0–100. ROAS-like ratios stay plain numbers even when
+    # the catalogue unit is ``ratio``.
+    if is_percent_share_metric(metric, unit) or (
+        unit.lower() in _SHARE_UNITS and is_percent_share_metric(metric, "ratio")
+    ):
+        return f"{percent_points(v):.2f}%"
     if unit.isalpha() and unit.isupper() and len(unit) == 3:  # ISO currency code
         return f"{unit} {_fmt(v)}"
     return _fmt(v)

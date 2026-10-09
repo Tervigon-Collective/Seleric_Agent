@@ -1,10 +1,41 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { conversationsApi } from "../api/conversations";
 import type { MessagePart, MetricDefinitionView } from "../api/contracts";
+import type { SwarmUIEvent } from "../types";
 import { useConversationStore } from "../stores/conversation";
 import { useMissionRuntimeStore } from "../stores/missionRuntime";
 import { type DetailTab, useShellStore } from "../stores/shell";
 import { XIcon } from "./icons";
+
+export type ActivityPhaseEvent = { key: string; summary: string; title: string };
+export type ActivityPhase = { key: string; agent: string; headline: string; count: number; events: ActivityPhaseEvent[] };
+
+/**
+ * Collapse a raw event stream into per-agent phases (newest first). Consecutive
+ * events from one agent form a phase; consecutive duplicate summaries merge.
+ * Sequence numbers stay out of the visible text (kept as `title` tooltips).
+ */
+export function groupActivityPhases(events: SwarmUIEvent[], route: string | null): ActivityPhase[] {
+  const rows = events.slice(-60).reverse();
+  const fallback = route === "v3" ? "Seleric" : "Swarm";
+  const out: ActivityPhase[] = [];
+  for (const event of rows) {
+    const summary = event.summary || event.eventType.replaceAll("_", " ");
+    const agent = event.agentId?.replace(/_agent$/, "") || fallback;
+    const title = `${event.eventType} · #${event.seq}`;
+    const last = out[out.length - 1];
+    if (last && last.agent === agent) {
+      last.count += 1;
+      const prev = last.events[last.events.length - 1];
+      if (!prev || prev.summary !== summary) {
+        last.events.push({ key: event.eventId, summary, title });
+      }
+    } else {
+      out.push({ key: event.eventId, agent, headline: summary, count: 1, events: [{ key: event.eventId, summary, title }] });
+    }
+  }
+  return out;
+}
 
 const TABS: DetailTab[] = ["Evidence", "Definitions", "Activity", "Memory", "Artifacts"];
 
@@ -27,7 +58,6 @@ export function DetailPanel() {
   const route = useMissionRuntimeStore((s) => s.route);
   const stage = useMissionRuntimeStore((s) => s.stage);
   const threadId = useConversationStore((s) => s.selectedThreadId);
-  const thread = useConversationStore((s) => s.threads.find((item) => item.id === threadId));
   const messages = useConversationStore((s) => threadId ? s.messages[threadId] ?? [] : []);
   const userTurns = messages.flatMap((message) => {
     if (message.role !== "USER") return [];
@@ -102,22 +132,12 @@ export function DetailPanel() {
   }, [sources, definitions]);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  // Group noisy repeats (same summary + agent) while preserving order + count.
-  const groupedActivity = useMemo(() => {
-    const rows = visibleTimeline.slice(-60).reverse();
-    const out: { key: string; summary: string; sub: string; count: number }[] = [];
-    for (const event of rows) {
-      const summary = event.summary || event.eventType.replaceAll("_", " ");
-      const sub = `${event.agentId || (route === "v3" ? "Seleric" : "Swarm")} · #${event.seq}`;
-      const last = out[out.length - 1];
-      if (last && last.summary === summary && last.sub.split(" · ")[0] === sub.split(" · ")[0]) {
-        last.count += 1;
-      } else {
-        out.push({ key: event.eventId, summary, sub, count: 1 });
-      }
-    }
-    return out;
-  }, [visibleTimeline, route]);
+  // Each phase reads as one meaningful step; the raw events stay one click
+  // away inside an expandable group.
+  const activityPhases = useMemo(
+    () => groupActivityPhases(visibleTimeline, route),
+    [visibleTimeline, route],
+  );
 
   useEffect(() => {
     if (tab === "Memory") void loadMemories();
@@ -165,7 +185,6 @@ export function DetailPanel() {
           <section>
             <h2>Analysis context</h2>
             <dl>
-              <dt>Title</dt><dd>{thread?.title || "Untitled"}</dd>
               <dt>Question</dt><dd>{userTurns[userTurns.length - 1] || query || "No active analysis"}</dd>
               {priorAsks.length > 0 && <>
                 <dt>Prior asks</dt>
@@ -253,16 +272,31 @@ export function DetailPanel() {
         {tab === "Activity" && (
           <section>
             <h2>Run activity</h2>
-            {groupedActivity.map((event) => (
-              <div className="activity-row" key={event.key}>
-                <span className={dotClass(event.summary)} aria-hidden="true" />
+            {activityPhases.map((phase, index) => phase.events.length > 1 ? (
+              <details className="activity-phase" key={phase.key} open={index === 0}>
+                <summary>
+                  <span className={dotClass(phase.headline)} aria-hidden="true" />
+                  <div>
+                    <strong>{phase.agent} · {phase.count} steps</strong>
+                    <small>{phase.headline}</small>
+                  </div>
+                </summary>
+                <ul className="activity-events">
+                  {phase.events.map((event) => (
+                    <li key={event.key} title={event.title}>{event.summary}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : (
+              <div className="activity-row" key={phase.key}>
+                <span className={dotClass(phase.headline)} aria-hidden="true" />
                 <div>
-                  <strong>{event.summary}{event.count > 1 ? ` ×${event.count}` : ""}</strong>
-                  <small>{event.sub}</small>
+                  <strong>{phase.headline}</strong>
+                  <small>{phase.agent}</small>
                 </div>
               </div>
             ))}
-            {!groupedActivity.length && <Empty text={threadId ? "Activity appears here while this conversation runs." : "Select or start a conversation to see its activity."} />}
+            {!activityPhases.length && <Empty text={threadId ? "Activity appears here while this conversation runs." : "Select or start a conversation to see its activity."} />}
           </section>
         )}
         {tab === "Memory" && <section className="memory-panel">

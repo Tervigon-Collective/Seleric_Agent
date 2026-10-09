@@ -81,6 +81,17 @@ describe("SafeContent markdown", () => {
     expect(el.textContent).not.toContain("---");
   });
 
+  it("turns literal \\\\n between table rows into a real table", () => {
+    // Live 2026-10-09: final_response stored backslash-n instead of newlines.
+    const el = render(
+      "Lead.\\n\\n| Metric | Yesterday | Day before |\\n| --- | ---: | ---: |\\n| CTR | 2.38% | 2.11% |\\n| Orders | 41 | 38 |",
+    );
+    expect(el.querySelectorAll("thead th")).toHaveLength(3);
+    expect(el.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(el.textContent).not.toContain("\\n");
+    expect(el.querySelector("td.num")?.textContent).toBe("2.38%");
+  });
+
   it("marks numeric columns so currency values stay on one line", () => {
     const el = render(
       [

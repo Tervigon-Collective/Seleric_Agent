@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import type { MessagePart } from "../api/contracts";
 import { useShellStore } from "../stores/shell";
+import { useConversationStore } from "../stores/conversation";
 import { SafeContent } from "./SafeContent";
 import { ApprovalCard } from "./ApprovalCard";
 import { ChartRenderer, SelectionInsight } from "./charts/ChartRenderer";
 import { useChartVocabularyDrift } from "../api/chartContract";
+import { buildFollowUp, buildPointContext } from "../api/drillContext";
 import { DownloadIcon } from "./icons";
 
 const text = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -35,6 +37,13 @@ function Table({ content }: { content: unknown }) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [selected, setSelected] = useState<number | null>(null);
+  const submit = useConversationStore((s) => s.submit);
+
+  const askAbout = (kind: "ask" | "compare", row: Record<string, unknown>) => {
+    const ctx = buildPointContext({ row, series: [], columns });
+    const question = buildFollowUp(kind, ctx);
+    if (question) void submit(question);
+  };
 
   const numericCols = useMemo(() => {
     const map = new Map<string, boolean>();
@@ -133,7 +142,15 @@ function Table({ content }: { content: unknown }) {
         </table>
       </div>
       {selected !== null && visible[selected] && (
-        <SelectionInsight columns={columns} row={visible[selected]} onClose={() => setSelected(null)} />
+        <SelectionInsight
+          columns={columns}
+          row={visible[selected]}
+          onClose={() => setSelected(null)}
+          drill={{
+            onAsk: () => askAbout("ask", visible[selected]),
+            onCompare: () => askAbout("compare", visible[selected]),
+          }}
+        />
       )}
     </figure>
   );

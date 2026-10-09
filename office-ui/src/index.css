@@ -296,7 +296,22 @@ button { color: inherit; }
   flex: 1 1 auto; min-height: 0; overflow-y: auto;
   padding: 28px 24px 16px; scroll-behavior: smooth;
 }
-.transcript-inner { width: 100%; max-width: 800px; margin: 0 auto; padding-bottom: 12px; }
+.transcript-inner { width: 100%; max-width: 880px; margin: 0 auto; padding-bottom: 12px; }
+
+/* Compact thread context: the question lives in the user bubble and the
+   compact title in the header — this line only orients, never repeats. */
+.thread-context {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 16px; min-width: 0;
+}
+.thread-context-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px; font-weight: 600; color: var(--text-dim);
+}
+.thread-context-meta {
+  flex: none; font-size: 11.5px; color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
 
 .message { margin: 0 0 22px; min-width: 0; }
 .message:last-child { margin-bottom: 8px; }
@@ -615,21 +630,61 @@ button { color: inherit; }
 
 .empty-state {
   height: 100%; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; text-align: center; color: var(--text-dim);
-  padding: 48px 24px; max-width: 640px; margin: 0 auto;
+  justify-content: flex-start; text-align: center; color: var(--text-dim);
+  padding: 36px 24px 48px; max-width: 720px; margin: 0 auto;
 }
 .empty-state h1 {
   color: var(--text); margin: 0 0 8px; font-size: 23px; font-weight: 650; letter-spacing: -0.02em;
 }
-.empty-state > p { margin: 0 0 24px; font-size: 14px; }
-.empty-suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 560px; }
-.empty-suggestions button {
+.empty-state > p { margin: 0 0 20px; font-size: 14px; }
+.empty-suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 640px; }
+.empty-suggestions button,
+.prompt-chip {
   border: 1px solid var(--line); background: var(--panel); border-radius: 999px;
   padding: 7px 14px; font-size: 12.5px; color: var(--text-dim); cursor: pointer;
-  transition: border-color var(--motion-fast) ease, color var(--motion-fast) ease;
+  transition: border-color var(--motion-fast) ease, color var(--motion-fast) ease, background var(--motion-fast) ease;
 }
-.empty-suggestions button:hover { border-color: var(--accent); color: var(--text); }
+.empty-suggestions button:hover,
+.prompt-chip:hover { border-color: var(--accent); color: var(--text); }
 .empty-note { margin: 0; color: var(--text-faint); font-size: 12px; line-height: 1.5; }
+
+/* Prompt registry — filterable starting questions */
+.prompt-registry {
+  width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 14px; text-align: left;
+}
+.prompt-filters { display: flex; flex-direction: column; gap: 8px; }
+.prompt-filter-row {
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+}
+.prompt-filter {
+  border: 1px solid var(--line); background: transparent; border-radius: 999px;
+  padding: 5px 11px; font-size: 11.5px; font-weight: 550; color: var(--text-faint);
+  cursor: pointer; transition: border-color var(--motion-fast) ease, color var(--motion-fast) ease, background var(--motion-fast) ease;
+}
+.prompt-filter.subtle { font-weight: 500; }
+.prompt-filter:hover { color: var(--text-dim); border-color: var(--line-strong); }
+.prompt-filter.active {
+  color: var(--text); border-color: var(--line-strong); background: var(--hover);
+}
+.prompt-registry-hint {
+  margin: 0; text-align: center; font-size: 11.5px; color: var(--text-faint);
+}
+.prompt-groups { display: flex; flex-direction: column; gap: 16px; }
+.prompt-group-label {
+  margin: 0 0 8px; font-size: 11px; font-weight: 650; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-faint); text-align: center;
+}
+.prompt-chips { justify-content: center; }
+.prompt-chip {
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  max-width: 100%; text-align: left; border-radius: 12px; padding: 9px 14px;
+}
+.prompt-chip-text { line-height: 1.4; }
+.prompt-chip-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.prompt-chip-badge {
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-faint); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px;
+}
 
 /* ===========================================================================
    Composer — premium, minimal, discoverable
@@ -706,7 +761,7 @@ button { color: inherit; }
    =========================================================================== */
 
 .detail-panel {
-  width: 340px; flex: 0 0 340px; min-height: 0;
+  width: 320px; flex: 0 0 320px; min-height: 0;
   border-left: 1px solid var(--line);
   display: flex; flex-direction: column; position: relative;
   background: var(--panel);
@@ -732,6 +787,24 @@ button { color: inherit; }
 .prior-asks { margin: 0; padding-left: 18px; }
 .prior-asks li { margin: 0 0 4px; }
 .activity-row { display: grid; grid-template-columns: 8px 1fr; gap: 10px; margin-bottom: 12px; align-items: start; }
+/* Agent phases: one meaningful step per agent run; raw events expand on demand. */
+.activity-phase { margin-bottom: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--sidebar); }
+.activity-phase > summary {
+  display: grid; grid-template-columns: 8px 1fr; gap: 10px; align-items: start;
+  padding: 9px 10px; cursor: pointer; list-style: none;
+}
+.activity-phase > summary::-webkit-details-marker { display: none; }
+.activity-phase > summary strong { display: block; font-size: 12px; font-weight: 600; }
+.activity-phase > summary small { color: var(--text-faint); font-size: 11px; }
+.activity-events { margin: 0; padding: 2px 10px 10px 28px; font-size: 11.5px; color: var(--text-dim); }
+.activity-events li { margin-bottom: 5px; overflow-wrap: anywhere; }
+.activity-events li:last-child { margin-bottom: 0; }
+/* Evaluation runs stay out of the date-grouped user history. */
+.thread-eval-group { margin-top: 6px; border-top: 1px solid var(--line); }
+.thread-eval-group > summary { cursor: pointer; list-style: none; }
+.thread-eval-group > summary::-webkit-details-marker { display: none; }
+.thread-eval-group > summary::before { content: "▸ "; color: var(--text-faint); font-size: 10px; }
+.thread-eval-group[open] > summary::before { content: "▾ "; }
 .activity-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: var(--accent); }
 .activity-dot.ok { background: var(--st-done); }
 .activity-dot.warn { background: var(--st-waiting); }
@@ -773,12 +846,30 @@ button { color: inherit; }
   background: rgba(16, 24, 40, 0.45); animation: fade-in var(--motion) ease;
 }
 @keyframes fade-in { from { opacity: 0; } }
-.command-search, .admin-diagnostics {
+.command-search, .admin-diagnostics, .prompt-registry-modal {
   width: min(640px, calc(100vw - 32px)); max-height: 68vh; overflow: auto;
   border: 1px solid var(--line); border-radius: var(--radius-lg);
   background: var(--panel); box-shadow: var(--shadow-lg); padding: 10px;
   animation: rise var(--motion) ease;
 }
+.prompt-registry-modal {
+  width: min(720px, calc(100vw - 32px)); max-height: 78vh; padding: 14px 16px 18px;
+}
+.prompt-registry-modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line);
+}
+.prompt-registry-modal-head h2 {
+  margin: 0; font-size: 15px; font-weight: 650; color: var(--text); letter-spacing: -0.01em;
+}
+.prompt-registry-modal-head p {
+  margin: 4px 0 0; font-size: 12px; color: var(--text-faint); line-height: 1.4;
+}
+.prompt-registry-modal .prompt-registry { max-width: none; }
+.prompt-registry-modal .prompt-filter-row { justify-content: flex-start; }
+.prompt-registry-modal .prompt-registry-hint,
+.prompt-registry-modal .prompt-group-label { text-align: left; }
+.prompt-registry-modal .prompt-chips { justify-content: flex-start; }
 @keyframes rise { from { opacity: 0; transform: translateY(-6px); } }
 .command-search > input {
   width: 100%; padding: 10px 12px; border: 1px solid var(--line);
@@ -964,7 +1055,7 @@ button.btn:hover { border-color: var(--line-strong); }
 
 @media (max-width: 1200px) {
   .thread-sidebar { width: 224px; flex-basis: 224px; }
-  .detail-panel { width: 320px; flex-basis: 320px; }
+  .detail-panel { width: 300px; flex-basis: 300px; }
 }
 
 @media (max-width: 1023px) {
@@ -1058,7 +1149,7 @@ button.btn:hover { border-color: var(--line-strong); }
 
 /* Buttery hover/press feedback on primary navigation rows and actions. */
 .thread-row, .thread-select, .icon-btn, .primary-btn,
-.empty-suggestions button, .search-trigger, .message-actions button {
+.empty-suggestions button, .prompt-chip, .prompt-filter, .search-trigger, .message-actions button {
   transition: background var(--motion-fast) ease, color var(--motion-fast) ease,
     border-color var(--motion-fast) ease, opacity var(--motion-fast) ease,
     transform var(--motion-fast) ease;

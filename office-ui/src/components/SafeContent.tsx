@@ -103,8 +103,17 @@ const isBlockStart = (line: string, next: string | undefined): boolean =>
   HEADING.test(line) || RULE.test(line) || BULLET.test(line) || ORDERED.test(line)
   || QUOTE.test(line) || (line.includes("|") && next !== undefined && TABLE_SEP.test(next));
 
+/** Model-escaped ``\\n`` between table rows must become real newlines or the
+ *  whole Markdown table stays one paragraph with visible ``\\n`` (live 2026-10-09). */
+function normalizeNewlines(source: string): string {
+  let text = source.replace(/\r\n?/g, "\n");
+  if (!text.includes("\\n")) return text;
+  if (!text.includes("\\n|") && !text.includes("|\\n") && !text.includes("\\n\\n|")) return text;
+  return text.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\n");
+}
+
 function blocks(source: string, keyPrefix: string): ReactNode[] {
-  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  const lines = normalizeNewlines(source).split("\n");
   const out: ReactNode[] = [];
   let i = 0;
   let k = 0;
@@ -204,7 +213,7 @@ function blocks(source: string, keyPrefix: string): ReactNode[] {
 }
 
 export function SafeContent({ text }: { text: string }) {
-  const parts = text.split(/```/);
+  const parts = normalizeNewlines(text).split(/```/);
   return (
     <div className="safe-content">
       {parts.map((part, index) =>

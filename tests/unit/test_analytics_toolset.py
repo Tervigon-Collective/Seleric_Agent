@@ -522,7 +522,7 @@ async def test_merged_series_outer_joins_a_metric_missing_a_day():
     result = await analytics.analyze(FakeRunContext(_deps(store)), ids, method="merge")
     assert result.success is True
     assert "2026-09-17" in result.summary
-    assert finding_store_line(result.summary, "2026-09-17", "ad_spend") == "—"
+    assert finding_store_line(result.summary, "2026-09-17", "ad_spend") == "n/a"
 
 
 def finding_store_line(summary: str, day: str, column_marker: str) -> str:

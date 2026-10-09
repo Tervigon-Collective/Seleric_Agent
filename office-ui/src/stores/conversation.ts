@@ -90,34 +90,49 @@ const textMessage = (threadId: string, role: "USER" | "ASSISTANT", text: string,
 });
 const optionalString = (value: unknown): string | undefined =>
   typeof value === "string" && value ? value : undefined;
+/**
+ * Render-safe text from untrusted event payloads (SSE JSON, stored rows, error
+ * paths). Strings pass through; finite numbers stringify; anything else is
+ * null so callers fall back instead of crashing React with a non-child.
+ */
+export const asText = (value: unknown): string | null => {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+};
 const messageText = (message: Message | undefined): string =>
   message?.parts
     .filter((part) => part.type === "TEXT" && typeof part.content === "string")
     .map((part) => String(part.content))
     .join("\n")
     .trim() ?? "";
-const toOfficeEvent = (event: ActivityEvent): SwarmUIEvent => {
-  const sourceKind = optionalString(event.payload.source_kind);
-  const eventType = (sourceKind ?? event.event_type).replaceAll(".", "_");
-  const artifactId = optionalString(event.payload.artifact_id);
+export const toOfficeEvent = (event: ActivityEvent): SwarmUIEvent => {
+  const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
+  const rawType = asText(payload.source_kind) ?? asText(event.event_type) ?? "unknown_event";
+  const eventType = rawType.replaceAll(".", "_");
+  const artifactId = optionalString(payload.artifact_id);
+  const seq = Number(event.sequence);
   return {
-    eventId: event.id,
-    seq: event.sequence,
-    timestamp: event.created_at,
-    missionId: optionalString(event.payload.mission_id) ?? event.run_id ?? "current-run",
-    taskId: optionalString(event.payload.task_id),
+    eventId: asText(event.id) ?? `event_${Math.abs(seq) || 0}`,
+    seq: Number.isFinite(seq) ? seq : 0,
+    timestamp: asText(event.created_at) ?? new Date().toISOString(),
+    missionId: optionalString(payload.mission_id) ?? asText(event.run_id) ?? "current-run",
+    taskId: optionalString(payload.task_id),
     agentId:
-      event.actor_id
-      ?? optionalString(event.payload.agent_id)
-      ?? optionalString(event.payload.agent)
-      ?? (optionalString(event.payload.route) === "v3" ? "coordinator" : undefined),
+      asText(event.actor_id)
+      ?? optionalString(payload.agent_id)
+      ?? optionalString(payload.agent)
+      ?? (optionalString(payload.route) === "v3" ? "coordinator" : undefined),
     eventType,
     summary:
-      event.summary
-      ?? event.title
+      asText(event.summary)
+      ?? asText(event.title)
       ?? eventType.replaceAll("_", " "),
-    artifactRefs: [...event.evidence_ids, ...(artifactId ? [artifactId] : [])],
-    metadata: { ...event.metadata, ...event.payload, conversationEventType: event.event_type },
+    artifactRefs: [
+      ...(Array.isArray(event.evidence_ids) ? event.evidence_ids.filter((id) => typeof id === "string") : []),
+      ...(artifactId ? [artifactId] : []),
+    ],
+    metadata: { ...(event.metadata && typeof event.metadata === "object" ? event.metadata : {}), ...payload, conversationEventType: rawType },
   };
 };
 
@@ -260,19 +275,22 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       );
       const artifactIds = new Map<string, Set<string>>();
       runEvents.forEach((event) => {
-        const artifactType = optionalString(event.payload.artifact_type);
-        if (!artifactType || !event.event_type.startsWith("artifact.")) return;
+        const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
+        const artifactType = optionalString(payload.artifact_type);
+        if (!artifactType || typeof event.event_type !== "string" || !event.event_type.startsWith("artifact.")) return;
         const ids = artifactIds.get(artifactType) ?? new Set<string>();
-        ids.add(optionalString(event.payload.artifact_id) ?? event.id);
+        ids.add(optionalString(payload.artifact_id) ?? asText(event.id) ?? "event");
         artifactIds.set(artifactType, ids);
       });
+      const payloadOf = (event: { payload: unknown }) =>
+        event.payload && typeof event.payload === "object" ? event.payload as Record<string, unknown> : {};
       const route = [...runEvents]
         .reverse()
-        .map((event) => optionalString(event.payload.route))
+        .map((event) => optionalString(payloadOf(event).route))
         .find(Boolean) ?? null;
       const missionId = [...runEvents]
         .reverse()
-        .map((event) => optionalString(event.payload.mission_id))
+        .map((event) => optionalString(payloadOf(event).mission_id))
         .find(Boolean) ?? latestRunId ?? "conversation";
       office.hydrate({
         missionId,
@@ -280,7 +298,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         status: terminal?.event_type.replace("run.", "") ?? (latestRunId ? "running" : "idle"),
         route,
         stage: terminal?.event_type.replace("run.", "") ?? (
-          runEvents[runEvents.length - 1]?.event_type.replaceAll(".", " ") ?? "intake"
+          asText(runEvents[runEvents.length - 1]?.event_type)?.replaceAll(".", " ") ?? "intake"
         ),
         leadershipEpoch: 0,
         lastSeq: timeline[timeline.length - 1]?.seq ?? 0,
@@ -303,8 +321,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (stillRunning && latestRunId) {
         const runId = latestRunId;
         const lastProgress = [...runEvents].reverse().find(
-          (event) => event.event_type.startsWith("agent.") && event.summary,
-        )?.summary ?? null;
+          (event) => typeof event.event_type === "string" && event.event_type.startsWith("agent.") && asText(event.summary),
+        )?.summary;
+        const resumeProgress = asText(lastProgress);
         subscriptions.get(id)?.();
         subscriptions.set(id, subscribeToRunEvents(runId, {
           onEvent: (event) => {
@@ -793,19 +812,23 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       return;
     }
     useOffice.getState().ingestEvent(toOfficeEvent(event));
+    const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
     if (event.event_type === "agent.thinking_delta") {
-      const delta = typeof event.payload.delta === "string" ? event.payload.delta : "";
+      const delta = typeof payload.delta === "string" ? payload.delta : "";
       if (delta) {
         set((s) => ({ thinkingText: (s.thinkingText ?? "") + delta }));
       }
       return;
     }
-    if (event.event_type.startsWith("agent.") && event.summary) {
-      set({ progress: event.summary });
+    // Progress must stay a renderable string: a structured error payload here
+    // used to unmount the whole app (React cannot render objects as children).
+    if (typeof event.event_type === "string" && event.event_type.startsWith("agent.")) {
+      const text = asText(event.summary);
+      if (text) set({ progress: text });
     }
     const office = useOffice.getState();
-    const incomingRoute = optionalString(event.payload.route);
-    const streamedAnswer = optionalString(event.payload.final_response);
+    const incomingRoute = optionalString(payload.route);
+    const streamedAnswer = optionalString(payload.final_response);
     const terminal = ["run.completed", "run.failed", "run.cancelled"].includes(event.event_type);
     if (event.event_type === "answer.completed" || terminal || incomingRoute) {
       const route = incomingRoute ?? office.route;

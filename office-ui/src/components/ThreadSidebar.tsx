@@ -14,6 +14,12 @@ function groupLabel(date: Date, now: Date): string {
   return "Older";
 }
 
+/** Development/evaluation runs (e.g. "GOLDEN Q18") live apart from ordinary conversations. */
+export function isEvalThread(title: string | null | undefined): boolean {
+  if (!title) return false;
+  return /^\s*golden\b/i.test(title) || /eval(uation)?\s*(run|set|suite)/i.test(title);
+}
+
 function shortDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -22,6 +28,32 @@ function shortDate(value: string): string {
   return date.toLocaleDateString(undefined, sameYear
     ? { month: "short", day: "numeric" }
     : { month: "short", day: "numeric", year: "numeric" });
+}
+
+function ThreadRow({ thread, selected, onChoose, onRename, onArchive }: {
+  thread: Thread;
+  selected: boolean;
+  onChoose: (id: string) => void;
+  onRename: (thread: Thread) => void;
+  onArchive: (id: string) => void;
+}) {
+  return (
+    <div className={`thread-row ${selected ? "selected" : ""}`}>
+      <button
+        className="thread-select"
+        onClick={() => onChoose(thread.id)}
+        aria-current={selected ? "page" : undefined}
+        title={thread.title || "Untitled conversation"}
+      >
+        <span>{thread.title || "Untitled conversation"}</span>
+        <small>{shortDate(thread.updated_at)}</small>
+      </button>
+      <div className="thread-actions">
+        <button className="icon-btn rename" aria-label={`Rename ${thread.title || "conversation"}`} title="Rename" onClick={() => onRename(thread)}><PencilIcon size={13} /></button>
+        <button className="icon-btn archive" aria-label={`Archive ${thread.title || "conversation"}`} title="Archive" onClick={() => onArchive(thread.id)}><ArchiveIcon size={13} /></button>
+      </div>
+    </div>
+  );
 }
 
 export function ThreadSidebar() {
@@ -43,21 +75,34 @@ export function ThreadSidebar() {
     [threads, search],
   );
 
+  // Evaluation runs never mix into the date-grouped user history.
+  const userThreads = useMemo(() => filtered.filter((thread) => !isEvalThread(thread.title)), [filtered]);
+  const evalThreads = useMemo(() => filtered.filter((thread) => isEvalThread(thread.title)), [filtered]);
+
   const groups = useMemo(() => {
     const now = new Date();
     const order = ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Older"];
     const buckets = new Map<string, Thread[]>();
-    for (const thread of filtered) {
+    for (const thread of userThreads) {
       const label = groupLabel(new Date(thread.updated_at), now);
       if (!buckets.has(label)) buckets.set(label, []);
       buckets.get(label)!.push(thread);
     }
     return order.filter((label) => buckets.has(label)).map((label) => ({ label, items: buckets.get(label)! }));
-  }, [filtered]);
+  }, [userThreads]);
 
   const choose = (id: string) => {
     void selectThread(id);
     if (window.matchMedia?.("(max-width: 1023px)").matches) toggleSidebar();
+  };
+
+  const handleRename = (thread: Thread) => {
+    const title = window.prompt("Rename conversation", thread.title || "");
+    if (title?.trim()) void renameThread(thread.id, title);
+  };
+
+  const handleArchive = (id: string) => {
+    void archiveThread(id);
   };
 
   return (
@@ -78,28 +123,35 @@ export function ThreadSidebar() {
           <div key={group.label}>
             <div className="thread-group-label" aria-hidden="true">{group.label}</div>
             {group.items.map((thread) => (
-              <div className={`thread-row ${selected === thread.id ? "selected" : ""}`} key={thread.id}>
-                <button
-                  className="thread-select"
-                  onClick={() => choose(thread.id)}
-                  aria-current={selected === thread.id ? "page" : undefined}
-                  title={thread.title || "Untitled conversation"}
-                >
-                  <span>{thread.title || "Untitled conversation"}</span>
-                  <small>{shortDate(thread.updated_at)}</small>
-                </button>
-                <div className="thread-actions">
-                  <button className="icon-btn rename" aria-label={`Rename ${thread.title || "conversation"}`} title="Rename" onClick={() => {
-                    const title = window.prompt("Rename conversation", thread.title || "");
-                    if (title?.trim()) void renameThread(thread.id, title);
-                  }}><PencilIcon size={13} /></button>
-                  <button className="icon-btn archive" aria-label={`Archive ${thread.title || "conversation"}`} title="Archive" onClick={() => void archiveThread(thread.id)}><ArchiveIcon size={13} /></button>
-                </div>
-              </div>
+              <ThreadRow
+                key={thread.id}
+                thread={thread}
+                selected={selected === thread.id}
+                onChoose={choose}
+                onRename={handleRename}
+                onArchive={handleArchive}
+              />
             ))}
           </div>
         ))}
-        {!filtered.length && <p className="empty-note">{search ? "No matching conversations." : "No conversations yet. Start a new analysis."}</p>}
+        {!userThreads.length && !evalThreads.length && <p className="empty-note">{search ? "No matching conversations." : "No conversations yet. Start a new analysis."}</p>}
+        {evalThreads.length > 0 && (
+          <details className="thread-eval-group">
+            <summary className="thread-group-label">
+              Evaluation runs ({evalThreads.length})
+            </summary>
+            {evalThreads.map((thread) => (
+              <ThreadRow
+                key={thread.id}
+                thread={thread}
+                selected={selected === thread.id}
+                onChoose={choose}
+                onRename={handleRename}
+                onArchive={handleArchive}
+              />
+            ))}
+          </details>
+        )}
       </nav>
       <div className="sidebar-foot">Ask about sales, marketing, products, or operations. Evidence stays with every answer.</div>
     </aside>

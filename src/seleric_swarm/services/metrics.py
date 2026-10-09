@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -299,3 +300,66 @@ def lead_agent_for_hints(hints: list[str], metrics: MetricRegistry | None = None
             if owner:
                 return owner
     return "coordinator_agent"
+
+
+# Share-like ratios the semantic layer stores as 0–1 (Cube ``format: percent`` /
+# catalogue ``unit: ratio`` for CTR, CVR, bounce rate, …). Multiples (ROAS, MER,
+# LTV:CAC) stay as plain numbers — never ×100.
+_PERCENT_UNITS = frozenset({"pct", "percent", "%"})
+_MULTIPLE_HINT = re.compile(r"(?:^|_)(?:roas|mer|ltv_?cac|frequency)(?:_|$)", re.IGNORECASE)
+_SHARE_HINT = re.compile(
+    r"(?:^|_)(?:ctr|cvr|cvr_rate|hook_rate|hold_rate|bounce_rate|repeat_rate|"
+    r"conversion_rate|session_conversion_rate|checkout_rate|checkout_to_purchase_rate|"
+    r"product_view_rate|video_completion_rate|completion_rate)(?:_|$)"
+    r"|(?:^|_).+_rate(?:_|$)",
+    re.IGNORECASE,
+)
+
+
+def is_percent_share_metric(metric_id: str, unit: str | None = None) -> bool:
+    """True when ``metric_id`` is a 0–1 share that readers expect as a percent.
+
+    ROAS / MER / LTV:CAC stay False even when the catalogue unit is ``ratio``.
+    """
+    mid = (metric_id or "").split(".")[-1]
+    u = (unit or "").strip().lower()
+    if _MULTIPLE_HINT.search(mid):
+        return False
+    if u in _PERCENT_UNITS:
+        return True
+    if u in {"ratio", "rate"} and _SHARE_HINT.search(mid):
+        return True
+    if not u and _SHARE_HINT.search(mid):
+        return True
+    return False
+
+
+def percent_points(value: float) -> float:
+    """Canonical 0–1 share → percent points; values already on a 0–100 scale stay.
+
+    Cube v2 returns CTR as ``0.0238``; gold / some Meta extracts already store
+    ``2.38``. Multiplying the latter again is the live double-percent bug
+    (thread_c8b3c93d / MS3 campaign tables). Threshold: only scale when
+    ``|value| ≤ 1``.
+    """
+    if abs(value) <= 1.0:
+        return value * 100.0
+    return value
+
+
+def format_metric_value(value: float, *, metric_id: str = "", unit: str | None = None) -> str:
+    """Compact display for tool summaries and merged tables.
+
+    Share metrics print as ``2.38%`` (never raw ``0.0238``, never double-scaled).
+    Other values keep the compact numeric form the model copies verbatim.
+    """
+    number = float(value)
+    if is_percent_share_metric(metric_id, unit):
+        pct = percent_points(number)
+        text = f"{pct:.2f}".rstrip("0").rstrip(".")
+        return f"{text}%"
+    if number.is_integer():
+        return str(int(number))
+    if abs(number) >= 1:
+        return f"{number:.2f}"
+    return f"{number:.4g}"

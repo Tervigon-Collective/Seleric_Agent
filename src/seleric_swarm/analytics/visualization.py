@@ -41,6 +41,103 @@ _SINGLE_POINT_FORMS: frozenset[str] = frozenset(
     {"bar", "pie", "donut", "funnel", "radar", "heatmap"}
 )
 
+#: Forms that add series values together (visually or semantically). Every
+#: stacked segment must share one unit group — see ``infer_unit_group``.
+#: Composition forms (pie/donut/funnel) likewise require a single group:
+#: shares of a whole are meaningless across currencies and counts.
+STACKING_FORMS: frozenset[str] = frozenset({"stacked_bar"})
+COMPOSITION_FORMS: frozenset[str] = frozenset({"pie", "donut", "funnel"})
+
+import re as _re
+
+_COUNT_PATTERNS = _re.compile(
+    r"orders?|sessions?|impressions?|clicks?|views?|visitors?|users?\b|units?|qty|quantity|\bcount\b",
+    _re.IGNORECASE,
+)
+_RATIO_PATTERNS = _re.compile(
+    r"roas|\bctr\b|\bcvr\b|margin|\brate\b|pct|percent|ratio|ltv.?cac|cac.*ltv",
+    _re.IGNORECASE,
+)
+_CURRENCY_PATTERNS = _re.compile(
+    r"revenue|sales|spend|cost|profit|cogs|\bcac\b|\bltv\b|\baov\b|amount|inr|\brs\b|rupee|₹|\$|usd|eur|£",
+    _re.IGNORECASE,
+)
+_CURRENCY_UNITS = frozenset({
+    "inr", "rs", "₹", "rupee", "rupees", "usd", "$", "eur", "€", "gbp", "£", "currency",
+})
+_COUNT_UNITS = frozenset({
+    "count", "counts", "orders", "sessions", "units", "qty", "quantity",
+    "impressions", "clicks", "views", "visitors", "users", "val_count",
+})
+_RATIO_UNITS = frozenset({"pct", "percent", "%", "ratio", "rate", "x"})
+
+
+def infer_unit_group(metric_id: str, unit: str | None) -> str:
+    """Map a metric to a stack-compatibility group.
+
+    Metric names win over the raw ``unit`` string: several toolsets stamp a
+    currency on every measure (including counts), so the name is the reliable
+    signal. Unknown names fall back to the normalized unit, else ``"unknown"``.
+    """
+    name = (metric_id or "").lower()
+    # Ratio names must win over currency substrings (e.g. "ltv_cac" contains
+    # neither spend-like tokens, but "margin" could co-occur with profit).
+    if _RATIO_PATTERNS.search(name):
+        return "ratio"
+    if _COUNT_PATTERNS.search(name):
+        return "count"
+    if _CURRENCY_PATTERNS.search(name):
+        return "currency"
+    u = (unit or "").strip().lower().rstrip("s")
+    if u in _CURRENCY_UNITS:
+        return "currency"
+    if u in _COUNT_UNITS:
+        return "count"
+    if u in _RATIO_UNITS:
+        return "ratio"
+    if u and u != "val":
+        return f"unit:{u}"
+    return "unknown"
+
+
+def unit_groups_for_evidence(evidence: list[EvidenceArtifact]) -> dict[str, str]:
+    """Metric id -> unit group for every metric in the evidence set."""
+    return {m: infer_unit_group(m, next(
+        (e.unit for e in evidence if e.metric_id == m and e.unit), None,
+    )) for m in dict.fromkeys(e.metric_id for e in evidence)}
+
+
+def _known_groups(groups: dict[str, str]) -> list[str]:
+    return sorted({g for g in groups.values() if g != "unknown"})
+
+
+def stacking_allowed(chart_type: str, groups: dict[str, str] | None) -> bool:
+    """Whether ``chart_type`` may add series values together.
+
+    Stacked and composition forms require a single known unit group, and that
+    group must not be a ratio — summing rates/ratios is never meaningful.
+    ``None``/empty/unknown-only groups allow (nothing disproves compatibility).
+    """
+    if chart_type not in STACKING_FORMS | COMPOSITION_FORMS:
+        return True
+    if not groups:
+        return True
+    known = _known_groups(groups)
+    if len(known) > 1:
+        return False
+    if "ratio" in known:
+        return False
+    return True
+
+
+def stacking_warning(chart_type: str, groups: dict[str, str]) -> str:
+    known = _known_groups(groups) or ["unknown"]
+    return (
+        f"{chart_type} needs series with matching units "
+        f"(found: {', '.join(known)}); used grouped_bar instead so values "
+        f"are compared side-by-side rather than summed"
+    )
+
 
 @dataclass(frozen=True)
 class DataShape:
@@ -87,17 +184,29 @@ def describe_evidence_shape(evidence: list[EvidenceArtifact]) -> DataShape:
     )
 
 
-def infer_chart_type_from_shape(shape: DataShape) -> ChartType:
+def infer_chart_type_from_shape(
+    shape: DataShape,
+    unit_groups: dict[str, str] | None = None,
+) -> ChartType:
     """Deterministic default when no form was requested. No user-text matching.
 
     Multi-series evidence defaults to a stacked bar: a trend line is only an
-    honest reading of a single series.
+    honest reading of a single series. When the series mix incompatible units
+    (e.g. currency and counts), the default is a grouped bar so values are
+    compared, never summed.
     """
+    multi_default: ChartType = (
+        "grouped_bar"
+        if unit_groups is not None and not stacking_allowed("stacked_bar", unit_groups)
+        else "stacked_bar"
+    )
     if shape.category_values > 1:
-        return "stacked_bar" if shape.series_count > 1 else "bar"
+        return multi_default if shape.series_count > 1 else "bar"
     if shape.time_periods > 1:
-        return "stacked_bar" if shape.series_count > 1 else "line"
+        return multi_default if shape.series_count > 1 else "line"
     if shape.metrics > 1:
+        if unit_groups is not None and not stacking_allowed("pie", unit_groups):
+            return "grouped_bar"
         return "funnel"
     return "bar"
 
@@ -105,21 +214,30 @@ def infer_chart_type_from_shape(shape: DataShape) -> ChartType:
 def reconcile_chart_type(
     requested: str | None,
     shape: DataShape,
+    unit_groups: dict[str, str] | None = None,
 ) -> tuple[ChartType, list[str]]:
     """Resolve the form to build, reporting every substitution.
 
     Nothing is remapped silently: the returned warnings travel with the spec so
     the caller — and the UI — can see that a form was changed and why.
+    Unit-incompatible stacks are downgraded to grouped bars here, and
+    :func:`generate_visualization_spec` passes the evidence unit groups in.
     """
     warnings: list[str] = []
     wanted = normalize_chart_type(requested) if requested else None
     if wanted is None and requested:
-        default = infer_chart_type_from_shape(shape)
+        default = infer_chart_type_from_shape(shape, unit_groups)
         warnings.append(
             f"chart form {requested!r} is not one of {', '.join(CHART_TYPES)}; "
             f"used {default!r} instead"
         )
-    resolved: ChartType = wanted or infer_chart_type_from_shape(shape)
+    resolved: ChartType = wanted or infer_chart_type_from_shape(shape, unit_groups)
+
+    if resolved in STACKING_FORMS | COMPOSITION_FORMS and not stacking_allowed(
+        resolved, unit_groups
+    ):
+        warnings.append(stacking_warning(resolved, unit_groups or {}))
+        return "grouped_bar", warnings
 
     if resolved in ("line", "area") and shape.time_periods < 2:
         warnings.append(f"{resolved} needs at least two periods; used bar instead")
@@ -335,7 +453,9 @@ def _build_cartesian(
     spec["xAxis"] = {"type": "category", "key": x_key}
     spec["data"] = data_rows
 
-    stack = "total" if chart_type == "stacked_bar" and len(series_names) > 1 else None
+    groups = {m: infer_unit_group(m, units.get(m)) for m in metrics}
+    can_stack = stacking_allowed(chart_type, groups)
+    stack = "total" if chart_type == "stacked_bar" and len(series_names) > 1 and can_stack else None
     for s_name in series_names:
         matched_metric = next(
             (m for m in metrics if _format_metric_label(m) in s_name or m in s_name),
@@ -496,7 +616,8 @@ def generate_visualization_spec(
     if len(evidence) < 2 and requested not in _SINGLE_POINT_FORMS:
         return {"error": "Insufficient data points for visualization. Need at least 2 data points."}
 
-    resolved, warnings = reconcile_chart_type(requested, shape)
+    unit_groups = unit_groups_for_evidence(evidence)
+    resolved, warnings = reconcile_chart_type(requested, shape, unit_groups)
 
     metrics = list(dict.fromkeys(e.metric_id for e in evidence))
     varying_dim_keys = _varying_dimension_keys(evidence)

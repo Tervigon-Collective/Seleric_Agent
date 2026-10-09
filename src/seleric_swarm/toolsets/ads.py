@@ -152,6 +152,12 @@ async def query_meta_insights(
             value = dimension_value(row, measure)
             if value is None:
                 continue
+            measure_id = str(measure).split(".")[-1]
+            cat_unit = (
+                ctx.deps.catalogue.unit_for(measure_id)
+                if getattr(ctx.deps, "catalogue", None) is not None
+                else None
+            )
             evidence = EvidenceArtifact(
                 metric_id=str(measure),
                 dimensions={**row_dims, "level": level, "account_id": account_id},
@@ -160,7 +166,7 @@ async def query_meta_insights(
                 period_start=bucket_start,
                 period_end=bucket_end,
                 value=float(value),
-                unit=currency,
+                unit=cat_unit or currency,
                 source_query=args,
             )
             artifact = ctx.deps.artifact_store.put(
@@ -182,7 +188,7 @@ async def query_meta_insights(
             if bucket_date:
                 label_bits.insert(0, bucket_date)
             label = ", ".join(label_bits) if label_bits else f"{period_start.date()}..{period_end.date()}"
-            series.append({"label": f"{label} · {measure}", "value": float(value)})
+            series.append({"label": f"{label} · {measure}", "value": float(value), "measure": measure_id})
     if not artifact_ids:
         return ToolResult(
             success=False,
@@ -190,8 +196,13 @@ async def query_meta_insights(
             error_code="INSUFFICIENT_EVIDENCE",
             retryable=False,
         )
+    from seleric_swarm.services.metrics import format_metric_value
+
     shown = series[:_MAX_SERIES_IN_SUMMARY]
-    body = "; ".join(f"{s['label']}={s['value']}" for s in shown)
+    body = "; ".join(
+        f"{s['label']}={format_metric_value(s['value'], metric_id=str(s.get('measure') or ''))}"
+        for s in shown
+    )
     more = "" if len(series) <= _MAX_SERIES_IN_SUMMARY else f"; …(+{len(series) - _MAX_SERIES_IN_SUMMARY} more in evidence)"
     summary = (
         f"Meta insights ({level}) for {account_id} over "

@@ -246,6 +246,27 @@ def strip_markdown_tables(text: str) -> str:
     return "\n".join(collapsed).strip()
 
 
+def unescape_literal_newlines(text: str) -> str:
+    """Turn model-escaped ``\\n`` sequences into real newlines when they break tables.
+
+    Live 2026-10-09 (thread_c8b3c93d): ``final_response`` stored the two characters
+    ``\\`` + ``n`` between Markdown table rows (``| CTR |\\n| :--- |\\n| …``). The
+    UI's ``SafeContent`` only splits on real newlines, so the whole table rendered
+    as one paragraph with visible ``\\n``. Prefetch tables use real joins; this
+    only fires when a pipe-row is glued with a literal escape.
+    """
+    if not text or "\\n" not in text:
+        return text
+    # Only rewrite when a table would otherwise stay on one physical line.
+    if "\\n|" not in text and "|\\n" not in text and "\\n\\n|" not in text:
+        return text
+    return (
+        text.replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\\r", "\n")
+    )
+
+
 def realign_markdown_tables(text: str) -> str:
     """Put an unescaped ``|`` inside a label back into that cell.
 

@@ -251,3 +251,28 @@ def test_a_finished_answer_is_not_flagged_as_an_offer(text: str) -> None:
     from seleric_swarm.agent.validation.answer_audit import ends_in_offer
 
     assert ends_in_offer(text) is None, text
+
+
+def test_literal_backslash_n_between_table_rows_becomes_real_newlines() -> None:
+    """Live 2026-10-09 thread_c8b3c93d: final_response stored ``\\n`` between cells."""
+    from seleric_swarm.agent.validation.answer_audit import unescape_literal_newlines
+
+    raw = (
+        "Meta ads spent 58853.\\n\\n"
+        "| Metric | Yesterday | Day before |\\n"
+        "| --- | ---: | ---: |\\n"
+        "| CTR | 2.38% | 2.11% |\\n"
+        "| Orders | 41 | 38 |"
+    )
+    fixed = unescape_literal_newlines(raw)
+    assert "\\n" not in fixed
+    assert fixed.count("\n") >= 4
+    assert "| CTR | 2.38% | 2.11% |" in fixed.splitlines()
+
+
+def test_unescape_leaves_ordinary_prose_with_backslash_n_alone() -> None:
+    """A path like ``C:\\new`` must not be rewritten when no table is glued."""
+    from seleric_swarm.agent.validation.answer_audit import unescape_literal_newlines
+
+    text = r"Saved under C:\new\reports only."
+    assert unescape_literal_newlines(text) == text

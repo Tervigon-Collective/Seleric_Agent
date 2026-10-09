@@ -382,14 +382,77 @@ _TWO_METRIC_EVIDENCE = [
 
 def test_every_declared_chart_form_builds_a_spec():
     for chart_type in CHART_TYPES:
+        # Stacking/composition forms need unit-compatible evidence; the mixed
+        # revenue+orders fixture is intentionally incompatible (see below).
+        evidence = (
+            _CHANNEL_EVIDENCE
+            if chart_type in ("stacked_bar", "pie", "donut", "funnel")
+            else _TWO_METRIC_EVIDENCE
+        )
         spec = generate_visualization_spec(
-            _TWO_METRIC_EVIDENCE, intent="any", title="Coverage", chart_type=chart_type
+            evidence, intent="any", title="Coverage", chart_type=chart_type
         )
         assert "error" not in spec, f"{chart_type}: {spec['error']}"
         assert spec["chart_type"] == chart_type
         assert spec["series"], f"{chart_type} emitted no series"
         assert spec["data"], f"{chart_type} emitted no data"
         assert set(spec) <= _SPEC_KEYS, f"{chart_type} emitted unexpected keys"
+
+
+def _mixed_unit_evidence():
+    return [
+        _make_evidence("metric.net_sales", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 717245.0, unit="inr"),
+        _make_evidence("metric.ad_spend", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 429000.0, unit="inr"),
+        _make_evidence("metric.sessions", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 30244.0, unit="count"),
+        _make_evidence("metric.orders", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 376.0, unit="count"),
+        _make_evidence("metric.net_sales", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 700000.0, unit="inr"),
+        _make_evidence("metric.ad_spend", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 400000.0, unit="inr"),
+        _make_evidence("metric.sessions", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 29000.0, unit="count"),
+        _make_evidence("metric.orders", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 360.0, unit="count"),
+    ]
+
+
+def test_stacked_bar_rejects_mixed_currency_and_counts():
+    """P0: net sales (₹) + ad spend (₹) + sessions + orders must never stack."""
+    spec = generate_visualization_spec(
+        _mixed_unit_evidence(), title="Mixed", chart_type="stacked_bar"
+    )
+    assert spec["chart_type"] == "grouped_bar"
+    assert all(s.get("stack") is None for s in spec["series"])
+    assert any("matching units" in w for w in spec.get("warnings", []))
+
+
+def test_mixed_unit_default_is_grouped_not_stacked():
+    from seleric_swarm.analytics.visualization import describe_evidence_shape, infer_chart_type_from_shape, unit_groups_for_evidence
+
+    evidence = _mixed_unit_evidence()
+    shape = describe_evidence_shape(evidence)
+    assert shape.series_count > 1
+    groups = unit_groups_for_evidence(evidence)
+    assert infer_chart_type_from_shape(shape, groups) == "grouped_bar"
+
+
+def test_compatible_currency_stack_still_stacks():
+    evidence = [
+        _make_evidence("metric.meta_spend", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 200.0, unit="inr"),
+        _make_evidence("metric.google_spend", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 150.0, unit="inr"),
+        _make_evidence("metric.meta_spend", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 210.0, unit="inr"),
+        _make_evidence("metric.google_spend", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 160.0, unit="inr"),
+    ]
+    spec = generate_visualization_spec(evidence, title="Spend", chart_type="stacked_bar")
+    assert spec["chart_type"] == "stacked_bar"
+    assert all(s.get("stack") == "total" for s in spec["series"])
+
+
+def test_ratios_never_stack():
+    evidence = [
+        _make_evidence("metric.ctr", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 2.5, unit="pct"),
+        _make_evidence("metric.cvr", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 1.2, unit="pct"),
+        _make_evidence("metric.ctr", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 2.7, unit="pct"),
+        _make_evidence("metric.cvr", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 1.4, unit="pct"),
+    ]
+    spec = generate_visualization_spec(evidence, title="Rates", chart_type="stacked_bar")
+    assert spec["chart_type"] == "grouped_bar"
 
 
 _SPEC_KEYS = {
