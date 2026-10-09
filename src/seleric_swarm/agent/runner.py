@@ -218,7 +218,11 @@ def _required_scope(
 
 
 # Per-process cache for value resolution (query -> result)
-_VALUE_RESOLUTION_CACHE: dict[str, dict[str, Any]] = {}
+# question -> (stored at, resolution). Bounded in time: the values in the data and the gateway's reading of a
+# question change (live 2026-10-09: an unbounded entry kept golden Q17's channel=meta after the gateway stopped
+# reading several channels as a scope, and every rerun of the question stayed filtered to Meta).
+_VALUE_RESOLUTION_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_VALUE_RESOLUTION_TTL_S = 600.0
 
 async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[str, Any]:
     """Map the question's words to values the data records, before the loop.
@@ -230,8 +234,9 @@ async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[s
     exactly as before."""
     # Check cache first
     cache_key = query.strip().lower()
-    if cache_key in _VALUE_RESOLUTION_CACHE:
-        return _VALUE_RESOLUTION_CACHE[cache_key]
+    cached = _VALUE_RESOLUTION_CACHE.get(cache_key)
+    if cached is not None and time.monotonic() - cached[0] < _VALUE_RESOLUTION_TTL_S:
+        return cached[1]
     
     timeout = float(getattr(runtime.settings, "value_resolve_timeout_s", 15.0))
     try:
@@ -249,7 +254,7 @@ async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[s
     if not isinstance(result, dict) or result.get("status") != "ok":
         return {}
     # Cache the result
-    _VALUE_RESOLUTION_CACHE[cache_key] = result
+    _VALUE_RESOLUTION_CACHE[cache_key] = (time.monotonic(), result)
     return result
 
 
