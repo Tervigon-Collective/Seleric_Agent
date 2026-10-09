@@ -200,10 +200,28 @@ async def break_down_metric(
             error_code="UNSUPPORTED_QUERY",
             retryable=bool(composed),
         )
+    switched_note = ""
+    if filters:
+        _, dropped_here = diagnosis._filters_for(ctx, metric_id, dict(filters))
+        if dropped_here:
+            # The slice lives at another grain (a product): the catalogue's grain twin of the total carries it and
+            # has its own verified composition. Broken down on the total's view, the product's filter was dropped
+            # and the brand P&L came back (live 2026-10-10: 'profit waterfall for Pawveralls Suspender Boots').
+            grain_twins = getattr(ctx.deps.catalogue, "grain_twins_for", None)
+            for twin in (grain_twins(metric_id) if grain_twins is not None else []):
+                if _composition(definitions.get(twin, {})) and not diagnosis._filters_for(ctx, twin, dict(filters))[1]:
+                    switched_note = (
+                        f"{metric_id} cannot be sliced by {', '.join(dropped_here)}; broken down as its grain twin "
+                        f"{twin} ({_label(definitions, twin)}), which carries that slice"
+                    )
+                    metric_id = twin
+                    break
     root = _tree(metric_id, definitions, max(1, min(int(depth or _MAX_DEPTH), _MAX_DEPTH)))
     nodes = _walk(root)
     metrics = list(dict.fromkeys(n.metric for n in nodes))
     start, end, notes = _window(ctx, period_start, period_end)
+    if switched_note:
+        notes.insert(0, switched_note)
     today = ctx.deps.as_of.date()
     if end >= today:
         notes.append(f"{today} is still in progress; its figures are partial")

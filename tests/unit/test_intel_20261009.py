@@ -501,3 +501,52 @@ async def test_metric_definitions_are_fetched_in_batches_the_gateway_accepts() -
     res = await semantic.get_metric_definitions(_Ctx(_deps(Gateway())), ids)
     assert res.success and len(res.provenance.source_metadata["definitions"]) == 11
     assert all(len(c) <= 10 for c in calls) and "unknown metric id 'nope'" in res.warnings
+
+
+async def test_a_rate_broken_down_by_entity_is_planned_with_its_base() -> None:
+    from seleric_swarm.agent.plan import MetricSlot, PlanSlots, plan_from_slots
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+
+    cat = CatalogueSnapshot(metrics=(
+        CatalogueMetricMeta(id="product_return_rate", view="product_pnl",
+                            raw={"aggregation": "ratio", "volume_metric": "product_order_orders"}),
+        CatalogueMetricMeta(id="product_order_orders", view="product_pnl", raw={"aggregation": "additive"}),
+    ))
+    slots = PlanSlots(shape="breakdown", breakdown_dimensions=["product_title"],
+                      metrics=[MetricSlot(words="return rate", metric_id="product_return_rate")])
+    out = await plan_from_slots(slots, catalogue=cat, windows=[(date(2026, 9, 1), date(2026, 9, 30))], as_of=AS_OF)
+    assert out.plan is not None
+    assert "product_order_orders" in out.plan.steps[0].metric_ids
+
+
+async def test_a_breakdown_sliced_by_a_product_uses_the_totals_product_twin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """'profit waterfall for <product>': the order-date P&L cannot be sliced by product, so the product P&L twin
+    (its own verified composition) is broken down instead of the brand total with the filter dropped."""
+    import dataclasses
+
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+
+    defs = {
+        "np": {"display_name": "Net profit", "formula": {"composition": [{"metric": "cm", "sign": 1}, {"metric": "ad", "sign": -1}]}},
+        "pnp": {"display_name": "Product net profit", "formula": {"composition": [{"metric": "pcm", "sign": 1}, {"metric": "pad", "sign": -1}]}},
+        "cm": {}, "ad": {}, "pcm": {}, "pad": {},
+    }
+
+    async def all_definitions(ctx: Any) -> dict[str, Any]:
+        return defs
+
+    monkeypatch.setattr(diagnosis, "_all_definitions", all_definitions)
+    cat = CatalogueSnapshot(metrics=(
+        CatalogueMetricMeta(id="np", view="order_pnl", supported_dimensions=["finance_channel"], raw={"grain_twins": ["pnp"]}),
+        *(CatalogueMetricMeta(id=m, view="product_pnl", supported_dimensions=["product_title"]) for m in ("pnp", "pcm", "pad")),
+        *(CatalogueMetricMeta(id=m, view="order_pnl", supported_dimensions=["finance_channel"]) for m in ("cm", "ad")),
+    ))
+    mcp = _Mcp({"2026-09-01": {"pnp": 10.0, "pcm": 30.0, "pad": 20.0}})
+    deps = dataclasses.replace(_deps(mcp), catalogue=cat)
+    res = await composition.break_down_metric(
+        _Ctx(deps), "np", period_start=datetime(2026, 9, 1, tzinfo=UTC), period_end=datetime(2026, 9, 30, tzinfo=UTC),
+        filters={"product_title": "Boots"},
+    )
+    assert res.success and "grain twin pnp" in res.summary and "Reconciled" in res.summary
+    assert mcp.calls[0]["measures"][0] == "pnp"
+    assert {"dimension": "product_title", "operator": "equals", "values": ["Boots"]} in mcp.calls[0]["filters"]

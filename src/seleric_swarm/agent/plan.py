@@ -534,6 +534,16 @@ async def plan_from_slots(
             replaced = metric_ids[0] if asked == twins.get(metric_ids[0]) else None
             metric_ids = [asked, *[m for m in metric_ids if m not in (asked, replaced)]]
             notes.append(f"the outcome is {asked}: the measure the question itself names")
+    if (slots.breakdown_dimensions or slots.entity_dimension.strip()) and slots.shape in (
+        "breakdown", "entity_comparison", "lookup", "trend"
+    ):
+        # A rate across entities is read with its base: "return rate by product" ranked one-order products at
+        # 100% with no order count beside them (live 2026-10-10). The catalogue names each ratio's volume metric.
+        for mid in list(metric_ids):
+            vol = catalogue.volume_metric_for(mid) if catalogue.aggregation_for(mid) == "ratio" else None
+            if vol and vol not in metric_ids and (not catalogue.metrics or catalogue.has_metric(vol)):
+                metric_ids.append(vol)
+                notes.append(f"{vol} fetched beside {mid}: the base each entity's rate rests on")
     rank_id = None
     if slots.rank_by is not None:
         rank_ids, rank_notes = await _resolve_metrics([slots.rank_by], resolver, catalogue)

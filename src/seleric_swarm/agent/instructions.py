@@ -193,6 +193,13 @@ WHY-QUESTIONS (diagnosis)
   cause could be identified, say so plainly. Never print raw labels such as
   supported_cause or likely_contributor, or metric ids.
 
+RATES ACROSS ENTITIES
+- A rate (return rate, conversion, ROAS, CTR) broken down by product, campaign
+  or channel is shown beside its base (the volume it rests on, fetched with
+  it) and labelled by the entity's name, not its id. Do not rank or headline
+  entities whose base is a handful of units: say how many there are and lead
+  with the entities whose base is material.
+
 BREAKDOWNS, WATERFALLS AND RECONCILIATIONS
 - "Break down", "waterfall", "what makes up", "reconcile", "walk from gross to
   net" or "how much of the change came from each cost": call
