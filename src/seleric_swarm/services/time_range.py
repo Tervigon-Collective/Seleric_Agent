@@ -66,6 +66,10 @@ _WINDOW_PHRASE = re.compile(
 )
 
 
+# Words that may join two windows named side by side in a comparison ("A and B", "A, B").
+_MAX_JOINER_WORDS = 2
+
+
 def _two_named_windows(text: str, anchor: date) -> TimeRangeV1 | None:
     """Two separately named windows joined by a comparison preposition.
 
@@ -94,7 +98,11 @@ def _two_named_windows(text: str, anchor: date) -> TimeRangeV1 | None:
         return None
     first, second = matches[0], matches[1]
     between = text[first.end() : second.start()]
-    if not re.search(_VS, between, re.IGNORECASE):
+    # Bound by a "vs"-style joiner, or — in a question that asks to compare — named side by
+    # side with only a short joiner between them ("compare … from yesterday and today": today
+    # was dropped, so the same-hours comparison never ran, live 2026-10-09 MS3-0f473daefd).
+    side_by_side = len(between.split()) <= _MAX_JOINER_WORDS and _COMPARISON_VERB.search(text) is not None
+    if not (re.search(_VS, between, re.IGNORECASE) or side_by_side):
         return None
 
     period_a = _single_window(first.group(0), anchor)

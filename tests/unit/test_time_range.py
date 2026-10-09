@@ -388,3 +388,37 @@ def test_required_scope_carries_both_windows_of_a_comparison() -> None:
     assert [str(w) for w in single] == ["2026-09-29..2026-10-05"]
     # Fail-open on anything undated.
     assert required_windows_from_resolved(None) == ()
+
+
+def test_two_windows_named_side_by_side_in_a_comparison_are_both_kept():
+    """Live 2026-10-09 MS3-0f473daefd: "compare … from yesterday and today" kept only yesterday."""
+    from seleric_swarm.services.time_range import window_from_query
+
+    w = window_from_query(
+        "compare performance of meta ads campaigns, from yesterday and today, same time till 11 am",
+        "Asia/Kolkata", "2026-10-09",
+    )
+    assert w is not None and w.kind == "comparison"
+    assert {(w.start[:10], w.end[:10]), (w.start_b[:10], w.end_b[:10])} == {
+        ("2026-10-08", "2026-10-08"), ("2026-10-09", "2026-10-09"),
+    }
+    # Without a comparison, two windows in a sentence stay what they were.
+    plain = window_from_query("orders yesterday and today", "Asia/Kolkata", "2026-10-09")
+    assert plain is None or plain.kind != "comparison"
+
+
+def test_two_windows_named_side_by_side_in_a_comparison_are_both_kept():
+    """Live 2026-10-09 MS3-0f473daefd: "compare … from yesterday and today" kept only yesterday."""
+    from seleric_swarm.services.time_range import window_from_query
+
+    w = window_from_query(
+        "compare performance of meta ads campaigns, from yesterday and today, same time till 11 am",
+        "Asia/Kolkata", "2026-10-09",
+    )
+    assert w is not None and w.kind == "comparison"
+    assert {(w.start[:10], w.end[:10]), (w.start_b[:10], w.end_b[:10])} == {
+        ("2026-10-08", "2026-10-08"), ("2026-10-09", "2026-10-09"),
+    }
+    # Without a comparison, two windows in a sentence stay what they were.
+    plain = window_from_query("orders yesterday and today", "Asia/Kolkata", "2026-10-09")
+    assert plain is None or plain.kind != "comparison"
