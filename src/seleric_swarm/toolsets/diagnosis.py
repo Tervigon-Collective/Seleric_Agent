@@ -185,13 +185,23 @@ def _rate_parts(
 # --------------------------------------------------------------------------- fetching
 def _filters_for(ctx: RunContext[SelericDeps], metric_id: str, filters: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
     supported = set(ctx.deps.catalogue.supported_dimensions_for(metric_id))
+    family_members = getattr(ctx.deps.catalogue, "family_members", None)
     out, dropped = [], []
     for k, v in (filters or {}).items():
         if v in (None, "", []):
             continue
         if supported and k not in supported:
-            dropped.append(k)
-            continue
+            # The same slice under the metric's own member of the conformed family (finance_channel = meta is
+            # ad_platform / acquisition_platform = meta elsewhere), as query_metrics answers it. Dropped, the
+            # driver series of a Meta diagnosis came back for every platform and the scope gate sent the answer
+            # back twice (regression 2026-10-09 Q28, 288 s).
+            sibling = next(
+                (m for m in sorted(family_members(k)) if m in supported), None
+            ) if family_members is not None else None
+            if sibling is None:
+                dropped.append(k)
+                continue
+            k = sibling
         out.append({"dimension": k, "operator": "equals", "values": list(v) if isinstance(v, list) else [str(v)]})
     return out, dropped
 

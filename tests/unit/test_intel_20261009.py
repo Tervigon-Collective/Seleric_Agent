@@ -467,3 +467,17 @@ def test_a_quotient_of_two_metrics_of_one_slice_and_period_is_backed() -> None:
     pool = _mission_values(fdeps(store))
     assert _backed(1746.19, 0.005, False, pool)      # spend per new customer
     assert not _backed(1912.40, 0.005, False, pool)
+
+
+def test_a_diagnosis_filter_moves_to_the_metrics_own_family_member() -> None:
+    import dataclasses
+
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+
+    cat = CatalogueSnapshot(
+        metrics=(CatalogueMetricMeta(id="sessions", view="web", supported_dimensions=["acquisition_platform"]),),
+        dimension_families=(("finance_channel", "platform", 1), ("acquisition_platform", "platform", 3)),
+    )
+    deps = dataclasses.replace(_deps(_Mcp({})), catalogue=cat)
+    out, dropped = diagnosis._filters_for(_Ctx(deps), "sessions", {"finance_channel": "meta"})
+    assert out == [{"dimension": "acquisition_platform", "operator": "equals", "values": ["meta"]}] and not dropped
