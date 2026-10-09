@@ -301,6 +301,9 @@ async def _execute(
     if entity_step is not None and entity:
         rank = entity_step.metric_ids[0]
         limit = _limit(entity_step.ranking)
+        # the plan's direction: the worst entities for "which … contributed to the loss" (golden Q16 2026-10-09
+        # ranked the most profitable and answered "no campaign lost money")
+        direction = "asc" if "order='asc'" in entity_step.ranking else "desc"
         volume = catalogue.volume_metric_for(rank)
         dims: dict[str, Any] = {entity: ""}
         if volume:
@@ -317,13 +320,13 @@ async def _execute(
         ranked = await _query(
             deps, gate, metric_id=rank, dimensions=dims,
             period_start=_at(rank_window[0], as_of), period_end=_at(rank_window[1], as_of),
-            **({} if volume else {"order": "desc", "limit": limit}),
+            **({} if volume else {"order": direction, "limit": limit}),
         )
         evidence_ids += ranked.artifact_ids
         rows = sorted(
             (p for p in _payloads(deps, ranked.artifact_ids) if p.get("value") is not None),
             key=lambda p: p["value"],
-            reverse=True,
+            reverse=direction == "desc",
         )
         entities = [str(p["dimensions"][entity]) for p in rows if p["dimensions"].get(entity)][:limit]
         if not entities:

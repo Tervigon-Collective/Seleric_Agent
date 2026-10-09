@@ -55,6 +55,10 @@ class Understanding(PlanSlots):
     rank_by: MetricSlot | None = Field(
         description="What makes an entity 'best' / 'top' (an outcome or efficiency measure); null when nothing is ranked."
     )
+    rank_order: Literal["desc", "asc"] = Field(
+        default="desc",
+        description="asc when the user asks for the worst, lowest, loss-making or declining entities; else desc.",
+    )
     metrics: list[MetricSlot] = Field(
         description="Every measure the user asks for, one entry each; [] only when the message names none."
     )
@@ -112,6 +116,8 @@ _INSTRUCTIONS = (
     "entities' names.\n"
     "- rank_by: the outcome or efficiency measure that makes an entity 'best' — what it "
     "returned, never what it cost.\n"
+    "- rank_order: asc when the entities wanted are the worst on rank_by (lowest, losing, "
+    "declining, dragging the total down); desc otherwise.\n"
     "- metrics: every measure asked for, one entry each, in plain words with abbreviations "
     "spelled out, plus your best metric id from the catalogue (empty if unsure). When the "
     "message continues the previous turn and names no measure, carry the previous turn's.\n"

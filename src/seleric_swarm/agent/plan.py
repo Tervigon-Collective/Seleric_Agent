@@ -102,6 +102,10 @@ class PlanSlots(BaseModel):
     )
     rank_by: MetricSlot | None = Field(default=None, description="What makes an entity 'best' / 'top'.")
     top_n: int | None = Field(default=None, description="How many entities to keep, if the user says.")
+    rank_order: Literal["desc", "asc"] = Field(
+        default="desc",
+        description="asc when the user asks for the worst, lowest, loss-making or declining entities; else desc.",
+    )
     metrics: list[MetricSlot] = Field(default_factory=list, description="Every measure the user asks for.")
     breakdown_dimensions: list[str] = Field(
         default_factory=list, description="Catalogue dimension ids the user asks to break down or map by."
@@ -256,7 +260,7 @@ def compose_plan(
                 metric_ids=[rank],
                 dimensions=[entity],
                 period=ref_text,
-                ranking=f"order='desc', limit={n}{guard}",
+                ranking=f"order='{slots.rank_order}', limit={n}{guard}",
                 purpose=f"Rank the {entity} values over {ref_text} by {rank}; these are the entities to compare.",
             )
         )

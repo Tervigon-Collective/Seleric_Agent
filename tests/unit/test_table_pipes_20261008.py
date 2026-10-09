@@ -166,3 +166,22 @@ def test_an_entity_the_rank_metric_cannot_carry_falls_back_to_an_asked_breakdown
     plan, notes = compose_plan(slots, metric_ids=["np"], rank_id="np", windows=windows, catalogue=catalogue, as_of=None)
     assert plan is not None and plan.steps[0].dimensions == ["campaign_name"]
     assert any("ranked by campaign_name instead" in n for n in notes)
+
+
+def test_a_worst_entities_question_ranks_ascending() -> None:
+    # golden Q16 2026-10-09: "which campaigns contributed to the loss" ranked the most profitable first
+    from datetime import date
+
+    from seleric_swarm.agent.plan import MetricSlot, PlanSlots, compose_plan
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    catalogue = CatalogueSnapshot(
+        metrics=(CatalogueMetricMeta(id="np", label="Net profit", supported_dimensions=["campaign_name"],
+                                     raw={"aggregation": "additive"}),),
+        dimensions=("campaign_name",),
+    )
+    slots = PlanSlots(shape="entity_comparison", entity_dimension="campaign_name", rank_by=MetricSlot(words="net profit"),
+                      rank_order="asc", metrics=[MetricSlot(words="net profit")])
+    windows = [(date(2026, 10, 1), date(2026, 10, 1)), (date(2026, 10, 2), date(2026, 10, 2))]
+    plan, _ = compose_plan(slots, metric_ids=["np"], rank_id="np", windows=windows, catalogue=catalogue, as_of=None)
+    assert plan is not None and "order='asc'" in plan.steps[0].ranking
