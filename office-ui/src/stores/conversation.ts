@@ -357,7 +357,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           loading: false,
           submitting: true,
           currentRunId: runId,
-          progress: lastProgress,
+          progress: resumeProgress,
         }));
       } else {
         set((s) => ({ messages: { ...s.messages, [id]: messages }, loading: false, submitting: false, currentRunId: null, progress: null }));
@@ -775,19 +775,21 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   applyRunEvent: (event) => {
     const state = get();
     if (
-      event.thread_id !== state.selectedThreadId
+      !event || typeof event !== "object"
+      || event.thread_id !== state.selectedThreadId
       || (state.currentRunId && event.run_id !== state.currentRunId)
     ) return;
+    const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
     // Live answer streaming: accumulate answer.delta into an optimistic
     // assistant message; answer.reset clears a revised-away draft. The full
     // message fetched on answer.completed is authoritative and replaces this.
     // Handled before ingestEvent so per-token deltas never spam the timeline.
     if (event.event_type === "answer.delta" || event.event_type === "answer.reset") {
       const threadId = event.thread_id;
-      const messageId = optionalString(event.payload.message_id);
+      const messageId = optionalString(payload.message_id);
       if (!messageId) return;
       const reset = event.event_type === "answer.reset";
-      const delta = reset ? "" : optionalString(event.payload.delta) ?? "";
+      const delta = reset ? "" : optionalString(payload.delta) ?? "";
       if (!reset && !delta) return;
       set((s) => {
         const list = s.messages[threadId] ?? [];
