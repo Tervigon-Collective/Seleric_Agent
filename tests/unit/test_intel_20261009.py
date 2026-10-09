@@ -290,3 +290,10 @@ async def test_a_why_question_diagnoses_the_measure_the_question_names() -> None
     )
     assert out.plan is not None
     assert out.plan.steps[0].metric_ids == ["net_roas"]
+
+
+def test_a_change_across_zero_between_shown_figures_is_backed() -> None:
+    from seleric_swarm.agent.validation import _derived_from_shown
+
+    assert _derived_from_shown(216.3, 0.05, True, [-8729.0, 10148.0], [])
+    assert not _derived_from_shown(57.0, 0.05, True, [-8729.0, 10148.0], [])

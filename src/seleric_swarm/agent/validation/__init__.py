@@ -640,6 +640,12 @@ def _derived_from_shown(
                 continue
             if abs(value - 100 * a / b) <= slack or abs(value - 100 * abs(a - b) / b) <= slack:
                 return True
+    # A change across zero (a loss turned into a profit: −8,729 → 10,148 is +216%) only exists on signed values.
+    signed = [x for x in backed if x]
+    for a in signed:
+        for b in signed:
+            if a != b and (a < 0) != (b < 0) and abs(abs(value) - 100 * abs(a - b) / abs(b)) <= slack:
+                return True
     return False
 
 

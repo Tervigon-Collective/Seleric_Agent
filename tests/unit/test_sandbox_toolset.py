@@ -1,7 +1,8 @@
 """Unit tests for toolsets/sandbox.py — the in-process python sandbox.
 
 Covers the failure paths, not just the happy one: code error / syntax error /
-blocked import / no-output all raise ModelRetry (the model's recovery signal);
+blocked import / no-output return a failed, retryable result (the model's recovery
+signal — never ModelRetry, whose exhaustion fails the whole attempt);
 timeout and evidence-miss return structured refusals. The NullMcpClient deps
 prove the sandbox never fetches (non-negotiable rule 5).
 
@@ -13,7 +14,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pydantic_ai import ModelRetry
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
@@ -92,42 +92,42 @@ async def test_happy_path_writes_finding_with_numeric_metrics() -> None:
 
 
 @pytest.mark.asyncio
-async def test_code_error_raises_model_retry() -> None:
+async def test_code_error_returns_a_retryable_failure() -> None:
     store = InMemoryArtifactStore()
     eid = _put_evidence(store)
     ctx = FakeRunContext(_deps(store))
-    with pytest.raises(ModelRetry) as exc:
-        await sandbox.run_python(ctx, "result = 1 / 0", [eid])
-    assert "ZeroDivisionError" in str(exc.value)
+    res = await sandbox.run_python(ctx, 'result = 1 / 0', [eid])
+    assert not res.success and res.retryable
+    assert "ZeroDivisionError" in res.summary
 
 
 @pytest.mark.asyncio
-async def test_syntax_error_raises_model_retry() -> None:
+async def test_syntax_error_returns_a_retryable_failure() -> None:
     store = InMemoryArtifactStore()
     eid = _put_evidence(store)
     ctx = FakeRunContext(_deps(store))
-    with pytest.raises(ModelRetry) as exc:
-        await sandbox.run_python(ctx, "result = (", [eid])
-    assert "syntax" in str(exc.value).lower()
+    res = await sandbox.run_python(ctx, 'result = (', [eid])
+    assert not res.success and res.retryable
+    assert "syntax" in res.summary.lower()
 
 
 @pytest.mark.asyncio
-async def test_blocked_import_raises_model_retry() -> None:
+async def test_blocked_import_returns_a_retryable_failure() -> None:
     store = InMemoryArtifactStore()
     eid = _put_evidence(store)
     ctx = FakeRunContext(_deps(store))
-    with pytest.raises(ModelRetry) as exc:
-        await sandbox.run_python(ctx, "import socket", [eid])
-    assert "socket" in str(exc.value)
+    res = await sandbox.run_python(ctx, 'import socket', [eid])
+    assert not res.success and res.retryable
+    assert "socket" in res.summary
 
 
 @pytest.mark.asyncio
-async def test_no_output_raises_model_retry() -> None:
+async def test_no_output_returns_a_retryable_failure() -> None:
     store = InMemoryArtifactStore()
     eid = _put_evidence(store)
     ctx = FakeRunContext(_deps(store))
-    with pytest.raises(ModelRetry):
-        await sandbox.run_python(ctx, "x = 1 + 1", [eid])
+    res = await sandbox.run_python(ctx, 'x = 1 + 1', [eid])
+    assert not res.success and res.retryable
 
 
 @pytest.mark.asyncio

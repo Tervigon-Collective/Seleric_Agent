@@ -31,7 +31,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import RunContext
 
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
@@ -122,6 +122,13 @@ def _workdir(mission_id: str) -> Path:
     path = repo_root() / ".data" / "sandbox" / safe
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _fix_the_script(message: str) -> ToolResult:
+    """A script that failed: a failed, retryable result rather than ModelRetry. Tool retries are capped, and an
+    exhausted ModelRetry is an UnexpectedModelBehavior that fails the whole attempt and restarts the mission from
+    scratch (live 2026-10-09 MS3-70c7ba2445: a second KeyError in a script cost the run its first 25 s)."""
+    return ToolResult(success=False, summary=message, error_code="SANDBOX_SCRIPT_ERROR", retryable=True)
 
 
 def _typed_in_values(code: str, ctx: RunContext[SelericDeps]) -> list[float]:
@@ -225,9 +232,9 @@ async def run_python(
     try:
         compiled = compile(code, "<sandbox>", "exec")
     except SyntaxError as exc:
-        raise ModelRetry(f"sandbox code has a syntax error: {exc}. Fix it and retry.") from exc
+        return _fix_the_script(f"sandbox code has a syntax error: {exc}. Fix it and retry.")
     if typed := _typed_in_values(code, ctx):
-        raise ModelRetry(
+        return _fix_the_script(
             "the script types fetched values in as literals ("
             + ", ".join(f"{v:g}" for v in typed[:5])
             + "); read them from `evidence` (each row has metric_id, value, dimensions, period_start/period_end) "
@@ -256,7 +263,7 @@ async def run_python(
             with contextlib.redirect_stdout(stdout):
                 exec(compiled, sandbox_globals)  # noqa: S102 — see ceiling note
             holder["result"] = sandbox_globals.get("result")
-        except Exception as exc:  # captured, re-raised as ModelRetry below
+        except Exception as exc:  # captured, returned as a failed result below
             holder["error"] = exc
             holder["tb"] = traceback.format_exc()
 
@@ -272,7 +279,7 @@ async def run_python(
         )
 
     if "error" in holder:
-        raise ModelRetry(
+        return _fix_the_script(
             f"sandbox code raised {type(holder['error']).__name__}: {holder['error']}. "
             f"Fix the script and retry.\n{holder.get('tb', '')[-800:]}"
         )
@@ -283,7 +290,7 @@ async def run_python(
     ) if workdir.exists() else []
 
     if result is None and not new_files:
-        raise ModelRetry(
+        return _fix_the_script(
             "sandbox script produced no output — set a `result` variable or write "
             "a file under WORKDIR, then retry."
         )

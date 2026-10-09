@@ -2824,6 +2824,30 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
             + ", ".join(d.dimension.replace("_", " ") for d in full)
             + " moved roughly in proportion, so no single segment explains it."
         )
+    # Segments far outside their own normal range are worth naming even when they are not the largest share
+    # (live 2026-10-09 MS3-dce7d3104e: exchange and unattributed rows at z −6.2 / −5.3 went unmentioned).
+    said = " ".join(out)
+    unusual = sorted(
+        (
+            (abs(sm.z_score or 0.0), d, sm)
+            for d in (*r.chain_dimensions, *r.dimensions) if _covers_whole(d)
+            for sm in d.top if sm.significant and sm.z_score is not None
+        ),
+        key=lambda x: -x[0],
+    )
+    named: list[str] = []
+    for _, d, sm in unusual:
+        if len(named) >= 3 or sm.segment in said or any(sm.segment in n for n in named):
+            continue
+        if sm.rate_reference is not None and sm.rate_event is not None:
+            move = f"{_val(sm.rate_reference, r.outcome, lineage)} → {_val(sm.rate_event, r.outcome, lineage)}"
+        else:
+            move = f"{_val(sm.reference, r.outcome, lineage)} → {_val(sm.event, r.outcome, lineage)}"
+        named.append(f"{d.dimension.replace('_', ' ')} {sm.segment}: {move}")
+    if named:
+        out.append(
+            "ALSO OUTSIDE ITS OWN NORMAL RANGE (places to look, not causes): " + "; ".join(named) + "."
+        )
     if len(r.previous_values) > 1:
         prev_label = r.event.previous_period.get("days", ["the day before"])
         out.append(

@@ -146,5 +146,5 @@ async def test_run_python_reads_the_missions_evidence_when_no_ids_are_passed_and
     ctx = Ctx(_deps(store))
     res = await sandbox.run_python(ctx, code="result = sum(e['value'] for e in evidence)")  # type: ignore[arg-type]
     assert res.success and "1946498.87" in res.summary
-    with pytest.raises(ModelRetry, match="literals"):
-        await sandbox.run_python(ctx, code="result = 1946496.87 - 2.0")  # type: ignore[arg-type]
+    typed = await sandbox.run_python(ctx, code="result = 1946496.87 - 2.0")  # type: ignore[arg-type]
+    assert not typed.success and typed.retryable and "literals" in typed.summary
