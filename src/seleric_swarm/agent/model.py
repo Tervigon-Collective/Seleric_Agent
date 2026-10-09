@@ -107,9 +107,17 @@ def resolve_v3_model(
             health_key=f"{tag}:{name}",
         )
 
+    # The reasoning-effort tuning is the primary's (the deployment it was measured on); fallbacks keep provider
+    # defaults. Applying it down the chain sent reasoning_effort to a non-reasoning fallback (gpt-4o), which
+    # rejects the parameter — the fallback that should absorb the primary's 429s would have failed every call.
     models: list[OpenAIChatModel] = [
-        chat(name, provider, "azure1", fast_settings if name == fast_model else strong_settings)
-        for name in model_names
+        chat(
+            name,
+            provider,
+            "azure1",
+            fast_settings if name == fast_model else (strong_settings if i == 0 else None),
+        )
+        for i, name in enumerate(model_names)
     ]
 
     chain: Model = models[0] if len(models) == 1 else FallbackModel(*models)

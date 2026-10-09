@@ -476,3 +476,27 @@ def test_question_axes_come_from_outside_the_measure_phrases():
     q = "Rank campaigns by net ROAS with ad spend, orders and Product Gross Sale on the P&L"
     out = _outside_measures(q, ["net ROAS", "ad spend", "orders", "product gross sale", "landing page views"])
     assert "product" not in out.lower() and "on the P&L" in out and "campaigns" in out
+
+
+def test_a_value_of_several_unrelated_families_is_a_hint_and_one_family_still_blocks():
+    """'other' is a channel, a platform and a payment method in the data: the gate cannot know which the user
+    meant (live 2026-10-09: "other available cost components" forced four revisions on an exact P&L bridge).
+    'meta' names members of one family only — a real scope, still blocking."""
+    from seleric_swarm.agent.scope import ValueFilter
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
+
+    cat = CatalogueSnapshot(dimension_families=(
+        ("channel", "channel", 0), ("acquisition_channel", "channel", 1),
+        ("platform", "platform", 0), ("ad_platform", "platform", 2),
+    ))
+    store = InMemoryArtifactStore()
+    for d in range(1, 4):
+        _evidence(store, day=d, dimensions={})
+    other = RequiredScope(value_filters=(ValueFilter(
+        term="other", dimensions=frozenset({"acquisition_channel", "ad_platform", "payment_method"}), values=("other",)),))
+    out = check_scope_coverage(store.list_for_mission(_MISSION), other, catalogue=cat)
+    assert not any(g.blocking for g in out.gaps)
+    meta = RequiredScope(value_filters=(ValueFilter(
+        term="meta", dimensions=frozenset({"platform", "ad_platform"}), values=("meta",)),))
+    out = check_scope_coverage(store.list_for_mission(_MISSION), meta, catalogue=cat)
+    assert any(g.blocking for g in out.gaps)

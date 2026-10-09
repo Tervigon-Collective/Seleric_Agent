@@ -211,9 +211,73 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
     """
     text = query or ""
     anchor = as_of_date(as_of, timezone)
+    if (explicit := _explicit_ranges(text, anchor)) is not None:
+        return explicit
     if (comparison := _two_named_windows(text, anchor)) is not None:
         return comparison
     return _single_window(text, anchor)
+
+
+# Words that join two calendar dates into ONE span. "and" only does after "between" ("between X and Y");
+# otherwise "X and Y" names two days.
+_RANGE_JOINERS = frozenset({"..", "to", "until", "till", "through", "thru", "-", "–", "—"})
+_TOKEN_EDGE = ",;:()[]{}'\""
+
+
+def _iso_day(token: str) -> date | None:
+    try:
+        return date.fromisoformat(token)
+    except ValueError:
+        return None
+
+
+def _explicit_ranges(text: str, anchor: date | None = None) -> TimeRangeV1 | None:
+    """Spans written as calendar dates: ``2026-10-01..2026-10-05``, ``2026-10-01 to 2026-10-05``,
+    ``between 2026-09-01 and 2026-09-30``. The phrase matcher reads each date as its own window, so
+    "between 09-01 and 09-30" became a comparison of two single days and "10-07..10-08 vs 10-06..10-07"
+    compared 10-07 with 10-08 (live 2026-10-09 dev replay of MS3-e4ba59ad63). One span → that window when the
+    question names no other date; two spans → a comparison in the order named. Token-based, so a written
+    range is only ever read from whole date tokens."""
+    tokens = [t.strip(_TOKEN_EDGE) for t in text.replace("..", " .. ").split()]
+    spans: list[tuple[date, date]] = []
+    used: set[int] = set()
+    loose_dates = 0
+    i = 0
+    while i < len(tokens):
+        first = _iso_day(tokens[i])
+        if first is None:
+            i += 1
+            continue
+        joiner = tokens[i + 1].lower() if i + 1 < len(tokens) else ""
+        second = _iso_day(tokens[i + 2]) if i + 2 < len(tokens) else None
+        bounded = joiner in _RANGE_JOINERS or (joiner == "and" and i > 0 and tokens[i - 1].lower() == "between")
+        if second is not None and bounded:
+            spans.append((min(first, second), max(first, second)))
+            used.update((i, i + 1, i + 2))
+            i += 3
+            continue
+        loose_dates += 1
+        i += 1
+    if len(spans) >= 2:
+        (a0, a1), (b0, b1) = spans[0], spans[1]
+        if (a0, a1) == (b0, b1):
+            return None
+        return TimeRangeV1(kind="comparison", start=a0.isoformat(), end=a1.isoformat(),
+                           start_b=b0.isoformat(), end_b=b1.isoformat(), relative_token="custom vs custom")
+    if len(spans) == 1 and loose_dates == 0:
+        a0, a1 = spans[0]
+        # The rest of the question may name the other side ("2026-09-01..2026-09-30 vs last month"): pair them.
+        # Each phrase is read on its own, as _two_named_windows does: "vs last month" beside a written span is
+        # the whole of last month, not a month-to-date comparison.
+        rest_text = " ".join(t for k, t in enumerate(tokens) if k not in used)
+        phrase = next(iter(_WINDOW_PHRASE.finditer(rest_text)), None) if anchor else None
+        rest = _single_window(phrase.group(0), anchor) if phrase is not None and anchor else None
+        other = (rest.start, rest.end) if rest is not None and rest.start and rest.end else None
+        if other is not None and other != (a0.isoformat(), a1.isoformat()):
+            return TimeRangeV1(kind="comparison", start=a0.isoformat(), end=a1.isoformat(), start_b=other[0],
+                               end_b=other[1], relative_token=f"custom vs {(rest.relative_token or 'custom')}")
+        return TimeRangeV1(kind="absolute", start=a0.isoformat(), end=a1.isoformat(), relative_token="custom")
+    return None
 
 
 def _single_window(text: str, anchor: date) -> TimeRangeV1 | None:

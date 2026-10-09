@@ -383,9 +383,9 @@ async def test_finding_artifacts_carry_evidence_and_calculation_version():
 
 
 @pytest.mark.asyncio
-async def test_a_finding_is_not_valid_input_evidence():
-    """Findings are derived; feeding one back in as evidence would let a
-    calculation be scored as if it were a measurement."""
+async def test_a_finding_is_scored_through_the_evidence_it_cites():
+    """Findings are derived; a finding id passed as input expands to the
+    measurements it cites, so a calculation is never scored as a measurement."""
     store = InMemoryArtifactStore()
     ids = _daily(store, {"2026-09-13": 100.0, "2026-09-14": 100.0, "2026-09-15": 100.0, "2026-09-16": 900.0})
     ctx = FakeRunContext(_deps(store))
@@ -393,15 +393,11 @@ async def test_a_finding_is_not_valid_input_evidence():
 
     result = await analytics.detect_anomalies(ctx, [finding_id])
 
-    assert result.success is False
-    assert result.error_code == "INSUFFICIENT_EVIDENCE"
-    assert "not evidence" in result.summary
-    # Refusal names the backing ids so the next call can be corrected (same
-    # recovery class as a mistyped id). Charts unwrap findings themselves;
-    # scoring tools must still refuse.
-    assert result.retryable is True
-    for eid in ids:
-        assert eid in result.summary
+    # The finding stands for the measurements it cites: the call scores those,
+    # never the finding's own derived numbers.
+    assert result.success is True
+    assert set(result.provenance.evidence_ids) == set(ids)
+    assert finding_id not in result.provenance.evidence_ids
 
 
 # ---- merge companion metric breakdowns --------------------------------------

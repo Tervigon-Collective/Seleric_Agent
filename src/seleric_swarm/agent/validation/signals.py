@@ -682,6 +682,26 @@ def check_scope_coverage(
                     )
                 )
             continue
+        # A value the data records under several unrelated dimensions ("other": a channel, a platform and a
+        # payment method) does not say which one the user meant — usually none ("other available cost
+        # components", live 2026-10-09: four forced revisions on an exact P&L bridge, shipped partial). It stays a
+        # hint; a value of one family ("meta": every platform member) is a real scope and still blocks.
+        family_head = getattr(catalogue, "family_head", None)
+        families_known = family_head is not None and bool(getattr(catalogue, "dimension_families", None))
+        meanings = {family_head(d) for d in vf.dimensions} if families_known else set()
+        if len(meanings) > 1:
+            gaps.append(
+                EvidenceGap(
+                    description=(
+                        f"the question uses '{vf.term}', which the data records under several unrelated "
+                        f"dimensions ({' / '.join(sorted(meanings))}); if the user meant one of those values, "
+                        f"filter to it and say which — otherwise it is an ordinary word"
+                    ),
+                    blocking=False,
+                    priority=3,
+                )
+            )
+            continue
         gaps.append(
             EvidenceGap(
                 description=(
@@ -785,8 +805,10 @@ def check_scope_coverage(
                     f"the question asks about {win_start}..{win_end} as well, but no evidence "
                     f"in this mission covers that period — a comparison question needs both "
                     f"periods fetched before it can be answered. Fetch it (one query_metrics "
-                    f"per metric over that window) and compare, or state plainly that the "
-                    f"period is unavailable"
+                    f"for EVERY metric the answer shows for that period, over that window) and "
+                    f"replace all of that period's figures — headline, table row and change — "
+                    f"with the new ones, or state plainly that the period is unavailable. Never "
+                    f"mix a newly fetched figure with figures of another window in one row"
                 ),
                 blocking=True,
                 priority=8,

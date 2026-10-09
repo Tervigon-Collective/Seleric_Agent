@@ -82,12 +82,16 @@ async def test_run_python_reads_a_derived_artifact_as_the_evidence_it_cites(arti
     assert set(out["evidence_ids"]) == set(rows)  # cites the measurements, never the summary
 
 
-async def test_scoring_tools_still_refuse_a_finding() -> None:
-    """The analytics owner's rule stands: scoring a summary as if it were a measurement."""
+async def test_scoring_tools_score_a_findings_measurements_never_the_finding() -> None:
+    """The analytics owner's rule stands — a summary is never scored as a measurement — but a finding id now
+    loads the measurements it cites (2026-10-09: 34 of 40 analyze calls failed on the refusal round trip)."""
     store = InMemoryArtifactStore()
     rows = [_row(store, "a", 1.0), _row(store, "b", 2.0)]
-    _ev, _ids, refusal = analytics._load_evidence(Ctx(_deps(store)), [_finding(store, rows)])  # type: ignore[arg-type]
-    assert refusal is not None and refusal.retryable and rows[0] in refusal.summary
+    finding = _finding(store, rows)
+    ev, ids, refusal = analytics._load_evidence(Ctx(_deps(store)), [finding])  # type: ignore[arg-type]
+    assert refusal is None
+    assert ids == rows and finding not in ids
+    assert sorted(e.value for e in ev) == [1.0, 2.0]
 
 
 def test_a_breakdowns_row_count_is_a_fetched_fact() -> None:
@@ -131,3 +135,16 @@ def test_failure_detail_keeps_types_and_status_never_bodies() -> None:
     detail = _failure_detail(exc)
     assert detail == ["ModelHTTPError 429", "TimeoutError"]
     assert "secret" not in str(detail)
+
+
+async def test_run_python_reads_the_missions_evidence_when_no_ids_are_passed_and_refuses_typed_values() -> None:
+    """Live 2026-10-09 MS3-9781c608fc: evidence_ids omitted → validation retry → the fetched numbers were typed
+    into the script, and the 'waterfall' it returned no longer followed the data."""
+    store = InMemoryArtifactStore()
+    _row(store, "a", 1946496.87)
+    _row(store, "b", 2.0)
+    ctx = Ctx(_deps(store))
+    res = await sandbox.run_python(ctx, code="result = sum(e['value'] for e in evidence)")  # type: ignore[arg-type]
+    assert res.success and "1946498.87" in res.summary
+    with pytest.raises(ModelRetry, match="literals"):
+        await sandbox.run_python(ctx, code="result = 1946496.87 - 2.0")  # type: ignore[arg-type]

@@ -37,6 +37,7 @@ from seleric_swarm.toolsets import (
     actions,
     analytics,
     causal,
+    composition,
     diagnosis,
     experiments,
     exploration,
@@ -75,6 +76,8 @@ TOOLS: list[Any] = [
     analytics.generate_visualization,
     sandbox.run_python,
     diagnosis.diagnose_metric_change,
+    # Breakdowns / waterfalls / bridges from the catalogue's verified composition (reconcile exactly).
+    composition.break_down_metric,
     exploration.explore_data,
     # estimate_effect runs its refuters itself; refute_estimate only re-ran them.
     causal.estimate_effect,
@@ -185,6 +188,7 @@ _PREFETCHED_TOOLS = frozenset(
         "analyze",
         "run_python",
         "generate_visualization",
+        "break_down_metric",
     }
 )
 

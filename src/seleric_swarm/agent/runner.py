@@ -50,6 +50,7 @@ from seleric_swarm.agent.understand import classification_from, understand
 from seleric_swarm.agent.scope import (
     RequiredScope,
     build_required_scope,
+    scope_from_dimensions,
     question_axes_from_resolution,
     required_windows_from_resolved,
     value_filters_from_resolution,
@@ -198,15 +199,29 @@ def _as_of_datetime(as_of: str | None, timezone: str = "Asia/Kolkata") -> dateti
 
 
 def _required_scope(
-    runtime: SwarmRuntime, query: str, temporal_grain: str | None = None
+    runtime: SwarmRuntime,
+    query: str,
+    temporal_grain: str | None = None,
+    understanding: Any = None,
+    catalogue: Any = None,
 ) -> RequiredScope:
     """Resolve the query's requested breakdowns to catalogue dimension ids via
-    the bootstrap's alias index. Fail-open: no bootstrap / any error ⇒ empty
-    scope (the coverage check becomes NOT_APPLICABLE)."""
+    the bootstrap's alias index. The understanding's ``breakdown_dimensions`` (its
+    reading of the whole question) are authoritative when present; the text scan
+    is only the fallback for a mission whose understanding failed. Fail-open: no
+    bootstrap / any error ⇒ empty scope (the coverage check becomes NOT_APPLICABLE)."""
     bootstrap = getattr(runtime, "bootstrap", None)
     if bootstrap is None:
         return RequiredScope()
     try:
+        if understanding is not None:
+            return scope_from_dimensions(
+                list(getattr(understanding, "breakdown_dimensions", None) or []),
+                alias_index=bootstrap.alias_index(),
+                dimension_ids=bootstrap.dimension_ids(),
+                temporal_grain=temporal_grain,
+                is_time_dimension=getattr(catalogue, "is_time_dimension", None),
+            )
         return build_required_scope(
             query,
             alias_index=bootstrap.alias_index(),
@@ -691,14 +706,19 @@ def _measure_phrases(understanding: Any) -> list[str]:
     return [str(slot.words) for slot in slots if getattr(slot, "words", "")]
 
 
+_WORD_EDGE = ".,;:!?()[]{}'\"“”‘’"
+
+
 def _outside_measures(query: str, phrases: list[str]) -> str:
-    """``query`` without the measure phrases it holds verbatim (case-insensitive); a phrase the understanding
-    reworded is left in place, so its axes still count as context."""
-    text = query
-    for phrase in sorted({p.strip() for p in phrases if p.strip()}, key=len, reverse=True):
-        while (at := text.lower().find(phrase.lower())) >= 0:
-            text = f"{text[:at]} {text[at + len(phrase):]}"
-    return text
+    """``query`` without the words of its measure phrases (case-insensitive). The understanding spells phrases
+    out in its own words ("product mix (changes in which products were sold)"), so a verbatim strip left them in
+    place and "product" set scope=product on the question: CAC became product-allocated CAC and every named
+    driver followed (live 2026-10-09 dev replay of the CAC-drivers question). Each phrase keeps its own words
+    for its own resolution."""
+    measure_words = {w.strip(_WORD_EDGE).lower() for p in phrases for w in p.split()} - {""}
+    if not measure_words:
+        return query
+    return " ".join(w for w in query.split() if w.strip(_WORD_EDGE).lower() not in measure_words)
 
 
 class _ConceptResolver:
@@ -1168,7 +1188,9 @@ async def run_v3_mission(
     affirmation = bool(understanding and understanding.accepts_offer)
     is_followup = not small_talk and classification.depends_on_prior is True
     ordinary_words = frozenset(w.strip().lower() for w in (understanding.ordinary_words if understanding else []))
-    required_scope = _required_scope(runtime, query, temporal_grain=classification.grain)
+    required_scope = _required_scope(
+        runtime, query, temporal_grain=classification.grain, understanding=understanding, catalogue=catalogue
+    )
     # A named value is named on its family's first member too: the resolver ranked "orders containing the
     # product" (basket_product_title) above product_title for "Suspender boot sale", and the answer counted orders
     # with touchpoints instead of the product's own orders (live 2026-10-08).
@@ -1302,6 +1324,7 @@ async def run_v3_mission(
                         windows=[(w.start, w.end) for w in deps.required_scope.windows],
                         as_of=as_of_dt,
                         headline_metric_ids=_headline_metric_ids(runtime),
+                        question=query,
                     )
                     if understanding is not None and not small_talk and not affirmation
                     else None

@@ -25,7 +25,7 @@ def test_every_tool_is_registered() -> None:
     unregistered — the test suite would stay green, because a tool nobody
     registers is a tool nobody tests.
     """
-    assert len(TOOLS) == 19  # + exploration.explore_data
+    assert len(TOOLS) == 20  # + exploration.explore_data, composition.break_down_metric
 
 
 _ALL = {
@@ -39,6 +39,7 @@ _ALL = {
     "generate_visualization",
     "run_python",
     "diagnose_metric_change",
+    "break_down_metric",
     "explore_data",
     "estimate_effect",
     "forecast",

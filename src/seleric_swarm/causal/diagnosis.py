@@ -2450,7 +2450,13 @@ def _headline(r: DiagnosisReport) -> str:
         )
     if r.decomposition:
         lead = max(r.decomposition, key=lambda t: abs(t.contribution))
-        parts.append(f"Arithmetically, {lead.metric} accounts for {_pct(lead.share_of_change).lstrip('+')} of the change.")
+        if _offsetting([t.share_of_change for t in r.decomposition]):
+            parts.append(
+                "Arithmetically, " + ", ".join(f"{t.metric} {t.contribution:+.4g}" for t in r.decomposition)
+                + f" (in {r.outcome}'s units; the parts offset each other)."
+            )
+        else:
+            parts.append(f"Arithmetically, {lead.metric} accounts for {_pct(lead.share_of_change).lstrip('+')} of the change.")
     if r.bridge:
         parents = {t.parent for t in r.bridge}
         leaves = sorted((t for t in r.bridge if t.metric not in parents), key=lambda t: -abs(t.share_of_change or 0.0))
@@ -2581,6 +2587,21 @@ def _share(v: float | None) -> str:
     return "n/a" if v is None or not math.isfinite(v) else f"{abs(v) * 100:.0f}%"
 
 
+def _offsetting(shares: list[float | None]) -> bool:
+    """Parts pull against each other harder than the net moved: a share of the change above 100% only says the
+    net is small (live 2026-10-09: ROAS "+694% / −594% of the change"), so the parts are stated in the outcome's
+    own units instead."""
+    return any(v is not None and math.isfinite(v) and abs(v) > 1.0 for v in shares)
+
+
+def _effect(contribution: float, outcome: str, lineage: dict[str, MetricMeta]) -> str:
+    """A part's effect on the outcome, signed, in the outcome's unit (a percent-point rate keeps its points)."""
+    if not math.isfinite(contribution):
+        return "n/a"
+    text = _val(abs(contribution), outcome, lineage)
+    return ("+" if contribution >= 0 else "−") + text
+
+
 def _same_weekday(e: EventSummary) -> bool:
     return e.reference_kind.startswith("same weekday")
 
@@ -2670,8 +2691,9 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
     happened += ({
         "strong": " The daily values of the two periods clearly differ, so this is a real shift.",
         "moderate": " The daily values of the two periods differ somewhat — a notable shift, not a clear one.",
-        "none": " The daily values of the two periods overlap a lot, so the shift is not clear-cut; the parts "
-                "below show what moved.",
+        "none": " The daily values of the two periods overlap a lot, so the shift is within normal day-to-day "
+                "variation: LEAD with that, and present the parts below as what moved, never as the reason it "
+                "rose or fell.",
     } if e.reference_kind == _PERIOD_KIND else {
         "strong": " That is well outside its normal day-to-day range.",
         "moderate": " That is a larger swing than most normal days, but not extreme — a notable change, not a clear anomaly.",
@@ -2697,17 +2719,30 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
         )
     elif r.decomposition:
         terms = sorted(r.decomposition, key=lambda t: -abs(t.contribution))
-        out.append(
-            "WHAT CHANGED (arithmetic, not a cause): "
-            + "; ".join(
-                f"{_label(t.metric, lineage)} went from {_val(t.reference, t.metric, lineage)} to "
-                f"{_val(t.event, t.metric, lineage)} ({_chg(t.event, t.reference)}), "
-                f"{'accounting for' if _sign(t.contribution) == _sign(e.delta or 0) else 'offsetting'} about "
-                f"{_share(t.share_of_change)} of the change"
-                for t in terms
+        if _offsetting([t.share_of_change for t in terms]):
+            out.append(
+                f"WHAT CHANGED (arithmetic, not a cause; the parts pull in opposite directions, so state each "
+                f"one's effect on {name}, never a percent share): "
+                + "; ".join(
+                    f"{_label(t.metric, lineage)} went from {_val(t.reference, t.metric, lineage)} to "
+                    f"{_val(t.event, t.metric, lineage)} ({_chg(t.event, t.reference)}), moving {name} by "
+                    f"{_effect(t.contribution, r.outcome, lineage)}"
+                    for t in terms
+                )
+                + f"; net {_effect(sum(t.contribution for t in terms), r.outcome, lineage)}."
             )
-            + "."
-        )
+        else:
+            out.append(
+                "WHAT CHANGED (arithmetic, not a cause): "
+                + "; ".join(
+                    f"{_label(t.metric, lineage)} went from {_val(t.reference, t.metric, lineage)} to "
+                    f"{_val(t.event, t.metric, lineage)} ({_chg(t.event, t.reference)}), "
+                    f"{'accounting for' if _sign(t.contribution) == _sign(e.delta or 0) else 'offsetting'} about "
+                    f"{_share(t.share_of_change)} of the change"
+                    for t in terms
+                )
+                + "."
+            )
     if r.chain and e.strength != "none":
         target = r.chain_identity.split(" ")[0]
         lead_c = max(r.chain, key=lambda t: abs(t.contribution))
@@ -2720,7 +2755,11 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
                 f"({_chg(t.event, t.reference)})"
                 for t in r.chain
             )
-            + f", so {_label(lead_c.metric, lineage)} carries about {_share(lead_c.share_of_change)} of it."
+            + (
+                f", so {_label(lead_c.metric, lineage)} moved it by {_effect(lead_c.contribution, target, lineage)}."
+                if _offsetting([t.share_of_change for t in r.chain])
+                else f", so {_label(lead_c.metric, lineage)} carries about {_share(lead_c.share_of_change)} of it."
+            )
         )
     period = e.reference_kind == _PERIOD_KIND
     where = next((d for d in r.chain_dimensions if _covers_whole(d) and (d.localised or d.simpsons_paradox)), None)

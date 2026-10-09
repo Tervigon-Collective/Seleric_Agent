@@ -209,10 +209,9 @@ def _unwrap_findings_to_evidence_ids(
     Live 2026-10-08 (MS3-7748dee188): the model called ``generate_visualization``
     with a ``prefetched_lookup`` finding id. Charts need the backing measurements,
     not the derived summary — expanding here is the same class of recovery as
-    ``_repair_ids`` (opaque id channel, model held the wrong token). Analytics
-    tools that *score* evidence must not use this: scoring a finding as if it
-    were a measurement is the bug ``test_a_finding_is_not_valid_input_evidence``
-    guards.
+    ``_repair_ids`` (opaque id channel, model held the wrong token). Scoring
+    tools get the same expansion through ``_load_evidence``: they score the
+    finding's backing measurements, never the finding itself.
     """
     if not requested:
         return [], {}
@@ -276,6 +275,14 @@ def _load_evidence(
         )
 
     resolved_ids, repairs = _repair_ids(ctx, list(evidence_ids))
+    # A finding id stands for the measurements it cites: compute over those. Refusing it cost a round trip per
+    # call, and live the model often never recovered (2026-10-08/09: 34 of 40 analyze calls failed this way, then
+    # run_python was fed hand-typed numbers). A derived artifact that cites nothing is still refused below.
+    resolved_ids, unwrapped = _unwrap_findings_to_evidence_ids(ctx, resolved_ids)
+    if unwrapped:
+        _note_repaired_ids(
+            ctx, "; ".join(f"{fid} -> its {len(ids)} evidence rows" for fid, ids in sorted(unwrapped.items()))
+        )
     artifacts = ctx.deps.artifact_store.get_many(resolved_ids)
     found = {a.id for a in artifacts}
     missing = [aid for aid in resolved_ids if aid not in found]

@@ -124,10 +124,38 @@ def _workdir(mission_id: str) -> Path:
     return path
 
 
+def _typed_in_values(code: str, ctx: RunContext[SelericDeps]) -> list[float]:
+    """Numeric literals in *code* that equal a value this mission fetched (to the cent).
+
+    A literal is any constant in the parsed script; small numbers (counts, scales, thresholds) are left alone
+    by requiring a fractional part or a magnitude beyond everyday constants, and a match against a fetched
+    value — so a script that re-types the evidence instead of reading it is caught."""
+    import ast
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    literals = {
+        float(n.value) for n in ast.walk(tree)
+        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)) and not isinstance(n.value, bool)
+        and (abs(float(n.value)) >= 1000 or float(n.value) != int(n.value))
+    }
+    if not literals:
+        return []
+    fetched = []
+    for a in ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id):
+        if a.artifact_type == "evidence" and isinstance(a.payload, dict):
+            v = a.payload.get("value")
+            if isinstance(v, (int, float)):
+                fetched.append(float(v))
+    return sorted(x for x in literals if any(abs(x - f) <= 0.005 * max(1.0, abs(f) / 1000) for f in fetched))
+
+
 async def run_python(
     ctx: RunContext[SelericDeps],
     code: str,
-    evidence_ids: list[str],
+    evidence_ids: list[str] | None = None,
     purpose: str = "",
 ) -> ToolResult:
     """Run a short python script to aggregate/transform already-fetched evidence.
@@ -135,8 +163,10 @@ async def run_python(
     Use this for computation the fixed analytics tools don't cover (custom
     ratios, rankings, multi-step arithmetic). It never fetches data — pass the
     ``evidence_ids`` returned by ``query_metrics``/``drilldown`` and read them
-    inside the script. A finding id (e.g. a prefetched table's) is read as the
-    evidence rows it cites. Sum or roll up rows here, never in the answer's prose:
+    inside the script (omitted: every evidence row this mission fetched). A finding
+    id (e.g. a prefetched table's) is read as the evidence rows it cites. Read every
+    figure from ``evidence``; a script that types a fetched value in as a literal is
+    refused, because its result would no longer follow the data. Sum or roll up rows here, never in the answer's prose:
     a total computed here is recorded and can be cited.
 
     In scope, the script sees:
@@ -175,6 +205,12 @@ async def run_python(
     # 2026-10-07/08: run_python refused the prefetch finding holding the very table a
     # channel reconciliation had to sum; the model summed in prose instead and the
     # unrecorded totals failed grounding until the mission did (4 of 6 failures).
+    if not evidence_ids:
+        # Omitted ids meant a validation retry, after which the model typed the fetched numbers into the script
+        # (live 2026-10-09 MS3-9781c608fc): the script sees the mission's evidence instead.
+        evidence_ids = [
+            a.id for a in ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id) if a.artifact_type == "evidence"
+        ]
     evidence_ids, unwrapped = _unwrap_findings_to_evidence_ids(ctx, list(evidence_ids))
     if unwrapped:
         _note_repaired_ids(
@@ -190,6 +226,13 @@ async def run_python(
         compiled = compile(code, "<sandbox>", "exec")
     except SyntaxError as exc:
         raise ModelRetry(f"sandbox code has a syntax error: {exc}. Fix it and retry.") from exc
+    if typed := _typed_in_values(code, ctx):
+        raise ModelRetry(
+            "the script types fetched values in as literals ("
+            + ", ".join(f"{v:g}" for v in typed[:5])
+            + "); read them from `evidence` (each row has metric_id, value, dimensions, period_start/period_end) "
+            "so the result follows the data"
+        )
 
     workdir = _workdir(ctx.deps.mission_id)
     before = {p.name for p in workdir.iterdir()} if workdir.exists() else set()

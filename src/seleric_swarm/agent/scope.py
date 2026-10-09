@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 from datetime import date
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
@@ -317,6 +318,37 @@ def build_required_scope(
             if cands:
                 resolved.add(cands)
                 break
+    return RequiredScope(breakdowns=frozenset(resolved), temporal_grain=temporal_grain)
+
+
+def scope_from_dimensions(
+    understood: list[str] | tuple[str, ...],
+    *,
+    alias_index: dict[str, str] | None,
+    dimension_ids: frozenset[str] | set[str] | None,
+    temporal_grain: str | None = None,
+    is_time_dimension: Any = None,
+) -> RequiredScope:
+    """The breakdowns the question's understanding read, as candidate sets.
+
+    The understanding (an LLM reading of the whole question) names the dimensions the user asked to break down
+    by; each becomes the set of catalogue dimensions sharing its grain language, so a sibling grouping still
+    covers it. Reading ``by`` / ``per`` out of the raw text instead took a measure's own words for a breakdown
+    ("cost per order" demanded every order_* dimension: live 2026-10-09 MS3-e4ba59ad63, three forced revisions,
+    and the shipped answer dropped the comparison that was asked). A time dimension is the temporal grain's
+    business, not a breakdown."""
+    aliases = alias_index or {}
+    dims = frozenset(dimension_ids or ())
+    resolved: set[frozenset[str]] = set()
+    for raw in understood or ():
+        term = str(raw or "").strip()
+        if not term or (is_time_dimension is not None and is_time_dimension(term)):
+            continue
+        cands = _resolve_dimension_candidates(term, aliases, dims) | (frozenset({term}) if term in dims else frozenset())
+        if is_time_dimension is not None:
+            cands = frozenset(c for c in cands if not is_time_dimension(c))
+        if cands:
+            resolved.add(cands)
     return RequiredScope(breakdowns=frozenset(resolved), temporal_grain=temporal_grain)
 
 

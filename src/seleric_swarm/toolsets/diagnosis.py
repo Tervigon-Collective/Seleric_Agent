@@ -425,6 +425,188 @@ def _summary(report: engine.DiagnosisReport, lineage: dict[str, engine.MetricMet
     return "\n".join(lines)
 
 
+def _named_driver_lines(
+    named: list[str],
+    series: dict[str, dict[date, float]],
+    event_days: list[date],
+    reference_days: list[date],
+    lineage: dict[str, engine.MetricMeta],
+    report: engine.DiagnosisReport,
+) -> tuple[str, dict[str, float]]:
+    """The drivers the user asked about, each with its move over the event vs the reference days and its test
+    verdict — so the answer addresses every hypothesis the user raised, largest move first. An average per day
+    keeps windows of different lengths comparable; it is a move, not a contribution, unless a verdict says so."""
+    verdicts = {f.driver: f for f in report.drivers}
+    rows: list[tuple[float, str]] = []
+    figures: dict[str, float] = {}
+    for m in named:
+        vals = series.get(m) or {}
+        ev = [vals[d] for d in event_days if d in vals]
+        rf = [vals[d] for d in reference_days if d in vals]
+        label = engine._label(m, lineage)
+        if not ev or not rf:
+            rows.append((-1.0, f"{label}: no data over these days, so it could not be checked"))
+            continue
+        e_avg, r_avg = sum(ev) / len(ev), sum(rf) / len(rf)
+        rel = (e_avg / r_avg - 1) if abs(r_avg) > 1e-12 else math.nan
+        figures[f"{m} | event average per day"] = e_avg
+        figures[f"{m} | reference average per day"] = r_avg
+        if math.isfinite(rel):
+            figures[f"{m} | change"] = rel
+        move = f"{label} {engine._val(r_avg, m, lineage)} → {engine._val(e_avg, m, lineage)} per day ({engine._chg(e_avg, r_avg)})"
+        f = verdicts.get(m)
+        if f is not None and f.status == "implicated" and f.classification:
+            verdict = f"tested: {f.classification.replace('_', ' ')}"
+        elif f is not None:
+            verdict = f"tested: {f.status.replace('_', ' ')}" + (f" ({f.reason})" if f.reason else "")
+        else:
+            verdict = "described, not tested as a cause (a rate, or a period comparison)"
+        rows.append((abs(rel) if math.isfinite(rel) else -1.0, f"{move} — {verdict}"))
+    rows.sort(key=lambda r: -r[0])
+    return (
+        "DRIVERS THE USER ASKED ABOUT (address every one, in this order — the size of each move; only a tested "
+        "cause may be called a cause): " + "; ".join(text for _, text in rows) + "."
+    ), figures
+
+
+def _base_form(
+    metric: str, lineage: dict[str, engine.MetricMeta], series: dict[str, dict[date, float]], days: list[date]
+) -> tuple[float, dict[str, float]] | None:
+    """A metric as constant × Π additive-base^exponent: itself when additive, else its lineage-proposed identity
+    the data verify (CPM = 1000 × spend / impressions)."""
+    if lineage.get(metric, engine.MetricMeta(metric)).additive:
+        return 1.0, {metric: 1.0}
+    for ident in engine.discover_identities(metric, lineage, series, days):
+        if not ident.approximate and all(lineage.get(f, engine.MetricMeta(f)).additive for f, _ in ident.factors):
+            return ident.k, {f: float(e) for f, e in ident.factors}
+    return None
+
+
+def _ratio_split(
+    outcome: str,
+    named: list[str],
+    lineage: dict[str, engine.MetricMeta],
+    series: dict[str, dict[date, float]],
+    history_days: list[date],
+    event_days: list[date],
+    reference_days: list[date],
+) -> tuple[str, dict[str, float]]:
+    """An exact multiplicative split of a ratio outcome through the rates the user named.
+
+    Every metric is written over additive bases (verified identities). The top split uses as few named rates as
+    rebuild the outcome with the fewest bases left over; what is left is one more factor named after its bases,
+    and among equal splits the one whose leftover joins the closest stages (its ratio nearest 1 on the data: clicks
+    per new customer, not impressions per new customer) wins — a funnel read from the data, not from names. Each
+    chosen rate is then split exactly by the other named rates (CPC = CPM ÷ CTR). Effects are log changes, so they
+    multiply to the outcome's change: CAC = CPC × clicks per new customer, CPC = CPM ÷ CTR — the cost side and the
+    conversion side of an acquisition cost, apart."""
+    import itertools
+
+    import numpy as np
+
+    out = _base_form(outcome, lineage, series, history_days)
+    if out is None or lineage.get(outcome, engine.MetricMeta(outcome)).additive:
+        return "", {}
+    forms = {m: f for m in named if m != outcome and (f := _base_form(m, lineage, series, history_days)) is not None
+             and not lineage.get(m, engine.MetricMeta(m)).additive}
+    if not forms:
+        return "", {}
+    bases = sorted({b for _, v in [out, *forms.values()] for b in v})
+    vec = lambda v: np.array([v.get(b, 0.0) for b in bases])  # noqa: E731
+
+    def avg(metric: str, days: list[date]) -> float | None:
+        vals = [v for d in days if (v := series.get(metric, {}).get(d)) is not None]
+        return sum(vals) / len(vals) if vals else None
+
+    def value(k: float, form: dict[str, float], days: list[date]) -> float | None:
+        v = k
+        for b, e in form.items():
+            a = avg(b, days)
+            if a is None or a <= 0:
+                return None
+            v *= a**e
+        return v
+
+    def split(target: np.ndarray, cands: list[str], exact: bool) -> tuple[dict[str, int], dict[str, float]] | None:
+        best: tuple[tuple[float, ...], dict[str, int], dict[str, float]] | None = None
+        for signs in itertools.product((-1, 0, 1), repeat=len(cands)):
+            chosen = {m: sg for m, sg in zip(cands, signs, strict=True) if sg}
+            if not chosen or np.linalg.matrix_rank(np.array([vec(forms[m][1]) for m in chosen])) < len(chosen):
+                continue
+            residual = target - sum(sg * vec(forms[m][1]) for m, sg in chosen.items())
+            res = {b: float(e) for b, e in zip(bases, residual, strict=True) if abs(e) > 1e-9}
+            if exact and res:
+                continue
+            rv = value(1.0, res, reference_days) if res else 1.0
+            closeness = abs(math.log(rv)) if rv else math.inf
+            score = (len(res), len(chosen), closeness)
+            if best is None or score < best[0]:
+                best = (score, chosen, res)
+        return None if best is None else (best[1], best[2])
+
+    cands = list(forms)[:6]
+    top = split(vec(out[1]), cands, exact=False)
+    if top is None:
+        return "", {}
+    chosen, res_form = top
+
+    def res_label(form: dict[str, float]) -> str:
+        num = " × ".join(engine._label(b, lineage) for b, e in form.items() if e > 0) or "1"
+        den = " × ".join(engine._label(b, lineage) for b, e in form.items() if e < 0)
+        return f"{num} per {den}" if den else num
+
+    o_ev, o_rf = value(out[0], out[1], event_days), value(out[0], out[1], reference_days)
+    if not o_ev or not o_rf:
+        return "", {}
+    figures: dict[str, float] = {}
+
+    def factor_text(m: str, label: str, k: float, form: dict[str, float], sign: int, of: str) -> tuple[float, str] | None:
+        ev, rf = value(k, form, event_days), value(k, form, reference_days)
+        if not ev or not rf:
+            return None
+        eff = sign * math.log(ev / rf)
+        shown = (lambda v: engine._val(v, m, lineage)) if m in lineage else (lambda v: f"{v:,.4g}")
+        figures[f"{label} | event"], figures[f"{label} | reference"] = ev, rf
+        figures[f"{label} | effect on {of} %"] = math.exp(eff) * 100 - 100
+        return eff, (f"{label} {shown(rf)} → {shown(ev)} ({engine._chg(ev, rf)}), moving {engine._label(of, lineage)} "
+                     f"{math.exp(eff) * 100 - 100:+.1f}%")
+
+    rows: list[tuple[float, str]] = []
+    nested: list[str] = []
+    for m, sg in chosen.items():
+        got = factor_text(m, engine._label(m, lineage), forms[m][0], forms[m][1], sg, outcome)
+        if got is None:
+            return "", {}
+        rows.append(got)
+        others = [c for c in cands if c not in chosen]
+        if others and (sub := split(vec(forms[m][1]), others, exact=True)) is not None:
+            parts = [factor_text(c, engine._label(c, lineage), forms[c][0], forms[c][1], s2, m) for c, s2 in sub[0].items()]
+            if all(parts):
+                nested.append(
+                    f"{engine._label(m, lineage)} itself = "
+                    + " ".join(("× " if s2 > 0 else "÷ ") + engine._label(c, lineage) for c, s2 in sub[0].items()).lstrip("× ")
+                    + ": " + "; ".join(t for _, t in sorted(parts, key=lambda p: -abs(p[0])))  # type: ignore[index]
+                )
+    if res_form:
+        got = factor_text("residual", res_label(res_form), 1.0, res_form, 1, outcome)
+        if got is None:
+            return "", {}
+        rows.append(got)
+    rows.sort(key=lambda r: -abs(r[0]))
+    formula = " ".join(("× " if sg > 0 else "÷ ") + engine._label(m, lineage) for m, sg in chosen.items()).lstrip("× ")
+    if res_form:
+        formula += f" × {res_label(res_form)}"
+    total = math.log(o_ev / o_rf)
+    figures[f"{outcome} | change %"] = math.exp(total) * 100 - 100
+    return (
+        f"EXACT SPLIT OF THE CHANGE (a multiplicative identity of the catalogue's definitions, verified on the "
+        f"data; the effects multiply to the total, so rank them by size): {engine._label(outcome, lineage)} = "
+        f"{formula} (× a constant). " + "; ".join(t for _, t in rows)
+        + f"; together {engine._label(outcome, lineage)} {math.exp(total) * 100 - 100:+.1f}%."
+        + (" " + " ".join(n + "." for n in nested) if nested else "")
+    ), figures
+
+
 def _inclusive_days(start_dt: datetime, end_dt: datetime) -> tuple[date, date]:
     """First and last day of a window. The end day is included, as in ``query_metrics``
     and the resolved-window pin: reading a midnight end as exclusive dropped the last
@@ -446,6 +628,7 @@ async def diagnose_metric_change(
     search_breadth: Literal[0, 1, 2] = 0,
     compare_start: datetime | None = None,
     compare_end: datetime | None = None,
+    drivers: list[str] | None = None,
 ) -> ToolResult:
     """Explain why a metric changed: event size, what/where it changed, and evidence-ranked causes.
 
@@ -466,6 +649,10 @@ async def diagnose_metric_change(
     compared with the equal-length period just before it. The result then
     splits the difference between the two periods exactly by component and by
     segment; upstream drivers are not estimated for period comparisons.
+
+    ``drivers``: catalogue metric ids the user names as possible explanations ("check whether it came from CPM,
+    CTR, checkout conversion …" — resolve each to its id first). Each one is fetched and reported with how it
+    moved over the same days, and tested as a cause where it can be; report every one of them.
     """
     if (unknown := await semantic._reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
@@ -547,7 +734,17 @@ async def diagnose_metric_change(
             chain_metrics += [rate, base]
     chain_metrics = [m for m in dict.fromkeys(chain_metrics) if m not in identity_metrics and m != metric_id]
     cap = P.DIAG_MAX_DRIVERS + 2 * int(search_breadth)
-    drivers = _plan_drivers(ctx, metric_id, lineage, set(identity_metrics), cap)
+    named = [d for d in dict.fromkeys(str(x).strip() for x in (drivers or [])) if d and d != metric_id]
+    if ctx.deps.catalogue.metrics:
+        if unknown_named := [d for d in named if not ctx.deps.catalogue.has_metric(d)]:
+            notes.append(f"not catalogue metric ids, so not checked: {', '.join(unknown_named)}")
+        named = [d for d in named if d not in unknown_named]
+    # A named driver is always tested when it is a quantity the engine can estimate (additive); a named rate is
+    # still fetched and its move reported over the same days.
+    drivers = list(dict.fromkeys([
+        *(d for d in named if lineage.get(d, engine.MetricMeta(d)).additive and d not in identity_metrics),
+        *_plan_drivers(ctx, metric_id, lineage, set(identity_metrics), cap),
+    ]))
     dims = _plan_dimensions(ctx, metric_id, P.DIAG_MAX_DIMENSIONS + 4 * int(search_breadth))
 
     # ---- fetch ---------------------------------------------------------------------------
@@ -567,7 +764,10 @@ async def diagnose_metric_change(
             if m != metric_id and meta.additive and meta.unit == out_meta.unit
             and ctx.deps.catalogue.has_metric(m) and _supports_brand(ctx, m)
         ]
-    series_ids = list(dict.fromkeys([metric_id, *identity_metrics, *chain_metrics, *drivers, *bridge_pool]))
+    named_parts = [d for n in named for d in lineage.get(n, engine.MetricMeta(n)).depends_on if d in lineage]
+    series_ids = list(dict.fromkeys(
+        [metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts, *bridge_pool]
+    ))
     series_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters)) for m in series_ids))
 
     quality: list[str] = []
@@ -583,7 +783,7 @@ async def diagnose_metric_change(
             quality.append(f"{m}: fetch failed ({str(res.get('error'))[:120]})")
             continue
         if res.get("_dropped_filters"):
-            if m in bridge_pool and m not in (metric_id, *identity_metrics, *chain_metrics, *drivers):
+            if m in bridge_pool and m not in (metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts):
                 # An unfiltered total cannot be a term of a filtered outcome.
                 bridge_pool.remove(m)
                 continue
@@ -713,14 +913,32 @@ async def diagnose_metric_change(
             method=f.estimator or "backdoor.linear_regression",
         )
         artifact_ids.append(_put_derived(ctx, "causal", causal, ev_ids))
+    named_text, named_metrics = "", {}
+    if named:
+        for m in named:
+            if m in series and m not in per_metric_ids:
+                ids = _evidence_rows(ctx, m, series[m], cited_days, args_by_metric[m], index, tz, unit=units.get(m))
+                per_metric_ids[m] = ids
+                evidence_ids += ids
+        reference_days = baseline or sorted(
+            {date.fromisoformat(x) for v in (report.event.reference_days.values() if report.event else []) for x in v}
+        )
+        named_text, named_metrics = _named_driver_lines(named, series, event_days, reference_days, lineage, report)
+        split_text, split_metrics = _ratio_split(metric_id, named, lineage, series, history_days, event_days, reference_days)
+        if split_text:
+            named_text = split_text + "\n" + named_text
+            named_metrics.update(split_metrics)
     finding = Finding(
         finding_type="diagnosis",
         statement=report.headline,
         evidence_ids=evidence_ids,
-        metrics=_finding_metrics(report),
+        # the named drivers' averages are derived here: recorded so the answer may print them
+        metrics={**_finding_metrics(report), **named_metrics},
     )
     finding_id = _put_derived(ctx, "finding", finding, evidence_ids)
     summary = _summary(report, lineage)
+    if named_text:
+        summary += "\n" + named_text
     ctx.deps.scratchpad.note(f"diagnose_metric_change({metric_id}, {ev_start}..{ev_end}) → {report.verdict}: {report.headline}")
     return ToolResult(
         success=True,
