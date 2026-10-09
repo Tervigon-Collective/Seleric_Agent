@@ -501,7 +501,50 @@ def _mission_values(deps: SelericDeps) -> list[float]:
             walk(payload.get("signals"))
     values.extend(rollups.values())
     values.extend(float(n) for n in row_counts.values() if n > 1)
+    values.extend(_same_metric_arithmetic(deps))
     return values
+
+
+def _same_metric_arithmetic(deps: SelericDeps) -> list[float]:
+    """Changes and shares of one metric's own fetched values: the same slice across periods (difference and
+    relative change) and each row's share of its breakdown total in one period. Arithmetic the answer states in
+    prose ("+9.8%", "26% of the total") is the commonest reason a correct answer was sent back as unbacked
+    (33 of 79 revisions in the 2026-10-08/09 audit); it is backed when it is exactly this, and only this, so an
+    invented figure still finds nothing. Relative figures are kept as fractions (the percent check scales them)."""
+    rows: list[tuple[Any, ...]] = []
+    for artifact in deps.artifact_store.list_for_mission(deps.mission_id):
+        payload = artifact.payload if artifact.artifact_type == "evidence" else None
+        if not isinstance(payload, dict):
+            continue
+        value = payload.get("value")
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        dims = payload.get("dimensions") if isinstance(payload.get("dimensions"), dict) else {}
+        rows.append((payload.get("metric_id"), payload.get("grain"), tuple(sorted((k, str(v)) for k, v in dims.items())),
+                     str(payload.get("period_start")), str(payload.get("period_end")), float(value)))
+    out: list[float] = []
+    by_slice: dict[tuple[Any, ...], list[tuple[str, float]]] = {}
+    by_query: dict[tuple[Any, ...], list[float]] = {}
+    for metric, grain, dims, start, end, value in rows:
+        by_slice.setdefault((metric, grain, dims), []).append((start, value))
+        by_query.setdefault((metric, grain, start, end, tuple(k for k, _ in dims)), []).append(value)
+    for (_, grain, _), series in by_slice.items():
+        series.sort()
+        # period totals: every pair of periods; a time series: each step only (bounded either way)
+        pairs = (
+            [(series[i][1], series[j][1]) for i in range(len(series)) for j in range(len(series)) if i != j]
+            if grain == "none" and len(series) <= 8
+            else [(series[i + 1][1], series[i][1]) for i in range(len(series) - 1)]
+        )
+        for later, earlier in pairs:
+            out.append(later - earlier)
+            if earlier:
+                out.append((later - earlier) / abs(earlier))
+    for key, vals in by_query.items():
+        total = sum(vals)
+        if key[4] and len(vals) > 1 and total:
+            out.extend(v / total for v in vals)
+    return out
 
 
 def _figures(text: str) -> list[tuple[float, float, bool]]:

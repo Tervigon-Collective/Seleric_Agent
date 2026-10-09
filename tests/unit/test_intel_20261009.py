@@ -335,3 +335,71 @@ async def test_a_composition_total_follows_the_basis_the_question_names() -> Non
     out = await plan_from_slots(slots, catalogue=cat, resolver=resolver, question=q,
                                 windows=[(date(2026, 9, 1), date(2026, 9, 30))], as_of=AS_OF)
     assert out.plan is not None and out.plan.steps[0].metric_ids == ["net_profit"]
+
+
+def test_a_change_or_share_of_one_metrics_own_values_is_backed_and_nothing_else_is() -> None:
+    from seleric_swarm.agent.validation import _backed, _mission_values
+    from tests.unit.test_failures_20261008 import _deps as fdeps
+    from tests.unit.test_failures_20261008 import _row
+
+    store = InMemoryArtifactStore()
+    _row(store, "a", 300.0)
+    _row(store, "b", 100.0)
+    pool = _mission_values(fdeps(store))
+    assert _backed(75.0, 0.05, True, pool)        # a's share of the a+b total
+    assert _backed(25.0, 0.05, True, pool)
+    assert not _backed(41.0, 0.05, True, pool)    # an invented percent
+
+
+async def test_a_date_basis_only_the_slot_names_is_not_the_users() -> None:
+    """The understanding wrote 'P&L net profit' (a catalogue label) for a question that names no date basis: the
+    order-date twin is used. A question that itself says 'on the P&L' keeps the Finance metric."""
+    from seleric_swarm.agent.runner import _ConceptResolver
+    from seleric_swarm.agent.scope import RequiredScope
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+
+    cat = CatalogueSnapshot(metrics=(
+        CatalogueMetricMeta(id="net_profit", view="order_pnl", raw={"date_basis": "order", "date_twin": "pnl_net_profit"}),
+        CatalogueMetricMeta(id="pnl_net_profit", view="pnl", raw={"date_basis": "finance", "date_twin": "net_profit"}),
+    ))
+
+    class Gateway:
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if capability.endswith("resolve_concept"):
+                return {"kind": "resolved_concept", "metric_id": "pnl_net_profit", "filter": {}}
+            return {"status": "ok", "axes": {"date": "finance"} if "P&L" in arguments["text"] else {}}
+
+    plain = _ConceptResolver(Gateway(), RequiredScope(), cat)
+    assert (await plain(["P&L net profit"]))["P&L net profit"] == "net_profit"
+    asked = _ConceptResolver(Gateway(), RequiredScope(question_axes=(("date", "finance"),)), cat)
+    assert (await asked(["P&L net profit"]))["P&L net profit"] == "pnl_net_profit"
+
+
+async def test_a_driver_the_question_names_never_takes_the_outcomes_place() -> None:
+    """Regression Q24: 'Why did CAC increase … checkout conversion …' — the whole-question reading named
+    checkout rate; CAC stays the outcome because checkout rate is a different measure, not a variant of it."""
+    from seleric_swarm.agent.plan import MetricSlot, PlanSlots, plan_from_slots
+
+    q = "Why did CAC increase yesterday? Check whether the change came from CPM or checkout conversion."
+    slots = PlanSlots(shape="why_single_metric", metrics=[
+        MetricSlot(words="customer acquisition cost", metric_id="cac"),
+        MetricSlot(words="checkout conversion", metric_id="checkout_rate"),
+    ])
+
+    async def resolver(texts: list[str]) -> dict[str, str | None]:
+        table = {"customer acquisition cost": "cac", "checkout conversion": "checkout_rate", q: "checkout_rate"}
+        return {t: table.get(t) for t in texts}
+
+    out = await plan_from_slots(slots, catalogue=CatalogueSnapshot(), resolver=resolver, question=q,
+                                windows=[(date(2026, 10, 8), date(2026, 10, 8))], as_of=AS_OF)
+    assert out.plan is not None and out.plan.steps[0].metric_ids == ["cac"]
+
+
+async def test_a_breakdowns_evidence_records_the_filters_it_was_fetched_with(defs: None) -> None:
+    mcp = _Mcp({"2026-10-01": {"np": -20.0, "cm": 80.0, "ns": 100.0, "cogs": 20.0, "ad": 100.0}})
+    deps = _deps(mcp)
+    res = await composition.break_down_metric(
+        _Ctx(deps), "np", period_start=datetime(2026, 10, 1, tzinfo=UTC), filters={"finance_channel": "meta"}
+    )
+    ev = deps.artifact_store.get(res.provenance.evidence_ids[0])
+    assert {"dimension": "finance_channel", "operator": "equals", "values": ["meta"]} in ev.provenance.source_metadata["filters_applied"]

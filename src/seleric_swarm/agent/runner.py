@@ -728,10 +728,27 @@ class _ConceptResolver:
     (``prime``) instead of re-resolving every concept in an LLM turn.
     A phrase the resolver cannot place maps to None; errors fail open."""
 
-    def __init__(self, mcp: Any, scope: RequiredScope) -> None:
+    def __init__(self, mcp: Any, scope: RequiredScope, catalogue: Any = None) -> None:
         self._mcp = mcp
         self._axes = dict(getattr(scope, "question_axes", ()) or ())
+        self._catalogue = catalogue
         self.filters: dict[str, dict[str, Any]] = {}
+
+    async def _basis_the_user_named(self, text: str, metric_id: str) -> str:
+        """The metric, or its date twin when the phrase sets a date basis the question itself does not.
+
+        The understanding words slots in its own terms and sometimes copies a catalogue label ("P&L net
+        profit"), which names the event-date Finance twin the user never asked for — the 10-02 loss bridge and
+        the September waterfall were both reconciled on the Finance P&L (regression 2026-10-09 golden Q15/Q22).
+        The user's words set the axes (``question_axes``); a basis only the slot carries is not theirs."""
+        basis_for = getattr(self._catalogue, "date_basis_for", None)
+        if basis_for is None:
+            return metric_id
+        basis, twin = basis_for(metric_id)
+        if not basis or not twin or "date" in self._axes:
+            return metric_id
+        slot_axes = dict(await _context_axes(self._mcp, text) or ())
+        return twin if slot_axes.get("date") == basis else metric_id
 
     async def _one(self, text: str) -> str | None:
         try:
@@ -749,6 +766,8 @@ class _ConceptResolver:
         if result.get("kind") != "resolved_concept":
             return None
         metric_id = result.get("metric_id")
+        if metric_id:
+            metric_id = await self._basis_the_user_named(text, metric_id)
         if metric_id and isinstance(result.get("filter"), dict) and result["filter"]:
             self.filters[metric_id] = result["filter"]
         return metric_id
@@ -763,8 +782,8 @@ class _ConceptResolver:
             deps.query_cache.set(f"concept_filter:{metric_id}", bound)
 
 
-def _concept_resolver(mcp: Any, scope: RequiredScope) -> _ConceptResolver:
-    return _ConceptResolver(mcp, scope)
+def _concept_resolver(mcp: Any, scope: RequiredScope, catalogue: Any = None) -> _ConceptResolver:
+    return _ConceptResolver(mcp, scope, catalogue)
 
 
 def _plan_trace(outcome: PlanOutcome | None, steps: list[dict[str, Any]] | None) -> dict[str, Any] | None:
@@ -1323,7 +1342,7 @@ async def run_v3_mission(
                 # The plan is built in code from the understand call's slots — no
                 # second LLM call. An accepted offer ("yes") is not re-planned: the
                 # follow-up hint tells the agent to do exactly what it offered.
-                resolver = _concept_resolver(mcp, deps.required_scope)
+                resolver = _concept_resolver(mcp, deps.required_scope, catalogue)
                 plan_outcome = (
                     await plan_from_slots(
                         understanding,

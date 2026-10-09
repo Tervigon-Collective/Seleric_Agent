@@ -271,7 +271,13 @@ def _evidence_rows(
         )
         ids.append(semantic._put_evidence(
             ctx, ev, index=index, raw_id=f"raw:{metric_id}:{d}:{d}",
-            provenance=ArtifactProvenance(calculation_version=_CALCULATION_VERSION),
+            # The filters the series was fetched with (a channel the question named) are part of what the row
+            # means, recorded as query_metrics records them; without them a Meta-filtered diagnosis read as
+            # unfiltered and the scope gate looped four times (regression 2026-10-09 Q28).
+            provenance=ArtifactProvenance(
+                calculation_version=_CALCULATION_VERSION,
+                source_metadata={"filters_applied": [f for f in (args.get("filters") or []) if isinstance(f, dict)]},
+            ),
         ))
     return ids
 

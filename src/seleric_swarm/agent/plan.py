@@ -522,7 +522,15 @@ async def plan_from_slots(
         except Exception:
             asked = None
         twins = {m: catalogue.date_basis_for(m)[1] for m in metric_ids}
-        if asked and asked != metric_ids[0] and (asked in metric_ids or asked == twins.get(metric_ids[0])):
+        # Only a variant of the SAME named measure may take the outcome's place (its slot shares the outcome
+        # slot's words, or it is the date twin): a long why-question names other measures as drivers, and the
+        # whole-question reading picked one of them ("checkout conversion") over CAC (regression Q24).
+        words = {mid: {w.strip("()[],.:;'\"").lower() for w in slot.words.split()} - {""}
+                 for slot, mid in _pairs(slots.metrics, metric_ids)}
+        same_measure = bool(words.get(asked, set()) & words.get(metric_ids[0], set()))
+        if asked and asked != metric_ids[0] and (
+            (asked in metric_ids and same_measure) or asked == twins.get(metric_ids[0])
+        ):
             replaced = metric_ids[0] if asked == twins.get(metric_ids[0]) else None
             metric_ids = [asked, *[m for m in metric_ids if m not in (asked, replaced)]]
             notes.append(f"the outcome is {asked}: the measure the question itself names")

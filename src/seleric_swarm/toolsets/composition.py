@@ -244,7 +244,10 @@ async def break_down_metric(
             )
             evidence_ids.append(semantic._put_evidence(
                 ctx, ev, index=index, raw_id=f"raw:{m}:{p_start}:{p_end}:{sorted(filt.items())}",
-                provenance=ArtifactProvenance(calculation_version=_CALCULATION_VERSION),
+                provenance=ArtifactProvenance(
+                    calculation_version=_CALCULATION_VERSION,
+                    source_metadata={"filters_applied": [f for f in (args.get("filters") or []) if isinstance(f, dict)]},
+                ),
             ))
     if metric_id not in values_by["period"]:
         return _refuse(f"no data for {metric_id} over {start}..{end}", error_code="INSUFFICIENT_EVIDENCE")
