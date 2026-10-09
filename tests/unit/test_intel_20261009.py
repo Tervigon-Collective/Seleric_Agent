@@ -754,3 +754,23 @@ def test_an_entity_label_covers_a_breakdown_by_its_key() -> None:
     scope = scope_from_dimensions(["product_id"], alias_index={}, dimension_ids={"product_id", "product_title"},
                                   stable_keys=(("product_title", "product_id"),))
     assert scope.breakdowns == frozenset({frozenset({"product_id", "product_title"})})
+
+
+def test_the_models_own_queries_carry_the_one_named_value_unless_weighed_against_the_whole() -> None:
+    import dataclasses
+    from types import SimpleNamespace
+
+    from seleric_swarm.agent.scope import RequiredScope, ValueFilter
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+    from seleric_swarm.toolsets.semantic import _scoped_to_named_values
+
+    cat = CatalogueSnapshot(metrics=(CatalogueMetricMeta(id="impressions", view="paid_media",
+                                                         supported_dimensions=["ad_platform", "campaign_name"]),),
+                            dimensions=("ad_platform", "campaign_name"))
+    meta = ValueFilter(term="meta", dimensions=frozenset({"ad_platform"}), values=("meta",))
+    scope = RequiredScope(value_filters=(meta,))
+    ctx = SimpleNamespace(deps=SimpleNamespace(required_scope=scope, catalogue=cat))
+    asked = {"campaign_name": ["A", "B"]}
+    assert _scoped_to_named_values(ctx, "impressions", asked) == {"campaign_name": ["A", "B"], "ad_platform": "meta"}
+    ctx.deps.required_scope = dataclasses.replace(scope, values_weighed_against_whole=True)
+    assert _scoped_to_named_values(ctx, "impressions", asked) == asked

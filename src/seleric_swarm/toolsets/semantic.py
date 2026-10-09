@@ -2156,6 +2156,21 @@ def _cross_view_metric_filter(
     return None
 
 
+def _scoped_to_named_values(ctx: RunContext[SelericDeps], metric_id: str, dimensions: dict[str, Any]) -> dict[str, Any]:
+    """The one value of a kind the question names ("Meta campaigns") scopes every query the model makes, as it does
+    the executor's: follow-up queries for the ranked campaigns dropped it and the gate sent the answer back for
+    unscoped figures (regression 2026-10-10 Q9, Q10, Q28). Not when the question weighs the value against the
+    whole, and several named values of one kind stay a comparison (the model breaks down by them)."""
+    scope = getattr(ctx.deps, "required_scope", None)
+    if scope is None or getattr(scope, "values_weighed_against_whole", False) or not getattr(scope, "value_filters", ()):
+        return dimensions
+    from seleric_swarm.agent.executor import _with_named_values
+
+    scoped = _with_named_values(ctx.deps, metric_id, dimensions) or {}
+    added = {k: v for k, v in scoped.items() if k not in dimensions and v not in ("", None, [])}
+    return {**dimensions, **added}
+
+
 async def query_metrics(
     ctx: RunContext[SelericDeps],
     metric_id: str,
@@ -2214,6 +2229,7 @@ async def query_metrics(
     if (unknown := await _reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     dimensions = _sanitize_dimensions(dimensions)
+    dimensions = _scoped_to_named_values(ctx, metric_id, dimensions)
     # Only lists the model wrote compare entities; a concept's bound filter is
     # a definition ("WhatsApp" = utm_medium whatsapp|wa) and stays pooled.
     asked_lists = {k for k, v in dimensions.items() if isinstance(v, list)}
