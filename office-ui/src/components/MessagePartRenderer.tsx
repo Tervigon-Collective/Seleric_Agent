@@ -4,6 +4,7 @@ import { useShellStore } from "../stores/shell";
 import { SafeContent } from "./SafeContent";
 import { ApprovalCard } from "./ApprovalCard";
 import { ChartRenderer, SelectionInsight } from "./charts/ChartRenderer";
+import { useChartVocabularyDrift } from "../api/chartContract";
 import { DownloadIcon } from "./icons";
 
 const text = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -77,12 +78,13 @@ function Table({ content }: { content: unknown }) {
     <figure style={{ margin: 0 }}>
       <div className="table-toolbar">
         <span>{visible.length} row{visible.length === 1 ? "" : "s"}</span>
+        {visible.length > 20 && <span className="table-scroll-hint">scroll for more</span>}
         <span className="spacer" />
         <button type="button" onClick={download} aria-label="Download table as CSV">
           <DownloadIcon size={12} /> CSV
         </button>
       </div>
-      <div className="part-table-wrap">
+      <div className={visible.length > 20 ? "part-table-wrap tall" : "part-table-wrap"}>
         <table aria-label="Analytical results table">
           <thead>
             <tr>
@@ -139,6 +141,7 @@ function Table({ content }: { content: unknown }) {
 
 export function MessagePartRenderer({ part }: { part: MessagePart }) {
   const showArtifact = useShellStore((state) => state.showArtifact);
+  useChartVocabularyDrift();
   const value = record(part.content);
   switch (part.type) {
     case "TEXT": return <SafeContent text={text(part.content)} />;

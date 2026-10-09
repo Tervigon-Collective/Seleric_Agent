@@ -447,8 +447,9 @@ async def test_merge_joins_companion_metrics_on_campaign_name():
     assert "A" in result.summary and "B" in result.summary and "C" in result.summary
     finding = store.get(result.artifact_ids[0]).payload
     assert finding["finding_type"] == "merge"
-    assert finding["metrics"]["cpa.A"] == pytest.approx(10.0)
-    assert finding["metrics"]["roas.A"] == pytest.approx(2.0)
+    # One row per (bucket, entity): the bucket date is part of the figure's key.
+    assert finding["metrics"]["cpa.2026-09-16|A"] == pytest.approx(10.0)
+    assert finding["metrics"]["roas.2026-09-16|A"] == pytest.approx(2.0)
 
 
 @pytest.mark.asyncio
@@ -465,12 +466,71 @@ async def test_merge_infers_campaign_name_when_dimensions_omitted():
 
 @pytest.mark.asyncio
 async def test_merge_refuses_without_join_key():
+    """No shared entity dimension and no real series (single bucket): nothing to join on."""
     store = InMemoryArtifactStore()
-    ids = _daily(store, {"2026-09-16": 100.0, "2026-09-17": 110.0}, metric="ad_spend")
-    ids += _daily(store, {"2026-09-16": 10.0, "2026-09-17": 11.0}, metric="orders")
+    ids = _daily(store, {"2026-09-16": 100.0}, metric="ad_spend")
+    ids += _daily(store, {"2026-09-16": 10.0}, metric="orders")
     result = await analytics.analyze(FakeRunContext(_deps(store)), ids, method="merge")
     assert result.success is False
     assert result.error_code == "INVALID_ARGUMENT"
+
+
+# ---- merge a multi-metric time series ---------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_merge_joins_a_multi_metric_daily_series_on_the_bucket():
+    """Golden 2026-10-08 q07: five metrics at grain=day, no shared entity key.
+
+    The join key is the time bucket; the table must carry a date column and run
+    oldest → newest, or the merged series cannot be read as a series.
+    """
+    store = InMemoryArtifactStore()
+    ids = _daily(store, {"2026-09-16": 100.0, "2026-09-17": 110.0}, metric="ad_spend")
+    ids += _daily(store, {"2026-09-16": 10.0, "2026-09-17": 11.0}, metric="orders")
+    ids += _daily(store, {"2026-09-16": 250.0, "2026-09-17": 275.0}, metric="net_sales")
+
+    result = await analytics.analyze(FakeRunContext(_deps(store)), ids, method="merge")
+
+    assert result.success is True
+    assert "date" in result.summary
+    row_16 = next(line for line in result.summary.splitlines() if line.startswith("| 2026-09-16"))
+    row_17 = next(line for line in result.summary.splitlines() if line.startswith("| 2026-09-17"))
+    # every metric present on each bucket, derived roas = net_sales / ad_spend
+    assert "100" in row_16 and "10" in row_16 and "250" in row_16 and "2.5" in row_16
+    assert "110" in row_17 and "11" in row_17 and "275" in row_17
+    finding = store.get(result.artifact_ids[0]).payload
+    assert finding["metrics"]["roas.2026-09-16"] == pytest.approx(2.5)
+
+
+@pytest.mark.asyncio
+async def test_merged_daily_series_is_ordered_oldest_first():
+    store = InMemoryArtifactStore()
+    ids = _daily(store, {"2026-09-18": 3.0, "2026-09-16": 1.0, "2026-09-17": 2.0}, metric="ad_spend")
+    ids += _daily(store, {"2026-09-18": 30.0, "2026-09-16": 10.0, "2026-09-17": 20.0}, metric="orders")
+    result = await analytics.analyze(FakeRunContext(_deps(store)), ids, method="merge")
+    dates = [line[2:12] for line in result.summary.splitlines() if line.startswith("| 2026-09-")]
+    assert dates == ["2026-09-16", "2026-09-17", "2026-09-18"]
+
+
+@pytest.mark.asyncio
+async def test_merged_series_outer_joins_a_metric_missing_a_day():
+    """Ad spend has days with no delivery; a missing day is a hole, not a zero."""
+    store = InMemoryArtifactStore()
+    ids = _daily(store, {"2026-09-16": 100.0, "2026-09-18": 50.0}, metric="ad_spend")
+    ids += _daily(store, {"2026-09-16": 10.0, "2026-09-17": 11.0}, metric="orders")
+    result = await analytics.analyze(FakeRunContext(_deps(store)), ids, method="merge")
+    assert result.success is True
+    assert "2026-09-17" in result.summary
+    assert finding_store_line(result.summary, "2026-09-17", "ad_spend") == "—"
+
+
+def finding_store_line(summary: str, day: str, column_marker: str) -> str:
+    lines = summary.splitlines()
+    header = next(line for line in lines if line.startswith("| date"))
+    col = header.split("|").index(f" {column_marker} ")
+    row = next(line for line in lines if line.startswith(f"| {day}"))
+    return row.split("|")[col].strip()
 
 
 @pytest.mark.asyncio

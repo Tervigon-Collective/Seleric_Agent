@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+
 import pytest
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
-from seleric_swarm.analytics.visualization import generate_visualization_spec
-from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance, ContextBundle, Principal
+from seleric_swarm.analytics.chart_vocabulary import CHART_TYPES
+from seleric_swarm.analytics.visualization import (
+    DataShape,
+    describe_evidence_shape,
+    generate_visualization_spec,
+    infer_chart_type_from_shape,
+    reconcile_chart_type,
+)
+from seleric_swarm.conversations.contracts import (
+    Artifact,
+    ArtifactProvenance,
+    ContextBundle,
+    Principal,
+)
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import analytics
 
@@ -117,14 +130,22 @@ def test_visualization_spec_bar_over_time():
 
 
 def test_visualization_spec_ignores_intent_keywords_without_chart_type():
-    """Without an explicit/Jev chart_type, multi-period evidence defaults to line
-    even when the intent string contains 'bar' — no keyword matching."""
+    """Without an explicit chart_type, multi-period evidence defaults to line
+    even when the intent string contains 'bar' — the form is the caller's
+    argument, never a keyword match on the description."""
     evidence = [
         _make_evidence("metric.net_profit", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 100.0),
         _make_evidence("metric.net_profit", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 200.0),
     ]
     spec = generate_visualization_spec(evidence, intent="stacked bar waterfall per day")
     assert spec["chart_type"] == "line"
+
+    # Asking for the form explicitly is what changes it.
+    asked = generate_visualization_spec(
+        evidence, intent="stacked bar waterfall per day", chart_type="stacked_bar"
+    )
+    assert asked["chart_type"] == "stacked_bar"
+    assert asked["series"][0]["type"] == "bar"
 
 
 def test_visualization_spec_composition_pie():
@@ -181,30 +202,15 @@ async def test_generate_visualization_tool():
     assert chart_artifact is not None
     assert chart_artifact.artifact_type == "chart_spec"
     assert chart_artifact.classification == "derived"
-    # Jev unconfigured → structural default for multi-period evidence is line
+    # Structural default for multi-period evidence is line
     assert chart_artifact.payload["chart_type"] == "line"
 
 
 @pytest.mark.asyncio
-async def test_generate_visualization_uses_jev_chart_choice(monkeypatch):
-    from seleric_swarm.agent.dependencies import JevConfig
-
+async def test_generate_visualization_accepts_explicit_chart_type():
+    """The form is the caller's argument; it survives to the artifact intact."""
     store = InMemoryArtifactStore()
-    deps = _deps(store)
-    deps = SelericDeps(
-        mission_id=deps.mission_id,
-        as_of=deps.as_of,
-        principal=deps.principal,
-        thread_id=deps.thread_id,
-        run_id=deps.run_id,
-        trace_id=deps.trace_id,
-        context=deps.context,
-        mcp_client=deps.mcp_client,
-        artifact_store=store,
-        limits=deps.limits,
-        jev=JevConfig(base_url="http://jev.test", api_key="k", timeout=1.0),
-    )
-    ctx = FakeRunContext(deps)
+    ctx = FakeRunContext(_deps(store))
 
     id1 = _put_evidence(
         store, _make_evidence("metric.net_profit", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 100.0)
@@ -213,25 +219,41 @@ async def test_generate_visualization_uses_jev_chart_choice(monkeypatch):
         store, _make_evidence("metric.net_profit", "2026-10-03T00:00:00", "2026-10-03T23:59:59", -50.0)
     )
 
-    async def _fake_select(intent, **kwargs):
-        assert "stacked bar" in intent
-        assert "time_periods=2" in kwargs["data_shape"]
-        return "bar"
-
-    monkeypatch.setattr(analytics, "select_chart_type", _fake_select)
-
     result = await analytics.generate_visualization(
         ctx,
         evidence_ids=[id1, id2],
         intent="stacked bar graph for the net profit waterfall for the last 7 days per day",
         title="Net profit waterfall",
+        chart_type="stacked bar",
     )
     assert result.success is True, result.summary
     chart = store.get(result.artifact_ids[0])
     assert chart is not None
-    assert chart.payload["chart_type"] == "bar"
+    assert chart.payload["chart_type"] == "stacked_bar"
     assert chart.payload["series"][0]["type"] == "bar"
     assert chart.payload["xAxis"]["key"] == "time"
+
+
+@pytest.mark.asyncio
+async def test_generate_visualization_refuses_unknown_chart_type():
+    """An unsupported form is refused with the supported list, never remapped."""
+    store = InMemoryArtifactStore()
+    ctx = FakeRunContext(_deps(store))
+
+    id1 = _put_evidence(
+        store, _make_evidence("metric.net_profit", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 100.0)
+    )
+    id2 = _put_evidence(
+        store, _make_evidence("metric.net_profit", "2026-10-03T00:00:00", "2026-10-03T23:59:59", -50.0)
+    )
+
+    result = await analytics.generate_visualization(
+        ctx, evidence_ids=[id1, id2], intent="waterfall", title="Net profit",
+        chart_type="waterfall",
+    )
+    assert result.success is False
+    assert "waterfall" in result.summary
+    assert "stacked_bar" in result.summary
 
 
 @pytest.mark.asyncio
@@ -331,3 +353,154 @@ def test_visualization_spec_multimetric_with_varying_dimensions():
     assert "Cpa (Dog Harness)" in series_names
     assert "meta" not in series_names[0]
 
+
+
+# --------------------------------------------------------------------------
+# Every form in the shared vocabulary must be buildable and must carry the
+# payload its renderer needs. These are the contract the UI relies on.
+# --------------------------------------------------------------------------
+
+
+_CHANNEL_EVIDENCE = [
+    _make_evidence("metric.revenue", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 300.0,
+                   dimensions={"channel": "meta"}),
+    _make_evidence("metric.revenue", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 200.0,
+                   dimensions={"channel": "google"}),
+    _make_evidence("metric.revenue", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 400.0,
+                   dimensions={"channel": "meta"}),
+    _make_evidence("metric.revenue", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 100.0,
+                   dimensions={"channel": "google"}),
+]
+
+_TWO_METRIC_EVIDENCE = [
+    _make_evidence("metric.revenue", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 300.0),
+    _make_evidence("metric.revenue", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 350.0),
+    _make_evidence("metric.orders", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 12.0),
+    _make_evidence("metric.orders", "2026-10-03T00:00:00", "2026-10-03T23:59:59", 14.0),
+]
+
+
+def test_every_declared_chart_form_builds_a_spec():
+    for chart_type in CHART_TYPES:
+        spec = generate_visualization_spec(
+            _TWO_METRIC_EVIDENCE, intent="any", title="Coverage", chart_type=chart_type
+        )
+        assert "error" not in spec, f"{chart_type}: {spec['error']}"
+        assert spec["chart_type"] == chart_type
+        assert spec["series"], f"{chart_type} emitted no series"
+        assert spec["data"], f"{chart_type} emitted no data"
+        assert set(spec) <= _SPEC_KEYS, f"{chart_type} emitted unexpected keys"
+
+
+_SPEC_KEYS = {
+    "title", "chart_type", "metrics", "dimensions", "series",
+    "xAxis", "yAxis", "radar", "data", "warnings",
+}
+
+
+def test_stacked_bar_actually_stacks():
+    spec = generate_visualization_spec(
+        _CHANNEL_EVIDENCE, intent="net profit waterfall", title="Revenue by channel",
+        chart_type="stacked_bar",
+    )
+    assert spec["chart_type"] == "stacked_bar"
+    assert len(spec["series"]) == 2
+    assert all(s["type"] == "bar" for s in spec["series"])
+    assert all(s.get("stack") == "total" for s in spec["series"])
+    # One row per period, one column per series.
+    assert [row["time"] for row in spec["data"]] == ["2026-10-02", "2026-10-03"]
+    assert {k for row in spec["data"] for k in row} == {"time", "meta", "google"}
+
+
+def test_grouped_bar_does_not_stack():
+    spec = generate_visualization_spec(
+        _CHANNEL_EVIDENCE, intent="revenue by channel", title="Revenue by channel",
+        chart_type="grouped_bar",
+    )
+    assert spec["chart_type"] == "grouped_bar"
+    assert len(spec["series"]) == 2
+    assert all(s.get("stack") is None for s in spec["series"])
+
+
+def test_single_series_bar_over_time_has_no_stack_key():
+    spec = generate_visualization_spec(
+        _TWO_METRIC_EVIDENCE[:2], intent="revenue", title="Revenue", chart_type="stacked_bar"
+    )
+    # One series cannot stack: there is nothing to stack on.
+    assert len(spec["series"]) == 1
+    assert "stack" not in spec["series"][0]
+
+
+def test_scatter_pairs_two_metrics_per_slice():
+    spec = generate_visualization_spec(
+        _TWO_METRIC_EVIDENCE, intent="revenue vs orders", title="Revenue vs Orders",
+        chart_type="scatter",
+    )
+    assert spec["chart_type"] == "scatter"
+    assert spec["xAxis"]["type"] == "value"
+    assert spec["xAxis"]["name"] == "Revenue"
+    assert spec["series"][0]["type"] == "scatter"
+    assert len(spec["data"]) == 2
+    assert sorted(spec["data"][0].keys()) == ["name", "x", "y"]
+
+
+def test_radar_uses_one_indicator_per_metric():
+    spec = generate_visualization_spec(
+        _TWO_METRIC_EVIDENCE, intent="metric comparison", title="Metric profile",
+        chart_type="radar",
+    )
+    assert spec["chart_type"] == "radar"
+    assert [ind["name"] for ind in spec["radar"]["indicator"]] == ["Revenue", "Orders"]
+    assert spec["series"][0]["type"] == "radar"
+    assert [row["indicator"] for row in spec["data"]] == ["Revenue", "Orders"]
+
+
+def test_heatmap_aggregates_each_cell():
+    spec = generate_visualization_spec(
+        _CHANNEL_EVIDENCE, intent="revenue intensity", title="Revenue heatmap",
+        chart_type="heatmap",
+    )
+    assert spec["chart_type"] == "heatmap"
+    assert spec["xAxis"]["data"] == ["2026-10-02", "2026-10-03"]
+    assert spec["yAxis"][0]["data"] == ["Revenue"]
+    assert {(r["x"], r["y"]): r["value"] for r in spec["data"]} == {
+        ("2026-10-02", "Revenue"): 500.0,
+        ("2026-10-03", "Revenue"): 500.0,
+    }
+
+
+def test_reconciliation_warns_instead_of_remapping_silently():
+    shape = DataShape(time_periods=1, metrics=1, category_values=1, values_may_be_negative=False)
+    resolved, warnings = reconcile_chart_type("line", shape)
+    assert resolved == "bar"
+    assert len(warnings) == 1
+    assert "at least two periods" in warnings[0]
+
+    resolved, warnings = reconcile_chart_type("not_a_form", shape)
+    assert resolved == "bar"
+    assert len(warnings) == 1
+    assert "not_a_form" in warnings[0]
+
+    resolved, warnings = reconcile_chart_type("bar", shape)
+    assert resolved == "bar"
+    assert warnings == []
+
+
+def test_reconciliation_keeps_the_requested_form_when_it_fits():
+    shape = DataShape(time_periods=3, metrics=1, category_values=0, values_may_be_negative=False)
+    assert reconcile_chart_type("stacked_bar", shape)[0] == "stacked_bar"
+    assert reconcile_chart_type("line", shape)[0] == "line"
+    assert reconcile_chart_type(None, shape)[0] == "line"
+
+
+def test_multi_series_default_is_a_stacked_bar():
+    """Regression: a multi-series trend used to come back as a line chart."""
+    shape = describe_evidence_shape(_CHANNEL_EVIDENCE)
+    assert shape.series_count > 1
+    assert infer_chart_type_from_shape(shape) == "stacked_bar"
+
+
+def test_single_series_default_is_a_line():
+    shape = describe_evidence_shape(_TWO_METRIC_EVIDENCE[:2])
+    assert shape.series_count == 1
+    assert infer_chart_type_from_shape(shape) == "line"

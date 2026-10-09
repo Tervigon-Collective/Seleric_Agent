@@ -90,3 +90,15 @@ export const DownloadIcon = (p: IconProps) => (
 export const SlidersIcon = (p: IconProps) => (
   <Base {...p}><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></Base>
 );
+export const ExpandIcon = (p: IconProps) => (
+  <Base {...p}><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></Base>
+);
+export const ShrinkIcon = (p: IconProps) => (
+  <Base {...p}><path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" /></Base>
+);
+export const ResetZoomIcon = (p: IconProps) => (
+  <Base {...p}><path d="M3 12a9 9 0 1 0 3-6.7" /><polyline points="3 4 3 9 8 9" /></Base>
+);
+export const ImageIcon = (p: IconProps) => (
+  <Base {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.5-3.5a2 2 0 0 0-2.8 0L6 20" /></Base>
+);

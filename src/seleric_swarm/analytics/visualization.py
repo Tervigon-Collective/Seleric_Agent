@@ -13,8 +13,9 @@ explicitly (and validated here) or derived from the evidence shape.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.analytics.chart_vocabulary import (
@@ -35,8 +36,10 @@ CARTESIAN_CHART_TYPES: tuple[ChartType, ...] = (
     "scatter",
 )
 
-#: Forms that need at least two data points before they mean anything.
-_MULTI_POINT_FORMS: frozenset[str] = frozenset(CARTESIAN_CHART_TYPES)
+#: Forms that can still say something with a single point. Trend forms cannot.
+_SINGLE_POINT_FORMS: frozenset[str] = frozenset(
+    {"bar", "pie", "donut", "funnel", "radar", "heatmap"}
+)
 
 
 @dataclass(frozen=True)
@@ -237,7 +240,7 @@ def _build_scatter(
         )
         y_value = (
             _co_metric_value(evidence, y_metric, item)
-            if x_metric is not None
+            if x_metric is not None and y_metric is not None
             else float(item.value)
         )
         if y_value is None:
@@ -370,14 +373,11 @@ def _build_composition(
     grouped = _group_by_dimension(evidence, varying_dim_keys) or {
         _format_metric_label(m): 0.0 for m in metrics
     }
-    data = sorted(
-        ({"name": k, "value": v} for k, v in grouped.items()),
-        key=lambda row: row["value"],
-        reverse=True,
-    )
+    rows: list[tuple[str, float]] = sorted(grouped.items(), key=lambda kv: kv[1], reverse=True)
+    data: list[dict[str, Any]] = [{"name": k, "value": v} for k, v in rows]
     if chart_type in ("pie", "donut") and len(data) > 7:
         head = data[:6]
-        head.append({"name": "Other", "value": sum(float(r["value"]) for r in data[6:])})
+        head.append({"name": "Other", "value": sum(v for _, v in rows[6:])})
         data = head
 
     main_metric = _format_metric_label(metrics[0]) if metrics else "Value"
@@ -491,7 +491,9 @@ def generate_visualization_spec(
             )
         }
 
-    if len(evidence) < 2 and requested in _MULTI_POINT_FORMS:
+    # Only an explicitly requested form can draw from a single point; a
+    # trend form over one period says nothing.
+    if len(evidence) < 2 and requested not in _SINGLE_POINT_FORMS:
         return {"error": "Insufficient data points for visualization. Need at least 2 data points."}
 
     resolved, warnings = reconcile_chart_type(requested, shape)

@@ -495,6 +495,26 @@ button { color: inherit; }
   padding: 3px 9px; font-size: 11.5px; cursor: pointer; color: var(--text-dim);
 }
 .table-toolbar button:hover { color: var(--text); border-color: var(--line-strong); }
+.table-scroll-hint { color: var(--text-faint); font-size: 11px; }
+
+/* Tall tables (>20 rows): cap at a fixed height and scroll vertically.
+   The `:has()` variant covers markdown tables in SafeContent, which gain
+   no explicit class — any table with a 21st body row becomes scrollable. */
+.md-table-wrap.tall,
+.part-table-wrap.tall,
+.md-table-wrap:has(tbody tr:nth-child(21)),
+.part-table-wrap:has(tbody tr:nth-child(21)) {
+  max-height: 600px;
+  overflow-y: auto;
+}
+.md-table-wrap.tall thead th,
+.part-table-wrap.tall thead th,
+.md-table-wrap:has(tbody tr:nth-child(21)) thead th,
+.part-table-wrap:has(tbody tr:nth-child(21)) thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
 
 .chart-card-container {
   width: 100%; margin: 12px 0; padding: 12px 14px;
@@ -517,6 +537,50 @@ button { color: inherit; }
   border-radius: 6px; padding: 3px 8px; cursor: pointer;
 }
 .chart-download:hover { color: var(--text); border-color: var(--line-strong); }
+.chart-head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.chart-head-actions .chart-download .chart-btn-label { display: inline; }
+@media (max-width: 560px) {
+  .chart-head-actions .chart-download .chart-btn-label { display: none; }
+}
+.chart-icon-btn {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+  color: var(--text-dim); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 7px; padding: 5px 10px; cursor: pointer; white-space: nowrap;
+}
+.chart-icon-btn:hover { color: var(--text); border-color: var(--line-strong); }
+
+/* Expandable chart modal — large inspect / zoom surface */
+.chart-modal-backdrop {
+  position: fixed; inset: 0; z-index: 120; display: grid;
+  place-items: center; padding: 24px;
+  background: rgba(8, 10, 14, 0.62);
+  animation: backdrop-in var(--motion-fast) ease;
+}
+.chart-modal {
+  width: min(1100px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid var(--line); border-radius: var(--radius-lg);
+  background: var(--panel); box-shadow: var(--shadow-lg);
+  padding: 14px 16px 12px;
+  animation: rise var(--motion) ease;
+}
+.chart-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding-bottom: 10px; margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.chart-modal-title {
+  font-size: 14px; font-weight: 650; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chart-modal-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.chart-modal-body { min-height: 320px; }
+.chart-modal-hint { margin: 8px 0 0; font-size: 11.5px; color: var(--text-faint); }
+@media (max-width: 640px) {
+  .chart-modal-backdrop { padding: 12px; }
+  .chart-modal { padding: 12px 12px 10px; }
+}
 .chart-data-toggle {
   background: none; border: 0; color: var(--text-faint); font-size: 11.5px;
   cursor: pointer; padding: 4px 0; text-decoration: underline; text-underline-offset: 2px;

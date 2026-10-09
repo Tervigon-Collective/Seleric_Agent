@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from seleric_swarm.analytics.chart_vocabulary import CHART_TYPES, normalize_chart_type
+
 
 def _id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
@@ -198,6 +200,9 @@ class SourcePartContent(ContractModel):
 
 
 class ChartPartContent(ContractModel):
+    #: One of the canonical forms in ``analytics.chart_vocabulary``. Validated
+    #: here (with alias normalization) so the API and the UI never disagree
+    #: about what a chart can be.
     chart_type: str = Field(min_length=1)
     artifact_id: str | None = None
     data: dict[str, Any] | list[Any] | None = None
@@ -206,6 +211,17 @@ class ChartPartContent(ContractModel):
     def require_chart_source(self) -> ChartPartContent:
         if self.artifact_id is None and self.data is None:
             raise ValueError("CHART parts require artifact_id or data")
+        return self
+
+    @model_validator(mode="after")
+    def normalize_chart_type(self) -> ChartPartContent:
+        normalized = normalize_chart_type(self.chart_type)
+        if normalized is None:
+            raise ValueError(
+                f"unknown chart_type {self.chart_type!r}; supported forms: "
+                f"{', '.join(CHART_TYPES)}"
+            )
+        object.__setattr__(self, "chart_type", normalized)
         return self
 
 

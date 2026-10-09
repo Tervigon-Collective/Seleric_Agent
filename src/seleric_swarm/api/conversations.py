@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import tempfile
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
@@ -75,6 +76,8 @@ from seleric_swarm.recovery import (
     RunWorkQueue,
 )
 from seleric_swarm.runtime import SwarmRuntime
+
+_log = logging.getLogger("seleric.api.conversations")
 
 router = APIRouter(prefix="/v1", tags=["conversations"])
 ArtifactClassification = Literal["ui", "factual", "derived"]
@@ -1162,8 +1165,13 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
         for chart in raw_charts:
             if not isinstance(chart, dict):
                 continue
-            chart_type = str(chart.get("chart_type") or "bar")
             artifact_id = chart.get("artifact_id")
+            chart_type = str(chart.get("chart_type") or "").strip()
+            if not chart_type:
+                _log.warning(
+                    "CHART part without chart_type for artifact %r; rendering as bar", artifact_id
+                )
+                chart_type = "bar"
             chart_data = chart.get("data") if isinstance(chart.get("data"), (dict, list)) else chart
             parts.append(
                 MessagePart(

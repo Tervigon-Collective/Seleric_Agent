@@ -39,6 +39,7 @@ from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.analytics import cohort as cohort_math
 from seleric_swarm.analytics import funnel as funnel_math
 from seleric_swarm.analytics.breakdown import Segment, contributions, shares
+from seleric_swarm.analytics.chart_vocabulary import CHART_TYPES, normalize_chart_type
 from seleric_swarm.analytics.comparison import MetricPoint, period_deltas
 from seleric_swarm.analytics.grain import CALCULATION_VERSION, validate_grain_set
 from seleric_swarm.analytics.visualization import (
@@ -1025,9 +1026,14 @@ async def generate_visualization(
     if refusal is not None:
         return refusal
 
-    # The form is the caller's explicit choice (validated against the shared
-    # vocabulary), otherwise the structural default from the evidence shape.
-    # Nothing is guessed from the intent wording.
+    # The form is the caller's explicit choice. An unrecognized one is refused
+    # with the supported list — never remapped to something else in silence.
+    if chart_type is not None and normalize_chart_type(chart_type) is None:
+        return _refuse(
+            f"Unsupported chart_type {chart_type!r}. Supported forms: "
+            f"{', '.join(CHART_TYPES)}.",
+            error_code="VISUALIZATION_FAILED",
+        )
     shape = describe_evidence_shape(evidence)
     resolved, chart_warnings = reconcile_chart_type(chart_type, shape)
     spec = generate_visualization_spec(evidence, intent, title, chart_type=resolved)
@@ -1098,15 +1104,32 @@ _MERGE_DERIVED: tuple[tuple[str, str, str], ...] = (
 )
 
 _MAX_MERGE_TABLE_ROWS = 40
+# A merged **time series** (the same metrics at a real grain, one row per bucket
+# per entity) is bounded by buckets × entities, not by the entity roster. The
+# flat 40-row cap made a 30-day × 5-metric trend truncate to 8 days, so the
+# table could not be read as a series at all (golden 2026-10-08: "Show the last
+# 30 days of daily net sales, ad spend, MER, CAC, and net profit" returned only
+# period totals). Cap by rows read, and always say how many were dropped.
+_MAX_MERGE_SERIES_ROWS = 400
 
 
 def _infer_join_keys(
     evidence: list[EvidenceArtifact],
     requested: list[str],
+    *,
+    allow_period_only: bool = True,
 ) -> list[str] | None:
     """Pick join dimensions: caller list if every key appears on some row with a
     value; else the highest-preference key that appears on at least two different
-    metrics (so companions can align)."""
+    metrics (so companions can align).
+
+    Returns ``[]`` — not ``None`` — when the evidence carries no shared entity
+    dimension **but** does span more than one time bucket. That is a multi-metric
+    *time series* (net sales, ad spend, MER, CAC, net profit per day), and the
+    join key is the bucket: refusing it is what stopped "the last 30 days of
+    daily net sales, ad spend, MER, CAC and net profit" from ever becoming one
+    table (golden 2026-10-08). ``None`` still means "nothing to join on".
+    """
     if requested:
         present = {k for item in evidence for k, v in item.dimensions.items() if k and v}
         missing = [k for k in requested if k not in present]
@@ -1130,10 +1153,14 @@ def _infer_join_keys(
             for k in keys:
                 counts[k] = counts.get(k, 0) + 1
         shared = {k for k, n in counts.items() if n >= 2}
-    if not shared:
-        return None
     ordered = [k for k in _PREFERRED_JOIN_KEYS if k in shared]
-    return ordered[:1] or sorted(shared)[:1]
+    if ordered:
+        return ordered[:1] or sorted(shared)[:1]
+    if not shared and allow_period_only:
+        buckets = {(item.period_start, item.period_end) for item in evidence}
+        if len(buckets) > 1:
+            return []
+    return None
 
 
 def _fmt_merge_value(value: float | None) -> str:
@@ -1145,6 +1172,24 @@ def _fmt_merge_value(value: float | None) -> str:
     if abs(value) >= 100:
         return f"{value:,.2f}"
     return f"{value:.4g}"
+
+
+def _bucket_label(period_start: datetime, period_end: datetime) -> str:
+    """The merged row's time bucket as a single readable label.
+
+    A day-grain bucket starts and ends on the same day (``_bucket_end`` keeps
+    day buckets inclusive), so it renders as one date; a week/month bucket
+    renders as the span it covers. Without this the merged series had no
+    referenceable time column (golden 2026-10-08).
+    """
+    try:
+        start = period_start.date() if isinstance(period_start, datetime) else period_start
+        end = period_end.date() if isinstance(period_end, datetime) else period_end
+    except Exception:  # defensive: never fail a merge over a label
+        return ""
+    if start == end:
+        return start.isoformat()
+    return f"{start.isoformat()}..{end.isoformat()}"
 
 
 def _with_query_rows(
@@ -1192,10 +1237,11 @@ async def merge_evidence_breakdowns(
     evidence, evidence_ids = _with_query_rows(ctx, evidence, evidence_ids)
 
     join_keys = _infer_join_keys(evidence, [d for d in (dimensions or []) if d])
-    if not join_keys:
+    if join_keys is None:
         return _refuse(
             "merge needs a shared entity dimension across the evidence "
-            f"(prefer one of: {', '.join(_PREFERRED_JOIN_KEYS[:6])}). "
+            f"(prefer one of: {', '.join(_PREFERRED_JOIN_KEYS[:6])}) or a real time "
+            "series (the same metrics fetched at grain=day/week/month). "
             "Pass dimensions=[<join key>] after fetching breakdowns that stamp that key, "
             "or rank once and fetch companions for the same entity ids.",
             error_code="INVALID_ARGUMENT",
@@ -1260,22 +1306,39 @@ async def merge_evidence_breakdowns(
             )
         cells = {slot: row for slot, row in cells.items() if slot[2] in anchor_entities}
 
-    # Stable sort: first join key label, then period start
-    sorted_slots = sorted(cells.keys(), key=lambda s: (s[2], s[0], s[1]))
+    # A multi-metric time series must be readable AS a series: the bucket date
+    # is a column, the rows run oldest → newest, and the row cap is the bucket
+    # count rather than the entity roster. Dropping the date column left a merged
+    # daily series as an ordered list of unlabelled numbers the model could not
+    # order, chart or rank (golden 2026-10-08 q07/q10).
+    is_series = len({(item.period_start, item.period_end) for item in evidence}) > 1
+    row_cap = _MAX_MERGE_SERIES_ROWS if is_series else _MAX_MERGE_TABLE_ROWS
+    ordered_slots = (
+        # series: date first, then entity
+        sorted(cells.keys(), key=lambda s: (s[0], s[1], s[2]))
+        if is_series
+        # entity table: entity first, period second (unchanged ordering)
+        else sorted(cells.keys(), key=lambda s: (s[2], s[0], s[1]))
+    )
+    sorted_slots = ordered_slots[:row_cap]
 
     derived_cols: list[str] = []
     for label, num_id, den_id in _MERGE_DERIVED:
         if num_id in metrics and den_id in metrics and label not in derived_cols:
             derived_cols.append(label)
 
-    header = [*join_keys, *metrics, *derived_cols]
+    date_col = "date" if is_series else None
+    header = [*([date_col] if date_col else []), *join_keys, *metrics, *derived_cols]
     lines = [
         "| " + " | ".join(header) + " |",
-        "| " + " | ".join(["---"] * len(join_keys) + [":---:"] * (len(metrics) + len(derived_cols))) + " |",
+        "| " + " | ".join(
+            ["---"] * ((1 if date_col else 0) + len(join_keys)) + [":---:"] * (len(metrics) + len(derived_cols))
+        )
+        + " |",
     ]
     finding_metrics: dict[str, float] = {}
-    for slot in sorted_slots[:_MAX_MERGE_TABLE_ROWS]:
-        _period_start, _period_end, key_vals = slot
+    for slot in sorted_slots:
+        period_start, period_end, key_vals = slot
         row_vals = cells[slot]
         derived: dict[str, float | None] = {label: None for label in derived_cols}
         for label, num_id, den_id in _MERGE_DERIVED:
@@ -1285,27 +1348,33 @@ async def merge_evidence_breakdowns(
             if num is not None and den is not None and den != 0:
                 derived[label] = num / den
         display = [
+            # one cell, not an unpacked iterable: a bucket label is a single string
+            *([table_cell(_bucket_label(period_start, period_end))] if date_col else []),
             *(table_cell(v) for v in key_vals),
             *[_fmt_merge_value(row_vals.get(m)) for m in metrics],
             *[_fmt_merge_value(derived.get(c)) for c in derived_cols],
         ]
         lines.append("| " + " | ".join(display) + " |")  # cells escaped by table_cell above
         # Index derived numbers for citation / unbacked checks
-        entity = "|".join(key_vals)
+        stamp = "|".join(p for p in (_bucket_label(period_start, period_end), *key_vals) if p)
         for m, v in row_vals.items():
-            finding_metrics[f"{m}.{entity}"] = v
+            finding_metrics[f"{m}.{stamp}"] = v
         for label, value in derived.items():
             if value is not None:
-                finding_metrics[f"{label}.{entity}"] = value
+                finding_metrics[f"{label}.{stamp}"] = value
 
-    more = ""
-    if len(sorted_slots) > _MAX_MERGE_TABLE_ROWS:
-        more = f" (showing {_MAX_MERGE_TABLE_ROWS} of {len(sorted_slots)} entities)"
+    dropped = len(ordered_slots) - len(sorted_slots)
+    if is_series:
+        more = f" (showing {len(sorted_slots)} of {len(ordered_slots)} day-rows{', oldest first' if sorted_slots else ''})"
+        unit_word = "day-rows"
+    else:
+        more = f" (showing {len(sorted_slots)} of {len(ordered_slots)} entities)" if dropped else ""
+        unit_word = "entities"
 
     table = "\n".join(lines)
-    join_label = ", ".join(join_keys)
+    join_label = ", ".join([*([date_col] if date_col else []), *join_keys])
     statement = (
-        f"Merged {len(metrics)} metrics on {join_label} across {len(sorted_slots)} entities"
+        f"Merged {len(metrics)} metrics on {join_label} across {len(sorted_slots)} {unit_word}"
         f"{more}.\n\n{table}"
     )
     finding_id = _write_finding(
@@ -1320,16 +1389,195 @@ async def merge_evidence_breakdowns(
         artifact_ids=[finding_id],
         summary=(
             f"Merged metrics [{', '.join(metrics)}] on {join_label} "
-            f"({len(sorted_slots)} entities{more}). "
+            f"({len(sorted_slots)} {unit_word}{more}). "
             f"Use finding {finding_id} — one table, not separate top-N lists. "
-            f"Derived columns ({', '.join(derived_cols) or 'none'}) only where both inputs exist.\n\n"
-            f"{table}"
+            f"Derived columns ({', '.join(derived_cols) or 'none'}) only where both inputs exist."
+            + (f" {dropped} older/newer rows were dropped by the row cap — re-merge a narrower window if you need them." if dropped else "")
+            + f"\n\n{table}"
         ),
         provenance=_provenance(list(evidence_ids)),
     )
 
 
-AnalysisMethod = Literal["compare", "anomaly", "contribution", "segments", "funnel", "cohort", "merge"]
+async def derive_metric(
+    ctx: RunContext[SelericDeps],
+    evidence_ids: list[str],
+    numerator_metric: str,
+    denominator_metric: str,
+    dimensions: list[str] | None = None,
+    operator: Literal["ratio", "difference"] = "ratio",
+    label: str | None = None,
+) -> ToolResult:
+    """Compute a metric the catalogue does not define, from components you fetched.
+
+    A business ratio that the semantic layer deliberately does not declare (a
+    return rate, a campaign profit, a blended cost per order) is arithmetic over
+    components that DO exist. Refusing to do that arithmetic turned answerable
+    questions into "No data available" (golden 2026-10-08 q08 return rate,
+    q18/q26 campaign profit): the agent held every input and still shipped a
+    gap.
+
+    ``numerator_metric`` / ``denominator_metric`` are metric ids already fetched;
+    ``operator`` picks ``numerator / denominator`` (a ratio — same unit or a
+    share) or ``numerator − denominator`` (a bridge component / a residual
+    profit). No metric name, pair or formula is hardcoded anywhere: the caller
+    names the ids, and only ids present on BOTH sides of a joined row produce a
+    figure. Every result is a citable Finding over the cited evidence.
+    """
+    evidence, evidence_ids, refusal = _load_evidence(ctx, evidence_ids)
+    if refusal is not None:
+        return refusal
+    evidence, evidence_ids = _with_query_rows(ctx, evidence, evidence_ids)
+
+    available = {item.metric_id for item in evidence}
+    missing = [m for m in (numerator_metric, denominator_metric) if m not in available]
+    if missing:
+        return _refuse(
+            f"derive needs both metrics fetched; not in the cited evidence: {', '.join(missing)}. "
+            f"Cited metrics: {', '.join(sorted(available)) or 'none'}."
+            + _available_evidence(ctx),
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=True,
+        )
+
+    join_keys = _infer_join_keys(evidence, [d for d in (dimensions or []) if d])
+    if join_keys is None:
+        return _refuse(
+            "derive needs a shared dimension (an entity key) or a real time series across "
+            f"the two metrics; cite a breakdown that stamps one of "
+            f"{', '.join(_PREFERRED_JOIN_KEYS[:6])}, or fetch both at the same grain.",
+            error_code="INVALID_ARGUMENT",
+            retryable=True,
+        )
+
+    is_series = len({(item.period_start, item.period_end) for item in evidence}) > 1
+    cells: dict[tuple[datetime, datetime, tuple[str, ...]], dict[str, EvidenceArtifact]] = {}
+    for aid, item in zip(evidence_ids, evidence, strict=True):
+        if item.value is None or item.metric_id not in (numerator_metric, denominator_metric):
+            continue
+        key_vals = tuple(str(item.dimensions.get(k) or "").strip() for k in join_keys)
+        if join_keys and any(not v for v in key_vals):
+            continue
+        slot = (item.period_start, item.period_end, key_vals)
+        cells.setdefault(slot, {})
+        if item.metric_id not in cells[slot]:
+            cells[slot][item.metric_id] = item
+
+    if not cells:
+        return _refuse(
+            f"no row carries both {numerator_metric} and {denominator_metric} over the same "
+            f"{', '.join(join_keys) or 'time bucket'}; fetch them at the same grain and slice first.",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=True,
+        )
+
+    name = label or f"{numerator_metric}_{operator}_{denominator_metric}"
+    # Only rows holding BOTH sides are usable; drop half-rows rather than guess.
+    complete = {
+        slot: pair
+        for slot, pair in cells.items()
+        if len(pair) == 2
+    }
+    if not complete:
+        return _refuse(
+            f"no row holds both {numerator_metric} and {denominator_metric}; "
+            "the two metrics were fetched over different slices — fetch them for the same entities.",
+            error_code="INSUFFICIENT_EVIDENCE",
+            retryable=True,
+        )
+
+    def _compute(num: float, den: float) -> float | None:
+        if operator == "ratio":
+            return None if den == 0 else num / den
+        return num - den
+
+    header = [*(["date"] if is_series else []), *join_keys, numerator_metric, denominator_metric, name]
+    table_rows: list[str] = []
+    metrics_index: dict[str, float] = {}
+    null_rows = 0
+    for slot in sorted(complete, key=lambda s: (s[0], s[1], s[2]))[:_MAX_MERGE_SERIES_ROWS]:
+        num = float(complete[slot][numerator_metric].value)
+        den = float(complete[slot][denominator_metric].value)
+        value = _compute(num, den)
+        if value is None:
+            null_rows += 1
+            cell = "n/a"
+        else:
+            cell = _fmt_merge_value(value)
+            metrics_index[f"{name}.{_join_stamp(slot, join_keys, is_series)}"] = value
+        stamp = _join_stamp(slot, join_keys, is_series)
+        metrics_index[f"{numerator_metric}.{stamp}"] = num
+        metrics_index[f"{denominator_metric}.{stamp}"] = den
+        cells_display = [
+            *([table_cell(_bucket_label(slot[0], slot[1]))] if is_series else []),
+            *(table_cell(v) for v in slot[2]),
+            _fmt_merge_value(num),
+            _fmt_merge_value(den),
+            cell,
+        ]
+        table_rows.append("| " + " | ".join(cells_display) + " |")
+
+    # A ratio is only meaningful where the denominator exists; a zero-denominator
+    # row is reported as n/a, never silently turned into 0 or ∞.
+    table = "\n".join(
+        [
+            "| " + " | ".join(header) + " |",
+            "| " + " | ".join(["---"] * len(header)) + " |",
+            *table_rows,
+        ]
+    )
+    note = (
+        f"{null_rows} of {len(complete)} rows had a zero denominator and are reported as n/a, not as 0."
+        if null_rows
+        else ""
+    )
+    statement = (
+        f"{name} computed as {numerator_metric} {operator if operator == 'difference' else '/'} "
+        f"{denominator_metric} over {len(complete)} joined rows.\n\n{table}"
+        + (f"\n\n{note}" if note else "")
+    )
+    finding_id = _write_finding(
+        ctx,
+        finding_type="derive",
+        statement=statement,
+        evidence_ids=list(evidence_ids),
+        metrics=metrics_index,
+    )
+    return ToolResult(
+        success=True,
+        artifact_ids=[finding_id],
+        summary=(
+            f"{name} = {numerator_metric} {operator} {denominator_metric} over {len(complete)} rows "
+            f"(joined on {', '.join([*(['date'] if is_series else []), *join_keys]) or 'nothing'}). "
+            f"Use finding {finding_id}. {note}\n\n{table}"
+        ),
+        provenance=_provenance(list(evidence_ids)),
+    )
+
+
+AnalysisMethod = Literal[
+    "compare",
+    "anomaly",
+    "contribution",
+    "segments",
+    "funnel",
+    "cohort",
+    "merge",
+    "derive",
+]
+
+
+def _join_stamp(
+    slot: tuple[datetime, datetime, tuple[str, ...]],
+    join_keys: list[str],
+    is_series: bool,
+) -> str:
+    """A joined row's identity, for indexing a derived figure per row."""
+    parts: list[str] = []
+    if is_series:
+        parts.append(_bucket_label(slot[0], slot[1]))
+    parts.extend(slot[2])
+    return "|".join(p for p in parts if p)
 
 
 async def analyze(
@@ -1337,6 +1585,10 @@ async def analyze(
     evidence_ids: list[str],
     method: AnalysisMethod,
     dimensions: list[str] | None = None,
+    numerator_metric: str | None = None,
+    denominator_metric: str | None = None,
+    operator: Literal["ratio", "difference"] = "ratio",
+    label: str | None = None,
 ) -> ToolResult:
     """Calculate over evidence you already fetched (never fetches). Pick the method:
 
@@ -1349,9 +1601,12 @@ async def analyze(
     - ``segments``: the same metric broken down across several ``dimensions`` at once.
     - ``funnel``: step-to-step conversion and drop-off (one base count + its rates).
     - ``cohort``: compare cohorts (dimension values or windows) with their median.
-    - ``merge``: outer-join companion metric breakdowns on shared entity dimensions
-      (e.g. campaign_name) into one table with derived CPA/ROAS when both sides exist.
-      Pass ``dimensions`` as the join key(s), or omit to infer (prefers campaign_name).
+     - ``merge``: outer-join companion metric breakdowns on shared entity dimensions
+       (e.g. campaign_name) into one table with derived CPA/ROAS when both sides exist.
+       Pass ``dimensions`` as the join key(s), or omit to infer (prefers campaign_name).
+     - ``derive``: compute a ratio or difference the catalogue does not declare, from two
+       metrics you already fetched (``numerator_metric`` + ``denominator_metric``,
+       ``operator`` ratio|difference). Nothing is hardcoded — the ids come from the caller.
 
     Every result is a citable Finding."""
     dims = [d for d in (dimensions or []) if d]
@@ -1373,4 +1628,21 @@ async def analyze(
         return await cohort_analysis(ctx, evidence_ids)
     if method == "merge":
         return await merge_evidence_breakdowns(ctx, evidence_ids, dims or None)
+    if method == "derive":
+        if not numerator_metric or not denominator_metric:
+            return _refuse(
+                "derive needs numerator_metric and denominator_metric (catalogue metric ids "
+                "already fetched)",
+                error_code="INVALID_ARGUMENT",
+                retryable=True,
+            )
+        return await derive_metric(
+            ctx,
+            evidence_ids,
+            numerator_metric=numerator_metric,
+            denominator_metric=denominator_metric,
+            dimensions=dims or None,
+            operator=operator,
+            label=label,
+        )
     return _refuse(f"unknown method {method!r}", error_code="INVALID_ARGUMENT")

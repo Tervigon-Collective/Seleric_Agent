@@ -9,7 +9,6 @@ from seleric_swarm.agent.intent import (
     QueryClassification,
     _normalize_bool,
     _normalize_ordinal,
-    select_chart_type,
 )
 
 
@@ -74,37 +73,3 @@ def test_stated_grain_is_read_from_the_words(text, grain):
     from seleric_swarm.agent.intent import stated_grain
 
     assert stated_grain(text) == grain
-
-
-@pytest.mark.asyncio
-async def test_select_chart_type_uses_jev_choice(monkeypatch):
-    async def _fake_post(state, questions, **kwargs):
-        assert "stacked bar" in state
-        assert "time_periods=7" in state
-        assert questions["chart_type"]["type"] == "choice"
-        return {"chart_type": {"type": "choice", "choice": "bar"}}
-
-    monkeypatch.setattr("seleric_swarm.agent.intent._post_jev", _fake_post)
-    assert (
-        await select_chart_type(
-            "stacked bar graph for the net profit waterfall",
-            data_shape="time_periods=7; metrics=1; category_values=0; values_may_be_negative=true",
-            title="Net profit waterfall",
-            base_url="http://jev.test",
-            api_key="k",
-        )
-        == "bar"
-    )
-
-
-@pytest.mark.asyncio
-async def test_select_chart_type_fails_open_without_config():
-    assert (
-        await select_chart_type(
-            "trend",
-            data_shape="time_periods=7; metrics=1; category_values=0",
-            base_url="",
-            api_key="",
-        )
-        is None
-    )

@@ -21,10 +21,13 @@ tool calls) is still tracked as exit criterion 5 in that profile brief.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from seleric_swarm.api.v3_state import get_v3_artifact_store, get_v3_mission_store
 from seleric_swarm.state.missions import Mission
+
+_log = logging.getLogger("seleric.api.office.v3")
 
 # V3 Artifact.artifact_type (agent/artifacts.py) -> the closest swarm_v2
 # artifact bucket normalize.py already knows how to render/attribute.
@@ -141,7 +144,7 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
     # One chart per (chart_type, metrics) set — the most recent. A mission that revised,
     # reset an answer, or was retried re-charts with different evidence or intent;
     # only the latest chart for that metric set should render on the answer.
-    latest_chart: dict[Any, Any] = {}
+    latest_chart: dict[Any, tuple[Any, str]] = {}
     for artifact in artifacts:
         if getattr(artifact, "artifact_type", None) != "chart_spec" or not isinstance(artifact.payload, dict):
             continue
@@ -155,15 +158,15 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
         metrics_key = tuple(sorted(payload.get("metrics") or []))
         key = (chart_type, metrics_key) if metrics_key else frozenset(getattr(artifact, "evidence_ids", None) or [artifact.id])
         prior = latest_chart.get(key)
-        if prior is None or artifact.created_at >= prior.created_at:
-            latest_chart[key] = artifact
+        if prior is None or artifact.created_at >= prior[0].created_at:
+            latest_chart[key] = (artifact, str(chart_type))
     charts = [
         {
-            "chart_type": chart.payload["chart_type"],
-            "artifact_id": chart.id,
-            "data": chart.payload,
+            "chart_type": chart_type,
+            "artifact_id": artifact.id,
+            "data": artifact.payload,
         }
-        for chart in sorted(latest_chart.values(), key=lambda a: a.created_at)
+        for (artifact, chart_type) in sorted(latest_chart.values(), key=lambda pair: pair[0].created_at)
     ]
 
     return {
