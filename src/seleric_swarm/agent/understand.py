@@ -117,7 +117,10 @@ _INSTRUCTIONS = (
     "- shape: entity_comparison when the question is about particular entities (the best or "
     "worst members of some dimension) in one window compared with another; period_comparison "
     "for whole-account figures across two windows; why_single_metric for why one metric's "
-    "total moved; funnel for stage drop-off; else lookup, trend, breakdown or other. For a "
+    "total moved; composition when the user wants a total split into the parts it is made of (a "
+    "waterfall, a P&L walk, reconciling components back to a total, how much of a change came "
+    "from each cost or revenue line) — list that total first in metrics; funnel for stage "
+    "drop-off; else lookup, trend, breakdown or other. For a "
     "conversation use other.\n"
     "- entity_dimension: the dimension id (from the catalogue's Dimensions list) holding those "
     "entities' names.\n"
@@ -231,6 +234,7 @@ _SHAPE_INTENT = {
     "period_comparison": "comparison",
     "entity_comparison": "comparison",
     "why_single_metric": "diagnostic",
+    "composition": "aggregation",
     "funnel": "diagnostic",
 }
 _KIND_INTENT = {

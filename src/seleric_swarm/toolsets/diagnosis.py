@@ -146,7 +146,15 @@ def _plan_drivers(
 
 
 def _plan_dimensions(ctx: RunContext[SelericDeps], outcome: str, cap: int) -> list[str]:
-    return space.plan_dimensions(ctx.deps.catalogue, outcome, cap)
+    """The dimensions to segment by: those the question named as where to look first (when the outcome carries
+    them), then the catalogue's own plan."""
+    planned = space.plan_dimensions(ctx.deps.catalogue, outcome, cap)
+    hints = getattr(getattr(ctx.deps, "required_scope", None), "segment_hints", frozenset()) or frozenset()
+    if not hints:
+        return planned
+    carried = set(ctx.deps.catalogue.supported_dimensions_for(outcome))
+    first = sorted(d for d in hints if d in carried and not ctx.deps.catalogue.is_time_dimension(d))
+    return list(dict.fromkeys([*first, *planned]))[: max(cap, len(first))]
 
 
 def _rate_parts(

@@ -214,6 +214,27 @@ def check_answer_grounding(artifacts: list[Artifact], result: MissionResult | No
     shown_periods = {_period(evidence[eid]) for eid in represented}
     shown_metrics = {evidence[eid].metric_id for eid in represented}
 
+    # What the mission holds, cited or not. A figure the mission fetched is at worst mis-cited, never invented:
+    # judged against the cited rows only, the answer's correct figures from rows it did not cite were reported as
+    # "not found in any evidence", and the revision flipped a right answer to a wrong one (live 2026-10-09,
+    # regression Q11: two loss-making products named correctly, then "no product loses money").
+    held_by_period: dict[tuple[date, date], list[float]] = {}
+    held_by_metric: dict[str, list[float]] = {}
+    held_all: list[float] = []
+    for ev in evidence.values():
+        if ev.value is None:
+            continue
+        held_all.append(float(ev.value))
+        if ev.grain == "none":
+            held_by_period.setdefault(_period(ev), []).append(float(ev.value))
+            held_by_metric.setdefault(ev.metric_id, []).append(float(ev.value))
+    held_all += [v for f in findings.values() for v in f.metrics.values()]
+    for p, vals in period_values.items():
+        vals.extend(held_by_period.get(p, []))
+    for mid, vals in metric_values.items():
+        vals.extend(held_by_metric.get(mid, []))
+    all_sources += held_all
+
     uncovered = [
         p for p, vals in sorted(period_values.items())
         if p not in shown_periods and not any(_matches(num, v) for num in numbers for v in vals)

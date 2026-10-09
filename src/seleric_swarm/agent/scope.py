@@ -162,6 +162,9 @@ class RequiredScope:
     # Concept axes the user's own words set (gateway catalogue_resolve_values "axes", e.g. date=finance
     # for "net profit on the P&L"): merged into every concept resolution and checked on the evidence.
     question_axes: tuple[tuple[str, str], ...] = ()
+    # Dimensions a why-question names as where to look ("was it product mix or channel mix?"): hypotheses the
+    # diagnosis segments first, never a table the answer must be grouped by.
+    segment_hints: frozenset[str] = frozenset()
 
     def is_empty(self) -> bool:
         return not (

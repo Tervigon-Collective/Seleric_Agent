@@ -53,6 +53,7 @@ PlanShape = Literal[
     "entity_comparison",
     "why_single_metric",
     "funnel",
+    "composition",
     "other",
 ]
 
@@ -293,6 +294,17 @@ def compose_plan(
                     purpose=f"Every requested metric over the {label} window {window_text}.{hours}",
                 )
             )
+    elif shape == "composition" and metric_ids:
+        # A total split into the lines it is built from (one period), or the change between two periods split
+        # by line: the catalogue's verified composition, so the lines reconcile (break_down_metric).
+        steps.append(
+            PlanStep(
+                tool="break_down_metric",
+                metric_ids=[metric_ids[0]],
+                period=ref_text if comparison is None else f"{ref_text} compared with {cmp_text}",
+                purpose="Break the total into its reconciling lines; answer from its table and waterfall.",
+            )
+        )
     elif shape == "why_single_metric" and metric_ids:
         steps.append(
             PlanStep(

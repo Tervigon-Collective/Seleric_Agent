@@ -23,6 +23,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
+from collections.abc import Sequence
 from typing import Any
 
 from seleric_swarm.agent.artifacts import Finding
@@ -147,6 +148,8 @@ async def execute_plan(
     to the agent."""
     if plan is None:
         return None
+    if plan.shape == "composition":
+        return await _execute_composition(plan, deps, windows=windows, as_of=as_of)
     two_windows = plan.shape in ("entity_comparison", "period_comparison") and len(windows) >= 2
     if not two_windows and plan.shape not in _SINGLE_WINDOW_SHAPES:
         return None
@@ -165,6 +168,43 @@ async def execute_plan(
     if prefetch is not None and (units := _units_line(plan, deps)):
         prefetch.text = f"{prefetch.text}\n{units}"
     return prefetch
+
+
+async def _execute_composition(
+    plan: MissionPlan, deps: SelericDeps, *, windows: Sequence[tuple[date, date]], as_of: datetime
+) -> Prefetch | None:
+    """A composition plan is one deterministic call: the total's reconciling lines (and their change between the
+    two windows when the question names two), on the question's own periods. Live 2026-10-09 (golden Q15): left
+    to the agent, a 'reconcile the profit change' was assembled by hand in run_python and fought the total gate
+    through four revisions."""
+    from seleric_swarm.toolsets import composition
+
+    step = next((s for s in plan.steps if s.tool == "break_down_metric" and s.metric_ids), None)
+    if step is None:
+        return None
+    emit_progress(deps.mission_id, "agent.stage", tool_label(step.tool), {"stage": "prefetch"})
+    kwargs: dict[str, Any] = {}
+    # A change runs from the earlier period to the later one, whichever the question names first.
+    ordered = sorted(windows[:2]) if len(windows) > 1 else list(windows[:1])
+    if ordered:
+        later = ordered[-1]
+        kwargs.update(period_start=_at(later[0], as_of), period_end=_at(later[1], as_of))
+    if len(ordered) > 1:
+        kwargs.update(compare_start=_at(ordered[0][0], as_of), compare_end=_at(ordered[0][1], as_of))
+    try:
+        result = await composition.break_down_metric(_ctx(deps), step.metric_ids[0], **kwargs)
+    except Exception:
+        _log.warning("composition_execution_failed", exc_info=True)
+        return None
+    if not getattr(result, "success", False):
+        return None
+    finding_id = (result.provenance.source_metadata or {}).get("finding_id")
+    return Prefetch(
+        text="Prefetched by the planner (break_down_metric):\n" + result.summary,
+        evidence_ids=[a for a in result.artifact_ids if a != finding_id],
+        finding_id=finding_id,
+        stats={"queries": 1, "rows": len(result.artifact_ids)},
+    )
 
 
 def _units_line(plan: MissionPlan, deps: SelericDeps) -> str:

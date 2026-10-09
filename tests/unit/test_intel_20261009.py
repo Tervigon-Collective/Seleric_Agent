@@ -297,3 +297,19 @@ def test_a_change_across_zero_between_shown_figures_is_backed() -> None:
 
     assert _derived_from_shown(216.3, 0.05, True, [-8729.0, 10148.0], [])
     assert not _derived_from_shown(57.0, 0.05, True, [-8729.0, 10148.0], [])
+
+
+async def test_a_composition_plan_runs_the_bridge_from_the_earlier_period(defs: None) -> None:
+    """'On 10-02 we recorded a loss … versus 10-01 … reconcile': the planner runs break_down_metric itself, with
+    the change running from 10-01 to 10-02 whichever is named first."""
+    from seleric_swarm.agent.executor import execute_plan
+    from seleric_swarm.agent.plan import MissionPlan, PlanStep
+
+    mcp = _Mcp({
+        "2026-10-02": {"np": -20.0, "cm": 80.0, "ns": 100.0, "cogs": 20.0, "ad": 100.0},
+        "2026-10-01": {"np": 10.0, "cm": 90.0, "ns": 110.0, "cogs": 20.0, "ad": 80.0},
+    })
+    plan = MissionPlan(shape="composition", steps=[PlanStep(tool="break_down_metric", metric_ids=["np"], period="x", purpose="bridge the change")])
+    out = await execute_plan(plan, _deps(mcp), windows=[(date(2026, 10, 2), date(2026, 10, 2)),
+                                                       (date(2026, 10, 1), date(2026, 10, 1))], as_of=AS_OF)
+    assert out is not None and "change -30.00" in out.text and out.finding_id
