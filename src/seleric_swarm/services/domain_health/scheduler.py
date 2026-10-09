@@ -91,7 +91,9 @@ async def run_once(
     snapshots = [s for s in results if s is not None]
 
     headline_ids = DomainHealthProfiles().headline_metrics()
-    if headline_ids:
+    # No domain resolved (e.g. the MCP restarting): an empty headline dated today would shadow the last good one
+    # for a day (live 2026-10-09 01:44 UTC: business/2026-10-09.json UNAVAILABLE, read by every mission).
+    if headline_ids and snapshots:
         headline = build_headline_snapshot(snapshots, headline_ids, brand_id=brand_id)
         await store.asave(headline)
         snapshots.append(headline)

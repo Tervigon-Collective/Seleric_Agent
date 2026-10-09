@@ -185,3 +185,17 @@ def test_a_worst_entities_question_ranks_ascending() -> None:
     windows = [(date(2026, 10, 1), date(2026, 10, 1)), (date(2026, 10, 2), date(2026, 10, 2))]
     plan, _ = compose_plan(slots, metric_ids=["np"], rank_id="np", windows=windows, catalogue=catalogue, as_of=None)
     assert plan is not None and "order='asc'" in plan.steps[0].ranking
+
+
+def test_an_unavailable_snapshot_does_not_shadow_the_last_good_one(tmp_path) -> None:
+    # live 2026-10-09: an empty business snapshot dated today was read instead of yesterday's full one
+    from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
+    from seleric_swarm.services.domain_health.models import DomainStateSnapshot
+
+    store = SnapshotStore(base_dir=tmp_path)
+    good = DomainStateSnapshot(domain="business", brand_id="20", as_of="2026-10-08", computed_at="2026-10-09T05:57:36",
+                               window={}, status="OK", metrics=[], headline_signals=["x"], provenance={})
+    empty = good.model_copy(update={"as_of": "2026-10-09", "status": "UNAVAILABLE", "headline_signals": []})
+    store.save(good)
+    store.save(empty)
+    assert store.get_latest("business").as_of == "2026-10-08"

@@ -57,12 +57,18 @@ class SnapshotStore:
         if not domain_dir.is_dir():
             return None
         files = sorted(p for p in domain_dir.glob("*.json") if not p.name.startswith("."))
+        # The newest snapshot that carries data; an UNAVAILABLE one (a cycle where nothing resolved) only when no
+        # other exists — it must not shadow the last good state.
+        fallback: DomainStateSnapshot | None = None
         for file_path in reversed(files):
             try:
-                return DomainStateSnapshot.model_validate_json(file_path.read_text(encoding="utf-8"))
+                snapshot = DomainStateSnapshot.model_validate_json(file_path.read_text(encoding="utf-8"))
             except Exception:  # noqa: S112 - skip corrupt snapshots and try the next newest
                 continue
-        return None
+            if snapshot.status != "UNAVAILABLE" or snapshot.metrics:
+                return snapshot
+            fallback = fallback or snapshot
+        return fallback
 
     async def asave(self, snapshot: DomainStateSnapshot) -> Path:
         return await asyncio.to_thread(self.save, snapshot)
