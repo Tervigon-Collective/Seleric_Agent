@@ -708,3 +708,49 @@ def test_evidence_period_stamps_are_always_timezone_aware() -> None:
                              value=1.0, source_query={})
     assert naive.period_start.tzinfo is not None
     assert sorted([aware.period_start, naive.period_start])[0] == naive.period_start   # comparable
+
+
+def test_a_month_named_without_a_year_is_its_latest_occurrence() -> None:
+    from seleric_swarm.services.time_range import window_from_query
+
+    as_of = "2026-10-10T08:00:00+05:30"
+    w = window_from_query("AOV and COD orders by product in September?", "Asia/Kolkata", as_of)
+    assert (w.kind, w.start, w.end) == ("absolute", "2026-09-01", "2026-09-30")
+    w = window_from_query("net sales in November", "Asia/Kolkata", as_of)
+    assert (w.start, w.end) == ("2025-11-01", "2025-11-30")
+    w = window_from_query("orders so far in October", "Asia/Kolkata", as_of)
+    assert (w.start, w.end) == ("2026-10-01", "2026-10-09")
+    w = window_from_query("compare September with August", "Asia/Kolkata", as_of)
+    assert (w.kind, w.start, w.start_b) == ("comparison", "2026-09-01", "2026-08-01")
+    assert window_from_query("what may have caused the drop?", "Asia/Kolkata", as_of) is None or \
+        window_from_query("what may have caused the drop?", "Asia/Kolkata", as_of).start != "2026-05-01"
+
+
+async def test_each_entity_kind_the_user_lists_is_ranked_on_its_own_carried_slice() -> None:
+    from seleric_swarm.agent.plan import PlanSlots, MetricSlot, plan_from_slots
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+
+    cat = CatalogueSnapshot(
+        metrics=(CatalogueMetricMeta(id="net_profit", view="order_pnl", supported_dimensions=["campaign_name", "finance_channel", "product_title"]),),
+        dimensions=("campaign_name", "finance_channel", "channel", "product_title"),
+    )
+    slots = PlanSlots(shape="entity_comparison", metrics=[MetricSlot(words="net profit", metric_id="net_profit")],
+                      rank_by=MetricSlot(words="net profit", metric_id="net_profit"), rank_order="asc",
+                      entity_dimension="campaign_name", breakdown_dimensions=["campaign_name", "product_title", "channel"])
+
+    async def resolver(texts: list[str]) -> dict[str, str | None]:
+        return {t: "net_profit" for t in texts}
+
+    out = await plan_from_slots(slots, catalogue=cat, resolver=resolver,
+                                windows=[(date(2026, 10, 2), date(2026, 10, 2))], as_of=AS_OF)
+    ranked = [s.dimensions for s in out.plan.steps if s.ranking]
+    assert ranked == [["campaign_name"], ["product_title"], ["finance_channel"]], ranked
+    assert all(len(s.dimensions) <= 1 for s in out.plan.steps)
+
+
+def test_an_entity_label_covers_a_breakdown_by_its_key() -> None:
+    from seleric_swarm.agent.scope import scope_from_dimensions
+
+    scope = scope_from_dimensions(["product_id"], alias_index={}, dimension_ids={"product_id", "product_title"},
+                                  stable_keys=(("product_title", "product_id"),))
+    assert scope.breakdowns == frozenset({frozenset({"product_id", "product_title"})})

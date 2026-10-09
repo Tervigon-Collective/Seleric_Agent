@@ -221,6 +221,7 @@ def _required_scope(
                 dimension_ids=bootstrap.dimension_ids(),
                 temporal_grain=temporal_grain,
                 is_time_dimension=getattr(catalogue, "is_time_dimension", None),
+                stable_keys=tuple(getattr(catalogue, "stable_keys", None) or ()),
             )
         return build_required_scope(
             query,

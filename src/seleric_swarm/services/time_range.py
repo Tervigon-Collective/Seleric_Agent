@@ -280,6 +280,33 @@ def _explicit_ranges(text: str, anchor: date | None = None) -> TimeRangeV1 | Non
     return None
 
 
+def _bare_months(text: str, anchor: date) -> list[tuple[str, str]]:
+    """Month names written without a year ("in September"), each as its most recent occurrence on or before the
+    anchor; the running month ends at its last complete day. Without this a bare month resolved to nothing and the
+    mission answered for today instead (regression 2026-10-10 Q20, "… by product in September").
+
+    A short form (Sep, Mar) or "May" counts only capitalised and not opening the sentence, so the modal verb and
+    ordinary words are never read as months."""
+    out: list[tuple[str, str]] = []
+    words = text.split()
+    for index, raw in enumerate(words):
+        token = raw.strip(".,;:!?()[]{}\"'’")
+        month = _MONTH_NAMES.get(token.lower())
+        if month is None:
+            continue
+        full = len(token) > 3 and token.lower() != "may"
+        if not full and (not token[:1].isupper() or index == 0):
+            continue
+        year = anchor.year if month <= anchor.month else anchor.year - 1
+        start, end = _month_range(year, month)
+        last = _last_complete_day(anchor)
+        if end > last:
+            end = max(last, start)
+        if (start, end) not in out:
+            out.append((start, end))
+    return out
+
+
 def _single_window(text: str, anchor: date) -> TimeRangeV1 | None:
     """Resolve one explicitly named window. Priority order (first match wins):
       1. last N days           → last_Nd  (capped at 90 to guard against typos)
@@ -363,6 +390,14 @@ def _single_window(text: str, anchor: date) -> TimeRangeV1 | None:
         name, year = months[0]
         month_start, month_end = _month_range(int(year), _MONTH_NAMES[name.lower()])
         return TimeRangeV1(kind="absolute", start=month_start, end=month_end)
+
+    bare = _bare_months(text, anchor)
+    if len(bare) >= 2:
+        (a_start, a_end), (b_start, b_end) = bare[0], bare[1]
+        return TimeRangeV1(kind="comparison", start=a_start, end=a_end, start_b=b_start, end_b=b_end)
+    if len(bare) == 1:
+        start, end = bare[0]
+        return TimeRangeV1(kind="absolute", start=start, end=end)
 
     dates = _ISO_DAY.findall(text)
     if len(dates) >= 2:

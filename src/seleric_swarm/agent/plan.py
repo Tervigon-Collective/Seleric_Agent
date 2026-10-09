@@ -265,6 +265,27 @@ def compose_plan(
                 purpose=f"Rank the {entity} values over {ref_text} by {rank}; these are the entities to compare.",
             )
         )
+        # Every other entity kind the user listed ("which campaigns, products and channels contributed") is its
+        # own ranking, never one cross-product query: a dimension of the same grain language the rank metric
+        # carries stands in for one it does not (net profit by finance_channel for "channels"). Regression
+        # 2026-10-10 Q16 joined all three in one step, lost products and channels, and went partial.
+        for other in breakdowns:
+            if other == entity:
+                continue
+            slice_dim = _carried_reading(catalogue, rank, other)
+            if slice_dim is None:
+                notes.append(f"{rank} cannot be broken down by {other} or any dimension of its kind")
+                continue
+            steps.append(
+                PlanStep(
+                    tool="query_metrics",
+                    metric_ids=[rank],
+                    dimensions=[slice_dim],
+                    period=ref_text,
+                    ranking=f"order='{slots.rank_order}', limit={n}",
+                    purpose=f"Rank the {slice_dim} values over {ref_text} by {rank}: the user asked about these too.",
+                )
+            )
         compared = [m for m in dict.fromkeys([rank, *metric_ids])]
         for window_text, label in ((ref_text, "reference"), (cmp_text, "comparison")):
             steps.append(
@@ -333,6 +354,8 @@ def compose_plan(
             )
         )
         breakdowns = []
+    if shape == "entity_comparison":
+        breakdowns = []
     if breakdowns and steps:
         mapped = [m for m in additive if any(d in catalogue.supported_dimensions_for(m) for d in breakdowns)]
         if mapped:
@@ -361,6 +384,21 @@ def compose_plan(
             }
         )
     return MissionPlan(shape=shape, steps=steps[:_MAX_STEPS]), notes
+
+
+def _carried_reading(catalogue: CatalogueSnapshot, metric_id: str, dimension: str) -> str | None:
+    """*dimension* when *metric_id* can be sliced by it, else the dimension of the same grain language (its
+    conformed family first, then every dimension whose id holds the term's words) the metric carries."""
+    if catalogue.carries(metric_id, dimension):
+        return dimension
+    from seleric_swarm.agent.scope import _resolve_dimension_candidates
+
+    family = sorted(catalogue.family_members(dimension) - {dimension})
+    worded = sorted(_resolve_dimension_candidates(dimension.replace("_", " "), {}, frozenset(catalogue.dimensions)))
+    for candidate in dict.fromkeys([*family, *worded]):
+        if candidate != dimension and catalogue.carries(metric_id, candidate):
+            return candidate
+    return None
 
 
 def sanitize_plan(

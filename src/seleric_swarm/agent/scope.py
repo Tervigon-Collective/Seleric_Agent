@@ -334,6 +334,7 @@ def scope_from_dimensions(
     dimension_ids: frozenset[str] | set[str] | None,
     temporal_grain: str | None = None,
     is_time_dimension: Any = None,
+    stable_keys: tuple[tuple[str, str], ...] | list[tuple[str, str]] = (),
 ) -> RequiredScope:
     """The breakdowns the question's understanding read, as candidate sets.
 
@@ -353,6 +354,11 @@ def scope_from_dimensions(
         cands = _resolve_dimension_candidates(term, aliases, dims) | (frozenset({term}) if term in dims else frozenset())
         if is_time_dimension is not None:
             cands = frozenset(c for c in cands if not is_time_dimension(c))
+        # An entity's label and its key are one breakdown: grouped by product_title answers "by product_id"
+        # (regression 2026-10-10 Q12 was sent back three times for it).
+        cands = cands | frozenset(
+            other for label, key in stable_keys for other in (label, key) if {label, key} & cands
+        )
         if cands:
             resolved.add(cands)
     return RequiredScope(breakdowns=frozenset(resolved), temporal_grain=temporal_grain)
