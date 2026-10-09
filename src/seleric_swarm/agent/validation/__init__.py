@@ -528,6 +528,24 @@ def _same_metric_arithmetic(deps: SelericDeps) -> list[float]:
     for metric, grain, dims, start, end, value in rows:
         by_slice.setdefault((metric, grain, dims), []).append((start, value))
         by_query.setdefault((metric, grain, start, end, tuple(k for k, _ in dims)), []).append(value)
+    # A period total divided by its own number of days (a per-day average), and the change between two periods'
+    # per-day averages: how windows of different lengths are compared fairly (regression 2026-10-10 Q28 compared
+    # 6 days with 3 per day and was sent back for "119.67 / 61% match nothing").
+    def _days(start: str, end: str) -> int:
+        try:
+            return (date.fromisoformat(end[:10]) - date.fromisoformat(start[:10])).days + 1
+        except ValueError:
+            return 1
+
+    per_day: dict[tuple[Any, ...], list[float]] = {}
+    for metric, grain, dims, start, end, value in rows:
+        n = _days(start, end)
+        if grain == "none" and n > 1:
+            out.append(value / n)
+            per_day.setdefault((metric, dims), []).append(value / n)
+    for vals in per_day.values():
+        if len(vals) <= 8:
+            out.extend((a - b) / abs(b) for i, a in enumerate(vals) for j, b in enumerate(vals) if i != j and b)
     for (_, grain, _), series in by_slice.items():
         series.sort()
         # period totals: every pair of periods; a time series: each step only (bounded either way)

@@ -1328,12 +1328,17 @@ async def merge_evidence_breakdowns(
     # order, chart or rank (golden 2026-10-08 q07/q10).
     is_series = len({(item.period_start, item.period_end) for item in evidence}) > 1
     row_cap = _MAX_MERGE_SERIES_ROWS if is_series else _MAX_MERGE_TABLE_ROWS
+    # Evidence written by different tools carries timezone-aware and naive period stamps side by side; comparing
+    # them raised TypeError and failed the whole mission (live 2026-10-10 regression Q8). Order on wall time.
+    def _wall(moment: Any) -> Any:
+        return moment.replace(tzinfo=None) if isinstance(moment, datetime) else moment
+
     ordered_slots = (
         # series: date first, then entity
-        sorted(cells.keys(), key=lambda s: (s[0], s[1], s[2]))
+        sorted(cells.keys(), key=lambda s: (_wall(s[0]), _wall(s[1]), s[2]))
         if is_series
         # entity table: entity first, period second (unchanged ordering)
-        else sorted(cells.keys(), key=lambda s: (s[2], s[0], s[1]))
+        else sorted(cells.keys(), key=lambda s: (s[2], _wall(s[0]), _wall(s[1])))
     )
     sorted_slots = ordered_slots[:row_cap]
 

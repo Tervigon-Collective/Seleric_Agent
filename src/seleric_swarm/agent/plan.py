@@ -306,12 +306,20 @@ def compose_plan(
             )
         )
     elif shape == "why_single_metric" and metric_ids:
+        # The other measures the question names are the user's hypotheses: they go in as drivers, so each is
+        # checked and reported (regression 2026-10-10 Q24: one run diagnosed CAC without them and never
+        # addressed the CPM / CTR / CPC the user asked about).
+        named = [m for m in metric_ids[1:] if m != metric_ids[0]]
         steps.append(
             PlanStep(
                 tool="diagnose_metric_change",
                 metric_ids=[metric_ids[0]],
                 period=ref_text,
-                purpose="Diagnose the change once and answer from its ANSWER SKELETON.",
+                purpose=(
+                    "Diagnose the change once and answer from its ANSWER SKELETON."
+                    + (f" Pass drivers={named} — the measures the user named as possible explanations — and "
+                       "address each of them in the answer." if named else "")
+                ),
             )
         )
     elif metric_ids:

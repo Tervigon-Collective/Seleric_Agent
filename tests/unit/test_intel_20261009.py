@@ -631,3 +631,39 @@ async def test_a_line_the_semantic_layer_splits_is_opened_into_its_parts(monkeyp
 
     res = await composition.break_down_metric(_Ctx(_deps(Split({}))), "ns", period_start=datetime(2026, 9, 1, tzinfo=UTC))
     assert "Inside Deductions (20.00) by refund_class: RETURN 12.00; CANCELLATION 8.00." in res.summary
+
+
+async def test_a_why_plan_carries_the_named_measures_as_drivers() -> None:
+    from seleric_swarm.agent.plan import MetricSlot, PlanSlots, plan_from_slots
+
+    slots = PlanSlots(shape="why_single_metric", metrics=[
+        MetricSlot(words="CAC", metric_id="cac"), MetricSlot(words="CPM", metric_id="cpm"),
+        MetricSlot(words="CTR", metric_id="ctr"),
+    ])
+    async def resolver(texts: list[str]) -> dict[str, str | None]:
+        return {t: t.lower() for t in texts}
+
+    out = await plan_from_slots(slots, catalogue=CatalogueSnapshot(), resolver=resolver,
+                                windows=[(date(2026, 10, 8), date(2026, 10, 8))], as_of=AS_OF)
+    assert out.plan is not None
+    step = out.plan.steps[0]
+    assert step.metric_ids == ["cac"] and "drivers=['cpm', 'ctr']" in step.purpose
+
+
+def test_per_day_averages_of_fetched_totals_and_their_change_are_backed() -> None:
+    from seleric_swarm.agent.artifacts import EvidenceArtifact
+    from seleric_swarm.agent.validation import _backed, _mission_values
+    from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+    from tests.unit.test_failures_20261008 import _deps as fdeps
+
+    store = InMemoryArtifactStore()
+    for start, end, value in (("2026-10-01", "2026-10-06", 600.0), ("2026-10-07", "2026-10-09", 480.0)):
+        ev = EvidenceArtifact(metric_id="orders", dimensions={}, grain="none", as_of=AS_OF,
+                              period_start=datetime.fromisoformat(start + "T00:00:00+05:30"),
+                              period_end=datetime.fromisoformat(end + "T00:00:00+05:30"), value=value,
+                              source_query={"measure": "orders"})
+        store.put(Artifact(workspace_id="w", artifact_type="evidence", payload=ev.model_dump(mode="json"),
+                           classification="factual", evidence_ids=["raw"], provenance=ArtifactProvenance(), mission_id="m1"))
+    pool = _mission_values(fdeps(store))
+    assert _backed(100.0, 0.005, False, pool) and _backed(160.0, 0.005, False, pool)   # per day
+    assert _backed(60.0, 0.05, True, pool)                                             # +60% per day
