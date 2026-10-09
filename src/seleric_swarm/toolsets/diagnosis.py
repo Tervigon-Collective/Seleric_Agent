@@ -426,11 +426,12 @@ def _summary(report: engine.DiagnosisReport, lineage: dict[str, engine.MetricMet
 
 
 def _inclusive_days(start_dt: datetime, end_dt: datetime) -> tuple[date, date]:
-    """First and last day of a window; "2026-10-02T00:00 .. 2026-10-03T00:00" is one
-    day with an exclusive end."""
+    """First and last day of a window. The end day is included, as in ``query_metrics``
+    and the resolved-window pin: reading a midnight end as exclusive dropped the last
+    day of every pinned multi-day window — "last week" (09-28..10-04) was diagnosed as
+    09-28..10-03, and the scope gate then sent the answer back for the missing day
+    (live 2026-10-09 MS3-2ec0e4a115)."""
     start, end = start_dt.date(), end_dt.date()
-    if end > start and (end_dt.hour, end_dt.minute, end_dt.second, end_dt.microsecond) == (0, 0, 0, 0):
-        end -= timedelta(days=1)
     return (start, end) if start <= end else (end, start)
 
 

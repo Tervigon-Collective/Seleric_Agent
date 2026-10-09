@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 import json
 from datetime import UTC, date, datetime, timedelta
 
-from seleric_swarm.services.elapsed import same_span
+from seleric_swarm.services.elapsed import in_progress_day, same_span
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
@@ -766,6 +766,14 @@ def check_scope_coverage(
                     win_start, win_end = span
                     break
         if _spans_contain(_merged_spans(evidence_periods), win_start, win_end):
+            continue
+        # A window running into today is covered by its complete days: a diagnosis leaves the
+        # running day out on purpose (live 2026-10-09: "this week vs last week" revised for 10-09).
+        today = in_progress_day(as_of) if as_of is not None else None
+        if (
+            today is not None and win_start < today <= win_end
+            and _spans_contain(_merged_spans(evidence_periods), win_start, today - timedelta(days=1))
+        ):
             continue
         gaps.append(
             EvidenceGap(

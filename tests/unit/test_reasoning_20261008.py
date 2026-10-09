@@ -204,3 +204,32 @@ def test_a_stated_hour_caps_the_same_hours_cut(monkeypatch) -> None:
     finally:
         elapsed.state_cutoff_hour(None)
     assert elapsed.completed_hours(as_of) == 15
+
+
+def test_a_diagnosis_window_keeps_its_last_day() -> None:
+    """The pinned "last week" ends at 10-04T00:00 and means 10-04 inclusive (live
+    2026-10-09 MS3-2ec0e4a115 diagnosed 09-28..10-03)."""
+    from seleric_swarm.toolsets.diagnosis import _inclusive_days
+
+    start, end = datetime(2026, 9, 28, tzinfo=IST), datetime(2026, 10, 4, tzinfo=IST)
+    assert _inclusive_days(start, end) == (date(2026, 9, 28), date(2026, 10, 4))
+
+
+def test_a_window_running_into_today_is_covered_by_its_complete_days(monkeypatch) -> None:
+    from seleric_swarm.agent.scope import RequiredScope, RequiredWindow
+    from seleric_swarm.agent.validation.signals import check_scope_coverage
+
+    monkeypatch.setattr(elapsed, "now_in", lambda tz: datetime(2026, 10, 9, 12, tzinfo=IST))
+    at = lambda d: datetime(d.year, d.month, d.day, tzinfo=IST)  # noqa: E731
+    rows = [
+        _artifact("evidence", EvidenceArtifact(
+            metric_id="spend", dimensions={}, grain="day", as_of=TODAY, period_start=at(d), period_end=at(d),
+            value=1.0, source_query={},
+        ).model_dump(mode="json"))
+        for d in (date(2026, 10, 5) + timedelta(days=i) for i in range(4))  # 10-05..10-08, today left out
+    ]
+    scope = RequiredScope(windows=(RequiredWindow(date(2026, 10, 5), date(2026, 10, 9)),))
+    as_of = datetime(2026, 10, 9, tzinfo=IST)
+    assert check_scope_coverage(rows, scope, None, as_of=as_of).status != "INSUFFICIENT"
+    short = RequiredScope(windows=(RequiredWindow(date(2026, 10, 4), date(2026, 10, 9)),))
+    assert check_scope_coverage(rows, short, None, as_of=as_of).status == "INSUFFICIENT"

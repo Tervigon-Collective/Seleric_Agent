@@ -422,3 +422,14 @@ def test_two_windows_named_side_by_side_in_a_comparison_are_both_kept():
     # Without a comparison, two windows in a sentence stay what they were.
     plain = window_from_query("orders yesterday and today", "Asia/Kolkata", "2026-10-09")
     assert plain is None or plain.kind != "comparison"
+
+
+def test_compared_with_last_week_is_this_week_against_last():
+    """Live 2026-10-09 MS3-2ec0e4a115: "compare" in the verb list never matched "compared",
+    so "Why did ROAS decline compared with last week?" diagnosed last week alone."""
+    from seleric_swarm.services.time_range import window_from_query
+
+    w = window_from_query("Why did ROAS decline compared with last week?", "Asia/Kolkata", "2026-10-09")
+    assert w is not None and w.kind == "comparison"
+    assert (w.start, w.end, w.start_b, w.end_b) == ("2026-10-05", "2026-10-09", "2026-09-28", "2026-10-02")
+    assert window_from_query("net sales last week", "Asia/Kolkata", "2026-10-09").kind == "absolute"

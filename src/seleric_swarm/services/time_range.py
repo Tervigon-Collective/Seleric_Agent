@@ -308,7 +308,11 @@ def _single_window(text: str, anchor: date) -> TimeRangeV1 | None:
     # Relative period-over-period ("this week vs last week", "MoM change") resolves
     # to a full-period comparison anchored on as_of, so the mission runs instead of
     # failing with "comparison time range requires two dates".
-    if _COMPARISON_VERB.search(text):
+    # The patterns bind the period to the comparison themselves; a "compared with/to" joiner
+    # opens the gate as well, since the verb list's "compare" never matches "compared"
+    # ("Why did ROAS decline compared with last week?" diagnosed last week on its own,
+    # live 2026-10-09 MS3-2ec0e4a115).
+    if _COMPARISON_VERB.search(text) or re.search(_VS, text, re.IGNORECASE):
         for pattern, unit in _RELATIVE_COMPARE:
             if not pattern.search(text):
                 continue
