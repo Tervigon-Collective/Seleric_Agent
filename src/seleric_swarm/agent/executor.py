@@ -243,10 +243,33 @@ async def _execute_single(
         grain = "none"
     gate = asyncio.Semaphore(_PARALLEL)
     metrics = list(dict.fromkeys(step.metric_ids))
+    # Several metrics broken down by the same entity: rank once, then fetch the others for the SAME entities.
+    # Fetched independently, each came back as its own top rows, so the rate and its base described different
+    # products and the merged table read "No data" where the other list stopped (live 2026-10-10, return rate by
+    # product). The anchor is the first additive metric (a volume ranks sensibly; a rate ranks one-order rows first).
+    anchor_rows: dict[str, list[str]] = {}
+    if step.dimensions and len(metrics) > 1 and grain == "none":
+        anchor = next((m for m in metrics if deps.catalogue.aggregation_for(m) == "additive"), metrics[0])
+        a_dims = {d: "" for d in step.dimensions if deps.catalogue.carries(anchor, d)}
+        if a_dims:
+            first = await _query(
+                deps, gate, metric_id=anchor, dimensions=a_dims, grain=grain,
+                period_start=_at(window[0], as_of), period_end=_at(window[1], as_of),
+            )
+            if getattr(first, "success", False):
+                for payload in _payloads(deps, first.artifact_ids):
+                    for k, v in (payload.get("dimensions") or {}).items():
+                        if k != ELAPSED_KEY and v not in (None, "") and str(v) not in anchor_rows.setdefault(k, []):
+                            anchor_rows[k].append(str(v))
+                metrics = [anchor, *[m for m in metrics if m != anchor]]
     jobs = []
     for metric in metrics:
         # query_metrics answers a conformed sibling / the grain twin; only a slice nothing carries is dropped
-        dims = {d: "" for d in step.dimensions if deps.catalogue.carries(metric, d)}
+        dims: dict[str, Any] = {d: "" for d in step.dimensions if deps.catalogue.carries(metric, d)}
+        if anchor_rows and metric != metrics[0]:
+            dims = {
+                k: vals for k, vals in anchor_rows.items() if deps.catalogue.carries(metric, k) and vals
+            } or dims
         jobs.append(
             _query(
                 deps, gate, metric_id=metric, dimensions=dims or None, grain=grain,

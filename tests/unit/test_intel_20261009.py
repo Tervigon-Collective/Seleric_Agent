@@ -550,3 +550,39 @@ async def test_a_breakdown_sliced_by_a_product_uses_the_totals_product_twin(monk
     assert res.success and "grain twin pnp" in res.summary and "Reconciled" in res.summary
     assert mcp.calls[0]["measures"][0] == "pnp"
     assert {"dimension": "product_title", "operator": "equals", "values": ["Boots"]} in mcp.calls[0]["filters"]
+
+
+async def test_companions_of_a_breakdown_are_fetched_for_the_anchors_entities() -> None:
+    """'return rate by product': the rate and its base were fetched as two independent top lists and described
+    different products. The additive base ranks; the rate is fetched for exactly those products."""
+    import dataclasses
+
+    from seleric_swarm.agent.executor import execute_plan
+    from seleric_swarm.agent.plan import MissionPlan, PlanStep
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+
+    cat = CatalogueSnapshot(metrics=(
+        CatalogueMetricMeta(id="rate", view="v", supported_dimensions=["product_title"], raw={"aggregation": "ratio"}),
+        CatalogueMetricMeta(id="orders", view="v", supported_dimensions=["product_title"], raw={"aggregation": "additive"}),
+    ))
+
+    class Gateway:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            self.calls.append(arguments)
+            m = arguments["measures"][0]
+            rows = [{"product_title": "A", m: 10.0}, {"product_title": "B", m: 5.0}]
+            return {"rows": rows, "provenance": {}}
+
+    gw = Gateway()
+    deps = dataclasses.replace(_deps(gw), catalogue=cat)  # type: ignore[arg-type]
+    plan = MissionPlan(shape="breakdown", steps=[PlanStep(tool="query_metrics", metric_ids=["rate", "orders"],
+                                                          dimensions=["product_title"], period="x", purpose="rate by product")])
+    await execute_plan(plan, deps, windows=[(date(2026, 9, 1), date(2026, 9, 30))], as_of=AS_OF)
+    rate_calls = [c for c in gw.calls if c["measures"] == ["rate"]]
+    assert gw.calls[0]["measures"] == ["orders"]
+    assert rate_calls and any(
+        f.get("dimension") == "product_title" and set(f.get("values") or []) == {"A", "B"} for f in rate_calls[0].get("filters") or []
+    )
