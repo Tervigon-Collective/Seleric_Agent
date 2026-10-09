@@ -692,3 +692,19 @@ def test_a_subtotal_of_the_rows_its_sentence_names_is_not_a_mismatched_total() -
     text = table + "\n\nWhatsApp and direct together total 12,706.78."
     assert total_mismatch(text) is None
     assert total_mismatch(table + "\n\nThe total is 99,999.99.") is not None
+
+
+def test_evidence_period_stamps_are_always_timezone_aware() -> None:
+    from datetime import timedelta, timezone
+
+    from seleric_swarm.agent.artifacts import EvidenceArtifact
+
+    ist = timezone(timedelta(hours=5, minutes=30))
+    naive = EvidenceArtifact(metric_id="m", grain="none", as_of=datetime(2026, 10, 9, tzinfo=ist),
+                             period_start=datetime(2026, 10, 1), period_end=datetime(2026, 10, 7), value=1.0,
+                             source_query={})
+    aware = EvidenceArtifact(metric_id="m", grain="none", as_of=datetime(2026, 10, 9, tzinfo=ist),
+                             period_start=datetime(2026, 10, 2, tzinfo=ist), period_end=datetime(2026, 10, 7, tzinfo=ist),
+                             value=1.0, source_query={})
+    assert naive.period_start.tzinfo is not None
+    assert sorted([aware.period_start, naive.period_start])[0] == naive.period_start   # comparable
