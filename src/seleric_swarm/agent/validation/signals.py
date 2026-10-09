@@ -303,7 +303,11 @@ def _filters_of(ev: EvidenceArtifact) -> str:
     2026-10-01 reported as 15 and 16" spent three revisions the model could not fix)."""
     query = ev.source_query if isinstance(ev.source_query, dict) else {}
     filters = query.get("filters") or []
-    return json.dumps(sorted(json.dumps(f, sort_keys=True, default=str) for f in filters))
+    # A drilldown row records its parent query, not the parent's filters: two drilldowns of differently filtered
+    # parents (one product vs every product) read as the same row and were flagged "85% apart" (regression
+    # 2026-10-10 Q17). The parent is part of what the row measures.
+    parent = query.get("parent_query_id")
+    return json.dumps([sorted(json.dumps(f, sort_keys=True, default=str) for f in filters), parent])
 
 
 def check_contradiction(artifacts: list[Artifact]) -> CheckOutcome:

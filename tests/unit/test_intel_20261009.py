@@ -667,3 +667,18 @@ def test_per_day_averages_of_fetched_totals_and_their_change_are_backed() -> Non
     pool = _mission_values(fdeps(store))
     assert _backed(100.0, 0.005, False, pool) and _backed(160.0, 0.005, False, pool)   # per day
     assert _backed(60.0, 0.05, True, pool)                                             # +60% per day
+
+
+def test_drilldowns_of_different_parent_queries_never_contradict() -> None:
+    from seleric_swarm.agent.artifacts import EvidenceArtifact
+    from seleric_swarm.agent.validation.signals import check_contradiction
+    from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+
+    arts = []
+    for parent, value in (("q_product", 353010.0), ("q_all", 2438388.0)):
+        ev = EvidenceArtifact(metric_id="product_net_revenue", dimensions={"finance_channel": "meta"}, grain="none",
+                              as_of=AS_OF, period_start=AS_OF, period_end=AS_OF, value=value,
+                              source_query={"parent_query_id": parent, "target_dimensions": ["finance_channel"]})
+        arts.append(Artifact(workspace_id="w", artifact_type="evidence", payload=ev.model_dump(mode="json"),
+                             classification="factual", evidence_ids=["raw"], provenance=ArtifactProvenance()))
+    assert not check_contradiction(arts).challenges
