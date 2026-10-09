@@ -76,6 +76,7 @@ from seleric_swarm.conversations.contracts import (
 from seleric_swarm.observability.traces import mission_trace
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
+from seleric_swarm.services.elapsed import state_cutoff_hour
 from seleric_swarm.services.insights import insight_block
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.services.time_range import as_of_date, window_from_query
@@ -1085,6 +1086,7 @@ async def run_v3_mission(
     ``run_mission_job`` / ``create_mission`` can call this with their full
     historical argument set after the swarm_v2 dispatcher was deleted.
     """
+    state_cutoff_hour(None)  # a previous mission's stated hour never carries over
     mission_id = mission_id or f"MS3-{uuid4().hex[:10]}"
     request_id = request_id or uuid4().hex
     thread_id = thread_id or session_id or uuid4().hex
@@ -1152,6 +1154,7 @@ async def run_v3_mission(
     )
     _stage("understand_ms")
     understanding = understood.understanding
+    state_cutoff_hour(getattr(understanding, "through_hour", None))
     classification = classification_from(understanding)
     if (grain := stated_grain(query)) and grain != classification.grain:
         classification = dataclasses.replace(classification, grain=grain)  # type: ignore[arg-type]

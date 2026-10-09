@@ -10,6 +10,7 @@ the reference days.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta, tzinfo
 
 # Evidence dimension carried by a same-elapsed-hours value ("12:00" = hours 00-11 of each day).
@@ -26,9 +27,21 @@ def in_progress_day(as_of: datetime) -> date | None:
     return as_of.date() if now_in(as_of.tzinfo).date() == as_of.date() else None
 
 
+# The hour the user cuts a same-hours comparison at ("till 11 am" = 11), for this mission.
+_STATED_CUTOFF: ContextVar[int | None] = ContextVar("elapsed_stated_cutoff", default=None)
+
+
+def state_cutoff_hour(hour: int | None) -> None:
+    """Set (or clear) the hour the question cuts the day at; set once per mission."""
+    _STATED_CUTOFF.set(hour if hour is not None and 0 < hour <= 24 else None)
+
+
 def completed_hours(as_of: datetime) -> int:
-    """Whole hours of the mission day already elapsed (0-23)."""
-    return now_in(as_of.tzinfo).hour
+    """Whole hours of the mission day already elapsed (0-23), never past the hour the
+    question named: "till 11 am" asked at 15:00 compares 00:00-11:00, not 00:00-15:00."""
+    hour = now_in(as_of.tzinfo).hour
+    stated = _STATED_CUTOFF.get()
+    return min(hour, stated) if stated is not None else hour
 
 
 def covers_in_progress_day(start: date, end: date, as_of: datetime) -> bool:

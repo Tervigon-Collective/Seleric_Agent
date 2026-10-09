@@ -487,6 +487,16 @@ async def plan_from_slots(
     if not metric_ids and slots.shape == "period_comparison" and headline_metric_ids:
         metric_ids = [m for m in headline_metric_ids if not catalogue.metrics or catalogue.has_metric(m)]
         notes.append("no measure named: compared the business headline measures")
+    entity = slots.entity_dimension.strip()
+    if not metric_ids and entity and slots.shape == "entity_comparison" and headline_metric_ids:
+        # Entities compared with no measure named: the headline measures that carry the entity,
+        # never an invalid plan (live 2026-10-09 MS3-0f473daefd, "compare performance of meta ads
+        # campaigns": no plan, and the answer gave four account totals instead of campaigns).
+        metric_ids = [
+            m for m in headline_metric_ids
+            if (not catalogue.metrics or catalogue.has_metric(m)) and catalogue.carries(m, entity)
+        ]
+        notes.append(f"no measure named: compared the headline measures that carry {entity}")
     rank_id = None
     if slots.rank_by is not None:
         rank_ids, rank_notes = await _resolve_metrics([slots.rank_by], resolver, catalogue)

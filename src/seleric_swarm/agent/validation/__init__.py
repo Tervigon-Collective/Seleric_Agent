@@ -217,6 +217,41 @@ def _escape_table_labels(result: MissionResult, deps: SelericDeps) -> MissionRes
     return result if fixed == text else result.model_copy(update={"final_response": fixed})
 
 
+# A sentence left with this few words once its artifact ids are removed was only a citation.
+_CITATION_ONLY_WORDS = 3
+
+
+def _strip_artifact_ids(result: MissionResult, deps: SelericDeps) -> MissionResult:
+    """Artifact ids belong in evidence_ids, never in the prose: a sentence that only lists them
+    is dropped, an id inside a real sentence is removed (live 2026-10-09 MS3-0f473daefd ended
+    with 'Evidence IDs: ["artifact_5866…", …]')."""
+    text = result.final_response or ""
+    ids = {a.id for a in deps.artifact_store.list_for_mission(deps.mission_id)}
+    ids |= set(result.evidence_ids) | set(result.finding_ids)
+    ids = {i for i in ids if i and i in text}
+    if not ids:
+        return result
+    lines = []
+    for line in text.splitlines():
+        if "|" in line or not any(i in line for i in ids):
+            lines.append(line)
+            continue
+        kept = []
+        for sentence in _SENTENCE_END.split(line):
+            if not any(i in sentence for i in ids):
+                kept.append(sentence)
+                continue
+            for i in ids:
+                sentence = sentence.replace(i, "")
+            words = [w for w in sentence.split() if any(ch.isalpha() for ch in w)]
+            if len(words) > _CITATION_ONLY_WORDS:
+                kept.append(" ".join(sentence.split()))
+        line = " ".join(kept)
+        if line.strip() or (lines and lines[-1].strip()):
+            lines.append(line)
+    return result.model_copy(update={"final_response": "\n".join(lines).strip()})
+
+
 def _strip_tables_when_charted(result: MissionResult, deps: SelericDeps) -> MissionResult:
     """Drop Markdown tables when this mission already wrote a chart_spec.
 
@@ -1188,7 +1223,7 @@ async def _validated(
     if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
         return result
     result = _repair_citations(
-        _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_with_query(result, query), deps), deps), deps),
+        _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_strip_artifact_ids(_with_query(result, query), deps), deps), deps), deps),
         deps,
     )
     outcome = validator.validate(result, deps=deps)
@@ -1271,7 +1306,7 @@ async def _validated(
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
         result = _repair_citations(
-            _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_with_query(result, query), deps), deps), deps),
+            _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_strip_artifact_ids(_with_query(result, query), deps), deps), deps), deps),
             deps,
         )
         previous = (outcome.reason, _figures(rejected or ""))

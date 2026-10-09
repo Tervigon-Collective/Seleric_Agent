@@ -158,3 +158,49 @@ def test_the_users_own_numbers_are_not_unbacked_figures() -> None:
     answer = MissionResult(status="completed", final_response="Of the extra 50,000 a day, keep 120,000 base spend.")
     unbacked, _share = _unbacked_figures(_with_query(answer, "If I add 50000 INR/day of budget"), deps)
     assert unbacked == []
+
+
+@pytest.mark.asyncio
+async def test_entities_compared_with_no_measure_named_use_the_headline_they_carry() -> None:
+    """Live 2026-10-09 MS3-0f473daefd: "compare performance of meta ads campaigns" named no
+    measure, the plan was invalid and the answer gave four account totals."""
+    from seleric_swarm.agent.plan import PlanSlots, plan_from_slots
+    from tests.unit.test_planner_executor_context import _catalogue
+
+    slots = PlanSlots(shape="entity_comparison", entity_dimension="camp")
+    windows = [(date(2026, 10, 8), date(2026, 10, 8)), (date(2026, 10, 9), date(2026, 10, 9))]
+    outcome = await plan_from_slots(
+        slots, catalogue=_catalogue(), windows=windows, as_of=TODAY,
+        headline_metric_ids=["spend", "ret", "not_in_catalogue"],
+    )
+    assert outcome.plan is not None, outcome.stats
+    assert outcome.plan.steps[0].metric_ids == ["spend"]  # ranked by the first headline measure
+
+
+def test_a_sentence_that_only_lists_artifact_ids_is_dropped() -> None:
+    from seleric_swarm.agent.validation import _strip_artifact_ids
+
+    deps = _deps()
+    ev = deps.artifact_store.put(_artifact("evidence", EvidenceArtifact(
+        metric_id="spend", dimensions={}, grain="none", as_of=TODAY, period_start=TODAY,
+        period_end=TODAY, value=1.0, source_query={},
+    ).model_dump(mode="json")))
+    text = (f"Spend fell sharply today against the same hours yesterday (see {ev.id}). "
+            f'Evidence IDs: ["{ev.id}"].\n\nPeriod: today')
+    out = _strip_artifact_ids(MissionResult(status="completed", final_response=text), deps).final_response
+    assert ev.id not in out and "Evidence IDs" not in out
+    assert out.startswith("Spend fell sharply today against the same hours yesterday") and "Period: today" in out
+
+
+def test_a_stated_hour_caps_the_same_hours_cut(monkeypatch) -> None:
+    """"till 11 am" asked at 15:00 compares 00:00-11:00 (live 2026-10-09 MS3-0f473daefd)."""
+    monkeypatch.setattr(elapsed, "now_in", lambda tz: datetime(2026, 10, 9, 15, 5, tzinfo=IST))
+    as_of = datetime(2026, 10, 9, tzinfo=IST)
+    try:
+        elapsed.state_cutoff_hour(11)
+        assert elapsed.completed_hours(as_of) == 11
+        elapsed.state_cutoff_hour(18)  # a stated hour still to come cannot reach past now
+        assert elapsed.completed_hours(as_of) == 15
+    finally:
+        elapsed.state_cutoff_hour(None)
+    assert elapsed.completed_hours(as_of) == 15

@@ -95,6 +95,13 @@ class Understanding(PlanSlots):
             "last 7 completed days, this month, since Monday); false when it names none."
         )
     )
+    through_hour: int | None = Field(
+        default=None,
+        description=(
+            "The hour of day (1-24, 24-hour clock) the user cuts a same-hours comparison at: "
+            "'till 11 am' -> 11, 'up to 3 pm' -> 15; null when no time of day is named."
+        ),
+    )
     grain: Literal["hour", "day", "week", "month", "none"] = Field(
         default="none", description="The time bucket the user asks to see results in, if any."
     )
@@ -120,7 +127,10 @@ _INSTRUCTIONS = (
     "declining, dragging the total down); desc otherwise.\n"
     "- metrics: every measure asked for, one entry each, in plain words with abbreviations "
     "spelled out, plus your best metric id from the catalogue (empty if unsure). When the "
-    "message continues the previous turn and names no measure, carry the previous turn's.\n"
+    "message continues the previous turn and names no measure, carry the previous turn's. When "
+    "the message asks how entities or a channel perform (their performance, how they did) and "
+    "names no measure, list the measures an analyst judges that kind of entity by: what was "
+    "spent on it, what it returned, and its efficiency and delivery rates.\n"
     "- breakdown_dimensions: dimension ids for any 'by …' or 'map to …' the user asks for.\n"
     "- ordinary_words: decide for each word in the 'Data-value words' list whether the message "
     "means that value of the dimension it is recorded under. List every word it does not mean "
