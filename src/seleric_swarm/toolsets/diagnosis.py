@@ -613,8 +613,9 @@ def _ratio_split(
     total = math.log(o_ev / o_rf)
     figures[f"{outcome} | change %"] = math.exp(total) * 100 - 100
     return (
-        f"EXACT SPLIT OF THE CHANGE (a multiplicative identity of the catalogue's definitions, verified on the "
-        f"data; the effects multiply to the total, so rank them by size): {engine._label(outcome, lineage)} = "
+        f"EXACT SPLIT OF THE CHANGE — answer 'which driver / rank the drivers' from this, in this order, each with "
+        f"its effect (a multiplicative identity of the catalogue's definitions, verified on the data; the effects "
+        f"multiply to the total; arithmetic, not a causal claim): {engine._label(outcome, lineage)} = "
         f"{formula} (× a constant). " + "; ".join(t for _, t in rows)
         + f"; together {engine._label(outcome, lineage)} {math.exp(total) * 100 - 100:+.1f}%."
         + (" " + " ".join(n + "." for n in nested) if nested else "")
@@ -934,14 +935,21 @@ async def diagnose_metric_change(
                 ids = _evidence_rows(ctx, m, series[m], cited_days, args_by_metric[m], index, tz, unit=units.get(m))
                 per_metric_ids[m] = ids
                 evidence_ids += ids
-        reference_days = baseline or sorted(
+        # The drivers are compared with what the user compares with: the comparison period, else the period just
+        # before the event ("why did CAC increase yesterday" = against the day before). The blended 'usual' level
+        # gave a split of +3.9% beside a headline of +6% on the day before (regression Q24).
+        previous = [date.fromisoformat(x) for x in ((report.event.previous_period or {}).get("days") or [])] if report.event else []
+        reference_days = baseline or previous or sorted(
             {date.fromisoformat(x) for v in (report.event.reference_days.values() if report.event else []) for x in v}
         )
+        versus = f"{reference_days[0]}..{reference_days[-1]}" if len(reference_days) > 1 else (str(reference_days[0]) if reference_days else "")
         named_text, named_metrics = _named_driver_lines(named, series, event_days, reference_days, lineage, report)
         split_text, split_metrics = _ratio_split(metric_id, named, lineage, series, history_days, event_days, reference_days)
         if split_text:
             named_text = split_text + "\n" + named_text
             named_metrics.update(split_metrics)
+        if versus:
+            named_text = f"DRIVERS ARE COMPARED over {', '.join(str(d) for d in event_days)} versus {versus}.\n" + named_text
     finding = Finding(
         finding_type="diagnosis",
         statement=report.headline,

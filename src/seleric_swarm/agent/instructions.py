@@ -166,7 +166,10 @@ WHY-QUESTIONS (diagnosis)
   or Z", "was it traffic or conversion?"), resolve each to its catalogue id and
   pass them as `drivers`; the result reports every one with how it moved and
   whether it was tested, and the answer must address each of them, ranked as
-  the result ranks them.
+  the result ranks them. When the result has an EXACT SPLIT, state each
+  factor's effect on the metric from it ("cheaper clicks lowered CAC 9%, fewer
+  new customers per click raised it 16%") — that is the ranking the user asked
+  for; whether the total move is unusual is a separate statement.
 - That applies to ONE metric's total over COMPLETE days. When the why is about
   particular entities (which campaigns or ads stopped performing), or the window
   includes today while it is still running, compare instead: rank the entities

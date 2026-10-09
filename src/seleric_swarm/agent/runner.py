@@ -1232,7 +1232,14 @@ async def run_v3_mission(
     # Axes are the question's context, not another measure's words: "net ROAS, ad spend … and product gross sale"
     # read scope=product from "product gross sale" and turned spend and ROAS into the product-allocated metrics
     # (live 2026-10-08). Read them from the question without the measure phrases; each phrase keeps its own words.
-    context = _outside_measures(query, _measure_phrases(understanding))
+    # Words the understanding read as dimensions ("product mix", "by channel") name where to look, not a scope of
+    # the measures: left in, "product" set scope=product and CAC became product-allocated CAC (regression Q24).
+    dimension_words = [
+        d.replace("_", " ")
+        for d in [*(getattr(understanding, "breakdown_dimensions", None) or []), getattr(understanding, "entity_dimension", "") or ""]
+        if d
+    ]
+    context = _outside_measures(query, [*_measure_phrases(understanding), *dimension_words])
     if question_axes and context != query and (context_axes := await _context_axes(mcp, context)) is not None:
         question_axes = context_axes
     if value_filters or question_axes:
