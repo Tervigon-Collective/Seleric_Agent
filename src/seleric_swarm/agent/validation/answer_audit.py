@@ -535,6 +535,39 @@ def without_mismatched_totals(
     return "\n".join(lines).strip()
 
 
+def _labelled_rows(text: str) -> list[tuple[str, list[float | None]]]:
+    """(first-cell label, the numbers of the other cells) for each body row of the answer's tables."""
+    rows: list[tuple[str, list[float | None]]] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if not cells or all(set(c) <= set("-: ") for c in cells):
+            continue
+        numbers: list[float | None] = []
+        for cell in cells[1:]:
+            found = _claim_candidates(cell)
+            numbers.append(found[0][0] if found else None)
+        rows.append((cells[0].strip("*_` ").lower(), numbers))
+    return rows
+
+
+def _sum_of_named_rows(sentence: str, claim: float, tolerance: float, rows: list[tuple[str, list[float | None]]]) -> bool:
+    """The total of the rows the sentence itself names ("unattributed and other sources total 12,706.78"): a
+    subtotal, not the table's total (regression 2026-10-10 Q17 was sent back for one)."""
+    said = sentence.lower()
+    named = [nums for label, nums in rows if len(label) >= 3 and label in said]
+    if not named:
+        return False
+    width = max(len(n) for n in named)
+    for col in range(width):
+        vals = [n[col] for n in named if col < len(n) and n[col] is not None]
+        if vals and abs(abs(claim) - abs(sum(vals))) <= max(tolerance, 0.01) * max(1, len(vals)):
+            return True
+    return False
+
+
 def _mismatched_totals(
     text: str,
     label_columns: frozenset[str],
@@ -546,6 +579,7 @@ def _mismatched_totals(
     columns = [values for values, _ in rounded]
     if not columns:
         return
+    labelled = _labelled_rows(text)
     for line in text.splitlines():
         if "|" in line:
             continue
@@ -563,6 +597,8 @@ def _mismatched_totals(
                 if any(_row_difference(claim, max(tolerance, cell), values) for values, cell in rounded):
                     continue
                 if word in _BLEND_WORDS and any(_blend_of_rows(claim, tolerance, c) for c in columns):
+                    continue
+                if _sum_of_named_rows(sentence, claim, tolerance, labelled):
                     continue
                 yield sentence, claim, ", ".join(f"{sum(c):,.2f}" for c in columns)
                 break

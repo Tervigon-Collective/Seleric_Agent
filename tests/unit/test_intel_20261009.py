@@ -682,3 +682,13 @@ def test_drilldowns_of_different_parent_queries_never_contradict() -> None:
         arts.append(Artifact(workspace_id="w", artifact_type="evidence", payload=ev.model_dump(mode="json"),
                              classification="factual", evidence_ids=["raw"], provenance=ArtifactProvenance()))
     assert not check_contradiction(arts).challenges
+
+
+def test_a_subtotal_of_the_rows_its_sentence_names_is_not_a_mismatched_total() -> None:
+    from seleric_swarm.agent.validation.answer_audit import total_mismatch
+
+    rows = "\n".join(f"| Campaign {i} | {1000 + i * 37.5:,.2f} |" for i in range(40))
+    table = "| Source | Net revenue |\n| --- | ---: |\n| whatsapp | 4,200.50 |\n| direct | 8,506.28 |\n" + rows
+    text = table + "\n\nWhatsApp and direct together total 12,706.78."
+    assert total_mismatch(text) is None
+    assert total_mismatch(table + "\n\nThe total is 99,999.99.") is not None
