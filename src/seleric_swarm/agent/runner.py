@@ -1231,6 +1231,8 @@ async def run_v3_mission(
     required_scope = _required_scope(
         runtime, query, temporal_grain=classification.grain, understanding=understanding, catalogue=catalogue
     )
+    if getattr(understanding, "part_of_whole", False):
+        required_scope = dataclasses.replace(required_scope, values_weighed_against_whole=True)
     if getattr(understanding, "shape", None) in ("why_single_metric", "composition") and required_scope.breakdowns:
         # A why-question's "product mix or channel mix" names hypotheses: the diagnosis segments by them first and
         # reports where the change sat. Required as breakdowns they sent a CAC diagnosis through four revisions

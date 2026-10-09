@@ -108,6 +108,15 @@ class Understanding(PlanSlots):
     direction: Literal["increase", "decrease", "either"] = Field(
         default="either", description="The movement the user asks about, if any."
     )
+    part_of_whole: bool = Field(
+        default=False,
+        description=(
+            "True only when the user asks how much a named value (a channel, platform, product …) explains or "
+            "contributes to a change or total of the whole ('is Meta responsible for the drop', 'how much of the "
+            "decline is Google'). False when they ask for the named value's own figures ('WhatsApp orders "
+            "yesterday', 'Meta campaigns last week')."
+        ),
+    )
 
 
 _INSTRUCTIONS = (

@@ -500,3 +500,23 @@ def test_a_value_of_several_unrelated_families_is_a_hint_and_one_family_still_bl
         term="meta", dimensions=frozenset({"platform", "ad_platform"}), values=("meta",)),))
     out = check_scope_coverage(store.list_for_mission(_MISSION), meta, catalogue=cat)
     assert any(g.blocking for g in out.gaps)
+
+
+def test_a_value_weighed_against_the_whole_only_has_to_appear():
+    """'Is Meta responsible for the drop' needs the total and Meta's part (regression Q28): with the
+    understanding's part_of_whole reading, unfiltered totals beside Meta rows are not a scope violation. A plain
+    scoped question still blocks."""
+    import dataclasses
+
+    from seleric_swarm.agent.scope import ValueFilter
+
+    store = InMemoryArtifactStore()
+    _evidence(store, day=1, dimensions={})
+    _evidence(store, day=2, dimensions={"lt_utm_medium": "meta"})
+    vf = ValueFilter(term="meta", dimensions=frozenset({"lt_utm_medium"}), values=("meta",))
+    scoped = RequiredScope(value_filters=(vf,))
+    weighed = dataclasses.replace(scoped, values_weighed_against_whole=True)
+    assert not any(g.blocking for g in check_scope_coverage(store.list_for_mission(_MISSION), weighed).gaps)
+    only_total = InMemoryArtifactStore()
+    _evidence(only_total, day=1, dimensions={})
+    assert any(g.blocking for g in check_scope_coverage(only_total.list_for_mission(_MISSION), weighed).gaps)

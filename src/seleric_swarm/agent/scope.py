@@ -165,6 +165,9 @@ class RequiredScope:
     # Dimensions a why-question names as where to look ("was it product mix or channel mix?"): hypotheses the
     # diagnosis segments first, never a table the answer must be grouped by.
     segment_hints: frozenset[str] = frozenset()
+    # The question weighs a named value against the whole ("is Meta responsible for the drop"): the answer needs
+    # the total and the part, so the value must appear in the evidence, not filter every figure.
+    values_weighed_against_whole: bool = False
 
     def is_empty(self) -> bool:
         return not (

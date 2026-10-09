@@ -645,7 +645,10 @@ def check_scope_coverage(
         # rows being compared, not a scope: the whole and its other parts belong in the
         # answer, so each value only has to appear in the evidence (live 2026-10-09
         # MS3-c0f21457ca: every metric was demanded filtered to Meta, partial).
-        compared = any(
+        # Weighed against the whole ("is Meta responsible", read by the understanding): the total and the part both
+        # belong in the answer — each value only has to appear (regression 2026-10-09 Q28: the gate demanded every
+        # figure filtered to Meta and sent a correct attribution answer back).
+        compared = getattr(scope, "values_weighed_against_whole", False) or any(
             other is not vf and set(other.dimensions) & set(vf.dimensions) for other in value_filters
         )
         if compared and _holds_value(artifacts, vf):
