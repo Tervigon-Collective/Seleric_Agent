@@ -71,8 +71,16 @@ def _signal(
     severity = float(anomaly.get("score") or 0.0) if flagged else abs(delta or 0.0) / 10.0
     name = label or _bare(m.metric_id)
     bits = [f"{name} ({snapshot.domain}) = {m.value:g}" if m.value is not None else name]
+    # The snapshot's own window, so the line is never read as the question's comparison (live 2026-10-09
+    # MS3-dce7d3104e: a snapshot "clicks +30%, CPC −21%" was reported "over the same comparison").
+    span = snapshot.window or {}
+    when = f"{span.get('start')}..{span.get('end')}" if span.get("start") and span.get("end") else ""
     if delta is not None:
-        bits.append(f"{delta:+.1f}% vs the previous period")
+        bits.append(f"{delta:+.1f}% vs the snapshot's previous period" + (f" (window {when})" if when else ""))
+    elif when:
+        bits.append(f"window {when}")
+    if snapshot.as_of:
+        bits.append(f"snapshot as of {snapshot.as_of}")
     if flagged:
         expected = anomaly.get("expected")
         bits.append(
@@ -195,7 +203,9 @@ def signals_block(signals: list[Signal], finding_id: str | None) -> str:
             "If one of these bears on the question (same metric, a driver or cost of it, or a risk the "
             "user would want to know), add at most two as a short 'Worth a look' line after the answer, "
             f"citing evidence_ids=[{finding_id}]. Ignore any that are unrelated. Never let them replace "
-            "the answer to what was asked."
+            "the answer to what was asked. Each covers its own snapshot window, not the periods this answer "
+            "compares: name that window, and never present one as the reason for, or part of, the change "
+            "the answer explains."
         ),
     ]
     return "\n".join(lines) + "\n\n"

@@ -73,6 +73,7 @@ from seleric_swarm.agent.validation.signals import (
     run_checks,
 )
 from seleric_swarm.agent.validation.trust import TrustResult, score_trust
+from seleric_swarm.agent.validation.coherence import ratio_incoherence
 from seleric_swarm.agent.validation.answer_audit import (
     escape_labels_in_tables,
     ragged_table,
@@ -444,6 +445,15 @@ def _unequal_window_change(result: MissionResult, deps: SelericDeps) -> str | No
     return None
 
 
+def _evidence_payloads(deps: SelericDeps) -> list[dict[str, Any]]:
+    """Every evidence payload this mission holds (what it fetched, in every run of it)."""
+    try:
+        artifacts = deps.artifact_store.list_for_mission(deps.mission_id)
+    except Exception:  # noqa: BLE001 - an audit input, never a reason to fail the answer
+        return []
+    return [a.payload for a in artifacts if a.artifact_type == "evidence" and isinstance(a.payload, dict)]
+
+
 def _mission_values(deps: SelericDeps) -> list[float]:
     """Every number the mission fetched or derived: evidence values and the numeric
     entries of findings (the executor's per-day figures and changes, run_python output)."""
@@ -788,6 +798,9 @@ class EvidenceValidator:
         # is never shipped either (not even as an exhausted loop's partial).
         if unequal := _unequal_window_change(result, deps):
             return ValidationOutcome(ok=False, reason=unequal, self_contradicting=True)
+        # A ratio beside its own parts must equal them in every row (the row mixes periods otherwise).
+        if incoherent := ratio_incoherence(result.final_response, _evidence_payloads(deps), getattr(deps, "catalogue", None)):
+            return ValidationOutcome(ok=False, reason=incoherent, self_contradicting=True)
         unbacked, share = _unbacked_figures(result, deps) if data_mission else ([], 0.0)
         if len(unbacked) >= _MIN_UNBACKED:
             return ValidationOutcome(
