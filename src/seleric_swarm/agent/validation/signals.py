@@ -768,12 +768,16 @@ def check_scope_coverage(
         if _spans_contain(_merged_spans(evidence_periods), win_start, win_end):
             continue
         # A window running into today is covered by its complete days: a diagnosis leaves the
-        # running day out on purpose (live 2026-10-09: "this week vs last week" revised for 10-09).
+        # running day out on purpose (live 2026-10-09: "this week vs last week" revised for 10-09),
+        # and the period compared with it then drops its counterpart day, its last.
         today = in_progress_day(as_of) if as_of is not None else None
-        if (
-            today is not None and win_start < today <= win_end
-            and _spans_contain(_merged_spans(evidence_periods), win_start, today - timedelta(days=1))
-        ):
+        if today is not None and win_start < today <= win_end:
+            covered_through = today - timedelta(days=1)
+        elif today is not None and win_start < win_end and any(s < today <= e for s, e in dated):
+            covered_through = win_end - timedelta(days=1)
+        else:
+            covered_through = None
+        if covered_through is not None and _spans_contain(_merged_spans(evidence_periods), win_start, covered_through):
             continue
         gaps.append(
             EvidenceGap(

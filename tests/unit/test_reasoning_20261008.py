@@ -233,3 +233,24 @@ def test_a_window_running_into_today_is_covered_by_its_complete_days(monkeypatch
     assert check_scope_coverage(rows, scope, None, as_of=as_of).status != "INSUFFICIENT"
     short = RequiredScope(windows=(RequiredWindow(date(2026, 10, 4), date(2026, 10, 9)),))
     assert check_scope_coverage(rows, short, None, as_of=as_of).status == "INSUFFICIENT"
+
+
+def test_the_period_compared_with_a_running_one_is_covered_without_its_counterpart_day(monkeypatch) -> None:
+    from seleric_swarm.agent.scope import RequiredScope, RequiredWindow
+    from seleric_swarm.agent.validation.signals import check_scope_coverage
+
+    monkeypatch.setattr(elapsed, "now_in", lambda tz: datetime(2026, 10, 9, 12, tzinfo=IST))
+    at = lambda d: datetime(d.year, d.month, d.day, tzinfo=IST)  # noqa: E731
+    days = [date(2026, 10, 5) + timedelta(days=i) for i in range(4)] + [date(2026, 9, 28) + timedelta(days=i) for i in range(4)]
+    rows = [
+        _artifact("evidence", EvidenceArtifact(
+            metric_id="spend", dimensions={}, grain="day", as_of=TODAY, period_start=at(d), period_end=at(d),
+            value=1.0, source_query={},
+        ).model_dump(mode="json"))
+        for d in days  # 10-05..10-08 and 09-28..10-01
+    ]
+    scope = RequiredScope(windows=(
+        RequiredWindow(date(2026, 10, 5), date(2026, 10, 9)), RequiredWindow(date(2026, 9, 28), date(2026, 10, 2)),
+    ))
+    as_of = datetime(2026, 10, 9, tzinfo=IST)
+    assert check_scope_coverage(rows, scope, None, as_of=as_of).status != "INSUFFICIENT"

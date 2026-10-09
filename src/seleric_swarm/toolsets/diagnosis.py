@@ -489,8 +489,10 @@ async def diagnose_metric_change(
     event_days = [ev_start + timedelta(days=i) for i in range(n_event)]
     # Days still in progress cannot be compared with complete ones. Drop them
     # when complete days remain; the engine refuses a window that is all partial.
+    running_left_out = 0
     if (complete := [d for d in event_days if d < today]) and len(complete) < len(event_days):
         notes.append(f"{', '.join(str(d) for d in event_days if d >= today)} is still in progress and was left out")
+        running_left_out = len(event_days) - len(complete)
         event_days = complete
         ev_start, ev_end = event_days[0], event_days[-1]
     partial = {d for d in event_days if d >= today}
@@ -500,6 +502,12 @@ async def diagnose_metric_change(
     if compare_start is not None or compare_end is not None:
         c_start, c_end = _inclusive_days(compare_start or compare_end, compare_end or compare_start)  # type: ignore[arg-type]
         c_days = [c_start + timedelta(days=i) for i in range((c_end - c_start).days + 1)]
+        if running_left_out and len(c_days) == len(event_days) + running_left_out:
+            # A period to date against its counterpart: the running day left the event, so its
+            # counterpart (the comparison's last day) leaves too — the same span from the start
+            # (live 2026-10-09: 10-05..10-08 was compared with 09-29..10-02, not 09-28..10-01).
+            c_days = c_days[: len(event_days)]
+            notes.append(f"compared with {c_days[0]}..{c_days[-1]}, the same days of the comparison period")
         if len(c_days) != len(event_days):
             notes.append(
                 f"the comparison period {c_start}..{c_end} has {len(c_days)} days and the period asked about "
