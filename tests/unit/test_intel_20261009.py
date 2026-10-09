@@ -481,3 +481,23 @@ def test_a_diagnosis_filter_moves_to_the_metrics_own_family_member() -> None:
     deps = dataclasses.replace(_deps(_Mcp({})), catalogue=cat)
     out, dropped = diagnosis._filters_for(_Ctx(deps), "sessions", {"finance_channel": "meta"})
     assert out == [{"dimension": "acquisition_platform", "operator": "equals", "values": ["meta"]}] and not dropped
+
+
+async def test_metric_definitions_are_fetched_in_batches_the_gateway_accepts() -> None:
+    """The gateway refuses more than 10 ids per call with a bare 'error'; 11 ids came back as 0 definitions."""
+    from seleric_swarm.toolsets import semantic
+
+    calls: list[list[str]] = []
+
+    class Gateway:
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            ids = arguments["metric_ids"]
+            calls.append(ids)
+            if len(ids) > 10:
+                return {"error": "Too many metric ids"}
+            return {"metrics": {m: {"id": m} for m in ids if m != "nope"}, "errors": {"nope": "unknown"} if "nope" in ids else {}}
+
+    ids = [f"m{i}" for i in range(11)] + ["nope"]
+    res = await semantic.get_metric_definitions(_Ctx(_deps(Gateway())), ids)
+    assert res.success and len(res.provenance.source_metadata["definitions"]) == 11
+    assert all(len(c) <= 10 for c in calls) and "unknown metric id 'nope'" in res.warnings

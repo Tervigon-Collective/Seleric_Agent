@@ -1733,6 +1733,10 @@ async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) ->
     )
 
 
+# The gateway's catalogue_get_metrics batch limit (server _MAX_BATCH_METRICS).
+_DEFINITIONS_PER_CALL = 10
+
+
 async def get_metric_definitions(ctx: RunContext[SelericDeps], metric_ids: list[str]) -> ToolResult:
     """Batch full catalogue definitions (incl. ``supported_dimensions``) for several metric ids at once.
 
@@ -1758,16 +1762,27 @@ async def get_metric_definitions(ctx: RunContext[SelericDeps], metric_ids: list[
         # Only unfetched ids cost a lookup; an all-cached batch is free.
         if (spent := _definition_budget_spent(ctx)) is not None:
             return _definitions_result(definitions, errors) if definitions else spent
+        # The gateway takes at most _DEFINITIONS_PER_CALL ids per call and answers a larger batch with only a
+        # top-level "error" — read as zero definitions, every id of an 11-id request came back missing (live
+        # 2026-10-09). Chunked, in parallel.
+        chunks = [missing[i : i + _DEFINITIONS_PER_CALL] for i in range(0, len(missing), _DEFINITIONS_PER_CALL)]
         try:
-            result = await ctx.deps.mcp_client.call(
-                agent_id=_AGENT_ID,
-                capability="seleric.catalogue_get_metrics",
-                arguments={"metric_ids": missing},
-            )
+            results = await asyncio.gather(*(
+                ctx.deps.mcp_client.call(
+                    agent_id=_AGENT_ID,
+                    capability="seleric.catalogue_get_metrics",
+                    arguments={"metric_ids": chunk},
+                )
+                for chunk in chunks
+            ))
         except Exception as exc:
             return _mcp_error_result(exc)
-        fetched = (result or {}).get("metrics") or {}
-        errors = (result or {}).get("errors") or {}
+        fetched: dict[str, Any] = {}
+        for chunk, result in zip(chunks, results, strict=True):
+            fetched.update((result or {}).get("metrics") or {})
+            errors.update((result or {}).get("errors") or {})
+            if (result or {}).get("error") and not (result or {}).get("metrics"):
+                errors.update({mid: result["error"] for mid in chunk if mid not in fetched})
         for mid, definition in fetched.items():
             cache.set(_definition_cache_key(mid), definition)
         definitions = {**definitions, **fetched}
