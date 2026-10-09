@@ -403,3 +403,25 @@ async def test_a_breakdowns_evidence_records_the_filters_it_was_fetched_with(def
     )
     ev = deps.artifact_store.get(res.provenance.evidence_ids[0])
     assert {"dimension": "finance_channel", "operator": "equals", "values": ["meta"]} in ev.provenance.source_metadata["filters_applied"]
+
+
+async def test_a_threshold_on_another_views_metric_is_refused_with_the_views_own_metrics() -> None:
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+    from seleric_swarm.toolsets import semantic
+
+    cat = CatalogueSnapshot(metrics=(
+        CatalogueMetricMeta(id="net_roas", view="order_pnl"),
+        CatalogueMetricMeta(id="order_pnl_ad_spend", view="order_pnl"),
+        CatalogueMetricMeta(id="ad_spend", view="paid_media"),
+    ))
+    import dataclasses
+
+    deps = dataclasses.replace(_deps(_Mcp({})), catalogue=cat)
+    res = semantic._cross_view_metric_filter(
+        _Ctx(deps), "net_roas", [semantic.MetricFilter(dimension="ad_spend", operator="gt", values=["0"])]
+    )
+    assert res is not None and not res.success and res.retryable and "order_pnl_ad_spend" in res.summary
+    same = semantic._cross_view_metric_filter(
+        _Ctx(deps), "net_roas", [semantic.MetricFilter(dimension="order_pnl_ad_spend", operator="gt", values=["0"])]
+    )
+    assert same is None

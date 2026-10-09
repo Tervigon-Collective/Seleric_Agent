@@ -2113,6 +2113,34 @@ async def _suggest_close_values(
     return suggestions
 
 
+def _cross_view_metric_filter(
+    ctx: RunContext[SelericDeps], metric_id: str, filters: list[MetricFilter]
+) -> ToolResult | None:
+    """A threshold on another metric only works when that metric lives on this metric's view (one query). Cube
+    rejected 'net_roas where ad_spend > 0' with a bare error (ad spend is on another view; live 2026-10-08
+    MS3-502ef2d8c6); the refusal names the metrics of this view to threshold on instead."""
+    by_id = {m.id: m for m in ctx.deps.catalogue.metrics}
+    own = by_id.get(metric_id)
+    if own is None or not own.view:
+        return None
+    for f in filters:
+        other = by_id.get(f.dimension)
+        if other is None or other.view == own.view:
+            continue
+        same_view = sorted(m.id for m in ctx.deps.catalogue.metrics if m.view == own.view and m.id != metric_id)
+        return ToolResult(
+            success=False,
+            summary=(
+                f"'{f.dimension}' is a metric on another view ({other.view}), so it cannot filter {metric_id} "
+                f"({own.view}) in one query. Threshold on a metric of {own.view} instead ("
+                + ", ".join(same_view[:25]) + "), or fetch both and compare them with analyze(method='merge')."
+            ),
+            error_code="INVALID_ARGUMENT",
+            retryable=True,
+        )
+    return None
+
+
 async def query_metrics(
     ctx: RunContext[SelericDeps],
     metric_id: str,
@@ -2185,6 +2213,8 @@ async def query_metrics(
     )
     asked_lists = {renamed.get(k, k) for k in asked_lists}  # a renamed list is still the model's entity list
     structured_filters = _fold_equals_filters(ctx, dimensions, structured_filters)
+    if (cross := _cross_view_metric_filter(ctx, metric_id, structured_filters)) is not None:
+        return cross
     # the twin answers under its own id: an earlier concept filter bound to it applies as well
     twin_filter = ctx.deps.query_cache.peek(f"concept_filter:{metric_id}") if metric_id != asked_metric else None
     if isinstance(twin_filter, dict):
