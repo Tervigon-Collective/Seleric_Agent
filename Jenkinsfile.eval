@@ -1,0 +1,67 @@
+// Eval gate (M0.4). Replay runs on every PR in CI (.github/workflows/ci.yml);
+// this Jenkins job runs the *live* suite before deploy and blocks a regression
+// against the committed baseline.
+//
+// Credentials expected (Jenkins credential ids):
+//   seleric-mcp-url, seleric-mcp-token, azure-openai-endpoint,
+//   azure-openai-key, database-url
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    timeout(time: 45, units: 'MINUTES')
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+        sh 'uv sync --extra dev'
+      }
+    }
+
+    stage('Static gates') {
+      steps {
+        sh 'uv run ruff check .'
+        sh 'uv run mypy src'
+        sh 'uv run lint-imports'
+        sh 'uv run python scripts/lint_semantic_literals.py'
+      }
+    }
+
+    stage('Replay suite (deterministic)') {
+      steps {
+        sh 'uv run python scripts/eval_run.py --mode replay --suite golden --compare eval/baselines/golden.json'
+      }
+    }
+
+    stage('Live suite (catalogue truth)') {
+      environment {
+        APP_ENV = 'staging'
+        SELERIC_MCP_URL = credentials('seleric-mcp-url')
+        SELERIC_MCP_TOKEN = credentials('seleric-mcp-token')
+        AZURE_OPENAI_ENDPOINT = credentials('azure-openai-endpoint')
+        AZURE_OPENAI_API_KEY = credentials('azure-openai-key')
+        DATABASE_URL = credentials('database-url')
+      }
+      steps {
+        sh 'uv run python scripts/eval_run.py --mode live --suite golden --compare eval/baselines/golden.json'
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'eval/reports/**', allowEmptyArchive: true
+      publishHTML(target: [
+        allowMissing: true,
+        alwaysLinkToLastBuild: true,
+        keepAll: true,
+        reportDir: 'eval/reports',
+        reportFiles: 'report.md',
+        reportName: 'Seleric eval report'
+      ])
+    }
+  }
+}

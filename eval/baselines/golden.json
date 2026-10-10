@@ -1,0 +1,8 @@
+{
+  "spec_accuracy": null,
+  "status_ok": null,
+  "value_correctness": null,
+  "revisions": null,
+  "latency_ms": null,
+  "_note": "Seed baseline for M0.4: metrics are recorded (not asserted) until the first replay cassette exists. Regenerate after `scripts/eval_run.py --mode record --suite golden` by copying eval/reports/report.json overall metrics here. A metric left null is never compared, so a new suite is not blocked before it has a baseline."
+}

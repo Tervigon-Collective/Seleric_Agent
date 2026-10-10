@@ -1,0 +1,68 @@
+# Seed golden cases for M0.4. Imported from the in-repo lookup fixtures; the
+# full 30-question set (currently outside the repo) replaces/extend this once
+# it is handed over.
+#
+# Truth is `metrics_query` args, never SQL. Live mode resolves `truth` against
+# the catalogue; replay mode reads the recorded `value`. Until cassettes are
+# recorded, run `--mode record --suite golden` once against a live MCP.
+cases:
+  - id: lookup-net-sales-yesterday
+    as_of: "2026-09-03"
+    turns: ["What were net sales yesterday?"]
+    tags: [lookup]
+    expect:
+      status: completed
+      spec:
+        kind: analysis
+        measures:
+          - metric_id: metric.net_sales
+      values:
+        - label: net sales
+          truth:
+            metric_id: metric.net_sales
+            start: "2026-09-02"
+            end: "2026-09-02"
+
+  - id: lookup-net-sales-explicit-day
+    as_of: "2026-09-03"
+    turns: ["What were net sales on 2026-08-01?"]
+    tags: [lookup]
+    expect:
+      status: completed
+      spec:
+        kind: analysis
+        measures:
+          - metric_id: metric.net_sales
+
+  - id: lookup-gross-sales-yesterday
+    as_of: "2026-09-03"
+    turns: ["What were gross sales yesterday?"]
+    tags: [lookup]
+    expect:
+      status: completed
+      spec:
+        kind: analysis
+        measures:
+          - metric_id: metric.gross_sales
+
+  - id: compare-net-sales-two-days
+    as_of: "2026-09-03"
+    turns: ["Compare net sales on 2026-08-01 and 2026-08-02"]
+    tags: [comparison]
+    expect:
+      status: completed
+      spec:
+        kind: analysis
+        measures:
+          - metric_id: metric.net_sales
+
+  - id: trend-net-sales-this-week
+    as_of: "2026-09-03"
+    turns: ["Show me net sales for the last week"]
+    tags: [trend]
+    expect:
+      status: completed
+      spec:
+        kind: analysis
+        measures:
+          - metric_id: metric.net_sales

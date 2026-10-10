@@ -645,7 +645,7 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | M0.1 | T1 | OpenCode | | not started | | | 2026-10-10 |
 | M0.2 | T2 | Cursor | `gaurav` | merged | https://github.com/Tervigon-Collective/Seleric_Agent/pull/5 | landed on `gaurav` (`fdb43ce`); tag `contracts-v1` | 2026-10-10 |
 | M0.3 | T3 | OpenCode | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
-| M0.4 | T4 | OpenCode | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
+| M0.4 | T4 | OpenCode | `gaurav` | merged | | landed on `gaurav` (harness + golden seed + cassettes); rebased onto `contracts-v1` | 2026-10-10 |
 | M0.5 | T5 | Cursor | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
 | M0.6 | T1 | OpenCode | | not started | | after M0.1 | 2026-10-10 |
 | M1.1 | T1 | OpenCode | | not started | | after `contracts-v1` and M0.5; publish `QuestionDraft` | 2026-10-10 |
@@ -678,6 +678,7 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | 2026-10-10 | — | — | Shared chat is `plans/AGENT_CHAT.md`. Read it each session. Post findings and messages there. |
 | 2026-10-10 | T2 | M0.2 | Fast-forwarded onto `gaurav` (`fdb43ce`). Closing mod/* PR; tagging `contracts-v1`. |
 | 2026-10-10 | T2 | M0.2 | Tagged `contracts-v1`. PR #5 merged. M1.2 blocked on M0.5 + M1.1 draft type. |
+| 2026-10-10 | T4 | M0.4 | Eval harness landed on `gaurav`: `seleric_swarm.evals` (`run_suite(cases, mode)`, replay/live/record), cassettes, scorer, report, `scripts/eval_run.py`, `Jenkinsfile.eval`, seed golden cases. Golden cases exist for T3's M1.3. |
 
 ## Part E — Files you will touch most (and the rule for each)
 - `agent/runner.py` (1,827 lines): **do not add logic**. M1.2/M2.x/M3.x move stage code into `pipeline/mission.py` (`run_mission(question, deps) -> AnswerDocument`), and `run_v3_mission` becomes a thin adapter. Each module removes its block from `runner.py` when it reaches enforce.
