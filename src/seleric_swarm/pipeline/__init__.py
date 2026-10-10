@@ -16,10 +16,12 @@ from seleric_swarm.pipeline._shadow import (
     start_shadow,
     summarise,
 )
+from seleric_swarm.pipeline.mission import MissionV2, run_mission
 
 __all__ = [
     "ExplorationMap",
     "LegacyDecision",
+    "MissionV2",
     "PlanReader",
     "PlanRun",
     "ShadowInputs",
@@ -28,6 +30,7 @@ __all__ = [
     "continue_exploration",
     "findings_as_derivations",
     "follow_up_steps",
+    "run_mission",
     "run_plan",
     "start_shadow",
     "summarise",

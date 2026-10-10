@@ -97,6 +97,7 @@ from seleric_swarm.pipeline import (
     ShadowInputs,
     ShadowModes,
     collect_shadow,
+    run_mission,
     start_shadow,
 )
 from seleric_swarm.runtime import SwarmRuntime
@@ -1004,7 +1005,8 @@ def _start_v2_shadow(
         understand=getattr(settings, "understand_v2_mode", "off"),
         planner=getattr(settings, "planner_v2_mode", "off"),
         clarify=getattr(settings, "clarify_mode", "off"),
-        answer=getattr(settings, "answer_v2_mode", "off"),
+        # enforce runs the v2 answer path itself (_v2_enforce); shadow must not run it twice.
+        answer="shadow" if getattr(settings, "answer_v2_mode", "off") == "shadow" else "off",
     )
     if not modes.active:
         return None
@@ -1026,6 +1028,61 @@ def _start_v2_shadow(
     except Exception:
         _log.warning("v2_shadow_start_failed", exc_info=True, extra={"mission_id": mission_id})
         return None
+
+
+async def _v2_enforce(
+    runtime: SwarmRuntime,
+    *,
+    mcp: Any,
+    mission_id: str,
+    query: str,
+    as_of_dt: datetime,
+    catalogue: CatalogueSnapshot,
+    values: dict[str, Any] | None,
+    prior_turn_record: dict[str, Any] | None,
+    trace_base: dict[str, Any],
+) -> V3MissionResult | None:
+    """ANSWER_V2_MODE=enforce: answer through the v2 pipeline; None falls back to the agent loop."""
+    settings = runtime.settings
+    if getattr(settings, "answer_v2_mode", "off") != "enforce":
+        return None
+    try:
+        model = resolve_planner_model(settings)
+        if model is None or isinstance(model, TestModel) or mcp is None:
+            return None
+        inputs = ShadowInputs(
+            question=query,
+            as_of=as_of_dt.date(),
+            as_of_time=as_of_dt,
+            read_model=SemanticReadModel.from_legacy(catalogue),
+            resolution=values,
+            prior_question=str((prior_turn_record or {}).get("query") or ""),
+            prior_offer=str((prior_turn_record or {}).get("offer") or ""),
+            headline_metric_ids=tuple(_headline_metric_ids(runtime)),
+            port=McpSemanticPort(mcp, agent_id="v2_mission"),
+        )
+        outcome = await run_mission(
+            PydanticAiDraftLLM(model), PydanticAiAnswerLLM(model), inputs,
+            mission_id=mission_id, clarify_mode=getattr(settings, "clarify_mode", "off"),
+        )
+    except Exception:
+        _log.warning("v2_enforce_failed", exc_info=True, extra={"mission_id": mission_id})
+        return None
+    trace = {**trace_base, "v2_mission": outcome.trace}
+    if outcome.status == "clarify" and outcome.clarification is not None:
+        return V3MissionResult(mission_id=mission_id, status="completed", query=query, as_of=as_of_dt,
+                               final_response=outcome.clarification.question_to_user, trace=trace)
+    if outcome.status != "answered" or outcome.doc is None:
+        _log.info("v2_enforce_fallback", extra={"mission_id": mission_id, "reason": outcome.reason})
+        return None
+    doc = outcome.doc
+    if outcome.turn is not None:
+        trace["v2_turn"] = outcome.turn.model_dump(mode="json", exclude={"spec"})
+    return V3MissionResult(
+        mission_id=mission_id, status=doc.draft.status, query=query, as_of=as_of_dt,
+        final_response=doc.rendered_markdown, evidence_ids=list(doc.evidence_ids),
+        limitations=list(doc.draft.limitations), trace=trace,
+    )
 
 
 @functools.cache
@@ -1636,6 +1693,13 @@ async def run_v3_mission(
                 )
             elif fast_result is not None:
                 result = fast_result
+            elif (v2_result := await _v2_enforce(
+                runtime, mcp=mcp, mission_id=mission_id, query=query, as_of_dt=as_of_dt, catalogue=catalogue,
+                values=values, prior_turn_record=prior_turn_record, trace_base={
+                    "request_id": request_id, "session_id": thread_id, "intent": intent},
+            )) is not None:
+                result = v2_result
+                _stage("v2_mission_ms")
             else:
                 model = resolve_mission_model(
                     runtime.settings,
