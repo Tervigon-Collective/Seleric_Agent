@@ -65,6 +65,11 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
+      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-off}
+      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
+      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
+      CLARIFY_MODE: ${CLARIFY_MODE:-off}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -181,6 +186,11 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
+      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-off}
+      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
+      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
+      CLARIFY_MODE: ${CLARIFY_MODE:-off}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -272,6 +282,11 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
+      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-off}
+      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
+      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
+      CLARIFY_MODE: ${CLARIFY_MODE:-off}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -329,6 +344,11 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
+      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-off}
+      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
+      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
+      CLARIFY_MODE: ${CLARIFY_MODE:-off}
       SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
       LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
       PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
