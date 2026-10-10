@@ -207,7 +207,7 @@ allowed_importers = ["seleric_swarm.spec"]
 [[tool.importlinter.contracts]]
 name = "plan private modules"
 type = "protected"
-protected_modules = ["seleric_swarm.plan._execute"]
+protected_modules = ["seleric_swarm.plan._execute", "seleric_swarm.plan._registry", "seleric_swarm.plan._templates"]
 allowed_importers = ["seleric_swarm.plan"]
 
 [[tool.importlinter.contracts]]

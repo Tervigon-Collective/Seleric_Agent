@@ -245,6 +245,8 @@ class Settings(BaseSettings):
     verified_examples_mode: Literal["off", "shadow", "enforce"] = "off"
     # M1.4: ask instead of guessing (spec._clarify). shadow records the would-be question on the spec.
     clarify_mode: Literal["off", "shadow", "enforce"] = "off"
+    # M2.1: typed template planner (seleric_swarm.plan). shadow plans beside the legacy advisory plan.
+    planner_v2_mode: Literal["off", "shadow", "enforce"] = "off"
 
     workflow_version: str = "1.0.0"
 

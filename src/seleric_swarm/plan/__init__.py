@@ -1,5 +1,13 @@
-"""Analysis planner and executor. Public entry points land with M2.1 and M2.2."""
+"""Analysis planner (M2.1) and executor (M2.2).
+
+Public interface:
+- ``plan(spec, read_model, *, as_of=None, headline_metric_ids=()) -> AnalysisPlan``
+- ``plan_notes(...)``: the corrections the planner made, for spans and the advisory block.
+- ``template_ids()``: the shapes the registry plans.
+- ``execute(steps, windows, port, read_model, as_of, ...)``: run the query steps.
+"""
 
 from seleric_swarm.plan._execute import execute
+from seleric_swarm.plan._registry import AGENT_TEMPLATE_ID, plan, plan_notes, template_ids
 
-__all__ = ["execute"]
+__all__ = ["AGENT_TEMPLATE_ID", "execute", "plan", "plan_notes", "template_ids"]
