@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -10,6 +11,8 @@ from seleric_swarm.paths import repo_root
 
 if TYPE_CHECKING:
     from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap, CatalogueMetricMeta
+
+log = logging.getLogger(__name__)
 
 # Deterministic map: catalogue category → swarm domain (then ``{domain}_agent``).
 # Not a metric list — MCP is the metric repository.
@@ -102,6 +105,16 @@ class MetricRegistry:
         self._live_defs = {}
         if bootstrap is None or not bootstrap.is_warm():
             return
+        skipped: list[str] = []
+        for entry in self._metrics.values():
+            catalogue_id = entry.catalogue_metric
+            if catalogue_id and not bootstrap.has(catalogue_id):
+                skipped.append(catalogue_id)
+        if skipped:
+            log.warning(
+                "metric_registry keys not in the live catalogue (skipped): %s",
+                ", ".join(sorted(set(skipped))),
+            )
         self._live_defs = {meta.id: self._from_live(meta) for meta in bootstrap.entries()}
 
     def _overlay_for(self, catalogue_id: str) -> MetricDefinition | None:
@@ -141,13 +154,11 @@ class MetricRegistry:
             "timezone": "Asia/Kolkata",
         }
         if overlay is not None:
+            # Agent policy only. Synonyms belong to Core concepts, not this YAML.
             payload["direction_bad"] = overlay.direction_bad
             payload["seleric_module"] = overlay.seleric_module
-            payload["aliases"] = overlay.aliases
-            payload["unit"] = overlay.unit
             if "seleric_module" in overlay.raw:
                 payload["seleric_module"] = overlay.seleric_module
-                raw = {**overlay.raw, **raw}
         payload["raw"] = raw
         return MetricDefinition(payload)
 
@@ -220,12 +231,7 @@ class MetricRegistry:
         return f"{m.domain}_agent"
 
     def resolve_alias(self, hint: str) -> MetricDefinition | None:
-        """Exact id or declared YAML alias only — never substring/keyword match.
-
-        Operator shorthand lives on each metric's ``aliases`` list in
-        ``metric_registry.yaml`` (the same overlay ``gs`` already used). This is
-        not the retired ``resolve_measure`` heuristic.
-        """
+        """Exact id only. YAML aliases are not a vocabulary; Core concepts own synonyms."""
         raw = str(hint or "").strip().lower()
         if not raw:
             return None
@@ -233,27 +239,19 @@ class MetricRegistry:
             hit = self.get(candidate) or self._metrics.get(candidate)
             if hit is not None:
                 return hit
-        for metric in self._metrics.values():
-            if raw in metric.aliases:
-                return metric
         return None
 
     def resolve_hint(self, hint: str) -> str | None:
-        """Best-effort resolve a raw classifier hint (e.g. ``metric.roas``) to a
-        known metric id, checking YAML aliases and the live catalogue before
-        giving up. Returns None (never the original hint) so callers can tell
-        an unresolved hint apart from an already-valid one.
+        """Resolve a classifier hint to a known metric id.
+
+        Exact ids pass through. YAML aliases are ignored. A live catalogue id or
+        description may still match the slug. Returns None when nothing matches.
         """
         if self.get(hint) is not None:
             return hint
         slug = hint.removeprefix("metric.").replace("_", " ").strip().lower()
         if not slug:
             return None
-        for metric in self._metrics.values():
-            if slug in metric.aliases:
-                return metric.id
-        # ponytail: substring match on live catalogue id/description, not token-ranked
-        # like catalogue_grounding.hints_from_catalogue — upgrade if false positives show up.
         for metric in self._live_defs.values():
             haystack = f"{metric.id} {metric.description}".lower().replace("_", " ")
             if slug in haystack:

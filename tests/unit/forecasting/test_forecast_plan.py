@@ -37,6 +37,7 @@ def _u(**kw) -> Understanding:
         "rank_by": None,
         "metrics": [MetricSlot(words="net sales", metric_id="net_sales")],
         "breakdown_dimensions": [],
+        "breakdown_words": "",
         "names_period": False,
         "forecast": ForecastSlots(
             targets=[MetricSlot(words="net sales", metric_id="net_sales")],

@@ -1,0 +1,109 @@
+# Semantic Literal Allowlist
+#
+# Format: literal # module_id
+# Each line is a string literal that currently exists in source code but should be
+# removed by the owning module. The allowlist must shrink over time.
+#
+# M0.5 - Semantic Port (removes catalogue_bootstrap.py, mcp_query.py, toolsets/semantic.py)
+net_sales # M0.5
+gross_sales # M0.5
+ad_spend # M0.5
+total_ad_spend # M0.5
+cac # M0.5
+net_roas # M0.5
+gross_roas # M0.5
+mer # M0.5
+orders # M0.5
+new_customers # M0.5
+sessions # M0.5
+conversion_rate # M0.5
+net_profit # M0.5
+pnl_net_profit # M0.5
+net_cogs # M0.5
+pnl_net_cogs # M0.5
+shipping_cost # M0.5
+pnl_shipping_cost # M0.5
+packaging_cost # M0.5
+pnl_packaging_cost # M0.5
+payment_gateway_fees # M0.5
+pnl_payment_gateway_fees # M0.5
+rto_cost # M0.5
+pnl_rto_cost # M0.5
+operating_cost # M0.5
+pnl_operating_cost # M0.5
+gross_profit # M0.5
+pnl_contribution_margin # M0.5
+contribution_margin # M0.5
+gross_margin_pct # M0.5
+pnl_contribution_margin_pct # M0.5
+contribution_margin_pct # M0.5
+net_margin_pct # M0.5
+pnl_net_margin_pct # M0.5
+pnl_mer # M0.5
+meta_spend # M0.5
+google_spend # M0.5
+channel # M0.5
+sub_channel # M0.5
+campaign # M0.5
+ad_platform # M0.5
+finance_channel # M0.5
+is_paid # M0.5
+product_title # M0.5
+sku # M0.5
+device # M0.5
+geo # M0.5
+utm_source # M0.5
+utm_medium # M0.5
+utm_campaign # M0.5
+landing_page # M0.5
+order_date # M0.5
+event_date # M0.5
+refund_date # M0.5
+week # M0.5
+month # M0.5
+quarter # M0.5
+year # M0.5
+day # M0.5
+brand # M0.5
+tenant # M0.5
+space # M0.5
+scope # M0.5
+DEFAULT_BRAND_ID # M0.5
+_BRAND_DIM_KEYS # M0.5
+
+# M2.3 - Derivation Engine (removes toolsets/analytics.py, toolsets/composition.py)
+_MERGE_DERIVED # M2.3
+_PREFERRED_JOIN_KEYS # M2.3
+_DELIVERY_METRICS # M2.3
+_SPEND_SLICE_COMPANIONS # M2.3
+
+# M0.6 - Known Defect Fixes (removes forecasting/scope.py, business_state/*, domain_health/resolver.py)
+lt_platform # M0.6
+product_sku # M0.6
+currency_default # M0.6
+
+# M3.2 - Verifier v2 (removes agent/instructions.py)
+stated_grain # M3.2
+_STATED_GRAIN # M3.2
+_BREAKDOWN_RE # M3.2
+_STOPWORDS # M3.2
+promote_verbatim_values # M3.2
+_word_edge # M3.2
+_WORD_EDGE # M3.2
+_fragment_terms # M3.2
+_question_window # M3.2
+_resolved_window # M3.2
+_resolved_window_line # M3.2
+_outside_measures # M3.2
+_PERIOD_LINE # M3.2
+_answer_period # M3.2
+_closing_offer # M3.2
+_parse_named_entities # M3.2
+
+# Allowlist for machine-format parsing in adapters (allowed per A2)
+ISO # adapters
+date # adapters
+datetime # adapters
+json # adapters
+id # adapters
+uuid # adapters

@@ -13,23 +13,82 @@ tools plan from one definition of "a dimension worth screening".
 
 from __future__ import annotations
 
+from functools import lru_cache
+from typing import Any
+
+import yaml
+
 from seleric_swarm.causal import diagnosis as engine
+from seleric_swarm.paths import repo_root
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 
 
+@lru_cache(maxsize=1)
+def _scope_file() -> dict[str, Any]:
+    path = repo_root() / "config" / "scope.yaml"
+    if not path.is_file():
+        return {}
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return loaded if isinstance(loaded, dict) else {}
 
-def scope_dimensions(catalogue: CatalogueSnapshot) -> set[str]:
-    """The tenant key every query is scoped to (the runtime injects it), never a split.
 
-    "Carried by nearly every view" stopped meaning tenant key once the business
-    axes (platform, campaign, channel) were conformed onto every view: campaign
-    was then dropped from every localisation and its words from every grain
-    (live 2026-10-08, an ads diagnosis that never looked at campaigns).
+def configured_scope_ids() -> tuple[str, ...]:
+    """Tenant dimension ids. Settings override the file; the file is the default."""
+    from seleric_swarm.config.settings import get_settings
+
+    override = get_settings().scope_dimension_ids.strip()
+    if override:
+        return tuple(part.strip() for part in override.split(",") if part.strip())
+    raw = _scope_file().get("scope_dimension_ids") or []
+    if isinstance(raw, str):
+        return tuple(part.strip() for part in raw.split(",") if part.strip())
+    return tuple(str(item) for item in raw if item)
+
+
+def default_brand_id() -> str:
+    """Workspace brand. ``settings.default_brand_id`` overrides ``config/scope.yaml``."""
+    from seleric_swarm.config.settings import get_settings
+
+    override = get_settings().default_brand_id.strip()
+    if override:
+        return override
+    return str(_scope_file().get("default_brand_id") or "")
+
+
+def _catalogue_dimension_ids(catalogue: Any) -> set[str]:
+    ids: set[str] = set()
+    for dim in getattr(catalogue, "dimensions", ()) or ():
+        if isinstance(dim, str):
+            ids.add(dim)
+        else:
+            dim_id = getattr(dim, "id", "")
+            if dim_id:
+                ids.add(str(dim_id))
+    for metric in getattr(catalogue, "metrics", ()) or ():
+        ids.update(str(dim) for dim in (getattr(metric, "supported_dimensions", ()) or []) if dim)
+    return ids
+
+
+def scope_dimensions(catalogue: CatalogueSnapshot | Any) -> set[str]:
+    """The tenant key every query is scoped to, never a split.
+
+    A snapshot that declares ``scope_dimension_ids`` wins. Otherwise the
+    configured ids are intersected with the dimensions the catalogue actually carries.
     """
-    from seleric_swarm.services.mcp_query import _BRAND_DIM_KEYS
+    dims = _catalogue_dimension_ids(catalogue)
+    declared = tuple(getattr(catalogue, "scope_dimension_ids", ()) or ())
+    keys = {item.lower() for item in declared} if declared else {item.lower() for item in configured_scope_ids()}
+    return {dim for dim in dims if dim.lower() in keys}
 
-    dims = set(catalogue.dimensions) | {d for m in catalogue.metrics for d in (m.supported_dimensions or [])}
-    return {d for d in dims if d.lower() in _BRAND_DIM_KEYS}
+
+def scope_keys(catalogue: Any | None = None) -> frozenset[str]:
+    """Lower-cased tenant dimension ids. An empty catalogue still uses the configured ids."""
+    if catalogue is not None:
+        found = {dim.lower() for dim in scope_dimensions(catalogue)}
+        metrics = getattr(catalogue, "metrics", ()) or ()
+        if found or metrics:
+            return frozenset(found)
+    return frozenset(item.lower() for item in configured_scope_ids())
 
 
 def plan_dimensions(

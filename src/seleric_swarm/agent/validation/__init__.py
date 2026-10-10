@@ -280,13 +280,18 @@ def _strip_tables_when_charted(result: MissionResult, deps: SelericDeps) -> Miss
 _ID_MATCH_CUTOFF = 0.9
 
 
-def _with_query(result: MissionResult, query: str) -> MissionResult:
-    """The user's question on the result the validator judges. The agent's output
+def _with_query(result: MissionResult, query: str, question: str | None = None) -> MissionResult:
+    """The user's original question on the result the validator judges. The agent's output
     leaves ``query`` empty, so the user's own numbers ("If I add 50000 INR/day")
     were judged as unbacked figures; the revision then dropped the allocation the
     question asked for and answered a period comparison instead (live 2026-10-09
-    MS3-9357d69324)."""
-    return result if (result.query or "").strip() else result.model_copy(update={"query": query})
+    MS3-9357d69324).
+
+    The ``question`` parameter is the original user question (not the revision prompt
+    or prefetch context). It is used by ``_unbacked_figures`` to exclude user-supplied
+    numbers from the unbacked check."""
+    user_question = question if question is not None else query
+    return result if (result.query or "").strip() else result.model_copy(update={"query": user_question})
 
 
 def _fetched_check(deps: SelericDeps) -> Callable[[float, float], bool] | None:
@@ -304,6 +309,7 @@ def _salvage(
     best: tuple[MissionResult, ValidationOutcome] | None,
     deps: SelericDeps,
     validator: EvidenceValidator,
+    question: str | None = None,
 ) -> tuple[MissionResult, ValidationOutcome] | None:
     """The answer an exhausted loop can still ship: the best draft, else the last one
     without the sentences stating a total its own table cannot produce — provided
@@ -314,7 +320,7 @@ def _salvage(
     if not text:
         return None
     repaired = _repair_citations(result.model_copy(update={"final_response": text}), deps)
-    outcome = validator.validate(repaired, deps=deps)
+    outcome = validator.validate(repaired, deps=deps, question=question)
     if not (outcome.ok or _is_answer(repaired, outcome)):
         return None
     note = "a stated total that did not reconcile with the table was removed"
@@ -650,14 +656,17 @@ def _mission_labels(deps: SelericDeps) -> set[float]:
     return labels
 
 
-def _unbacked_figures(result: MissionResult, deps: SelericDeps) -> tuple[list[str], float]:
+def _unbacked_figures(result: MissionResult, deps: SelericDeps, question: str | None = None) -> tuple[list[str], float]:
     """Figures in the answer no fetched or derived value accounts for, and their share.
     Live 2026-10-07 (gpt-5-nano) a row of plausible numbers was written for a day the
     mission never fetched, and an "INR 4,431.03" appeared with no query behind it."""
     pool = _mission_values(deps)
     if not pool:
         return [], 0.0
-    query_numbers = {abs(v) for v, _t, _p in _figures(result.query or "")}
+    # Use the original user question, not the revision prompt which may contain
+    # plan/prefetch numbers that should not be treated as user-supplied.
+    query_text = question if question is not None else (result.query or "")
+    query_numbers = {abs(v) for v, _t, _p in _figures(query_text)}
     labels = _mission_labels(deps)
     figures = [
         (v, t, pct)
@@ -743,6 +752,7 @@ class EvidenceValidator:
         *,
         deps: SelericDeps,
         alternatives: list[AlternativeHypothesis] | None = None,
+        question: str | None = None,
     ) -> ValidationOutcome:
         # -- structural gates (Sprint 2, unchanged) ----------------------
         referenced = [*result.evidence_ids, *result.finding_ids]
@@ -886,7 +896,7 @@ class EvidenceValidator:
         # A ratio beside its own parts must equal them in every row (the row mixes periods otherwise).
         if incoherent := ratio_incoherence(result.final_response, _evidence_payloads(deps), getattr(deps, "catalogue", None)):
             return ValidationOutcome(ok=False, reason=incoherent, self_contradicting=True)
-        unbacked, share = _unbacked_figures(result, deps) if data_mission else ([], 0.0)
+        unbacked, share = _unbacked_figures(result, deps, question) if data_mission else ([], 0.0)
         if len(unbacked) >= _MIN_UNBACKED:
             return ValidationOutcome(
                 ok=False,
@@ -1284,6 +1294,7 @@ async def run_validated_mission(
     deps: SelericDeps,
     query: str,
     *,
+    question: str | None = None,
     validator: EvidenceValidator | None = None,
     tracker: ExecutionBudgetTracker | None = None,
     on_stream: Callable[[str, str], None] | None = None,
@@ -1297,6 +1308,10 @@ async def run_validated_mission(
     Each revision continues the same conversation (``message_history``), so the
     model sees its own tool results and the draft that was rejected.
 
+    ``question`` is the original user question (not the revision prompt or
+    prefetch context). It is used by ``_unbacked_figures`` to exclude user-supplied
+    numbers from the unbacked check.
+
     ``on_stream(kind, text)`` — when supplied — receives the answer once, as
     ``("delta", full_text)``, after it has validated (or ships as a partial).
     A rejected draft is never sent. Before 2026-10-04 every draft streamed live
@@ -1304,7 +1319,7 @@ async def run_validated_mission(
     user seven answers appearing and vanishing. ``reset`` is no longer emitted
     here; callers may keep handling it.
     """
-    result = await _validated(agent, deps, query, validator=validator, tracker=tracker)
+    result = await _validated(agent, deps, query, question=question, validator=validator, tracker=tracker)
     if (
         on_stream is not None
         and result.status in ("completed", "partial")
@@ -1319,6 +1334,7 @@ async def _validated(
     deps: SelericDeps,
     query: str,
     *,
+    question: str | None = None,
     validator: EvidenceValidator | None,
     tracker: ExecutionBudgetTracker | None,
 ) -> MissionResult:
@@ -1343,7 +1359,7 @@ async def _validated(
             update={"final_response": unescape_literal_newlines(result.final_response)}
         )
     result = _repair_citations(
-        _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_strip_artifact_ids(_with_query(result, query), deps), deps), deps), deps),
+        _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_strip_artifact_ids(_with_query(result, query, question), deps), deps), deps), deps),
         deps,
     )
     outcome = validator.validate(result, deps=deps)
@@ -1383,7 +1399,7 @@ async def _validated(
             )
         verdict = tracker.consume("validation_revisions")
         if not verdict.ok:
-            return _exhausted(result, outcome, _salvage(result, best, deps, validator), deps, revisions)
+            return _exhausted(result, outcome, _salvage(result, best, deps, validator, question), deps, revisions)
         emit_progress(
             deps.mission_id,
             "agent.revising",
@@ -1426,11 +1442,11 @@ async def _validated(
         if result.error_code == "EXECUTION_LIMIT_EXCEEDED":
             return result
         result = _repair_citations(
-            _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_strip_artifact_ids(_with_query(result, query), deps), deps), deps), deps),
+            _humanize_metric_ids(_strip_tables_when_charted(_escape_table_labels(_strip_artifact_ids(_with_query(result, query, question), deps), deps), deps), deps),
             deps,
         )
         previous = (outcome.reason, _figures(rejected or ""))
-        outcome = validator.validate(result, deps=deps)
+        outcome = validator.validate(result, deps=deps, question=question)
         if not outcome.ok and (outcome.reason, _figures(result.final_response or "")) == previous:
             # The revision printed the same figures and failed for the same reason: the
             # model cannot fix it from what it holds, and another round costs ~10 s for
@@ -1439,7 +1455,7 @@ async def _validated(
             if _is_answer(result, outcome):
                 best = (result, outcome)
             return _exhausted(
-                result, outcome, _salvage(result, best, deps, validator), deps, revisions, code="VALIDATION_STALLED"
+                result, outcome, _salvage(result, best, deps, validator, question), deps, revisions, code="VALIDATION_STALLED"
             )
 
     # Attach validation telemetry to trace for observability

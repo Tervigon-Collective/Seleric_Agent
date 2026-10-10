@@ -41,20 +41,6 @@ DEFAULT_TTL_SECONDS: int = 900  # 15 minutes
 _BOOTSTRAP_CAP = "seleric.catalogue_bootstrap"
 _LIST_METRICS_CAP = "seleric.catalogue_list_metrics"
 
-# Delivery metrics that cannot carry traffic hierarchy leaves like sub_channel /
-# product_title; ModelRetry should prefer these P&L companions instead of event_*.
-_DELIVERY_METRICS = frozenset({
-    "ad_spend", "clicks", "impressions", "ctr", "cpc", "cpm",
-    "landing_page_views", "link_clicks", "cost_per_landing_page_view",
-    "cost_per_link_click", "thruplays", "hook_rate", "hold_rate_15s",
-    "video_completion_rate",
-})
-_SPEND_SLICE_COMPANIONS = frozenset({
-    "channel_cac", "cost_per_order", "mer", "net_roas", "gross_roas", "be_roas",
-    "channel_orders", "channel_new_customers", "net_profit", "operating_cost",
-    "pnl_mer", "pnl_net_roas", "pnl_be_roas",
-})
-
 
 @dataclass
 class CatalogueMetricMeta:
@@ -93,6 +79,8 @@ class CatalogueSnapshot:
     # declared values ((dimension id, (value, ...)), ...) — only for small declared enums.
     dimension_families: tuple[tuple[str, str, int], ...] = ()
     dimension_values: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # Tenant dimensions the catalogue declared. Empty means space.py uses config/scope.yaml.
+    scope_dimension_ids: tuple[str, ...] = ()
 
     def dimension_fact(self, dimension: str, key: str) -> int:
         """A numeric catalogue fact about a dimension (0 when not declared)."""
@@ -210,44 +198,15 @@ class CatalogueSnapshot:
         return []
 
     def metrics_supporting_dimension(self, dimension: str, n: int = 6, like: str | None = None) -> list[str]:
-        """Ids of metrics whose ``supported_dimensions`` include *dimension* —
-        the redirect candidates when a chosen metric can't carry a requested
-        breakdown/filter. Empty when nothing supports it (a real capability gap,
-        not a bad pick).
+        """Ids of metrics whose ``supported_dimensions`` include *dimension*.
 
-        Ranked for a useful retry, not alphabetically: grain twins of *like*,
-        same catalogue concept, known P&L companions for delivery metrics
-        (``ad_spend`` × ``sub_channel`` → ``channel_cac`` / ``cost_per_order`` /
-        ``mer``…), then word overlap. Alphabetical alone offered ``event_count``
-        for "net_sales by product_title" (live 2026-10-04) and noise for
-        ``ad_spend`` × ``sub_channel`` (live 2026-10-08)."""
-        target = dimension.strip()
-        hits = [m for m in self.metrics if target in (m.supported_dimensions or [])]
-        if not hits:
-            return []
+        Ranked by the semantic read model: grain twins, same unit, same
+        aggregation, shared dimensions, then ``extra.redirect_rank``.
+        """
+        from seleric_swarm.semantic import SemanticReadModel
 
-        like_id = (like or "").strip()
-        words = set(like_id.lower().split("_")) - {""}
-        twins = set(self.grain_twins_for(like_id)) if like_id else set()
-        like_meta = next((m for m in self.metrics if m.id == like_id), None)
-        like_concept = str((like_meta.raw or {}).get("concept") or "").strip() if like_meta else ""
-        like_view = (like_meta.view or str((like_meta.raw or {}).get("view") or "")).strip() if like_meta else ""
-        delivery_like = like_id in _DELIVERY_METRICS or like_view in {"paid_media", "meta_ads", "google_ads"}
-        traffic_slice = target in {"sub_channel", "channel", "product_title", "sku"}
-
-        def score(meta: CatalogueMetricMeta) -> tuple[int, int, int, int, int, str]:
-            mid = meta.id
-            # Sort key: higher score first → negate in sorted via negative ints
-            twin_hit = 1 if mid in twins else 0
-            concept = str((meta.raw or {}).get("concept") or "").strip()
-            same_concept = 1 if like_concept and concept and concept == like_concept else 0
-            companion = 1 if delivery_like and traffic_slice and mid in _SPEND_SLICE_COMPANIONS else 0
-            overlap = len(words & set(mid.split("_")))
-            # Deprioritize event-grain noise when the ask was a delivery/P&L metric
-            event_penalty = 1 if delivery_like and mid.startswith(("event_", "events_")) else 0
-            return (-twin_hit, -same_concept, -companion, event_penalty, -overlap, mid)
-
-        return [m.id for m in sorted(hits, key=score)[:n]]
+        model = SemanticReadModel.from_legacy(self)
+        return model.metrics_supporting_dimension(dimension, n=n, like=like)
 
     def grain_twins_for(self, metric_id: str) -> list[str]:
         """The catalogue's ``grain_twins`` of a metric: the same concept selection at another grain
@@ -374,7 +333,38 @@ class CatalogueBootstrap:
         self._dimension_families: dict[str, tuple[str, int]] = {}
         self._dimension_values: dict[str, tuple[str, ...]] = {}
         self._grain_defaults: dict[str, Any] = {}
+        self._scope_dimension_ids: tuple[str, ...] = ()
         self._warmed_at: float | None = None
+        self._registry: Any = None
+        self._semantic_port: Any = None
+        self._mode_override: str | None = None
+
+    def attach_registry(self, registry: Any) -> None:
+        """Bind this catalogue into the metric registry after every successful warm."""
+        self._registry = registry
+
+    def _port_mode(self) -> str:
+        if self._mode_override:
+            return self._mode_override
+        try:
+            from seleric_swarm.config.settings import get_settings
+
+            return get_settings().semantic_port_mode
+        except Exception:
+            return "off"
+
+    def _semantic(self) -> Any:
+        if self._semantic_port is None:
+            from seleric_swarm.semantic import McpSemanticPort
+
+            self._semantic_port = McpSemanticPort(
+                self._mcp, agent_id=self._agent_id, ttl_seconds=self._ttl
+            )
+        return self._semantic_port
+
+    def _bind_registry(self) -> None:
+        if self._registry is not None and self.is_warm():
+            self._registry.bind_catalogue(self)
 
     # ------------------------------------------------------------------
     # State queries
@@ -445,6 +435,7 @@ class CatalogueBootstrap:
                 (did, fam, rank) for did, (fam, rank) in sorted(self._dimension_families.items())
             ),
             dimension_values=tuple(sorted(self._dimension_values.items())),
+            scope_dimension_ids=tuple(self._scope_dimension_ids),
         )
 
     def unresolvable(self, candidate_ids: list[str]) -> list[str]:
@@ -514,7 +505,8 @@ class CatalogueBootstrap:
                     self._stable_keys[did] = str(dim["stable_key"])
                 if dim.get("is_time"):
                     self._time_dimensions.add(did)
-                hierarchy = dim.get("hierarchy") if isinstance(dim.get("hierarchy"), dict) else {}
+                hierarchy_raw = dim.get("hierarchy")
+                hierarchy = hierarchy_raw if isinstance(hierarchy_raw, dict) else {}
                 self._dimension_facts[did] = {
                     "hierarchy_level": int(hierarchy.get("level") or 0),
                     "n_allowed": len(dim.get("allowed_values") or []),
@@ -555,8 +547,95 @@ class CatalogueBootstrap:
         Prefer ``catalogue_bootstrap``, then ``catalogue_list_metrics``, then
         the local Qdrant catalogue index. Never raises — a failing call
         leaves the cache empty so ``_resolve_measure`` falls through to
-        Steps 1+2 unchanged.
+        Steps 1+2 unchanged. A successful warm binds the metric registry.
+        ``SEMANTIC_PORT_MODE=enforce`` fills the cache from ``McpSemanticPort``.
+        ``shadow`` warms the port beside this path and logs id-set disagreements.
         """
+        mode = self._port_mode()
+        if mode == "enforce":
+            count = await self._warm_enforced()
+        else:
+            count = await self._warm_legacy(registry_hints)
+            if mode == "shadow":
+                await self._shadow_compare()
+        self._bind_registry()
+        return count
+
+    async def _warm_enforced(self) -> int:
+        port = self._semantic()
+        await port.warm()
+        model = port.read_model()
+        if model.metrics:
+            self._adopt(model)
+            log.info("CatalogueBootstrap: cached %d metric(s) via the semantic port", len(model.metrics))
+            return len(self._cache)
+        count = self._load_from_local_index()
+        self._warmed_at = time.monotonic()
+        if not count:
+            log.warning("CatalogueBootstrap.warm() failed — using empty cache")
+        return count
+
+    async def _shadow_compare(self) -> None:
+        port = self._semantic()
+        try:
+            await port.warm()
+        except Exception as exc:
+            log.warning("semantic port shadow warm failed (%s: %s)", type(exc).__name__, exc)
+            return
+        live = set(self._cache)
+        ported = set(port.read_model().metric_ids())
+        if live != ported:
+            log.warning(
+                "semantic port shadow disagreement only_legacy=%s only_port=%s",
+                sorted(live - ported),
+                sorted(ported - live),
+            )
+
+    def _adopt(self, model: Any) -> None:
+        metrics: list[dict[str, Any]] = []
+        for metric in model.metrics:
+            row: dict[str, Any] = {
+                "id": metric.id,
+                "label": metric.label,
+                "view": metric.view,
+                "supported_dimensions": list(metric.supported_dimensions),
+                "unit": metric.unit,
+                "aggregation": metric.aggregation,
+                "date_basis": metric.date_basis,
+                "date_twin": metric.date_twin,
+                "grain_twins": list(metric.grain_twins),
+                "volume_metric": metric.volume_metric,
+                "composition": metric.composition,
+                "split_by": metric.split_by,
+                "currency": metric.currency,
+            }
+            if metric.valid_for:
+                row["valid_for"] = {key: list(value) for key, value in metric.valid_for.items()}
+            if metric.excluded_dimensions:
+                row["excluded_dimensions"] = dict(metric.excluded_dimensions)
+            row.update(metric.extra)
+            metrics.append({key: value for key, value in row.items() if value not in (None, "", [], {})})
+        dimensions: list[dict[str, Any]] = []
+        for dim in model.dimensions:
+            dimensions.append({
+                "id": dim.id,
+                "is_time": dim.is_time,
+                "family": dim.family,
+                "family_rank": dim.family_rank,
+                "stable_key": dim.stable_key,
+                "hierarchy": dim.hierarchy,
+                "allowed_values": list(dim.allowed_values) or None,
+                "aliases": list(dim.extra.get("aliases") or []),
+            })
+        self._load_payload({
+            "metrics": metrics,
+            "dimensions": dimensions,
+            "grain_defaults": dict(model.grain_defaults),
+        })
+        self._scope_dimension_ids = tuple(model.scope_dimension_ids)
+        self._warmed_at = time.monotonic()
+
+    async def _warm_legacy(self, registry_hints: list[str] | None = None) -> int:
         count = 0
         payload = await self._call(_BOOTSTRAP_CAP, {})
         count = self._load_payload(payload)
@@ -591,5 +670,15 @@ class CatalogueBootstrap:
         only happens on the first explicit ``warm()`` call (from
         ``build_mcp_bundle`` after the first mission triggers warming).
         """
+        mode = self._port_mode()
+        if mode == "enforce":
+            port = self._semantic()
+            await port.ensure_fresh()
+            if port.read_model().metrics:
+                self._adopt(port.read_model())
+                self._bind_registry()
+            elif self.should_refresh():
+                await self.warm()
+            return
         if self.should_refresh():
             await self.warm()

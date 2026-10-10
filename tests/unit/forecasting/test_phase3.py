@@ -59,6 +59,7 @@ async def test_compile_uses_catalogue_forecast_block():
                 "rank_by": None,
                 "metrics": [MetricSlot(words="refunds", metric_id="refunds")],
                 "breakdown_dimensions": [],
+                "breakdown_words": "",
                 "names_period": False,
                 "forecast": ForecastSlots(
                     targets=[MetricSlot(words="refunds", metric_id="refunds")],

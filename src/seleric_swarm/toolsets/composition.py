@@ -25,7 +25,8 @@ from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import ArtifactProvenance
-from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID, dimension_value
+from seleric_swarm.exploration.space import default_brand_id, scope_dimensions
+from seleric_swarm.services.mcp_query import dimension_value
 from seleric_swarm.toolsets import diagnosis, semantic
 from seleric_swarm.toolsets.analytics import _refuse
 
@@ -151,8 +152,12 @@ async def _totals_by(
     if by:
         args["dimensions"] = [by]
     flt = list(flt)
-    if diagnosis._supports_brand(ctx, metrics[0]) and not any(f.get("dimension") == "brand_id" for f in flt):
-        flt.append({"dimension": "brand_id", "operator": "equals", "values": [DEFAULT_BRAND_ID]})
+    scope = scope_dimensions(ctx.deps.catalogue)
+    carried = {d.lower(): d for d in ctx.deps.catalogue.supported_dimensions_for(metrics[0])}
+    scope_dim = next((carried[name.lower()] for name in scope if name.lower() in carried), None)
+    already = {str(f.get("dimension") or "") for f in flt}
+    if diagnosis._supports_brand(ctx, metrics[0]) and scope_dim and scope_dim not in already:
+        flt.append({"dimension": scope_dim, "operator": "equals", "values": [default_brand_id()]})
     if flt:
         args["filters"] = flt
     result = await semantic._cached_metrics_query(ctx, args)

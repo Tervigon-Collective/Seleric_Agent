@@ -265,7 +265,8 @@ def _units_line(plan: MissionPlan, deps: SelericDeps) -> str:
         return ""
     line = "Units (catalogue): " + ", ".join(f"{metric}={unit}" for metric, unit in units.items())
     line += ". Label every figure with its unit"
-    currencies = {str(raw[metric].get("currency_default") or "").strip() for metric in metrics} - {""}
+    # currency_default is not in the bootstrap; use unit which carries the currency code
+    currencies = {unit for unit in units.values() if unit}
     if len(currencies) == 1:
         line += f"; the footer's Currency is {currencies.pop()}"
     return line + "."

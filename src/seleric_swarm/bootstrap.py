@@ -74,7 +74,8 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     # refresh_if_stale() which does the actual MCP call.
     cat_bootstrap = CatalogueBootstrap(mcp)
     metrics = MetricRegistry(settings.metric_registry_path)
-    metrics.bind_catalogue(cat_bootstrap)
+    # Bind after a successful warm, not here: the cache is still empty.
+    cat_bootstrap.attach_registry(metrics)
     query_embedder = build_query_embedder(settings)
     persist_path = str(repo_root() / settings.persistence_path)
     if settings.persistence_backend == "file":

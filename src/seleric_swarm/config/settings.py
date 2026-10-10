@@ -143,6 +143,17 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = ""
     otel_exporter_otlp_headers: str = ""
     otel_trace_sample_ratio: float = 1.0
+    # Tracing backend (M0.3): which backends receive stage/mission traces. "both"
+    # = OTel + Langfuse (each when configured); "otel" / "langfuse" = one; "none" =
+    # off. Read by observability.configure_tracing.
+    trace_backend: Literal["none", "otel", "langfuse", "both"] = "both"
+    # Local redacted stage-input/output store (one JSON per stage) that makes a
+    # mission replayable without Langfuse. Read by observability.stage_span.
+    trace_local_dir: str = ".data/traces"
+    # Stage-tracing rollout flag (M0.3): the pipeline reads this to decide whether
+    # to wrap each stage in stage_span. off = legacy path only; shadow = trace
+    # beside legacy; enforce = trace and consume. Consumed by pipeline/ (M1.2+).
+    stage_tracing_mode: Literal["off", "shadow", "enforce"] = "off"
     search_embedding_model: str = ""
 
     mcp_config_path: str = "config/mcp_servers.yaml"
@@ -212,6 +223,21 @@ class Settings(BaseSettings):
     query_spec_mode: Literal["off", "shadow", "enforce"] = Field(
         default="shadow",
         validation_alias=AliasChoices("query_spec_mode", "QUERY_SPEC_MODE"),
+    )
+    # Semantic port (M0.5). off = legacy catalogue warm; shadow = port beside it;
+    # enforce = missions read the port's snapshot. Default brand and scope
+    # dimension ids: empty uses config/scope.yaml.
+    semantic_port_mode: Literal["off", "shadow", "enforce"] = Field(
+        default="off",
+        validation_alias=AliasChoices("semantic_port_mode", "SEMANTIC_PORT_MODE"),
+    )
+    default_brand_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("default_brand_id", "DEFAULT_BRAND_ID"),
+    )
+    scope_dimension_ids: str = Field(
+        default="",
+        validation_alias=AliasChoices("scope_dimension_ids", "SCOPE_DIMENSION_IDS"),
     )
 
     workflow_version: str = "1.0.0"

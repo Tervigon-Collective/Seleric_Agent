@@ -8,13 +8,13 @@ import yaml
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import StateNeed, StateRequest
+from seleric_swarm.exploration.space import configured_scope_ids, default_brand_id
 from seleric_swarm.paths import repo_root
 from seleric_swarm.services.domain_health.models import (
     DomainStateSnapshot,
     DomainStatus,
     ResolvedMetric,
 )
-from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID
 from seleric_swarm.services.time_range import resolve_time_range
 
 if TYPE_CHECKING:
@@ -132,9 +132,12 @@ class DomainStateResolver:
         domain: str,
         *,
         time_range: TimeRangeV1,
-        brand_id: str = DEFAULT_BRAND_ID,
+        brand_id: str | None = None,
         store: SnapshotStore | None = None,
     ) -> DomainStateSnapshot:
+        brand_id = brand_id or default_brand_id()
+        scope_ids = configured_scope_ids()
+        scope_dim = scope_ids[0] if scope_ids else ""
         block = self._profiles.get(domain)
         agent_id = block.get("agent_id", f"{domain}_agent")
         # `time_range` is typically still unresolved (kind="relative",
@@ -171,7 +174,7 @@ class DomainStateResolver:
             request = StateRequest(
                 metric_id=metric_id,
                 time_range=time_range,
-                dimensions={"brand_id": brand_id},
+                dimensions={scope_dim: brand_id} if scope_dim else {},
                 agent_id=agent_id,
                 need=need,
             )

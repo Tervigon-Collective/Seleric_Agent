@@ -209,10 +209,10 @@ def _filters_for(ctx: RunContext[SelericDeps], metric_id: str, filters: dict[str
 
 
 def _supports_brand(ctx: RunContext[SelericDeps], metric_id: str) -> bool:
-    from seleric_swarm.services.mcp_query import _BRAND_DIM_KEYS
+    from seleric_swarm.exploration.space import scope_keys
 
     cat = ctx.deps.catalogue
-    return (not cat.metrics) or bool({d.lower() for d in cat.supported_dimensions_for(metric_id)} & _BRAND_DIM_KEYS)
+    return (not cat.metrics) or bool({d.lower() for d in cat.supported_dimensions_for(metric_id)} & scope_keys(cat))
 
 
 async def _fetch_daily(

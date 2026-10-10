@@ -243,3 +243,47 @@ def assert_catalogue_ids(policies: ForecastPolicies, metric_ids: set[str]) -> li
         if mid not in metric_ids:
             unknown.append(mid)
     return sorted(set(unknown))
+
+
+def assert_catalogue_dimensions(
+    policies: ForecastPolicies, dimension_ids: set[str], catalogue: Any | None = None
+) -> tuple[ForecastPolicies, list[str]]:
+    """Validate and filter entity dimensions in policies against catalogue dimensions.
+
+    Returns a tuple of (filtered_policies, warnings). Unknown dimensions like
+    'lt_platform' and 'product_sku' (not v2 dimensions) are dropped with a warning
+    only when they are not present in the catalogue.
+    """
+    import logging
+
+    log = logging.getLogger(__name__)
+    warnings: list[str] = []
+
+    # Known non-v2 dimensions that should be dropped if not in catalogue
+    deprecated_dimensions = {"lt_platform", "product_sku"}
+
+    # Build a set of all valid dimensions from catalogue dimensions and metric supported_dimensions
+    valid_dimensions = set(dimension_ids)
+    if catalogue is not None:
+        for meta in getattr(catalogue, "metrics", ()) or ():
+            for dim in getattr(meta, "supported_dimensions", ()) or ():
+                valid_dimensions.add(dim)
+
+    # Create a new policies object with filtered entities
+    new_targets: dict[str, TargetPolicy] = {}
+    for mid, target in policies.targets.items():
+        new_entities: dict[str, EntityPolicy] = {}
+        for entity, entity_policy in target.entities.items():
+            if entity not in valid_dimensions:
+                if entity in deprecated_dimensions:
+                    msg = f"forecast policy for '{mid}': entity dimension '{entity}' not found in catalogue (deprecated dimension); dropping"
+                else:
+                    msg = f"forecast policy for '{mid}': entity dimension '{entity}' not found in catalogue; dropping"
+                warnings.append(msg)
+                log.warning(msg)
+            else:
+                new_entities[entity] = entity_policy
+        new_targets[mid] = target.model_copy(update={"entities": new_entities})
+
+    filtered_policies = policies.model_copy(update={"targets": new_targets})
+    return filtered_policies, warnings

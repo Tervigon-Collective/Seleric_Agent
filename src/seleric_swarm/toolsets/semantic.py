@@ -33,6 +33,7 @@ from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.limits import withdraw_tool
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+from seleric_swarm.exploration.space import default_brand_id, scope_keys
 from seleric_swarm.services.elapsed import (
     ELAPSED_KEY,
     completed_hours,
@@ -40,8 +41,6 @@ from seleric_swarm.services.elapsed import (
     in_progress_day,
 )
 from seleric_swarm.services.mcp_query import (
-    _BRAND_DIM_KEYS,
-    DEFAULT_BRAND_ID,
     build_metrics_query_args,
     call_metrics_query,
     dimension_value,
@@ -91,6 +90,10 @@ def _is_placeholder_dimension_value(value: str) -> bool:
 
 def _normalize_dim_token(text: str) -> str:
     return text.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _is_scope_dimension(ctx: RunContext[SelericDeps], name: str) -> bool:
+    return _normalize_dim_token(name) in scope_keys(ctx.deps.catalogue)
 
 
 def _is_self_referential_dimension_value(key: str, value: str) -> bool:
@@ -933,7 +936,7 @@ async def semantic_sql(
     statement, read-only, rows capped, 30s timeout. Tables and columns are checked
     against the views before anything runs: an unknown name comes back with that
     view's columns."""
-    brand = str(brand_id or DEFAULT_BRAND_ID)
+    brand = str(brand_id or default_brand_id())
     try:
         start = datetime.fromisoformat(period_start[:10]).replace(tzinfo=ctx.deps.as_of.tzinfo)
         end = datetime.fromisoformat(period_end[:10]).replace(tzinfo=ctx.deps.as_of.tzinfo)
@@ -2281,7 +2284,7 @@ async def query_metrics(
             if k in asked_lists
             and isinstance(v, list)
             and len(v) > 1
-            and _normalize_dim_token(k) not in _BRAND_DIM_KEYS
+            and not _is_scope_dimension(ctx, k)
             and not ctx.deps.catalogue.is_time_dimension(k)
         ]
     # A time-axis dimension (catalogue is_time: order_date, refund_date, …)
@@ -2311,7 +2314,7 @@ async def query_metrics(
         filters += [
             {"dimension": k, "operator": "set", "values": []}
             for k in breakdown
-            if not ctx.deps.catalogue.is_time_dimension(k) and _normalize_dim_token(k) not in _BRAND_DIM_KEYS
+            if not ctx.deps.catalogue.is_time_dimension(k) and not _is_scope_dimension(ctx, k)
         ]
     sort = _top_n_sort(metric_id, order)
     # Only scope to the default brand for metrics that actually carry a brand
@@ -2319,7 +2322,7 @@ async def query_metrics(
     # brand filter onto a brand-less metric would make Cube reject the query.
     # Fail-open when the snapshot is empty.
     supports_brand = (not ctx.deps.catalogue.metrics) or bool(
-        {d.lower() for d in ctx.deps.catalogue.supported_dimensions_for(metric_id)} & _BRAND_DIM_KEYS
+        {d.lower() for d in ctx.deps.catalogue.supported_dimensions_for(metric_id)} & scope_keys(ctx.deps.catalogue)
     )
     same_hours = _same_hours_applies(ctx, metric_id, period_start, period_end, grain, order, limit)
     if elapsed_only:
@@ -2388,7 +2391,7 @@ async def query_metrics(
         # silently answers a different question and still reports success (live
         # Suspender-Boots trace).
         kept_filters = [
-            f for f in filters if _normalize_dim_token(f["dimension"]) not in _BRAND_DIM_KEYS
+            f for f in filters if not _is_scope_dimension(ctx, f["dimension"])
         ]
         if len(kept_filters) != len(filters):
             filters = kept_filters
@@ -2454,7 +2457,7 @@ async def query_metrics(
         # args so a re-issued identical query pays it only once.
         non_brand = [
             f for f in filters
-            if _normalize_dim_token(f["dimension"]) not in _BRAND_DIM_KEYS and f.get("operator") != "set"
+            if not _is_scope_dimension(ctx, f["dimension"]) and f.get("operator") != "set"
         ]
         hint = ""
         if non_brand:

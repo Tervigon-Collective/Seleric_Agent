@@ -12,6 +12,7 @@ from seleric_swarm.forecasting.policies import (
     ForecastPolicies,
     catalogue_forecast_block,
     default_policies,
+    assert_catalogue_dimensions,
 )
 from seleric_swarm.forecasting.types import ForecastPlan, ForecastPlanTarget
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
@@ -65,6 +66,12 @@ async def compile_forecast_plan(
 
     targets: list[ForecastPlanTarget] = []
     plan_notes = list(notes)
+
+    # Validate entity dimensions against catalogue, dropping deprecated/unknown ones
+    catalogue_dim_ids = set(catalogue.dimensions)
+    policies, dim_warnings = assert_catalogue_dimensions(policies, catalogue_dim_ids, catalogue)
+    for warning in dim_warnings:
+        plan_notes.append(warning)
 
     # Expand derived ratios into component targets + recomposition metadata.
     expanded: list[str] = []

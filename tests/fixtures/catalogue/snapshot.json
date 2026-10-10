@@ -1,0 +1,57 @@
+{
+  "catalogue_version": "zz-snap-1",
+  "default_brand_id": "zz-brand",
+  "scope_dimensions": ["zz_tenant"],
+  "grain_defaults": {"zz_day": {"dimension": "zz_day"}},
+  "future_field": true,
+  "hierarchies": {
+    "zz_path": {"levels": ["zz_coarse", "zz_fine"], "views": ["zz_view"], "note": "sample"}
+  },
+  "views": [{"id": "zz_view", "freshness": "ok", "title": "ZZ"}],
+  "brands": [{"id": "zz-brand", "name": "ZZ Brand", "code": "ZZ"}],
+  "metrics": [
+    {
+      "id": "zz_sales",
+      "label": "ZZ Sales",
+      "view": "zz_view",
+      "unit": "ZZU",
+      "aggregation": "additive",
+      "supported_dimensions": ["zz_tenant", "zz_coarse", "zz_day"],
+      "date_basis": "order",
+      "date_twin": "zz_sales_event",
+      "grain_twins": ["zz_sales_item"],
+      "split_by": "zz_coarse",
+      "currency": "ZZU",
+      "zz_future": "kept",
+      "composition": {"depends_on": ["zz_part"]}
+    },
+    {
+      "id": "zz_sales_item",
+      "label": "ZZ Sales Item",
+      "view": "zz_item",
+      "unit": "ZZU",
+      "aggregation": "additive",
+      "supported_dimensions": ["zz_tenant", "zz_fine"]
+    },
+    {
+      "id": "zz_rate",
+      "label": "ZZ Rate",
+      "unit": "ratio",
+      "aggregation": "ratio",
+      "supported_dimensions": ["zz_tenant"],
+      "volume_metric": "zz_sales"
+    }
+  ],
+  "dimensions": [
+    {"id": "zz_tenant", "is_time": false, "allowed_values": ["zz-brand"]},
+    {
+      "id": "zz_coarse",
+      "family": "zz_family",
+      "family_rank": 0,
+      "hierarchy": {"id": "zz_path", "level": 1, "levels": ["zz_coarse", "zz_fine"]},
+      "allowed_values": ["a", "b"]
+    },
+    {"id": "zz_fine", "family": "zz_family", "family_rank": 1, "hierarchy": {"level": 2}},
+    {"id": "zz_day", "is_time": true}
+  ]
+}

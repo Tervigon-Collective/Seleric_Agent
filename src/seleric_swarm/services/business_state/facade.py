@@ -11,11 +11,11 @@ from seleric_swarm.domain.models import (
     SeriesPoint,
     StateRequest,
 )
+from seleric_swarm.exploration.space import configured_scope_ids, default_brand_id
 from seleric_swarm.services.business_state.detectors import robust_zscore
 from seleric_swarm.services.business_state.features import classify_freshness, compute_features
 from seleric_swarm.services.business_state.profiles import ProfileLoader
 from seleric_swarm.services.business_state.series import fetch_series
-from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID
 from seleric_swarm.services.time_range import resolve_time_range
 
 if TYPE_CHECKING:
@@ -65,7 +65,13 @@ class BusinessStateService:
             )
 
         profile = self._profiles.get(request.profile_id)
-        brand_id = str(request.dimensions.get("brand_id") or DEFAULT_BRAND_ID)
+        brand_id = ""
+        for scope_dim in configured_scope_ids():
+            named = request.dimensions.get(scope_dim)
+            if named:
+                brand_id = str(named)
+                break
+        brand_id = brand_id or default_brand_id()
         series_cfg = profile.get("series") or {}
         anomaly_cfg = profile.get("anomaly") or {}
 

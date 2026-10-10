@@ -20,12 +20,14 @@ def test_resolve_hint_matches_live_catalogue_by_substring():
     assert r.resolve_hint("metric.roas") == "net_roas_all_channels"
 
 
-def test_resolve_hint_matches_yaml_alias():
+def test_resolve_hint_ignores_yaml_aliases():
     yaml_metric = MetricDefinition(
         {"id": "metric.net_sales", "aliases": ["sales", "revenue"], "domain": "commerce"}
     )
     r = _registry(yaml_metrics=[yaml_metric])
-    assert r.resolve_hint("metric.sales") == "metric.net_sales"
+    assert r.resolve_hint("metric.sales") is None
+    assert r.resolve_alias("sales") is None
+    assert r.resolve_alias("metric.net_sales") is yaml_metric
 
 
 def test_resolve_hint_returns_none_when_nothing_matches():

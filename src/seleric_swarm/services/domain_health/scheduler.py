@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-
 from datetime import UTC, datetime
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
+from seleric_swarm.exploration.space import default_brand_id
 from seleric_swarm.services.domain_health.models import DomainStateSnapshot
 from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles, DomainStateResolver
 from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
-from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID
 
 # Inventory/procurement/technical excluded -- no MCP module (04 doc).
 ALL_DOMAINS = ["commerce", "finance", "performance", "attribution", "funnel", "product", "customer", "operations"]
@@ -23,13 +22,14 @@ def build_headline_snapshot(
     snapshots: list[DomainStateSnapshot],
     headline_metric_ids: list[str],
     *,
-    brand_id: str = DEFAULT_BRAND_ID,
+    brand_id: str | None = None,
 ) -> DomainStateSnapshot:
     """Pick the headline metrics out of already-resolved domain snapshots into
     one `business` snapshot -- the single read the fast path serves "How's the
     business?" from. No MCP calls: the metrics were fetched during the per-
     domain resolve pass. Preserves ``headline_metric_ids`` order.
     """
+    brand_id = brand_id or default_brand_id()
     by_metric = {m.metric_id: m for s in snapshots for m in s.metrics}
     metrics = [by_metric[mid] for mid in headline_metric_ids if mid in by_metric]
     signals = [sig for s in snapshots for sig in s.headline_signals]
@@ -61,7 +61,7 @@ async def run_once(
     *,
     domains: Sequence[str] = ALL_DOMAINS,
     time_range: TimeRangeV1 | None = None,
-    brand_id: str = DEFAULT_BRAND_ID,
+    brand_id: str | None = None,
 ) -> list[DomainStateSnapshot]:
     """Resolve + persist one snapshot per domain.
 
@@ -73,6 +73,7 @@ async def run_once(
     log = logging.getLogger("seleric.business_state.scheduler")
 
     time_range = time_range or TimeRangeV1(kind="relative", relative_token="last_7d")
+    brand_id = brand_id or default_brand_id()
     
     async def _resolve_and_save(domain: str) -> DomainStateSnapshot | None:
         try:

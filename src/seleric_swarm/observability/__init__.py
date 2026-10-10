@@ -1,19 +1,9 @@
-from seleric_swarm.observability.tracing import (
-    SpanHandle,
-    configure_langfuse_env,
-    configure_langsmith_env,
-    configure_logging,
-    langfuse_trace_url,
-    redact_mapping,
-    traced_span,
-)
+from seleric_swarm.observability._stages import configure_tracing, stage_span
 
+# A9 public interface: exactly the two entry points. The existing agent imports
+# the legacy helpers (traced_span, operation_span, …) from submodules
+# (seleric_swarm.observability.tracing / .traces / .flow), not from this root.
 __all__ = [
-    "SpanHandle",
-    "configure_langfuse_env",
-    "configure_langsmith_env",
-    "configure_logging",
-    "langfuse_trace_url",
-    "redact_mapping",
-    "traced_span",
+    "configure_tracing",
+    "stage_span",
 ]

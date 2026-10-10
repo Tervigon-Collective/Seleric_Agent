@@ -803,15 +803,33 @@ async def test_order_grain_metric_by_product_redirects_to_its_grain_twin():
     assert ModelRetry  # still the path when no twin carries the slice (see the conformance tests)
 
 
-def test_redirect_alternatives_rank_by_shared_id_words():
+def test_redirect_alternatives_rank_by_unit_then_shared_dimensions():
     from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 
-    snap = CatalogueSnapshot(metrics=tuple(
+    snap = CatalogueSnapshot(metrics=(
+        CatalogueMetricMeta(
+            id="zz_base",
+            supported_dimensions=["zz_dim", "zz_a"],
+            raw={"unit": "INR", "aggregation": "additive"},
+        ),
+        CatalogueMetricMeta(
+            id="zz_same",
+            supported_dimensions=["zz_dim", "zz_a", "zz_b"],
+            raw={"unit": "INR", "aggregation": "additive"},
+        ),
+        CatalogueMetricMeta(
+            id="zz_other",
+            supported_dimensions=["zz_dim"],
+            raw={"unit": "count", "aggregation": "additive"},
+        ),
+    ))
+    ranked = [m for m in snap.metrics_supporting_dimension("zz_dim", like="zz_base") if m != "zz_base"]
+    assert ranked[0] == "zz_same"
+    plain = CatalogueSnapshot(metrics=tuple(
         CatalogueMetricMeta(id=m, supported_dimensions=["product_title"])
         for m in ("event_count", "events_per_session", "orders", "product_net_cogs", "units_sold")
     ))
-    assert snap.metrics_supporting_dimension("product_title", like="net_cogs")[0] == "product_net_cogs"
-    assert snap.metrics_supporting_dimension("product_title")[0] == "event_count"   # no hint: alphabetical
+    assert plain.metrics_supporting_dimension("product_title")[0] == "event_count"
 
 
 @pytest.mark.asyncio

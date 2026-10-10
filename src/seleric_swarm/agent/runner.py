@@ -1704,7 +1704,7 @@ async def run_v3_mission(
                     window=resolved_window,
                 )
                 v3_result = await asyncio.wait_for(
-                    run_validated_mission(agent, deps, prompt, on_stream=on_stream),
+                    run_validated_mission(agent, deps, prompt, question=query, on_stream=on_stream),
                     timeout=deps.limits.max_runtime_seconds,
                 )
                 _stage("agent_loop_ms")

@@ -14,24 +14,19 @@ _GRANULARITY_DATE_KEY = re.compile(
     r"\.(?:second|minute|hour|day|week|month|quarter|year)$"
 )
 
-# The tenant's default brand. A metrics_query with no brand filter and no brand
-# breakdown is scoped to this brand HERE, in the API arguments — the single place
-# the default lives. Previously the MCP server injected it and several services
-# hardcoded "20" of their own; both are gone in favour of this constant.
-DEFAULT_BRAND_ID = "20"
+def _scope_keys() -> frozenset[str]:
+    from seleric_swarm.exploration.space import configured_scope_ids
 
-# Dimension keys that name a brand filter/breakdown. If a query already scopes or
-# groups by brand, the default is NOT injected (a brand breakdown must span all
-# brands; an explicit brand filter is the caller's own choice).
-_BRAND_DIM_KEYS = frozenset({"brand_id", "brand", "brand_name"})
+    return frozenset(item.lower() for item in configured_scope_ids())
 
 
-def _has_brand(
+def _has_scope(
     dimensions: list[str] | None, filters: list[dict[str, Any]] | None
 ) -> bool:
+    """True when the query already filters or groups by a tenant dimension."""
     keys = {str(d).strip().lower() for d in (dimensions or [])}
     keys |= {str(f.get("dimension", "")).strip().lower() for f in (filters or [])}
-    return bool(keys & _BRAND_DIM_KEYS)
+    return bool(keys & _scope_keys())
 
 
 def row_date(row: dict[str, Any]) -> str | None:
@@ -89,10 +84,15 @@ def build_metrics_query_args(
     if dimensions:
         arguments["dimensions"] = list(dimensions)
     all_filters = list(filters) if filters else []
-    if inject_default_brand and not _has_brand(dimensions, filters):
-        all_filters.append(
-            {"dimension": "brand_id", "operator": "equals", "values": [DEFAULT_BRAND_ID]}
-        )
+    if inject_default_brand and not _has_scope(dimensions, filters):
+        from seleric_swarm.exploration.space import configured_scope_ids, default_brand_id
+
+        scope_ids = configured_scope_ids()
+        brand = default_brand_id()
+        if scope_ids and brand:
+            all_filters.append(
+                {"dimension": scope_ids[0], "operator": "equals", "values": [brand]}
+            )
     if all_filters:
         arguments["filters"] = all_filters
     if limit is not None:
