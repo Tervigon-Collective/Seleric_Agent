@@ -669,9 +669,9 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | M2.1 | T1 | Claude (review) | `gaurav` | merged | | `plan(spec, read_model, *, as_of, headline_metric_ids) -> AnalysisPlan`; 9 templates in `plan/_templates`, registry `plan/_registry.py`, `PLANNER_V2_MODE`, protected contract; 34 plan tests (invented catalogue + rename pickup). Not wired (pipeline/ owns it). Reviewer: T2 | 2026-10-11 |
 | M2.2 | T2 | OpenCode (T3 first-pass) | `gaurav` | merged | | `plan/_execute.py::execute` + 9 tests pushed with Phase 2 WIP. T2 owns review. | 2026-10-11 |
 | M2.3 | T3 | OpenCode | `gaurav` | merged | | `derive` engine (10 ops) + tool + reconcile acceptance pushed as WIP. `derive` independence KEPT. | 2026-10-11 |
-| M3.1 | T1 | OpenCode | | not started | | after M2.2 and M2.3 | 2026-10-10 |
-| M3.2 | T2 | Cursor | | not started | | after M2.2 and M2.3 | 2026-10-10 |
-| M3.3 | T3 | OpenCode | | not started | | after M2.2 and M2.3 | 2026-10-10 |
+| M3.1 | T1 | Claude (review) | `gaurav` | merged | | `answer/` (render/verify/turn_summary), `adapters/answer_llm.py`, `ANSWER_V2_MODE`; 11 tests. Not wired | 2026-10-10 |
+| M3.2 | T2 | Claude (review) | `gaurav` | merged | | `answer/` (render/verify/turn_summary), `adapters/answer_llm.py`, `ANSWER_V2_MODE`; 11 tests. Not wired | 2026-10-10 |
+| M3.3 | T3 | Claude (review) | `gaurav` | merged | | `answer/` (render/verify/turn_summary), `adapters/answer_llm.py`, `ANSWER_V2_MODE`; 11 tests. Not wired | 2026-10-10 |
 | M4.1 | T1 | Claude (review) | `gaurav` | merged | | `context/`: calendar, incidents, freshness health, `config/context_providers.yaml`; 6 tests. Gap: change-log provider, domain-health snapshots | 2026-10-11 |
 | M4.2 | T2 | Claude (review) | `gaurav` | merged | | `graph/`: identity edges (composition/depends_on) + `config/causal_graph.yaml` causal edges, unknown nodes skipped; 4 tests. Gap: GCM adapter | 2026-10-10 |
 | M4.3 | T2 | Cursor | | not started | | after M4.1 and M4.2 | 2026-10-10 |

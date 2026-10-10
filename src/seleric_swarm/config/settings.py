@@ -250,6 +250,7 @@ class Settings(BaseSettings):
     # background beside the legacy path and records disagreements in trace["v2_shadow"].
     understand_v2_mode: Literal["off", "shadow", "enforce"] = "off"
     planner_v2_mode: Literal["off", "shadow", "enforce"] = "off"
+    answer_v2_mode: Literal["off", "shadow", "enforce"] = "off"
 
     workflow_version: str = "1.0.0"
 
