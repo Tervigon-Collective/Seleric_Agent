@@ -111,9 +111,14 @@ def _numeric(value: Any) -> float | None:
     return None
 
 
+def _bare(metric_id: Any) -> str:
+    """Legacy evidence names metrics ``metric.<id>`` or ``<view>.<id>``; compare the bare id."""
+    return str(metric_id or "").rsplit(".", 1)[-1]
+
+
 def _row_matches(row: Any, match: dict[str, Any]) -> bool:
     metric = match.get("metric_id", match.get("metric"))
-    if metric is not None and getattr(row, "metric_id", None) != metric:
+    if metric is not None and _bare(getattr(row, "metric_id", None)) != _bare(metric):
         return False
     wanted_dims = match.get("dimensions") or match.get("dimension_values") or {}
     row_dims = getattr(row, "dimensions", {}) or {}
@@ -144,6 +149,8 @@ def score_case(
     metrics: dict[str, float | None] = {}
     details: dict[str, Any] = {}
 
+    details["observed"] = observed.diagnostics
+    details["truths"] = [{"match": t.match, "expected": t.expected} for t in truths]
     if case.expect.spec:
         matched, total = spec_matches(case.expect.spec, observed.spec)
         metrics["spec_accuracy"] = matched / total if total else None

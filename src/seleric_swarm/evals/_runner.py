@@ -46,6 +46,7 @@ class ObservedCase(BaseModel):
     latency_ms: float | None = None
     llm_calls: int | None = None
     tokens: int | None = None
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
 
 
@@ -90,12 +91,21 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
 
     elapsed = trace.get("elapsed_seconds")
     spec = trace.get("spec")
+    diagnostics: dict[str, Any] = {"spec_source": "trace.spec" if isinstance(spec, dict) and spec else None}
+    for key in ("v2_mission", "v2_shadow"):
+        stage = trace.get(key)
+        if isinstance(stage, dict):
+            diagnostics[key] = {k: stage.get(k) for k in ("status", "reason", "disagree", "clarification", "plan", "answer")
+                                if stage.get(k) is not None}
+        elif key == "v2_shadow":
+            diagnostics[key] = "absent (UNDERSTAND_V2_MODE/PLANNER_V2_MODE not set in this process?)"
     if not isinstance(spec, dict) or not spec:
         # The legacy path writes no spec; the v2 stages do (enforce first, then shadow).
         for key in ("v2_mission", "v2_shadow"):
             stage = trace.get(key)
             if isinstance(stage, dict) and isinstance(stage.get("spec"), dict):
                 spec = stage["spec"]
+                diagnostics["spec_source"] = key
                 break
     return ObservedCase(
         id=case.id,
@@ -106,6 +116,7 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
         response_text=str(payload.get("final_response") or ""),
         revisions=_revisions(trace),
         latency_ms=float(elapsed) * 1000 if isinstance(elapsed, (int, float)) else None,
+        diagnostics={**diagnostics, "evidence_metrics": sorted({e.metric_id for e in evidence})[:10]},
         error=str(error_code) if error_code else None,
     )
 

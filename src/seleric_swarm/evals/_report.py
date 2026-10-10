@@ -161,6 +161,14 @@ def render_markdown(report: Report) -> str:
             )
         )
 
+    lines += ["", "## Diagnostics", ""]
+    for case in report.score.cases:
+        obs = case.details.get("observed") or {}
+        shadow = obs.get("v2_shadow")
+        spec_info = f"{case.details.get('spec_matched', '-')}/{case.details.get('spec_total', '-')} from {obs.get('spec_source')}"
+        truths = "; ".join(f"{t['match'].get('metric_id')}={t['expected']}" for t in case.details.get("truths") or [])
+        lines.append(f"- `{case.id}`: spec {spec_info}; evidence {obs.get('evidence_metrics')}; truth {truths or '-'}; v2_shadow {json.dumps(shadow, default=str)[:300]}")
+
     comparison = report.comparison
     lines += ["", "## Baseline", ""]
     if not comparison.compared:
