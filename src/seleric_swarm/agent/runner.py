@@ -9,9 +9,8 @@ stores the office gateway falls back to.
 
 from __future__ import annotations
 
-import dataclasses
-
 import asyncio
+import dataclasses
 import functools
 import logging
 import os
@@ -25,7 +24,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from openai import APITimeoutError as OpenAIAPITimeoutError
 from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.models.test import TestModel
 
+from seleric_swarm.adapters.understand_llm import PydanticAiDraftLLM
 from seleric_swarm.agent.agent import (
     CONVERSATIONAL,
     FORECAST_PREFETCHED,
@@ -40,16 +41,13 @@ from seleric_swarm.agent.dependencies import (
     NullMcpClient,
     SelericDeps,
 )
-from seleric_swarm.agent.intent import QueryClassification, stated_grain
-from seleric_swarm.api.status import is_terminal_status
-from seleric_swarm.agent.model import resolve_mission_model, resolve_planner_model
-from seleric_swarm.agent.output import MissionResult as V3MissionResult
 from seleric_swarm.agent.executor import execute_plan
 from seleric_swarm.agent.forecast_plan import compile_forecast_plan, render_forecast_plan
+from seleric_swarm.agent.intent import QueryClassification, stated_grain
+from seleric_swarm.agent.model import resolve_mission_model, resolve_planner_model
+from seleric_swarm.agent.output import MissionResult as V3MissionResult
 from seleric_swarm.agent.plan import PlanOutcome, plan_adherence, plan_from_slots
 from seleric_swarm.agent.progress import emit_progress, tool_label
-from seleric_swarm.agent.understand import classification_from, diagnose_one_named_entity, understand
-from seleric_swarm.forecasting.pipeline import run_forecast
 from seleric_swarm.agent.query_spec import (
     QuerySpec,
     apply_spec_edit,
@@ -60,18 +58,25 @@ from seleric_swarm.agent.scope import (
     RequiredScope,
     build_required_scope,
     promote_verbatim_values,
-    scope_from_dimensions,
     question_axes_from_resolution,
     required_windows_from_resolved,
+    scope_from_dimensions,
     value_filters_from_resolution,
+)
+from seleric_swarm.agent.understand import (
+    classification_from,
+    diagnose_one_named_entity,
+    understand,
 )
 from seleric_swarm.agent.validation import run_validated_mission
 from seleric_swarm.api.office.registry import register_mission
 from seleric_swarm.api.office.v3_adapter import v3_raw_snapshot
+from seleric_swarm.api.status import is_terminal_status
 from seleric_swarm.api.v3_state import get_v3_artifact_store, get_v3_mission_store
 from seleric_swarm.contracts.lookup import (
     EvidenceView,
     MissionError,
+    TimeRangeV1,
     TraceInfo,
 )
 from seleric_swarm.contracts.lookup import (
@@ -84,13 +89,20 @@ from seleric_swarm.conversations.contracts import (
     PrincipalAuthMethod,
     TurnRecord,
 )
+from seleric_swarm.forecasting.pipeline import run_forecast
 from seleric_swarm.observability.traces import mission_trace
+from seleric_swarm.pipeline import (
+    LegacyDecision,
+    ShadowInputs,
+    ShadowModes,
+    collect_shadow,
+    start_shadow,
+)
 from seleric_swarm.runtime import SwarmRuntime
-from seleric_swarm.semantic import McpSemanticPort
+from seleric_swarm.semantic import McpSemanticPort, SemanticReadModel
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 from seleric_swarm.services.elapsed import state_cutoff_hour
 from seleric_swarm.services.insights import insight_block
-from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.services.time_range import as_of_date, window_from_query
 from seleric_swarm.state.missions import Mission
 
@@ -974,6 +986,43 @@ def _prefetch_windows(scope: RequiredScope, prior_window: Any) -> list[tuple[dat
         return []
 
 
+def _start_v2_shadow(
+    runtime: SwarmRuntime,
+    *,
+    mission_id: str,
+    query: str,
+    as_of: date,
+    catalogue: CatalogueSnapshot,
+    values: dict[str, Any] | None,
+    prior_turn_record: dict[str, Any] | None,
+) -> asyncio.Task[Any] | None:
+    """Launch the v2 understand → spec → plan stages in shadow; None when their flags are off."""
+    settings = runtime.settings
+    modes = ShadowModes(
+        understand=getattr(settings, "understand_v2_mode", "off"),
+        planner=getattr(settings, "planner_v2_mode", "off"),
+        clarify=getattr(settings, "clarify_mode", "off"),
+    )
+    if not modes.active:
+        return None
+    try:
+        model = resolve_planner_model(settings)
+        llm = None if model is None or isinstance(model, TestModel) else PydanticAiDraftLLM(model)
+        inputs = ShadowInputs(
+            question=query,
+            as_of=as_of,
+            read_model=SemanticReadModel.from_legacy(catalogue),
+            resolution=values,
+            prior_question=str((prior_turn_record or {}).get("query") or ""),
+            prior_offer=str((prior_turn_record or {}).get("offer") or ""),
+            headline_metric_ids=tuple(_headline_metric_ids(runtime)),
+        )
+        return start_shadow(llm, inputs, modes=modes, mission_id=mission_id)
+    except Exception:
+        _log.warning("v2_shadow_start_failed", exc_info=True, extra={"mission_id": mission_id})
+        return None
+
+
 @functools.cache
 def _headline_registry_ids() -> tuple[str, ...]:
     """domain_health_profiles.yaml's headline, read once per process (the config is
@@ -1279,6 +1328,12 @@ async def run_v3_mission(
     )
     values = promote_verbatim_values(values, query) or {}
     _stage("catalogue_values_ms")
+    # v2 stages in shadow (UNDERSTAND_V2_MODE / PLANNER_V2_MODE): a background task beside the legacy path,
+    # compared at the end of the mission into trace["v2_shadow"]. Never changes the answer.
+    v2_shadow = _start_v2_shadow(
+        runtime, mission_id=mission_id, query=query, as_of=as_of_dt.date(), catalogue=catalogue,
+        values=values, prior_turn_record=prior_turn_record,
+    )
     # One structured LLM reading replaces Jev's classifier, the value-sense helper,
     # the planner's slot reader and the small-talk / acceptance / overview word lists.
     understood = await understand(
@@ -1774,6 +1829,21 @@ async def run_v3_mission(
                     m_trace.set_output(result.final_response)
                 except Exception:
                     pass
+
+    if v2_shadow is not None:
+        legacy_plan = locals().get("plan_outcome")
+        shadow_record = await collect_shadow(
+            v2_shadow,
+            LegacyDecision(
+                kind=getattr(understanding, "kind", None),
+                shape=getattr(understanding, "shape", None),
+                metric_ids=tuple((legacy_plan.stats.get("metrics") if legacy_plan is not None else None) or ()),
+                windows=tuple((w.start, w.end) for w in deps.required_scope.windows),
+                filter_values=tuple(v for vf in deps.required_scope.value_filters for v in vf.values),
+            ),
+        )
+        if shadow_record is not None:
+            result = result.model_copy(update={"trace": {**(result.trace or {}), "v2_shadow": shadow_record}})
 
     v3_store.finish(
         mission_id,
