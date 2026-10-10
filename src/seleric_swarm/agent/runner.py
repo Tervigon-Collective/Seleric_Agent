@@ -1175,6 +1175,13 @@ def _to_lookup(
     if result.error_code:
         error = MissionError(code=result.error_code, message=result.final_response or result.error_code)
     intent = result.trace.get("intent")
+    # TraceInfo allows extras; forward the full V3 trace so shadow / stage
+    # telemetry is not dropped when the lookup record is persisted.
+    trace_payload = {
+        **dict(result.trace or {}),
+        "request_id": str(result.trace.get("request_id") or request_id),
+        "session_id": str(result.trace.get("session_id") or session_id),
+    }
     return LookupMissionResult(
         mission_id=result.mission_id,
         status=_lookup_status(result.status),  # type: ignore[arg-type]
@@ -1185,15 +1192,7 @@ def _to_lookup(
         limitations=list(result.limitations),
         final_response=result.final_response,
         error=error,
-        trace=TraceInfo(
-            request_id=str(result.trace.get("request_id") or request_id),
-            session_id=str(result.trace.get("session_id") or session_id),
-            elapsed_seconds=result.trace.get("elapsed_seconds"),
-            steps=result.trace.get("steps"),
-            validation=result.trace.get("validation"),
-            intent=result.trace.get("intent"),
-            plan=result.trace.get("plan"),
-        ),
+        trace=TraceInfo.model_validate(trace_payload),
     )
 
 
