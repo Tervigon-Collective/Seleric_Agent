@@ -106,7 +106,8 @@ layers = [
   "seleric_swarm.api",
   "seleric_swarm.pipeline",
   "seleric_swarm.adapters",
-  "seleric_swarm.understand | seleric_swarm.spec | seleric_swarm.plan | seleric_swarm.derive | seleric_swarm.answer | seleric_swarm.investigate | seleric_swarm.context | seleric_swarm.graph",
+  "seleric_swarm.investigate",
+  "seleric_swarm.understand | seleric_swarm.spec | seleric_swarm.plan | seleric_swarm.derive | seleric_swarm.answer | seleric_swarm.context | seleric_swarm.graph",
   "seleric_swarm.semantic",
   "seleric_swarm.contracts",
 ]

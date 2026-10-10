@@ -251,6 +251,7 @@ class Settings(BaseSettings):
     understand_v2_mode: Literal["off", "shadow", "enforce"] = "off"
     planner_v2_mode: Literal["off", "shadow", "enforce"] = "off"
     answer_v2_mode: Literal["off", "shadow", "enforce"] = "off"
+    investigate_mode: Literal["off", "shadow", "enforce"] = "off"
 
     workflow_version: str = "1.0.0"
 

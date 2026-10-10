@@ -74,3 +74,4 @@ Durable facts the other tracks need. Update the row in place when the fact chang
 | 2026-10-11 | review | M2.1–M2.3 + M4.1 set `merged` on `gaurav` (user: keep everything on gaurav, no PR to main). 1568 passed. Starting M4.2 metric graph. Phase 3 unblocked. |
 | 2026-10-11 | review | M4.2 merged on `gaurav`: `build_graph(read_model, causal_config)`; renamed example yaml to `config/causal_graph.yaml`; deleted unused `diagnostic_ontology.yaml`. M4.3 unblocked. |
 | 2026-10-11 | review | Phase 3 merged on `gaurav`: `answer.render/verify/answer/turn_summary` + `adapters/answer_llm.py` + `ANSWER_V2_MODE`. 1583 passed. Not wired: needs v2 executor evidence in pipeline. Starting M4.3. |
+| 2026-10-11 | review | M4.3 merged on `gaurav`: `investigate.Investigation` state machine over `context` + `graph`; layers contract puts `investigate` above the other L2 packages. Next: pipeline wiring (MetricReader adapter, EngineStep dispatch, answer v2 shadow) and M4.4. |
