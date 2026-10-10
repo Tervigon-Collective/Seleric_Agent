@@ -290,3 +290,16 @@ async def test_elapsed_only_cuts_the_running_day_to_elapsed_hours() -> None:
 async def test_empty_plan_returns_no_results() -> None:
     results = await _run([], FakePort())
     assert results == ()
+
+@pytest.mark.asyncio
+async def test_day_grain_rows_keep_their_period() -> None:
+    from seleric_swarm.plan import PERIOD_KEY
+
+    port = FakePort()
+    port.rows["net_sales"] = (
+        {"channel": "paid", "v.report_date.day": "2026-01-01T00:00:00", "net_sales": 3.0},
+        {"channel": "paid", "v.report_date.day": "2026-01-02T00:00:00", "net_sales": 4.0},
+    )
+    step = QueryStep(step_id="s1", metric_id="net_sales", breakdowns=("channel",), filters=(), window_role="event", grain="day")
+    (rs,) = await _run([step], port)
+    assert [(r.dimensions[PERIOD_KEY], r.value) for r in rs.rows] == [("2026-01-01", 3.0), ("2026-01-02", 4.0)]

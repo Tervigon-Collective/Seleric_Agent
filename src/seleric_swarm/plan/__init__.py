@@ -7,7 +7,7 @@ Public interface:
 - ``execute(steps, windows, port, read_model, as_of, ...)``: run the query steps.
 """
 
-from seleric_swarm.plan._execute import execute
+from seleric_swarm.plan._execute import PERIOD_KEY, execute
 from seleric_swarm.plan._registry import AGENT_TEMPLATE_ID, plan, plan_notes, template_ids
 
-__all__ = ["AGENT_TEMPLATE_ID", "execute", "plan", "plan_notes", "template_ids"]
+__all__ = ["AGENT_TEMPLATE_ID", "PERIOD_KEY", "execute", "plan", "plan_notes", "template_ids"]

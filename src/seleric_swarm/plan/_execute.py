@@ -75,6 +75,10 @@ _EVIDENCE_IDENTITY_FIELDS = (
 _GRANULARITY_SUFFIXES = ("second", "minute", "hour", "day", "week", "month", "quarter", "year")
 
 
+# Row-dimension key carrying a grain bucket's start date (ISO) on per-period ResultSets.
+PERIOD_KEY = "period_start"
+
+
 class EvidenceStore(Protocol):
     """Persistence seam for EvidenceArtifact payloads (wired by the pipeline)."""
 
@@ -369,6 +373,9 @@ def _plain_rows(
             evidence_index=evidence_index,
             evidence_store=evidence_store,
         )
+        if bucket_date:
+            # The bucket's first day travels with the row, so per-period answers keep their time axis.
+            row_dimensions = {**row_dimensions, PERIOD_KEY: bucket_date}
         rows.append(ResultRow(evidence_id=evidence_id, dimensions=row_dimensions, value=value))
     return tuple(rows)
 

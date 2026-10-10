@@ -6,6 +6,7 @@ legacy mission (``start_shadow`` / ``collect_shadow``) behind ``UNDERSTAND_V2_MO
 (queries, derivations, the ``investigate`` engine).
 """
 
+from seleric_swarm.pipeline._engines import ExplorationMap, continue_exploration, follow_up_steps
 from seleric_swarm.pipeline._run_plan import PlanReader, PlanRun, findings_as_derivations, run_plan
 from seleric_swarm.pipeline._shadow import (
     LegacyDecision,
@@ -17,13 +18,16 @@ from seleric_swarm.pipeline._shadow import (
 )
 
 __all__ = [
+    "ExplorationMap",
     "LegacyDecision",
     "PlanReader",
     "PlanRun",
     "ShadowInputs",
     "ShadowModes",
     "collect_shadow",
+    "continue_exploration",
     "findings_as_derivations",
+    "follow_up_steps",
     "run_plan",
     "start_shadow",
     "summarise",

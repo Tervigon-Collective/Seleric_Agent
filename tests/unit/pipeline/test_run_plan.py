@@ -85,10 +85,10 @@ async def test_missing_input_and_unsupported_engine_are_recorded() -> None:
     p = AnalysisPlan(template_id="x", steps=(
         QueryStep(step_id="q1", metric_id="zz_take", breakdowns=(), filters=(), window_role="event", grain=None),
         DeriveStep(step_id="d1", op="delta", inputs=("q0", "q1")),
-        EngineStep(step_id="e1", engine="explore", params={}),
+        EngineStep(step_id="e1", engine="forecast", params={}),
     ))
     run = await run_plan(p, spec("lookup"), port=FactPort(), read_model=MODEL, as_of=AS_OF)
-    assert run.summary()["derive_errors"] == ["missing_input"] and run.unsupported == ["explore"]
+    assert run.summary()["derive_errors"] == ["missing_input"] and run.unsupported == ["forecast"]
 
 
 async def test_answer_over_run_evidence_verifies() -> None:

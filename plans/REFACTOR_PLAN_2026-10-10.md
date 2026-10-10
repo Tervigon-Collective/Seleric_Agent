@@ -675,7 +675,7 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | M4.1 | T1 | Claude (review) | `gaurav` | merged | | `context/`: calendar, incidents, freshness health, `config/context_providers.yaml`; 6 tests. Gap: change-log provider, domain-health snapshots | 2026-10-11 |
 | M4.2 | T2 | Claude (review) | `gaurav` | merged | | `graph/`: identity edges (composition/depends_on) + `config/causal_graph.yaml` causal edges, unknown nodes skipped; 4 tests. Gap: GCM adapter | 2026-10-10 |
 | M4.3 | T2 | Claude (review) | `gaurav` | merged | | `investigate/` controller (8 stages, resume, selector, budget); `INVESTIGATE_MODE`; 8 planted-incident tests. Not wired | 2026-10-10 |
-| M4.4 | T3 | OpenCode | | not started | | after M4.3 | 2026-10-10 |
+| M4.4 | T3 | Claude (review) | `gaurav` | merged | | `pipeline/_engines.py`: `explore` engine on typed daily reads, `ExplorationMap` (shown keys + typed follow-up EngineSteps), `continue_exploration` for "what else?"; `composition` engine. Overview routing to explore not switched (legacy) | 2026-10-10 |
 | M5.1 | T1 | OpenCode | | not started | | any time after M0.3 | 2026-10-10 |
 | M5.2 | T2 | Cursor | | not started | | after M3.3 | 2026-10-10 |
 | M5.3 | T3 | OpenCode | | not started | | after M2.1 templates | 2026-10-10 |

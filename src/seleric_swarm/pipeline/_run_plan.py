@@ -36,6 +36,7 @@ from seleric_swarm.investigate import (
     InvestigationState,
     Selector,
 )
+from seleric_swarm.pipeline._engines import ExplorationMap, run_composition, run_explore
 from seleric_swarm.plan import execute
 from seleric_swarm.semantic import SemanticPort, SemanticReadModel
 
@@ -78,6 +79,7 @@ class PlanRun:
     result_sets: list[ResultSet] = field(default_factory=list)
     derivations: list[Derivation] = field(default_factory=list)
     investigations: dict[str, InvestigationState] = field(default_factory=dict)
+    explorations: dict[str, ExplorationMap] = field(default_factory=dict)
     unsupported: list[str] = field(default_factory=list)  # engine ids the v2 path cannot run yet
 
     @property
@@ -91,6 +93,7 @@ class PlanRun:
             "derivations": len(self.derivations),
             "derive_errors": [d.error.code for d in self.derivations if d.error],
             "investigations": {k: v.status for k, v in self.investigations.items()},
+            "explorations": {k: len(v.insights) for k, v in self.explorations.items()},
             "unsupported": self.unsupported,
         }
 
@@ -120,14 +123,24 @@ async def run_plan(
             items[step.step_id] = d
             run.derivations.append(d)
         elif isinstance(step, EngineStep):
-            if step.engine != "investigate":
+            g = graph or build_graph(read_model)
+            if step.engine == "investigate":
+                state = await _investigate(step, spec, PlanReader(port, read_model, as_of), read_model,
+                                           g, providers, health_sources, selector, policy)
+                if state is not None:
+                    run.investigations[step.step_id] = state
+                    run.derivations += findings_as_derivations(step.step_id, state)
+            elif step.engine == "explore":
+                xmap, sets = await run_explore(step, spec, port=port, read_model=read_model, graph=g, as_of=as_of)
+                run.explorations[step.step_id] = xmap
+                run.result_sets += sets
+            elif step.engine == "composition":
+                sets, derived = await run_composition(step, spec, port=port, read_model=read_model, graph=g, as_of=as_of)
+                run.result_sets += sets
+                run.derivations += derived
+                items.update({rs.step_id: rs for rs in sets})
+            else:
                 run.unsupported.append(step.engine)
-                continue
-            state = await _investigate(step, spec, PlanReader(port, read_model, as_of), read_model,
-                                       graph or build_graph(read_model), providers, health_sources, selector, policy)
-            if state is not None:
-                run.investigations[step.step_id] = state
-                run.derivations += findings_as_derivations(step.step_id, state)
     return run
 
 
