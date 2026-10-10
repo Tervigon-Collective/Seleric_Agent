@@ -1,6 +1,6 @@
 # Seleric_Agent — modular refactor plan
 
-**Agents: read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) before every session.** Post findings and talk there. Update the status board in this file when a module starts, blocks, or lands. Every commit is on `gaurav`.
+**Agents: read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) before every session.** Post findings and talk there. Update the status board in this file when a module starts, blocks, or lands. Do not commit unless explicitly told. When a commit is requested, it goes on `gaurav`.
 
 ## Context
 
@@ -114,7 +114,7 @@ Each stage runs inside `stage_span(name, input_model, output_model)` (M0.3). No 
 - A legacy-deletion PR is prepared, to merge after the module reaches enforce.
 
 ### A8. Branch and PR workflow (for parallel agents)
-- Every change is committed on `gaurav`. If the work is on any other branch, move it onto `gaurav` and continue there. See the note in Part D.
+- Do not commit unless explicitly told. When a commit is requested, it goes on `gaurav`. If the work is on any other branch, move it onto `gaurav` and continue there. See the note in Part D.
 - Each change touches only its module's files plus wiring behind its flag. If you must edit a shared file (`pipeline/`, `config/settings.py`), add, never rewrite.
 - CI (M0.1) must pass on `gaurav`.
 
@@ -627,8 +627,8 @@ Phase 5:                                 M5.1  M5.2  M5.3  M5.4          (M5.1 m
 
 Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) at the start of every session. Post findings, questions, and handoffs there, and keep posting as the work moves. Module status stays in the board below.
 
-1. Every change is committed on the `gaurav` branch. If you are on any other branch now, move that work onto `gaurav` before the next commit and continue there. Do not open or keep a `mod/*` branch. The `Branch` column below is `gaurav`.
-2. On every session start, read `plans/AGENT_CHAT.md`. When you learn something another track needs, add a findings row. When you ask, answer, or hand off, append a chat line. Do this in the same commit as the code or the status change.
+1. Do not commit unless you are explicitly told to commit. Leave the work in the working tree. When a commit is requested, it goes on the `gaurav` branch. If you are on any other branch now, move that work onto `gaurav` before the next commit and continue there. Do not open or keep a `mod/*` branch. The `Branch` column below is `gaurav`.
+2. On every session start, read `plans/AGENT_CHAT.md`. When you learn something another track needs, add a findings row. When you ask, answer, or hand off, append a chat line. Do this in the same working-tree change as the code or the status update. Do not commit that change unless told.
 3. On starting a module, set its row below to `in progress` and append one log line.
 4. When blocked, set `blocked` and name the module you are waiting on in `Note`. Post the block in `plans/AGENT_CHAT.md`. Do not start a later module on your track to skip the block, except where this plan explicitly allows an early start (M4.1, M4.2, M5.1).
 5. When the change is ready for review, set `in review` and put the PR URL in `PR` if there is one.
@@ -642,15 +642,15 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 
 | Module | Track | Tool | Branch | Status | PR | Note | Updated |
 |---|---|---|---|---|---|---|---|
-| M0.1 | T1 | OpenCode | | not started | | | 2026-10-10 |
+| M0.1 | T1 | OpenCode | `gaurav` | merged | | Phase 0 complete: CI on all branches, import-linter, semantic-literal scanner + allowlist | 2026-10-11 |
 | M0.2 | T2 | Cursor | `gaurav` | merged | https://github.com/Tervigon-Collective/Seleric_Agent/pull/5 | landed on `gaurav` (`fdb43ce`); tag `contracts-v1` | 2026-10-10 |
-| M0.3 | T3 | OpenCode | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
-| M0.4 | T4 | OpenCode | `gaurav` | merged | | landed on `gaurav` (harness + golden seed + cassettes); rebased onto `contracts-v1` | 2026-10-10 |
-| M0.5 | T5 | Cursor | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
-| M0.6 | T1 | OpenCode | | not started | | after M0.1 | 2026-10-10 |
-| M1.1 | T1 | OpenCode | | not started | | after `contracts-v1` and M0.5; publish `QuestionDraft` | 2026-10-10 |
-| M1.2 | T2 | Cursor | `gaurav` | blocked | | waiting on M0.5 + M1.1 `QuestionDraft` (`contracts-v1` done) | 2026-10-10 |
-| M1.3 | T3 | OpenCode | | not started | | after M0.4 golden cases | 2026-10-10 |
+| M0.3 | T3 | OpenCode | `gaurav` | merged | | Phase 0 complete: `stage_span` / `configure_tracing` / Langfuse adapter / `replay_mission` + tests | 2026-10-11 |
+| M0.4 | T4 | OpenCode | `gaurav` | merged | | Phase 0 complete: `run_suite`, cassettes, scorer, report, golden seed, `Jenkinsfile.eval` | 2026-10-11 |
+| M0.5 | T5 | Cursor | `gaurav` | merged | | Phase 0 complete: `SemanticPort` / `SemanticReadModel` / MCP+fake adapters; `SEMANTIC_PORT_MODE` default `off` | 2026-10-11 |
+| M0.6 | T1 | OpenCode | `gaurav` | merged | | Phase 0 complete: validation `question` kwarg, executor unit fix, forecast dim validate, TurnRecord adopt | 2026-10-11 |
+| M1.1 | T1 | OpenCode | `gaurav` | not started | | Phase 1: publish `QuestionDraft` (unblocks T2 M1.2) | 2026-10-11 |
+| M1.2 | T2 | Cursor | `gaurav` | blocked | | Phase 0 done; waiting only on M1.1 `QuestionDraft` | 2026-10-11 |
+| M1.3 | T3 | OpenCode | `gaurav` | in progress | | after M0.4 golden cases; started 2026-10-11 | 2026-10-11 |
 | M1.4 | T1 | OpenCode | | not started | | after M1.2 merges; `spec/_clarify.py` only | 2026-10-10 |
 | M2.1 | T1 | OpenCode | | not started | | after M1.2 | 2026-10-10 |
 | M2.2 | T2 | Cursor | | not started | | after M1.2 | 2026-10-10 |
@@ -672,13 +672,18 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | Date | Track | Module | What changed |
 |---|---|---|---|
 | 2026-10-10 | — | — | Status board opened. T1/T3/T4 = OpenCode. T2/T5 = Cursor. M5.4 assigned to T5. |
+| 2026-10-10 | T3 | M0.3 | Started. contracts-v1 confirmed tagged on gaurav (fdb43ce); no rebase needed. Committing directly to gaurav per AGENT_CHAT, staging only my files. |
 | 2026-10-10 | T2 | M0.2 | Branch `mod/M0.2-pipeline-contracts` cut from `gaurav`; implementing Part B models. |
 | 2026-10-10 | T2 | M0.2 | PR open: https://github.com/Tervigon-Collective/Seleric_Agent/pull/5 — Part B models + dump/load/fingerprint; 40 unit tests. Tag `contracts-v1` after merge. |
 | 2026-10-10 | — | — | Every change lands on `gaurav`. Work already on another branch, including `mod/M0.2-pipeline-contracts`, moves onto `gaurav`. |
 | 2026-10-10 | — | — | Shared chat is `plans/AGENT_CHAT.md`. Read it each session. Post findings and messages there. |
+| 2026-10-10 | — | — | Do not commit unless explicitly told. Requested commits go on `gaurav`. |
 | 2026-10-10 | T2 | M0.2 | Fast-forwarded onto `gaurav` (`fdb43ce`). Closing mod/* PR; tagging `contracts-v1`. |
 | 2026-10-10 | T2 | M0.2 | Tagged `contracts-v1`. PR #5 merged. M1.2 blocked on M0.5 + M1.1 draft type. |
 | 2026-10-10 | T4 | M0.4 | Eval harness landed on `gaurav`: `seleric_swarm.evals` (`run_suite(cases, mode)`, replay/live/record), cassettes, scorer, report, `scripts/eval_run.py`, `Jenkinsfile.eval`, seed golden cases. Golden cases exist for T3's M1.3. |
+| 2026-10-10 | T5 | M0.5 | Started the semantic port on `gaurav` (working tree). `contracts-v1` is in. |
+| 2026-10-10 | T5 | M0.5 | Port is in the working tree (not committed). `from seleric_swarm.semantic import …` exports `SemanticPort`, `SemanticReadModel`, `McpSemanticPort`, `FakeSemanticPort`, plus `CatalogueError`, `ConceptResolution`, `MetricDefinition`, `MetricsQueryArgs`, `QueryResponse`, `ValueCandidates` (wider than the four entry points so callers never import `_` modules). Flag `SEMANTIC_PORT_MODE` default `off`. Bind runs after a successful warm. Tenant scope is `config/scope.yaml` (settings override). Fixture `tests/fixtures/catalogue/snapshot.json` is a `zz_*` schema sample until `scripts/record_catalogue_fixture.py` is run. Direct `catalogue_*` calls stay until enforce. Local: 37 tests passed; mypy clean on `semantic` + bootstrap shim. |
+| 2026-10-11 | — | Phase 0 | Phase 0 complete (M0.1–M0.6). Status board synced. Phase 1 open: T1 M1.1 → T2 M1.2; T3 M1.3 in progress. |
 
 ## Part E — Files you will touch most (and the rule for each)
 - `agent/runner.py` (1,827 lines): **do not add logic**. M1.2/M2.x/M3.x move stage code into `pipeline/mission.py` (`run_mission(question, deps) -> AnswerDocument`), and `run_v3_mission` becomes a thin adapter. Each module removes its block from `runner.py` when it reaches enforce.
