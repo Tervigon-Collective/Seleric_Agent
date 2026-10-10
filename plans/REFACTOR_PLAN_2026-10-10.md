@@ -630,13 +630,13 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 1. Every change is committed on the `gaurav` branch. If you are on any other branch now, move that work onto `gaurav` before the next commit and continue there. Do not open or keep a `mod/*` branch. The `Branch` column below is `gaurav`.
 2. On every session start, read `plans/AGENT_CHAT.md`. When you learn something another track needs, add a findings row. When you ask, answer, or hand off, append a chat line. Do this in the same commit as the code or the status change.
 3. On starting a module, set its row below to `in progress` and append one log line.
-3. When blocked, set `blocked` and name the module you are waiting on in `Note`. Do not start a later module on your track to skip the block, except where this plan explicitly allows an early start (M4.1, M4.2, M5.1).
-4. When the change is ready for review, set `in review` and put the PR URL in `PR` if there is one.
-5. When the module is on `gaurav` and its checks pass, set `merged`, add the date, and append one log line. Then start the next module on your track.
-6. Edit only your own rows. You may append a log line if you unblocked another track. Do not rewrite another track's status or delete log lines.
-7. A change contains that module's package, its tests, and its README, plus one flag line in `config/settings.py` (`Literal["off","shadow","enforce"]`, default `"off"`). Do not edit another module's flag. Do not add logic to `agent/runner.py`.
-8. After `contracts-v1`, only T2 changes a frozen contract, and only with an ADR.
-9. If the plan itself is wrong, change the module text in the same change and say so in the log. Status rows and the log stay in this file so the next agent sees the truth.
+4. When blocked, set `blocked` and name the module you are waiting on in `Note`. Post the block in `plans/AGENT_CHAT.md`. Do not start a later module on your track to skip the block, except where this plan explicitly allows an early start (M4.1, M4.2, M5.1).
+5. When the change is ready for review, set `in review` and put the PR URL in `PR` if there is one.
+6. When the module is on `gaurav` and its checks pass, set `merged`, add the date, and append one log line. Then start the next module on your track.
+7. Edit only your own rows. You may append a log line if you unblocked another track. Do not rewrite another track's status or delete log lines.
+8. A change contains that module's package, its tests, and its README, plus one flag line in `config/settings.py` (`Literal["off","shadow","enforce"]`, default `"off"`). Do not edit another module's flag. Do not add logic to `agent/runner.py`.
+9. After `contracts-v1`, only T2 changes a frozen contract, and only with an ADR.
+10. If the plan itself is wrong, change the module text in the same change and say so in the log and in `plans/AGENT_CHAT.md`. Status rows and the log stay in this file so the next agent sees the truth.
 
 **Status board.** Values: `not started` | `in progress` | `blocked` | `in review` | `merged`.
 
@@ -649,7 +649,7 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | M0.5 | T5 | Cursor | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
 | M0.6 | T1 | OpenCode | | not started | | after M0.1 | 2026-10-10 |
 | M1.1 | T1 | OpenCode | | not started | | after `contracts-v1` and M0.5; publish `QuestionDraft` | 2026-10-10 |
-| M1.2 | T2 | Cursor | | not started | | after `contracts-v1`, M0.5, and M1.1 draft type | 2026-10-10 |
+| M1.2 | T2 | Cursor | `gaurav` | blocked | | waiting on M0.5 + M1.1 `QuestionDraft` (`contracts-v1` done) | 2026-10-10 |
 | M1.3 | T3 | OpenCode | | not started | | after M0.4 golden cases | 2026-10-10 |
 | M1.4 | T1 | OpenCode | | not started | | after M1.2 merges; `spec/_clarify.py` only | 2026-10-10 |
 | M2.1 | T1 | OpenCode | | not started | | after M1.2 | 2026-10-10 |
@@ -675,7 +675,9 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | 2026-10-10 | T2 | M0.2 | Branch `mod/M0.2-pipeline-contracts` cut from `gaurav`; implementing Part B models. |
 | 2026-10-10 | T2 | M0.2 | PR open: https://github.com/Tervigon-Collective/Seleric_Agent/pull/5 — Part B models + dump/load/fingerprint; 40 unit tests. Tag `contracts-v1` after merge. |
 | 2026-10-10 | — | — | Every change lands on `gaurav`. Work already on another branch, including `mod/M0.2-pipeline-contracts`, moves onto `gaurav`. |
+| 2026-10-10 | — | — | Shared chat is `plans/AGENT_CHAT.md`. Read it each session. Post findings and messages there. |
 | 2026-10-10 | T2 | M0.2 | Fast-forwarded onto `gaurav` (`fdb43ce`). Closing mod/* PR; tagging `contracts-v1`. |
+| 2026-10-10 | T2 | M0.2 | Tagged `contracts-v1`. PR #5 merged. M1.2 blocked on M0.5 + M1.1 draft type. |
 
 ## Part E — Files you will touch most (and the rule for each)
 - `agent/runner.py` (1,827 lines): **do not add logic**. M1.2/M2.x/M3.x move stage code into `pipeline/mission.py` (`run_mission(question, deps) -> AnswerDocument`), and `run_v3_mission` becomes a thin adapter. Each module removes its block from `runner.py` when it reaches enforce.
