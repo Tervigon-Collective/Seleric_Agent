@@ -79,6 +79,15 @@ def test_the_planner_runs_at_its_own_reasoning_effort(monkeypatch) -> None:
     assert seen == {"role_tuning": False, "reasoning_effort": "low"}
 
 
+def test_the_planner_falls_back_down_the_agent_chain(monkeypatch) -> None:
+    import json
+
+    seen: dict = {}
+    monkeypatch.setattr(model, "resolve_v3_model", lambda settings, **kw: seen.update(models=settings.azure_openai_models) or "m")
+    model.resolve_planner_model(_settings(azure_openai_planner_model="p", azure_openai_models='["a", "p", "b"]'))
+    assert json.loads(seen["models"]) == ["p", "a", "b"]
+
+
 
 def test_a_same_hours_companion_never_replaces_the_full_period_value() -> None:
     """Golden Q6 2026-10-08: Sep 1-8 net sales 696,778 came back with a 00:00-02:00

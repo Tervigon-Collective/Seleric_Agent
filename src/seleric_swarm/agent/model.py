@@ -136,8 +136,16 @@ def resolve_planner_model(settings: Settings) -> Model:
         return resolve_v3_model(settings)
     import json
 
+    # The planner deployment first, then the agent's chain behind it: alone, one rate-limited call left the
+    # question un-understood and unplanned, and the agent answered without a plan (regression 2026-10-10 Q13:
+    # 429 on gpt-5-mini, partial). The effort tuning stays the planner deployment's (primary only).
+    try:
+        rest = [str(m) for m in json.loads(getattr(settings, "azure_openai_models", "") or "[]")]
+    except (TypeError, ValueError):
+        rest = []
+    chain = [name, *[m for m in rest if m != name]]
     only = settings.model_copy(
-        update={"azure_openai_models": json.dumps([name]), "azure_openai_fast_model": ""}
+        update={"azure_openai_models": json.dumps(chain), "azure_openai_fast_model": ""}
     )
     effort = (getattr(settings, "azure_openai_planner_reasoning_effort", "") or "").strip()
     return resolve_v3_model(only, role_tuning=False, reasoning_effort=effort)
