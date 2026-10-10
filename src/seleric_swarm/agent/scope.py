@@ -229,6 +229,81 @@ def value_filters_from_resolution(resolution: dict | None) -> tuple[ValueFilter,
     return tuple(filters)
 
 
+# Characters that join the parts of a recorded name ("TH-383-SUSPENDER-26SEP-ADV+", "a/b", "x_y"): a value written
+# out in the question must not continue into one of them, or "TH-383-SUSPENDER" would match inside the longer name.
+_NAME_JOINERS = r"\w\-+/"
+
+
+def _name_tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def promote_verbatim_values(resolution: dict | None, question: str) -> dict | None:
+    """A recorded value the question writes out whole is an exact match of that value.
+
+    The gateway matches the question word by word, so a punctuated name comes back split: "TH-383-SUSPENDER-
+    26SEP-ADV+" was only a 0.6-coverage token hit of the term "suspender 26sep adv", while its fragment "adv"
+    matched the zero-row value "Adv+" exactly — the campaign never became a filter and every query, the
+    diagnosis included, ran on the whole account (live 2026-10-10 thread_066b9cd1). Any value the resolver
+    returned that appears in the question as a whole name (case aside, not continuing into a longer one) becomes
+    one exact term on every dimension holding it; the longest such name wins where names overlap, and the
+    fragment terms inside it — words that do not occur elsewhere in the question — are dropped. Only names of two
+    or more parts: single words the gateway already matches exactly."""
+    if not resolution or not question:
+        return resolution
+    terms = list(resolution.get("terms") or [])
+    found: dict[str, dict[str, Any]] = {}  # value (lower) → {value, span, dims}
+    for term in terms:
+        if term.get("catalogue_vocabulary"):
+            continue
+        for d in term.get("dimensions") or []:
+            for v in d.get("values") or []:
+                value = str(v.get("value") or "")
+                if len(_name_tokens(value)) < 2 or float(v.get("volume") or 0) <= 0:
+                    continue
+                pattern = rf"(?<![{_NAME_JOINERS}]){re.escape(value)}(?![{_NAME_JOINERS}])"
+                hit = re.search(pattern, question, flags=re.IGNORECASE)
+                if hit is None:
+                    continue
+                entry = found.setdefault(value.lower(), {"value": value, "span": hit.span(), "dims": {}})
+                dim = str(d.get("dimension") or "")
+                if dim and dim not in entry["dims"]:
+                    entry["dims"][dim] = {
+                        "dimension": dim,
+                        "view": d.get("view"),
+                        "values": [{"value": value, "volume": v.get("volume"), "match": "exact"}],
+                        "metrics": d.get("metrics") or [],
+                    }
+    if not found:
+        return resolution
+    # Longest name first; a name inside an accepted one is part of it, not a second value.
+    spans: list[tuple[int, int]] = []
+    promoted: list[dict[str, Any]] = []
+    for entry in sorted(found.values(), key=lambda e: e["span"][0] - e["span"][1]):
+        start, end = entry["span"]
+        if any(start < e and s < end for s, e in spans):
+            continue
+        spans.append((start, end))
+        promoted.append({
+            "term": question[start:end].lower(),
+            "catalogue_vocabulary": False,
+            "best_match": "exact",
+            "dimensions": list(entry["dims"].values()),
+        })
+    rest = question
+    for s, e in sorted(spans, reverse=True):
+        rest = rest[:s] + " " + rest[e:]
+    inside = {t for s, e in spans for t in _name_tokens(question[s:e])}
+    outside = set(_name_tokens(rest))
+    kept = [
+        t for t in terms
+        if not (toks := _name_tokens(str(t.get("term") or "")))
+        or not set(toks) <= inside
+        or set(toks) & outside
+    ]
+    return {**resolution, "terms": [*promoted, *kept]}
+
+
 def question_axes_from_resolution(resolution: dict | None) -> tuple[tuple[str, str], ...]:
     """The axes the gateway read from the question's own words (``axes`` on the resolve-values payload)."""
     axes = (resolution or {}).get("axes") or {}

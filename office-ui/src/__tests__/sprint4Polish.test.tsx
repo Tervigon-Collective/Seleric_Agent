@@ -3,7 +3,8 @@ import type { DataMessagePartProps } from "@assistant-ui/react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
-import { SelericFeedback } from "../components/Transcript";
+import { SelericFeedback, SelericContext } from "../components/Transcript";
+import { splitAnswerAndContext } from "../providers/SelericAssistantRuntime";
 import { conversationsApi } from "../api/conversations";
 import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
@@ -43,6 +44,7 @@ describe("answer feedback", () => {
   });
 
   it("restores the saved vote and submits a new one", async () => {
+    useConversationStore.setState({ demoMode: false });
     vi.spyOn(conversationsApi, "getFeedback").mockResolvedValue({
       id: "f1", workspace_id: "w", owner_user_id: "u", thread_id: "t1",
       message_id: "m1", run_id: "r1", rating: "up", note: "",
@@ -65,6 +67,7 @@ describe("answer feedback", () => {
   });
 
   it("sends an optional note with a down vote", async () => {
+    useConversationStore.setState({ demoMode: false });
     vi.spyOn(conversationsApi, "getFeedback").mockResolvedValue(null);
     const submit = vi.spyOn(conversationsApi, "submitFeedback").mockResolvedValue({
       id: "f2", workspace_id: "w", owner_user_id: "u", thread_id: "t1",
@@ -94,6 +97,50 @@ describe("answer feedback", () => {
     expect(submit).toHaveBeenLastCalledWith(
       "t1", "m1", { rating: "down", note: "wrong metric", runId: "r1" },
     );
+  });
+
+  it("votes locally in demo mode without calling the API", async () => {
+    useConversationStore.setState({ demoMode: true });
+    const get = vi.spyOn(conversationsApi, "getFeedback");
+    const submit = vi.spyOn(conversationsApi, "submitFeedback");
+    act(() => root.render(<SelericFeedback {...feedbackProps(data)} />));
+    await act(async () => undefined);
+    act(() => (container.querySelector(
+      '[aria-label="Mark answer helpful"]',
+    ) as HTMLButtonElement).click());
+    const up = container.querySelector('[aria-label="Mark answer helpful"]') as HTMLButtonElement;
+    expect(up.getAttribute("aria-pressed")).toBe("true");
+    expect(get).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+    expect(container.querySelector(".feedback-error")).toBeNull();
+  });
+});
+
+describe("answer context footer", () => {
+  it("lifts the Period/Currency/Data-as-of line out of the answer", () => {
+    const raw = [
+      "Total sales were INR 143,282 on 2026-10-08.",
+      "",
+      "Period: 2026-10-08..2026-10-08 · Currency: INR · Data as of 2026-10-09",
+    ].join("\n");
+    const { answer, context } = splitAnswerAndContext(raw);
+    expect(answer).toBe("Total sales were INR 143,282 on 2026-10-08.");
+    expect(context).toContain("Period:");
+    expect(context).toContain("Data as of 2026-10-09");
+  });
+
+  it("leaves answers without metadata untouched", () => {
+    const raw = "Hello world, no footer here.";
+    expect(splitAnswerAndContext(raw)).toEqual({ answer: raw, context: null });
+  });
+
+  it("renders context as a muted line and nothing when empty", () => {
+    const props = (text: string) =>
+      ({ data: { text }, type: "data-seleric-context", name: "seleric-context" }) as unknown as DataMessagePartProps;
+    act(() => root.render(<SelericContext {...props("Period: 2026-10-08 · Currency: INR")} />));
+    expect(container.querySelector(".message-context")?.textContent).toContain("Period:");
+    act(() => root.render(<SelericContext {...props("  ")} />));
+    expect(container.querySelector(".message-context")).toBeNull();
   });
 });
 

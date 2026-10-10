@@ -224,6 +224,10 @@ def compose_plan(
     else:
         hours = ""
     breakdowns = [d for d in slots.breakdown_dimensions if dim_ok(d)]
+    if slots.shape == "why_single_metric":
+        # A diagnosis is already read day by day: "by event_date" is its grain, not a mapping step (a separate
+        # orders-by-event_date query returned an undated row of 16 beside one of 1, live 2026-10-10).
+        breakdowns = [d for d in breakdowns if not catalogue.is_time_dimension(d)]
     notes.extend(f"no dimension {d}" for d in slots.breakdown_dimensions if not dim_ok(d))
     shape = slots.shape
     if shape == "why_single_metric" and today_running:
@@ -343,7 +347,7 @@ def compose_plan(
                 period=ref_text,
                 purpose=(
                     "Diagnose the change once and answer from its ANSWER SKELETON."
-                    + (f" Pass drivers={named} — the measures the user named as possible explanations — and "
+                    + (f" Pass drivers={named} — the measures to check as possible explanations — and "
                        "address each of them in the answer." if named else "")
                 ),
             )

@@ -140,6 +140,9 @@ class SelericDeps:
     # validation/signals.py::check_scope_coverage to prove the executed evidence
     # covers what was asked. Default-empty ⇒ the check is NOT_APPLICABLE.
     required_scope: RequiredScope = field(default_factory=RequiredScope)
+    # Typed once-per-turn decision (agent/query_spec.py). None when the feature
+    # is off or understand failed. Prefer this over reparsing the question.
+    query_spec: Any | None = None
     # Real per-mission execution-limit enforcement (agent/limits.py). Not a
     # dataclass default_factory: ExecutionBudgetTracker needs this same
     # instance's own `limits`, so it's built in __post_init__ instead — every

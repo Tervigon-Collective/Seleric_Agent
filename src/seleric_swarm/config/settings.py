@@ -94,8 +94,21 @@ class Settings(BaseSettings):
     # Per-role deployments on AZURE_OPENAI_ENDPOINT (2026-10-07). Empty = the agent model.
     # planner: reads the question into PlanSlots (agent/plan.py).
     azure_openai_planner_model: str = ""
-    # The planner's reasoning effort ("low", "medium", ...); empty = provider default.
+    # The planner's reasoning effort ("low", "medium", "high"); empty = provider default.
     azure_openai_planner_reasoning_effort: str = ""
+    # Tool-call turns of the agent loop. Empty = the normal model chain, one model
+    # for tools and the answer. Set with azure_openai_answer_model to split them.
+    azure_openai_tool_model: str = ""
+    # Sampling temperature for the tool-call model only. None = do not send one.
+    # gpt-5-mini rejects every temperature except the default, so this stays off
+    # the answer model.
+    azure_openai_tool_temperature: float | None = None
+    # Final-answer deployment. Empty = the tool-call model also writes the answer.
+    azure_openai_answer_model: str = ""
+    # Reasoning effort for that answer. "none" is off. Empty = provider default.
+    azure_openai_answer_reasoning_effort: str = ""
+    # Same, for diagnostic intents (why / causal). Empty = the ordinary answer effort.
+    azure_openai_answer_diagnosis_reasoning_effort: str = ""
     # helper: short single-shot calls — value sense, business-state fast answer, /llm ping.
     azure_openai_helper_model: str = ""
     azure_openai_api_version: str = "2024-05-01-preview"
@@ -135,6 +148,9 @@ class Settings(BaseSettings):
     mcp_config_path: str = "config/mcp_servers.yaml"
     seleric_mcp_url: str = ""
     seleric_mcp_token: str = ""
+    # Chronos-2 standalone inference service (chronos/docker-compose.yml).
+    # Empty → forecast pipeline skips Chronos and falls back to ETS.
+    chronos_base_url: str = ""
     # Catalogue LTM (long-term, cross-mission) semantic index — replaces the
     # remote catalogue_search_metrics/catalogue_resolve_term round trips in
     # toolsets/semantic.py::search_semantics with a local Qdrant search kept
@@ -187,6 +203,16 @@ class Settings(BaseSettings):
     # POST /v1/missions run Agent[SelericDeps, MissionResult] instead of
     # swarm_v2. Sprint 5: V3 is now the only mission path, default True.
     v3_agent_enabled: bool = True
+
+    # QuerySpec migration (agent/query_spec.py): decide intent once from the
+    # understand call, then execute/check against that typed spec instead of
+    # re-scanning the raw question with regex. off = legacy only; shadow =
+    # build+log disagreements, still execute legacy; enforce = consumers read
+    # the validated spec (fail-open to legacy when the spec has no windows).
+    query_spec_mode: Literal["off", "shadow", "enforce"] = Field(
+        default="shadow",
+        validation_alias=AliasChoices("query_spec_mode", "QUERY_SPEC_MODE"),
+    )
 
     workflow_version: str = "1.0.0"
 

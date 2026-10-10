@@ -41,6 +41,7 @@ from seleric_swarm.toolsets import (
     diagnosis,
     experiments,
     exploration,
+    forecasting,
     knowledge,
     models,
     sandbox,
@@ -81,7 +82,8 @@ TOOLS: list[Any] = [
     exploration.explore_data,
     # estimate_effect runs its refuters itself; refute_estimate only re-ran them.
     causal.estimate_effect,
-    models.forecast,
+    forecasting.forecast_metrics,
+    models.forecast,  # evidence-only ETS; hidden when forecast_metrics is registered
     # propose_action validates and previews; validate/preview only re-read it.
     actions.propose_action,
     actions.commit_action,
@@ -108,7 +110,11 @@ def unbacked_tools(*, allow_writes: bool) -> frozenset[str]:
         approved = {
             rec.model_type for rec in (registry.get(i) for i in registry.ids()) if rec and rec.status == "approved"
         }
-        if "forecast" not in approved:
+        # Governed pipeline tool is always preferred; hide the evidence-only ETS
+        # forecast when forecast_metrics is registered (P2).
+        if "forecast_metrics" in {getattr(fn, "__name__", "") for fn in TOOLS}:
+            hidden.add("forecast")
+        elif "forecast" not in approved:
             hidden.add("forecast")
     except Exception:  # noqa: S110 - availability is advisory; the tool still refuses on its own
         pass
@@ -178,6 +184,7 @@ CONVERSATIONAL = "conversational"
 # data (agent/executor.py): the agent then sees only the tools it may still need,
 # not all of them (~6k tokens of schemas on every step).
 PREFETCHED = "plan_prefetched"
+FORECAST_PREFETCHED = "forecast_prefetched"
 _PREFETCHED_TOOLS = frozenset(
     {
         "query_metrics",
@@ -189,6 +196,18 @@ _PREFETCHED_TOOLS = frozenset(
         "run_python",
         "generate_visualization",
         "break_down_metric",
+    }
+)
+# Forecast missions: follow-ups ("and Meta only?") re-enter via forecast_metrics.
+_FORECAST_PREFETCHED_TOOLS = frozenset(
+    {
+        "forecast_metrics",
+        "generate_visualization",
+        "query_metrics",
+        "semantic_sql",
+        "drilldown",
+        "get_metric_definitions",
+        "find_metrics",
     }
 )
 
@@ -216,7 +235,9 @@ async def _withdraw_data_tools(
         return []
     if counts.get(LIVE_DATA_UNAVAILABLE):
         tool_defs = [t for t in tool_defs if t.name in _STILL_AVAILABLE_WITHOUT_LIVE_DATA]
-    if counts.get(PREFETCHED):
+    if counts.get(FORECAST_PREFETCHED):
+        tool_defs = [t for t in tool_defs if t.name in _FORECAST_PREFETCHED_TOOLS]
+    elif counts.get(PREFETCHED):
         tool_defs = [t for t in tool_defs if t.name in _PREFETCHED_TOOLS]
     withdrawn = withdrawn_tools(ctx.deps)
     return [t for t in tool_defs if t.name not in withdrawn]

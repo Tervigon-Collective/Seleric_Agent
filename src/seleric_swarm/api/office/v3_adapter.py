@@ -27,6 +27,8 @@ _ARTIFACT_TYPE_TO_BUCKET = {
     "finding": "hypothesis",
     "causal": "causal",
     "prediction": "prediction",
+    "forecast": "prediction",
+    "forecast_input": "evidence",
 }
 
 
@@ -68,7 +70,7 @@ def _mission_events(
     if buckets.get("causal"):
         tool_beats.append(("estimate_effect", "Estimating causal effect"))
     if buckets.get("prediction"):
-        tool_beats.append(("forecast", "Forecasting"))
+        tool_beats.append(("forecast_metrics", "Forecasting"))
     for tool, summary in tool_beats:
         events.append(
             {

@@ -35,6 +35,12 @@ services:
       CUDA_VISIBLE_DEVICES: ""
       BATCH_SIZE: "1"
       MAX_SERIES_PER_REQUEST: "10"
+      QUEUE_WAIT_SECONDS: "15"
+      MODEL_REVISION: ""
+      MODEL_ID_SMALL: autogluon/chronos-2-small
+      MAX_TASKS_PER_REQUEST: "8"
+      MAX_TARGETS_PER_TASK: "4"
+      MAX_COVARIATES_PER_TASK: "8"
     volumes:
       - chronos_model_cache:/models
     networks:

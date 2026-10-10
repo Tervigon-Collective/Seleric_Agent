@@ -497,6 +497,13 @@ def _mission_values(deps: SelericDeps) -> list[float]:
                     rollups[group] = rollups.get(group, 0.0) + float(value)
         elif artifact.artifact_type == "finding":
             walk(payload.get("metrics"))
+        elif artifact.artifact_type == "prediction":
+            # Horizon totals + interval from the forecast pipeline (live 2026-10-10:
+            # skeleton figures 312500/198500/500100 were revised as unbacked).
+            walk(payload.get("value"))
+            walk(payload.get("confidence_interval"))
+        elif artifact.artifact_type == "forecast":
+            walk(payload.get("targets"))
         elif artifact.artifact_type == "signal":
             walk(payload.get("signals"))
     values.extend(rollups.values())

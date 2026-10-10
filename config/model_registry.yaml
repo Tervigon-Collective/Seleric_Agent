@@ -100,6 +100,45 @@ models:
     drift_policy: warn
     fallback: null
 
+  # Chronos-2 engines (governed by forecasting/policies.py bundles). Status is
+  # candidate until an offline backtest promotes a metric-specific bundle; the
+  # pipeline may still call the service for provisional forecasts.
+  - id: forecast.chronos2
+    version: "1"
+    type: forecast
+    status: candidate
+    owner: forecasting
+    target: "*"
+    forecast_horizon_days: 90
+    last_validated_at: null
+    backtest_available: false
+    huggingface:
+      model_id: amazon/chronos-2
+      revision: ""  # pin sha at promotion time
+    applicability:
+      minimum_history_days: 120
+      supports_seasonality: true
+    drift_policy: warn
+    fallback: forecast.ets
+
+  - id: forecast.chronos2_small
+    version: "1"
+    type: forecast
+    status: candidate
+    owner: forecasting
+    target: "*"
+    forecast_horizon_days: 90
+    last_validated_at: null
+    backtest_available: false
+    huggingface:
+      model_id: autogluon/chronos-2-small
+      revision: ""
+    applicability:
+      minimum_history_days: 120
+      supports_seasonality: true
+    drift_policy: warn
+    fallback: forecast.ets
+
   # LTV and propensity are deliberately absent, not forgotten.
   #
   # Both need a labelled training set and a feature store; this repo has

@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import math
+import statistics
 import time
 from datetime import date, datetime, timedelta
 from typing import Any, Literal
@@ -450,6 +451,11 @@ def _summary(report: engine.DiagnosisReport, lineage: dict[str, engine.MetricMet
     return "\n".join(lines)
 
 
+# A lever is judged against at least this many of its own normal days, and is out of line beyond this robust z.
+_NORMAL_MIN_DAYS = 5
+_NORMAL_Z = 2.0
+
+
 def _named_driver_lines(
     named: list[str],
     series: dict[str, dict[date, float]],
@@ -457,20 +463,29 @@ def _named_driver_lines(
     reference_days: list[date],
     lineage: dict[str, engine.MetricMeta],
     report: engine.DiagnosisReport,
+    history_days: list[date] | None = None,
 ) -> tuple[str, dict[str, float]]:
-    """The drivers the user asked about, each with its move over the event vs the reference days and its test
-    verdict — so the answer addresses every hypothesis the user raised, largest move first. An average per day
-    keeps windows of different lengths comparable; it is a move, not a contribution, unless a verdict says so."""
+    """The drivers to address, each with its move over the event vs the reference days and its test verdict — so
+    the answer addresses every hypothesis, and each lever is judged against its OWN normal days: a lever outside
+    the range it keeps on ordinary days is where the entity broke, and it is listed first. "Why did the campaign
+    not perform yesterday compared to the other days" listed twelve moves against one day, never said which lever
+    was out of line, and the answer named nothing (live 2026-10-10 thread_066b9cd1). An average per day keeps
+    windows of different lengths comparable; it is a move, not a contribution, unless a verdict says so."""
     verdicts = {f.driver: f for f in report.drivers}
     rows: list[tuple[float, str]] = []
     figures: dict[str, float] = {}
+    # The days a lever's normal range is read from: the reference days when there are enough of them, else the
+    # last two weeks before the event.
+    normal_days = reference_days if len(reference_days) >= _NORMAL_MIN_DAYS else [
+        d for d in (history_days or []) if d < min(event_days, default=date.max)
+    ][-14:]
     for m in named:
         vals = series.get(m) or {}
         ev = [vals[d] for d in event_days if d in vals]
         rf = [vals[d] for d in reference_days if d in vals]
         label = engine._label(m, lineage)
         if not ev or not rf:
-            rows.append((-1.0, f"{label}: no data over these days, so it could not be checked"))
+            rows.append((-1.0, f"{label}: no data for this scope over these days, so it could not be checked"))
             continue
         e_avg, r_avg = sum(ev) / len(ev), sum(rf) / len(rf)
         rel = (e_avg / r_avg - 1) if abs(r_avg) > 1e-12 else math.nan
@@ -479,19 +494,66 @@ def _named_driver_lines(
         if math.isfinite(rel):
             figures[f"{m} | change"] = rel
         move = f"{label} {engine._val(r_avg, m, lineage)} → {engine._val(e_avg, m, lineage)} per day ({engine._chg(e_avg, r_avg)})"
+        usual = [vals[d] for d in normal_days if d in vals and math.isfinite(vals[d])]
+        z = math.nan
+        if len(usual) >= _NORMAL_MIN_DAYS:
+            med = statistics.median(usual)
+            scale = 1.4826 * statistics.median(abs(u - med) for u in usual) or statistics.pstdev(usual)
+            z = (e_avg - med) / scale if scale > 1e-12 else math.nan
+            span = f"{engine._val(min(usual), m, lineage)}–{engine._val(max(usual), m, lineage)}"
+            if math.isfinite(z) and abs(z) >= _NORMAL_Z:
+                move += f"; OUTSIDE its own usual range ({span} on {len(usual)} normal days), {'above' if z > 0 else 'below'} it"
+            else:
+                move += f"; within its own usual range ({span} on {len(usual)} normal days)"
+            if math.isfinite(z):
+                figures[f"{m} | z vs its own normal days"] = z
         f = verdicts.get(m)
         if f is not None and f.status == "implicated" and f.classification:
             verdict = f"tested: {f.classification.replace('_', ' ')}"
         elif f is not None:
             verdict = f"tested: {f.status.replace('_', ' ')}" + (f" ({f.reason})" if f.reason else "")
         else:
-            verdict = "described, not tested as a cause (a rate, or a period comparison)"
-        rows.append((abs(rel) if math.isfinite(rel) else -1.0, f"{move} — {verdict}"))
+            verdict = ("a rate (or a period comparison), not tested as a cause: its share of the change is in the "
+                       "exact split when one is given")
+        out_of_range = math.isfinite(z) and abs(z) >= _NORMAL_Z
+        rank = (1e6 + abs(z)) if out_of_range else (abs(rel) if math.isfinite(rel) else -1.0)
+        rows.append((rank, f"{move} — {verdict}"))
     rows.sort(key=lambda r: -r[0])
     return (
-        "DRIVERS THE USER ASKED ABOUT (address every one, in this order — the size of each move; only a tested "
-        "cause may be called a cause): " + "; ".join(text for _, text in rows) + "."
+        "DRIVERS TO ADDRESS (every one, in this order — levers OUTSIDE their own usual range first: lead with them "
+        "as where it broke, then the size of each move; when none is outside its range, say that no lever broke "
+        "from its normal and the day was ordinary variation for this entity; only a tested cause may be called a "
+        "cause; never say the user named them): " + "; ".join(text for _, text in rows) + "."
     ), figures
+
+
+def _outcome_on_its_normal_days(
+    metric: str,
+    series: dict[str, dict[date, float]],
+    event_days: list[date],
+    reference_days: list[date],
+    history_days: list[date],
+    lineage: dict[str, engine.MetricMeta],
+) -> str:
+    """Where the outcome sits among its own normal days. "Why did the campaign not perform yesterday" had a
+    structural answer — net ROAS 0–0.90 on every one of its normal days, never breaking even — and the answer only
+    said the day was within normal variation (live 2026-10-10 thread_066b9cd1)."""
+    vals = series.get(metric) or {}
+    days = reference_days if len(reference_days) >= _NORMAL_MIN_DAYS else [
+        d for d in history_days if d < min(event_days, default=date.max)
+    ][-14:]
+    usual = [vals[d] for d in days if d in vals and math.isfinite(vals[d])]
+    ev = [vals[d] for d in event_days if d in vals and math.isfinite(vals[d])]
+    if len(usual) < _NORMAL_MIN_DAYS or not ev:
+        return ""
+    show = lambda v: engine._val(v, metric, lineage)  # noqa: E731
+    return (
+        f"THE OUTCOME ON ITS OWN NORMAL DAYS: {engine._label(metric, lineage)} ranged {show(min(usual))}–"
+        f"{show(max(usual))} (median {show(statistics.median(usual))}) over {len(usual)} normal days; "
+        f"{', '.join(str(d) for d in event_days)}: {show(sum(ev) / len(ev))}. Say where the day sits in that range; "
+        "when the whole range is poor for this measure (a loss, a return below what was spent), say the entity "
+        "under-performs on ordinary days too — a standing problem, not this day's."
+    )
 
 
 def _base_form(
@@ -516,7 +578,7 @@ def _ratio_split(
     event_days: list[date],
     reference_days: list[date],
 ) -> tuple[str, dict[str, float]]:
-    """An exact multiplicative split of a ratio outcome through the rates the user named.
+    """An exact multiplicative split of an outcome (a ratio, or a total the rates rebuild) through the named rates.
 
     Every metric is written over additive bases (verified identities). The top split uses as few named rates as
     rebuild the outcome with the fewest bases left over; what is left is one more factor named after its bases,
@@ -530,8 +592,13 @@ def _ratio_split(
     import numpy as np
 
     out = _base_form(outcome, lineage, series, history_days)
-    if out is None or lineage.get(outcome, engine.MetricMeta(outcome)).additive:
+    if out is None:
         return "", {}
+    # An additive outcome splits the same way when the named rates rebuild it: gross sales = sessions × conversion
+    # rate × order value. Left out, every rate behind a sales or profit drop was "described, not tested" and the
+    # answer named no driver while conversion had halved on flat traffic (live 2026-10-10 thread_066b9cd1). A split
+    # that leaves the outcome itself in its leftover factor explains nothing and is never taken.
+    additive_outcome = lineage.get(outcome, engine.MetricMeta(outcome)).additive
     forms = {m: f for m in named if m != outcome and (f := _base_form(m, lineage, series, history_days)) is not None
              and not lineage.get(m, engine.MetricMeta(m)).additive}
     if not forms:
@@ -552,7 +619,9 @@ def _ratio_split(
             v *= a**e
         return v
 
-    def split(target: np.ndarray, cands: list[str], exact: bool) -> tuple[dict[str, int], dict[str, float]] | None:
+    def split(
+        target: np.ndarray, cands: list[str], exact: bool, deepest: bool = False
+    ) -> tuple[dict[str, int], dict[str, float]] | None:
         best: tuple[tuple[float, ...], dict[str, int], dict[str, float]] | None = None
         for signs in itertools.product((-1, 0, 1), repeat=len(cands)):
             chosen = {m: sg for m, sg in zip(cands, signs, strict=True) if sg}
@@ -562,18 +631,26 @@ def _ratio_split(
             res = {b: float(e) for b, e in zip(bases, residual, strict=True) if abs(e) > 1e-9}
             if exact and res:
                 continue
+            if additive_outcome and outcome in res:
+                continue
             rv = value(1.0, res, reference_days) if res else 1.0
             closeness = abs(math.log(rv)) if rv else math.inf
-            score = (len(res), len(chosen), closeness)
+            # A total reads deepest: sessions × conversion × order value, not orders × order value (which only
+            # restates the drop); a ratio reads through the fewest rates.
+            score = (len(res), -len(chosen) if deepest else len(chosen), closeness)
             if best is None or score < best[0]:
                 best = (score, chosen, res)
         return None if best is None else (best[1], best[2])
 
     cands = list(forms)[:6]
-    top = split(vec(out[1]), cands, exact=False)
+    top = split(vec(out[1]), cands, exact=False, deepest=additive_outcome)
     if top is None:
         return "", {}
     chosen, res_form = top
+    # A leftover of more than one stage ("contribution margin × impressions per ad spend × clicks") names no lever
+    # anyone can act on: no split rather than an unreadable one (live 2026-10-10 thread_066b9cd1).
+    if len(res_form) > 2:
+        return "", {}
 
     def res_label(form: dict[str, float]) -> str:
         num = " × ".join(engine._label(b, lineage) for b, e in form.items() if e > 0) or "1"
@@ -912,16 +989,29 @@ async def _diagnose(
     # Period comparison: an explicit comparison window, or the equal-length
     # period just before a window too long to compare with "usual" days.
     baseline: list[date] = []
+    # Every day of the comparison period, kept for the levers: per-day averages need no equal length, and trimming
+    # "the other days" to the one before compared yesterday's levers with one day only (live 2026-10-10).
+    full_baseline: list[date] = []
     if compare_start is not None or compare_end is not None:
         c_start, c_end = _inclusive_days(compare_start or compare_end, compare_end or compare_start)  # type: ignore[arg-type]
         c_days = [c_start + timedelta(days=i) for i in range((c_end - c_start).days + 1)]
+        full_baseline = list(c_days)
         if running_left_out and len(c_days) == len(event_days) + running_left_out:
             # A period to date against its counterpart: the running day left the event, so its
             # counterpart (the comparison's last day) leaves too — the same span from the start
             # (live 2026-10-09: 10-05..10-08 was compared with 09-29..10-02, not 09-28..10-01).
             c_days = c_days[: len(event_days)]
             notes.append(f"compared with {c_days[0]}..{c_days[-1]}, the same days of the comparison period")
-        if len(c_days) != len(event_days):
+        if len(c_days) > len(event_days) and len(event_days) <= _MAX_EVENT_DAYS:
+            # "Yesterday compared to the other days": a short event against several days is read against its usual
+            # days (the reference with a z), not against the last of them; the levers are compared with every day
+            # of the period (full_baseline). Trimmed to the day before, the headline compared one day with one.
+            notes.append(
+                f"{', '.join(str(d) for d in event_days)} is compared with its usual days and its levers with each "
+                f"day of {c_start}..{c_end}"
+            )
+            c_days = []
+        elif len(c_days) != len(event_days):
             notes.append(
                 f"the comparison period {c_start}..{c_end} has {len(c_days)} days and the period asked about "
                 f"{len(event_days)}; compared with the {len(event_days)} days ending {c_end} so totals are like for like"
@@ -930,16 +1020,17 @@ async def _diagnose(
         baseline = c_days
     elif len(event_days) > _MAX_EVENT_DAYS:
         baseline = [d - timedelta(days=len(event_days)) for d in event_days]
-    if baseline and max(baseline) >= ev_start:
+    compared = [*baseline, *full_baseline]
+    if compared and max(compared) >= ev_start:
         return _refuse(
             f"the comparison period must end before the event starts ({ev_start}..{ev_end}); it was "
-            f"{min(baseline)}..{max(baseline)}. Pass compare_start/compare_end "
+            f"{min(compared)}..{max(compared)}. Pass compare_start/compare_end "
             f"days before {ev_start}, or event_start/event_end for the day to explain",
             error_code="UNSUPPORTED_QUERY",
         )
     hist_start = ev_start - timedelta(days=P.DIAG_HISTORY_DAYS)
-    if baseline:
-        hist_start = min(hist_start, baseline[0] - timedelta(days=_MAX_EVENT_DAYS))
+    if baseline or full_baseline:
+        hist_start = min(hist_start, min([*baseline[:1], *full_baseline[:1]]) - timedelta(days=_MAX_EVENT_DAYS))
     filters = dict(filters or {})
     if pooled := [k for k, v in filters.items() if isinstance(v, list) and len({str(x) for x in v}) > 1]:
         # One series for several entities: whether each of them moved is not visible in it.
@@ -1006,9 +1097,12 @@ async def _diagnose(
     # particular entities through what the account edited on them (budget / status / bid edits).
     ladder_ends = _funnel_pool(ctx, metric_id, lineage)
     change_log = _change_log_metrics(ctx, lineage) if filters else []
+    # The count of the outcome's own units, so a driver counting the same events is recognised as such.
+    unit_count = engine.unit_count_metric(metric_id, lineage)
+    unit_counts = [unit_count] if unit_count and ctx.deps.catalogue.has_metric(unit_count) else []
     series_ids = list(dict.fromkeys(
         [metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts, *bridge_pool,
-         *ladder_ends, *change_log]
+         *ladder_ends, *change_log, *unit_counts]
     ))
     series_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters)) for m in series_ids))
 
@@ -1032,6 +1126,13 @@ async def _diagnose(
             if m in bridge_pool and m not in (metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts):
                 # An unfiltered total cannot be a term of a filtered outcome.
                 bridge_pool.remove(m)
+                continue
+            if m != metric_id:
+                # A whole-account figure beside a filtered outcome describes another scope: the account's web
+                # purchases were reported as one campaign's (live 2026-10-10 thread_066b9cd1).
+                quality.append(
+                    f"{m} is not recorded by {', '.join(res['_dropped_filters'])}, so it is left out of this scope"
+                )
                 continue
             quality.append(f"{m} cannot be filtered by {', '.join(res['_dropped_filters'])}; used unfiltered")
         parsed = _parse_series(res, m)
@@ -1164,7 +1265,7 @@ async def _diagnose(
     # the period just before the event ("why did CAC increase yesterday" = against the day before). The blended
     # 'usual' level gave a split of +3.9% beside a headline of +6% on the day before (regression Q24).
     previous = [date.fromisoformat(x) for x in ((report.event.previous_period or {}).get("days") or [])] if report.event else []
-    reference_days = baseline or previous or sorted(
+    reference_days = full_baseline or baseline or previous or sorted(
         {date.fromisoformat(x) for v in (report.event.reference_days.values() if report.event else []) for x in v}
     )
 
@@ -1195,7 +1296,9 @@ async def _diagnose(
     if named:
         cite(named)
         versus = f"{reference_days[0]}..{reference_days[-1]}" if len(reference_days) > 1 else (str(reference_days[0]) if reference_days else "")
-        driver_text, driver_metrics = _named_driver_lines(named, series, event_days, reference_days, lineage, report)
+        driver_text, driver_metrics = _named_driver_lines(
+            named, series, event_days, reference_days, lineage, report, history_days
+        )
         split_text, split_metrics = _ratio_split(metric_id, named, lineage, series, history_days, event_days, reference_days)
         if split_text:
             driver_text = split_text + "\n" + driver_text
@@ -1204,6 +1307,8 @@ async def _diagnose(
             driver_text = f"DRIVERS ARE COMPARED over {', '.join(str(d) for d in event_days)} versus {versus}.\n" + driver_text
         named_text = (named_text + "\n" + driver_text) if named_text else driver_text
         named_metrics.update(driver_metrics)
+        if own := _outcome_on_its_normal_days(metric_id, series, event_days, reference_days, history_days, lineage):
+            named_text = own + "\n" + named_text
     finding = Finding(
         finding_type="diagnosis",
         statement=report.headline,

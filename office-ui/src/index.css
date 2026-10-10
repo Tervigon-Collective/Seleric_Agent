@@ -4,35 +4,45 @@
    4px spacing scale · Inter/system typography · tabular numerals for data.
    =========================================================================== */
 
-:root {
-  --bg: #ffffff;
-  --panel: #ffffff;
-  --sidebar: #f8f8f7;
-  --surface-2: #f7f8fa;
-  --hover: #f0f1f3;
-  --panel-2: #f8f8f7; /* legacy alias: sidebar / secondary surface */
-  --line: #e9eaec;
-  --line-strong: #dcdde1;
-  --text: #202125;
-  --text-dim: #656971;
-  --text-faint: #898d96;
-  --accent: #5865d9;
-  --accent-hover: #4752b8;
-  --accent-soft: #f0f1ff;
-  --success: #1a7f4b;
-  --success-soft: rgba(26, 127, 75, 0.09);
-  --warning: #b54708;
-  --warning-soft: rgba(181, 71, 8, 0.08);
-  --danger: #c03648;
-  --danger-soft: rgba(192, 54, 72, 0.08);
+/* ===========================================================================
+   Seleric — Apple HIG-aligned design system
+   Semantic iOS system colors: base vs elevated layering, vibrancy-ready
+   materials, SF typography. Light = systemBackground family, Dark = true
+   black OLED base (#000000) with elevated #1C1C1E / #2C2C2E.
+   Ref: Apple HIG Dark Mode, Color, Materials.
+   =========================================================================== */
 
-  --st-neutral: #98a2b3;
-  --st-working: #5865d9;
-  --st-thinking: #7048e8;
-  --st-waiting: #b54708;
-  --st-failed: #c03648;
-  --st-done: #1a7f4b;
-  --st-collab: #0e7490;
+:root {
+  color-scheme: light;
+  /* Base (recedes) */
+  --bg: #ffffff; /* systemBackground light */
+  --panel: #ffffff; /* tertiarySystemBackground light — foreground cards */
+  --sidebar: #f2f2f7; /* secondarySystemBackground light — grouped */
+  --surface-2: #f2f2f7;
+  --hover: #e5e5ea; /* systemGray5 light */
+  --panel-2: #f2f2f7; /* legacy alias: sidebar / secondary surface */
+  --line: #e5e5ea; /* hairline on white */
+  --line-strong: #c6c6c8; /* opaqueSeparator light */
+  --text: #000000; /* label light */
+  --text-dim: rgba(60, 60, 67, 0.6); /* secondaryLabel light */
+  --text-faint: rgba(60, 60, 67, 0.38); /* tertiary/placeholder light */
+  --accent: #007aff; /* systemBlue light */
+  --accent-hover: #0062cc;
+  --accent-soft: rgba(0, 122, 255, 0.12);
+  --success: #34c759; /* systemGreen light */
+  --success-soft: rgba(52, 199, 89, 0.12);
+  --warning: #ff9500; /* systemOrange light */
+  --warning-soft: rgba(255, 149, 0, 0.12);
+  --danger: #ff3b30; /* systemRed light */
+  --danger-soft: rgba(255, 59, 48, 0.08);
+
+  --st-neutral: #8e8e93; /* systemGray */
+  --st-working: #007aff; /* systemBlue */
+  --st-thinking: #af52de; /* systemPurple */
+  --st-waiting: #ff9500; /* systemOrange */
+  --st-failed: #ff3b30; /* systemRed */
+  --st-done: #34c759; /* systemGreen */
+  --st-collab: #32ade6; /* systemCyan */
 
   --radius-sm: 6px;
   --radius: 10px;
@@ -40,50 +50,88 @@
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
   --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.16);
 
-  --font: "Inter", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  /* SF-first stack per HIG Typography; Inter kept as web fallback. */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", "Geist", ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --motion-fast: 120ms;
   --motion: 180ms;
+
+  /* iOS materials (light): translucent nav/tab bars over content. */
+  --material-header: rgba(255, 255, 255, 0.72);
+  --material-elevated: rgba(255, 255, 255, 0.84);
+  --material-backdrop: saturate(180%) blur(20px);
 }
 
 [data-theme="dark"] {
-  --bg: #0b0d10;
-  --panel: #111418;
-  --sidebar: #141920;
-  --surface-2: #1a212b;
-  --hover: #222b37;
-  --panel-2: #141920;
-  --line: #232b36;
-  --line-strong: #303a47;
-  --text: #e8ebf0;
-  --text-dim: #9aa4b2;
-  --text-faint: #6b7686;
-  --accent: #8e97f2;
-  --accent-hover: #aab1f7;
-  --accent-soft: rgba(142, 151, 242, 0.16);
-  --success: #51cf8a;
-  --success-soft: rgba(81, 207, 138, 0.12);
-  --warning: #f0a35c;
-  --warning-soft: rgba(240, 163, 92, 0.12);
-  --danger: #f0758a;
-  --danger-soft: rgba(240, 117, 138, 0.12);
+  color-scheme: dark;
+  /* HIG Dark Mode: true-black base (OLED + battery), elevated layers advance.
+     Base #000000 (systemBackground dark) → elevated #1C1C1E (secondary) →
+     top #2C2C2E (tertiary). Never pure-invert light values. */
+  --bg: #000000;
+  --panel: #1c1c1e; /* secondarySystemBackground dark */
+  --sidebar: #1c1c1e;
+  --surface-2: #2c2c2e; /* tertiarySystemBackground dark */
+  --hover: #3a3a3c; /* systemGray4 dark */
+  --panel-2: #1c1c1e;
+  --line: #38383a; /* opaqueSeparator dark */
+  --line-strong: #48484a; /* systemGray3 dark */
+  --text: #ffffff; /* label dark */
+  --text-dim: rgba(235, 235, 245, 0.6); /* secondaryLabel dark */
+  --text-faint: rgba(235, 235, 245, 0.32); /* tertiaryLabel dark */
+  --accent: #0a84ff; /* systemBlue dark */
+  --accent-hover: #5eb1ff;
+  --accent-soft: rgba(10, 132, 255, 0.18);
+  --success: #30d158; /* systemGreen dark */
+  --success-soft: rgba(48, 209, 88, 0.14);
+  --warning: #ff9f0a; /* systemOrange dark */
+  --warning-soft: rgba(255, 159, 10, 0.14);
+  --danger: #ff453a; /* systemRed dark */
+  --danger-soft: rgba(255, 69, 58, 0.14);
 
-  --st-neutral: #6b7688;
-  --st-working: #748ffc;
-  --st-thinking: #a78bfa;
-  --st-waiting: #f0a35c;
-  --st-failed: #f0758a;
-  --st-done: #51cf8a;
-  --st-collab: #4dd4e6;
+  --st-neutral: #8e8e93;
+  --st-working: #0a84ff;
+  --st-thinking: #bf5af2; /* systemPurple dark */
+  --st-waiting: #ff9f0a;
+  --st-failed: #ff453a;
+  --st-done: #30d158;
+  --st-collab: #64d2ff; /* systemCyan dark */
 
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
+
+  /* iOS dark materials: translucent + vibrant, blur over content. */
+  --material-header: rgba(28, 28, 30, 0.72);
+  --material-elevated: rgba(44, 44, 46, 0.72);
+  --material-backdrop: saturate(180%) blur(20px);
 }
 
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; margin: 0; }
+
+/* Native-feel scrolling, OLED overscroll, Apple selection. */
+html {
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+::selection { background: var(--accent-soft); }
+[data-theme="dark"] ::selection { background: rgba(10, 132, 255, 0.32); }
+
+/* Thin iOS-style scrollbars in both appearances — fixes the stark white
+   scrollbar gutter seen in dark-mode screenshots on desktop Chrome. */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  min-height: 40px;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: content-box; border: 3px solid transparent; }
+*::-webkit-scrollbar-corner { background: transparent; }
 
 body {
   font-family: var(--font);
@@ -127,10 +175,15 @@ button { color: inherit; }
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  background: var(--panel);
+  /* iOS nav-bar material: translucent + vibrant blur over scrolling content. */
+  background: var(--material-header);
+  -webkit-backdrop-filter: var(--material-backdrop);
+  backdrop-filter: var(--material-backdrop);
   border-bottom: 1px solid var(--line);
   z-index: 30;
   min-width: 0;
+  /* Fill behind the blur so true-black base never shows through as gap. */
+  box-shadow: inset 0 -0.5px 0 var(--line);
 }
 
 .brand-button {
@@ -462,6 +515,10 @@ button { color: inherit; }
 .message-sources > summary:hover { color: var(--text); }
 .message-sources-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .message-response-time { margin: 8px 0 0; color: var(--text-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+/* Report metadata lifted out of the answer prose (Period / Currency / Data
+ * as of). Rendered alongside Sources, never copied with the answer. */
+.message-context { margin: 8px 0 0; color: var(--text-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.message-actions .copy-failed { color: var(--danger, #c0392b); }
 
 /* Answer feedback — quiet verdict row pinned to each final answer. */
 .message-feedback {
@@ -612,7 +669,9 @@ button { color: inherit; }
 .chart-modal-backdrop {
   position: fixed; inset: 0; z-index: 120; display: grid;
   place-items: center; padding: 24px;
-  background: rgba(8, 10, 14, 0.62);
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: saturate(140%) blur(10px);
+  backdrop-filter: saturate(140%) blur(10px);
   animation: backdrop-in var(--motion-fast) ease;
 }
 .chart-modal {
@@ -745,6 +804,8 @@ button { color: inherit; }
   letter-spacing: 0.06em; color: var(--text-faint); text-align: center;
 }
 .prompt-chips { justify-content: center; }
+.prompt-registry.front { text-align: center; }
+.prompt-registry.front .prompt-chip { align-items: center; text-align: center; }
 .prompt-chip {
   display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px;
   max-width: 100%; text-align: left; border-radius: 12px; padding: 9px 14px;
@@ -768,7 +829,7 @@ button { color: inherit; }
 .composer {
   position: relative; border: 1px solid var(--line-strong);
   border-radius: 16px; background: var(--panel);
-  box-shadow: var(--shadow); padding: 10px 52px 26px 44px;
+  box-shadow: var(--shadow); padding: 10px 90px 26px 44px;
   transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
 }
 .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
@@ -804,6 +865,12 @@ button { color: inherit; }
 .voice-btn:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); }
 .voice-btn:disabled { opacity: 0.5; cursor: default; }
 .voice-btn.error { border-color: var(--danger); color: var(--danger); }
+.voice-btn.enhance-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.voice-btn.enhance-btn.busy { color: var(--accent); border-color: var(--accent); animation: enhance-pulse 0.9s ease-in-out infinite; }
+@keyframes enhance-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
 .voice-status { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attach-btn {
   position: absolute; left: 10px; top: 8px; border: 0; background: transparent;
@@ -913,8 +980,13 @@ button { color: inherit; }
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 100; display: grid;
   place-items: start center; padding-top: 12vh;
-  background: rgba(16, 24, 40, 0.45); animation: fade-in var(--motion) ease;
+  /* iOS dim + vibrancy: soften, never pure-black crush. */
+  background: rgba(0, 0, 0, 0.4);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  backdrop-filter: saturate(140%) blur(8px);
+  animation: fade-in var(--motion) ease;
 }
+[data-theme="dark"] .modal-backdrop { background: rgba(0, 0, 0, 0.55); }
 @keyframes fade-in { from { opacity: 0; } }
 .command-search, .admin-diagnostics, .prompt-registry-modal {
   width: min(640px, calc(100vw - 32px)); max-height: 68vh; overflow: auto;
@@ -1139,7 +1211,7 @@ button.btn:hover { border-color: var(--line-strong); }
   .mobile-panel-toggle, .mobile-panel-close { display: inline-flex; }
   .mobile-panel-backdrop {
     display: block; position: fixed; inset: 52px 0 0; z-index: 41;
-    border: 0; background: rgba(16, 24, 40, 0.45); padding: 0; cursor: default;
+    border: 0; background: rgba(0, 0, 0, 0.4); padding: 0; cursor: default;
   }
   .mission-board { display: none; }
   .inspector { width: 100%; }

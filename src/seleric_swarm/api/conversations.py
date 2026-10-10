@@ -464,6 +464,23 @@ def get_message_feedback(
     )
 
 
+@router.get("/threads/{thread_id}/feedback")
+def list_thread_feedback(
+    thread_id: str, request: Request, limit: int = Query(default=100, ge=1, le=500)
+) -> list[MessageFeedback]:
+    """All reader verdicts on one thread — training-data export surface.
+
+    Append-only `message_feedback` rows (a re-vote supersedes the prior row for
+    the same message rather than editing it), scoped to the caller's workspace.
+    """
+    principal = _authenticated_principal(request)
+    repositories = _repositories(_runtime(request))
+    _owned_thread(repositories, principal, thread_id)
+    return repositories.feedback.list_for_thread(
+        thread_id, principal.workspace_id, principal.user_id, limit=limit
+    )
+
+
 @router.get("/memories")
 def list_memories(
     request: Request,
@@ -695,6 +712,38 @@ def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
             )
         )
     return views
+
+
+class EnhanceQueryRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+
+
+class EnhanceQueryResponse(BaseModel):
+    original: str
+    enhanced: str
+
+
+@router.post("/query/enhance", response_model=EnhanceQueryResponse)
+async def enhance_query(body: EnhanceQueryRequest, request: Request) -> EnhanceQueryResponse:
+    """Fast rewrite of an ambiguous draft into a system-ready analytics question.
+
+    Updates nothing on the server — the UI replaces the composer text with
+    ``enhanced`` so the user can edit or send.
+    """
+    _authenticated_principal(request)
+    runtime = _runtime(request)
+    original = body.query.strip()
+    if not original:
+        raise HTTPException(status_code=422, detail="query is required")
+
+    from seleric_swarm.services.query_enhance import QueryEnhanceError, enhance_query as _enhance
+
+    request_id = getattr(getattr(request, "state", None), "request_id", None)
+    try:
+        enhanced = await _enhance(runtime, query=original, request_id=request_id)
+    except QueryEnhanceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc) or "query enhance failed") from exc
+    return EnhanceQueryResponse(original=original, enhanced=enhanced)
 
 
 @router.post(

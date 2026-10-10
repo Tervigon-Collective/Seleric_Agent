@@ -82,6 +82,24 @@ def _composed_metrics(definitions: dict[str, dict[str, Any]]) -> list[str]:
     return sorted(m for m, d in definitions.items() if _composition(d))
 
 
+def _parent_for_leaf(metric_id: str, definitions: dict[str, dict[str, Any]]) -> str | None:
+    """A composed metric whose first +1 term is *metric_id* (leaf → parent waterfall).
+
+    Live 2026-10-10 (MS3-10e4f10ee9): "breakdown" after gross sales called
+    ``break_down_metric(gross_sales)``, which has no composition. Net sales is
+    ``gross − discounts − deductions``, so that parent is the reconciling total.
+    Prefer ``net_sales`` when several parents exist.
+    """
+    parents = [
+        mid
+        for mid, defn in definitions.items()
+        if (terms := _composition(defn)) and terms[0] == (metric_id, 1)
+    ]
+    if "net_sales" in parents:
+        return "net_sales"
+    return sorted(parents)[0] if parents else None
+
+
 def _window(
     ctx: RunContext[SelericDeps], start: datetime | None, end: datetime | None
 ) -> tuple[date, date, list[str]]:
@@ -204,21 +222,29 @@ async def break_down_metric(
     definitions = await diagnosis._all_definitions(ctx)
     if (unknown := await semantic._reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
-    if not _composition(definitions.get(metric_id, {})):
-        composed = _composed_metrics(definitions)
-        hint = (
-            " Metrics with a verified composition: "
-            + ", ".join(f"{m} ({_label(definitions, m)})" for m in composed)
-            if composed
-            else ""
-        )
-        return _refuse(
-            f"{metric_id} has no declared composition in the catalogue, so it cannot be broken into reconciling "
-            f"lines.{hint}",
-            error_code="UNSUPPORTED_QUERY",
-            retryable=bool(composed),
-        )
     switched_note = ""
+    if not _composition(definitions.get(metric_id, {})):
+        parent = _parent_for_leaf(metric_id, definitions)
+        if parent is not None:
+            switched_note = (
+                f"{_label(definitions, metric_id)} has no declared composition (it is a leaf line); "
+                f"breaking down {_label(definitions, parent)} instead, which starts from it. "
+            )
+            metric_id = parent
+        else:
+            composed = _composed_metrics(definitions)
+            hint = (
+                " Metrics with a verified composition: "
+                + ", ".join(f"{m} ({_label(definitions, m)})" for m in composed)
+                if composed
+                else ""
+            )
+            return _refuse(
+                f"{metric_id} has no declared composition in the catalogue, so it cannot be broken into reconciling "
+                f"lines.{hint}",
+                error_code="UNSUPPORTED_QUERY",
+                retryable=bool(composed),
+            )
     if filters:
         _, dropped_here = diagnosis._filters_for(ctx, metric_id, dict(filters))
         if dropped_here:

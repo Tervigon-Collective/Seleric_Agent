@@ -43,6 +43,7 @@ Seleric_Agent/
 2. Read `docs/CURRENT_ARCHITECTURE.md`.
 3. Configure your MCP endpoint in `.env`.
 4. Define canonical metrics in `config/metric_registry.yaml`.
+5. Forecasting (UI + Chronos): `docs/features/forecasting/README.md`.
 
 ## Non-goals
 

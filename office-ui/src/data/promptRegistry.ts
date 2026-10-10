@@ -261,6 +261,17 @@ export function filterPrompts(
   });
 }
 
+/**
+ * Empty-chat starters. A single completed window and one (or a few headline)
+ * metrics: the fast lookup path, already marked successful. Diagnosis,
+ * comparisons, and multi-step golden questions stay in the Prompts browser.
+ */
+export function frontChatPrompts(prompts: RegistryPrompt[] = PROMPT_REGISTRY): RegistryPrompt[] {
+  return prompts.filter(
+    (prompt) => prompt.level === "L1" && prompt.tags.includes("successful") && !prompt.tags.includes("diagnosis"),
+  );
+}
+
 export function groupByDomain(prompts: RegistryPrompt[]): { domain: PromptDomain; prompts: RegistryPrompt[] }[] {
   const order: PromptDomain[] = ["sales", "marketing", "products", "operations", "cross"];
   return order

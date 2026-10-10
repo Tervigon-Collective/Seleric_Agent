@@ -115,3 +115,32 @@ class PredictionArtifact(BaseModel):
     confidence_interval: tuple[float, float] | None = None
     evidence_ids: list[str] = Field(min_length=1)
     feature_leakage_checked: bool
+
+
+class ForecastArtifact(BaseModel):
+    """``artifact_type="forecast"``, ``classification="derived"``.
+
+    Per-day P10/P50/P90 bands plus horizon totals, feature roles, quality
+    verdicts and engine provenance. Horizon-total ``PredictionArtifact`` is
+    also written so ``check_prediction`` / evaluation keep working.
+    """
+
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
+
+    plan_spec: dict[str, Any] = Field(default_factory=dict)
+    cutoff: str
+    maturity_cut: str
+    targets: list[dict[str, Any]] = Field(default_factory=list)
+    entity: dict[str, Any] = Field(default_factory=dict)
+    features: list[dict[str, Any]] = Field(default_factory=list)
+    quality_verdicts: list[dict[str, Any]] = Field(default_factory=list)
+    engine: str
+    model_id: str
+    model_version: str
+    model_revision: str | None = None
+    status: Literal["validated", "provisional", "refused"] = "provisional"
+    warnings: list[str] = Field(default_factory=list)
+    input_artifact_id: str | None = None
+    input_hash: str = ""
+    evidence_ids: list[str] = Field(min_length=1)
+    backtest_summary: dict[str, Any] = Field(default_factory=dict)

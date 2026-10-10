@@ -9,12 +9,23 @@ without a live LLM.
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from typing import Any
 
-from pydantic_ai.models import Model
+from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.models import Model, ModelRequestParameters
+from pydantic_ai.models.wrapper import WrapperModel
+from pydantic_ai.settings import ModelSettings
 
 from seleric_swarm.agent.agent import _stub_test_model
-from seleric_swarm.agent.model_health import MODEL_HEALTH, HealthGatedChatModel, PatientModel
+from seleric_swarm.agent.model_health import (
+    MODEL_HEALTH,
+    HealthGatedChatModel,
+    PatientModel,
+    ReplayedStreamedResponse,
+)
 from seleric_swarm.config.settings import Settings, configured_chat_model
 
 # Read timeout (httpx) for the agent's model client. A hung call costs its
@@ -23,6 +34,11 @@ from seleric_swarm.config.settings import Settings, configured_chat_model
 # ReadTimeout; raise AGENT_LLM_TIMEOUT_S when they do. Must stay under
 # mission_timeout_s (600).
 AGENT_LLM_TIMEOUT_S = float(os.getenv("AGENT_LLM_TIMEOUT_S", "45"))
+# Understand at high effort measured 43–60s and was cut by the 60s request cap,
+# which then fell back to a model that does not reason. These apply only to the
+# planner client, not to tool-call steps.
+UNDERSTAND_CAP_S = float(os.getenv("AGENT_LLM_UNDERSTAND_CAP_S", "120"))
+UNDERSTAND_TIMEOUT_S = float(os.getenv("AGENT_LLM_UNDERSTAND_TIMEOUT_S", "120"))
 
 
 def resolve_v3_model(
@@ -31,6 +47,9 @@ def resolve_v3_model(
     prefer_fast: bool = False,
     role_tuning: bool = True,
     reasoning_effort: str = "",
+    temperature: float | None = None,
+    request_cap_s: float | None = None,
+    read_timeout_s: float | None = None,
 ) -> Model:
     """Live OpenAI-compatible model when configured; otherwise the stub TestModel.
 
@@ -63,8 +82,9 @@ def resolve_v3_model(
     # reasoning model legitimately needs longer than the 30s the short helper
     # calls (summaries, classification) use. Live: "why did CAC go up" died on a
     # 30s read timeout mid-investigation. Longer only for the agent's clients.
+    read_floor = AGENT_LLM_TIMEOUT_S if read_timeout_s is None else read_timeout_s
     settings = settings.model_copy(
-        update={"llm_timeout_s": max(settings.llm_timeout_s, AGENT_LLM_TIMEOUT_S)}
+        update={"llm_timeout_s": max(settings.llm_timeout_s, read_floor)}
     )
     adapter = AzureOpenAICompatibleAdapter(settings)
     provider = OpenAIProvider(openai_client=adapter.async_client)
@@ -98,6 +118,7 @@ def resolve_v3_model(
         if strong_effort
         else None
     )
+
     def chat(name: str, prov: OpenAIProvider, tag: str, model_settings: Any = None) -> OpenAIChatModel:
         return HealthGatedChatModel(
             name,
@@ -105,18 +126,24 @@ def resolve_v3_model(
             settings=model_settings,
             health=MODEL_HEALTH,
             health_key=f"{tag}:{name}",
+            request_cap_s=request_cap_s,
         )
 
     # The reasoning-effort tuning is the primary's (the deployment it was measured on); fallbacks keep provider
     # defaults. Applying it down the chain sent reasoning_effort to a non-reasoning fallback (gpt-4o), which
     # rejects the parameter — the fallback that should absorb the primary's 429s would have failed every call.
+    def primary_settings(name: str, index: int) -> Any:
+        chosen = fast_settings if name == fast_model else (strong_settings if index == 0 else None)
+        # Temperature is the tool-call deployment's. Fallbacks keep provider defaults:
+        # gpt-5-mini returns 400 for any temperature other than 1.
+        if temperature is None or index != 0:
+            return chosen
+        merged = dict(chosen or {})
+        merged["temperature"] = temperature
+        return OpenAIChatModelSettings(**merged)
+
     models: list[OpenAIChatModel] = [
-        chat(
-            name,
-            provider,
-            "azure1",
-            fast_settings if name == fast_model else (strong_settings if i == 0 else None),
-        )
+        chat(name, provider, "azure1", primary_settings(name, i))
         for i, name in enumerate(model_names)
     ]
 
@@ -148,4 +175,111 @@ def resolve_planner_model(settings: Settings) -> Model:
         update={"azure_openai_models": json.dumps(chain), "azure_openai_fast_model": ""}
     )
     effort = (getattr(settings, "azure_openai_planner_reasoning_effort", "") or "").strip()
-    return resolve_v3_model(only, role_tuning=False, reasoning_effort=effort)
+    return resolve_v3_model(
+        only,
+        role_tuning=False,
+        reasoning_effort=effort,
+        request_cap_s=UNDERSTAND_CAP_S,
+        read_timeout_s=UNDERSTAND_TIMEOUT_S,
+    )
+
+
+def _led_by(settings: Settings, leader: str) -> Settings:
+    """``leader`` first in the fallback chain, the rest unchanged behind it."""
+    import json
+
+    leader = leader.strip()
+    if not leader:
+        return settings
+    rest = [m for m in settings.resolved_models() if m != leader]
+    return settings.model_copy(update={"azure_openai_models": json.dumps([leader, *rest])})
+
+
+def resolve_mission_model(settings: Settings, *, prefer_fast: bool = False, diagnosis: bool = False) -> Model:
+    """The agent loop's model.
+
+    With ``AZURE_OPENAI_ANSWER_MODEL`` set, tool-call turns stay on
+    ``AZURE_OPENAI_TOOL_MODEL`` (temperature from ``AZURE_OPENAI_TOOL_TEMPERATURE``,
+    no reasoning effort — gpt-4o-code has none) and a turn that only calls
+    ``final_result`` is rewritten by the answer model. Diagnosis uses
+    ``AZURE_OPENAI_ANSWER_DIAGNOSIS_REASONING_EFFORT`` (high); other questions use
+    ``AZURE_OPENAI_ANSWER_REASONING_EFFORT`` (none). gpt-5-mini rejects a custom
+    temperature, so the answer model is not given one.
+
+    Unset answer model: one chain, same as ``resolve_v3_model``.
+    """
+    answer_name = (getattr(settings, "azure_openai_answer_model", "") or "").strip()
+    if not answer_name:
+        return resolve_v3_model(settings, prefer_fast=prefer_fast)
+    tool_name = (getattr(settings, "azure_openai_tool_model", "") or "").strip()
+    tool = resolve_v3_model(
+        _led_by(settings, tool_name) if tool_name else settings,
+        prefer_fast=prefer_fast,
+        role_tuning=False,
+        temperature=getattr(settings, "azure_openai_tool_temperature", None),
+    )
+    if diagnosis:
+        effort = (getattr(settings, "azure_openai_answer_diagnosis_reasoning_effort", "") or "").strip()
+    else:
+        effort = ""
+    if not effort:
+        effort = (getattr(settings, "azure_openai_answer_reasoning_effort", "") or "").strip()
+    answer = resolve_v3_model(
+        _led_by(settings, answer_name),
+        role_tuning=False,
+        reasoning_effort=effort,
+    )
+    return RoleSplitModel(tool, answer)
+
+
+def _is_answer_turn(response: ModelResponse) -> bool:
+    calls = [part for part in response.parts if isinstance(part, ToolCallPart)]
+    return bool(calls) and all(part.tool_name == "final_result" for part in calls)
+
+
+class RoleSplitModel(WrapperModel):
+    """Tool turns use ``wrapped``. A turn that only submits ``final_result`` is
+    answered again by ``answer_model`` from the same messages, so the written
+    answer is that model's and the tool calls stay the tool model's."""
+
+    def __init__(self, tool_model: Model, answer_model: Model) -> None:
+        super().__init__(tool_model)
+        self.answer_model = answer_model
+
+    async def __aenter__(self) -> RoleSplitModel:
+        await self.wrapped.__aenter__()
+        await self.answer_model.__aenter__()
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool | None:
+        tool_result = await self.wrapped.__aexit__(exc_type, exc_val, exc_tb)
+        answer_result = await self.answer_model.__aexit__(exc_type, exc_val, exc_tb)
+        return tool_result or answer_result
+
+    async def request(
+        self,
+        messages: list[Any],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ModelResponse:
+        response = await self.wrapped.request(messages, model_settings, model_request_parameters)
+        if not _is_answer_turn(response):
+            return response
+        # The answer deployment only writes final_result. Leaving the data tools
+        # on this request let it start another lookup instead of answering.
+        answer_parameters = replace(model_request_parameters, function_tools=[])
+        return await self.answer_model.request(messages, model_settings, answer_parameters)
+
+    @asynccontextmanager
+    async def request_stream(
+        self,
+        messages: list[Any],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+        run_context: Any = None,
+    ) -> AsyncIterator[ReplayedStreamedResponse]:
+        """Same as ``PatientModel``: one plain request, replayed as a stream so
+        the run's event handler still sees tool calls."""
+        del run_context
+        response = await self.request(messages, model_settings, model_request_parameters)
+        yield ReplayedStreamedResponse(model_request_parameters=model_request_parameters, response=response)

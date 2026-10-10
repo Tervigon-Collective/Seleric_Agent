@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PROMPT_REGISTRY,
   filterPrompts,
+  frontChatPrompts,
   groupByDomain,
 } from "../data/promptRegistry";
 
@@ -24,6 +25,16 @@ describe("prompt registry", () => {
     const marketingGolden = filterPrompts(PROMPT_REGISTRY, "golden", "marketing");
     expect(marketingGolden.length).toBeGreaterThan(0);
     expect(marketingGolden.every((p) => p.domain === "marketing" && p.tags.includes("golden"))).toBe(true);
+  });
+
+  it("offers the empty chat only successful L1 lookups", () => {
+    const front = frontChatPrompts();
+    expect(front.length).toBeGreaterThan(0);
+    expect(front.every((p) => p.level === "L1" && p.tags.includes("successful"))).toBe(true);
+    expect(front.every((p) => !p.tags.includes("diagnosis"))).toBe(true);
+    expect(front.some((p) => p.text === "What were net sales yesterday?")).toBe(true);
+    expect(front.some((p) => /why did/i.test(p.text))).toBe(false);
+    expect(PROMPT_REGISTRY.filter((p) => p.tags.includes("diagnosis")).length).toBeGreaterThan(0);
   });
 
   it("groups filtered prompts by domain without empty sections", () => {

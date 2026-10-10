@@ -28,6 +28,7 @@ from pydantic_ai.exceptions import ModelHTTPError
 
 from seleric_swarm.agent.agent import (
     CONVERSATIONAL,
+    FORECAST_PREFETCHED,
     PREFETCHED,
     build_seleric_agent,
     registered_tool_names,
@@ -41,15 +42,24 @@ from seleric_swarm.agent.dependencies import (
 )
 from seleric_swarm.agent.intent import QueryClassification, stated_grain
 from seleric_swarm.api.status import is_terminal_status
-from seleric_swarm.agent.model import resolve_planner_model, resolve_v3_model
+from seleric_swarm.agent.model import resolve_mission_model, resolve_planner_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
 from seleric_swarm.agent.executor import execute_plan
+from seleric_swarm.agent.forecast_plan import compile_forecast_plan, render_forecast_plan
 from seleric_swarm.agent.plan import PlanOutcome, plan_adherence, plan_from_slots
 from seleric_swarm.agent.progress import emit_progress, tool_label
-from seleric_swarm.agent.understand import classification_from, understand
+from seleric_swarm.agent.understand import classification_from, diagnose_one_named_entity, understand
+from seleric_swarm.forecasting.pipeline import run_forecast
+from seleric_swarm.agent.query_spec import (
+    QuerySpec,
+    apply_spec_edit,
+    build_spec_outcome,
+    spec_from_dump,
+)
 from seleric_swarm.agent.scope import (
     RequiredScope,
     build_required_scope,
+    promote_verbatim_values,
     scope_from_dimensions,
     question_axes_from_resolution,
     required_windows_from_resolved,
@@ -374,6 +384,47 @@ def _store_plan_artifact(
         )
     except Exception:
         _log.warning("plan_artifact_store_failed", exc_info=True)
+
+
+async def _prefetch_forecast(
+    deps: SelericDeps,
+    *,
+    understanding: Any,
+    catalogue: CatalogueSnapshot,
+    resolver: Any,
+    as_of: datetime,
+    timezone: str,
+    chronos_url: str = "",
+) -> str:
+    """Compile ForecastPlan, run the pipeline, return the ANSWER SKELETON text."""
+    try:
+        fplan = await compile_forecast_plan(
+            understanding,
+            catalogue=catalogue,
+            resolver=resolver,
+            as_of=as_of,
+            scope=deps.required_scope,
+            timezone=timezone,
+            canonical=deps.canonical_metric_id,
+        )
+    except Exception:
+        _log.warning("forecast_plan_compile_failed", exc_info=True)
+        return (
+            "ANSWER SKELETON:\nstatus: refused\nreason: forecast_plan_compile_failed\n"
+            "Do not invent a numeric forecast."
+        )
+    advisory = render_forecast_plan(fplan)
+    try:
+        outcome = await run_forecast(
+            deps, fplan, chronos_url=chronos_url.strip() or None
+        )
+    except Exception:
+        _log.warning("forecast_pipeline_failed", exc_info=True)
+        return (
+            f"{advisory}\n\nANSWER SKELETON:\nstatus: refused\n"
+            "reason: forecast_pipeline_failed\nDo not invent a numeric forecast."
+        )
+    return outcome.skeleton or advisory
 
 
 def _resolved_window(query: str, timezone: str, as_of: str):
@@ -847,6 +898,7 @@ def _mission_prompt(
     hint: str = "",
     is_followup: bool = False,
     prior_turn_record: dict[str, Any] | None = None,
+    window: TimeRangeV1 | None = None,
 ) -> str:
     """Assemble the full user-turn prompt for one mission.
 
@@ -858,6 +910,10 @@ def _mission_prompt(
     as_of_day = as_of_dt.date()
     yesterday = as_of_day.fromordinal(as_of_day.toordinal() - 1)
     window_line = _resolved_window_line(query, timezone, as_of_day.isoformat())
+    if not window_line and window is not None and window.start and window.relative_token != "prior_answer_period":
+        # The period the understanding read where the phrase parser read none ("yesterdays").
+        span = window.start if window.end in (None, window.start) else f"{window.start} through {window.end}"
+        window_line = f"The period asked about resolves to {span}. "
     thread = _thread_context_block(
         context,
         is_followup=is_followup,
@@ -1072,6 +1128,7 @@ def _write_turn_record(
     workspace_id: str,
     mission_id: str,
     as_of_dt: datetime,
+    query_spec: QuerySpec | None = None,
 ) -> None:
     """Persist a TurnRecord artifact so the next turn can use it for grounding.
 
@@ -1123,6 +1180,9 @@ def _write_turn_record(
             "mission_id": mission_id,
             "as_of": as_of_dt.date().isoformat(),
         }
+        if query_spec is not None:
+            # Follow-ups amend this typed decision instead of re-guessing windows.
+            record["query_spec"] = query_spec.dump()
         period = _answer_period(result.final_response or "")
         if period:
             record["period_start"], record["period_end"] = period
@@ -1225,6 +1285,7 @@ async def run_v3_mission(
     catalogue, values = await asyncio.gather(
         _catalogue_snapshot(runtime), _resolve_values(runtime, mcp, query)
     )
+    values = promote_verbatim_values(values, query) or {}
     _stage("catalogue_values_ms")
     # One structured LLM reading replaces Jev's classifier, the value-sense helper,
     # the planner's slot reader and the small-talk / acceptance / overview word lists.
@@ -1241,11 +1302,36 @@ async def run_v3_mission(
         prior_offer=str((prior_turn_record or {}).get("offer") or ""),
     )
     _stage("understand_ms")
+    prior_query = str((prior_turn_record or {}).get("query") or "").strip()
+    if understood.understanding is not None and understood.understanding.restyles_prior and prior_query:
+        # "Show this in a graph and table" asks for the previous answer in another form: the previous question is
+        # asked again with that request, so the same scope and analysis come back, charted. Read on its own it was a
+        # new analysis — of the whole account, then of a channel the prior answer only suggested (live 2026-10-10
+        # thread_066b9cd1).
+        query = f"{prior_query} ({query})"
+        values = promote_verbatim_values(await _resolve_values(runtime, mcp, query), query) or {}
+        understood = await understand(
+            resolve_planner_model(runtime.settings),
+            query,
+            catalogue=catalogue,
+            value_words=[vf.term for vf in value_filters_from_resolution(values)],
+            value_meanings={
+                vf.term: f"{' / '.join(sorted(vf.dimensions))} = {', '.join(vf.values[:3])}"
+                for vf in value_filters_from_resolution(values)
+            },
+            prior_question=prior_query,
+            prior_offer=str((prior_turn_record or {}).get("offer") or ""),
+        )
+        _stage("restyle_ms")
     understanding = understood.understanding
     state_cutoff_hour(getattr(understanding, "through_hour", None))
     classification = classification_from(understanding)
-    if (grain := stated_grain(query)) and grain != classification.grain:
-        classification = dataclasses.replace(classification, grain=grain)  # type: ignore[arg-type]
+    query_spec_mode = str(getattr(runtime.settings, "query_spec_mode", "shadow") or "off")
+    # Regex grain override fights the understand call (and QuerySpec). Keep it only
+    # when QuerySpec is off; shadow/enforce trust Understanding.grain.
+    if query_spec_mode == "off":
+        if (grain := stated_grain(query)) and grain != classification.grain:
+            classification = dataclasses.replace(classification, grain=grain)  # type: ignore[arg-type]
     intent = classification.intent
     small_talk = understanding is not None and understanding.kind == "conversation" and not (
         understanding.follows_prior or understanding.accepts_offer
@@ -1279,6 +1365,21 @@ async def run_v3_mission(
         if vf.term.lower() not in ordinary_words
     )
     values = _without_terms(values, ordinary_words)
+    if is_followup and not value_filters and getattr(understanding, "follows_prior", False):
+        # A follow-up that names no value of its own stays on the values the prior turn was scoped to: "show this in
+        # a graph and table" after a one-campaign drill-down charted the whole account's spend and ROAS (live
+        # 2026-10-10 thread_066b9cd1). The QuerySpec carried them; the executed path did not.
+        prior_qs = spec_from_dump((prior_turn_record or {}).get("query_spec"))
+        if prior_qs is not None:
+            value_filters = tuple(
+                dataclasses.replace(vf, dimensions=vf.dimensions | {catalogue.family_head(d) for d in vf.dimensions})
+                for vf in prior_qs.value_filters()
+            )
+    diagnosed = diagnose_one_named_entity(understanding, value_filters, catalogue, _headline_metric_ids(runtime))
+    if diagnosed is not understanding:
+        understanding = diagnosed
+        classification = dataclasses.replace(classification_from(understanding), grain=classification.grain)
+        intent = classification.intent
     question_axes = question_axes_from_resolution(values)
     # Axes are the question's context, not another measure's words: "net ROAS, ad spend … and product gross sale"
     # read scope=product from "product gross sale" and turned spend and ROAS into the product-allocated metrics
@@ -1310,11 +1411,103 @@ async def run_v3_mission(
         windows := required_windows_from_resolved(_question_window(query, timezone, as_of_dt.date().isoformat()))
     ):
         required_scope = dataclasses.replace(required_scope, windows=windows)
+
+    # --- QuerySpec: decide once (shadow by default; enforce switches consumers) ---
+    query_spec: QuerySpec | None = None
+    if not small_talk and query_spec_mode != "off":
+        as_of_day = as_of_dt.date()
+        prior_spec = (
+            spec_from_dump((prior_turn_record or {}).get("query_spec"))
+            if is_followup
+            else None
+        )
+        legacy_filter_terms = frozenset(vf.term.lower() for vf in value_filters)
+        outcome = build_spec_outcome(
+            understanding,
+            resolution=values,
+            as_of=as_of_day,
+            catalogue=catalogue,
+            mode=query_spec_mode,  # type: ignore[arg-type]
+            legacy_window=_question_window(query, timezone, as_of_day.isoformat()),
+            legacy_grain=stated_grain(query) or classification.grain,
+            legacy_breakdowns=required_scope.breakdowns,
+            legacy_filter_terms=legacy_filter_terms,
+        )
+        query_spec = outcome.spec
+        if (
+            query_spec is not None
+            and prior_spec is not None
+            and getattr(understanding, "follows_prior", False)
+        ):
+            query_spec = apply_spec_edit(
+                prior_spec,
+                understanding,
+                candidates=outcome.candidates,
+                as_of=as_of_day,
+                catalogue=catalogue,
+            )
+        # Enforce: windows, filters, grain come from the validated spec when present.
+        # Fail-open: an empty/invalid window set keeps the legacy regex path.
+        if query_spec_mode == "enforce" and query_spec is not None and query_spec.valid:
+            if query_spec.grain and query_spec.grain != classification.grain:
+                classification = dataclasses.replace(classification, grain=query_spec.grain)  # type: ignore[arg-type]
+            spec_tr = query_spec.to_time_range()
+            if spec_tr is not None:
+                resolved_window = spec_tr
+            spec_windows = query_spec.required_windows()
+            if spec_windows:
+                required_scope = dataclasses.replace(required_scope, windows=spec_windows)
+            # Entities are compared, not filtered; filters drop volume-0 fragments (Adv+).
+            spec_filters = tuple(
+                dataclasses.replace(
+                    vf, dimensions=vf.dimensions | {catalogue.family_head(d) for d in vf.dimensions}
+                )
+                for vf in query_spec.value_filters()
+            )
+            if spec_filters or query_spec.entities or query_spec.assumptions:
+                required_scope = dataclasses.replace(
+                    required_scope,
+                    value_filters=spec_filters,
+                    question_axes=query_spec.question_axes or required_scope.question_axes,
+                    values_weighed_against_whole=query_spec.part_of_whole
+                    or required_scope.values_weighed_against_whole,
+                )
+
+    # The phrase parser missed a period the understanding read ("why did it not perform yesterdays"): the
+    # understanding's windows stand, in every QuerySpec mode. Without this the question counted as naming none and
+    # the prior answer's three days were imposed; the diagnosis then reported their sum as yesterday's value (live
+    # 2026-10-10 thread_066b9cd1).
+    names_period = _names_a_period(query, timezone, as_of_dt.date().isoformat())
+    if (
+        not small_talk
+        and not names_period
+        and getattr(understanding, "names_period", False)
+        and query_spec is not None
+        and query_spec.valid
+        and (spec_tr := query_spec.to_time_range()) is not None
+    ):
+        names_period = True
+        if spec_tr.kind == "absolute":
+            resolved_window = spec_tr
+        if spec_windows := query_spec.required_windows():
+            required_scope = dataclasses.replace(required_scope, windows=spec_windows)
+
     # The prior period is a stated default, not a pin: resolved_window rewrites every
     # call to its dates, which would break "compare with the week before".
     prior_window = None
-    if not small_talk and not _names_a_period(query, timezone, as_of_dt.date().isoformat()):
-        prior_window = _prior_window(prior_turn_record)
+    if not small_talk and not names_period:
+        # Prefer the prior turn's QuerySpec event window when present.
+        if (prior_turn_record or {}).get("query_spec"):
+            prior_qs = spec_from_dump(prior_turn_record.get("query_spec"))  # type: ignore[union-attr]
+            if prior_qs is not None and (pw := prior_qs.to_time_range()) is not None:
+                prior_window = TimeRangeV1(
+                    kind="absolute",
+                    start=pw.start,
+                    end=pw.end,
+                    relative_token="prior_answer_period",
+                )
+        if prior_window is None:
+            prior_window = _prior_window(prior_turn_record)
     ceiling = int(getattr(runtime.settings, "max_tool_calls", 160))
     deps = SelericDeps(
         mission_id=mission_id,
@@ -1344,6 +1537,7 @@ async def run_v3_mission(
             timeout=float(getattr(runtime.settings, "jev_timeout_s", 1.0)),
         ),
         required_scope=required_scope,
+        query_spec=query_spec,
     )
     # Small talk gets no tools at all (and is answered from the understand call's
     # reply below). An elliptical follow-up ("yes", "and for brand X?") keeps its
@@ -1391,8 +1585,10 @@ async def run_v3_mission(
             elif fast_result is not None:
                 result = fast_result
             else:
-                model = resolve_v3_model(
-                    runtime.settings, prefer_fast=_prefer_fast_model(classification)
+                model = resolve_mission_model(
+                    runtime.settings,
+                    prefer_fast=_prefer_fast_model(classification),
+                    diagnosis=intent in _DIAGNOSTIC_INTENTS,
                 )
                 agent = build_seleric_agent(
                     model=model,
@@ -1424,27 +1620,57 @@ async def run_v3_mission(
                 # The plan's data and the business-health signals around it are
                 # independent reads: fetch them together.
                 asked_metrics = list((plan_outcome.stats.get("metrics") if plan_outcome else None) or [])
-                prefetch, (insights, insight_stats) = await asyncio.gather(
-                    execute_plan(
-                        # Only a plain analysis is prefetched: a prefetch narrows the
-                        # agent's tools to the data tools, and a forecast, what-if or
-                        # action question needs the tool its kind names.
-                        plan_outcome.plan
-                        if plan_outcome is not None and understanding is not None and understanding.kind == "analysis"
-                        else None,
+                is_forecast = understanding is not None and understanding.kind == "forecast"
+                if is_forecast:
+                    forecast_prefetch = await _prefetch_forecast(
                         deps,
-                        windows=_prefetch_windows(deps.required_scope, prior_window),
+                        understanding=understanding,
+                        catalogue=catalogue,
+                        resolver=resolver,
                         as_of=as_of_dt,
-                        grain=classification.grain,
-                    ),
+                        timezone=timezone,
+                        chronos_url=getattr(runtime.settings, "chronos_base_url", "") or "",
+                    )
                     # The hourly snapshots are whole-business figures: beside a question about named entities they
                     # described the account, not the entities (a business-wide conversion drop under two campaigns'
                     # answer, live 2026-10-10 thread_d1844eb0).
-                    insight_block(deps, asked_metrics)
-                    if not _about_named_entities(plan_outcome, deps)
-                    else _no_insights(),
-                )
+                    insights, insight_stats = (
+                        await insight_block(deps, asked_metrics)
+                        if not _about_named_entities(plan_outcome, deps)
+                        else await _no_insights()
+                    )
+                    prefetch = None
+                else:
+                    forecast_prefetch = None
+                    prefetch, (insights, insight_stats) = await asyncio.gather(
+                        execute_plan(
+                            # Only a plain analysis is prefetched: a prefetch narrows the
+                            # agent's tools to the data tools, and a what-if or action
+                            # question needs the tool its kind names. Forecasts use the
+                            # dedicated pipeline below.
+                            plan_outcome.plan
+                            if plan_outcome is not None
+                            and understanding is not None
+                            and understanding.kind == "analysis"
+                            else None,
+                            deps,
+                            windows=_prefetch_windows(deps.required_scope, prior_window),
+                            as_of=as_of_dt,
+                            grain=classification.grain,
+                        ),
+                        insight_block(deps, asked_metrics)
+                        if not _about_named_entities(plan_outcome, deps)
+                        else _no_insights(),
+                    )
                 _stage("prefetch_ms")
+                if forecast_prefetch is not None:
+                    emit_progress(mission_id, "agent.stage", "Writing the forecast", {"stage": "answer"})
+                    plan = (
+                        f"{plan}\n\n{forecast_prefetch}" if plan else forecast_prefetch
+                    )
+                    deps.call_counts[FORECAST_PREFETCHED] = 1
+                    if plan_outcome is not None:
+                        plan_outcome.stats["forecast_prefetch"] = True
                 if prefetch is not None:
                     emit_progress(mission_id, "agent.stage", tool_label("analyze"), {"stage": "answer"})
                     plan = f"{plan}\n\n{prefetch.text}" if plan else prefetch.text
@@ -1475,6 +1701,7 @@ async def run_v3_mission(
                     + insights,
                     is_followup=is_followup,
                     prior_turn_record=prior_turn_record,
+                    window=resolved_window,
                 )
                 v3_result = await asyncio.wait_for(
                     run_validated_mission(agent, deps, prompt, on_stream=on_stream),
@@ -1575,6 +1802,7 @@ async def run_v3_mission(
         workspace_id=workspace_id,
         mission_id=mission_id,
         as_of_dt=as_of_dt,
+        query_spec=query_spec,
     )
 
     raw = v3_raw_snapshot(mission_id) or {}

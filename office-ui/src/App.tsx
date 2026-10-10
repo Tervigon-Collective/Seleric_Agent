@@ -55,11 +55,18 @@ export default function App() {
   const [routingReady, setRoutingReady] = useState(false);
   const [dark, setDark] = useState(() => {
     const saved = localStorage.getItem("seleric.theme");
-    return saved ? saved === "dark" : false;
+    // HIG: respect the system appearance when the user has no saved choice.
+    if (saved) return saved === "dark";
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
   });
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
     localStorage.setItem("seleric.theme", dark ? "dark" : "light");
+    document.querySelector('meta[name="theme-color"]')?.setAttribute(
+      "content",
+      dark ? "#000000" : "#ffffff",
+    );
   }, [dark]);
   const workspace = useShellStore((s) => s.workspace);
   // Union-typed alias: `workspace` narrows to "conversation" past the office
@@ -78,6 +85,8 @@ export default function App() {
   const threads = useConversationStore((s) => s.threads);
   const currentTitle = threads.find((t) => t.id === selectedThreadId)?.title || null;
   useEffect(() => {
+    // Narrow viewports always start with panels folded; desktop keeps the
+    // last inspector choice from localStorage (see shell store).
     if (window.matchMedia?.("(max-width: 1023px)").matches) {
       useShellStore.setState({ sidebarOpen: false, detailsOpen: false });
     }

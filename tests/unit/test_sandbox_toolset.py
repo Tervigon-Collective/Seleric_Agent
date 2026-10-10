@@ -102,6 +102,37 @@ async def test_code_error_returns_a_retryable_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_globals_get_evidence_succeeds() -> None:
+    """Live 2026-10-10: ``evidence = globals().get('evidence')`` used to NameError."""
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store, value=80.0)
+    ctx = FakeRunContext(_deps(store))
+    code = (
+        "evidence = globals().get('evidence', None)\n"
+        "result = {'total': evidence[0]['value']}\n"
+    )
+    res = await sandbox.run_python(ctx, code, [eid])
+    assert res.success is True
+    assert store.get(res.artifact_ids[0]).payload["metrics"]["total"] == 80.0
+
+
+@pytest.mark.asyncio
+async def test_globals_locals_vars_see_sandbox_namespace() -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store, value=12.0)
+    ctx = FakeRunContext(_deps(store))
+    code = (
+        "ev = globals()['evidence']\n"
+        "assert locals()['WORKDIR']\n"
+        "assert vars()['os'] is not None\n"
+        "result = ev[0]['value'] * 3\n"
+    )
+    res = await sandbox.run_python(ctx, code, [eid])
+    assert res.success is True
+    assert store.get(res.artifact_ids[0]).payload["metrics"]["result"] == 36.0
+
+
+@pytest.mark.asyncio
 async def test_syntax_error_returns_a_retryable_failure() -> None:
     store = InMemoryArtifactStore()
     eid = _put_evidence(store)

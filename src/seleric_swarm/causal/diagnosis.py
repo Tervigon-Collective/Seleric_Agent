@@ -107,6 +107,22 @@ def lineage_from_definitions(definitions: dict[str, dict[str, Any]]) -> dict[str
     return out
 
 
+def unit_count_metric(metric_id: str, lineage: dict[str, MetricMeta]) -> str | None:
+    """The count of the units an outcome is recorded on — its catalogue grain's own count (grain ``order`` →
+    ``orders``, ``session`` → ``sessions``) on the same view — or None. A driver in lockstep with it counts the
+    outcome's own events: the web funnel's purchases follow orders at r=0.97 but gross sales only at 0.94, and were
+    named the cause of a sales drop (live 2026-10-10 thread_066b9cd1, as on 2026-09-24)."""
+    meta = lineage.get(metric_id)
+    if meta is None or not meta.grain:
+        return None
+    for unit in sorted(meta.entity_tokens()):
+        for cand in (unit, f"{unit}s"):
+            m = lineage.get(cand)
+            if cand != metric_id and m is not None and m.additive and m.view == meta.view:
+                return cand
+    return None
+
+
 def descendants(metric_id: str, lineage: dict[str, MetricMeta]) -> set[str]:
     """Metrics computed (directly or transitively) from ``metric_id``."""
     children: dict[str, set[str]] = {}
@@ -2119,9 +2135,12 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
         *(t.metric for t in report.bridge),
     ]))
     components = [m for m in components if m != y and inp.lineage.get(m, MetricMeta(m)).additive]
+    if (unit_count := unit_count_metric(y, inp.lineage)) and unit_count not in components:
+        components.append(unit_count)
     for c in list(drivers):
         twin = next(
-            (m for m in components if m in inp.series and (rc := _lockstep_correlation(inp.series[c], inp.series[m], history, outliers, same_weekday)) is not None and abs(rc) >= P.DIAG_COMEASURE_R),
+            (m for m in components if m in inp.series and (rc := _lockstep_correlation(inp.series[c], inp.series[m], history, outliers, same_weekday)) is not None
+             and abs(rc) >= (P.DIAG_UNIT_COUNT_R if m == unit_count else P.DIAG_COMEASURE_R)),
             None,
         )
         if twin is not None:

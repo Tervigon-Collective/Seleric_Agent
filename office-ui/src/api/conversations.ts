@@ -204,6 +204,12 @@ export class ConversationApi {
       throw error;
     }
   }
+  /** All verdicts on one thread — training-data export surface. */
+  listThreadFeedback(threadId: string, limit = 100): Promise<MessageFeedback[]> {
+    return this.http.request(
+      `/v1/threads/${enc(threadId)}/feedback?limit=${limit}`,
+    );
+  }
 }
 
 export const conversationsApi = new ConversationApi();

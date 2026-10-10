@@ -118,6 +118,8 @@ services:
       V3_AGENT_ENABLED: ${V3_AGENT_ENABLED:-true}
       # In-network URL wins; host SELERIC_MCP_URL (127.0.0.1) is unreachable here.
       SELERIC_MCP_URL: ${COMPOSE_SELERIC_MCP_URL:-${SELERIC_MCP_URL:-}}
+      # Chronos-2 forecasting service (chronos/docker-compose.yml, same network).
+      CHRONOS_BASE_URL: ${CHRONOS_BASE_URL:-http://seleric_agent-chronos-1:8112}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
       # POST /v1/voice/token (the browser's room join) is served by this service.
@@ -231,6 +233,8 @@ services:
       QDRANT_EMBEDDING_MODEL: ${QDRANT_EMBEDDING_MODEL:-text-embedding-3-small}
       V3_AGENT_ENABLED: ${V3_AGENT_ENABLED:-true}
       SELERIC_MCP_URL: ${COMPOSE_SELERIC_MCP_URL:-${SELERIC_MCP_URL:-}}
+      # Chronos-2 forecasting service (chronos/docker-compose.yml, same network).
+      CHRONOS_BASE_URL: ${CHRONOS_BASE_URL:-http://seleric_agent-chronos-1:8112}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
       JEV_BASE_URL: ${JEV_BASE_URL:-}
@@ -321,7 +325,7 @@ services:
       context: .
       target: runtime
     command: >
-      /bin/sh -c "while true; do python -m seleric_swarm.services.domain_health.scheduler; sleep 60; done"
+      /bin/sh -c "while true; do python -m seleric_swarm.services.domain_health.scheduler; python -m seleric_swarm.forecasting.score --if-due || true; sleep 60; done"
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

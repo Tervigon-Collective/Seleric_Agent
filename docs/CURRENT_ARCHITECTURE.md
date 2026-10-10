@@ -86,7 +86,7 @@ old values are read-only compatibility, not a live creation path.
   Cube is the only authority for business metrics), `analytics.py`
   (statistics/anomaly detection, consumes evidence already fetched — never
   fetches independently), `causal.py` (DoWhy-backed causal estimation +
-  refutation), `models.py` (forecasting), `actions.py` (Meta write actions
+  refutation), `models.py` (legacy ETS evidence-only forecast tool), `actions.py` (Meta write actions
   only, gated by the propose→confirm→commit flow — Google Ads action
   execution is explicitly out of scope), `knowledge.py`, `experiments.py`,
   `sandbox.py` (registered Python-execution tool, `sandbox.run_python`),
@@ -99,10 +99,14 @@ old values are read-only compatibility, not a live creation path.
   see §11.2).
 - Backing service packages (toolsets are thin adapters over these):
   `analytics/`, `knowledge/`, `experiments/`, `models/`, `causal/`,
+  `forecasting/` (governed multi-target forecasts: Chronos-2 + ETS fallback;
+  see `docs/features/forecasting/README.md` — runner prefetches when
+  `kind=forecast`),
   `services/` (catalogue bootstrap, evidence, ontology, claim gate, numeric
   audit, business-state, domain-health), `llm/` (provider factory/gateway,
   metering, circuit breaker; one Azure resource — gpt-5-nano since 2026-10-07), `protocols/mcp/gateway.py`
   (`MCPGateway`).
+  Standalone Chronos service: `chronos/` (`POST /predict`, `POST /v2/forecast`).
 - Every agent loop is bounded (`max_tool_calls`, `max_llm_calls`, etc. in
   `config/settings.py`) and the bound is enforced, not a no-op. Repeat/
   paraphrase loops are additionally walled by `agent/repeat_guard.py` and

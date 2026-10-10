@@ -33,6 +33,12 @@ function SelericSources({ data }: DataMessagePartProps) {
   );
 }
 
+export function SelericContext({ data }: DataMessagePartProps) {
+  const text = (data as { text?: unknown }).text;
+  if (typeof text !== "string" || !text.trim()) return null;
+  return <p className="message-context">{text}</p>;
+}
+
 export function formatResponseTime(ms: number): string {
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   const seconds = Math.round(ms / 1000);
@@ -48,6 +54,7 @@ type FeedbackData = { messageId: string; threadId: string; runId: string | null;
 
 export function SelericFeedback({ data }: DataMessagePartProps) {
   const { messageId, threadId, runId, final } = data as FeedbackData;
+  const demoMode = useConversationStore((s) => s.demoMode);
   const [vote, setVote] = useState<"up" | "down" | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState("");
@@ -55,18 +62,25 @@ export function SelericFeedback({ data }: DataMessagePartProps) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (!final) return;
+    if (!final || demoMode) return;
     let alive = true;
     conversationsApi.getFeedback(threadId, messageId)
       .then((existing) => { if (alive && existing) setVote(existing.rating); })
       .catch(() => undefined);
     return () => { alive = false; };
-  }, [final, threadId, messageId]);
+  }, [final, demoMode, threadId, messageId]);
 
   // Draft/streaming messages carry a transient id — no voting until final.
   if (!final) return null;
 
   const cast = (rating: "up" | "down", text?: string) => {
+    // Demo mode has no backend thread: keep the verdict local so the buttons
+    // still respond instead of flashing "Couldn't save".
+    if (demoMode) {
+      setVote(rating);
+      if (rating === "up" || text !== undefined) setNoteOpen(false);
+      return;
+    }
     setSaving(true);
     setFailed(false);
     conversationsApi.submitFeedback(threadId, messageId, { rating, note: text ?? "", runId: runId ?? undefined })
@@ -132,35 +146,106 @@ const parts = {
     by_name: {
       "seleric-part": SelericPart,
       "seleric-sources": SelericSources,
+      "seleric-context": SelericContext,
       "seleric-response-time": SelericResponseTime,
       "seleric-feedback": SelericFeedback,
     },
   },
 };
 
+/** Best-effort clipboard write: async API when available (secure contexts),
+ *  legacy execCommand fallback for plain-http / older browsers. Never throws. */
+async function writeToClipboard(text: string): Promise<boolean> {
+  try {
+    const clipboard = navigator.clipboard;
+    if (clipboard?.writeText) {
+      await clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through to the legacy path */ }
+  try {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.top = "-9999px";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+    area.setSelectionRange(0, area.value.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(area);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Answer-only text for Copy: prose + tables + code. Excludes Sources,
+ *  report-metadata context, feedback row, response time and action labels. */
+function answerText(root: HTMLElement): string {
+  const chunks: string[] = [];
+  // Prose blocks (footer metadata already lives in .message-context, so it is
+  // excluded by construction).
+  root.querySelectorAll(".safe-content").forEach((node) => {
+    const text = (node as HTMLElement).innerText ?? node.textContent ?? "";
+    if (text.trim()) chunks.push(text.trim());
+  });
+  // Analytical tables as tab-separated rows.
+  root.querySelectorAll(".part-table-wrap table, .md-table-wrap table").forEach((table) => {
+    const rows: string[] = [];
+    table.querySelectorAll("tr").forEach((tr) => {
+      const cells = [...tr.querySelectorAll("th, td")].map((cell) =>
+        (cell.textContent ?? "").trim().replace(/\s+/g, " "),
+      );
+      if (cells.some(Boolean)) rows.push(cells.join("\t"));
+    });
+    if (rows.length) chunks.push(rows.join("\n"));
+  });
+  root.querySelectorAll(".part-code").forEach((node) => {
+    const text = node.textContent ?? "";
+    if (text.trim()) chunks.push(text.trim());
+  });
+  if (!chunks.length) {
+    // Last resort: whole body minus known chrome rows.
+    const clone = root.querySelector(".message-body")?.cloneNode(true) as HTMLElement | undefined;
+    clone?.querySelectorAll(
+      ".message-feedback, .message-sources, .message-context, .message-response-time, .message-actions, .thinking-bubble, .run-status",
+    ).forEach((node) => node.remove());
+    const fallback = clone?.innerText ?? clone?.textContent ?? "";
+    if (fallback.trim()) chunks.push(fallback.trim());
+  }
+  return chunks.join("\n\n").trim();
+}
+
 function CopyButton() {
   const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
   const timer = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  const flash = (ok: boolean) => {
+    setCopied(ok);
+    setFailed(!ok);
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => { setCopied(false); setFailed(false); }, 1600);
+  };
   return (
     <button
       type="button"
-      className={copied ? "copied" : ""}
-      aria-label={copied ? "Copied" : "Copy response"}
+      className={copied ? "copied" : failed ? "copy-failed" : ""}
+      aria-label={copied ? "Copied" : failed ? "Copy failed — select and copy manually" : "Copy response"}
       title="Copy response"
       onClick={(event) => {
-        const root = (event.currentTarget as HTMLElement).closest(".message");
-        const text = root?.querySelector(".message-body")?.textContent?.trim() ?? "";
+        const root = (event.currentTarget as HTMLElement).closest(".message") as HTMLElement | null;
+        if (!root) return;
+        const text = answerText(root);
         if (!text) return;
-        void navigator.clipboard?.writeText(text).then(() => {
-          setCopied(true);
-          if (timer.current) window.clearTimeout(timer.current);
-          timer.current = window.setTimeout(() => setCopied(false), 1600);
-        }).catch(() => undefined);
+        void writeToClipboard(text).then(flash);
       }}
     >
       {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
-      {copied ? "Copied" : "Copy"}
+      {copied ? "Copied" : failed ? "Copy failed" : "Copy"}
     </button>
   );
 }
@@ -189,8 +274,7 @@ function RunningLine() {
   const progress = useConversationStore((state) => state.progress);
   const cancelRun = useConversationStore((state) => state.cancelRun);
   const timeline = useOffice((state) => state.timeline);
-  const openInspector = useShellStore((state) => state.toggleDetails);
-  const detailsOpen = useShellStore((state) => state.detailsOpen);
+  const openInspector = useShellStore((state) => state.openInspector);
   const phases = useMemo(() => deriveRunPhases(timeline), [timeline]);
   return (
     <div className="run-status" aria-live="polite">
@@ -210,7 +294,7 @@ function RunningLine() {
           ))}
         </ol>
       </div>
-      <button type="button" className="view-activity" onClick={() => { if (!detailsOpen) openInspector(); else useShellStore.getState().setDetailTab("Activity"); }}>
+      <button type="button" className="view-activity" onClick={() => openInspector("Activity")}>
         View activity
       </button>
       <button type="button" onClick={() => void cancelRun()}>Stop</button>
@@ -343,7 +427,7 @@ export function Transcript() {
             <div className="empty-state">
               <h1>Where should we begin?</h1>
               <p>Ask about marketing, sales, products, or operations — Seleric investigates your metrics and shows its evidence.</p>
-              <PromptRegistry />
+              <PromptRegistry surface="front" />
             </div>
           )}
           {threadId && (
@@ -351,7 +435,7 @@ export function Transcript() {
               <div className="empty-state">
                 <h1>What should we investigate?</h1>
                 <p>Ask a question about your metrics and Seleric will investigate.</p>
-                <PromptRegistry />
+                <PromptRegistry surface="front" />
               </div>
             </ThreadPrimitive.Empty>
           )}

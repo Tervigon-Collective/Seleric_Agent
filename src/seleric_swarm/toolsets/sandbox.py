@@ -63,15 +63,42 @@ for _opt in ("numpy", "pandas"):
 # Everything from builtins except the process-escape hatches. exec/eval/compile
 # and open-by-default stay out of the base set; open is re-added scoped to
 # WORKDIR usage by convention (see ceiling note above).
+# ``globals``/``locals``/``vars`` are NOT stripped: they are rebound per run to
+# the sandbox namespace (live 2026-10-10 MS3-66cc3bb5f2 — the model wrote
+# ``globals().get('evidence')`` and NameError burned a turn). Returning the real
+# process globals would be an escape hatch; returning the script dict is not.
 _UNSAFE_BUILTINS = frozenset({
-    "eval", "exec", "compile", "__import__", "globals", "locals",
-    "vars", "input", "exit", "quit", "help", "breakpoint", "memoryview",
+    "eval", "exec", "compile", "__import__",
+    "globals", "locals", "vars",  # rebound to the sandbox namespace below
+    "input", "exit", "quit", "help", "breakpoint", "memoryview",
 })
 _SAFE_BUILTINS: dict[str, Any] = {
     name: getattr(_builtins, name)
     for name in dir(_builtins)
     if not name.startswith("_") and name not in _UNSAFE_BUILTINS
 }
+_VARS_MISSING = object()
+
+
+def _bind_namespace_builtins(namespace: dict[str, Any], builtins_map: dict[str, Any]) -> None:
+    """Expose ``globals``/``locals``/``vars`` as views of *namespace*, not the process."""
+
+    def _globals() -> dict[str, Any]:
+        return namespace
+
+    def _locals() -> dict[str, Any]:
+        # Top-level ``exec`` has no separate locals dict; nested ``def``/``class``
+        # still get real function locals from the interpreter.
+        return namespace
+
+    def _vars(obj: Any = _VARS_MISSING) -> Any:
+        if obj is _VARS_MISSING:
+            return namespace
+        return _builtins.vars(obj)
+
+    builtins_map["globals"] = _globals
+    builtins_map["locals"] = _locals
+    builtins_map["vars"] = _vars
 
 
 def _timeout_s() -> float:
@@ -178,7 +205,9 @@ async def run_python(
 
     In scope, the script sees:
       - ``evidence``: list of dicts, one per evidence id (metric_id, value,
-        unit, dimensions, period_start/period_end, grain).
+        unit, dimensions, period_start/period_end, grain). Prefer this name
+        directly; ``globals()``/``locals()``/``vars()`` also see the sandbox
+        namespace (including ``evidence``), not the host process.
       - ``WORKDIR``: str path to a per-mission dir; write intermediate files
         there (they persist for later steps). Use ``open(os.path.join(...))``.
       - stdlib math/statistics/json/collections (+ numpy/pandas if available).
@@ -254,6 +283,7 @@ async def run_python(
         "WORKDIR": str(workdir),
         "os": os_facade,
     }
+    _bind_namespace_builtins(sandbox_globals, safe_builtins)
 
     holder: dict[str, Any] = {}
     stdout = io.StringIO()
@@ -279,8 +309,9 @@ async def run_python(
         )
 
     if "error" in holder:
+        err = holder["error"]
         return _fix_the_script(
-            f"sandbox code raised {type(holder['error']).__name__}: {holder['error']}. "
+            f"sandbox code raised {type(err).__name__}: {err}. "
             f"Fix the script and retry.\n{holder.get('tb', '')[-800:]}"
         )
 

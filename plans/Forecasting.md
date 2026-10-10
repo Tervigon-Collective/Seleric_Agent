@@ -1,5 +1,10 @@
 # Governed multi-target forecasting on the existing Seleric planner (Chronos-2 + feature framework)
 
+> **Status 2026-10-10:** P0–P4 implemented. How to use (including UI):  
+> [`docs/features/forecasting/README.md`](../docs/features/forecasting/README.md).  
+> P4: candidate Chronos bundles from the live backtest, calibrated h14 totals, forecast trace, golden questions.  
+> Bundles stay `candidate` until a human promotes them.
+
 ## Context
 
 Today a question classified `kind="forecast"` gets no plan and no prefetch: `runner.py` only prefetches
@@ -311,23 +316,28 @@ It is built domain by domain, every decision carries a reason code, and nothing 
     forecast from the stored input hash.
 
 ## Phases (release order)
-1. **P0, net_sales and orders at account level:**
+1. **P0, net_sales and orders at account level:** ✅ **done**
    - contracts; policy registry and schema; `calendar_in.yaml`; horizon; gates; quality; assembler;
    - `forecast_plan.py`; pipeline; runner branch; `ForecastArtifact`;
    - ETS `forecast_path` and the Chronos univariate path through the existing `/predict`.
-2. **P1:**
+2. **P1:** ✅ **mostly done** (bundles still candidate until backtest PR)
    - Chronos `/v2/forecast` (covariates, co-targets, nulls, queue, pinned revision) and the benchmark;
    - backtest CLI and evaluation metrics;
    - first approved bundles for net_sales and orders (by PR); calibrated totals.
-3. **P2:**
+3. **P2:** ✅ **done**
    - the provisional path for any eligible certified metric;
    - derived recomposition (AOV, ROAS, MER, conversion rate);
    - entity level: platform/channel first, then campaign, product and SKU with sparse-entity refusal;
    - the `forecast_metrics` tool for follow-ups; the UI fan chart.
-4. **Follow-ups, outside v1:**
-   - scheduled re-validation and scoring job;
-   - moving eligibility fields into the Core catalogue source and generator;
-   - MCP principal-derived brand/workspace enforcement.
+4. **Follow-ups (phase 3):** ✅ **done**
+   - scheduled re-validation and scoring job (`python -m seleric_swarm.forecasting.score --if-due`, cron);
+   - catalogue `raw.forecast` eligibility overrides the Agent YAML registry when Core carries it;
+   - forecast fetches pin `workspace_config.brand_id` when the principal's workspace declares one.
+5. **Phase 4:** ✅ **done**
+   - candidate bundles for `net_sales` and `orders` from the 2026-10-10 backtest (not approved; a human promotes by PR);
+   - horizon totals use those bundles' `h14` error quantiles;
+   - `forecast_trace` artifact; `python -m seleric_swarm.forecasting explain <id-or-path>`;
+   - golden questions in `eval/datasets/forecast_questions.jsonl`.
 
 ## Reuse (do not rebuild)
 - **Resolution and catalogue:** `agent/plan.py` (`_resolve_metrics`, `plan_from_slots` pattern) and

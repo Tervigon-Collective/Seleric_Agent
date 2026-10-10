@@ -21,22 +21,54 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 
 from seleric_swarm.agent.intent import QueryClassification
 from seleric_swarm.agent.plan import MetricSlot, PlanShape, PlanSlots
+from seleric_swarm.agent.query_spec import WindowSlot
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 
 _log = logging.getLogger("seleric.agent.understand")
 
 QuestionKind = Literal["conversation", "analysis", "overview", "forecast", "what_if", "action"]
+HorizonUnit = Literal["day", "week", "month"]
+PeriodWord = Literal["next_n", "rest_of_month", "next_month", "this_quarter"]
+
+
+class ForecastHorizonSlot(BaseModel):
+    n: int = Field(default=14, description="How many units ahead when period_word is next_n.")
+    unit: HorizonUnit = Field(default="day", description="day, week or month.")
+    until_iso: str = Field(
+        default="",
+        description="Inclusive end date YYYY-MM-DD when the user names one; else empty.",
+    )
+    period_word: PeriodWord = Field(
+        default="next_n",
+        description=(
+            "next_n: the next n units; rest_of_month: through month-end; "
+            "next_month: the following calendar month; this_quarter: through quarter-end."
+        ),
+    )
+
+
+class ForecastSlots(BaseModel):
+    """Filled only when kind=forecast. Targets reuse MetricSlot."""
+
+    targets: list[MetricSlot] = Field(
+        default_factory=list,
+        description="Metrics to forecast; empty means use Understanding.metrics.",
+    )
+    horizon: ForecastHorizonSlot = Field(
+        default_factory=ForecastHorizonSlot,
+        description="How far ahead to forecast from as_of.",
+    )
 
 
 class Understanding(PlanSlots):
@@ -95,6 +127,13 @@ class Understanding(PlanSlots):
         default=False,
         description="True when the user accepts the offer that ended the previous answer (yes, sure, go ahead).",
     )
+    restyles_prior: bool = Field(
+        default=False,
+        description=(
+            "True when the message only asks to see the previous answer in another form (as a graph, chart, "
+            "table, shorter, in lakhs) and names no new measure, entity or period of its own."
+        ),
+    )
     ordinary_words: list[str] = Field(
         default_factory=list,
         description="Of the listed data-value words, the ones the question uses as plain language, not as that value.",
@@ -127,21 +166,46 @@ class Understanding(PlanSlots):
             "yesterday', 'Meta campaigns last week')."
         ),
     )
+    forecast: ForecastSlots | None = Field(
+        default=None,
+        description=(
+            "When kind=forecast: targets and horizon slots. Null for every other kind. "
+            "targets may be empty when metrics already lists them."
+        ),
+    )
+    windows: list[WindowSlot] = Field(
+        default_factory=list,
+        description=(
+            "Every time window the message names, as expressions (not calendar dates). "
+            "role=event for the period asked about; role=baseline for what to compare it "
+            "against (the days/weeks before the event, or an explicitly named prior period); "
+            "role=context for a surrounding span the user also names (e.g. 'over the last 3 "
+            "days' when the event is yesterday). Prefer name=yesterday|today|this_week|… when "
+            "those words appear; else unit+n with ending=yesterday for 'last N days/weeks/…'; "
+            "use ending=before_event on a baseline that is 'the N days before' the event; use "
+            "start_iso/end_iso only for explicit calendar dates. Empty when no period is named."
+        ),
+    )
 
 
 _INSTRUCTIONS = (
     "Read the user's message to a business-analytics assistant and fill Understanding. Do not "
     "answer analytics questions and do not invent numbers.\n"
     "- kind, follows_prior, accepts_offer: judge from the message and the previous turn shown.\n"
+    "- forecast: only when kind=forecast — set horizon (n/unit/period_word/until_iso) from the "
+    "message (default next 14 days); leave null otherwise.\n"
     "- shape: entity_comparison when the question is about particular entities (the best or "
-    "worst members of some dimension) in one window compared with another; period_comparison "
+    "worst members of some dimension) in one window compared with another — not a question about ONE "
+    "entity it writes out (one campaign, ad or product) against its own other days, which is "
+    "why_single_metric; period_comparison "
     "for whole-account figures across two windows; why_single_metric for why one metric's "
     "total moved — also when it names possible causes or drivers and asks to rank them; "
-    "composition when the user wants a total split into the additive lines it is made of (a "
-    "waterfall, a P&L walk, reconciling components back to a total, how much of a profit change "
-    "came from each cost or revenue line) — list that total first in metrics; funnel for stage "
-    "drop-off; else lookup, trend, breakdown or other. For a "
-    "conversation use other.\n"
+    "composition when the user wants a total split into the additive P&L/waterfall lines it is "
+    "made of (reconcile, waterfall, what makes up profit/margin/net sales, how much of a change "
+    "came from each cost or revenue line) — list that total first in metrics; NOT a bare "
+    "'breakdown' / 'break it down' / 'by day' follow-up (that is shape breakdown: split by day, "
+    "channel, product, …). Funnel for stage drop-off; else lookup, trend, breakdown or other. "
+    "For a conversation use other.\n"
     "- entity_dimension: the dimension id (from the catalogue's Dimensions list) holding those "
     "entities' names.\n"
     "- rank_by: the outcome or efficiency measure that makes an entity 'best' — what it "
@@ -159,7 +223,11 @@ _INSTRUCTIONS = (
     "message continues the previous turn and names no measure, carry the previous turn's. When "
     "the message asks how entities or a channel perform (their performance, how they did) and "
     "names no measure, list the measures an analyst judges that kind of entity by: what was "
-    "spent on it, what it returned, and its efficiency and delivery rates.\n"
+    "spent on it, what it returned, and its efficiency and delivery rates. For why_single_metric "
+    "the first entry is the outcome whose move is explained: when the user asks why something did "
+    "not perform, lost money or did badly and names no measure, that is what it returned for what it "
+    "cost (its profit, or its return on ad spend) — never the spend itself, which follows as a "
+    "possible explanation with the delivery and conversion rates.\n"
     "- breakdown_dimensions: dimension ids for any 'by …' or 'map to …' the user asks for — the "
     "entity's name dimension (its title / name), not its id, unless the user asks for ids. A word that "
     "only says where the named entities live or what kind of figures to read (\"check all the metrics "
@@ -168,7 +236,14 @@ _INSTRUCTIONS = (
     "- ordinary_words: decide for each word in the 'Data-value words' list whether the message "
     "means that value of the dimension it is recorded under. List every word it does not mean "
     "that way: ordinary language (\"other days\", \"direct answer\"), or the same word meant "
-    "for a different kind of thing than that dimension holds. Words meant as that value stay out."
+    "for a different kind of thing than that dimension holds. Words meant as that value stay out.\n"
+    "- windows: every period the message names, as expressions — not dates. A diagnosis that "
+    "asks why something moved yesterday against the days before it has event=yesterday and a "
+    "baseline with unit=day, n=how many days before, ending=before_event; 'compared to the other "
+    "days', 'its usual' or 'normal days' with no count is that baseline with n=7. 'Over the last 3 "
+    "days, why did X fall yesterday' also has a context window of last 3 days. A plain "
+    "'net sales last week' has one event window (name=last_week). Do not invent a baseline "
+    "the user did not ask for. Leave [] when no period is named."
 )
 
 
@@ -275,6 +350,48 @@ _KIND_INTENT = {
     "forecast": "forecast",
     "what_if": "simulation",
 }
+
+
+def diagnose_one_named_entity(
+    u: Understanding | None,
+    value_filters: Sequence[Any],
+    catalogue: CatalogueSnapshot,
+    outcome_candidates: Sequence[str] = (),
+) -> Understanding | None:
+    """One entity the question names, read against its own other days, is diagnosed — not compared with its peers.
+
+    "TH-383-SUSPENDER-26SEP-ADV+, why did it not perform yesterday compared to the other days" was read as an
+    entity comparison three times in five: the plan ranked every campaign by spend and the answer explained orders
+    through site searches (live 2026-10-10 thread_066b9cd1). When exactly one value of the entity's kind is named,
+    the shape is why_single_metric: the outcome is what the entity is judged by (``rank_by``, else the first
+    ``outcome_candidates`` ratio the entity carries) and the measures read become the levers checked against the
+    entity's own days. Several named values stay a comparison."""
+    if u is None or u.shape != "entity_comparison" or not u.entity_dimension.strip():
+        return u
+    family = catalogue.family_members(u.entity_dimension.strip())
+    named = [vf for vf in value_filters if set(getattr(vf, "dimensions", ())) & family]
+    if len(named) != 1 or len(getattr(named[0], "values", ())) != 1:
+        return u
+    dims = {*family, *named[0].dimensions}
+    outcome = u.rank_by if u.rank_by is not None and u.rank_by.metric_id else None
+    if outcome is None:
+        # A headline ratio the reading already holds first (net ROAS read among the levers, not MER, which only
+        # leads the headline), then the headline's own order.
+        read = {s.metric_id for s in u.metrics}
+        ordered = [*(m for m in outcome_candidates if m in read), *(m for m in outcome_candidates if m not in read)]
+        oid = next(
+            (m for m in ordered
+             if catalogue.aggregation_for(m) == "ratio" and any(catalogue.carries(m, d) for d in dims)),
+            None,
+        )
+        if oid is not None:
+            outcome = next((s for s in u.metrics if s.metric_id == oid), None) or MetricSlot(
+                words=catalogue.label_for(oid) or oid.replace("_", " "), metric_id=oid
+            )
+    metrics = list(u.metrics)
+    if outcome is not None:
+        metrics = [outcome, *(s for s in metrics if s.metric_id != outcome.metric_id)]
+    return u.model_copy(update={"shape": "why_single_metric", "metrics": metrics, "rank_by": None})
 
 
 def classification_from(u: Understanding | None) -> QueryClassification:

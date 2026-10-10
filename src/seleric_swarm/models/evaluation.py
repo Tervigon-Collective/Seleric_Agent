@@ -140,3 +140,113 @@ def summarize(errors: list[PredictionError]) -> dict[str, float]:
         summary["interval_coverage"] = round(covered / len(with_interval), 4)
         summary["interval_sample"] = float(len(with_interval))
     return summary
+
+
+def wql(
+    actuals: list[float],
+    quantile_forecasts: dict[float, list[float]],
+) -> float:
+    """Mean weighted quantile loss across the provided quantile levels."""
+    if not actuals or not quantile_forecasts:
+        return float("nan")
+    total = 0.0
+    n = 0
+    for q, preds in quantile_forecasts.items():
+        for y, yhat in zip(actuals, preds, strict=False):
+            err = y - yhat
+            total += (q * err) if err >= 0 else ((q - 1.0) * err)
+            n += 1
+    return round(total / n, 6) if n else float("nan")
+
+
+def mase(
+    actuals: list[float],
+    predictions: list[float],
+    *,
+    seasonality: int = 7,
+    insample: list[float] | None = None,
+) -> float:
+    """Mean absolute scaled error vs seasonal naive (scale from ``insample``)."""
+    if not actuals or not predictions:
+        return float("nan")
+    hist = insample if insample is not None else actuals
+    if len(hist) <= seasonality:
+        return float("nan")
+    scale = sum(abs(hist[i] - hist[i - seasonality]) for i in range(seasonality, len(hist))) / (
+        len(hist) - seasonality
+    )
+    if scale == 0:
+        return float("nan")
+    mae = sum(abs(a - p) for a, p in zip(actuals, predictions, strict=False)) / min(
+        len(actuals), len(predictions)
+    )
+    return round(mae / scale, 6)
+
+
+def coverage(
+    actuals: list[float],
+    lows: list[float],
+    highs: list[float],
+) -> float:
+    """Fraction of actuals inside [low, high]."""
+    n = min(len(actuals), len(lows), len(highs))
+    if n == 0:
+        return float("nan")
+    hits = sum(1 for i in range(n) if lows[i] <= actuals[i] <= highs[i])
+    return round(hits / n, 4)
+
+
+def bias(actuals: list[float], predictions: list[float]) -> float:
+    """Mean prediction − actual (positive = over-forecast)."""
+    n = min(len(actuals), len(predictions))
+    if n == 0:
+        return float("nan")
+    return round(sum(predictions[i] - actuals[i] for i in range(n)) / n, 6)
+
+
+def horizon_total_ape(actual_total: float, predicted_total: float) -> float | None:
+    """Absolute percentage error on the horizon sum."""
+    if actual_total == 0:
+        return None
+    return round(abs(predicted_total - actual_total) / abs(actual_total) * 100, 4)
+
+
+def score_forecast_artifact(
+    forecast_payload: dict,
+    daily_actuals: dict[str, float],
+    *,
+    metric_id: str | None = None,
+) -> dict[str, float]:
+    """Pair each forecast day with later actuals; return summarize-style metrics.
+
+    ``daily_actuals`` maps ISO date → measured value. ``forecast_payload`` is a
+    ``ForecastArtifact.model_dump()`` (or one target dict with a ``days`` list).
+    """
+    targets = forecast_payload.get("targets") or [forecast_payload]
+    preds: list[float] = []
+    acts: list[float] = []
+    lows: list[float] = []
+    highs: list[float] = []
+    for target in targets:
+        if metric_id and target.get("metric_id") not in {metric_id, f"metric.{metric_id}"}:
+            continue
+        for day in target.get("days") or []:
+            d = str(day.get("date") or "")[:10]
+            if d not in daily_actuals:
+                continue
+            preds.append(float(day.get("p50") if day.get("p50") is not None else day.get("mean") or 0))
+            acts.append(float(daily_actuals[d]))
+            lows.append(float(day.get("p10") if day.get("p10") is not None else preds[-1]))
+            highs.append(float(day.get("p90") if day.get("p90") is not None else preds[-1]))
+    if not acts:
+        return {}
+    out: dict[str, float] = {
+        "count": float(len(acts)),
+        "mae": round(sum(abs(a - p) for a, p in zip(acts, preds, strict=True)) / len(acts), 6),
+        "bias": bias(acts, preds),
+        "coverage_80": coverage(acts, lows, highs),
+    }
+    ape = horizon_total_ape(sum(acts), sum(preds))
+    if ape is not None:
+        out["horizon_total_ape"] = ape
+    return out

@@ -2,12 +2,14 @@ import {
   AuiIf,
   AttachmentPrimitive,
   ComposerPrimitive,
+  useAui,
   useAuiState,
 } from "@assistant-ui/react";
 import { useVoiceStore, type VoiceStatus } from "../stores/voice";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { enhanceQuery } from "../api/queryEnhance";
 import { attachAutoCorrect, type AutoCorrectItem } from "../utils/autocorrect";
-import { MicIcon, PaperclipIcon, SendIcon, StopIcon } from "./icons";
+import { MicIcon, PaperclipIcon, SendIcon, SparklesIcon, StopIcon } from "./icons";
 
 const VOICE_LABEL: Record<VoiceStatus, string> = {
   idle: "Talk to Seleric",
@@ -17,7 +19,59 @@ const VOICE_LABEL: Record<VoiceStatus, string> = {
   error: "Voice unavailable — click to retry",
 };
 
-function VoiceControls() {
+function focusComposer() {
+  const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]');
+  if (!input) return;
+  input.focus();
+  const end = input.value.length;
+  input.setSelectionRange(end, end);
+}
+
+function EnhanceButton({ text }: { text: string }) {
+  const aui = useAui();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const empty = !text.trim();
+
+  const onEnhance = async () => {
+    if (empty || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await enhanceQuery(text);
+      const next = (result.enhanced || result.original).trim();
+      if (next) {
+        aui.composer.setText(next);
+        requestAnimationFrame(() => focusComposer());
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to enhance query";
+      setError(message);
+      window.setTimeout(() => setError((cur) => (cur === message ? null : cur)), 4000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const label = busy ? "Enhancing…" : empty ? "Type a question to enhance" : "Enhance query";
+  return (
+    <>
+      {error && <span className="voice-status" role="alert">{error}</span>}
+      <button
+        type="button"
+        className={`voice-btn enhance-btn${busy ? " busy" : ""}`}
+        aria-label={label}
+        title={label}
+        disabled={empty || busy}
+        onClick={() => void onEnhance()}
+      >
+        <SparklesIcon size={15} />
+      </button>
+    </>
+  );
+}
+
+function VoiceControls({ text }: { text: string }) {
   const status = useVoiceStore((s) => s.status);
   const error = useVoiceStore((s) => s.error);
   const start = useVoiceStore((s) => s.start);
@@ -25,6 +79,7 @@ function VoiceControls() {
   return (
     <div className="voice-controls">
       {status === "error" && error && <span className="voice-status" role="alert">{error}</span>}
+      <EnhanceButton text={text} />
       <button
         type="button"
         className={`voice-btn ${status}`}
@@ -184,7 +239,7 @@ export function Composer() {
               )}
             </ComposerPrimitive.Attachments>
           </div>
-          <VoiceControls />
+          <VoiceControls text={text} />
           <small className="hint">Enter to send · Shift+Enter for a new line</small>
         </ComposerPrimitive.Root>
       </div>

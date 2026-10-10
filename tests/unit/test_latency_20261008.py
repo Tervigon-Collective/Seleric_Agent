@@ -76,7 +76,10 @@ def test_the_planner_runs_at_its_own_reasoning_effort(monkeypatch) -> None:
     model.resolve_planner_model(
         _settings(azure_openai_planner_model="p", azure_openai_planner_reasoning_effort="low")
     )
-    assert seen == {"role_tuning": False, "reasoning_effort": "low"}
+    assert seen["role_tuning"] is False
+    assert seen["reasoning_effort"] == "low"
+    assert seen["request_cap_s"] == model.UNDERSTAND_CAP_S
+    assert seen["read_timeout_s"] == model.UNDERSTAND_TIMEOUT_S
 
 
 def test_the_planner_falls_back_down_the_agent_chain(monkeypatch) -> None:

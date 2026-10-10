@@ -211,6 +211,82 @@ def test_reasoning_effort_is_the_primarys_only(monkeypatch: pytest.MonkeyPatch) 
     assert seen[0][1] is not None and seen[1][1] is None
 
 
+def test_tool_calls_and_the_answer_use_different_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+
+    from seleric_swarm.agent import model as M
+    from seleric_swarm.config.settings import Settings
+
+    seen: list[tuple[str, Any]] = []
+    real = M.HealthGatedChatModel
+
+    def spy(name: str, **kw: Any) -> Any:
+        seen.append((name, kw.get("settings"), kw.get("request_cap_s")))
+        return real(name, **kw)
+
+    monkeypatch.setattr(M, "HealthGatedChatModel", spy)
+    monkeypatch.delenv("AZURE_OPENAI_STRONG_REASONING_EFFORT", raising=False)
+    settings = Settings(
+        llm_provider="azure_openai_compatible", azure_openai_api_key="k", azure_openai_endpoint="https://x",
+        azure_openai_models=json.dumps(["gpt-5-mini", "gpt-4o-code", "grok"]),
+        azure_openai_tool_model="gpt-4o-code", azure_openai_tool_temperature=0,
+        azure_openai_answer_model="gpt-5-mini", azure_openai_answer_reasoning_effort="none",
+        azure_openai_answer_diagnosis_reasoning_effort="high",
+    )
+    ordinary = M.resolve_mission_model(settings, diagnosis=False)
+    diagnosis = M.resolve_mission_model(settings, diagnosis=True)
+    assert isinstance(ordinary, M.RoleSplitModel) and isinstance(diagnosis, M.RoleSplitModel)
+    # Tool chain leads with gpt-4o-code at temperature 0 and no reasoning effort.
+    # Two chains are built per call (tool, then answer), twice.
+    tool_primary = [row for row in seen if row[0] == "gpt-4o-code"][0]
+    assert tool_primary[1] == {"temperature": 0}
+    assert tool_primary[2] is None
+    answer_efforts = [row[1].get("openai_reasoning_effort") for row in seen if row[0] == "gpt-5-mini" and row[1]]
+    assert answer_efforts == ["none", "high"]
+
+
+@pytest.mark.asyncio
+async def test_a_final_result_turn_is_rewritten_by_the_answer_model() -> None:
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.models.function import FunctionModel
+    from pydantic_ai.tools import ToolDefinition
+
+    from seleric_swarm.agent.model import RoleSplitModel
+
+    params = ModelRequestParameters(
+        function_tools=[ToolDefinition(name="query_metrics", description="fetch", parameters_json_schema={"type": "object"})]
+    )
+
+    calls: list[str] = []
+    answer_tools: list[int] = []
+
+    def respond(name: str, tool: str):
+        def _fn(messages: list, info: object) -> ModelResponse:
+            del messages
+            calls.append(name)
+            if name == "answer":
+                answer_tools.append(len(info.model_request_parameters.function_tools))  # type: ignore[attr-defined]
+            return ModelResponse(parts=[ToolCallPart(tool_name=tool, args={})])
+        return _fn
+
+    split = RoleSplitModel(
+        FunctionModel(respond("tool", "query_metrics"), model_name="tool"),
+        FunctionModel(respond("answer", "final_result"), model_name="answer"),
+    )
+    tool_turn = await split.request([], None, params)
+    assert calls == ["tool"] and tool_turn.parts[0].tool_name == "query_metrics"  # type: ignore[union-attr]
+
+    answer_split = RoleSplitModel(
+        FunctionModel(respond("tool", "final_result"), model_name="tool"),
+        FunctionModel(respond("answer", "final_result"), model_name="answer"),
+    )
+    answer_turn = await answer_split.request([], None, params)
+    assert calls[-2:] == ["tool", "answer"]
+    assert answer_tools == [0]
+    assert answer_turn.parts[0].tool_name == "final_result"  # type: ignore[union-attr]
+
+
 def test_a_reworded_measure_phrase_does_not_leak_its_words_into_the_question_context() -> None:
     from seleric_swarm.agent.runner import _outside_measures
 

@@ -1,0 +1,24 @@
+# Domain priors that narrow the candidate covariate pool for forecasting.
+# Backtests choose the final bundle; this file only lists which domains may drive which.
+version: 1
+drivers:
+  commerce:
+    - paidmedia
+    - webanalytics
+    - calendar
+  paidmedia:
+    - calendar
+  webanalytics:
+    - calendar
+  operations:
+    - commerce
+    - calendar
+metric_hints:
+  net_sales:
+    - orders
+    - ad_spend
+    - sessions
+  orders:
+    - ad_spend
+    - sessions
+    - net_sales

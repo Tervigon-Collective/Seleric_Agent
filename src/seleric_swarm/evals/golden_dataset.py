@@ -20,6 +20,7 @@ from seleric_swarm.paths import repo_root
 
 DEFAULT_DATASET_PATHS: tuple[Path, ...] = (
     repo_root() / "eval" / "datasets" / "lookup_commerce.jsonl",
+    repo_root() / "eval" / "datasets" / "forecast_questions.jsonl",
 )
 
 

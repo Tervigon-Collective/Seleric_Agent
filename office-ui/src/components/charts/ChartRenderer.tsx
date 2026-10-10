@@ -38,10 +38,10 @@ interface ChartRendererProps {
   spec: ChartSpec;
 }
 
-/** Restrained analytical palette led by the product chart accent. */
+/** Restrained analytical palette led by Apple system colors (HIG Color). */
 const PALETTE = [
-  '#737CE7', '#2A9D8F', '#7FB069', '#E0A458',
-  '#9B8AFB', '#94A3B8', '#C0C9D6',
+  '#0A84FF', '#30D158', '#FF9F0A', '#FF453A',
+  '#BF5AF2', '#64D2FF', '#8E8E93',
 ];
 
 /** Forms drawn as flat bars rather than as a continuous line. */
@@ -59,25 +59,25 @@ export interface ChartThemeColors {
 }
 
 const LIGHT_CHART_THEME: ChartThemeColors = {
-  text: '#202125',
-  dim: '#656971',
-  faint: '#898d96',
-  line: '#e9eaec',
-  lineStrong: '#dcdde1',
+  text: '#000000',
+  dim: '#3c3c43', // secondaryLabel light (60% over white ≈ solid for canvas)
+  faint: '#8e8e93', // systemGray
+  line: '#e5e5ea', // systemGray5 light
+  lineStrong: '#c6c6c8', // opaqueSeparator light
   panel: '#ffffff',
-  sidebar: '#f8f8f7',
-  accent: '#5865d9',
+  sidebar: '#f2f2f7',
+  accent: '#007aff', // systemBlue light
 };
 
 const DARK_CHART_THEME: ChartThemeColors = {
-  text: '#e8ebf0',
-  dim: '#9aa4b2',
-  faint: '#6b7686',
-  line: '#232b36',
-  lineStrong: '#303a47',
-  panel: '#111418',
-  sidebar: '#141920',
-  accent: '#8e97f2',
+  text: '#ffffff', // label dark
+  dim: '#98989f', // secondaryLabel dark ≈ #EBEBF5 @60% on black, solid for canvas
+  faint: '#636366', // systemGray2 dark
+  line: '#38383a', // opaqueSeparator dark
+  lineStrong: '#48484a', // systemGray3 dark
+  panel: '#1c1c1e', // secondarySystemBackground dark
+  sidebar: '#000000',
+  accent: '#0a84ff', // systemBlue dark
 };
 
 function readCssVar(name: string, fallback: string): string {
@@ -442,8 +442,9 @@ function cartesianSeries(spec: ChartSpec, mark?: CartesianMark): Array<Record<st
     // The backend already emits `stack: "total"` for stacked forms; never restack.
     // Defense in depth: a stacked spec over mixed units (e.g. ₹ + counts from
     // an older backend) renders unstacked so values compare side-by-side.
-    // A line override never stacks: summed lines mislead like mixed bars do.
-    stack: mark === 'line' ? undefined : unstack ? undefined : s.stack,
+    // A user line override never stacks: summed lines mislead like mixed bars do.
+    // Keep stack when the series already carries areaStyle (forecast P10–P90 fan band).
+    stack: mark === 'line' && !s.areaStyle ? undefined : unstack ? undefined : s.stack,
     areaStyle: spec.chart_type === 'area' ? { opacity: 0.12 } : s.areaStyle,
     lineStyle: flatMarks ? undefined : { width: 2 },
     symbolSize: 5,

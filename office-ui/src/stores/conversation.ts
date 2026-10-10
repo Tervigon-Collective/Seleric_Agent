@@ -226,16 +226,47 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   createThread: async () => {
+    // Detach from any in-flight run on the previous thread. Leaving
+    // submitting/progress set makes the empty new chat render the old
+    // "Working…" / "Revising…" card (assistant-ui treats isRunning as an
+    // empty assistant placeholder).
+    if (threadFollow) stopThreadFollow();
+    selectionGeneration += 1;
+    submissionGeneration += 1;
+    subscriptions.forEach((stop) => stop());
+    subscriptions.clear();
     useOffice.getState().reset();
     if (get().demoMode) {
       const id = `thread_demo_${Date.now()}`;
       const thread = { ...DEMO_THREAD, id, title: "New conversation", created_at: now(), updated_at: now() };
-      set((s) => ({ threads: [thread, ...s.threads], selectedThreadId: id, messages: { ...s.messages, [id]: [] } }));
+      set((s) => ({
+        threads: [thread, ...s.threads],
+        selectedThreadId: id,
+        messages: { ...s.messages, [id]: [] },
+        loading: false,
+        submitting: false,
+        currentRunId: null,
+        progress: null,
+        thinkingText: null,
+        voicePending: null,
+        error: null,
+      }));
       return;
     }
     try {
       const thread = await conversationsApi.createThread();
-      set((s) => ({ threads: [thread, ...s.threads], selectedThreadId: thread.id, messages: { ...s.messages, [thread.id]: [] } }));
+      set((s) => ({
+        threads: [thread, ...s.threads],
+        selectedThreadId: thread.id,
+        messages: { ...s.messages, [thread.id]: [] },
+        loading: false,
+        submitting: false,
+        currentRunId: null,
+        progress: null,
+        thinkingText: null,
+        voicePending: null,
+        error: null,
+      }));
     } catch (error) {
       set({ error: error instanceof Error ? error.message : "Unable to create thread" });
     }
@@ -880,6 +911,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         run_id: event.run_id,
         parent_message_id: null,
         created_at: event.created_at,
+        // Mark final immediately so thumbs + response time render without
+        // waiting for the listMessages refetch below (streaming deltas carry
+        // no updated_at and stay vote-free by design).
+        updated_at: event.created_at,
       };
       set((s) => {
         const existing = s.messages[event.thread_id] ?? [];

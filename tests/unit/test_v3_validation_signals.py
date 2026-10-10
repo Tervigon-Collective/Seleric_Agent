@@ -360,6 +360,42 @@ def test_derived_artifact_with_no_backing_evidence_is_a_blocking_gap():
     assert any("no evidence artifacts" in r for r in outcome.reasons)
 
 
+def test_forecast_input_backs_derived_forecast_artifacts():
+    """Live 2026-10-10 (MS3-66cc3bb5f2): Chronos stored forecast_input + prediction
+    with no Cube evidence rows; check_evidence treated that as a blocking gap and
+    forced a revision that abandoned the forecast."""
+    store = InMemoryArtifactStore()
+    store.put(
+        Artifact(
+            workspace_id="ws-1",
+            artifact_type="forecast_input",
+            payload={"frame": {"content_hash": "abc"}, "content_hash": "abc"},
+            classification="factual",
+            evidence_ids=["forecast_frame:abc"],
+            provenance=ArtifactProvenance(evidence_ids=["forecast_frame:abc"]),
+            mission_id=_MISSION,
+        )
+    )
+    _derived(
+        store,
+        "prediction",
+        {
+            "model_id": "chronos",
+            "model_version": "1",
+            "prediction_type": "forecast",
+            "value": 312500.0,
+            "confidence_interval": [198500.0, 500100.0],
+            "evidence_ids": ["forecast_input"],
+            "feature_leakage_checked": True,
+        },
+        ["forecast_input"],
+    )
+    outcome = check_evidence(store.list_for_mission(_MISSION))
+    assert outcome.status == "OK"
+    scored = EvidenceValidator().score(_deps(store))
+    assert scored.verdict != "REVISE" or not any("no evidence artifacts" in r for r in scored.reasons)
+
+
 def test_a_plan_artifact_alone_is_not_a_claim_and_does_not_fail_the_mission():
     """Live bug: a planned mission that answered without fetching data (e.g.
     "thanks!") carried a `plan` artifact, which was scored as a derived claim

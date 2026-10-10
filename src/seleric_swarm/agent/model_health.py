@@ -133,10 +133,21 @@ def _spent_without_output(response: Any) -> bool:
 class HealthGatedChatModel(OpenAIChatModel):
     """``OpenAIChatModel`` that fails instantly while cooling down."""
 
-    def __init__(self, model_name: str, *, health: ModelHealth, health_key: str, **kwargs: Any):
+    def __init__(
+        self,
+        model_name: str,
+        *,
+        health: ModelHealth,
+        health_key: str,
+        request_cap_s: float | None = None,
+        **kwargs: Any,
+    ):
         super().__init__(model_name, **kwargs)
         self._health = health
         self._health_key = health_key
+        # None uses the process default. The understand call at high effort runs
+        # 43–60s and was falling through the 60s cap; that role passes a longer cap.
+        self._request_cap_s = request_cap_s
         health.register(health_key)
 
     def _gate(self) -> None:
@@ -174,7 +185,7 @@ class HealthGatedChatModel(OpenAIChatModel):
         return response
 
     async def _capped(self, call: Awaitable[Any]) -> Any:
-        cap = AGENT_LLM_REQUEST_CAP_S
+        cap = AGENT_LLM_REQUEST_CAP_S if self._request_cap_s is None else self._request_cap_s
         if cap <= 0:
             return await call
         try:

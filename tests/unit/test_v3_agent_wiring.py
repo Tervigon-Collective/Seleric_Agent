@@ -25,7 +25,7 @@ def test_every_tool_is_registered() -> None:
     unregistered — the test suite would stay green, because a tool nobody
     registers is a tool nobody tests.
     """
-    assert len(TOOLS) == 20  # + exploration.explore_data, composition.break_down_metric
+    assert len(TOOLS) == 21  # + forecast_metrics (P2)
 
 
 _ALL = {
@@ -42,6 +42,7 @@ _ALL = {
     "break_down_metric",
     "explore_data",
     "estimate_effect",
+    "forecast_metrics",
     "forecast",
     "propose_action",
     "commit_action",
@@ -59,14 +60,22 @@ def test_all_tools_register_on_the_agent() -> None:
 
 def test_tools_with_nothing_behind_them_are_not_offered() -> None:
     # This deployment: writes off, no experiments registered, empty knowledge
-    # corpus; the four approved forecast models keep forecast.
+    # corpus; forecast_metrics hides the evidence-only models.forecast tool (P2).
     hidden = unbacked_tools(allow_writes=False)
-    assert hidden == {"propose_action", "commit_action", "get_experiment_history", "evaluate_experiment", "search_knowledge"}
+    assert hidden == {
+        "propose_action",
+        "commit_action",
+        "get_experiment_history",
+        "evaluate_experiment",
+        "search_knowledge",
+        "forecast",
+    }
     assert "propose_action" not in unbacked_tools(allow_writes=True)
     agent = build_seleric_agent(hidden=hidden)
     names = set(agent._function_toolset.tools.keys())
     assert names == _ALL - hidden
-    assert "estimate_sample_size" in names and "forecast" in names
+    assert "estimate_sample_size" in names and "forecast_metrics" in names
+    assert "forecast" not in names
 
 
 async def test_stub_model_still_calls_zero_tools() -> None:

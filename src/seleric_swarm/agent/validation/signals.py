@@ -158,6 +158,17 @@ def check_evidence(artifacts: list[Artifact]) -> CheckOutcome:
     if not rows:
         if not artifacts:
             return CheckOutcome(check="evidence", status="NOT_APPLICABLE")
+        # Live 2026-10-10 (MS3-66cc3bb5f2): the forecast pipeline stores the assembled
+        # feature frame as ``forecast_input`` (factual) and predictions/charts as
+        # derived — never Cube ``evidence`` rows. That frame is the backing for the
+        # forecast claim; treating it as missing evidence burned two revisions and
+        # the model abandoned a successful Chronos run.
+        if any(a.artifact_type == "forecast_input" for a in artifacts):
+            return CheckOutcome(
+                check="evidence",
+                status="OK",
+                score_signals={"evidence_quality": 0.9},
+            )
         return CheckOutcome(
             check="evidence",
             status="INSUFFICIENT",

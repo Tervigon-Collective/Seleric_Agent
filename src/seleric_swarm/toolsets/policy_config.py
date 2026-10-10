@@ -48,6 +48,7 @@ DIAG_MIN_ROWS_PER_COVARIATE: int = 3   # estimation rows needed per regressor
 DIAG_PLACEBO_SHIFTS: int = 60          # circular-shift placebo draws
 DIAG_BROAD_BASED_MAX: float = 0.3      # segment-specificity at/below which a change is broad-based
 DIAG_COMEASURE_R: float = 0.95         # normal-day lockstep with the outcome => same units, not a cause
+DIAG_UNIT_COUNT_R: float = 0.90        # normal-day lockstep with the count of the outcome's own units (orders for sales) => the same events
 DIAG_MIN_DIMENSION_COVERAGE: float = 0.9  # share of the outcome a dimension's segments must account for
 # Calendar words in a catalogue grain (``brand_order_day``): time buckets, not units.
 DIAG_CALENDAR_GRAIN_TOKENS: tuple[str, ...] = ("hour", "day", "week", "month", "quarter", "year")

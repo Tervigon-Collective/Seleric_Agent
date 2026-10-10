@@ -1,0 +1,212 @@
+{
+  "target": "orders",
+  "generated_at": "2026-10-10T08:48:10.740173Z",
+  "folds": [
+    {
+      "cutoff": "2026-07-03",
+      "seasonal_naive": {
+        "wql": 17.162295,
+        "mase": 2.464397,
+        "coverage_80": 0.3571,
+        "bias": 34.5,
+        "horizon_total_ape": 51.6578
+      },
+      "ets": {
+        "wql": 22.173608,
+        "mase": 3.154227,
+        "coverage_80": 0.3571,
+        "bias": 64.087321,
+        "horizon_total_ape": 95.9596
+      },
+      "chronos-2": {
+        "wql": 12.211048,
+        "mase": 1.925675,
+        "coverage_80": 0.6429,
+        "bias": 37.871047,
+        "horizon_total_ape": 56.7053
+      }
+    },
+    {
+      "cutoff": "2026-07-17",
+      "seasonal_naive": {
+        "wql": 5.884631,
+        "mase": 0.767412,
+        "coverage_80": 0.9286,
+        "bias": -16.714286,
+        "horizon_total_ape": 30.0
+      },
+      "ets": {
+        "wql": 4.952989,
+        "mase": 0.475523,
+        "coverage_80": 1.0,
+        "bias": -9.837927,
+        "horizon_total_ape": 17.6578
+      },
+      "chronos-2": {
+        "wql": 4.57905,
+        "mase": 0.636405,
+        "coverage_80": 0.8571,
+        "bias": -14.095455,
+        "horizon_total_ape": 25.2995
+      }
+    },
+    {
+      "cutoff": "2026-07-31",
+      "seasonal_naive": {
+        "wql": 7.214288,
+        "mase": 0.941662,
+        "coverage_80": 0.8571,
+        "bias": -21.428571,
+        "horizon_total_ape": 30.7377
+      },
+      "ets": {
+        "wql": 6.793178,
+        "mase": 0.883224,
+        "coverage_80": 1.0,
+        "bias": -18.115649,
+        "horizon_total_ape": 25.9856
+      },
+      "chronos-2": {
+        "wql": 5.652337,
+        "mase": 0.761098,
+        "coverage_80": 1.0,
+        "bias": -14.851096,
+        "horizon_total_ape": 21.3028
+      }
+    },
+    {
+      "cutoff": "2026-08-14",
+      "seasonal_naive": {
+        "wql": 6.723883,
+        "mase": 0.853356,
+        "coverage_80": 0.9286,
+        "bias": 13.857143,
+        "horizon_total_ape": 21.9457
+      },
+      "ets": {
+        "wql": 6.032037,
+        "mase": 0.625818,
+        "coverage_80": 1.0,
+        "bias": 7.592076,
+        "horizon_total_ape": 12.0237
+      },
+      "chronos-2": {
+        "wql": 4.764771,
+        "mase": 0.528297,
+        "coverage_80": 0.9286,
+        "bias": 2.391638,
+        "horizon_total_ape": 3.7877
+      }
+    },
+    {
+      "cutoff": "2026-08-28",
+      "seasonal_naive": {
+        "wql": 8.019929,
+        "mase": 1.0567,
+        "coverage_80": 0.7143,
+        "bias": 22.214286,
+        "horizon_total_ape": 45.1379
+      },
+      "ets": {
+        "wql": 4.248624,
+        "mase": 0.285657,
+        "coverage_80": 1.0,
+        "bias": 3.330566,
+        "horizon_total_ape": 6.7675
+      },
+      "chronos-2": {
+        "wql": 3.258914,
+        "mase": 0.283885,
+        "coverage_80": 1.0,
+        "bias": 1.984989,
+        "horizon_total_ape": 4.0334
+      }
+    },
+    {
+      "cutoff": "2026-09-11",
+      "seasonal_naive": {
+        "wql": 8.411244,
+        "mase": 1.186907,
+        "coverage_80": 0.7857,
+        "bias": 25.714286,
+        "horizon_total_ape": 103.4483
+      },
+      "ets": {
+        "wql": 10.177508,
+        "mase": 1.401829,
+        "coverage_80": 0.5714,
+        "bias": 32.528441,
+        "horizon_total_ape": 130.8615
+      },
+      "chronos-2": {
+        "wql": 11.916022,
+        "mase": 1.351907,
+        "coverage_80": 0.2143,
+        "bias": 31.750287,
+        "horizon_total_ape": 127.731
+      }
+    },
+    {
+      "cutoff": "2026-09-25",
+      "seasonal_naive": {
+        "wql": 7.112392,
+        "mase": 0.910022,
+        "coverage_80": 0.9286,
+        "bias": -21.571429,
+        "horizon_total_ape": 47.4843
+      },
+      "ets": {
+        "wql": 5.18722,
+        "mase": 0.595662,
+        "coverage_80": 1.0,
+        "bias": -13.94251,
+        "horizon_total_ape": 30.6911
+      },
+      "chronos-2": {
+        "wql": 4.01147,
+        "mase": 0.465954,
+        "coverage_80": 1.0,
+        "bias": -7.257196,
+        "horizon_total_ape": 15.975
+      }
+    }
+  ],
+  "selection_path": [
+    "seasonal-naive",
+    "ets",
+    "chronos-2-univariate",
+    "winner:chronos-2"
+  ],
+  "rejected": [],
+  "point_in_time_caveat": "If the warehouse lacks revision snapshots, backtests use today's values for past days; maturity masking reduces that bias.",
+  "mean_metrics": {},
+  "mean_by_engine": {
+    "seasonal_naive": {
+      "wql": 8.646952,
+      "mase": 1.168637,
+      "coverage_80": 0.785714,
+      "bias": 5.22449,
+      "horizon_total_ape": 47.201671,
+      "n_folds": 7.0
+    },
+    "ets": {
+      "wql": 8.509309,
+      "mase": 1.060277,
+      "coverage_80": 0.846929,
+      "bias": 9.377474,
+      "horizon_total_ape": 45.706686,
+      "n_folds": 7.0
+    },
+    "chronos-2": {
+      "wql": 6.627659,
+      "mase": 0.85046,
+      "coverage_80": 0.806129,
+      "bias": 5.399173,
+      "horizon_total_ape": 36.404957,
+      "n_folds": 7.0
+    }
+  },
+  "winner": "chronos-2",
+  "context_days": 180,
+  "horizon_days": 14
+}

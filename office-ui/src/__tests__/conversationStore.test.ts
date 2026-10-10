@@ -82,6 +82,53 @@ describe("conversation store submit", () => {
     });
   });
 
+  it("clears in-flight run chrome when starting a new chat", async () => {
+    useConversationStore.setState({
+      demoMode: true,
+      selectedThreadId: "t1",
+      threads: [{
+        id: "t1", workspace_id: "demo", owner_user_id: "demo", project_id: null,
+        title: "Old run", status: "ACTIVE", metadata: {},
+        created_at: "2026-09-17T10:00:00Z", updated_at: "2026-09-17T10:00:00Z",
+      }],
+      messages: { t1: [] },
+      submitting: true,
+      currentRunId: "run-old",
+      progress: "Revising the answer — blocking evidence gap",
+      thinkingText: "checking…",
+      error: "stale",
+    });
+    useOffice.getState().hydrate({
+      missionId: "mission-old",
+      query: "old question",
+      status: "running",
+      route: "v3",
+      stage: "answer",
+      leadershipEpoch: 0,
+      lastSeq: 1,
+      agents: [],
+      board: { steps: [] },
+      handoffs: [],
+      artifacts: {},
+      unresolvedQuestions: [],
+      limitations: [],
+      timeline: [],
+    });
+
+    await useConversationStore.getState().createThread();
+
+    const state = useConversationStore.getState();
+    expect(state.selectedThreadId).not.toBe("t1");
+    expect(state.selectedThreadId).toBeTruthy();
+    expect(state.submitting).toBe(false);
+    expect(state.currentRunId).toBeNull();
+    expect(state.progress).toBeNull();
+    expect(state.thinkingText).toBeNull();
+    expect(state.error).toBeNull();
+    expect(state.messages[state.selectedThreadId!]).toEqual([]);
+    expect(useOffice.getState().status).toBe("idle");
+  });
+
   it("creates a conversation when the first message is sent", async () => {
     useConversationStore.setState({
       demoMode: false,

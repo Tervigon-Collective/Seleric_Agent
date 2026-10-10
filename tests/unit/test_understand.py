@@ -224,13 +224,18 @@ async def test_ordinary_words_do_not_become_required_filters(monkeypatch):
 
 
 
-async def test_a_forecast_question_is_not_prefetched_so_its_tool_stays_available(monkeypatch):
+async def test_a_forecast_question_runs_the_forecast_pipeline(monkeypatch):
+    """Forecast missions compile a ForecastPlan and prefetch via the forecasting
+    pipeline (not execute_plan). Thin MCP history refuses closed — no invented numbers."""
     mcp = _Mcp()
     reading = {"kind": "forecast", "shape": "trend", "metrics": [{"words": "net sales", "metric_id": ""}]}
     await _run(monkeypatch, mcp, reading, "forecast net sales for next week")
-    assert not [c for c, _ in mcp.calls if c == "seleric.metrics_query"]
+    assert any(c == "seleric.metrics_query" for c, _ in mcp.calls)
     plans = [a for a in get_v3_artifact_store().list_for_mission("MS3-u") if a.artifact_type == "plan"]
-    assert plans and "prefetch" not in plans[0].payload["stats"]
+    assert plans
+    assert plans[0].payload["stats"].get("forecast_prefetch") is True
+    assert "ANSWER SKELETON" in plans[0].payload["plan"]
+    assert "prefetch" not in plans[0].payload["stats"]  # analysis executor path unused
 
 
 async def test_a_breakdown_with_no_words_asking_for_it_is_dropped():
