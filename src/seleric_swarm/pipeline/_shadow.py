@@ -18,9 +18,11 @@ import logging
 import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
+from datetime import time as dtime
 from typing import Any, Literal
 
+from seleric_swarm.answer import AnswerLLM, Evidence, answer, verify
 from seleric_swarm.contracts.pipeline import (
     AnalysisPlan,
     Clarification,
@@ -29,9 +31,10 @@ from seleric_swarm.contracts.pipeline import (
     QuestionSpec,
 )
 from seleric_swarm.observability import stage_span
+from seleric_swarm.pipeline._run_plan import PlanRun, run_plan
 from seleric_swarm.plan import plan as build_plan
 from seleric_swarm.plan import plan_notes
-from seleric_swarm.semantic import SemanticReadModel
+from seleric_swarm.semantic import SemanticPort, SemanticReadModel
 from seleric_swarm.spec import candidates_from_resolution, compile_question_spec
 from seleric_swarm.understand import DraftLLM, understand
 
@@ -45,11 +48,13 @@ class ShadowModes:
     understand: Mode = "off"
     planner: Mode = "off"
     clarify: Mode = "off"
+    # Answer shadow runs the plan (real reads through ``port``) and drafts a v2 answer.
+    answer: Mode = "off"
 
     @property
     def active(self) -> bool:
         # The planner reads the v2 spec, so planner shadow implies understand + spec.
-        return self.understand != "off" or self.planner != "off"
+        return self.understand != "off" or self.planner != "off" or self.answer != "off"
 
 
 @dataclass(frozen=True)
@@ -61,6 +66,8 @@ class ShadowInputs:
     prior_question: str = ""
     prior_offer: str = ""
     headline_metric_ids: tuple[str, ...] = ()
+    port: SemanticPort | None = None
+    as_of_time: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -82,6 +89,8 @@ class ShadowOutcome:
     spec: QuestionSpec | Clarification | None = None
     plan: AnalysisPlan | None = None
     notes: tuple[str, ...] = ()
+    run: PlanRun | None = None
+    answer: dict[str, Any] = field(default_factory=dict)
     stats: dict[str, Any] = field(default_factory=dict)
     latency_ms: int = 0
 
@@ -92,11 +101,14 @@ def start_shadow(
     *,
     modes: ShadowModes,
     mission_id: str,
+    answer_llm: AnswerLLM | None = None,
 ) -> asyncio.Task[ShadowOutcome] | None:
     """Launch the v2 stages in the background; None when every v2 flag is off."""
     if not modes.active:
         return None
-    return asyncio.create_task(_run(llm, inputs, modes=modes, mission_id=mission_id), name=f"v2_shadow:{mission_id}")
+    return asyncio.create_task(
+        _run(llm, inputs, modes=modes, mission_id=mission_id, answer_llm=answer_llm), name=f"v2_shadow:{mission_id}"
+    )
 
 
 async def collect_shadow(
@@ -122,7 +134,14 @@ async def collect_shadow(
     return record
 
 
-async def _run(llm: DraftLLM | None, inputs: ShadowInputs, *, modes: ShadowModes, mission_id: str) -> ShadowOutcome:
+async def _run(
+    llm: DraftLLM | None,
+    inputs: ShadowInputs,
+    *,
+    modes: ShadowModes,
+    mission_id: str,
+    answer_llm: AnswerLLM | None = None,
+) -> ShadowOutcome:
     started = time.perf_counter()
     outcome = ShadowOutcome()
     try:
@@ -154,12 +173,14 @@ async def _run(llm: DraftLLM | None, inputs: ShadowInputs, *, modes: ShadowModes
         if isinstance(spec, Clarification):
             outcome.status = "clarification"
             return outcome
-        if modes.planner != "off":
+        if modes.planner != "off" or modes.answer != "off":
             with stage_span("plan", mission_id=mission_id, inp=spec) as span:
                 as_of, headline = inputs.as_of, inputs.headline_metric_ids
                 outcome.plan = build_plan(spec, inputs.read_model, as_of=as_of, headline_metric_ids=headline)
                 outcome.notes = plan_notes(spec, inputs.read_model, as_of=as_of, headline_metric_ids=headline)
                 span.set_output(outcome.plan)
+            if modes.answer != "off" and inputs.port is not None and not outcome.plan.needs_agent:
+                await _answer_shadow(answer_llm, inputs, spec, outcome, mission_id=mission_id)
         outcome.status = "ok"
     except Exception as exc:
         _log.warning("pipeline_v2_shadow_failed", exc_info=True, extra={"mission_id": mission_id})
@@ -168,6 +189,26 @@ async def _run(llm: DraftLLM | None, inputs: ShadowInputs, *, modes: ShadowModes
     finally:
         outcome.latency_ms = round((time.perf_counter() - started) * 1000)
     return outcome
+
+
+async def _answer_shadow(
+    llm: AnswerLLM | None, inputs: ShadowInputs, spec: QuestionSpec, outcome: ShadowOutcome, *, mission_id: str
+) -> None:
+    assert outcome.plan is not None
+    as_of = inputs.as_of_time or datetime.combine(inputs.as_of, dtime(23, 59))
+    with stage_span("execute", mission_id=mission_id, inp=outcome.plan):
+        outcome.run = await run_plan(outcome.plan, spec, port=inputs.port, read_model=inputs.read_model, as_of=as_of)
+    evidence = Evidence(outcome.run.evidence)
+    with stage_span("answer", mission_id=mission_id, inp=spec) as span:
+        doc, stats = await answer(llm, inputs.question, spec=spec, evidence=evidence, read_model=inputs.read_model)
+        span.set_output(doc)
+    outcome.answer = {
+        "status": doc.draft.status,
+        "issues": verify(doc.draft, spec, evidence).codes(),
+        "attempts": stats.get("attempts"),
+        "chars": len(doc.rendered_markdown),
+        "evidence_ids": len(doc.evidence_ids),
+    }
 
 
 def summarise(outcome: ShadowOutcome, legacy: LegacyDecision) -> dict[str, Any]:
@@ -212,6 +253,10 @@ def summarise(outcome: ShadowOutcome, legacy: LegacyDecision) -> dict[str, Any]:
             record["plan"]["notes"] = list(outcome.notes)
         if legacy.metric_ids and set(legacy.metric_ids) != metrics:
             disagree.append("metrics")
+    if outcome.run is not None:
+        record["run"] = outcome.run.summary()
+    if outcome.answer:
+        record["answer"] = outcome.answer
     record["disagree"] = disagree
     return record
 

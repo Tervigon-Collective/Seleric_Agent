@@ -1,9 +1,12 @@
 """Stage wiring (L4). `run_mission` lands as modules move out of `agent/runner.py`.
 
-Today: the v2 stages (understand → spec → plan) run in shadow beside the legacy mission
-(``start_shadow`` / ``collect_shadow``) behind ``UNDERSTAND_V2_MODE`` / ``PLANNER_V2_MODE``.
+Today: the v2 stages (understand → spec → plan → execute → answer) run in shadow beside the
+legacy mission (``start_shadow`` / ``collect_shadow``) behind ``UNDERSTAND_V2_MODE`` /
+``PLANNER_V2_MODE`` / ``ANSWER_V2_MODE``. ``run_plan`` executes an ``AnalysisPlan``
+(queries, derivations, the ``investigate`` engine).
 """
 
+from seleric_swarm.pipeline._run_plan import PlanReader, PlanRun, findings_as_derivations, run_plan
 from seleric_swarm.pipeline._shadow import (
     LegacyDecision,
     ShadowInputs,
@@ -15,9 +18,13 @@ from seleric_swarm.pipeline._shadow import (
 
 __all__ = [
     "LegacyDecision",
+    "PlanReader",
+    "PlanRun",
     "ShadowInputs",
     "ShadowModes",
     "collect_shadow",
+    "findings_as_derivations",
+    "run_plan",
     "start_shadow",
     "summarise",
 ]

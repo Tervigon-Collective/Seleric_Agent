@@ -6,7 +6,13 @@ import asyncio
 from datetime import date
 
 from seleric_swarm.contracts.pipeline import MeasurePhrase, QuestionDraft, WindowExpr, WindowSlot
-from seleric_swarm.pipeline import LegacyDecision, ShadowInputs, ShadowModes, collect_shadow, start_shadow
+from seleric_swarm.pipeline import (
+    LegacyDecision,
+    ShadowInputs,
+    ShadowModes,
+    collect_shadow,
+    start_shadow,
+)
 from seleric_swarm.semantic import SemanticReadModel
 
 AS_OF = date(2026, 10, 10)
@@ -82,3 +88,22 @@ async def test_a_slow_shadow_is_cancelled_not_awaited() -> None:
     record = await collect_shadow(task, LegacyDecision(), timeout_s=0.05)
     assert record == {"status": "timeout"}
     assert task is not None and task.done()
+
+
+async def test_answer_shadow_runs_plan_and_drafts() -> None:
+    from seleric_swarm.contracts.pipeline import AnswerDraft, Claim, Paragraph, Ref
+    from seleric_swarm.semantic import QueryResponse
+
+    class Port:
+        async def query(self, args):  # type: ignore[no-untyped-def]
+            return QueryResponse(rows=({"zz_take": 42.0},))
+
+    async def answer_llm(*, instructions: str, prompt: str):
+        return AnswerDraft(status="completed", claims=(Claim(claim_id="t", ref=Ref(kind="result_set", id="q1"), label="Take", role="headline"),),
+                           blocks=(Paragraph(kind="paragraph", text="Take was {t}."),)), {}
+
+    inputs = ShadowInputs(question="take yesterday", as_of=AS_OF, read_model=MODEL, port=Port())  # type: ignore[arg-type]
+    task = start_shadow(_llm(), inputs, modes=ShadowModes(understand="shadow", answer="shadow"), mission_id="m", answer_llm=answer_llm)
+    record = await collect_shadow(task, LegacyDecision())
+    assert record is not None and record["run"]["result_sets"] == 1
+    assert record["answer"]["status"] == "completed" and record["answer"]["issues"] == []

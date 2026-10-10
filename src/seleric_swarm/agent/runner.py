@@ -26,6 +26,7 @@ from openai import APITimeoutError as OpenAIAPITimeoutError
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models.test import TestModel
 
+from seleric_swarm.adapters.answer_llm import PydanticAiAnswerLLM
 from seleric_swarm.adapters.understand_llm import PydanticAiDraftLLM
 from seleric_swarm.agent.agent import (
     CONVERSATIONAL,
@@ -995,6 +996,7 @@ def _start_v2_shadow(
     catalogue: CatalogueSnapshot,
     values: dict[str, Any] | None,
     prior_turn_record: dict[str, Any] | None,
+    mcp: Any = None,
 ) -> asyncio.Task[Any] | None:
     """Launch the v2 understand → spec → plan stages in shadow; None when their flags are off."""
     settings = runtime.settings
@@ -1002,6 +1004,7 @@ def _start_v2_shadow(
         understand=getattr(settings, "understand_v2_mode", "off"),
         planner=getattr(settings, "planner_v2_mode", "off"),
         clarify=getattr(settings, "clarify_mode", "off"),
+        answer=getattr(settings, "answer_v2_mode", "off"),
     )
     if not modes.active:
         return None
@@ -1016,8 +1019,10 @@ def _start_v2_shadow(
             prior_question=str((prior_turn_record or {}).get("query") or ""),
             prior_offer=str((prior_turn_record or {}).get("offer") or ""),
             headline_metric_ids=tuple(_headline_metric_ids(runtime)),
+            port=McpSemanticPort(mcp, agent_id="v2_shadow") if modes.answer != "off" and mcp is not None else None,
         )
-        return start_shadow(llm, inputs, modes=modes, mission_id=mission_id)
+        answer_llm = PydanticAiAnswerLLM(model) if llm is not None and modes.answer != "off" else None
+        return start_shadow(llm, inputs, modes=modes, mission_id=mission_id, answer_llm=answer_llm)
     except Exception:
         _log.warning("v2_shadow_start_failed", exc_info=True, extra={"mission_id": mission_id})
         return None
@@ -1332,7 +1337,7 @@ async def run_v3_mission(
     # compared at the end of the mission into trace["v2_shadow"]. Never changes the answer.
     v2_shadow = _start_v2_shadow(
         runtime, mission_id=mission_id, query=query, as_of=as_of_dt.date(), catalogue=catalogue,
-        values=values, prior_turn_record=prior_turn_record,
+        values=values, prior_turn_record=prior_turn_record, mcp=mcp,
     )
     # One structured LLM reading replaces Jev's classifier, the value-sense helper,
     # the planner's slot reader and the small-talk / acceptance / overview word lists.
