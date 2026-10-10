@@ -1,0 +1,348 @@
+{
+  "suite": "golden",
+  "mode": "live",
+  "generated_at": "2026-10-10T22:39:36.885032+00:00",
+  "case_count": 12,
+  "score": {
+    "overall": {
+      "spec_accuracy": 0.0,
+      "status_ok": 1.0,
+      "value_correctness": 0.0,
+      "revisions": 0.0,
+      "latency_ms": 26660.0,
+      "llm_calls": null,
+      "tokens": null
+    },
+    "by_tag": {
+      "breakdown": {
+        "spec_accuracy": 0.0,
+        "status_ok": null,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 7592.0,
+        "llm_calls": null,
+        "tokens": null
+      },
+      "comparison": {
+        "spec_accuracy": 0.0,
+        "status_ok": 1.0,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 21343.0,
+        "llm_calls": null,
+        "tokens": null
+      },
+      "entity_comparison": {
+        "spec_accuracy": 0.0,
+        "status_ok": null,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 40671.0,
+        "llm_calls": null,
+        "tokens": null
+      },
+      "follow_up": {
+        "spec_accuracy": 0.0,
+        "status_ok": null,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 112647.0,
+        "llm_calls": null,
+        "tokens": null
+      },
+      "lookup": {
+        "spec_accuracy": 0.0,
+        "status_ok": 1.0,
+        "value_correctness": 0.0,
+        "revisions": 0.0,
+        "latency_ms": 7265.4,
+        "llm_calls": null,
+        "tokens": null
+      },
+      "period_comparison": {
+        "spec_accuracy": 0.0,
+        "status_ok": null,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 15137.0,
+        "llm_calls": null,
+        "tokens": null
+      },
+      "roas": {
+        "spec_accuracy": 0.0,
+        "status_ok": 1.0,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 7719.0,
+        "llm_calls": null,
+        "tokens": null
+      },
+      "trend": {
+        "spec_accuracy": 0.0,
+        "status_ok": 1.0,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 8357.0,
+        "llm_calls": null,
+        "tokens": null
+      },
+      "why": {
+        "spec_accuracy": 0.0,
+        "status_ok": null,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 81428.66666666667,
+        "llm_calls": null,
+        "tokens": null
+      }
+    },
+    "cases": [
+      {
+        "id": "lookup-net-sales-yesterday",
+        "tags": [
+          "lookup"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": 1.0,
+          "value_correctness": 0.0,
+          "revisions": 0.0,
+          "latency_ms": 7200.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 2,
+          "status": "completed"
+        }
+      },
+      {
+        "id": "lookup-net-sales-explicit-day",
+        "tags": [
+          "lookup"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 7809.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 2,
+          "status": "completed"
+        }
+      },
+      {
+        "id": "lookup-gross-sales-yesterday",
+        "tags": [
+          "lookup"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 6851.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 2,
+          "status": "completed"
+        }
+      },
+      {
+        "id": "compare-net-sales-two-days",
+        "tags": [
+          "comparison"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 8221.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 2,
+          "status": "completed"
+        }
+      },
+      {
+        "id": "trend-net-sales-this-week",
+        "tags": [
+          "trend"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 8357.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 2,
+          "status": "completed"
+        }
+      },
+      {
+        "id": "spec-th383-entity-comparison",
+        "tags": [
+          "entity_comparison",
+          "comparison",
+          "why"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": null,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 40671.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 17
+        }
+      },
+      {
+        "id": "spec-last3-vs-today",
+        "tags": [
+          "period_comparison",
+          "comparison"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": null,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 15137.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 2
+        }
+      },
+      {
+        "id": "spec-net-sales-yesterday",
+        "tags": [
+          "lookup"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 6748.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 7,
+          "status": "completed"
+        }
+      },
+      {
+        "id": "spec-last-week-roas",
+        "tags": [
+          "lookup",
+          "roas"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 7719.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 6,
+          "status": "completed"
+        }
+      },
+      {
+        "id": "spec-why-cac-yesterday",
+        "tags": [
+          "why"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": null,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 90968.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 10
+        }
+      },
+      {
+        "id": "spec-ads-by-platform",
+        "tags": [
+          "breakdown"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": null,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 7592.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 7
+        }
+      },
+      {
+        "id": "spec-followup-keeps-windows",
+        "tags": [
+          "follow_up",
+          "why"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.0,
+          "status_ok": null,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 112647.0,
+          "llm_calls": null,
+          "tokens": null
+        },
+        "details": {
+          "spec_matched": 0,
+          "spec_total": 7
+        }
+      }
+    ]
+  },
+  "comparison": {
+    "compared": false,
+    "baseline_path": null,
+    "passed": true,
+    "regressions": []
+  }
+}
