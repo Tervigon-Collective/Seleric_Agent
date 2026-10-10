@@ -642,19 +642,19 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 
 | Module | Track | Tool | Branch | Status | PR | Note | Updated |
 |---|---|---|---|---|---|---|---|
-| M0.1 | T1 | OpenCode | `gaurav` | merged | | Gate closed in the working tree: CI push `**`, `import-linter` dev extra, `lint-imports` in CI, ADR-005, scanner tolerates the fixture. Not committed. | 2026-10-11 |
+| M0.1 | T1 | OpenCode | `gaurav` | merged | | On `gaurav`: CI push `**`, `import-linter` + `lint-imports` in CI, ADR-005, literal scanner | 2026-10-11 |
 | M0.2 | T2 | Cursor | `gaurav` | merged | https://github.com/Tervigon-Collective/Seleric_Agent/pull/5 | landed on `gaurav` (`fdb43ce`); tag `contracts-v1` | 2026-10-10 |
-| M0.3 | T3 | OpenCode | `gaurav` | merged | | Phase 0 complete: `stage_span` / `configure_tracing` / Langfuse adapter / `replay_mission` + tests | 2026-10-11 |
-| M0.4 | T4 | OpenCode | `gaurav` | merged | | Phase 0 complete: `run_suite`, cassettes, scorer, report, golden seed, `Jenkinsfile.eval` | 2026-10-11 |
-| M0.5 | T5 | Cursor | `gaurav` | merged | | Phase 0 complete: `SemanticPort` / `SemanticReadModel` / MCP+fake adapters; `SEMANTIC_PORT_MODE` default `off` | 2026-10-11 |
-| M0.6 | T1 | OpenCode | `gaurav` | merged | | Phase 0 complete: validation `question` kwarg, executor unit fix, forecast dim validate, TurnRecord adopt | 2026-10-11 |
-| M1.1 | T1 | OpenCode | `gaurav` | blocked | | `QuestionDraft` type published by T2 in `understand/_draft.py`; T1 owns `understand()` prompt+call | 2026-10-11 |
-| M1.2 | T2 | Cursor | `gaurav` | in progress | | `compile_question_spec` + `scope_from_spec` in working tree; 14 unit tests green | 2026-10-11 |
-| M1.3 | T3 | OpenCode | `gaurav` | in review | | complete in working tree; not committed (AGENT_CHAT: do not commit unless told) | 2026-10-11 |
-| M1.4 | T1 | OpenCode | | not started | | after M1.2 merges; `spec/_clarify.py` only | 2026-10-10 |
+| M0.3 | T3 | OpenCode | `gaurav` | merged | | On `gaurav`: `stage_span` / `configure_tracing` / Langfuse adapter / `replay_mission` + tests | 2026-10-11 |
+| M0.4 | T4 | OpenCode | `gaurav` | merged | | On `gaurav`: `run_suite`, cassettes, scorer, report, golden seed, `Jenkinsfile.eval` | 2026-10-11 |
+| M0.5 | T5 | Cursor | `gaurav` | merged | | On `gaurav`: `SemanticPort` / `SemanticReadModel` / MCP+fake adapters; `SEMANTIC_PORT_MODE` default `off` | 2026-10-11 |
+| M0.6 | T1 | OpenCode | `gaurav` | merged | | On `gaurav`: validation `question` kwarg, executor unit fix, forecast dim validate, TurnRecord adopt | 2026-10-11 |
+| M1.1 | T1 | OpenCode | `gaurav` | in review | | Code on `gaurav` (`7a8d308`); Phase 1 **not done**: L2 imports `pydantic_ai` → `lint-imports` red | 2026-10-11 |
+| M1.2 | T2 | Cursor | `gaurav` | blocked | | Code on `gaurav` but `import seleric_swarm.spec` fails (`WindowEnding` not exported). Also `spec → understand` same-layer and `spec → agent.scope → re`. | 2026-10-11 |
+| M1.3 | T3 | OpenCode | `gaurav` | merged | | On `gaurav`: store + Qdrant adapter + seed; `run_suite` collision check; tests green | 2026-10-11 |
+| M1.4 | T1 | OpenCode | `gaurav` | not started | | `spec/_clarify.py` and `CLARIFY_MODE` missing. Phase 1 incomplete until this lands and M1.1/M1.2 gates are green. | 2026-10-11 |
 | M2.1 | T1 | OpenCode | | not started | | after M1.2 | 2026-10-10 |
-| M2.2 | T2 | Cursor | | not started | | after M1.2 | 2026-10-10 |
-| M2.3 | T3 | OpenCode | | not started | | after M1.2 | 2026-10-10 |
+| M2.2 | T2 | OpenCode (T3 first-pass) | `gaurav` | in review | | `plan/_execute.py::execute` + 9 tests pushed with Phase 2 WIP. T2 owns review. | 2026-10-11 |
+| M2.3 | T3 | OpenCode | `gaurav` | in review | | `derive` engine (10 ops) + tool + reconcile acceptance pushed as WIP. `derive` independence KEPT. | 2026-10-11 |
 | M3.1 | T1 | OpenCode | | not started | | after M2.2 and M2.3 | 2026-10-10 |
 | M3.2 | T2 | Cursor | | not started | | after M2.2 and M2.3 | 2026-10-10 |
 | M3.3 | T3 | OpenCode | | not started | | after M2.2 and M2.3 | 2026-10-10 |
@@ -689,6 +689,8 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | 2026-10-11 | — | M0.1 | Closed the real gate: CI runs on every branch, `import-linter` is a dev dependency, `uv run lint-imports` is in CI (7 contracts kept), ADR-005 written, literal scanner no longer crashes on the catalogue fixture. Working tree only. |
 | 2026-10-11 | T5 | port cleanup | Phase 1. Catalogue capability names in `src/` live only in `semantic/_mcp_port.py`. Call sites (runner value/concept resolution, semantic tools, diagnosis definitions, ontology, bootstrap warm, qdrant sync) go through `McpSemanticPort` and still get the gateway payload. `SEMANTIC_PORT_MODE` stays `off`. Working tree, not committed. |
 | 2026-10-11 | T4 | M1.3 seq (eval side) | Phase 1 eval assets (working tree). Added `eval/golden/spec_shapes.yaml` — 7 shape cases ported from `tests/fixtures/query_specs/th383_and_regressions.jsonl` (entity_comparison, period_comparison, lookup, why_single_metric, breakdown, follow-up-keeps-windows); golden suite now 12 cases. Wired M1.3 step 4 into `run_suite`: loads example ids via `evals._case.load_verified_example_ids` and calls `understand.examples.check_no_collision` — the runner refuses a case id that is also an example id (`examples_dir` overridable). Reconciled with T3's in-tree `check_no_collision` primitive (removed a duplicate `_separation.py`). 18 evals unit tests pass, ruff clean, mypy clean on `evals`. Not committed. |
+| 2026-10-11 | — | Phase 1 | **Phase 1 is not complete.** Codebase check: M1.3 usable; M1.1 present but breaks L2 (`pydantic_ai`); M1.2 present but `seleric_swarm.spec` ImportError (`WindowEnding`) and layer/`re` violations; M1.4 missing (`_clarify.py`, `CLARIFY_MODE`). |
+| 2026-10-11 | — | branches | Checked local + remote branches and worktrees. `mod/M0.2-*` and `mod/M0.4-*` are behind `gaurav` (no unique refactor commits). Other dirty worktrees (`agent_build_*` charts, `agent_effort`, `agent_gaurav_merge`, `intel-20261009b`) are unrelated to this modular refactor. Refactor WIP on `gaurav` pushed next. |
 
 ## Part E — Files you will touch most (and the rule for each)
 - `agent/runner.py` (1,827 lines): **do not add logic**. M1.2/M2.x/M3.x move stage code into `pipeline/mission.py` (`run_mission(question, deps) -> AnswerDocument`), and `run_v3_mission` becomes a thin adapter. Each module removes its block from `runner.py` when it reaches enforce.

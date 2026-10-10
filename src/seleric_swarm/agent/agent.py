@@ -38,6 +38,7 @@ from seleric_swarm.toolsets import (
     analytics,
     causal,
     composition,
+    derive,
     diagnosis,
     experiments,
     exploration,
@@ -79,6 +80,8 @@ TOOLS: list[Any] = [
     diagnosis.diagnose_metric_change,
     # Breakdowns / waterfalls / bridges from the catalogue's verified composition (reconcile exactly).
     composition.break_down_metric,
+    # Typed arithmetic over recorded evidence (sum/share/delta/ratio/reconcile/...).
+    derive.derive,
     exploration.explore_data,
     # estimate_effect runs its refuters itself; refute_estimate only re-ran them.
     causal.estimate_effect,

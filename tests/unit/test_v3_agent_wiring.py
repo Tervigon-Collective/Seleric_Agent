@@ -25,7 +25,7 @@ def test_every_tool_is_registered() -> None:
     unregistered — the test suite would stay green, because a tool nobody
     registers is a tool nobody tests.
     """
-    assert len(TOOLS) == 21  # + forecast_metrics (P2)
+    assert len(TOOLS) == 22  # + forecast_metrics (P2) + derive (M2.3)
 
 
 _ALL = {
@@ -40,6 +40,7 @@ _ALL = {
     "run_python",
     "diagnose_metric_change",
     "break_down_metric",
+    "derive",
     "explore_data",
     "estimate_effect",
     "forecast_metrics",
