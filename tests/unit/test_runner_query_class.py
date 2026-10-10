@@ -39,3 +39,24 @@ def test_query_class_stays_none_when_intent_classification_was_unavailable():
         _v3_result(intent=None), request_id="req-1", session_id="sess-1", evidence=[]
     )
     assert lookup.query_class is None
+
+
+def test_to_lookup_keeps_v2_shadow_on_the_persisted_trace():
+    # Live 2026-10-11: collect_shadow wrote trace["v2_shadow"] on the V3
+    # result, but _to_lookup rebuilt TraceInfo with a fixed field list and
+    # dropped it before missions.result_json was saved.
+    result = _v3_result(intent="lookup")
+    result = result.model_copy(
+        update={
+            "trace": {
+                **result.trace,
+                "v2_shadow": {
+                    "status": "ok",
+                    "disagree": {"kind": False, "shape": True},
+                    "plan": {"template_id": "lookup_single"},
+                },
+            }
+        }
+    )
+    lookup = _to_lookup(result, request_id="req-1", session_id="sess-1", evidence=[])
+    assert lookup.trace.model_dump()["v2_shadow"]["plan"]["template_id"] == "lookup_single"
