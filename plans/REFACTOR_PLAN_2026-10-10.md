@@ -106,7 +106,7 @@ Every module's test file is `tests/unit/<module>/test_*.py`. A fix to a producti
 Each stage runs inside `stage_span(name, input_model, output_model)` (M0.3). No stage logs prompts or bodies outside spans. Redaction comes from the existing `observability/tracing.py:63-82`.
 
 ### A7. Definition of done (per module)
-- Interface matches Part B exactly; mypy and ruff clean; import-linter clean.
+- Interface matches Part B and the A9 table exactly (nothing else in `__all__`); mypy and ruff clean; import-linter clean, including the `protected` contracts.
 - Unit and contract tests pass. The replay suite is no worse than baseline on every metric. The flag is wired.
 - The module README (`<package>/README.md`) lists purpose, interface, flag, failure policy and test command.
 - A legacy-deletion PR is prepared, to merge after the module reaches enforce.
@@ -115,6 +115,42 @@ Each stage runs inside `stage_span(name, input_model, output_model)` (M0.3). No 
 - One branch per module: `mod/<id>-<slug>` (e.g. `mod/M2.3-derivation-engine`), cut from `gaurav`.
 - Each PR touches only its module's files plus wiring behind its flag. If you must edit a shared file (`pipeline/`, `config/settings.py`), add, never rewrite.
 - CI (M0.1) must pass. Merge to `gaurav`; no direct pushes once M0.1 lands.
+
+### A9. Deep modules (simple interface, rich internals)
+A module earns its place by hiding complexity behind a small interface (Ousterhout, *A Philosophy of Software
+Design*). A module that only renames, re-exports or passes calls through is shallow: it adds an interface to learn
+and hides nothing. Rules:
+- **Each package exposes one to three entry points**, and only through its `__init__.py` (`__all__`). Everything
+  else lives in `_`-prefixed private modules (`spec/_windows.py`). The file lists in Part C are these internals;
+  the public interface is the table below.
+- **Callers import the package root only** (`from seleric_swarm.spec import compile_question_spec`), never a
+  private submodule. This is enforced by an import-linter `protected` contract per package (M0.1).
+- **No pass-through layers.** A function whose body is one call to another function with the same arguments is
+  deleted and its callers point at the target. Re-export-only modules are not allowed outside a package's `__init__.py`.
+- **No abstraction without a second user or a test double.** A `Protocol` is justified when a fake implements it in
+  tests (the `SemanticPort` fake) or two real adapters exist. Otherwise use the concrete type.
+- **Do not split for size alone.** Split a module when a part can be understood and tested on its own behind its own
+  interface. A one-function module with a clean job (e.g. a pure builder) is fine; merging it into a larger class
+  only to "reduce files" makes that class shallower.
+- **Cross-cutting concerns are wrapped once.** Spans, scope checks, error envelopes and logging are applied by
+  one decorator or context manager (`stage_span`, the tool-registration decorator). They are never repeated per call site.
+
+| Package | Public interface (`__all__`) | Hides |
+|---|---|---|
+| `contracts.pipeline` | the Part B models, `dump`, `load`, `fingerprint` | serialisation details |
+| `semantic` | `SemanticPort`, `SemanticReadModel`, `McpSemanticPort`, `FakeSemanticPort` | MCP capability names, tolerant parsing, version refresh, TTL, ranking |
+| `observability` | `stage_span`, `configure_tracing` | OTel/Langfuse wiring, redaction, fingerprints |
+| `evals` | `run_suite(cases, mode) -> Report` | cassettes, scoring, truth queries, baselines |
+| `understand` | `understand(question, read_model, candidates, prior, exemplars, llm) -> QuestionDraft \| Clarification` | prompt building, retries, structured output |
+| `understand.examples` | `ExampleStore.similar(question, k)` | embedding, Qdrant, stale-example re-validation |
+| `spec` | `compile_question_spec(...) -> QuestionSpec \| Clarification`, `scope_from_spec(spec)` | windows, filters, exclusions, edits, validation, clarification triggers |
+| `plan` | `plan(spec, read_model) -> AnalysisPlan`, `execute(plan, port) -> list[ResultSet]` | template registry, step ordering, parallelism, entity hand-off |
+| `derive` | `derive(op, inputs, params, read_model) -> Derivation` | op registry, refusal rules, artifact writes |
+| `answer` | `draft_answer(...) -> AnswerDraft`, `render(draft, results) -> AnswerDocument`, `verify(draft, spec, results) -> Verdict` | placeholders, number formatting, table rendering, structural checks |
+| `context` | `events(window, scope, port) -> list[ContextEvent]`, `health(metric_ids, window, port) -> list[DataHealth]` | individual providers, provider config |
+| `graph` | `metric_graph(read_model) -> MetricGraph` | identity discovery, YAML causal edges, node validation |
+| `investigate` | `investigate(request, deps) -> InvestigationResult` | state machine, steps, recursion, LLM branch selection, persistence |
+| `pipeline` | `run_mission(question, deps) -> AnswerDocument` | stage wiring, flags, shadow comparison |
 
 ---
 
@@ -197,7 +233,8 @@ Tracks (T1–T5) show what can run at the same time.
   2. Add the dev dependency `import-linter` and define these contracts:
      - `layers`: `contracts → semantic → (understand|spec|plan|derive|answer|investigate|context|graph) → adapters → pipeline → api`;
      - `forbidden`: L2 packages must not import `re`, `httpx`, `openai`, `pydantic_ai`, `seleric_swarm.adapters`;
-     - `independence`: `derive`, `answer`, `context`, `graph`.
+     - `independence`: `derive`, `answer`, `context`, `graph`;
+     - `protected`: for each new package, its `_`-prefixed submodules may be imported only from inside that package (A9).
   3. Write `lint_semantic_literals.py`:
      - load every metric and dimension id and every dimension value from `tests/fixtures/catalogue/snapshot.json` (M0.5 records it);
      - scan `src/**/*.py` string literals with the `ast` module (not regex);
@@ -211,7 +248,7 @@ Tracks (T1–T5) show what can run at the same time.
 #### M0.2 Pipeline contracts (T2)
 - **Goal:** Part B as code.
 - **Depends:** none.
-- **Files:** `src/seleric_swarm/contracts/pipeline/{__init__,question,plan,results,answer,errors}.py`, `tests/unit/contracts/test_models.py`.
+- **Files:** `src/seleric_swarm/contracts/pipeline/{__init__,_question,_plan,_results,_answer,_errors}.py`, `tests/unit/contracts/test_models.py`.
 - **Steps:**
   1. Write the models exactly as in Part B.
   2. Add `.dump()` and `.load()` helpers (JSON round trip).
@@ -223,7 +260,7 @@ Tracks (T1–T5) show what can run at the same time.
 #### M0.3 Observability (T3)
 - **Goal:** every mission is traceable and replayable.
 - **Depends:** M0.2 (soft: types for attributes).
-- **Files:** `src/seleric_swarm/observability/stages.py`, `adapters/langfuse_exporter.py`, `scripts/replay_mission.py`, `config/settings.py` (add `TRACE_BACKEND`, `LANGFUSE_*`).
+- **Files:** `src/seleric_swarm/observability/_stages.py` (exported as `stage_span`), `adapters/langfuse_exporter.py`, `scripts/replay_mission.py`, `config/settings.py` (add `TRACE_BACKEND`, `LANGFUSE_*`).
 - **Steps:**
   1. Write the context manager `stage_span(stage: str, *, mission_id, inp: BaseModel | None, out_setter)`. It creates an OTel span named `seleric.stage.<stage>` with attributes `seleric.mission_id`, `seleric.stage.input_fingerprint`, `seleric.stage.output_fingerprint`, and `gen_ai.*` attributes for LLM stages (`gen_ai.operation.name`, `gen_ai.request.model`, `gen_ai.response.model`, token usage) per the OTel GenAI semconv. Pin the semconv version in a constant.
   2. Persist full stage input/output JSON to the Langfuse observation (redacted), plus a compact copy in `trace["stages"][stage]` of the mission result.
@@ -235,7 +272,7 @@ Tracks (T1–T5) show what can run at the same time.
 #### M0.4 Evaluation harness (T4)
 - **Goal:** a behavioural gate in-repo, in replay (CI) and live (Jenkins) modes.
 - **Depends:** M0.2 (spec comparison), M0.3 (optional).
-- **Files:** `src/seleric_swarm/evals/{case.py,runner.py,cassette.py,scorer.py,report.py}`, `eval/golden/*.yaml`, `eval/cassettes/`, `scripts/eval_run.py`, `Jenkinsfile.eval` (or a Jenkins stage snippet in `docs/`).
+- **Files:** `src/seleric_swarm/evals/{__init__,_case,_runner,_cassette,_scorer,_report}.py` (public: `run_suite`), `eval/golden/*.yaml`, `eval/cassettes/`, `scripts/eval_run.py`, `Jenkinsfile.eval` (or a Jenkins stage snippet in `docs/`).
 - **Case schema** (`evals/case.py`):
   - `id, as_of, turns: [question], tags: [shape…]`
   - `expect: {spec: partial QuestionSpec, status, values: [{label, truth: MetricsQuery args, tolerance}], must_mention: [entity values], forbid: [phrases]}`
@@ -253,7 +290,7 @@ Tracks (T1–T5) show what can run at the same time.
 #### M0.5 Semantic port (agent side) (T5)
 - **Goal:** one entry point for all catalogue knowledge; catalogue changes need zero agent code change.
 - **Depends:** M0.2.
-- **Files:** `src/seleric_swarm/semantic/{port.py,read_model.py,mcp_port.py,README.md}`, modify `services/catalogue_bootstrap.py` (becomes a thin shim over the port), `services/metrics.py`, `tests/contract/test_semantic_port.py`, `tests/contract/test_semantic_pickup.py`, `tests/fixtures/catalogue/snapshot.json`.
+- **Files:** `src/seleric_swarm/semantic/{__init__,_port,_read_model,_mcp_port,_fake}.py` and `README.md`, modify `services/catalogue_bootstrap.py` (becomes a thin shim over the port), `services/metrics.py`, `tests/contract/test_semantic_port.py`, `tests/contract/test_semantic_pickup.py`, `tests/fixtures/catalogue/snapshot.json`.
 
 **`SemanticPort` (Protocol):**
 ```python
@@ -310,7 +347,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 #### M1.1 Understand v2 (T1)
 - **Goal:** one structured LLM call producing a `QuestionDraft` (phrases and expressions; no dates, no ids required).
 - **Depends:** M0.2, M0.5.
-- **Files:** `src/seleric_swarm/understand/{draft.py,prompt.py,call.py}`, reusing `agent/understand.py` (`Understanding` fields, `_prompt`, `WindowSlot`/`WindowExpr` from `query_spec.py:65-110`).
+- **Files:** `src/seleric_swarm/understand/{__init__,_draft,_prompt,_call}.py` (public: `understand`, `QuestionDraft`), reusing `agent/understand.py` (`Understanding` fields, `_prompt`, `WindowSlot`/`WindowExpr` from `query_spec.py:65-110`).
 - **`QuestionDraft`** = today's `Understanding` fields plus `exclusion_phrases: list[str]`, `entity_phrases`, `needs_clarification: str | None`. It is a pydantic model used as `output_type`.
 - **Steps:**
   1. Move the fields into `understand/draft.py`.
@@ -326,7 +363,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 #### M1.2 Spec compiler and validator (T2)
 - **Goal:** `compile_question_spec(draft, candidates, read_model, prior: QuestionSpec | None, as_of) -> QuestionSpec | Clarification` (pure code).
 - **Depends:** M0.2, M0.5, M1.1's draft type.
-- **Files:** `src/seleric_swarm/spec/{compile.py,windows.py,filters.py,edit.py,validate.py}`. Reuse and move these from `agent/query_spec.py`: `resolve_window_expr` (377), `resolve_window_slots` (458), `candidates_from_resolution` (336), `_pick_entities_and_filters` (519), `validate_query_spec` (634), `apply_spec_edit` (861).
+- **Files:** `src/seleric_swarm/spec/{__init__,_compile,_windows,_filters,_edit,_validate}.py` (public: `compile_question_spec`, `scope_from_spec`). Reuse and move these from `agent/query_spec.py`: `resolve_window_expr` (377), `resolve_window_slots` (458), `candidates_from_resolution` (336), `_pick_entities_and_filters` (519), `validate_query_spec` (634), `apply_spec_edit` (861).
 - **Rules:**
   - Windows come only from draft expressions plus `as_of` date arithmetic.
   - Filters come only from value candidates that the draft confirms as named (not `ordinary_words`).
@@ -351,7 +388,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 #### M1.3 Verified examples store (T3)
 - **Goal:** retrieve verified `(question → QuestionSpec → template_id)` examples as understand exemplars and mark trusted plans.
 - **Depends:** M0.2, M0.4 (golden cases are the seed).
-- **Files:** `src/seleric_swarm/understand/examples.py`, `adapters/examples_qdrant.py` (Qdrant is already a dependency; reuse `knowledge/search.py` patterns), `eval/verified/*.yaml`.
+- **Files:** `src/seleric_swarm/understand/examples/{__init__,_store}.py` (public: `ExampleStore`), `adapters/examples_qdrant.py` (Qdrant is already a dependency; reuse `knowledge/search.py` patterns), `eval/verified/*.yaml`.
 - **Steps:**
   1. A store schema with the fields `id, question, spec (QuestionSpec json), template_id, verified_by, verified_at, catalogue_version`.
   2. `similar(question, k=3) -> list[VerifiedExample]`.
@@ -363,7 +400,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 
 #### M1.4 Clarification (T1, after M1.2)
 - **Goal:** ask instead of guessing.
-- **Files:** `src/seleric_swarm/spec/clarify.py`, `pipeline/` wiring, and the office-ui message part, if needed (reuse `MessagePart` TEXT).
+- **Files:** `src/seleric_swarm/spec/_clarify.py` (called from `compile_question_spec`; no separate public entry point), `pipeline/` wiring, and the office-ui message part, if needed (reuse `MessagePart` TEXT).
 - **Rules:**
   - Clarify when `resolve_concept` returns a disambiguation, a required axis is missing, or a named value matches several dimensions with comparable volume.
   - Ask at most one question per turn.
@@ -375,7 +412,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 
 #### M2.1 Planner v2 (T1)
 - **Goal:** `plan(spec, read_model) -> AnalysisPlan` from a template registry.
-- **Files:** `src/seleric_swarm/plan/{registry.py,templates/*.py}`. Port the template logic from `agent/plan.py::plan_from_slots` (534) and the executor templates (`_execute`, `_execute_single`, `_execute_composition`, `_execute_named_drivers` in `agent/executor.py`).
+- **Files:** `src/seleric_swarm/plan/{__init__,_registry}.py`, `plan/_templates/*.py` (public: `plan`). Port the template logic from `agent/plan.py::plan_from_slots` (534) and the executor templates (`_execute`, `_execute_single`, `_execute_composition`, `_execute_named_drivers` in `agent/executor.py`).
 - **Rules:**
   - A template is a class with `id`, `matches(spec) -> bool` and `build(spec, read_model) -> AnalysisPlan`.
   - Templates: lookup, breakdown, trend, period_comparison, entity_comparison (rank then compare), composition (bridge), funnel, why → `EngineStep(engine="investigate")`, exploration → `EngineStep(engine="explore")`.
@@ -386,7 +423,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 
 #### M2.2 Executor v2 (T2)
 - **Goal:** run `QueryStep`s and return `ResultSet`s.
-- **Files:** `src/seleric_swarm/plan/execute.py`. Reuse `toolsets/semantic.py::query_metrics` internals (`_conform_dimensions`, `_cached_metrics_query`, `_put_evidence`) through the port.
+- **Files:** `src/seleric_swarm/plan/_execute.py` (public: `execute`, exported from `plan`). Reuse `toolsets/semantic.py::query_metrics` internals (`_conform_dimensions`, `_cached_metrics_query`, `_put_evidence`) through the port.
 - **Rules:**
   - Steps run in parallel (`asyncio.Semaphore(6)`, same as today).
   - Filters come **only** from the step (no `_with_named_values`).
@@ -399,7 +436,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 
 #### M2.3 Derivation engine (T3)
 - **Goal:** all arithmetic as typed, recorded ops.
-- **Files:** `src/seleric_swarm/derive/{ops.py,engine.py,README.md}`, plus a tool `toolsets/derive.py::derive(op, inputs, params)` registered in `agent/agent.py` for the agent-loop path.
+- **Files:** `src/seleric_swarm/derive/{__init__,_ops,_engine}.py` and `README.md` (public: `derive`), plus a tool `toolsets/derive.py::derive(op, inputs, params)` registered in `agent/agent.py` for the agent-loop path.
 - **Ops (exact):**
 
 | op | inputs | params | refuses when |
@@ -425,7 +462,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 
 #### M3.1 Answer drafting and rendering (T1)
 - **Goal:** the model writes an `AnswerDraft`; code renders the markdown.
-- **Files:** `src/seleric_swarm/answer/{draft_call.py,render.py,format.py}`.
+- **Files:** `src/seleric_swarm/answer/{__init__,_draft_call,_render,_format}.py` (public: `draft_answer`, `render`).
 - **Steps:**
   1. The agent's `output_type` becomes `AnswerDraft` (`agent/output.py`). It is mapped back to `MissionResult` for the API: `final_response = rendered_markdown`, `evidence_ids` = the union of resolved refs.
   2. `render.py`:
@@ -439,7 +476,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 
 #### M3.2 Verifier v2 (T2)
 - **Goal:** structural verification of `AnswerDraft` against spec and evidence.
-- **Files:** `src/seleric_swarm/answer/verify.py`. Keep `validation/signals.py` artifact checks (`check_evidence`, `check_provenance`, `check_contradiction`, `check_causal`, `check_prediction`, `check_scope_coverage`) and `trust.py` / `verdict.py`.
+- **Files:** `src/seleric_swarm/answer/_verify.py` (public: `verify`, exported from `answer`). Keep `validation/signals.py` artifact checks (`check_evidence`, `check_provenance`, `check_contradiction`, `check_causal`, `check_prediction`, `check_scope_coverage`) and `trust.py` / `verdict.py`.
 - **Checks:**
   1. Every claim ref resolves, and `row_key` matches a row.
   2. Role consistency: a `change` claim references a delta or pct_change derivation, and a `total` claim references a `sum` or a total row.
@@ -467,7 +504,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 
 #### M4.1 Context providers (T1)
 - **Goal:** events and data health that diagnosis can cite.
-- **Files:** `src/seleric_swarm/context/{model.py,calendar.py,incidents.py,changes.py,health.py,registry.py}`.
+- **Files:** `src/seleric_swarm/context/{__init__,_model,_calendar,_incidents,_changes,_health,_registry}.py` (public: `events`, `health`, `ContextEvent`, `DataHealth`).
 - **Interface:**
   - `ContextEvent(kind, start, end, scope: dict[str,str], source, title, detail)`.
   - `ContextProvider.events(window, scope, port) -> list[ContextEvent]`.
@@ -482,7 +519,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 
 #### M4.2 Metric graph (T2)
 - **Goal:** identity and causal edges as one graph.
-- **Files:** `src/seleric_swarm/graph/{model.py,build.py}`, `config/causal_graph.yaml` (rename from `causal_graphs.example.yaml`; keyed by **catalogue ids or concept names**).
+- **Files:** `src/seleric_swarm/graph/{__init__,_model,_build}.py` (public: `metric_graph`, `MetricGraph`), `config/causal_graph.yaml` (rename from `causal_graphs.example.yaml`; keyed by **catalogue ids or concept names**).
 - **Build:**
   - Identity edges come from the read model's `composition` / `depends_on`. Reuse `causal/diagnosis.py::lineage_from_definitions`, `discover_identities`, `rate_chain_proposals`.
   - Causal edges come from the YAML, each with sign and lag.
@@ -493,7 +530,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 
 #### M4.3 Investigation controller (T3, after M4.1 and M4.2)
 - **Goal:** a deep "why" as a code state machine over the existing engines.
-- **Files:** `src/seleric_swarm/investigate/{state.py,controller.py,steps/*.py,select.py}`; registered as `EngineStep(engine="investigate")` and as tool `investigate` (replacing `diagnose_metric_change` in the why template).
+- **Files:** `src/seleric_swarm/investigate/{__init__,_state,_controller,_select}.py`, `investigate/_steps/*.py` (public: `investigate`); registered as `EngineStep(engine="investigate")` and as tool `investigate` (replacing `diagnose_metric_change` in the why template).
 - **States, in order:**
   1. `premise`: event sizing; reuse `causal/diagnosis.py::diagnose` event layer. Stop with "premise false" if not confirmed.
   2. `health`: M4.1 `HealthProvider`. Unhealthy data adds a limitation, or stops if incomplete.
