@@ -34,6 +34,7 @@ from seleric_swarm.agent.limits import withdraw_tool
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.exploration.space import default_brand_id, scope_keys
+from seleric_swarm.semantic import McpSemanticPort
 from seleric_swarm.services.elapsed import (
     ELAPSED_KEY,
     completed_hours,
@@ -748,11 +749,7 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
             retryable=False,
         )
     try:
-        result = await ctx.deps.mcp_client.call(
-            agent_id=_AGENT_ID,
-            capability="seleric.catalogue_search_metrics",
-            arguments={"query": query},
-        )
+        result = await McpSemanticPort(ctx.deps.mcp_client, agent_id=_AGENT_ID).search_metrics(query)
         hoisted = _hoist_exact(query, list((result or {}).get("matches") or []), ctx.deps.catalogue)
         matches = [_slim_match(m) for m in hoisted][:_SEARCH_SHORTLIST]
         if not matches and (verdict := _empty_search_verdict(ctx)) is not None:
@@ -858,11 +855,7 @@ async def resolve_brand(ctx: RunContext[SelericDeps], name: str) -> ToolResult:
     (``{"dimension": "brand_id", "operator": "equals", "values": [brand_id]}``),
     never used to rewrite a ``metric_id`` (rule 1)."""
     try:
-        result = await ctx.deps.mcp_client.call(
-            agent_id=_AGENT_ID,
-            capability="seleric.catalogue_resolve_brand",
-            arguments={"text": name},
-        )
+        result = await McpSemanticPort(ctx.deps.mcp_client, agent_id=_AGENT_ID).resolve_brand(name)
     except Exception as exc:
         return _mcp_error_result(exc)
     result = dict(result or {})
@@ -1072,10 +1065,8 @@ async def resolve_concept(
     stated = dict(getattr(ctx.deps.required_scope, "question_axes", ()) or ())
     merged_axes = {**(axes or {}), **stated}
     try:
-        result = await ctx.deps.mcp_client.call(
-            agent_id=_AGENT_ID,
-            capability="seleric.catalogue_resolve_concept",
-            arguments={"text": concept, "axes": merged_axes},
+        result = await McpSemanticPort(ctx.deps.mcp_client, agent_id=_AGENT_ID).resolve_concept_payload(
+            concept, merged_axes
         )
     except Exception as exc:
         return _mcp_error_result(exc)
@@ -1716,9 +1707,7 @@ async def get_metric_definition(ctx: RunContext[SelericDeps], metric_id: str) ->
     if (unknown := await _reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     try:
-        result = await ctx.deps.mcp_client.call(
-            agent_id=_AGENT_ID, capability="seleric.catalogue_get_metric", arguments={"metric_id": metric_id}
-        )
+        result = await McpSemanticPort(ctx.deps.mcp_client, agent_id=_AGENT_ID).fetch_metric(metric_id)
     except Exception as exc:
         return _mcp_error_result(exc)
     if not result or result.get("error"):
@@ -1770,14 +1759,8 @@ async def get_metric_definitions(ctx: RunContext[SelericDeps], metric_ids: list[
         # 2026-10-09). Chunked, in parallel.
         chunks = [missing[i : i + _DEFINITIONS_PER_CALL] for i in range(0, len(missing), _DEFINITIONS_PER_CALL)]
         try:
-            results = await asyncio.gather(*(
-                ctx.deps.mcp_client.call(
-                    agent_id=_AGENT_ID,
-                    capability="seleric.catalogue_get_metrics",
-                    arguments={"metric_ids": chunk},
-                )
-                for chunk in chunks
-            ))
+            port = McpSemanticPort(ctx.deps.mcp_client, agent_id=_AGENT_ID)
+            results = await asyncio.gather(*(port.fetch_metrics(chunk) for chunk in chunks))
         except Exception as exc:
             return _mcp_error_result(exc)
         fetched: dict[str, Any] = {}

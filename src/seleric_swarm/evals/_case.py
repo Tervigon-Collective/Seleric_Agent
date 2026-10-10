@@ -113,3 +113,24 @@ def load_cases(sources: str | Path | Sequence[str | Path]) -> list[EvalCase]:
             seen[case.id] = source
             cases.append(case)
     return cases
+
+
+def load_verified_example_ids(directory: str | Path = "eval/verified") -> set[str]:
+    """Ids of every verified example on disk (for the runner collision check).
+
+    Defensive: an unreadable or missing directory yields an empty set so the
+    eval harness never fails on the examples store.
+    """
+    ids: set[str] = set()
+    dir_path = Path(directory)
+    if not dir_path.is_dir():
+        return ids
+    try:
+        for path in sorted(dir_path.glob("*.y*ml")):
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            for row in raw.get("examples") or []:
+                if isinstance(row, dict) and row.get("id"):
+                    ids.add(str(row["id"]))
+    except Exception:
+        return set()
+    return ids

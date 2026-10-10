@@ -322,3 +322,86 @@ one.
 **Reference docs:**
 - Plan / gap: `Seleric_Agent_Core/doc/semantic_v2/PHASE6.md`
 - Cube docs (inspiration): Cube Core introduction (`docs.cube.dev/docs/introduction`)
+
+---
+### Phase 0 — Modular pipeline foundations (2026-10-11)
+
+**What:** the first phase of the modular refactor planned in
+`plans/REFACTOR_PLAN_2026-10-10.md` (rationale:
+`docs/ARCHITECTURE_REVIEW_2026-10-10.md`). The V3 single-agent loop described
+above is unchanged; Phase 0 adds the typed seams, the tracing/replay and eval
+infrastructure, and the CI guardrails that later phases build on. The decision
+is recorded in `docs/ADR/ADR-005-modular-pipeline.md`.
+
+**New packages (flag-gated, default `off`):**
+
+| Package | Layer | Public interface | Flag |
+|---|---|---|---|
+| `contracts.pipeline` | L0 | Part B models + `dump` / `load` / `fingerprint` | — (frozen, tag `contracts-v1`) |
+| `semantic` | L1 | `SemanticPort`, `SemanticReadModel`, `McpSemanticPort`, `FakeSemanticPort` + port value types | `SEMANTIC_PORT_MODE` = `off`\|`shadow`\|`enforce` (default `off`) |
+| `observability` | cross-cutting | `stage_span`, `configure_tracing` | `stage_tracing_mode` (default `off`), `trace_backend` |
+| `evals` | cross-cutting | `run_suite(cases, mode) -> Report` | — (CI replay / Jenkins live) |
+
+- **`contracts.pipeline`** (`src/seleric_swarm/contracts/pipeline/`) — frozen
+  pydantic v2 models for every stage boundary (`QuestionSpec`, `AnalysisPlan`,
+  `ResultSet`, `Derivation`, `Claim`, `AnswerDraft`, `StageError`, …), each with
+  a `schema_version`. A breaking change after `contracts-v1` needs a new ADR and
+  a new `schema_version`, not an in-place edit.
+- **`semantic`** (`src/seleric_swarm/semantic/`) — one port for all catalogue
+  knowledge, so a catalogue change needs no agent code change.
+  `McpSemanticPort` wraps the MCP catalogue capabilities and parses tolerantly
+  (unknown fields go to `extra`); `FakeSemanticPort` is the test double.
+  `bind_catalogue` now runs after a successful warm. The agent-side catalogue
+  copies are removed incrementally; direct `seleric.catalogue_*` calls stay
+  until the flag reaches `enforce`.
+- **`observability`** (`src/seleric_swarm/observability/_stages.py`,
+  `src/seleric_swarm/adapters/langfuse_exporter.py`) — `stage_span(name, …)`
+  emits one OTel span plus a Langfuse observation per stage, with input/output
+  fingerprints (`sha256` of canonical JSON) and `gen_ai.*` attributes for LLM
+  stages. `scripts/replay_mission.py <mission_id>` re-runs a mission from the
+  stored stage input/output with a cassette MCP. Observability never aborts a
+  mission; failures degrade to a no-op.
+- **`evals`** (`src/seleric_swarm/evals/`) — the behavioural gate.
+  `run_suite(cases, mode)` supports `replay` (recorded MCP + fake LLM, CI),
+  `live` (Jenkins) and `record`. `RecordingMcpClient` / `ReplayMcpClient`
+  serve recorded MCP responses keyed by canonical request hash and fail on a
+  miss. The scorer reports spec accuracy, status, value correctness, revisions,
+  latency, LLM calls and tokens; the report compares against
+  `eval/baselines/golden.json`. CLI `scripts/eval_run.py`; Jenkins gate
+  `Jenkinsfile.eval`.
+
+**Guardrails (M0.1):** `import-linter` (`[tool.importlinter]`) enforces the
+layer direction (`api → pipeline → adapters → L2 domain → semantic → contracts`),
+the "L2 does not decide intent with regex or reach I/O SDKs" rule, independence
+of `derive` / `answer` / `context` / `graph`, and a `protected` contract per new
+package (its `_` submodules may only be imported from inside). Legacy packages
+(`agent`, `toolsets`, …) stay outside the layer contract until their code moves.
+`scripts/lint_semantic_literals.py` scans `src/**/*.py` AST string literals
+against `tests/fixtures/catalogue/snapshot.json` and fails on any metric /
+dimension / value id that is not in `scripts/semantic_literal_allowlist.txt`
+(which must shrink to zero). CI (`ci.yml`) now runs on every branch
+(`["**"]`) and includes `uv run lint-imports` and the literal scanner.
+
+**Known-defect fixes (M0.6):** `run_validated_mission` receives the original
+`question` separately from the composed prompt, so plan or prefetch numbers are
+no longer treated as user-supplied; the dead `currency_default` read is removed
+from `executor.py`; `config/forecast_policies.yaml` dimensions are validated
+against the catalogue; `TurnRecord` is adopted for M3.3.
+
+**Status and gaps at 2026-10-11:**
+- The Phase 0 modules are green: `uv run lint-imports` keeps 7/7 contracts; the
+  literal scanner is clean; `tests/unit/{semantic,observability,evals,contracts}`
+  plus the semantic contract tests pass (80).
+- The Phase 0 code landed on `gaurav` (`2e82031`). The M0.1 gate corrections
+  (CI branches `**`, `lint-imports` in CI, `ADR-005`, the scanner fix) are in
+  the working tree, not yet committed.
+- Repo-wide `ruff check .` and `mypy src` are still red (pre-existing, unrelated
+  to Phase 0). The L2 domain packages (`understand`, `spec`, `plan`, `derive`,
+  `answer`, `investigate`, `context`, `graph`, `pipeline`) are Phase 1 work.
+- `eval/cassettes/` has no recorded responses yet and
+  `eval/baselines/golden.json` is a null placeholder, so
+  `scripts/eval_run.py --mode replay` exits 2 until a cassette is recorded.
+
+**Verification:** `uv run ruff check . && uv run mypy src && uv run lint-imports
+&& uv run python scripts/lint_semantic_literals.py && uv run pytest -q`, plus
+`uv run python scripts/eval_run.py --mode replay --compare eval/baselines/golden.json`.

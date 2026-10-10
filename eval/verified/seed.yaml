@@ -1,0 +1,56 @@
+examples:
+- schema_version: 1
+  id: verified-lookup-net-sales-yesterday
+  question: What were net sales yesterday?
+  spec:
+    kind: analysis
+    measures:
+    - metric_id: metric.net_sales
+  template_id: lookup
+  verified_by: golden-seed
+  verified_at: '2026-10-10T18:56:38.952978+00:00'
+  catalogue_version: ''
+- schema_version: 1
+  id: verified-lookup-net-sales-explicit-day
+  question: What were net sales on 2026-08-01?
+  spec:
+    kind: analysis
+    measures:
+    - metric_id: metric.net_sales
+  template_id: lookup
+  verified_by: golden-seed
+  verified_at: '2026-10-10T18:56:38.953511+00:00'
+  catalogue_version: ''
+- schema_version: 1
+  id: verified-lookup-gross-sales-yesterday
+  question: What were gross sales yesterday?
+  spec:
+    kind: analysis
+    measures:
+    - metric_id: metric.gross_sales
+  template_id: lookup
+  verified_by: golden-seed
+  verified_at: '2026-10-10T18:56:38.953553+00:00'
+  catalogue_version: ''
+- schema_version: 1
+  id: verified-compare-net-sales-two-days
+  question: Compare net sales on 2026-08-01 and 2026-08-02
+  spec:
+    kind: analysis
+    measures:
+    - metric_id: metric.net_sales
+  template_id: comparison
+  verified_by: golden-seed
+  verified_at: '2026-10-10T18:56:38.953579+00:00'
+  catalogue_version: ''
+- schema_version: 1
+  id: verified-trend-net-sales-this-week
+  question: Show me net sales for the last week
+  spec:
+    kind: analysis
+    measures:
+    - metric_id: metric.net_sales
+  template_id: trend
+  verified_by: golden-seed
+  verified_at: '2026-10-10T18:56:38.953596+00:00'
+  catalogue_version: ''

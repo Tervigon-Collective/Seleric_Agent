@@ -12,6 +12,8 @@
 
 ## Test plan
 
+- [ ] `uv run lint-imports`
+- [ ] `uv run python scripts/lint_semantic_literals.py`
 - [ ] `uv run pytest -q`
 - [ ] `uv run pytest tests/unit/test_v3_golden_dataset.py -q` if prompts or the agent loop changed
 - [ ] No credentials in logs or committed files

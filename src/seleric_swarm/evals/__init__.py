@@ -17,7 +17,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from seleric_swarm.evals._case import EvalCase, load_cases
+from seleric_swarm.evals._case import EvalCase, load_cases, load_verified_example_ids
 from seleric_swarm.evals._cassette import (
     Cassette,
     CassetteMiss,
@@ -46,6 +46,7 @@ from seleric_swarm.evals._scorer import (
     aggregate,
     score_case,
 )
+from seleric_swarm.understand.examples import check_no_collision
 
 __all__ = [
     "Cassette",
@@ -76,6 +77,24 @@ def _resolve_cases(cases: _CaseSource) -> list[EvalCase]:
         return [case for case in materialised if isinstance(case, EvalCase)]
     paths = [Path(p) for p in materialised if isinstance(p, (str, Path))]
     return load_cases(paths)
+
+
+def _check_separation(
+    cases: list[EvalCase],
+    examples_dir: str | Path | None,
+) -> None:
+    """Refuse to score a case that is also a named example (M1.3).
+
+    The verified-examples store feeds the understand prompt; a case the harness
+    scores must not silently double as a trusted exemplar. Ids are read from
+    disk here (``load_verified_example_ids``) and the collision rule lives with
+    the store (``check_no_collision``), so the harness stays a leaf.
+    """
+
+    directory = examples_dir if examples_dir is not None else "eval/verified"
+    example_ids = load_verified_example_ids(directory)
+    if example_ids:
+        check_no_collision({case.id for case in cases}, example_ids)
 
 
 async def _resolve_truths(
@@ -148,6 +167,7 @@ async def run_suite(
     mcp_client: Any | None = None,
     cassette_dir: str | Path = DEFAULT_CASSETTE_DIR,
     settings: Any | None = None,
+    examples_dir: str | Path | None = None,
     baseline: dict[str, float | None] | None = None,
     baseline_path: str | Path | None = None,
     out_dir: str | Path | None = None,
@@ -158,12 +178,16 @@ async def run_suite(
     ``runner`` and ``mcp_client`` are injection seams: tests pass a fake runner;
     the default builds a mission runtime and drives ``run_v3_mission`` with the
     cassette (``replay``), the live MCP (``live``) or a recorder (``record``).
+
+    ``examples_dir`` is the M1.3 verified-examples store (default
+    ``eval/verified``); a case that is also a named example is refused.
     """
 
     if mode not in {"replay", "live", "record"}:
         raise ValueError(f"unknown mode {mode!r}")
 
     resolved_cases = _resolve_cases(cases)
+    _check_separation(resolved_cases, examples_dir)
     if baseline is None and baseline_path is not None:
         baseline = load_baseline(baseline_path)
 

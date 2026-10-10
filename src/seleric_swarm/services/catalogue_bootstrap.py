@@ -1,6 +1,6 @@
 """Live Cube catalogue cache — warmed once at startup, refreshed on TTL.
 
-Rather than calling ``seleric.catalogue_get_metric`` per metric per mission
+Rather than calling the catalogue once per metric per mission
 (the old Step 1 in ``_resolve_measure``), ``CatalogueBootstrap`` pulls the
 full live metric list once and lets ``_resolve_measure`` check the cache as a
 free Step 0.  This means:
@@ -38,8 +38,6 @@ log = logging.getLogger(__name__)
 
 DEFAULT_TTL_SECONDS: int = 900  # 15 minutes
 
-_BOOTSTRAP_CAP = "seleric.catalogue_bootstrap"
-_LIST_METRICS_CAP = "seleric.catalogue_list_metrics"
 
 
 @dataclass
@@ -455,23 +453,6 @@ class CatalogueBootstrap:
     # Warming
     # ------------------------------------------------------------------
 
-    async def _call(self, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        try:
-            result = await self._mcp.call(
-                agent_id=self._agent_id,
-                capability=capability,
-                arguments=arguments,
-            )
-        except Exception as exc:
-            log.warning(
-                "CatalogueBootstrap %s failed (%s: %s)",
-                capability,
-                type(exc).__name__,
-                exc,
-            )
-            return {}
-        return result if isinstance(result, dict) else {}
-
     def _load_payload(self, payload: dict[str, Any]) -> int:
         rows = payload.get("metrics") or payload.get("matches") or []
         self._cache.clear()
@@ -637,10 +618,11 @@ class CatalogueBootstrap:
 
     async def _warm_legacy(self, registry_hints: list[str] | None = None) -> int:
         count = 0
-        payload = await self._call(_BOOTSTRAP_CAP, {})
+        port = self._semantic()
+        payload = await port.listing("bootstrap")
         count = self._load_payload(payload)
         if count == 0:
-            payload = await self._call(_LIST_METRICS_CAP, {})
+            payload = await port.listing("metrics")
             count = self._load_payload(payload)
         if count == 0:
             count = self._load_from_local_index()

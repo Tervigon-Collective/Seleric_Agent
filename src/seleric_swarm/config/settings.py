@@ -239,6 +239,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("scope_dimension_ids", "SCOPE_DIMENSION_IDS"),
     )
+    # Verified examples (M1.3): the understand stage reads this to decide whether
+    # to inject verified examples as exemplars. off = no exemplars; shadow =
+    # retrieve + log, don't inject; enforce = inject into the prompt.
+    verified_examples_mode: Literal["off", "shadow", "enforce"] = "off"
 
     workflow_version: str = "1.0.0"
 

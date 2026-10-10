@@ -51,6 +51,7 @@ dev = [
   "ruff>=0.9",
   "mypy>=1.14",
   "types-PyYAML>=6.0",
+  "import-linter>=2.1",
 ]
 
 [project.scripts]
@@ -95,26 +96,34 @@ ignore_missing_imports = true
 [tool.importlinter]
 root_package = "seleric_swarm"
 include_external_packages = true
-# Layer contracts: contracts → semantic → L2 domain → adapters → pipeline → api
-# Note: understand, spec, plan, derive, answer, investigate, context, graph, pipeline are planned modules
-# Only include existing modules in the layer contract
+
+# Highest layer first. Legacy packages (agent, toolsets, …) stay outside this
+# contract until their code moves. See docs/ADR/ADR-005-modular-pipeline.md.
 [[tool.importlinter.contracts]]
 name = "layers"
 type = "layers"
 layers = [
-  "seleric_swarm.contracts",
-  "seleric_swarm.semantic",
-  "seleric_swarm.adapters",
   "seleric_swarm.api",
-  "seleric_swarm.voice",
+  "seleric_swarm.pipeline",
+  "seleric_swarm.adapters",
+  "seleric_swarm.understand | seleric_swarm.spec | seleric_swarm.plan | seleric_swarm.derive | seleric_swarm.answer | seleric_swarm.investigate | seleric_swarm.context | seleric_swarm.graph",
+  "seleric_swarm.semantic",
+  "seleric_swarm.contracts",
 ]
 
-# Forbidden imports: L2 packages must not import re, httpx, openai, pydantic_ai, or adapters
-# Note: only apply to existing L2 packages
 [[tool.importlinter.contracts]]
-name = "forbidden_agent_imports"
+name = "L2 does not decide intent with regex or reach I/O SDKs"
 type = "forbidden"
-source_modules = ["seleric_swarm.agent"]
+source_modules = [
+  "seleric_swarm.understand",
+  "seleric_swarm.spec",
+  "seleric_swarm.plan",
+  "seleric_swarm.derive",
+  "seleric_swarm.answer",
+  "seleric_swarm.investigate",
+  "seleric_swarm.context",
+  "seleric_swarm.graph",
+]
 forbidden_modules = [
   "re",
   "httpx",
@@ -122,95 +131,57 @@ forbidden_modules = [
   "pydantic_ai",
   "seleric_swarm.adapters",
 ]
-include_external_packages = true
-[[tool.importlinter.contracts]]
-name = "forbidden_forecasting_imports"
-type = "forbidden"
-source_modules = ["seleric_swarm.forecasting"]
-forbidden_modules = [
-  "re",
-  "httpx",
-  "openai",
-  "pydantic_ai",
-  "seleric_swarm.adapters",
-]
-include_external_packages = true
-[[tool.importlinter.contracts]]
-name = "forbidden_toolsets_imports"
-type = "forbidden"
-source_modules = ["seleric_swarm.toolsets"]
-forbidden_modules = [
-  "re",
-  "httpx",
-  "openai",
-  "pydantic_ai",
-  "seleric_swarm.adapters",
-]
-include_external_packages = true
-[[tool.importlinter.contracts]]
-name = "forbidden_causal_imports"
-type = "forbidden"
-source_modules = ["seleric_swarm.causal"]
-forbidden_modules = [
-  "re",
-  "httpx",
-  "openai",
-  "pydantic_ai",
-  "seleric_swarm.adapters",
-]
-include_external_packages = true
-[[tool.importlinter.contracts]]
-name = "forbidden_conversations_imports"
-type = "forbidden"
-source_modules = ["seleric_swarm.conversations"]
-forbidden_modules = [
-  "re",
-  "httpx",
-  "openai",
-  "pydantic_ai",
-  "seleric_swarm.adapters",
-]
-include_external_packages = true
-[[tool.importlinter.contracts]]
-name = "forbidden_analytics_imports"
-type = "forbidden"
-source_modules = ["seleric_swarm.analytics"]
-forbidden_modules = [
-  "re",
-  "httpx",
-  "openai",
-  "pydantic_ai",
-  "seleric_swarm.adapters",
-]
-include_external_packages = true
-[[tool.importlinter.contracts]]
-name = "forbidden_exploration_imports"
-type = "forbidden"
-source_modules = ["seleric_swarm.exploration"]
-forbidden_modules = [
-  "re",
-  "httpx",
-  "openai",
-  "pydantic_ai",
-  "seleric_swarm.adapters",
-]
-include_external_packages = true
 
-# Independence contracts: existing modules that should be independent
 [[tool.importlinter.contracts]]
-name = "independence_existing"
+name = "derive, answer, context, and graph stay independent"
 type = "independence"
 modules = [
-  "seleric_swarm.analytics",
-  "seleric_swarm.causal",
-  "seleric_swarm.conversations",
-  "seleric_swarm.exploration",
-  "seleric_swarm.forecasting",
-  "seleric_swarm.toolsets",
+  "seleric_swarm.derive",
+  "seleric_swarm.answer",
+  "seleric_swarm.context",
+  "seleric_swarm.graph",
 ]
 
-# Protected contracts: each package's _-prefixed submodules may only be imported from inside that package
-# Disabled for now - will be configured when modules have proper _prefixed submodules
+[[tool.importlinter.contracts]]
+name = "semantic private modules"
+type = "protected"
+protected_modules = [
+  "seleric_swarm.semantic._fake",
+  "seleric_swarm.semantic._mcp_port",
+  "seleric_swarm.semantic._port",
+  "seleric_swarm.semantic._read_model",
+]
+allowed_importers = ["seleric_swarm.semantic"]
+
+[[tool.importlinter.contracts]]
+name = "pipeline contract private modules"
+type = "protected"
+protected_modules = [
+  "seleric_swarm.contracts.pipeline._answer",
+  "seleric_swarm.contracts.pipeline._errors",
+  "seleric_swarm.contracts.pipeline._plan",
+  "seleric_swarm.contracts.pipeline._question",
+  "seleric_swarm.contracts.pipeline._results",
+]
+allowed_importers = ["seleric_swarm.contracts.pipeline"]
+
+[[tool.importlinter.contracts]]
+name = "observability private modules"
+type = "protected"
+protected_modules = ["seleric_swarm.observability._stages"]
+allowed_importers = ["seleric_swarm.observability"]
+
+[[tool.importlinter.contracts]]
+name = "evals private modules"
+type = "protected"
+protected_modules = [
+  "seleric_swarm.evals._case",
+  "seleric_swarm.evals._cassette",
+  "seleric_swarm.evals._report",
+  "seleric_swarm.evals._runner",
+  "seleric_swarm.evals._scorer",
+]
+allowed_importers = ["seleric_swarm.evals"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]

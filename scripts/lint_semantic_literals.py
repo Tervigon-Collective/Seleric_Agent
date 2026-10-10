@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Semantic literal scanner.
 
 Scans Python source files for string literals that match catalogue metric IDs,
@@ -16,11 +15,35 @@ import ast
 import json
 import sys
 from pathlib import Path
-from typing import Iterable
+
+
+def _as_records(node: object) -> list[tuple[str | None, dict]]:
+    """Normalise a catalogue collection into ``(key, record)`` pairs.
+
+    The fixture uses a list of objects for metrics and a dict keyed by id for
+    hierarchies. Both shapes are accepted. A bare string is an id with no body.
+    """
+    if isinstance(node, dict):
+        return [(str(key), value if isinstance(value, dict) else {}) for key, value in node.items()]
+    if isinstance(node, list):
+        records: list[tuple[str | None, dict]] = []
+        for item in node:
+            if isinstance(item, dict):
+                records.append((None, item))
+            elif isinstance(item, str) and item:
+                records.append((item, {}))
+        return records
+    return []
+
+
+def _add_id(terms: set[str], record: dict, key: str | None) -> None:
+    ident = record.get("id") or key
+    if ident:
+        terms.add(str(ident))
 
 
 def load_catalogue_terms(catalogue_path: Path) -> set[str]:
-    """Extract all metric IDs, dimension IDs, and dimension values from the catalogue."""
+    """Extract metric ids, dimension ids, and dimension values from the catalogue."""
     terms: set[str] = set()
 
     if not catalogue_path.exists():
@@ -33,23 +56,21 @@ def load_catalogue_terms(catalogue_path: Path) -> set[str]:
         print(f"Error reading catalogue snapshot: {e}", file=sys.stderr)
         return terms
 
-    # Metrics
-    for metric in data.get("metrics", []):
-        mid = metric.get("id")
-        if mid:
-            terms.add(mid)
+    if not isinstance(data, dict):
+        print(f"Error reading catalogue snapshot: expected an object in {catalogue_path}", file=sys.stderr)
+        return terms
+
+    for key, metric in _as_records(data.get("metrics", [])):
+        _add_id(terms, metric, key)
         for alias in metric.get("aliases", []):
             if alias:
                 terms.add(str(alias))
         label = metric.get("label")
         if label:
-            terms.add(label)
+            terms.add(str(label))
 
-    # Dimensions
-    for dim in data.get("dimensions", []):
-        did = dim.get("id")
-        if did:
-            terms.add(did)
+    for key, dim in _as_records(data.get("dimensions", [])):
+        _add_id(terms, dim, key)
         for alias in dim.get("aliases", []):
             if alias:
                 terms.add(str(alias))
@@ -57,19 +78,12 @@ def load_catalogue_terms(catalogue_path: Path) -> set[str]:
             if value:
                 terms.add(str(value))
 
-    # Hierarchies, views, brands
-    for h in data.get("hierarchies", []):
-        hid = h.get("id")
-        if hid:
-            terms.add(hid)
-    for v in data.get("views", []):
-        vid = v.get("id")
-        if vid:
-            terms.add(vid)
-    for b in data.get("brands", []):
-        bid = b.get("id")
-        if bid:
-            terms.add(bid)
+    for key, record in _as_records(data.get("hierarchies", [])):
+        _add_id(terms, record, key)
+    for key, record in _as_records(data.get("views", [])):
+        _add_id(terms, record, key)
+    for key, record in _as_records(data.get("brands", [])):
+        _add_id(terms, record, key)
 
     return terms
 
@@ -130,19 +144,21 @@ def scan_file(filepath: Path, terms: set[str], allowlist: dict[str, str]) -> lis
 
     violations: list[tuple[int, str, str]] = []
     for line_num, literal in visitor.literals:
-        # Check each term to see if it appears in the literal
-        for term in terms:
-            if term and term in literal:
-                if literal not in allowlist:
-                    # Find the owning module from the filepath
-                    module_id = "unknown"
-                    rel = filepath.relative_to(Path.cwd())
-                    parts = rel.parts
-                    if len(parts) >= 2 and parts[0] == "src":
-                        module_id = parts[1]
-                    elif len(parts) >= 1:
-                        module_id = parts[0]
-                    violations.append((line_num, literal, module_id))
+        # Exact match only. Terms shorter than 3 characters are sample values
+        # ("a", "b") and ordinary words, not catalogue ids.
+        if len(literal) < 3 or literal not in terms or literal in allowlist:
+            continue
+        module_id = "unknown"
+        try:
+            rel = filepath.resolve().relative_to(Path.cwd().resolve())
+        except ValueError:
+            rel = filepath
+        parts = rel.parts
+        if len(parts) >= 2 and parts[0] == "src":
+            module_id = parts[1]
+        elif parts:
+            module_id = parts[0]
+        violations.append((line_num, literal, module_id))
     return violations
 
 

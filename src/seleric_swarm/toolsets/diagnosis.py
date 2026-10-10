@@ -45,6 +45,7 @@ from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal import diagnosis as engine
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.exploration import space
+from seleric_swarm.semantic import McpSemanticPort
 from seleric_swarm.services.mcp_query import build_metrics_query_args, dimension_value, row_date
 from seleric_swarm.toolsets import policy_config as P
 from seleric_swarm.toolsets import semantic
@@ -81,9 +82,7 @@ async def _all_definitions(ctx: RunContext[SelericDeps]) -> dict[str, dict[str, 
 
     async def one(batch: list[str]) -> None:
         try:
-            res = await ctx.deps.mcp_client.call(
-                agent_id="v3_agent", capability="seleric.catalogue_get_metrics", arguments={"metric_ids": batch}
-            )
+            res = await McpSemanticPort(ctx.deps.mcp_client).fetch_metrics(batch)
         except Exception:
             return
         for mid, d in ((res or {}).get("metrics") or {}).items():

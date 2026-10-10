@@ -23,8 +23,8 @@ the MCP rejects. A kind whose live pull came back empty is never pruned.
 
 from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
@@ -34,6 +34,7 @@ from seleric_swarm.bootstrap import _sync_settings_to_environ
 from seleric_swarm.config.settings import get_settings
 from seleric_swarm.paths import repo_root
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
+from seleric_swarm.semantic import McpSemanticPort
 from seleric_swarm.toolsets import catalogue_index
 
 _AGENT_ID = "v3_agent"
@@ -45,12 +46,12 @@ _AGENT_ID = "v3_agent"
 # under "brands". No local canonicalization of these fields, just reading
 # them under their live-catalogue key names.
 _SOURCES: list[tuple[str, str, str, str, str]] = [
-    # metrics from catalogue_bootstrap (same queryable list as catalogue_list_metrics, plus the
-    # semantic v2 fields): catalogue_list_metrics is rate-limited server-side (3 calls / 60 s, shared
+    # metrics from the bootstrap listing (same queryable list as the metric listing, plus the
+    # semantic v2 fields). The metric listing is rate-limited server-side (3 calls / 60 s, shared
     # with the /readyz probe), so a sync through it can come back as an error payload with 0 rows.
-    ("metric", "seleric.catalogue_bootstrap", "metrics", "id", "display_name"),
-    ("dimension", "seleric.catalogue_list_dimensions", "dimensions", "id", "display_name"),
-    ("brand", "seleric.catalogue_list_brands", "brands", "id", "name"),
+    ("metric", "bootstrap", "metrics", "id", "display_name"),
+    ("dimension", "dimensions", "dimensions", "id", "display_name"),
+    ("brand", "brands", "brands", "id", "name"),
 ]
 
 
@@ -66,12 +67,12 @@ async def _sync_kind(
     embedder: Callable[[str], list[float]],
     *,
     kind: str,
-    capability: str,
+    pull_kind: str,
     list_key: str,
     id_field: str,
     name_field: str,
 ) -> set[str]:
-    payload = await gateway.call(agent_id=_AGENT_ID, capability=capability, arguments={})
+    payload = await McpSemanticPort(gateway, agent_id=_AGENT_ID).pull(pull_kind)
     synced: set[str] = set()
     for entry in _entries_from(payload, list_key):
         catalogue_id = str(entry.get(id_field) or "").strip()
@@ -123,14 +124,14 @@ async def _sync(prune: bool = False) -> int:
     gateway = MCPGateway(settings.mcp_config_path)
     synced = 0
     try:
-        for kind, capability, list_key, id_field, name_field in _SOURCES:
+        for kind, pull_kind, list_key, id_field, name_field in _SOURCES:
             ids = await _sync_kind(
                 gateway,
                 client,
                 settings,
                 embedder,
                 kind=kind,
-                capability=capability,
+                pull_kind=pull_kind,
                 list_key=list_key,
                 id_field=id_field,
                 name_field=name_field,

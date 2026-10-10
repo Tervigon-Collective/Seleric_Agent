@@ -40,7 +40,7 @@ Unknown catalogue fields are kept on `extra`. Missing optional fields are `None`
 - `shadow` — the port warms beside that path and logs an id-set disagreement. The legacy snapshot is what missions read.
 - `enforce` — the bootstrap cache is the port's read model.
 
-Direct `seleric.catalogue_*` calls outside this package are removed when the flag reaches enforce.
+Catalogue capability names live in `_mcp_port.py`. Callers use `McpSemanticPort` (`search_metrics`, `resolve_brand`, `fetch_metric`, `fetch_metrics`, `resolve_concept_payload`, `resolve_values_payload`, `ontology`, `related_metrics`, `pull`, `listing`). Those methods return the gateway payload and raise on a failed call, so existing tools keep their error handling. `SEMANTIC_PORT_MODE` still decides whether a mission reads the port's snapshot.
 
 ## Failure policy
 

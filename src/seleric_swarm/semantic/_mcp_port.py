@@ -28,9 +28,24 @@ _LIST_BRANDS = "seleric.catalogue_list_brands"
 _RESOLVE_CONCEPT = "seleric.catalogue_resolve_concept"
 _RESOLVE_VALUES = "seleric.catalogue_resolve_values"
 _GET_METRICS = "seleric.catalogue_get_metrics"
+_GET_METRIC = "seleric.catalogue_get_metric"
+_SEARCH = "seleric.catalogue_search_metrics"
+_RESOLVE_BRAND = "seleric.catalogue_resolve_brand"
+_GET_ONTOLOGY = "seleric.catalogue_get_ontology"
+_RELATED = "seleric.catalogue_related_metrics"
+_LIST_DIMENSIONS = "seleric.catalogue_list_dimensions"
 _METRICS_QUERY = "seleric.metrics_query"
 _METRICS_DRILL = "seleric.metrics_drilldown"
 _BATCH = 10
+_PULL = {
+    "bootstrap": _BOOTSTRAP,
+    "metrics": _LIST_METRICS,
+    "dimensions": _LIST_DIMENSIONS,
+    "brands": _LIST_BRANDS,
+    "ontology": _GET_ONTOLOGY,
+    "metric": _GET_METRIC,
+    "related": _RELATED,
+}
 
 
 class CatalogueCaller(Protocol):
@@ -116,6 +131,73 @@ class McpSemanticPort:
         self.note_version(str(payload.get("catalogue_version") or ""))
         return values_from_payload(payload)
 
+    def supports(self, kind: str) -> bool:
+        """True when the gateway advertises this catalogue operation."""
+        capabilities = getattr(self._mcp, "capabilities", ())
+        return _PULL[kind] in capabilities
+
+    async def pull(self, kind: str, *, agent_id: str | None = None) -> dict[str, Any]:
+        """One catalogue read. Raises when the gateway call fails."""
+        return await self._call_raising(_PULL[kind], {}, agent_id=agent_id)
+
+    async def listing(self, kind: str) -> dict[str, Any]:
+        """Catalogue read that fails open. The legacy warm uses this."""
+        try:
+            return await self.pull(kind)
+        except Exception as exc:
+            log.warning("semantic port %s failed (%s: %s)", kind, type(exc).__name__, exc)
+            return {}
+
+    async def search_metrics(self, query: str, *, agent_id: str | None = None) -> dict[str, Any]:
+        return await self._call_raising(_SEARCH, {"query": query}, agent_id=agent_id)
+
+    async def resolve_brand(self, text: str, *, agent_id: str | None = None) -> dict[str, Any]:
+        return await self._call_raising(_RESOLVE_BRAND, {"text": text}, agent_id=agent_id)
+
+    async def fetch_metric(self, metric_id: str, *, agent_id: str | None = None) -> dict[str, Any]:
+        return await self._call_raising(_GET_METRIC, {"metric_id": metric_id}, agent_id=agent_id)
+
+    async def fetch_metrics(self, metric_ids: list[str], *, agent_id: str | None = None) -> dict[str, Any]:
+        return await self._call_raising(_GET_METRICS, {"metric_ids": list(metric_ids)}, agent_id=agent_id)
+
+    async def resolve_concept_payload(
+        self,
+        text: str,
+        axes: dict[str, str] | None = None,
+        *,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {"text": text}
+        if axes is not None:
+            arguments["axes"] = dict(axes)
+        return await self._call_raising(_RESOLVE_CONCEPT, arguments, agent_id=agent_id)
+
+    async def resolve_values_payload(
+        self,
+        text: str,
+        *,
+        axes_only: bool = False,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {"text": text}
+        if axes_only:
+            arguments["axes_only"] = True
+        return await self._call_raising(_RESOLVE_VALUES, arguments, agent_id=agent_id)
+
+    async def ontology(
+        self,
+        *,
+        agent_id: str,
+        module: str | None = None,
+    ) -> dict[str, Any]:
+        arguments: dict[str, Any] = {}
+        if module is not None:
+            arguments["module"] = module
+        return await self._call_raising(_GET_ONTOLOGY, arguments, agent_id=agent_id)
+
+    async def related_metrics(self, metric_id: str, *, agent_id: str) -> dict[str, Any]:
+        return await self._call_raising(_RELATED, {"metric_id": metric_id}, agent_id=agent_id)
+
     async def metric_definitions(self, ids: list[str]) -> dict[str, MetricDefinition]:
         unique = list(dict.fromkeys(item for item in ids if item))
         found: dict[str, MetricDefinition] = {}
@@ -169,14 +251,23 @@ class McpSemanticPort:
 
     async def _call(self, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
         try:
-            result = await self._mcp.call(
-                agent_id=self._agent_id,
-                capability=capability,
-                arguments=arguments,
-            )
+            return await self._call_raising(capability, arguments)
         except Exception as exc:
             log.warning("semantic port %s failed (%s: %s)", capability, type(exc).__name__, exc)
             return {}
+
+    async def _call_raising(
+        self,
+        capability: str,
+        arguments: dict[str, Any],
+        *,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        result = await self._mcp.call(
+            agent_id=agent_id or self._agent_id,
+            capability=capability,
+            arguments=arguments,
+        )
         return result if isinstance(result, dict) else {}
 
 

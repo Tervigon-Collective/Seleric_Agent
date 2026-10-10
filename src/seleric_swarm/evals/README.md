@@ -46,6 +46,14 @@ cases:
 
 Truth is `metrics_query` arguments, never SQL, so a case follows the catalogue.
 
+`expect.spec` is a *partial* spec compared field-by-field (`_scorer.spec_matches`):
+an omitted field is not scored, dicts are recursive subsets, and lists
+(`measures`, `entities`, `windows`) match element-wise in order. Once the
+pipeline surfaces a real spec (M1.2), `eval/golden/spec_shapes.yaml` exercises
+the Phase 1 shapes ported from `tests/fixtures/query_specs/th383_and_regressions.jsonl`
+(`entity_comparison`, `period_comparison`, `lookup`, `why_single_metric`,
+`breakdown`, and a follow-up that keeps its windows).
+
 ## Metrics
 
 Higher is better: `spec_accuracy`, `status_ok`, `value_correctness`.
@@ -59,6 +67,10 @@ Lower is better: `revisions`, `latency_ms`, `llm_calls`, `tokens`. A metric is
 - A mission error is captured on `ObservedCase.error` and reported, not raised.
 - `--compare` exits non-zero when any comparable metric is worse than the
   baseline.
+- Eval cases and verified examples must stay separate (M1.3): before running,
+  the harness loads example ids from `eval/verified` and raises `ValueError`
+  when a case id is also an example id, so a scored case can never double as a
+  trusted exemplar. Override the store with `run_suite(..., examples_dir=...)`.
 
 ## Flag
 
@@ -78,5 +90,6 @@ uv run pytest tests/unit/evals -q
 - `obs.spec` falls back to `{}` until the pipeline surfaces a `QuestionSpec`;
   spec-accuracy cases score `n/a` until then (M1.2).
 - The 30-question golden set lives outside the repo; `eval/golden/lookup.yaml`
-  seeds from the in-repo datasets. Import the full set when the owner provides
-  the harness (tracked as an open gap).
+  seeds from the in-repo datasets and `eval/golden/spec_shapes.yaml` covers the
+  spec-shape fixtures. Import the full set when the owner provides the harness
+  (tracked as an open gap).

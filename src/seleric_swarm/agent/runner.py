@@ -86,6 +86,7 @@ from seleric_swarm.conversations.contracts import (
 )
 from seleric_swarm.observability.traces import mission_trace
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.semantic import McpSemanticPort
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 from seleric_swarm.services.elapsed import state_cutoff_hour
 from seleric_swarm.services.insights import insight_block
@@ -268,11 +269,7 @@ async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[s
     timeout = float(getattr(runtime.settings, "value_resolve_timeout_s", 15.0))
     try:
         result = await asyncio.wait_for(
-            mcp.call(
-                agent_id="v3_agent",
-                capability="seleric.catalogue_resolve_values",
-                arguments={"text": query},
-            ),
+            McpSemanticPort(mcp).resolve_values_payload(query),
             timeout=timeout,
         )
     except Exception:
@@ -754,8 +751,7 @@ async def _context_axes(mcp: Any, text: str) -> tuple[tuple[str, str], ...] | No
     the caller keeps the whole question's axes."""
     try:
         result = await asyncio.wait_for(
-            mcp.call(agent_id="v3_agent", capability="seleric.catalogue_resolve_values",
-                     arguments={"text": text, "axes_only": True}),
+            McpSemanticPort(mcp).resolve_values_payload(text, axes_only=True),
             timeout=3.0,
         )
     except Exception:
@@ -838,11 +834,7 @@ class _ConceptResolver:
     async def _one(self, text: str) -> str | None:
         try:
             result = await asyncio.wait_for(
-                self._mcp.call(
-                    agent_id="planner",
-                    capability="seleric.catalogue_resolve_concept",
-                    arguments={"text": text, "axes": self._axes},
-                ),
+                McpSemanticPort(self._mcp, agent_id="planner").resolve_concept_payload(text, self._axes),
                 timeout=5.0,
             )
         except Exception:

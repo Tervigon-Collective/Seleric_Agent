@@ -139,3 +139,31 @@ async def test_metric_definitions_batch_at_ten() -> None:
 def test_query_args_reject_unknown_fields() -> None:
     with pytest.raises(ValidationError):
         MetricsQueryArgs(measures=("zz_sales",), not_a_field=1)  # type: ignore[call-arg]
+
+
+@pytest.mark.asyncio
+async def test_lookup_methods_keep_the_gateway_call() -> None:
+    mcp = ScriptedMcp([
+        ("seleric.catalogue_search_metrics", {"matches": [{"id": "zz_sales"}]}),
+        ("seleric.catalogue_resolve_values", {"status": "ok", "candidates": []}),
+    ])
+    port = McpSemanticPort(mcp, agent_id="planner")
+    found = await port.search_metrics("zz sales")
+    values = await port.resolve_values_payload("zz sales", axes_only=True)
+    assert found["matches"][0]["id"] == "zz_sales"
+    assert values["status"] == "ok"
+    assert mcp.calls[0] == ("seleric.catalogue_search_metrics", {"query": "zz sales"})
+    assert mcp.calls[1] == (
+        "seleric.catalogue_resolve_values",
+        {"text": "zz sales", "axes_only": True},
+    )
+
+
+def test_catalogue_capabilities_live_only_in_the_port() -> None:
+    root = Path("src")
+    hits = [
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        if "seleric_swarm/semantic/" not in path.as_posix() and "seleric.catalogue_" in path.read_text(encoding="utf-8")
+    ]
+    assert hits == []
