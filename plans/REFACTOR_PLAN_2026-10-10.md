@@ -673,7 +673,7 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | M3.2 | T2 | Cursor | | not started | | after M2.2 and M2.3 | 2026-10-10 |
 | M3.3 | T3 | OpenCode | | not started | | after M2.2 and M2.3 | 2026-10-10 |
 | M4.1 | T1 | Claude (review) | `gaurav` | merged | | `context/`: calendar, incidents, freshness health, `config/context_providers.yaml`; 6 tests. Gap: change-log provider, domain-health snapshots | 2026-10-11 |
-| M4.2 | T2 | Claude (review) | `gaurav` | in progress | | may start in Phase 2 | 2026-10-10 |
+| M4.2 | T2 | Claude (review) | `gaurav` | merged | | `graph/`: identity edges (composition/depends_on) + `config/causal_graph.yaml` causal edges, unknown nodes skipped; 4 tests. Gap: GCM adapter | 2026-10-10 |
 | M4.3 | T2 | Cursor | | not started | | after M4.1 and M4.2 | 2026-10-10 |
 | M4.4 | T3 | OpenCode | | not started | | after M4.3 | 2026-10-10 |
 | M5.1 | T1 | OpenCode | | not started | | any time after M0.3 | 2026-10-10 |

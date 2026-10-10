@@ -1,3 +1,6 @@
-"""Metric graph. The public entry point lands with M4.2."""
+"""Metric graph (M4.2): identity edges from the catalogue plus configured causal edges."""
 
-__all__: list[str] = []
+from seleric_swarm.graph.build import build_graph, causal_edges, identity_edges
+from seleric_swarm.graph.model import Edge, MetricGraph, SkippedNode
+
+__all__ = ["Edge", "MetricGraph", "SkippedNode", "build_graph", "causal_edges", "identity_edges"]

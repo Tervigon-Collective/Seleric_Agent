@@ -1,3 +1,5 @@
+# Causal edges for diagnosis (M4.2). Nodes must be catalogue metric/dimension ids; others are skipped and reported.
+# Edge: [cause, effect] or [cause, effect, sign(1|-1|0), lag_days].
 graphs:
   - id: causal.funnel_purchase.v1
     domain: funnel
