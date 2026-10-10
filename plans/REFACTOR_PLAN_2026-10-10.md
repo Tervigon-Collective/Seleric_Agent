@@ -112,9 +112,9 @@ Each stage runs inside `stage_span(name, input_model, output_model)` (M0.3). No 
 - A legacy-deletion PR is prepared, to merge after the module reaches enforce.
 
 ### A8. Branch and PR workflow (for parallel agents)
-- One branch per module: `mod/<id>-<slug>` (e.g. `mod/M2.3-derivation-engine`), cut from `gaurav`.
-- Each PR touches only its module's files plus wiring behind its flag. If you must edit a shared file (`pipeline/`, `config/settings.py`), add, never rewrite.
-- CI (M0.1) must pass. Merge to `gaurav`; no direct pushes once M0.1 lands.
+- Every change is committed on `gaurav`. If the work is on any other branch, move it onto `gaurav` and continue there. See the note in Part D.
+- Each change touches only its module's files plus wiring behind its flag. If you must edit a shared file (`pipeline/`, `config/settings.py`), add, never rewrite.
+- CI (M0.1) must pass on `gaurav`.
 
 ### A9. Deep modules (simple interface, rich internals)
 A module earns its place by hiding complexity behind a small interface (Ousterhout, *A Philosophy of Software
@@ -547,7 +547,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 - **Acceptance:** "why" eval tag: root cause at the right depth ≥ target; no causal wording without a `supported_cause` driver.
 - **Flag:** `INVESTIGATE_MODE`.
 
-#### M4.4 Exploration integration (T4)
+#### M4.4 Exploration integration (T3)
 - `explore_data` (`toolsets/exploration.py`) follow-ups become typed `EngineStep`s.
 - The exploration result is stored per thread (`ExplorationMap` artifact) so "what else?" continues.
 - The overview kind routes to `explore` instead of the snapshot fast path when a period is named.
@@ -571,7 +571,7 @@ drill(args) -> QueryResponse                       # metrics_drilldown
 - On the deadline, wrap up with what the ResultSets hold (reuse `_wrap_up` behaviour in `validation/__init__.py:1153`).
 - Report p50 and p90 per tag in the eval.
 
-#### M5.4 Single agent brain (T4) — Core, not the semantic layer
+#### M5.4 Single agent brain (T5) — Core, not the semantic layer
 - The dashboard chat calls the Seleric_Agent conversation API (`api/conversations.py`) with module/brand scope.
 - Retire `seleric_agent_core/src/seleric_mcp/gateway/analyst.py`, `llm/agent_core.py` and `gateway/prompts.py` (the latter hardcodes v1 ids).
 - Keep Core's MCP tools.
@@ -592,17 +592,85 @@ Phase 4:                                 M4.1  M4.2 ──► M4.3 ──► M4.
 Phase 5:                                 M5.1  M5.2  M5.3  M5.4          (M5.1 may start any time after M0.3)
 ```
 
-**Track assignment for 5 agents:**
+**Track assignment for 5 agents.** One agent keeps one track for the whole programme. Cursor takes the tracks that freeze interfaces or move the existing brain. OpenCode takes the tracks that are new code against those frozen interfaces.
 
-| | Phase 0 | Phase 1 | Phase 2 | Phase 3 | Phase 4 |
-|---|---|---|---|---|---|
-| T1 | M0.1 → M0.6 | M1.1 → M1.4 | M2.1 | M3.1 | M4.1 |
-| T2 | M0.2 | M1.2 | M2.2 | M3.2 | M4.2 → M4.3 |
-| T3 | M0.3 | M1.3 | M2.3 | M3.3 | M4.4 |
-| T4 | M0.4 | (eval cases, cassettes) | — | — | — |
-| T5 | M0.5 | (port cleanup) | — | — | — |
+| Track | Tool | Phase 0 | Phase 1 | Phase 2 | Phase 3 | Phase 4 | Phase 5 |
+|---|---|---|---|---|---|---|---|
+| T1 | OpenCode | M0.1 → M0.6 | M1.1 → M1.4 | M2.1 | M3.1 | M4.1 | M5.1 |
+| T2 | Cursor | M0.2 | M1.2 | M2.2 | M3.2 | M4.2 → M4.3 | M5.2 |
+| T3 | OpenCode | M0.3 | M1.3 | M2.3 | M3.3 | M4.4 | M5.3 |
+| T4 | OpenCode | M0.4 | eval cases, cassettes, baselines | stay on the suite | stay on the suite | stay on the suite | stay on the suite |
+| T5 | Cursor | M0.5 | port cleanup | — | — | — | M5.4 |
 
 **Merge order inside a phase:** contracts → port → producers → consumers. A consumer behind its flag can merge first against a stub of the producer.
+
+**Day 1.** All five start together, on `gaurav`. Land T1's guardrails first, then tag T2's contracts (`contracts-v1`, day 3), then land T5's port. T3 and T4 draft against Part B and continue on `gaurav` after `contracts-v1`.
+
+| Agent | Branch | Blocked until |
+|---|---|---|
+| T1 | `gaurav` | nothing |
+| T2 | `gaurav` | nothing; tag `contracts-v1` on day 3 |
+| T3 | `gaurav` | `contracts-v1` |
+| T4 | `gaurav` | `contracts-v1` |
+| T5 | `gaurav` | `contracts-v1` |
+
+**Handoffs.**
+
+- T1 publishes `QuestionDraft` before T2 starts M1.2. T1 adds `spec/_clarify.py` only after T2's `compile_question_spec` has merged.
+- T3's M1.3 waits for T4's golden cases. T2's M3.2 waits for M2.2 and T3's M2.3. T2's M4.3 waits for T1's M4.1 and T2's M4.2.
+- T4 does not pick up feature modules. M5.4 belongs to T5, not T4.
+- T1's M4.1 may start during Phase 2. T1's M5.1 may start any time after T3's M0.3. T2's M4.2 may start during Phase 2.
+
+### Note for every agent — this file is the status channel
+
+Read this note before writing code. The five agents do not have another shared board. Talk through this document.
+
+1. Every change is committed on the `gaurav` branch. If you are on any other branch now, move that work onto `gaurav` before the next commit and continue there. Do not open or keep a `mod/*` branch. The `Branch` column below is `gaurav`.
+2. On starting a module, set its row below to `in progress` and append one log line.
+3. When blocked, set `blocked` and name the module you are waiting on in `Note`. Do not start a later module on your track to skip the block, except where this plan explicitly allows an early start (M4.1, M4.2, M5.1).
+4. When the change is ready for review, set `in review` and put the PR URL in `PR` if there is one.
+5. When the module is on `gaurav` and its checks pass, set `merged`, add the date, and append one log line. Then start the next module on your track.
+6. Edit only your own rows. You may append a log line if you unblocked another track. Do not rewrite another track's status or delete log lines.
+7. A change contains that module's package, its tests, and its README, plus one flag line in `config/settings.py` (`Literal["off","shadow","enforce"]`, default `"off"`). Do not edit another module's flag. Do not add logic to `agent/runner.py`.
+8. After `contracts-v1`, only T2 changes a frozen contract, and only with an ADR.
+9. If the plan itself is wrong, change the module text in the same change and say so in the log. Status rows and the log stay in this file so the next agent sees the truth.
+
+**Status board.** Values: `not started` | `in progress` | `blocked` | `in review` | `merged`.
+
+| Module | Track | Tool | Branch | Status | PR | Note | Updated |
+|---|---|---|---|---|---|---|---|
+| M0.1 | T1 | OpenCode | | not started | | | 2026-10-10 |
+| M0.2 | T2 | Cursor | `gaurav` | in progress | | Move `mod/M0.2-pipeline-contracts` onto `gaurav`. Tag `contracts-v1` when it lands. | 2026-10-10 |
+| M0.3 | T3 | OpenCode | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
+| M0.4 | T4 | OpenCode | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
+| M0.5 | T5 | Cursor | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
+| M0.6 | T1 | OpenCode | | not started | | after M0.1 | 2026-10-10 |
+| M1.1 | T1 | OpenCode | | not started | | after `contracts-v1` and M0.5; publish `QuestionDraft` | 2026-10-10 |
+| M1.2 | T2 | Cursor | | not started | | after `contracts-v1`, M0.5, and M1.1 draft type | 2026-10-10 |
+| M1.3 | T3 | OpenCode | | not started | | after M0.4 golden cases | 2026-10-10 |
+| M1.4 | T1 | OpenCode | | not started | | after M1.2 merges; `spec/_clarify.py` only | 2026-10-10 |
+| M2.1 | T1 | OpenCode | | not started | | after M1.2 | 2026-10-10 |
+| M2.2 | T2 | Cursor | | not started | | after M1.2 | 2026-10-10 |
+| M2.3 | T3 | OpenCode | | not started | | after M1.2 | 2026-10-10 |
+| M3.1 | T1 | OpenCode | | not started | | after M2.2 and M2.3 | 2026-10-10 |
+| M3.2 | T2 | Cursor | | not started | | after M2.2 and M2.3 | 2026-10-10 |
+| M3.3 | T3 | OpenCode | | not started | | after M2.2 and M2.3 | 2026-10-10 |
+| M4.1 | T1 | OpenCode | | not started | | may start in Phase 2 | 2026-10-10 |
+| M4.2 | T2 | Cursor | | not started | | may start in Phase 2 | 2026-10-10 |
+| M4.3 | T2 | Cursor | | not started | | after M4.1 and M4.2 | 2026-10-10 |
+| M4.4 | T3 | OpenCode | | not started | | after M4.3 | 2026-10-10 |
+| M5.1 | T1 | OpenCode | | not started | | any time after M0.3 | 2026-10-10 |
+| M5.2 | T2 | Cursor | | not started | | after M3.3 | 2026-10-10 |
+| M5.3 | T3 | OpenCode | | not started | | after M2.1 templates | 2026-10-10 |
+| M5.4 | T5 | Cursor | | not started | | Phase 5; Core `analyst.py`, not T4 | 2026-10-10 |
+
+**Log.** Append only. Newest at the bottom.
+
+| Date | Track | Module | What changed |
+|---|---|---|---|
+| 2026-10-10 | — | — | Status board opened. T1/T3/T4 = OpenCode. T2/T5 = Cursor. M5.4 assigned to T5. |
+| 2026-10-10 | T2 | M0.2 | Branch `mod/M0.2-pipeline-contracts` cut from `gaurav`; implementing Part B models. |
+| 2026-10-10 | — | — | Every change lands on `gaurav`. Work already on another branch, including `mod/M0.2-pipeline-contracts`, moves onto `gaurav`. |
 
 ## Part E — Files you will touch most (and the rule for each)
 - `agent/runner.py` (1,827 lines): **do not add logic**. M1.2/M2.x/M3.x move stage code into `pipeline/mission.py` (`run_mission(question, deps) -> AnswerDocument`), and `run_v3_mission` becomes a thin adapter. Each module removes its block from `runner.py` when it reaches enforce.
