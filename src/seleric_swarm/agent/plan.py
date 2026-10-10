@@ -71,6 +71,10 @@ class PlanStep(BaseModel):
     uses_entities_from_step: int | None = Field(
         default=None, description="1-based number of an earlier step whose entities this step reuses."
     )
+    drivers: list[str] = Field(
+        default_factory=list,
+        description="For diagnose_metric_change: metric ids the user named as possible explanations.",
+    )
     # No max_length: a long purpose failed schema validation and cost a whole
     # second planner call (live 2026-10-07); it is clipped when rendered instead.
     purpose: str = Field(min_length=3)
@@ -335,6 +339,7 @@ def compose_plan(
             PlanStep(
                 tool="diagnose_metric_change",
                 metric_ids=[metric_ids[0]],
+                drivers=named,
                 period=ref_text,
                 purpose=(
                     "Diagnose the change once and answer from its ANSWER SKELETON."

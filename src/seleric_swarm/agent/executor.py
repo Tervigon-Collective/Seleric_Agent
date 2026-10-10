@@ -150,6 +150,8 @@ async def execute_plan(
         return None
     if plan.shape == "composition":
         return await _execute_composition(plan, deps, windows=windows, as_of=as_of)
+    if plan.shape == "why_single_metric":
+        return await _execute_named_drivers(plan, deps, windows=windows, as_of=as_of)
     two_windows = plan.shape in ("entity_comparison", "period_comparison") and len(windows) >= 2
     if not two_windows and plan.shape not in _SINGLE_WINDOW_SHAPES:
         return None
@@ -201,6 +203,50 @@ async def _execute_composition(
     finding_id = (result.provenance.source_metadata or {}).get("finding_id")
     return Prefetch(
         text="Prefetched by the planner (break_down_metric):\n" + result.summary,
+        evidence_ids=[a for a in result.artifact_ids if a != finding_id],
+        finding_id=finding_id,
+        stats={"queries": 1, "rows": len(result.artifact_ids)},
+    )
+
+
+async def _execute_named_drivers(
+    plan: MissionPlan, deps: SelericDeps, *, windows: Sequence[tuple[date, date]], as_of: datetime
+) -> Prefetch | None:
+    """A why-question that names its own suspects ("did CAC rise from CPM, CTR or CPC?") is diagnosed here with
+    those drivers, so each is checked and reported. Left to the model, the drivers rode only in the plan's
+    wording and one run diagnosed CAC without them (regression 2026-10-10 Q24, twice). Without named drivers the
+    agent still runs the diagnosis itself."""
+    from seleric_swarm.toolsets import diagnosis
+
+    step = next((s for s in plan.steps if s.tool == "diagnose_metric_change" and s.metric_ids and s.drivers), None)
+    if step is None:
+        return None
+    metric_id = step.metric_ids[0]
+    emit_progress(deps.mission_id, "agent.stage", tool_label(step.tool), {"stage": "prefetch"})
+    kwargs: dict[str, Any] = {"drivers": list(step.drivers)}
+    ordered = sorted(windows[:2]) if len(windows) > 1 else list(windows[:1])
+    if ordered:
+        later = ordered[-1]
+        kwargs.update(event_start=_at(later[0], as_of), event_end=_at(later[1], as_of))
+    if len(ordered) > 1:
+        kwargs.update(compare_start=_at(ordered[0][0], as_of), compare_end=_at(ordered[0][1], as_of))
+    named = {k: v for k, v in (_with_named_values(deps, metric_id, None) or {}).items() if v not in ("", None, [])}
+    if named:
+        kwargs["filters"] = named
+    try:
+        result = await diagnosis.diagnose_metric_change(_ctx(deps), metric_id, **kwargs)
+    except Exception:
+        _log.warning("diagnosis_execution_failed", exc_info=True)
+        return None
+    if not getattr(result, "success", False):
+        return None
+    finding_id = (result.provenance.source_metadata or {}).get("finding_id")
+    return Prefetch(
+        text=(
+            f"Prefetched by the planner (diagnose_metric_change, drivers={list(step.drivers)}):\n{result.summary}\n"
+            "Answer from its ANSWER SKELETON and state, for each named driver, what it did and how much of the "
+            "change it explains."
+        ),
         evidence_ids=[a for a in result.artifact_ids if a != finding_id],
         finding_id=finding_id,
         stats={"queries": 1, "rows": len(result.artifact_ids)},

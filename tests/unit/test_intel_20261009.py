@@ -647,7 +647,7 @@ async def test_a_why_plan_carries_the_named_measures_as_drivers() -> None:
                                 windows=[(date(2026, 10, 8), date(2026, 10, 8))], as_of=AS_OF)
     assert out.plan is not None
     step = out.plan.steps[0]
-    assert step.metric_ids == ["cac"] and "drivers=['cpm', 'ctr']" in step.purpose
+    assert step.metric_ids == ["cac"] and step.drivers == ["cpm", "ctr"]
 
 
 def test_per_day_averages_of_fetched_totals_and_their_change_are_backed() -> None:
@@ -774,3 +774,30 @@ def test_the_models_own_queries_carry_the_one_named_value_unless_weighed_against
     assert _scoped_to_named_values(ctx, "impressions", asked) == {"campaign_name": ["A", "B"], "ad_platform": "meta"}
     ctx.deps.required_scope = dataclasses.replace(scope, values_weighed_against_whole=True)
     assert _scoped_to_named_values(ctx, "impressions", asked) == asked
+
+
+async def test_named_drivers_are_diagnosed_by_the_executor_with_them(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from seleric_swarm.agent import executor
+    from seleric_swarm.agent.plan import MissionPlan, PlanStep
+    from seleric_swarm.toolsets import diagnosis
+
+    seen: dict = {}
+
+    async def fake(ctx, metric_id, **kwargs):
+        seen.update(metric_id=metric_id, **kwargs)
+        return SimpleNamespace(success=True, summary="ANSWER SKELETON", artifact_ids=["e1", "f1"],
+                               provenance=SimpleNamespace(source_metadata={"finding_id": "f1"}))
+
+    monkeypatch.setattr(diagnosis, "diagnose_metric_change", fake)
+    plan = MissionPlan(shape="why_single_metric", steps=[PlanStep(tool="diagnose_metric_change", metric_ids=["cac"],
+                                                                  drivers=["cpm", "ctr", "cpc"], purpose="diagnose")])
+    from tests.unit.test_failures_20261008 import _deps as fdeps
+    deps = fdeps(InMemoryArtifactStore())
+    out = await executor.execute_plan(plan, deps, windows=[(date(2026, 10, 9), date(2026, 10, 9))], as_of=AS_OF)
+    assert out is not None and seen["drivers"] == ["cpm", "ctr", "cpc"] and seen["metric_id"] == "cac"
+    assert seen["event_start"].date() == date(2026, 10, 9) and out.evidence_ids == ["e1"]
+    plain = MissionPlan(shape="why_single_metric", steps=[PlanStep(tool="diagnose_metric_change", metric_ids=["cac"],
+                                                                   purpose="diagnose")])
+    assert await executor.execute_plan(plain, deps, windows=[(date(2026, 10, 9), date(2026, 10, 9))], as_of=AS_OF) is None
