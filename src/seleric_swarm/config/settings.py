@@ -252,6 +252,8 @@ class Settings(BaseSettings):
     planner_v2_mode: Literal["off", "shadow", "enforce"] = "off"
     answer_v2_mode: Literal["off", "shadow", "enforce"] = "off"
     investigate_mode: Literal["off", "shadow", "enforce"] = "off"
+    # How long a finished mission waits for the v2 shadow before cancelling it (raise it for evals).
+    v2_shadow_timeout_s: float = 2.0
 
     workflow_version: str = "1.0.0"
 

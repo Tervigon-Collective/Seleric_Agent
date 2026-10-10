@@ -21,6 +21,7 @@ from seleric_swarm.spec._filters import (
     pick_entities_and_filters,
     pick_exclusions,
 )
+from seleric_swarm.spec._names import resolve_draft_names
 from seleric_swarm.spec._validate import validate_question_spec
 from seleric_swarm.spec._windows import resolve_window_slots
 
@@ -43,6 +44,7 @@ def compile_question_spec(
     a phrase fits several metrics). ``clarify_mode`` is ``CLARIFY_MODE``: the pipeline passes the
     setting; called directly, the compiler asks (``enforce``).
     """
+    draft = resolve_draft_names(draft, read_model)
     if draft.kind == "conversation":
         return Clarification(
             reason="conversation",

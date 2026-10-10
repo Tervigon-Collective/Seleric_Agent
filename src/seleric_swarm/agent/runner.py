@@ -1910,6 +1910,7 @@ async def run_v3_mission(
                 windows=tuple((w.start, w.end) for w in deps.required_scope.windows),
                 filter_values=tuple(v for vf in deps.required_scope.value_filters for v in vf.values),
             ),
+            timeout_s=float(getattr(runtime.settings, "v2_shadow_timeout_s", 2.0)),
         )
         if shadow_record is not None:
             result = result.model_copy(update={"trace": {**(result.trace or {}), "v2_shadow": shadow_record}})

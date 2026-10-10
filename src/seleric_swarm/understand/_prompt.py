@@ -30,7 +30,7 @@ INSTRUCTIONS = (
     "a total is to be split into the lines it is made of; funnel for stage drop-off; else lookup, trend, "
     "breakdown or other.\n"
     "- measures: every measure asked for, one entry each, in the user's words with abbreviations spelled "
-    "out (words), plus your best metric id from the catalogue listing when you are sure (else empty). "
+    "out (words), plus in metric_id the measure's label exactly as the catalogue listing shows it when you are sure (else empty). "
     "Never split a measure into variants the user did not name and never add a qualifier they did not "
     "say; the catalogue knows the default meaning. When the message continues the previous turn and "
     "names no measure, carry the previous turn's.\n"
@@ -52,7 +52,7 @@ INSTRUCTIONS = (
     "- grain, direction, through_hour, part_of_whole: only when the user states them.\n"
     "- needs_clarification: when the question cannot be answered without one answer from the user (two "
     "measures fit equally, a named value fits several dimensions equally, a required period is missing), "
-    "state that one question; else null."
+    "state that one question; else null. Do not ask when one reading is the usual one (a plain measure name means its listed default, e.g. the un-prefixed one) or when the user only asks how things compare or performed: draft it with the measures you would show."
 )
 
 

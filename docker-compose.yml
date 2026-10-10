@@ -70,6 +70,7 @@ services:
       PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
       ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
+      V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -191,6 +192,7 @@ services:
       PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
       ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
+      V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -287,6 +289,7 @@ services:
       PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
       ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
+      V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -349,6 +352,7 @@ services:
       PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
       ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
+      V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
       LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
       PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
