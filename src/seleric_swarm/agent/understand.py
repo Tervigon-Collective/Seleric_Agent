@@ -65,6 +65,16 @@ class Understanding(PlanSlots):
     breakdown_dimensions: list[str] = Field(
         description="Catalogue dimension ids the user asks to break down or map by; [] when none."
     )
+    breakdown_words: str = Field(
+        description=(
+            "The user's own words asking to split, group or compare results across the values of a dimension "
+            "('by channel', 'per product', 'split by platform'), quoted from the message; '' when there are none. "
+            "When the message names the entities it wants (campaigns, ads, products), those entities are the rows: "
+            "a dimension that only describes where they run or which figures to read ('metrics for the ads "
+            "platform', 'on Meta') is NOT a split unless the message says to split, group or compare across it "
+            "('by', 'per', 'across', 'split by')."
+        )
+    )
     kind: QuestionKind = Field(
         description=(
             "conversation: greeting, thanks, small talk or a question about the assistant — no "
@@ -151,7 +161,10 @@ _INSTRUCTIONS = (
     "names no measure, list the measures an analyst judges that kind of entity by: what was "
     "spent on it, what it returned, and its efficiency and delivery rates.\n"
     "- breakdown_dimensions: dimension ids for any 'by …' or 'map to …' the user asks for — the "
-    "entity's name dimension (its title / name), not its id, unless the user asks for ids.\n"
+    "entity's name dimension (its title / name), not its id, unless the user asks for ids. A word that "
+    "only says where the named entities live or what kind of figures to read (\"check all the metrics "
+    "for the ads platform\" about two named campaigns) is not a breakdown: [] unless the user asks to "
+    "split by it.\n"
     "- ordinary_words: decide for each word in the 'Data-value words' list whether the message "
     "means that value of the dimension it is recorded under. List every word it does not mean "
     "that way: ordinary language (\"other days\", \"direct answer\"), or the same word meant "
@@ -228,6 +241,10 @@ async def understand(
         usage = result.usage() if callable(result.usage) else result.usage
         stats.update(input_tokens=usage.input_tokens, output_tokens=usage.output_tokens)
         understanding = result.output
+        if understanding.breakdown_dimensions and not understanding.breakdown_words.strip():
+            # A breakdown the user never asked for becomes a hard scope requirement: two named campaigns read as
+            # "by ad platform" sent the answer back four times for a grouping nobody wanted (live 2026-10-10).
+            understanding = understanding.model_copy(update={"breakdown_dimensions": []})
     except Exception as exc:
         _log.warning("understand_failed", exc_info=True)
         stats.update(status="failed", error=type(exc).__name__)

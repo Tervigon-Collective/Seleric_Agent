@@ -35,7 +35,7 @@ def _clean_v3_state():
     registry.clear()
 
 
-_SLOTS = {"entity_dimension": "", "rank_by": None, "metrics": [], "breakdown_dimensions": [], "names_period": False}
+_SLOTS = {"entity_dimension": "", "rank_by": None, "metrics": [], "breakdown_dimensions": [], "breakdown_words": "", "names_period": False}
 
 
 def _model(payload: dict[str, Any], seen: list[str] | None = None) -> FunctionModel:
@@ -107,7 +107,7 @@ async def test_a_reply_without_the_plan_slots_is_not_a_reading():
             "kind": "analysis", "shape": "entity_comparison", "entity_dimension": "campaign_name",
             "names_period": True,
             "rank_by": {"words": "return on ad spend", "metric_id": "net_roas"},
-            "metrics": [{"words": "spend", "metric_id": "ad_spend"}], "breakdown_dimensions": [],
+            "metrics": [{"words": "spend", "metric_id": "ad_spend"}], "breakdown_dimensions": [], "breakdown_words": "",
         }
         return ModelResponse(parts=[ToolCallPart(tool_name=info.output_tools[0].name, args=args)])
 
@@ -231,3 +231,18 @@ async def test_a_forecast_question_is_not_prefetched_so_its_tool_stays_available
     assert not [c for c, _ in mcp.calls if c == "seleric.metrics_query"]
     plans = [a for a in get_v3_artifact_store().list_for_mission("MS3-u") if a.artifact_type == "plan"]
     assert plans and "prefetch" not in plans[0].payload["stats"]
+
+
+async def test_a_breakdown_with_no_words_asking_for_it_is_dropped():
+    """Two named campaigns read as "by ad platform" became a hard scope requirement and sent the answer back four
+    times (live 2026-10-10 thread_d1844eb0): the model must quote the words that ask for the split."""
+    quoted = await understand(
+        _model({"kind": "analysis", "shape": "breakdown", "breakdown_dimensions": ["channel"], "breakdown_words": "by channel"}),
+        "net sales by channel", catalogue=CatalogueSnapshot(),
+    )
+    assert quoted.understanding is not None and quoted.understanding.breakdown_dimensions == ["channel"]
+    unquoted = await understand(
+        _model({"kind": "analysis", "shape": "entity_comparison", "breakdown_dimensions": ["ad_platform"], "breakdown_words": " "}),
+        "check the metrics for the ads platform", catalogue=CatalogueSnapshot(),
+    )
+    assert unquoted.understanding is not None and unquoted.understanding.breakdown_dimensions == []

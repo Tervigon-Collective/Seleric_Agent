@@ -42,6 +42,12 @@ class NullMcpClient:
         raise NotImplementedError("this path does not call MCP")
 
 
+# deps.call_counts keys: how the mission's diagnosis went (toolsets/diagnosis.py records, the validator reads).
+# DIAGNOSIS_FAILED holds the last refusal while no diagnosis has succeeded; a success removes it.
+DIAGNOSIS_FAILED = "diagnosis_failed"
+DIAGNOSIS_OK = "diagnosis_ok"
+
+
 @dataclass(frozen=True)
 class ExecutionLimits:
     """Supersedes ``coordinator/governance/budget.py::MissionLimits``.

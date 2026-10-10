@@ -61,7 +61,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from seleric_swarm.agent.agent import CONVERSATIONAL
 from seleric_swarm.agent.artifacts import CausalArtifact
-from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
+from seleric_swarm.agent.dependencies import DIAGNOSIS_FAILED, ExecutionLimits, SelericDeps
 from seleric_swarm.agent.limits import ExecutionBudgetTracker
 from seleric_swarm.agent.output import MissionResult
 from seleric_swarm.agent.progress import emit_progress, has_progress_sink, progress_handler
@@ -948,6 +948,21 @@ class EvidenceValidator:
                     f"state plainly in limitations what is missing and why, and end the answer "
                     f"without an offer; if you truly cannot proceed without an answer only the "
                     f"user has, say exactly which value you need and set status='partial'."
+                ),
+            )
+
+        # A why-answer needs the diagnosis behind it. Live 2026-10-10 (thread_d1844eb0): diagnose_metric_change was
+        # refused twice and the model explained the move from raw tables anyway; the answer shipped as completed and
+        # VERIFIED with no cause analysis anywhere under it. The tool stays failed until one call succeeds.
+        if data_mission and result.status == "completed" and (refusal := (deps.call_counts or {}).get(DIAGNOSIS_FAILED)):
+            return ValidationOutcome(
+                ok=False,
+                reason=(
+                    f"diagnose_metric_change was refused ({str(refusal)[:300]}) and never succeeded, so nothing in this "
+                    "answer rests on a diagnosis. Call it again with arguments that satisfy that message and answer from "
+                    "its result. If it genuinely cannot run for this question, use status='partial', say in limitations "
+                    "that the cause analysis could not be run, and describe only what the fetched figures show — no "
+                    "cause, no 'because'."
                 ),
             )
 

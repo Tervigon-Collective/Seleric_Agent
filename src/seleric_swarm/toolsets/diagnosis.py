@@ -30,6 +30,7 @@ Candidate planning — nothing is named here:
 from __future__ import annotations
 
 import asyncio
+import functools
 import math
 import time
 from datetime import date, datetime, timedelta
@@ -38,7 +39,7 @@ from typing import Any, Literal
 from pydantic_ai import RunContext
 
 from seleric_swarm.agent.artifacts import CausalArtifact, EvidenceArtifact, Finding
-from seleric_swarm.agent.dependencies import SelericDeps
+from seleric_swarm.agent.dependencies import DIAGNOSIS_FAILED, DIAGNOSIS_OK, SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal import diagnosis as engine
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
@@ -632,6 +633,188 @@ def _ratio_split(
     ), figures
 
 
+def _scope_line(filters: dict[str, Any]) -> str:
+    parts = [
+        f"{k.replace('_', ' ')} = {', '.join(str(x) for x in (v if isinstance(v, list) else [v]))}"
+        for k, v in (filters or {}).items() if v not in (None, "", [])
+    ]
+    return ("SCOPE OF THIS DIAGNOSIS — every figure below is for " + "; ".join(parts) + " alone, not for any other entity.") if parts else ""
+
+
+def _funnel_pool(ctx: RunContext[SelericDeps], metric_id: str, lineage: dict[str, engine.MetricMeta]) -> list[str]:
+    """The countable events that close a ratio outcome's funnel: the counts some catalogue rate divides one component
+    by, that are counted in the other component's own view (cost per order divides spend by orders, and orders sit
+    in the view of the contribution margin they carry). The ladder's last stage is read from these."""
+    out_meta = lineage.get(metric_id, engine.MetricMeta(metric_id))
+    if out_meta.additive:
+        return []
+    cat = ctx.deps.catalogue
+    comps = [d for d in out_meta.depends_on if d in lineage and lineage[d].additive]
+    pool: list[str] = []
+    for base in comps:
+        views = {lineage[o].view for o in comps if o != base}
+        for r in lineage.values():
+            if r.additive or base not in r.depends_on:
+                continue
+            for d in r.depends_on:
+                meta = lineage.get(d)
+                if (meta and meta.additive and meta.unit == "count" and d not in comps and meta.view in views
+                        and (cat.has_metric(d) or not cat.metrics) and _supports_brand(ctx, d)):
+                    pool.append(d)
+    return list(dict.fromkeys(pool))
+
+
+def _funnel_ladder(
+    outcome: str,
+    ends: list[str],
+    stages_named: list[str],
+    lineage: dict[str, engine.MetricMeta],
+    series: dict[str, dict[date, float]],
+    history_days: list[date],
+    event_days: list[date],
+    reference_days: list[date],
+) -> tuple[str, dict[str, float], list[str]]:
+    """The stages between a ratio's denominator and its numerator, each with its exact effect.
+
+    outcome = N / D telescopes through the counts between them: N / D = (s1 / D) x (s2 / s1) x ... x (N / sk). The
+    product is the outcome whatever the stages are, so the effects (log changes of each stage ratio) multiply to
+    the outcome's change; the stages only decide how readable the split is. The last stage is the count counted in
+    the numerator's own view (contribution margin per order, not per new customer); the stages before it are the
+    counts the question or the diagnosis named (through the rates they named), ordered by volume, since a funnel
+    narrows. With none named it is two stages: orders per unit of spend, and the numerator per order — what an
+    order cost and what it was worth. Arithmetic, not a causal claim."""
+    ident = next((
+        i for i in engine.discover_identities(outcome, lineage, series, history_days)
+        if not i.approximate and sorted(e for _, e in i.factors) == [-1.0, 1.0]
+        and all(lineage.get(m, engine.MetricMeta(m)).additive for m, _ in i.factors)
+    ), None)
+    if ident is None or not event_days or not reference_days:
+        return "", {}, []
+    num = next(m for m, e in ident.factors if e > 0)
+    den = next(m for m, e in ident.factors if e < 0)
+
+    def total(m: str, days: list[date]) -> float | None:
+        vals = [series[m][d] for d in days if d in series.get(m, {})]
+        return sum(vals) if vals else None
+
+    def usable(m: str) -> bool:
+        return all((t := total(m, w)) is not None and t > 0 for w in (event_days, reference_days))
+
+    if not usable(num) or not usable(den):
+        return "", {}, []
+    num_view = lineage[num].view
+    closing = [m for m in ends if m in series and usable(m) and lineage[m].view == num_view]
+    if not closing:
+        return "", {}, []
+
+    def volume(m: str) -> float:
+        return (total(m, event_days) or 0.0) / len(event_days) + (total(m, reference_days) or 0.0) / len(reference_days)
+
+    last = max(closing, key=volume)
+    middle = sorted(
+        (m for m in dict.fromkeys(stages_named)
+         if m in series and m not in (num, den, last) and usable(m) and lineage.get(m, engine.MetricMeta(m)).additive
+         and lineage[m].unit == "count" and lineage[m].view != num_view and volume(m) >= volume(last)),
+        key=lambda m: -volume(m),
+    )
+    shown = lambda m: engine._label(m, lineage)  # noqa: E731
+
+    def ratio(a: str, b: str, days: list[date]) -> float | None:
+        shared = [d for d in days if d in series.get(a, {}) and d in series.get(b, {})]
+        top, bottom = (sum(series[a][d] for d in shared), sum(series[b][d] for d in shared)) if shared else (0.0, 0.0)
+        return top / bottom if bottom > 0 and top > 0 else None
+
+    def narrows(lo: str, hi: str) -> bool:
+        return all((r := ratio(hi, lo, w)) is not None and r <= 1.0 for w in (event_days, reference_days))
+
+    # A funnel narrows: a stage that is larger than the one before it (link clicks beside sessions) is another
+    # system's count of the same traffic, and a count within a tenth of the closing one is that event counted twice
+    # (orders in the sales ledger and in the P&L); neither is a step.
+    chain: list[str] = []
+    for m in middle:
+        if abs(math.log(volume(m) / volume(last))) < 0.1:
+            continue
+        if narrows(chain[-1] if chain else m, m) if chain else True:
+            chain.append(m)
+    seq = [den, *chain, last, num]
+
+    rows: list[tuple[float, str]] = []
+    figures: dict[str, float] = {}
+    names: list[str] = []
+    cum = 0.0
+    for lo, hi in zip(seq, seq[1:], strict=False):
+        ev, rf = ratio(hi, lo, event_days), ratio(hi, lo, reference_days)
+        if ev is None or rf is None:
+            return "", {}, []
+        label = f"{shown(hi)} per {shown(lo)}"
+        eff = math.log(ev / rf)
+        cum += eff
+        both_counts = lineage[lo].unit == "count" and lineage[hi].unit == "count"
+        show = (lambda v: f"{v:.2%}") if both_counts and ev <= 1 and rf <= 1 else (lambda v: f"{v:,.4g}")
+        unit = "INR " if lineage[hi].unit not in ("count", "ratio") and lineage[lo].unit == "count" else ""
+        shown_ev, shown_rf, shown_label = ev, rf, label
+        if lo == den and lineage[lo].unit not in ("count", "ratio") and lineage[hi].unit == "count":
+            # The first stage as the cost it is: ad spend per order, not orders per unit of spend.
+            shown_ev, shown_rf, shown_label, unit = 1 / ev, 1 / rf, f"{shown(lo)} per {shown(hi)}", "INR "
+            if shown_rf < 1 and shown_ev < 1:
+                # a cost under one unit per event reads as a cost per thousand (CPM), not as a fraction of a rupee
+                shown_ev, shown_rf, shown_label = shown_ev * 1000, shown_rf * 1000, f"{shown(lo)} per 1,000 {shown(hi)}"
+            names.append(f"1 ÷ {shown_label}")
+        else:
+            names.append(label)
+        figures[f"{shown_label} | event"], figures[f"{shown_label} | reference"] = shown_ev, shown_rf
+        figures[f"{shown_label} | effect on {outcome} %"] = math.exp(eff) * 100 - 100
+        rows.append((eff, f"{shown_label} {unit}{show(shown_rf)} → {unit}{show(shown_ev)} ({engine._chg(shown_ev, shown_rf)}), "
+                          f"moving {shown(outcome)} {math.exp(eff) * 100 - 100:+.1f}%"))
+    figures[f"{outcome} | lever ladder change %"] = math.exp(cum) * 100 - 100
+    rows.sort(key=lambda r: -abs(r[0]))
+    return (
+        "EXACT LEVER LADDER — answer 'what are the levers / which one moved it' from this, largest first. "
+        f"{shown(outcome)} = " + " × ".join(names) + " (consecutive stages of the funnel; the effects multiply to the "
+        "total; arithmetic, not a causal claim): " + "; ".join(t for _, t in rows)
+        + f"; together {shown(outcome)} {math.exp(cum) * 100 - 100:+.1f}%."
+    ), figures, list(seq)
+
+
+def _change_log_metrics(ctx: RunContext[SelericDeps], lineage: dict[str, engine.MetricMeta]) -> list[str]:
+    """The catalogue's change-event counts (budget, status, bid-strategy edits): additive counts whose grain is
+    a change event. Found by grain, not by name."""
+    cat = ctx.deps.catalogue
+    return [
+        m for m, meta in lineage.items()
+        if meta.additive and meta.unit == "count" and "change" in meta.entity_tokens()
+        and (cat.has_metric(m) or not cat.metrics)
+    ]
+
+
+def _change_log_lines(
+    metrics: list[str],
+    series: dict[str, dict[date, float]],
+    event_days: list[date],
+    reference_days: list[date],
+    lineage: dict[str, engine.MetricMeta],
+) -> tuple[str, dict[str, float]]:
+    """What was edited on the ads in scope: the change log's counts on the event days against the usual days.
+    The log records that something changed, not its old and new value."""
+    parts: list[str] = []
+    figures: dict[str, float] = {}
+    for m in metrics:
+        vals = series.get(m) or {}
+        ev = sum(vals.get(d, 0.0) for d in event_days) / len(event_days)
+        rf = sum(vals.get(d, 0.0) for d in reference_days) / max(len(reference_days), 1)
+        if ev <= 0 and rf <= 0:
+            continue
+        figures[f"{m} | event average per day"], figures[f"{m} | reference average per day"] = ev, rf
+        parts.append(f"{engine._label(m, lineage)}: {rf:.1f} → {ev:.1f} per day")
+    if not parts:
+        return "", {}
+    return (
+        "CHANGES LOGGED ON THE ADS IN SCOPE (what the account edited, as counts of logged edits per day — the log "
+        "does not hold what each edit changed, so state which kinds of edit were logged and on which days, never "
+        "that one caused the move): " + "; ".join(parts) + "."
+    ), figures
+
+
 def _inclusive_days(start_dt: datetime, end_dt: datetime) -> tuple[date, date]:
     """First and last day of a window. The end day is included, as in ``query_metrics``
     and the resolved-window pin: reading a midnight end as exclusive dropped the last
@@ -643,7 +826,7 @@ def _inclusive_days(start_dt: datetime, end_dt: datetime) -> tuple[date, date]:
 
 
 # --------------------------------------------------------------------------- the tool
-async def diagnose_metric_change(
+async def _diagnose(
     ctx: RunContext[SelericDeps],
     metric_id: str,
     event_start: datetime | None = None,
@@ -678,6 +861,13 @@ async def diagnose_metric_change(
     ``drivers``: catalogue metric ids the user names as possible explanations ("check whether it came from CPM,
     CTR, checkout conversion …" — resolve each to its id first). Each one is fetched and reported with how it
     moved over the same days, and tested as a cause where it can be; report every one of them.
+
+    For a ratio outcome (ROAS, CAC, a cost or a rate) the result adds an exact LEVER LADDER: the outcome as a product
+    of the funnel stages between its parts, each stage's effect on it. Name the stages you want in the ladder as
+    ``drivers`` — the rates of the funnel (cost per mille, click-through, conversion, the cost per click) from the
+    catalogue; without any it shows what an order cost and what an order was worth. When ``filters`` scope the
+    outcome to particular campaigns or ads, the result also lists the edits logged on them (budget, status, bid
+    strategy) on the event days against the usual days.
     """
     if (unknown := await semantic._reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
@@ -690,10 +880,21 @@ async def diagnose_metric_change(
     else:
         default = ctx.deps.as_of - timedelta(days=1)
         start_dt, end_dt = event_start or event_end or default, event_end or event_start or default
-        # The question named a period: hold the call to it (same rule as query_metrics).
+        # The question named a period: hold the call to it (same rule as query_metrics) — unless that would put the
+        # event on top of the days it is compared with. "Last 3 days … why worse yesterday" names a data window and an
+        # event inside it; pinning yesterday to the whole window made it overlap its own baseline and the diagnosis was
+        # refused twice (live 2026-10-10 thread_d1844eb0). A pin that leaves no valid call is not a correction.
         if (pinned := semantic._pin_to_resolved_window(ctx, start_dt, end_dt)) is not None:
-            start_dt, end_dt, note = pinned
-            notes.append(note)
+            p_start, p_end, note = pinned
+            against = compare_start or compare_end
+            if against is not None:
+                c_first, c_last = _inclusive_days(against, compare_end or compare_start)  # type: ignore[arg-type]
+                p_first, p_last = _inclusive_days(p_start, p_end)
+                if p_first <= c_last and c_first <= p_last:
+                    pinned = None
+            if pinned is not None:
+                start_dt, end_dt = p_start, p_end
+                notes.append(note)
         ev_start, ev_end = _inclusive_days(start_dt, end_dt)
     if ev_end < ev_start:
         ev_start, ev_end = ev_end, ev_start
@@ -730,11 +931,22 @@ async def diagnose_metric_change(
     elif len(event_days) > _MAX_EVENT_DAYS:
         baseline = [d - timedelta(days=len(event_days)) for d in event_days]
     if baseline and max(baseline) >= ev_start:
-        return _refuse(f"the comparison period must end before {ev_start}", error_code="UNSUPPORTED_QUERY")
+        return _refuse(
+            f"the comparison period must end before the event starts ({ev_start}..{ev_end}); it was "
+            f"{min(baseline)}..{max(baseline)}. Pass compare_start/compare_end "
+            f"days before {ev_start}, or event_start/event_end for the day to explain",
+            error_code="UNSUPPORTED_QUERY",
+        )
     hist_start = ev_start - timedelta(days=P.DIAG_HISTORY_DAYS)
     if baseline:
         hist_start = min(hist_start, baseline[0] - timedelta(days=_MAX_EVENT_DAYS))
     filters = dict(filters or {})
+    if pooled := [k for k, v in filters.items() if isinstance(v, list) and len({str(x) for x in v}) > 1]:
+        # One series for several entities: whether each of them moved is not visible in it.
+        notes.append(
+            f"the {len(filters[pooled[0]])} values of {pooled[0]} are pooled into one series here; call once per "
+            "entity to see which of them moved and whether each moved at all"
+        )
 
     definitions = await _all_definitions(ctx)
     if metric_id not in definitions:
@@ -790,8 +1002,13 @@ async def diagnose_metric_change(
             and ctx.deps.catalogue.has_metric(m) and _supports_brand(ctx, m)
         ]
     named_parts = [d for n in named for d in lineage.get(n, engine.MetricMeta(n)).depends_on if d in lineage]
+    # A ratio outcome is also read through the funnel between its denominator and numerator, and an outcome scoped to
+    # particular entities through what the account edited on them (budget / status / bid edits).
+    ladder_ends = _funnel_pool(ctx, metric_id, lineage)
+    change_log = _change_log_metrics(ctx, lineage) if filters else []
     series_ids = list(dict.fromkeys(
-        [metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts, *bridge_pool]
+        [metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts, *bridge_pool,
+         *ladder_ends, *change_log]
     ))
     series_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters)) for m in series_ids))
 
@@ -808,6 +1025,10 @@ async def diagnose_metric_change(
             quality.append(f"{m}: fetch failed ({str(res.get('error'))[:120]})")
             continue
         if res.get("_dropped_filters"):
+            if m in change_log or (m in ladder_ends and m not in bridge_pool):
+                # Not recorded for this scope: a stage or an edit count for the whole account describes another scope.
+                quality.append(f"{m} is not recorded by {', '.join(res['_dropped_filters'])}, so it is left out of this scope")
+                continue
             if m in bridge_pool and m not in (metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts):
                 # An unfiltered total cannot be a term of a filtered outcome.
                 bridge_pool.remove(m)
@@ -939,27 +1160,50 @@ async def diagnose_metric_change(
         )
         artifact_ids.append(_put_derived(ctx, "causal", causal, ev_ids))
     named_text, named_metrics = "", {}
-    if named:
-        for m in named:
+    # The drivers (and the levers below) are compared with what the user compares with: the comparison period, else
+    # the period just before the event ("why did CAC increase yesterday" = against the day before). The blended
+    # 'usual' level gave a split of +3.9% beside a headline of +6% on the day before (regression Q24).
+    previous = [date.fromisoformat(x) for x in ((report.event.previous_period or {}).get("days") or [])] if report.event else []
+    reference_days = baseline or previous or sorted(
+        {date.fromisoformat(x) for v in (report.event.reference_days.values() if report.event else []) for x in v}
+    )
+
+    def cite(metrics: list[str]) -> None:
+        for m in metrics:
             if m in series and m not in per_metric_ids:
                 ids = _evidence_rows(ctx, m, series[m], cited_days, args_by_metric[m], index, tz, unit=units.get(m))
                 per_metric_ids[m] = ids
-                evidence_ids += ids
-        # The drivers are compared with what the user compares with: the comparison period, else the period just
-        # before the event ("why did CAC increase yesterday" = against the day before). The blended 'usual' level
-        # gave a split of +3.9% beside a headline of +6% on the day before (regression Q24).
-        previous = [date.fromisoformat(x) for x in ((report.event.previous_period or {}).get("days") or [])] if report.event else []
-        reference_days = baseline or previous or sorted(
-            {date.fromisoformat(x) for v in (report.event.reference_days.values() if report.event else []) for x in v}
-        )
+                evidence_ids.extend(ids)
+
+    ladder_text, ladder_metrics, ladder_stages = _funnel_ladder(
+        metric_id, ladder_ends, [*named, *named_parts], lineage, series, history_days, event_days, reference_days
+    )
+    if ladder_text:
+        # The days the stage ratios were read over must be citable, so cite the days the ladder compares.
+        cited_days = sorted({*cited_days, *reference_days})
+        cite([metric_id, *ladder_stages])
+        named_text, named_metrics = ladder_text, dict(ladder_metrics)
+    usual = [d for d in history_days if d < ev_start][-14:] or reference_days
+    logged = [m for m in change_log if m in series]
+    if logged:
+        change_text, change_metrics = _change_log_lines(logged, series, event_days, usual, lineage)
+        if change_text:
+            cited_days = sorted({*cited_days, *usual})
+            cite(logged)
+            named_text = (named_text + "\n" + change_text) if named_text else change_text
+            named_metrics.update(change_metrics)
+    if named:
+        cite(named)
         versus = f"{reference_days[0]}..{reference_days[-1]}" if len(reference_days) > 1 else (str(reference_days[0]) if reference_days else "")
-        named_text, named_metrics = _named_driver_lines(named, series, event_days, reference_days, lineage, report)
+        driver_text, driver_metrics = _named_driver_lines(named, series, event_days, reference_days, lineage, report)
         split_text, split_metrics = _ratio_split(metric_id, named, lineage, series, history_days, event_days, reference_days)
         if split_text:
-            named_text = split_text + "\n" + named_text
-            named_metrics.update(split_metrics)
+            driver_text = split_text + "\n" + driver_text
+            driver_metrics.update(split_metrics)
         if versus:
-            named_text = f"DRIVERS ARE COMPARED over {', '.join(str(d) for d in event_days)} versus {versus}.\n" + named_text
+            driver_text = f"DRIVERS ARE COMPARED over {', '.join(str(d) for d in event_days)} versus {versus}.\n" + driver_text
+        named_text = (named_text + "\n" + driver_text) if named_text else driver_text
+        named_metrics.update(driver_metrics)
     finding = Finding(
         finding_type="diagnosis",
         statement=report.headline,
@@ -971,6 +1215,9 @@ async def diagnose_metric_change(
     summary = _summary(report, lineage)
     if named_text:
         summary += "\n" + named_text
+    if scope_line := _scope_line(filters):
+        # Calls for several entities run side by side; the result must say whose it is.
+        summary = scope_line + "\n" + summary
     ctx.deps.scratchpad.note(f"diagnose_metric_change({metric_id}, {ev_start}..{ev_end}) → {report.verdict}: {report.headline}")
     return ToolResult(
         success=True,
@@ -982,3 +1229,23 @@ async def diagnose_metric_change(
         ),
         warnings=list(report.data_quality),
     )
+
+
+@functools.wraps(_diagnose)
+async def diagnose_metric_change(*args: Any, **kwargs: Any) -> ToolResult:
+    """The tool the agent and the executor call; it records how the diagnosis went on the mission, so the answer's
+    why-part can be held to it: a diagnosis that never succeeded leaves nothing behind a stated cause."""
+    result = await _diagnose(*args, **kwargs)
+    ctx = args[0] if args else kwargs.get("ctx")
+    counts = getattr(getattr(ctx, "deps", None), "call_counts", None)
+    if isinstance(counts, dict):
+        if result.success:
+            counts[DIAGNOSIS_OK] = 1
+            counts.pop(DIAGNOSIS_FAILED, None)
+        else:
+            counts[DIAGNOSIS_FAILED] = result.summary
+    return result
+
+
+# functools.wraps names the wrapper after the wrapped function; the agent registers this one under its public name.
+diagnose_metric_change.__name__ = diagnose_metric_change.__qualname__ = "diagnose_metric_change"

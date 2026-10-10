@@ -270,9 +270,26 @@ async def _resolve_values(runtime: SwarmRuntime, mcp: Any, query: str) -> dict[s
         return {}
     if not isinstance(result, dict) or result.get("status") != "ok":
         return {}
+    result = _without_terms(result, _fragment_terms(query, result))
     # Cache the result
     _VALUE_RESOLUTION_CACHE[cache_key] = (time.monotonic(), result)
     return result
+
+
+def _fragment_terms(query: str, resolution: dict[str, Any]) -> frozenset[str]:
+    """Single-word terms the question only writes inside a longer name.
+
+    The gateway splits "TH-383-SUSPENDER-26SEP-ADV+" into words, and the word "adv" matched an ad set called "Adv+"
+    exactly: the scope gate then demanded the answer be filtered to a nonexistent ad set, three revisions in a row
+    (live 2026-10-10). A word the user never wrote on its own is a piece of a name, not a value they named."""
+    separators = lambda token: "".join(c if c.isalnum() else " " for c in token).split()  # noqa: E731
+    tokens = [w.strip(_WORD_EDGE).lower() for w in query.split()]
+    standalone = set(tokens)
+    inside = {piece for token in tokens if len(parts := separators(token)) > 1 for piece in parts}
+    return frozenset(
+        term for t in resolution.get("terms") or []
+        if (term := str(t.get("term") or "").lower()) and " " not in term and term not in standalone and term in inside
+    )
 
 
 def _without_terms(resolution: dict[str, Any], terms: frozenset[str]) -> dict[str, Any]:
@@ -1123,6 +1140,16 @@ def _write_turn_record(
         _log.warning("turn_record_write_failed", exc_info=True)
 
 
+def _about_named_entities(plan_outcome: Any, deps: SelericDeps) -> bool:
+    """The question is about particular entities: values it names filter the answer, or the plan compares entities."""
+    stats = getattr(plan_outcome, "stats", None) or {}
+    return bool(deps.required_scope.value_filters) or stats.get("shape") == "entity_comparison"
+
+
+async def _no_insights() -> tuple[str, dict[str, Any]]:
+    return "", {"status": "skipped", "reason": "question about named entities"}
+
+
 async def run_v3_mission(
 
     runtime: SwarmRuntime,
@@ -1410,7 +1437,12 @@ async def run_v3_mission(
                         as_of=as_of_dt,
                         grain=classification.grain,
                     ),
-                    insight_block(deps, asked_metrics),
+                    # The hourly snapshots are whole-business figures: beside a question about named entities they
+                    # described the account, not the entities (a business-wide conversion drop under two campaigns'
+                    # answer, live 2026-10-10 thread_d1844eb0).
+                    insight_block(deps, asked_metrics)
+                    if not _about_named_entities(plan_outcome, deps)
+                    else _no_insights(),
                 )
                 _stage("prefetch_ms")
                 if prefetch is not None:

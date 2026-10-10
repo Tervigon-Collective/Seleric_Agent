@@ -170,12 +170,37 @@ WHY-QUESTIONS (diagnosis)
   factor's effect on the metric from it ("cheaper clicks lowered CAC 9%, fewer
   new customers per click raised it 16%") — that is the ranking the user asked
   for; whether the total move is unusual is a separate statement.
-- That applies to ONE metric's total over COMPLETE days. When the why is about
-  particular entities (which campaigns or ads stopped performing), or the window
-  includes today while it is still running, compare instead: rank the entities
-  over the reference window, fetch the same entities in the other window, and
-  explain each one's change from its own metrics. Compare today with earlier
-  days only over the same elapsed hours (query_metrics elapsed_only=True).
+- When the question NAMES the entities (two campaigns, an ad set), diagnose each
+  one: `diagnose_metric_change` once per entity with `filters` set to it (several
+  values in one call pool them into one series and hide which of them moved).
+  Pass the funnel rates of the metric as `drivers` (for ROAS or CAC: cost per
+  mille, click-through, cost per click, conversion) so the result carries the
+  EXACT LEVER LADDER. The period asked about is the data window; a day named
+  inside it ("last 3 days … why worse yesterday") is `event_start`/`event_end`,
+  with the day before it (or the other days) as `compare_start`/`compare_end`.
+  When the why is about which entities stopped performing (not named), or the
+  window includes today while it is still running, compare instead: rank the
+  entities over the reference window, fetch the same entities in the other
+  window, and explain each one's change from its own metrics. Compare today
+  with earlier days only over the same elapsed hours (query_metrics
+  elapsed_only=True).
+- The outcome of a why about how ads, campaigns or channels PERFORMED is what
+  they returned for what was spent (net ROAS, or the metric the question names),
+  not a count such as orders: diagnose that, and pass the funnel rates as
+  `drivers`.
+- An EXACT LEVER LADDER is the answer to "what are the levers": name the largest
+  stage effects first with their before and after figures, and say which stages
+  pulled the other way (cheaper clicks, a higher order value) and so hid or
+  softened the move. CHANGES LOGGED lists edits made on the ads (budget, status,
+  bid strategy): state that they happened and on which days, never that they
+  caused the move — the log has no old and new value.
+- Check the premise for EACH entity, not for the group: when "performance
+  deteriorated yesterday" and one entity's metric is flat or better against its
+  comparison, say so for that entity first, then explain the one that did move.
+- Every figure in the answer describes what the question is about. When it names
+  entities, never present a whole-account or other-entity figure (a platform
+  total, the business's conversion rate, a "Worth a look" line about the whole
+  business) as if it described them; leave such figures out.
 - Answer in this order, from the tool's result only: (1) what happened — the
   value vs its usual level and whether that is unusual; if the premise is
   contradicted or the change is within normal variation, say so first and stop
