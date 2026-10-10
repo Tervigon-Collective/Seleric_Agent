@@ -158,6 +158,7 @@ name = "pipeline contract private modules"
 type = "protected"
 protected_modules = [
   "seleric_swarm.contracts.pipeline._answer",
+  "seleric_swarm.contracts.pipeline._draft",
   "seleric_swarm.contracts.pipeline._errors",
   "seleric_swarm.contracts.pipeline._plan",
   "seleric_swarm.contracts.pipeline._question",
@@ -182,6 +183,39 @@ protected_modules = [
   "seleric_swarm.evals._scorer",
 ]
 allowed_importers = ["seleric_swarm.evals"]
+
+# A9: each new package exposes its interface through __init__ only.
+[[tool.importlinter.contracts]]
+name = "understand private modules"
+type = "protected"
+protected_modules = ["seleric_swarm.understand._call", "seleric_swarm.understand._prompt", "seleric_swarm.understand.examples._store"]
+allowed_importers = ["seleric_swarm.understand"]
+
+[[tool.importlinter.contracts]]
+name = "spec private modules"
+type = "protected"
+protected_modules = [
+  "seleric_swarm.spec._clarify",
+  "seleric_swarm.spec._compile",
+  "seleric_swarm.spec._edit",
+  "seleric_swarm.spec._filters",
+  "seleric_swarm.spec._validate",
+  "seleric_swarm.spec._windows",
+]
+allowed_importers = ["seleric_swarm.spec"]
+
+[[tool.importlinter.contracts]]
+name = "plan private modules"
+type = "protected"
+protected_modules = ["seleric_swarm.plan._execute"]
+allowed_importers = ["seleric_swarm.plan"]
+
+[[tool.importlinter.contracts]]
+name = "derive private modules"
+type = "protected"
+protected_modules = ["seleric_swarm.derive._engine", "seleric_swarm.derive._ops"]
+allowed_importers = ["seleric_swarm.derive"]
+
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]

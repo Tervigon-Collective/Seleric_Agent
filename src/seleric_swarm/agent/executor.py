@@ -265,8 +265,9 @@ def _units_line(plan: MissionPlan, deps: SelericDeps) -> str:
         return ""
     line = "Units (catalogue): " + ", ".join(f"{metric}={unit}" for metric, unit in units.items())
     line += ". Label every figure with its unit"
-    # currency_default is not in the bootstrap; use unit which carries the currency code
-    currencies = {unit for unit in units.values() if unit}
+    # currency_default is not in the bootstrap; a currency is a unit written as an ISO 4217 code
+    # (three upper-case letters, the same rule as causal/diagnosis.py::_val). "ratio" or "%" is not.
+    currencies = {unit for unit in units.values() if len(unit) == 3 and unit.isalpha() and unit.isupper()}
     if len(currencies) == 1:
         line += f"; the footer's Currency is {currencies.pop()}"
     return line + "."

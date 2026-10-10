@@ -158,7 +158,7 @@ def _comparison_reading(**over):
         shape="entity_comparison", entity_dimension="acquisition_campaign", rank_by=None,
         metrics=[MetricSlot(words="ad spend", metric_id="ad_spend"), MetricSlot(words="CTR", metric_id="ctr"),
                  MetricSlot(words="orders", metric_id="orders")],
-        breakdown_dimensions=[], kind="analysis", names_period=True, direction="decrease",
+        breakdown_dimensions=[], breakdown_words="", kind="analysis", names_period=True, direction="decrease",
     )
     return Understanding(**{**base, **over})
 

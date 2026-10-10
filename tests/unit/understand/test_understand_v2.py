@@ -4,15 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from seleric_swarm.understand._prompt import build_prompt
-from seleric_swarm.understand.draft import (
-    Clarification,
-    MeasureExpr,
-    QuestionDraft,
-    WindowExpr,
-)
+from seleric_swarm.contracts.pipeline import Clarification, MeasurePhrase, QuestionDraft
 from seleric_swarm.semantic import SemanticReadModel
-from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+from seleric_swarm.understand import understand
+from seleric_swarm.understand._prompt import build_prompt
 
 
 def _read_model() -> SemanticReadModel:
@@ -134,34 +129,80 @@ def test_build_prompt_with_exemplars():
 
 
 def test_question_draft_model_validates():
-    """QuestionDraft should validate with required fields."""
-    draft = QuestionDraft(
-        kind="analysis",
-        shape="lookup",
-        measures=[{"phrase": "net sales"}],
-    )
-    assert draft.kind == "analysis"
-    assert draft.shape == "lookup"
-    assert len(draft.measures) == 1
+    draft = QuestionDraft(kind="analysis", shape="lookup", measures=(MeasurePhrase(words="net sales"),))
+    assert draft.kind == "analysis" and draft.shape == "lookup" and len(draft.measures) == 1
 
 
 def test_question_draft_rejects_extra_fields():
-    """QuestionDraft should reject extra fields (frozen, extra=forbid)."""
-    with pytest.raises(Exception):
-        QuestionDraft(
-            kind="analysis",
-            shape="lookup",
-            measures=[{"phrase": "net sales"}],
-            extra_field="not allowed",
-        )
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        QuestionDraft(kind="analysis", shape="lookup", extra_field="not allowed")  # type: ignore[call-arg]
 
 
 def test_clarification_model():
-    """Clarification model should work."""
-    clar = Clarification(
-        reason="ambiguous_dimension",
-        question_to_user="Did you mean channel or sub_channel?",
-        options=("channel", "sub_channel"),
-    )
-    assert clar.reason == "ambiguous_dimension"
-    assert clar.options == ("channel", "sub_channel")
+    clar = Clarification(reason="ambiguous_dimension", question_to_user="Which one?", options=("a", "b"))
+    assert clar.options == ("a", "b")
+
+
+# --- the call and its failure policy (A4) -------------------------------------------------------
+
+class _ScriptedLLM:
+    """A DraftLLM that replays a script: an exception or an output per attempt."""
+
+    def __init__(self, *script):
+        self.script = list(script)
+        self.calls = 0
+
+    async def __call__(self, *, instructions, prompt):
+        self.calls += 1
+        item = self.script.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item, {"input_tokens": 1, "output_tokens": 1}
+
+
+async def test_understand_returns_the_draft():
+    draft = QuestionDraft(kind="analysis", shape="lookup", measures=(MeasurePhrase(words="sales"),))
+    llm = _ScriptedLLM(draft)
+    out, stats = await understand(llm, "sales yesterday", read_model=_read_model())
+    assert out == draft and stats["status"] == "ok" and llm.calls == 1
+
+
+async def test_understand_retries_once_then_succeeds():
+    draft = QuestionDraft(kind="analysis", shape="lookup")
+    llm = _ScriptedLLM(RuntimeError("429"), draft)
+    out, stats = await understand(llm, "q", read_model=_read_model())
+    assert out == draft and stats["attempt"] == 2
+
+
+async def test_understand_asks_after_two_failures_and_never_raises():
+    llm = _ScriptedLLM(RuntimeError("429"), TimeoutError())
+    out, stats = await understand(llm, "q", read_model=_read_model())
+    assert isinstance(out, Clarification) and out.reason == "understanding_unavailable"
+    assert llm.calls == 2 and stats["status"] == "failed"
+
+
+async def test_understand_without_a_model_asks():
+    out, stats = await understand(None, "q", read_model=_read_model())
+    assert isinstance(out, Clarification) and stats["status"] == "skipped"
+
+
+async def test_understand_passes_a_model_clarification_through():
+    clar = Clarification(reason="ambiguous_measure", question_to_user="Gross or net?")
+    out, stats = await understand(_ScriptedLLM(clar), "q", read_model=_read_model())
+    assert out == clar and stats["status"] == "clarification"
+
+
+async def test_pydantic_ai_adapter_returns_structured_draft():
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    from seleric_swarm.adapters.understand_llm import PydanticAiDraftLLM
+
+    def reply(messages, info: AgentInfo) -> ModelResponse:
+        tool = next(t for t in info.output_tools if "QuestionDraft" in t.name or "question" in t.name.lower())
+        return ModelResponse(parts=[ToolCallPart(tool.name, {"kind": "analysis", "shape": "trend"})])
+
+    out, usage = await PydanticAiDraftLLM(FunctionModel(reply))(instructions="x", prompt="y")
+    assert isinstance(out, QuestionDraft) and out.shape == "trend" and "input_tokens" in usage

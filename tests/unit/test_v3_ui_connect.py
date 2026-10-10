@@ -226,7 +226,7 @@ async def test_completed_with_empty_response_is_caught_not_shipped(monkeypatch):
             },
         )
 
-    monkeypatch.setattr(runner_mod, "resolve_v3_model", _broken_model)
+    monkeypatch.setattr(runner_mod, "resolve_mission_model", _broken_model)
 
     runtime = _runtime()
     dispatched = await run_v3_mission(

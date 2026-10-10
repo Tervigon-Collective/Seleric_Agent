@@ -6,19 +6,20 @@ from datetime import date
 
 import pytest
 
-from seleric_swarm.contracts.pipeline import Clarification, QuestionSpec
+from seleric_swarm.contracts.pipeline import (
+    Clarification,
+    MeasurePhrase,
+    QuestionDraft,
+    QuestionSpec,
+    WindowExpr,
+    WindowSlot,
+)
 from seleric_swarm.semantic import SemanticReadModel
 from seleric_swarm.spec import (
     SpecCandidates,
     ValueHit,
     compile_question_spec,
     scope_from_spec,
-)
-from seleric_swarm.understand import (
-    MeasurePhrase,
-    QuestionDraft,
-    WindowExpr,
-    WindowSlot,
 )
 
 _CATALOGUE = {

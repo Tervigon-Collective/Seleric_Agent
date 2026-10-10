@@ -5,8 +5,7 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date, timedelta
 
-from seleric_swarm.contracts.pipeline import WindowSpec
-from seleric_swarm.understand import WindowEnding, WindowExpr, WindowSlot
+from seleric_swarm.contracts.pipeline import WindowEnding, WindowExpr, WindowSlot, WindowSpec
 
 
 def _last_complete_day(anchor: date) -> date:

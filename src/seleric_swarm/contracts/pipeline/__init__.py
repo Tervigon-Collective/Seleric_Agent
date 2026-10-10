@@ -16,6 +16,15 @@ from seleric_swarm.contracts.pipeline._answer import (
     Paragraph,
     TableBlock,
 )
+from seleric_swarm.contracts.pipeline._draft import (
+    ForecastHorizonSlot,
+    ForecastSlots,
+    MeasurePhrase,
+    QuestionDraft,
+    WindowEnding,
+    WindowExpr,
+    WindowSlot,
+)
 from seleric_swarm.contracts.pipeline._errors import StageError
 from seleric_swarm.contracts.pipeline._plan import (
     AnalysisPlan,
@@ -48,10 +57,14 @@ __all__ = [
     "EngineStep",
     "EntitySpec",
     "FilterSpec",
+    "ForecastHorizonSlot",
+    "ForecastSlots",
     "JsonValue",
+    "MeasurePhrase",
     "MeasureSpec",
     "Paragraph",
     "QueryStep",
+    "QuestionDraft",
     "QuestionSpec",
     "RankingSpec",
     "Ref",
@@ -59,6 +72,9 @@ __all__ = [
     "ResultSet",
     "StageError",
     "TableBlock",
+    "WindowEnding",
+    "WindowExpr",
+    "WindowSlot",
     "WindowSpec",
     "dump",
     "fingerprint",

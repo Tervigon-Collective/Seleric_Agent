@@ -243,6 +243,8 @@ class Settings(BaseSettings):
     # to inject verified examples as exemplars. off = no exemplars; shadow =
     # retrieve + log, don't inject; enforce = inject into the prompt.
     verified_examples_mode: Literal["off", "shadow", "enforce"] = "off"
+    # M1.4: ask instead of guessing (spec._clarify). shadow records the would-be question on the spec.
+    clarify_mode: Literal["off", "shadow", "enforce"] = "off"
 
     workflow_version: str = "1.0.0"
 

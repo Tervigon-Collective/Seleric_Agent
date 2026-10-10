@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 
-from seleric_swarm.agent.scope import RequiredScope, RequiredWindow, ValueFilter
+from seleric_swarm.agent.scope_model import RequiredScope, RequiredWindow, ValueFilter
 from seleric_swarm.contracts.pipeline import (
     Clarification,
     MeasureSpec,
+    QuestionDraft,
     QuestionSpec,
     RankingSpec,
 )
-from seleric_swarm.semantic import SemanticReadModel
+from seleric_swarm.semantic import ConceptResolution, SemanticReadModel
+from seleric_swarm.spec._clarify import ClarifyMode, ambiguous_value, apply_mode, clarification_for
 from seleric_swarm.spec._edit import merge_with_prior
 from seleric_swarm.spec._filters import (
     SpecCandidates,
@@ -20,7 +23,6 @@ from seleric_swarm.spec._filters import (
 )
 from seleric_swarm.spec._validate import validate_question_spec
 from seleric_swarm.spec._windows import resolve_window_slots
-from seleric_swarm.understand import QuestionDraft
 
 _DIRECTION = {"increase": "up", "decrease": "down", "either": "either"}
 
@@ -31,14 +33,16 @@ def compile_question_spec(
     read_model: SemanticReadModel,
     prior: QuestionSpec | None,
     as_of: date,
+    *,
+    concepts: Mapping[str, ConceptResolution] | None = None,
+    clarify_mode: ClarifyMode = "enforce",
 ) -> QuestionSpec | Clarification:
-    """Build a validated QuestionSpec from the draft + value candidates + read model."""
-    if draft.needs_clarification:
-        return Clarification(
-            reason="draft_needs_clarification",
-            question_to_user=draft.needs_clarification,
-        )
+    """Build a validated QuestionSpec from the draft + value candidates + read model.
 
+    ``concepts`` maps a measure's words to the catalogue's resolution of them (used to ask when
+    a phrase fits several metrics). ``clarify_mode`` is ``CLARIFY_MODE``: the pipeline passes the
+    setting; called directly, the compiler asks (``enforce``).
+    """
     if draft.kind == "conversation":
         return Clarification(
             reason="conversation",
@@ -49,10 +53,9 @@ def compile_question_spec(
         draft=draft, candidates=candidates, read_model=read_model
     )
     if ambiguity:
-        return Clarification(
-            reason="ambiguous_value",
-            question_to_user=f"Which dimension did you mean for {ambiguity.split(':', 1)[-1]!r}?",
-        )
+        # A value that could mean two different things is never guessed (A4), whatever the mode.
+        term, dimensions = ambiguity
+        return ambiguous_value(term, dimensions, read_model)
 
     exclusions = pick_exclusions(draft=draft, candidates=candidates)
     filters = (*filters, *exclusions)
@@ -129,7 +132,13 @@ def compile_question_spec(
         fresh = fresh.model_copy(update={"follow_up_of": prior.follow_up_of or "prior"})
         fresh = merge_with_prior(fresh, prior, draft)
 
-    return validate_question_spec(fresh, read_model=read_model)
+    checked = validate_question_spec(fresh, read_model=read_model)
+    if isinstance(checked, Clarification):
+        return checked
+    question = clarification_for(
+        draft, windows=checked.windows, concepts=concepts or {}, read_model=read_model, prior=prior
+    )
+    return apply_mode(clarify_mode, question, checked)
 
 
 def scope_from_spec(spec: QuestionSpec) -> RequiredScope:

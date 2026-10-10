@@ -1,59 +1,45 @@
-"""Understand v2 (M1.1) — one structured LLM call producing a QuestionDraft.
+"""Understand v2 (M1.1): one structured LLM call turns the question into a ``QuestionDraft``.
 
-Public interface: `understand`, `QuestionDraft`, `Clarification`, `WindowExpr`, `MeasureExpr`, `UnderstandOutput`.
+Public interface: ``understand`` and ``DraftLLM`` (the injected model call). The draft and
+clarification types are stage-boundary contracts in ``seleric_swarm.contracts.pipeline``.
+The pydantic-ai implementation of ``DraftLLM`` is ``seleric_swarm.adapters.understand_llm``.
 """
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping, Sequence
+from typing import Any
 
-from pydantic_ai.models import Model
-
+from seleric_swarm.contracts.pipeline import Clarification, QuestionDraft
 from seleric_swarm.semantic import SemanticReadModel
-from seleric_swarm.understand._call import call_understand
-from seleric_swarm.understand._prompt import build_prompt
-from seleric_swarm.understand.draft import (
-    Clarification,
-    MeasureExpr,
-    QuestionDraft,
-    UnderstandOutput,
-    WindowExpr,
-)
+from seleric_swarm.understand._call import DraftLLM, call_understand
+from seleric_swarm.understand._prompt import INSTRUCTIONS, build_prompt
 
-__all__ = [
-    "QuestionDraft",
-    "Clarification",
-    "UnderstandOutput",
-    "WindowExpr",
-    "MeasureExpr",
-    "understand",
-]
+__all__ = ["DraftLLM", "understand"]
 
 
 async def understand(
-    model: Model | None,
-    query: str,
+    llm: DraftLLM | None,
+    question: str,
     *,
     read_model: SemanticReadModel,
-    value_words: list[str] | None = None,
+    value_words: Sequence[str] = (),
     value_meanings: Mapping[str, str] | None = None,
     prior_question: str = "",
     prior_offer: str = "",
-    exemplars: list[dict[str, Any]] | None = None,
-) -> tuple[UnderstandOutput, dict[str, Any]]:
-    """One structured LLM call producing a QuestionDraft.
+    exemplars: Sequence[Mapping[str, Any]] = (),
+) -> tuple[QuestionDraft | Clarification, dict[str, Any]]:
+    """Read ``question`` into a draft, or a clarification (A4: one retry, then ask).
 
-    Returns (UnderstandOutput, stats_dict).
-    UnderstandOutput wraps either QuestionDraft or Clarification.
-    On failure after one retry, returns UnderstandOutput.from_clarification(...).
+    Returns ``(draft_or_clarification, stats)``; never raises.
     """
     prompt = build_prompt(
-        query,
+        question,
         read_model=read_model,
-        value_words=list(value_words or ()),
+        value_words=list(value_words),
         value_meanings=value_meanings,
         prior_question=prior_question,
         prior_offer=prior_offer,
-        exemplars=exemplars,
+        exemplars=[dict(e) for e in exemplars],
     )
-    return await call_understand(model, prompt, read_model=read_model)
+    return await call_understand(llm, instructions=INSTRUCTIONS, prompt=prompt)

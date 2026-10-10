@@ -213,6 +213,20 @@ class AnswerDocument(BaseModel): draft: AnswerDraft; rendered_markdown: str; evi
 class StageError(BaseModel): stage: str; code: str; message: str; retryable: bool = False
 ```
 
+**Added in contracts-v1.1 (ADR-006, additive):** the understand → spec hand-off.
+```python
+class WindowExpr(BaseModel): name: Literal["", "yesterday","today","this_week","last_week","this_month","last_month","this_year","last_year"] = ""
+    unit: Literal["","day","week","month","quarter","year"] = ""; n: int | None = None
+    ending: Literal["yesterday","today","as_of","before_event"] = "yesterday"; start_iso: str = ""; end_iso: str = ""
+class WindowSlot(BaseModel): role: Literal["event","baseline","context"]; expr: WindowExpr; source_span: str = ""
+class MeasurePhrase(BaseModel): words: str; metric_id: str | None = None; axes: tuple[tuple[str,str],...] = ()
+class QuestionDraft(BaseModel):   # structured expressions only: spec never parses free text (A2)
+    kind; shape; measures: tuple[MeasurePhrase,...]; entity_dimension: str; entity_phrases; exclusion_phrases
+    breakdown_dimensions; breakdown_words: str; windows: tuple[WindowSlot,...]; grain; direction
+    rank_by: MeasurePhrase | None; rank_order; top_n; ordinary_words; names_period; through_hour
+    follows_prior; accepts_offer; restyles_prior; part_of_whole; forecast: ForecastSlots | None; reply; needs_clarification
+```
+
 **Mapping to today.**
 - `QuestionSpec` supersedes `agent/query_spec.py::QuerySpec`. Keep `QuerySpec` working; M1.2 adds a `to_question_spec()` adapter and later deletes `QuerySpec`.
 - `AnswerClaim` (`query_spec.py:290`) is replaced by `Claim`.
@@ -648,10 +662,10 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | M0.4 | T4 | OpenCode | `gaurav` | merged | | On `gaurav`: `run_suite`, cassettes, scorer, report, golden seed, `Jenkinsfile.eval` | 2026-10-11 |
 | M0.5 | T5 | Cursor | `gaurav` | merged | | On `gaurav`: `SemanticPort` / `SemanticReadModel` / MCP+fake adapters; `SEMANTIC_PORT_MODE` default `off` | 2026-10-11 |
 | M0.6 | T1 | OpenCode | `gaurav` | merged | | On `gaurav`: validation `question` kwarg, executor unit fix, forecast dim validate, TurnRecord adopt | 2026-10-11 |
-| M1.1 | T1 | OpenCode | `gaurav` | in review | | Code on `gaurav` (`7a8d308`); Phase 1 **not done**: L2 imports `pydantic_ai` → `lint-imports` red | 2026-10-11 |
-| M1.2 | T2 | Cursor | `gaurav` | blocked | | Code on `gaurav` but `import seleric_swarm.spec` fails (`WindowEnding` not exported). Also `spec → understand` same-layer and `spec → agent.scope → re`. | 2026-10-11 |
+| M1.1 | T1 | OpenCode | `gaurav` | merged | | `understand(llm: DraftLLM, ...)`; pydantic-ai call moved to `adapters/understand_llm.py`; one `QuestionDraft` in contracts (ADR-006) | 2026-10-11 |
+| M1.2 | T2 | Cursor | `gaurav` | merged | | imports fixed (draft from contracts, scope types from `agent/scope_model.py`); `lint-imports` 11/11 | 2026-10-11 |
 | M1.3 | T3 | OpenCode | `gaurav` | merged | | On `gaurav`: store + Qdrant adapter + seed; `run_suite` collision check; tests green | 2026-10-11 |
-| M1.4 | T1 | OpenCode | `gaurav` | not started | | `spec/_clarify.py` and `CLARIFY_MODE` missing. Phase 1 incomplete until this lands and M1.1/M1.2 gates are green. | 2026-10-11 |
+| M1.4 | T1 | Claude (review) | `gaurav` | merged | | `spec/_clarify.py` + `CLARIFY_MODE`; 9 tests via `compile_question_spec` | 2026-10-11 |
 | M2.1 | T1 | OpenCode | | not started | | after M1.2 | 2026-10-10 |
 | M2.2 | T2 | OpenCode (T3 first-pass) | `gaurav` | in review | | `plan/_execute.py::execute` + 9 tests pushed with Phase 2 WIP. T2 owns review. | 2026-10-11 |
 | M2.3 | T3 | OpenCode | `gaurav` | in review | | `derive` engine (10 ops) + tool + reconcile acceptance pushed as WIP. `derive` independence KEPT. | 2026-10-11 |
@@ -691,6 +705,7 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | 2026-10-11 | T4 | M1.3 seq (eval side) | Phase 1 eval assets (working tree). Added `eval/golden/spec_shapes.yaml` — 7 shape cases ported from `tests/fixtures/query_specs/th383_and_regressions.jsonl` (entity_comparison, period_comparison, lookup, why_single_metric, breakdown, follow-up-keeps-windows); golden suite now 12 cases. Wired M1.3 step 4 into `run_suite`: loads example ids via `evals._case.load_verified_example_ids` and calls `understand.examples.check_no_collision` — the runner refuses a case id that is also an example id (`examples_dir` overridable). Reconciled with T3's in-tree `check_no_collision` primitive (removed a duplicate `_separation.py`). 18 evals unit tests pass, ruff clean, mypy clean on `evals`. Not committed. |
 | 2026-10-11 | — | Phase 1 | **Phase 1 is not complete.** Codebase check: M1.3 usable; M1.1 present but breaks L2 (`pydantic_ai`); M1.2 present but `seleric_swarm.spec` ImportError (`WindowEnding`) and layer/`re` violations; M1.4 missing (`_clarify.py`, `CLARIFY_MODE`). |
 | 2026-10-11 | — | branches | Checked local + remote branches and worktrees. `mod/M0.2-*` and `mod/M0.4-*` are behind `gaurav` (no unique refactor commits). Other dirty worktrees (`agent_build_*` charts, `agent_effort`, `agent_gaurav_merge`, `intel-20261009b`) are unrelated to this modular refactor. Refactor WIP on `gaurav` pushed next. |
+| 2026-10-11 | review | Phase 1 | **Phase 1 complete; `gaurav` green.** Found the suite aborting at collection and `lint-imports` 3 broken. Root cause: `QuestionDraft` was never frozen in Part B, so T1 and T2 each wrote one. Fix (ADR-006): one structured `QuestionDraft` in `contracts.pipeline`; `understand` takes an injected `DraftLLM` (pydantic-ai in `adapters/understand_llm.py`); scope types moved to `agent/scope_model.py`; protected contracts added for `understand`, `spec`, `plan`, `derive` (A9); M1.4 landed. Also fixed: M0.6 currency footer regression (`executor._units_line`), `forecast_metrics` crashing on every call (`breakdown_words` missing), and 18 stale tests that were red before Phase 0. Unit suite 1531 passed / 0 failed; `lint-imports` 11 kept / 0 broken; literal scan clean. |
 
 ## Part E — Files you will touch most (and the rule for each)
 - `agent/runner.py` (1,827 lines): **do not add logic**. M1.2/M2.x/M3.x move stage code into `pipeline/mission.py` (`run_mission(question, deps) -> AnswerDocument`), and `run_v3_mission` becomes a thin adapter. Each module removes its block from `runner.py` when it reaches enforce.

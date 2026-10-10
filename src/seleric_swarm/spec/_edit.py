@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from seleric_swarm.contracts.pipeline import QuestionSpec
-from seleric_swarm.understand import QuestionDraft
+from seleric_swarm.contracts.pipeline import QuestionDraft, QuestionSpec
 
 
 def merge_with_prior(

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from seleric_swarm.contracts.pipeline import EntitySpec, FilterSpec
+from seleric_swarm.contracts.pipeline import EntitySpec, FilterSpec, QuestionDraft
 from seleric_swarm.semantic import SemanticReadModel
-from seleric_swarm.understand import QuestionDraft
 
 
 class ValueHit(BaseModel):
@@ -105,8 +104,9 @@ def pick_entities_and_filters(
     draft: QuestionDraft,
     candidates: SpecCandidates,
     read_model: SemanticReadModel,
-) -> tuple[tuple[EntitySpec, ...], tuple[FilterSpec, ...], str | None]:
-    """Build entities and filters. Returns optional clarification reason for ambiguity."""
+) -> tuple[tuple[EntitySpec, ...], tuple[FilterSpec, ...], tuple[str, tuple[str, ...]] | None]:
+    """Build entities and filters. The third item is ``(term, dimensions)`` when a named value is
+    recorded on several dimensions with comparable volume (the caller asks which one was meant)."""
     del read_model  # reserved for family-aware disambiguation (M1.4)
     ordinary = frozenset(word.strip().lower() for word in draft.ordinary_words if word)
     entity_phrases = frozenset(phrase.strip().lower() for phrase in draft.entity_phrases if phrase)
@@ -117,7 +117,7 @@ def pick_entities_and_filters(
     ) - ordinary
 
     best = _best_hits(candidates, ordinary=ordinary, phrases=None)
-    # Ambiguity: same term, several dims, comparable volume → clarify (M1.4 owns polish).
+    # Ambiguity: same term, several dims, comparable volume → the caller asks (spec._clarify).
     by_term: dict[str, list[ValueHit]] = {}
     for hit in best.values():
         if hit.volume <= 0:
@@ -128,7 +128,7 @@ def pick_entities_and_filters(
         if len(dims) > 1:
             volumes = sorted(hit.volume for hit in hits)
             if volumes[-1] > 0 and volumes[0] * 2 >= volumes[-1]:
-                return (), (), f"ambiguous_value:{term}"
+                return (), (), (term, tuple(sorted(dims)))
 
     entities: list[EntitySpec] = []
     filter_groups: dict[str, list[ValueHit]] = {}

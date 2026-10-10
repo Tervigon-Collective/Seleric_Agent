@@ -2,26 +2,39 @@
 
 ## Purpose
 
-Structured reading of the user question into a `QuestionDraft` (phrases and
-window expressions). The LLM call is M1.1 (T1); the draft type is shared with
-M1.2 (spec compile).
+One structured LLM call turns the user's question into a `QuestionDraft` (phrases and structured
+window expressions; no dates, no required ids), or a `Clarification`.
 
 ## Interface
 
 ```python
-from seleric_swarm.understand import QuestionDraft, understand
+from seleric_swarm.understand import understand, DraftLLM
+from seleric_swarm.contracts.pipeline import QuestionDraft, Clarification   # the stage-boundary types
+from seleric_swarm.adapters.understand_llm import PydanticAiDraftLLM          # the model call (L3)
+
+out, stats = await understand(PydanticAiDraftLLM(model), question, read_model=read_model,
+                              value_words=..., value_meanings=..., prior_question=..., prior_offer=...,
+                              exemplars=...)
 ```
 
-- `QuestionDraft` — pydantic output model
-- `understand(...)` — M1.1 entry point (stub returns `Clarification` until T1 lands)
+- `understand(llm, question, *, read_model, ...) -> (QuestionDraft | Clarification, stats)` — never raises.
+- `DraftLLM` — the injected model call (`async (instructions, prompt) -> (draft_or_clarification, usage)`).
+  This package imports no LLM SDK (A1/A2); tests pass a scripted `DraftLLM`.
+- The prompt is built from the semantic read model only (labels, dimensions, hierarchies, value words).
 
 Sub-package: `seleric_swarm.understand.examples` (M1.3).
 
 ## Flag
 
-`UNDERSTAND_V2_MODE` (`off` | `shadow` | `enforce`) — owned by M1.1 / T1.
+`UNDERSTAND_V2_MODE` (`off` | `shadow` | `enforce`).
 
-## Failure policy
+## Failure policy (A4)
 
-One retry, then `Clarification(reason="understanding_unavailable")`. Never fall
-back to treating every value word as a filter.
+One retry, then `Clarification(reason="understanding_unavailable")`. Never fall back to treating
+every value word as a filter.
+
+## Tests
+
+```bash
+uv run pytest tests/unit/understand -q
+```

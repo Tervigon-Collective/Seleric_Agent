@@ -72,6 +72,7 @@ async def forecast_metrics(
             "rank_by": None,
             "metrics": [MetricSlot(words=mid, metric_id=mid) for mid in bare_targets],
             "breakdown_dimensions": [],
+            "breakdown_words": "",
             "names_period": False,
             "forecast": slots,
         }

@@ -40,6 +40,7 @@ _SLOTS = {
     "rank_by": None,
     "metrics": [],
     "breakdown_dimensions": [],
+    "breakdown_words": "",
     "names_period": False,
 }
 

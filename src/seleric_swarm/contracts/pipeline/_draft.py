@@ -1,6 +1,10 @@
-"""QuestionDraft — structured understand output (phrases/expressions; no calendar dates).
+"""QuestionDraft — the understand stage's output and the spec stage's input.
 
-M1.1 owns the LLM call that fills this model. M1.2 compiles it into ``QuestionSpec``.
+A stage boundary, so it lives here with the other frozen contracts (A3): ``understand``
+produces it, ``spec`` consumes it, and neither imports the other (A1). Phrases and
+structured expressions only — no calendar dates (code computes them from ``as_of``),
+no required catalogue ids (``spec`` resolves them). Added in contracts-v1.1 (additive;
+no existing model changed).
 """
 
 from __future__ import annotations
