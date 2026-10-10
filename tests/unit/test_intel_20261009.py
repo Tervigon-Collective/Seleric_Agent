@@ -877,3 +877,30 @@ async def test_named_drivers_are_diagnosed_by_the_executor_with_them(monkeypatch
     plain = MissionPlan(shape="why_single_metric", steps=[PlanStep(tool="diagnose_metric_change", metric_ids=["cac"],
                                                                    purpose="diagnose")])
     assert await executor.execute_plan(plain, deps, windows=[(date(2026, 10, 9), date(2026, 10, 9))], as_of=AS_OF) is None
+
+
+def test_a_key_breakdown_is_covered_by_the_labels_renamed_family_members() -> None:
+    from seleric_swarm.agent.scope import scope_from_dimensions
+
+    fam = {"product_title": {"product_title", "basket_product_title"}, "basket_product_title": {"product_title", "basket_product_title"}}
+    scope = scope_from_dimensions(["product_id"], alias_index={}, dimension_ids={"product_id", "product_title", "basket_product_title"},
+                                  stable_keys=(("product_title", "product_id"),),
+                                  family_members=lambda d: frozenset(fam.get(d, {d})))
+    assert scope.breakdowns == frozenset({frozenset({"product_id", "product_title", "basket_product_title"})})
+
+
+async def test_the_outcome_at_a_finer_grain_is_not_a_named_driver() -> None:
+    from seleric_swarm.agent.plan import MetricSlot, PlanSlots, plan_from_slots
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
+
+    cat = CatalogueSnapshot(metrics=(CatalogueMetricMeta(id="cac", raw={"grain_twins": ["product_cac"]}),
+                                     CatalogueMetricMeta(id="cpm"), CatalogueMetricMeta(id="product_cac")))
+    slots = PlanSlots(shape="why_single_metric", metrics=[MetricSlot(words="CAC", metric_id="cac"),
+                      MetricSlot(words="CPM", metric_id="cpm"), MetricSlot(words="product mix", metric_id="product_cac")])
+
+    async def resolver(texts: list[str]) -> dict[str, str | None]:
+        return {"CAC": "cac", "CPM": "cpm", "product mix": "product_cac"}
+
+    out = await plan_from_slots(slots, catalogue=cat, resolver=resolver,
+                                windows=[(date(2026, 10, 9), date(2026, 10, 9))], as_of=AS_OF)
+    assert out.plan.steps[0].drivers == ["cpm"]

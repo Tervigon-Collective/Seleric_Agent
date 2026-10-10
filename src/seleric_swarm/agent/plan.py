@@ -338,7 +338,11 @@ def compose_plan(
         # The other measures the question names are the user's hypotheses: they go in as drivers, so each is
         # checked and reported (regression 2026-10-10 Q24: one run diagnosed CAC without them and never
         # addressed the CPM / CTR / CPC the user asked about).
-        named = [m for m in metric_ids[1:] if m != metric_ids[0]]
+        # The outcome at a finer grain ("product mix" read as product-level CAC) is not a driver but where the
+        # change sits: the diagnosis localises segments itself, and as a driver it explains the outcome by itself.
+        twins = set(catalogue.grain_twins_for(metric_ids[0]))
+        named = [m for m in metric_ids[1:] if m != metric_ids[0] and m not in twins]
+        notes.extend(f"{m} is {metric_ids[0]} at another grain: left to the segment search" for m in metric_ids[1:] if m in twins)
         steps.append(
             PlanStep(
                 tool="diagnose_metric_change",

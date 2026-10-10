@@ -333,6 +333,7 @@ def scope_from_dimensions(
     temporal_grain: str | None = None,
     is_time_dimension: Any = None,
     stable_keys: tuple[tuple[str, str], ...] | list[tuple[str, str]] = (),
+    family_members: Any = None,
 ) -> RequiredScope:
     """The breakdowns the question's understanding read, as candidate sets.
 
@@ -357,6 +358,10 @@ def scope_from_dimensions(
         cands = cands | frozenset(
             other for label, key in stable_keys for other in (label, key) if {label, key} & cands
         )
+        # ... and every conformed member of those (basket_product_title, sold_product_title for product_title):
+        # renamed views carry the label but not its key.
+        if family_members is not None:
+            cands = cands | frozenset(m for c in cands for m in family_members(c))
         if cands:
             resolved.add(cands)
     return RequiredScope(breakdowns=frozenset(resolved), temporal_grain=temporal_grain)

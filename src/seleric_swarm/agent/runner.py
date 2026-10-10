@@ -249,6 +249,7 @@ def _required_scope(
                 temporal_grain=temporal_grain,
                 is_time_dimension=getattr(catalogue, "is_time_dimension", None),
                 stable_keys=tuple(getattr(catalogue, "stable_keys", None) or ()),
+                family_members=getattr(catalogue, "family_members", None),
             )
         return build_required_scope(
             query,
