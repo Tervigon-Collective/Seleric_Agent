@@ -90,6 +90,13 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
 
     elapsed = trace.get("elapsed_seconds")
     spec = trace.get("spec")
+    if not isinstance(spec, dict) or not spec:
+        # The legacy path writes no spec; the v2 stages do (enforce first, then shadow).
+        for key in ("v2_mission", "v2_shadow"):
+            stage = trace.get(key)
+            if isinstance(stage, dict) and isinstance(stage.get("spec"), dict):
+                spec = stage["spec"]
+                break
     return ObservedCase(
         id=case.id,
         question=question,
@@ -165,6 +172,18 @@ def _first_number(value: Any) -> float | None:
     return None
 
 
+def truth_query(args: dict[str, Any]) -> dict[str, Any]:
+    """Case truth (``metric_id``/``start``/``end``/``filters``) as ``metrics_query`` arguments."""
+    if "measures" in args:
+        return dict(args)
+    out: dict[str, Any] = {k: v for k, v in args.items() if k not in ("metric_id", "start", "end")}
+    if args.get("metric_id"):
+        out["measures"] = [args["metric_id"]]
+    if args.get("start") or args.get("end"):
+        out["time_range"] = {"start": args.get("start") or args.get("end"), "end": args.get("end") or args.get("start")}
+    return out
+
+
 class McpTruthResolver:
     """Live truth lookup: run the case's ``metrics_query`` args and read the value.
 
@@ -182,7 +201,7 @@ class McpTruthResolver:
             response = await self._mcp.call(
                 agent_id=self._agent_id,
                 capability="seleric.metrics_query",
-                arguments=dict(args),
+                arguments=truth_query(args),
             )
         except Exception:
             return None
@@ -193,7 +212,10 @@ class McpTruthResolver:
             return None
         row = rows[0]
         if isinstance(row, dict):
-            for key in ("value", "metric_value", "result"):
+            metric = args.get("metric_id") or next(iter(args.get("measures") or []), None)
+            for key in (metric, "value", "metric_value", "result"):
+                if key is None:
+                    continue
                 number = _first_number(row.get(key))
                 if number is not None:
                     return number

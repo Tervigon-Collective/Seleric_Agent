@@ -46,7 +46,7 @@ cases:
         kind: analysis
         shape: lookup
         measures:
-          - metric_id: metric.net_sales
+          - metric_id: net_sales
         windows:
           - {role: event, start: "2026-10-09", end: "2026-10-09", token: yesterday}
 

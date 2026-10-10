@@ -12,7 +12,9 @@ The scorer and runner stay private; they are exercised through
 
 from __future__ import annotations
 
+import asyncio
 import inspect
+import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -199,7 +201,11 @@ async def run_suite(
         truth_resolver = truth_resolver or built_truth
 
     scores: list[CaseScore] = []
-    for case in resolved_cases:
+    # Live runs share the model's token-rate limit: EVAL_CASE_PAUSE_S spaces the cases out.
+    pause = float(os.environ.get("EVAL_CASE_PAUSE_S") or 0)
+    for index, case in enumerate(resolved_cases):
+        if pause and index and mode == "live":
+            await asyncio.sleep(pause)
         if progress is not None:
             progress(f"running {case.id} ({mode})")
         observed = await _call_runner(runner, case)

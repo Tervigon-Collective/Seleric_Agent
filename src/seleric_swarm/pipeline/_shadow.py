@@ -229,6 +229,7 @@ def summarise(outcome: ShadowOutcome, legacy: LegacyDecision) -> dict[str, Any]:
             disagree.append("shape")
     spec = outcome.spec if isinstance(outcome.spec, QuestionSpec) else None
     if spec is not None:
+        record["spec"] = spec_json(spec)
         windows = tuple(sorted((w.start, w.end) for w in spec.windows))
         record["windows"] = [[s.isoformat(), e.isoformat()] for s, e in windows]
         if legacy.windows and tuple(sorted(legacy.windows)) != windows:
@@ -259,6 +260,16 @@ def summarise(outcome: ShadowOutcome, legacy: LegacyDecision) -> dict[str, Any]:
         record["answer"] = outcome.answer
     record["disagree"] = disagree
     return record
+
+
+_ROLE_ORDER = {"event": 0, "baseline": 1, "context": 2}
+
+
+def spec_json(spec: QuestionSpec) -> dict[str, Any]:
+    """The spec as JSON with windows in canonical role order (what the eval scorer compares)."""
+    data = spec.model_dump(mode="json")
+    data["windows"] = sorted(data.get("windows") or [], key=lambda w: _ROLE_ORDER.get(w.get("role"), 9))
+    return data
 
 
 def _plan_metrics(plan: AnalysisPlan) -> set[str]:
