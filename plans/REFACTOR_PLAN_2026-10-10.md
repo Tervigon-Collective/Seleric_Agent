@@ -666,14 +666,14 @@ Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) 
 | M1.2 | T2 | Cursor | `gaurav` | merged | | imports fixed (draft from contracts, scope types from `agent/scope_model.py`); `lint-imports` 11/11 | 2026-10-11 |
 | M1.3 | T3 | OpenCode | `gaurav` | merged | | On `gaurav`: store + Qdrant adapter + seed; `run_suite` collision check; tests green | 2026-10-11 |
 | M1.4 | T1 | Claude (review) | `gaurav` | merged | | `spec/_clarify.py` + `CLARIFY_MODE`; 9 tests via `compile_question_spec` | 2026-10-11 |
-| M2.1 | T1 | Claude (review) | `gaurav` | in review | | `plan(spec, read_model, *, as_of, headline_metric_ids) -> AnalysisPlan`; 9 templates in `plan/_templates`, registry `plan/_registry.py`, `PLANNER_V2_MODE`, protected contract; 34 plan tests (invented catalogue + rename pickup). Not wired (pipeline/ owns it). Reviewer: T2 | 2026-10-11 |
-| M2.2 | T2 | OpenCode (T3 first-pass) | `gaurav` | in review | | `plan/_execute.py::execute` + 9 tests pushed with Phase 2 WIP. T2 owns review. | 2026-10-11 |
-| M2.3 | T3 | OpenCode | `gaurav` | in review | | `derive` engine (10 ops) + tool + reconcile acceptance pushed as WIP. `derive` independence KEPT. | 2026-10-11 |
+| M2.1 | T1 | Claude (review) | `gaurav` | merged | | `plan(spec, read_model, *, as_of, headline_metric_ids) -> AnalysisPlan`; 9 templates in `plan/_templates`, registry `plan/_registry.py`, `PLANNER_V2_MODE`, protected contract; 34 plan tests (invented catalogue + rename pickup). Not wired (pipeline/ owns it). Reviewer: T2 | 2026-10-11 |
+| M2.2 | T2 | OpenCode (T3 first-pass) | `gaurav` | merged | | `plan/_execute.py::execute` + 9 tests pushed with Phase 2 WIP. T2 owns review. | 2026-10-11 |
+| M2.3 | T3 | OpenCode | `gaurav` | merged | | `derive` engine (10 ops) + tool + reconcile acceptance pushed as WIP. `derive` independence KEPT. | 2026-10-11 |
 | M3.1 | T1 | OpenCode | | not started | | after M2.2 and M2.3 | 2026-10-10 |
 | M3.2 | T2 | Cursor | | not started | | after M2.2 and M2.3 | 2026-10-10 |
 | M3.3 | T3 | OpenCode | | not started | | after M2.2 and M2.3 | 2026-10-10 |
-| M4.1 | T1 | OpenCode | | not started | | may start in Phase 2 | 2026-10-10 |
-| M4.2 | T2 | Cursor | | not started | | may start in Phase 2 | 2026-10-10 |
+| M4.1 | T1 | Claude (review) | `gaurav` | merged | | `context/`: calendar, incidents, freshness health, `config/context_providers.yaml`; 6 tests. Gap: change-log provider, domain-health snapshots | 2026-10-11 |
+| M4.2 | T2 | Claude (review) | `gaurav` | in progress | | may start in Phase 2 | 2026-10-10 |
 | M4.3 | T2 | Cursor | | not started | | after M4.1 and M4.2 | 2026-10-10 |
 | M4.4 | T3 | OpenCode | | not started | | after M4.3 | 2026-10-10 |
 | M5.1 | T1 | OpenCode | | not started | | any time after M0.3 | 2026-10-10 |
