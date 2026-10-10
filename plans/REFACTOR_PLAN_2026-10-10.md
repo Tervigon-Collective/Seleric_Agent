@@ -1,5 +1,7 @@
 # Seleric_Agent — modular refactor plan
 
+**Agents: read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) before every session.** Post findings and talk there. Update the status board in this file when a module starts, blocks, or lands. Every commit is on `gaurav`.
+
 ## Context
 
 **Why.** Seleric_Agent answers business questions with an LLM loop over Cube (via Seleric_Agent_Core MCP).
@@ -623,10 +625,11 @@ Phase 5:                                 M5.1  M5.2  M5.3  M5.4          (M5.1 m
 
 ### Note for every agent — this file is the status channel
 
-Read this note before writing code. The five agents do not have another shared board. Talk through this document.
+Read this note before writing code. Read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) at the start of every session. Post findings, questions, and handoffs there, and keep posting as the work moves. Module status stays in the board below.
 
 1. Every change is committed on the `gaurav` branch. If you are on any other branch now, move that work onto `gaurav` before the next commit and continue there. Do not open or keep a `mod/*` branch. The `Branch` column below is `gaurav`.
-2. On starting a module, set its row below to `in progress` and append one log line.
+2. On every session start, read `plans/AGENT_CHAT.md`. When you learn something another track needs, add a findings row. When you ask, answer, or hand off, append a chat line. Do this in the same commit as the code or the status change.
+3. On starting a module, set its row below to `in progress` and append one log line.
 3. When blocked, set `blocked` and name the module you are waiting on in `Note`. Do not start a later module on your track to skip the block, except where this plan explicitly allows an early start (M4.1, M4.2, M5.1).
 4. When the change is ready for review, set `in review` and put the PR URL in `PR` if there is one.
 5. When the module is on `gaurav` and its checks pass, set `merged`, add the date, and append one log line. Then start the next module on your track.
@@ -640,7 +643,7 @@ Read this note before writing code. The five agents do not have another shared b
 | Module | Track | Tool | Branch | Status | PR | Note | Updated |
 |---|---|---|---|---|---|---|---|
 | M0.1 | T1 | OpenCode | | not started | | | 2026-10-10 |
-| M0.2 | T2 | Cursor | `gaurav` | in progress | | Move `mod/M0.2-pipeline-contracts` onto `gaurav`. Tag `contracts-v1` when it lands. | 2026-10-10 |
+| M0.2 | T2 | Cursor | `gaurav` | merged | https://github.com/Tervigon-Collective/Seleric_Agent/pull/5 | landed on `gaurav` (`fdb43ce`); tag `contracts-v1` | 2026-10-10 |
 | M0.3 | T3 | OpenCode | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
 | M0.4 | T4 | OpenCode | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
 | M0.5 | T5 | Cursor | | not started | | rebase onto `contracts-v1` | 2026-10-10 |
@@ -670,7 +673,9 @@ Read this note before writing code. The five agents do not have another shared b
 |---|---|---|---|
 | 2026-10-10 | — | — | Status board opened. T1/T3/T4 = OpenCode. T2/T5 = Cursor. M5.4 assigned to T5. |
 | 2026-10-10 | T2 | M0.2 | Branch `mod/M0.2-pipeline-contracts` cut from `gaurav`; implementing Part B models. |
+| 2026-10-10 | T2 | M0.2 | PR open: https://github.com/Tervigon-Collective/Seleric_Agent/pull/5 — Part B models + dump/load/fingerprint; 40 unit tests. Tag `contracts-v1` after merge. |
 | 2026-10-10 | — | — | Every change lands on `gaurav`. Work already on another branch, including `mod/M0.2-pipeline-contracts`, moves onto `gaurav`. |
+| 2026-10-10 | T2 | M0.2 | Fast-forwarded onto `gaurav` (`fdb43ce`). Closing mod/* PR; tagging `contracts-v1`. |
 
 ## Part E — Files you will touch most (and the rule for each)
 - `agent/runner.py` (1,827 lines): **do not add logic**. M1.2/M2.x/M3.x move stage code into `pipeline/mission.py` (`run_mission(question, deps) -> AnswerDocument`), and `run_v3_mission` becomes a thin adapter. Each module removes its block from `runner.py` when it reaches enforce.
