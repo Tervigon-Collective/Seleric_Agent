@@ -150,6 +150,7 @@ def score_case(
     details: dict[str, Any] = {}
 
     details["observed"] = observed.diagnostics
+    details["status"] = observed.status if not observed.error else f"{observed.status} ({observed.error})"
     details["truths"] = [{"match": t.match, "expected": t.expected} for t in truths]
     if case.expect.spec:
         matched, total = spec_matches(case.expect.spec, observed.spec)

@@ -73,6 +73,7 @@ class ShadowInputs:
     port: SemanticPort | None = None
     as_of_time: datetime | None = None
     prior_spec: QuestionSpec | None = None
+    evidence_store: Any = None  # plan.EvidenceStore: persists v2 rows as mission evidence
     brand_prefs: Mapping[str, Any] | None = None
 
 

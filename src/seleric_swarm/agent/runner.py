@@ -1037,6 +1037,21 @@ def _start_v2_shadow(
         return None
 
 
+class _MissionEvidenceStore:
+    """``plan.EvidenceStore`` over the mission artifact store: v2 rows become evidence artifacts
+    under their own ids, so answers cite them like the agent loop's evidence."""
+
+    def __init__(self, store: Any, workspace_id: str, mission_id: str) -> None:
+        self._store, self._workspace, self._mission = store, workspace_id, mission_id
+
+    def put_evidence(self, payload: dict[str, Any], evidence_id: str) -> None:
+        try:
+            self._store.put(Artifact(id=evidence_id, workspace_id=self._workspace, artifact_type="evidence",
+                                     payload=payload, classification="factual", mission_id=self._mission))
+        except Exception:
+            _log.warning("v2_evidence_put_failed", exc_info=True, extra={"evidence_id": evidence_id})
+
+
 async def _v2_enforce(
     runtime: SwarmRuntime,
     *,
@@ -1048,6 +1063,7 @@ async def _v2_enforce(
     values: dict[str, Any] | None,
     prior_turn_record: dict[str, Any] | None,
     trace_base: dict[str, Any],
+    evidence_store: Any = None,
 ) -> V3MissionResult | None:
     """ANSWER_V2_MODE=enforce: answer through the v2 pipeline; None falls back to the agent loop."""
     settings = runtime.settings
@@ -1069,6 +1085,7 @@ async def _v2_enforce(
             prior_spec=prior_spec(prior_turn_record),
             brand_prefs=brand_prefs().get(str(getattr(settings, "default_brand_id", "") or "")),
             port=McpSemanticPort(mcp, agent_id="v2_mission"),
+            evidence_store=evidence_store,
         )
         outcome = await run_mission(
             PydanticAiDraftLLM(model), PydanticAiAnswerLLM(resolve_role_model(settings, "answer")), inputs,
@@ -1717,6 +1734,7 @@ async def run_v3_mission(
                 runtime, mcp=mcp, mission_id=mission_id, query=query, as_of_dt=as_of_dt, catalogue=catalogue,
                 values=values, prior_turn_record=prior_turn_record, trace_base={
                     "request_id": request_id, "session_id": thread_id, "intent": intent},
+                evidence_store=_MissionEvidenceStore(deps.artifact_store, deps.principal.workspace_id, mission_id),
             )) is not None:
                 result = v2_result
                 _stage("v2_mission_ms")

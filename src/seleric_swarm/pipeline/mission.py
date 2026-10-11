@@ -106,6 +106,7 @@ async def _run(
     as_of = inputs.as_of_time or datetime.combine(inputs.as_of, dtime(23, 59))
     with stage_span("execute", mission_id=mission_id, inp=plan):
         run = await run_plan(plan, spec, port=inputs.port, read_model=inputs.read_model, as_of=as_of, graph_gcm=graph_gcm,
+                             evidence_store=inputs.evidence_store,
                              deadline_s=P.PLAN_DEADLINE_S.get(plan.template_id, P.PLAN_DEADLINE_DEFAULT_S))
     trace["run"] = run.summary()
     if run.unsupported:

@@ -118,6 +118,7 @@ async def run_plan(
     policy: InvestigatePolicy | None = None,
     graph_gcm: bool = False,
     deadline_s: float | None = None,
+    evidence_store: Any = None,
 ) -> PlanRun:
     """``deadline_s`` (M5.3): after it, no new step starts and a running one is cut; the run
     keeps what it has and lists the rest in ``deadline_hit``."""
@@ -143,7 +144,8 @@ async def run_plan(
     windows: dict[str, WindowSpec] = {w.role: w for w in spec.windows}
     queries = [s for s in plan.steps if isinstance(s, QueryStep)]
     if queries:
-        sets = await bounded("queries", execute(queries, windows=windows, port=port, read_model=read_model, as_of=as_of))
+        sets = await bounded("queries", execute(queries, windows=windows, port=port, read_model=read_model, as_of=as_of,
+                                                   evidence_store=evidence_store))
         run.result_sets = list(sets or ())
     items: dict[str, ResultSet | Derivation] = {rs.step_id: rs for rs in run.result_sets}
     for step in plan.steps:
