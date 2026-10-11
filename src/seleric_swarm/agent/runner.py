@@ -1084,6 +1084,11 @@ async def _v2_enforce(
                                final_response=outcome.clarification.question_to_user, trace=trace)
     if outcome.status != "answered" or outcome.doc is None:
         _log.info("v2_enforce_fallback", extra={"mission_id": mission_id, "reason": outcome.reason})
+        if getattr(settings, "v2_no_fallback", False):
+            # Testing the v2 path alone: report why it could not answer instead of using the agent loop.
+            return V3MissionResult(mission_id=mission_id, status="failed", query=query, as_of=as_of_dt,
+                                   final_response=f"v2 pipeline could not answer: {outcome.reason or 'unknown'}",
+                                   limitations=[f"v2_fallback:{outcome.reason}"], trace=trace)
         return None
     doc = outcome.doc
     if outcome.turn is not None:

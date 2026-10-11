@@ -72,6 +72,7 @@ services:
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
       V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
+      V2_NO_FALLBACK: ${V2_NO_FALLBACK:-true}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -195,6 +196,7 @@ services:
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
       V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
+      V2_NO_FALLBACK: ${V2_NO_FALLBACK:-true}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -293,6 +295,7 @@ services:
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
       V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
+      V2_NO_FALLBACK: ${V2_NO_FALLBACK:-true}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -357,6 +360,7 @@ services:
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
       V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
+      V2_NO_FALLBACK: ${V2_NO_FALLBACK:-true}
       SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
       LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
       PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
