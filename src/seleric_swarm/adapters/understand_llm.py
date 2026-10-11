@@ -1,7 +1,7 @@
 """pydantic-ai implementation of ``seleric_swarm.understand.DraftLLM``.
 
 The understand package stays free of LLM SDKs (A1); this adapter owns the model call and
-asks for structured output, returning either a ``QuestionDraft`` or a ``Clarification``.
+asks for structured output: always a ``QuestionDraft`` (asking is decided in code).
 """
 
 from __future__ import annotations
@@ -21,9 +21,10 @@ class PydanticAiDraftLLM:
         self._model = model
 
     async def __call__(self, *, instructions: str, prompt: str) -> tuple[QuestionDraft | Clarification, dict[str, Any]]:
-        reader: Agent[None, QuestionDraft | Clarification] = Agent(
+        reader: Agent[None, QuestionDraft] = Agent(
             model=self._model,
-            output_type=[QuestionDraft, Clarification],
+            # Draft only: whether to ask is decided in code (needs_clarification + CLARIFY_MODE).
+            output_type=QuestionDraft,
             instructions=instructions,
             name="seleric_understand_v2",
         )

@@ -33,6 +33,14 @@ _UNAVAILABLE = AnswerDraft(
 )
 
 
+_MAX_ROWS = 20
+
+
+def _short(value: float | None) -> float | None:
+    """Four significant figures: enough to choose what to say, cheaper than full floats."""
+    return None if value is None else float(f"{value:.4g}")
+
+
 class AnswerLLM(Protocol):
     async def __call__(self, *, instructions: str, prompt: str) -> tuple[AnswerDraft, dict[str, Any]]: ...
 
@@ -42,23 +50,40 @@ def evidence_prompt(question: str, spec: QuestionSpec | None, evidence: Evidence
     so the model can choose what to say, never so it can type them)."""
     items: list[dict[str, Any]] = []
     for rs in evidence.result_sets():
-        items.append({
-            "ref": {"kind": "result_set", "id": rs.ref.id},
-            "metric": rs.metric_id, "label": read_model.label_for(rs.metric_id) or rs.metric_id,
-            "window": rs.window.role, "breakdowns": list(rs.breakdowns),
-            "rows": [{"key": r.dimensions, "value": r.value} for r in rs.rows[:50]],
-            "error": rs.error.code if rs.error else None,
-        })
+        item: dict[str, Any] = {
+            "ref": rs.ref.id, "kind": "result_set",
+            "metric": read_model.label_for(rs.metric_id) or rs.metric_id,
+            "window": f"{rs.window.role} {rs.window.start}..{rs.window.end}",
+        }
+        if rs.error:
+            item["error"] = rs.error.code
+        elif rs.breakdowns or len(rs.rows) != 1:
+            # The answer cites rows by key; values are shown only so the model can pick what to say.
+            ordered = sorted(rs.rows, key=lambda r: -abs(r.value or 0.0))
+            item["rows"] = [[r.dimensions, _short(r.value)] for r in ordered[:_MAX_ROWS]]
+            if len(rs.rows) > _MAX_ROWS:
+                item["rows_not_shown"] = len(rs.rows) - _MAX_ROWS
+        else:
+            item["value"] = _short(rs.rows[0].value)
+        items.append(item)
     for d in evidence.derivations():
-        items.append({
-            "ref": {"kind": "derivation", "id": d.ref.id}, "op": d.op,
-            "inputs": [r.id for r in d.inputs], "value": d.value,
-            "error": d.error.code if d.error else None,
-        })
+        ditem: dict[str, Any] = {"ref": d.ref.id, "kind": "derivation", "op": d.op, "value": _short(d.value)}
+        if d.error:
+            ditem["error"] = d.error.code
+        subject = d.params.get("subject")
+        if subject:
+            ditem["subject"] = subject
+        items.append(ditem)
     body: dict[str, Any] = {"question": question, "evidence": items}
     if spec is not None:
-        body["spec"] = spec.model_dump(mode="json", include={"kind", "shape", "measures", "breakdowns", "entities", "windows"})
-    return json.dumps(body, default=str)
+        body["asked"] = {
+            "shape": spec.shape,
+            "measures": [m.metric_id or m.phrase for m in spec.measures],
+            "by": list(spec.breakdowns),
+            "entities": {e.dimension: list(e.values) for e in spec.entities},
+            "periods": [f"{w.role} {w.start}..{w.end}" for w in spec.windows],
+        }
+    return json.dumps(body, default=str, separators=(",", ":"))
 
 
 async def answer(

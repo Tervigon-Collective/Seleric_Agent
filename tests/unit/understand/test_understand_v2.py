@@ -201,7 +201,7 @@ async def test_pydantic_ai_adapter_returns_structured_draft():
     from seleric_swarm.adapters.understand_llm import PydanticAiDraftLLM
 
     def reply(messages, info: AgentInfo) -> ModelResponse:
-        tool = next(t for t in info.output_tools if "QuestionDraft" in t.name or "question" in t.name.lower())
+        tool = info.output_tools[0]  # draft-only output: one output tool
         return ModelResponse(parts=[ToolCallPart(tool.name, {"kind": "analysis", "shape": "trend"})])
 
     out, usage = await PydanticAiDraftLLM(FunctionModel(reply))(instructions="x", prompt="y")

@@ -116,6 +116,9 @@ def prepare(spec: QuestionSpec, ctx: PlanContext) -> Prepared:
         headline = [m for m in ctx.headline_metric_ids if _known(model, m)]
         if shape == "entity_comparison" and entity:
             headline = [m for m in headline if model.carries(m, entity)]
+        if not headline and shape == "entity_comparison" and entity:
+            # No headline measure is sliced by this entity: compare it on the measures that are.
+            headline = model.metrics_supporting_dimension(entity, n=3)
         if headline:
             metrics = headline
             notes.append("no measure named: compared the business headline measures")
