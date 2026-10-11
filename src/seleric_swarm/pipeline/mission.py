@@ -13,7 +13,7 @@ from datetime import datetime
 from datetime import time as dtime
 from typing import Any, Literal
 
-from seleric_swarm.answer import AnswerLLM, Evidence, TurnSummary, answer, turn_summary
+from seleric_swarm.answer import AnswerLLM, Evidence, TurnSummary, answer, render, turn_summary
 from seleric_swarm.config.llm_roles import load_prompt
 from seleric_swarm.contracts.pipeline import AnswerDocument, Clarification, QuestionSpec
 from seleric_swarm.observability import stage_span
@@ -27,6 +27,7 @@ from seleric_swarm.pipeline._shadow import (
 )
 from seleric_swarm.plan import plan as build_plan
 from seleric_swarm.spec import candidates_from_resolution, compile_question_spec
+from seleric_swarm.toolsets import policy_config as P
 from seleric_swarm.understand import DraftLLM, understand
 
 _log = logging.getLogger("seleric.pipeline.mission")
@@ -100,7 +101,8 @@ async def _run(
         return MissionV2(status="fallback", reason="no_template", spec=spec, trace=trace)
     as_of = inputs.as_of_time or datetime.combine(inputs.as_of, dtime(23, 59))
     with stage_span("execute", mission_id=mission_id, inp=plan):
-        run = await run_plan(plan, spec, port=inputs.port, read_model=inputs.read_model, as_of=as_of, graph_gcm=graph_gcm)
+        run = await run_plan(plan, spec, port=inputs.port, read_model=inputs.read_model, as_of=as_of, graph_gcm=graph_gcm,
+                             deadline_s=P.PLAN_DEADLINE_S.get(plan.template_id, P.PLAN_DEADLINE_DEFAULT_S))
     trace["run"] = run.summary()
     if run.unsupported:
         return MissionV2(status="fallback", reason="unsupported_engine", spec=spec, run=run, trace=trace)
@@ -112,6 +114,11 @@ async def _run(
                                     instructions=load_prompt("answer")[0])
         span.set_output(doc)
     trace["answer"] = {k: v for k, v in astats.items() if k in ("attempts", "issues", "status")}
+    if run.deadline_hit and doc.draft.status != "failed":
+        # M5.3: the answer was written from a run the latency tier cut short; say so.
+        cut = doc.draft.model_copy(update={"status": "partial", "limitations": (
+            *doc.draft.limitations, f"time_limit:{','.join(run.deadline_hit)}")})
+        doc = render(cut, evidence, inputs.read_model)
     if doc.draft.status == "failed":
         return MissionV2(status="fallback", reason="answer_failed", spec=spec, run=run, trace=trace)
     turn = turn_summary(spec, doc.draft, evidence, inputs.read_model)

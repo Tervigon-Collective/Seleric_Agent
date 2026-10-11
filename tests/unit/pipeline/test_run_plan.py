@@ -110,3 +110,18 @@ async def test_answer_over_run_evidence_verifies() -> None:
 
     doc, _ = await answer(llm, "why did take fall", spec=s, evidence=ev, read_model=MODEL)
     assert doc.rendered_markdown == "Take fell to INR 310 from INR 400 (-22.5%)."
+
+
+async def test_deadline_keeps_what_it_has() -> None:
+    import asyncio
+
+    class SlowPort(FactPort):
+        async def query(self, args):  # type: ignore[no-untyped-def]
+            await asyncio.sleep(5)
+            return await super().query(args)
+
+    s = spec("period_comparison")
+    run = await run_plan(build_plan(s, MODEL, as_of=date(2026, 10, 10)), s, port=SlowPort(), read_model=MODEL,
+                         as_of=AS_OF, deadline_s=0.05)
+    assert run.deadline_hit == ["queries"] and run.result_sets == []
+    assert run.summary()["derive_errors"]  # derivations refuse on the missing inputs, never invent

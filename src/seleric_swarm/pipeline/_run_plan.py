@@ -6,6 +6,7 @@ others are reported as unsupported so the caller can hand the question to the ag
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -84,6 +85,7 @@ class PlanRun:
     investigations: dict[str, InvestigationState] = field(default_factory=dict)
     explorations: dict[str, ExplorationMap] = field(default_factory=dict)
     unsupported: list[str] = field(default_factory=list)  # engine ids the v2 path cannot run yet
+    deadline_hit: list[str] = field(default_factory=list)  # steps skipped or cut by the latency tier
 
     @property
     def evidence(self) -> list[ResultSet | Derivation]:
@@ -98,6 +100,7 @@ class PlanRun:
             "investigations": {k: v.status for k, v in self.investigations.items()},
             "explorations": {k: len(v.insights) for k, v in self.explorations.items()},
             "unsupported": self.unsupported,
+            "deadline_hit": self.deadline_hit,
         }
 
 
@@ -114,12 +117,34 @@ async def run_plan(
     selector: Selector | None = None,
     policy: InvestigatePolicy | None = None,
     graph_gcm: bool = False,
+    deadline_s: float | None = None,
 ) -> PlanRun:
+    """``deadline_s`` (M5.3): after it, no new step starts and a running one is cut; the run
+    keeps what it has and lists the rest in ``deadline_hit``."""
     run = PlanRun()
+    loop = asyncio.get_running_loop()
+    end = loop.time() + deadline_s if deadline_s else None
+
+    def left() -> float | None:
+        return None if end is None else max(0.0, end - loop.time())
+
+    async def bounded(step_id: str, coro: Any) -> Any:
+        remaining = left()
+        if remaining is not None and remaining <= 0:
+            coro.close()
+            run.deadline_hit.append(step_id)
+            return None
+        try:
+            return await asyncio.wait_for(coro, timeout=remaining)
+        except TimeoutError:
+            run.deadline_hit.append(step_id)
+            return None
+
     windows: dict[str, WindowSpec] = {w.role: w for w in spec.windows}
     queries = [s for s in plan.steps if isinstance(s, QueryStep)]
     if queries:
-        run.result_sets = list(await execute(queries, windows=windows, port=port, read_model=read_model, as_of=as_of))
+        sets = await bounded("queries", execute(queries, windows=windows, port=port, read_model=read_model, as_of=as_of))
+        run.result_sets = list(sets or ())
     items: dict[str, ResultSet | Derivation] = {rs.step_id: rs for rs in run.result_sets}
     for step in plan.steps:
         if isinstance(step, DeriveStep):
@@ -135,20 +160,22 @@ async def run_plan(
                     providers = built[0] if providers is None else providers
                     health_sources = built[1] if health_sources is None else health_sources
                 attributor = GcmAttributor(port, read_model, g, as_of) if graph_gcm else None
-                state = await _investigate(step, spec, reader, read_model,
-                                           g, providers, health_sources, selector, policy, attributor)
+                state = await bounded(step.step_id, _investigate(step, spec, reader, read_model,
+                                           g, providers, health_sources, selector, policy, attributor))
                 if state is not None:
                     run.investigations[step.step_id] = state
                     run.derivations += findings_as_derivations(step.step_id, state)
             elif step.engine == "explore":
-                xmap, sets = await run_explore(step, spec, port=port, read_model=read_model, graph=g, as_of=as_of)
-                run.explorations[step.step_id] = xmap
-                run.result_sets += sets
+                got = await bounded(step.step_id, run_explore(step, spec, port=port, read_model=read_model, graph=g, as_of=as_of))
+                if got is not None:
+                    run.explorations[step.step_id] = got[0]
+                    run.result_sets += got[1]
             elif step.engine == "composition":
-                sets, derived = await run_composition(step, spec, port=port, read_model=read_model, graph=g, as_of=as_of)
-                run.result_sets += sets
-                run.derivations += derived
-                items.update({rs.step_id: rs for rs in sets})
+                got = await bounded(step.step_id, run_composition(step, spec, port=port, read_model=read_model, graph=g, as_of=as_of))
+                if got is not None:
+                    run.result_sets += got[0]
+                    run.derivations += got[1]
+                    items.update({rs.step_id: rs for rs in got[0]})
             else:
                 run.unsupported.append(step.engine)
     return run
