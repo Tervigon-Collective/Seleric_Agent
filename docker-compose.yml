@@ -66,9 +66,9 @@ services:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
-      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-off}
-      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
-      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
+      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-enforce}
+      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-enforce}
+      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-enforce}
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
       V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
@@ -189,9 +189,9 @@ services:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
-      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-off}
-      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
-      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
+      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-enforce}
+      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-enforce}
+      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-enforce}
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
       V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
@@ -287,9 +287,9 @@ services:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
-      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-off}
-      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
-      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
+      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-enforce}
+      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-enforce}
+      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-enforce}
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
       V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
@@ -351,9 +351,9 @@ services:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
-      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-off}
-      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-off}
-      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-off}
+      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-enforce}
+      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-enforce}
+      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-enforce}
       CLARIFY_MODE: ${CLARIFY_MODE:-off}
       V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
       GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}

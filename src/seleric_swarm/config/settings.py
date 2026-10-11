@@ -248,10 +248,10 @@ class Settings(BaseSettings):
     # M2.1: typed template planner (seleric_swarm.plan). shadow plans beside the legacy advisory plan.
     # M1.1: v2 understand → spec stages (seleric_swarm.understand/spec). shadow runs them in the
     # background beside the legacy path and records disagreements in trace["v2_shadow"].
-    understand_v2_mode: Literal["off", "shadow", "enforce"] = "off"
-    planner_v2_mode: Literal["off", "shadow", "enforce"] = "off"
-    answer_v2_mode: Literal["off", "shadow", "enforce"] = "off"
-    investigate_mode: Literal["off", "shadow", "enforce"] = "off"
+    understand_v2_mode: Literal["off", "shadow", "enforce"] = "enforce"
+    planner_v2_mode: Literal["off", "shadow", "enforce"] = "enforce"
+    answer_v2_mode: Literal["off", "shadow", "enforce"] = "enforce"
+    investigate_mode: Literal["off", "shadow", "enforce"] = "enforce"
     graph_gcm_mode: Literal["off", "shadow", "enforce"] = "off"
     # How long a finished mission waits for the v2 shadow before cancelling it (raise it for evals).
     v2_shadow_timeout_s: float = 2.0
