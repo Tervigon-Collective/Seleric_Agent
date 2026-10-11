@@ -17,7 +17,13 @@ from seleric_swarm.answer import AnswerLLM, Evidence, TurnSummary, answer, turn_
 from seleric_swarm.contracts.pipeline import AnswerDocument, Clarification, QuestionSpec
 from seleric_swarm.observability import stage_span
 from seleric_swarm.pipeline._run_plan import PlanRun, run_plan
-from seleric_swarm.pipeline._shadow import Mode, ShadowInputs, _value_words, spec_json
+from seleric_swarm.pipeline._shadow import (
+    Mode,
+    ShadowInputs,
+    _value_words,
+    overview_as_exploration,
+    spec_json,
+)
 from seleric_swarm.plan import plan as build_plan
 from seleric_swarm.spec import candidates_from_resolution, compile_question_spec
 from seleric_swarm.understand import DraftLLM, understand
@@ -71,6 +77,7 @@ async def _run(
     trace: dict[str, Any] = {"understand": {k: v for k, v in stats.items() if k != "latency_ms"}}
     if isinstance(draft, Clarification):
         return _clarify_or_fallback(draft, clarify_mode, trace)
+    draft = overview_as_exploration(draft, inputs.headline_metric_ids)
     if draft.kind != "analysis" and draft.kind != "exploration":
         return MissionV2(status="fallback", reason=f"kind:{draft.kind}", trace=trace)
     with stage_span("spec", mission_id=mission_id, inp=draft) as span:

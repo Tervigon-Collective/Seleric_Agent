@@ -72,3 +72,19 @@ async def test_failed_answer_falls_back() -> None:
 
     out = await run_mission(_understand(), broken, _inputs(), mission_id="m")
     assert out.status == "fallback" and out.reason == "answer_failed"
+
+
+async def test_overview_with_a_period_is_explored() -> None:
+    from seleric_swarm.pipeline._shadow import overview_as_exploration
+    from tests.unit.pipeline.test_engines import AS_OF as X_AS_OF
+    from tests.unit.pipeline.test_engines import MODEL as X_MODEL
+    from tests.unit.pipeline.test_engines import DailyPort
+
+    overview = QuestionDraft(kind="overview", shape="other", names_period=True,
+                             windows=(WindowSlot(role="event", expr=WindowExpr(name="last_week"), source_span="last week"),))
+    assert overview_as_exploration(overview.model_copy(update={"names_period": False}), ("zz_take",)).kind == "overview"
+    inputs = ShadowInputs(question="how did last week go", as_of=X_AS_OF.date(), as_of_time=X_AS_OF, read_model=X_MODEL,
+                          port=DailyPort(), headline_metric_ids=("zz_take",))  # type: ignore[arg-type]
+    out = await run_mission(_understand(overview), _answer_llm, inputs, mission_id="m")
+    assert out.trace["plan"]["template_id"] == "exploration"
+    assert out.run is not None and out.run.explorations

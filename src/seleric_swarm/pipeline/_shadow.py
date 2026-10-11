@@ -26,6 +26,7 @@ from seleric_swarm.answer import AnswerLLM, Evidence, answer, verify
 from seleric_swarm.contracts.pipeline import (
     AnalysisPlan,
     Clarification,
+    MeasurePhrase,
     QueryStep,
     QuestionDraft,
     QuestionSpec,
@@ -156,6 +157,8 @@ async def _run(
                 prior_offer=inputs.prior_offer,
             )
             span.set_output(draft)
+        if not isinstance(draft, Clarification):
+            draft = overview_as_exploration(draft, inputs.headline_metric_ids)
         outcome.draft, outcome.stats = draft, dict(stats)
         if isinstance(draft, Clarification):
             outcome.status = "clarification"
@@ -213,6 +216,15 @@ async def _answer_shadow(
         "chars": len(doc.rendered_markdown),
         "evidence_ids": len(doc.evidence_ids),
     }
+
+
+def overview_as_exploration(draft: QuestionDraft, headline_metric_ids: tuple[str, ...]) -> QuestionDraft:
+    """An overview that names a period is explored (the headline measures over that period);
+    without a period it stays an overview (the snapshot fast path answers it)."""
+    if draft.kind != "overview" or not draft.names_period:
+        return draft
+    measures = draft.measures or tuple(MeasurePhrase(words=m, metric_id=m) for m in headline_metric_ids)
+    return draft.model_copy(update={"kind": "exploration", "measures": measures})
 
 
 def summarise(outcome: ShadowOutcome, legacy: LegacyDecision) -> dict[str, Any]:
