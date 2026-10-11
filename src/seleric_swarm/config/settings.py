@@ -255,8 +255,8 @@ class Settings(BaseSettings):
     graph_gcm_mode: Literal["off", "shadow", "enforce"] = "off"
     # How long a finished mission waits for the v2 shadow before cancelling it (raise it for evals).
     v2_shadow_timeout_s: float = 2.0
-    # Enforce without the legacy agent-loop fallback (V2_NO_FALLBACK): a v2 miss is a failed answer.
-    v2_no_fallback: bool = True
+    # V2_NO_FALLBACK=true: under enforce, a v2 miss fails with its reason instead of using the agent loop.
+    v2_no_fallback: bool = False
 
     workflow_version: str = "1.0.0"
 
