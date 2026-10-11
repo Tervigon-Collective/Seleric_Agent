@@ -23,7 +23,8 @@ from seleric_swarm.contracts.pipeline import (
 
 # Claim role -> derive ops that may back it (None = a plain ResultSet row is fine too).
 _ROLE_OPS: dict[str, frozenset[str]] = {
-    "change": frozenset({"delta", "pct_change"}),
+    # Investigation findings carry the change they explain (premise, component, segment, driver).
+    "change": frozenset({"delta", "pct_change", "finding:premise", "finding:component", "finding:segment", "finding:driver"}),
     "share": frozenset({"share"}),
 }
 

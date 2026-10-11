@@ -41,3 +41,15 @@ def test_later_period_becomes_the_event() -> None:
     late = WindowSpec(role="baseline", start=date(2026, 8, 2), end=date(2026, 8, 2))
     out = {w.role: w.start for w in _later_is_event((early, late))}
     assert out == {"event": date(2026, 8, 2), "baseline": date(2026, 8, 1)}
+
+
+def test_overlapping_baseline_ends_before_the_event() -> None:
+    from datetime import date
+
+    from seleric_swarm.contracts.pipeline import WindowSpec
+    from seleric_swarm.spec._compile import _later_is_event
+
+    event = WindowSpec(role="event", start=date(2026, 9, 29), end=date(2026, 9, 29))
+    base = WindowSpec(role="baseline", start=date(2026, 9, 27), end=date(2026, 9, 29))
+    out = {w.role: (w.start, w.end) for w in _later_is_event((event, base))}
+    assert out["baseline"] == (date(2026, 9, 27), date(2026, 9, 28)) and out["event"][0] == date(2026, 9, 29)
