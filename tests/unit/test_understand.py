@@ -83,6 +83,11 @@ def test_classification_carries_follow_up_write_and_grain():
     assert classification_from(None) == runner.QueryClassification()
 
 
+def test_null_direction_defaults_to_either():
+    # LLM structured output often sets direction=null on lookups that name no movement.
+    assert _u(direction=None).direction == "either"
+
+
 async def test_understand_skips_the_stub_model_and_fails_open():
     out = await understand(_stub_test_model(), "hi", catalogue=CatalogueSnapshot())
     assert out.understanding is None and out.stats["status"] == "skipped"

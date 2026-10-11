@@ -9,9 +9,9 @@ no existing model changed).
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 QuestionKind = Literal[
     "conversation",
@@ -113,7 +113,11 @@ class QuestionDraft(BaseModel):
     breakdown_words: str = ""
     windows: tuple[WindowSlot, ...] = ()
     grain: Literal["hour", "day", "week", "month", "none"] = "none"
-    direction: Literal["increase", "decrease", "either"] = "either"
+    # Models often emit null when the question names no movement; coerce to default.
+    direction: Annotated[
+        Literal["increase", "decrease", "either"],
+        BeforeValidator(lambda v: "either" if v is None else v),
+    ] = "either"
     rank_by: MeasurePhrase | None = None
     rank_order: Literal["desc", "asc"] = "desc"
     top_n: int | None = None
