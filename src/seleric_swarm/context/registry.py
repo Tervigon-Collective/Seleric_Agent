@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from seleric_swarm.context.model import (
+    AsyncContextProvider,
     ContextEvent,
     ContextProvider,
     ContextWindow,
@@ -61,3 +62,27 @@ def gather_health(
         except Exception:
             _log.warning("health_source_failed", exc_info=True, extra={"source": s.id})
     return out
+
+
+async def agather_events(
+    providers: Sequence[ContextProvider | AsyncContextProvider],
+    window: ContextWindow,
+    scope: dict[str, str],
+    read_model: SemanticReadModel,
+    *,
+    disabled: frozenset[str] = frozenset(),
+) -> list[ContextEvent]:
+    """Like ``gather_events`` but also awaits async (data-reading) providers."""
+    out: list[ContextEvent] = []
+    for p in providers:
+        if p.id in disabled:
+            continue
+        try:
+            aevents = getattr(p, "aevents", None)
+            if aevents is not None:
+                out += await aevents(window, scope, read_model)
+            else:
+                out += p.events(window, scope, read_model)  # type: ignore[union-attr]
+        except Exception:
+            _log.warning("context_provider_failed", exc_info=True, extra={"provider": p.id})
+    return sorted(out, key=lambda e: (e.start, e.kind, e.title))

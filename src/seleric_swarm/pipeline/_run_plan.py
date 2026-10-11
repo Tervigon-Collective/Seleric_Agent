@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from seleric_swarm.context import ContextProvider, HealthSource
+from seleric_swarm.context import AsyncContextProvider, ContextProvider, HealthSource
 from seleric_swarm.contracts.pipeline import (
     AnalysisPlan,
     Derivation,
@@ -36,6 +36,7 @@ from seleric_swarm.investigate import (
     InvestigationState,
     Selector,
 )
+from seleric_swarm.pipeline._context import build_context
 from seleric_swarm.pipeline._engines import ExplorationMap, run_composition, run_explore
 from seleric_swarm.plan import execute
 from seleric_swarm.semantic import SemanticPort, SemanticReadModel
@@ -106,8 +107,8 @@ async def run_plan(
     read_model: SemanticReadModel,
     as_of: datetime,
     graph: MetricGraph | None = None,
-    providers: Sequence[ContextProvider] = (),
-    health_sources: Sequence[HealthSource] = (),
+    providers: Sequence[ContextProvider | AsyncContextProvider] | None = None,
+    health_sources: Sequence[HealthSource] | None = None,
     selector: Selector | None = None,
     policy: InvestigatePolicy | None = None,
 ) -> PlanRun:
@@ -125,7 +126,12 @@ async def run_plan(
         elif isinstance(step, EngineStep):
             g = graph or build_graph(read_model)
             if step.engine == "investigate":
-                state = await _investigate(step, spec, PlanReader(port, read_model, as_of), read_model,
+                reader = PlanReader(port, read_model, as_of)
+                if providers is None or health_sources is None:
+                    built = build_context(reader)
+                    providers = built[0] if providers is None else providers
+                    health_sources = built[1] if health_sources is None else health_sources
+                state = await _investigate(step, spec, reader, read_model,
                                            g, providers, health_sources, selector, policy)
                 if state is not None:
                     run.investigations[step.step_id] = state
@@ -170,7 +176,7 @@ async def _investigate(
     reader: PlanReader,
     read_model: SemanticReadModel,
     graph: MetricGraph,
-    providers: Sequence[ContextProvider],
+    providers: Sequence[ContextProvider | AsyncContextProvider],
     health_sources: Sequence[HealthSource],
     selector: Selector | None,
     policy: InvestigatePolicy | None,

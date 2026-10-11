@@ -56,3 +56,13 @@ class HealthSource(Protocol):
     def health(
         self, window: ContextWindow, metric_ids: tuple[str, ...], read_model: SemanticReadModel
     ) -> list[DataHealth]: ...
+
+
+class AsyncContextProvider(Protocol):
+    """A provider that reads data (through a port) to find its events."""
+
+    id: str
+
+    async def aevents(
+        self, window: ContextWindow, scope: dict[str, str], read_model: SemanticReadModel
+    ) -> list[ContextEvent]: ...

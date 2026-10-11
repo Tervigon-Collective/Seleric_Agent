@@ -12,10 +12,11 @@ import math
 from collections.abc import Sequence
 
 from seleric_swarm.context import (
+    AsyncContextProvider,
     ContextProvider,
     ContextWindow,
     HealthSource,
-    gather_events,
+    agather_events,
     gather_health,
 )
 from seleric_swarm.contracts.pipeline import FilterSpec, WindowSpec
@@ -52,7 +53,7 @@ class Investigation:
         read_model: SemanticReadModel,
         graph: MetricGraph,
         *,
-        providers: Sequence[ContextProvider] = (),
+        providers: Sequence[ContextProvider | AsyncContextProvider] = (),
         health_sources: Sequence[HealthSource] = (),
         selector: Selector | None = None,
         policy: InvestigatePolicy | None = None,
@@ -77,7 +78,7 @@ class Investigation:
             if st.stage in ("localise", "recurse"):
                 await self._localise(st)
             if st.stage == "context":
-                self._context(st)
+                await self._context(st)
             if st.stage == "drivers":
                 await self._drivers(st)
             st.stage, st.status = "stop", "done"
@@ -221,10 +222,10 @@ class Investigation:
             st.depth += 1
         st.stage = "context"
 
-    def _context(self, st: InvestigationState) -> None:
+    async def _context(self, st: InvestigationState) -> None:
         r = st.request
         scope = {f.dimension: f.values[0] for f in (*r.filters, *st.path) if f.operator == "in" and len(f.values) == 1}
-        st.events = gather_events(self.providers, ContextWindow(start=r.event.start, end=r.event.end), scope, self.model)
+        st.events = await agather_events(self.providers, ContextWindow(start=r.event.start, end=r.event.end), scope, self.model)
         for ev in st.events:
             if ev.metric_ids and r.metric_id not in ev.metric_ids:
                 continue
