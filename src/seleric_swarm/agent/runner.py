@@ -1297,7 +1297,7 @@ def _write_turn_record(
             record["query_spec"] = query_spec.dump()
         # The v2 spec (enforce answer, else shadow) so the next turn's spec edits it (M5.2).
         for key in ("v2_mission", "v2_shadow"):
-            stage = (result.trace or {}).get(key)
+            stage = (getattr(result, "trace", None) or {}).get(key)
             if isinstance(stage, dict) and isinstance(stage.get("spec"), dict):
                 record["v2_spec"] = stage["spec"]
                 break
