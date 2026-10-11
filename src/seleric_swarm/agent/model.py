@@ -184,6 +184,31 @@ def resolve_planner_model(settings: Settings) -> Model:
     )
 
 
+def resolve_role_model(settings: Settings, role_name: str) -> Model:
+    """The model for an LLM role (config/llm_roles.yaml, env AZURE_OPENAI_<ROLE>_MODEL first).
+
+    A role with no deployment uses the planner's model for the short structured roles
+    (understand / answer / select) and the agent's chain otherwise.
+    """
+    import json
+
+    from seleric_swarm.config.llm_roles import role
+
+    cfg = role(role_name)
+    name = cfg.deployment
+    if not name:
+        return resolve_planner_model(settings) if role_name in ("understand", "answer", "select") else resolve_v3_model(settings)
+    try:
+        rest = [str(m) for m in json.loads(getattr(settings, "azure_openai_models", "") or "[]")]
+    except (TypeError, ValueError):
+        rest = []
+    chain = [name, *[m for m in rest if m != name]]
+    only = settings.model_copy(update={"azure_openai_models": json.dumps(chain), "azure_openai_fast_model": ""})
+    timeout = cfg.timeout_s or UNDERSTAND_TIMEOUT_S
+    return resolve_v3_model(only, role_tuning=False, reasoning_effort=cfg.reasoning_effort,
+                            request_cap_s=timeout, read_timeout_s=timeout)
+
+
 def _led_by(settings: Settings, leader: str) -> Settings:
     """``leader`` first in the fallback chain, the rest unchanged behind it."""
     import json

@@ -23,6 +23,7 @@ from datetime import time as dtime
 from typing import Any, Literal
 
 from seleric_swarm.answer import AnswerLLM, Evidence, answer, verify
+from seleric_swarm.config.llm_roles import load_prompt
 from seleric_swarm.contracts.pipeline import (
     AnalysisPlan,
     Clarification,
@@ -155,6 +156,7 @@ async def _run(
                 value_words=_value_words(inputs.resolution),
                 prior_question=inputs.prior_question,
                 prior_offer=inputs.prior_offer,
+                instructions=load_prompt("understand")[0],
             )
             span.set_output(draft)
         if not isinstance(draft, Clarification):
@@ -207,7 +209,8 @@ async def _answer_shadow(
                                    graph_gcm=modes.graph_gcm != "off")
     evidence = Evidence(outcome.run.evidence)
     with stage_span("answer", mission_id=mission_id, inp=spec) as span:
-        doc, stats = await answer(llm, inputs.question, spec=spec, evidence=evidence, read_model=inputs.read_model)
+        doc, stats = await answer(llm, inputs.question, spec=spec, evidence=evidence, read_model=inputs.read_model,
+                                   instructions=load_prompt("answer")[0])
         span.set_output(doc)
     outcome.answer = {
         "status": doc.draft.status,
@@ -229,7 +232,11 @@ def overview_as_exploration(draft: QuestionDraft, headline_metric_ids: tuple[str
 
 def summarise(outcome: ShadowOutcome, legacy: LegacyDecision) -> dict[str, Any]:
     """Compact record: what v2 decided and, per field, whether it agrees with the legacy path."""
-    record: dict[str, Any] = {"status": outcome.status, "latency_ms": outcome.latency_ms}
+    record: dict[str, Any] = {
+        "status": outcome.status,
+        "latency_ms": outcome.latency_ms,
+        "prompts": {r: load_prompt(r)[1] for r in ("understand", "answer")},
+    }
     if outcome.stats:
         record["understand"] = {k: v for k, v in outcome.stats.items() if k != "latency_ms"}
     if isinstance(outcome.draft, Clarification) or isinstance(outcome.spec, Clarification):

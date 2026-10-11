@@ -45,7 +45,7 @@ from seleric_swarm.agent.dependencies import (
 from seleric_swarm.agent.executor import execute_plan
 from seleric_swarm.agent.forecast_plan import compile_forecast_plan, render_forecast_plan
 from seleric_swarm.agent.intent import QueryClassification, stated_grain
-from seleric_swarm.agent.model import resolve_mission_model, resolve_planner_model
+from seleric_swarm.agent.model import resolve_mission_model, resolve_planner_model, resolve_role_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
 from seleric_swarm.agent.plan import PlanOutcome, plan_adherence, plan_from_slots
 from seleric_swarm.agent.progress import emit_progress, tool_label
@@ -1012,7 +1012,7 @@ def _start_v2_shadow(
     if not modes.active:
         return None
     try:
-        model = resolve_planner_model(settings)
+        model = resolve_role_model(settings, "understand")
         llm = None if model is None or isinstance(model, TestModel) else PydanticAiDraftLLM(model)
         inputs = ShadowInputs(
             question=query,
@@ -1024,7 +1024,9 @@ def _start_v2_shadow(
             headline_metric_ids=tuple(_headline_metric_ids(runtime)),
             port=McpSemanticPort(mcp, agent_id="v2_shadow") if modes.answer != "off" and mcp is not None else None,
         )
-        answer_llm = PydanticAiAnswerLLM(model) if llm is not None and modes.answer != "off" else None
+        answer_llm = (
+            PydanticAiAnswerLLM(resolve_role_model(settings, "answer")) if llm is not None and modes.answer != "off" else None
+        )
         return start_shadow(llm, inputs, modes=modes, mission_id=mission_id, answer_llm=answer_llm)
     except Exception:
         _log.warning("v2_shadow_start_failed", exc_info=True, extra={"mission_id": mission_id})
@@ -1048,7 +1050,7 @@ async def _v2_enforce(
     if getattr(settings, "answer_v2_mode", "off") != "enforce":
         return None
     try:
-        model = resolve_planner_model(settings)
+        model = resolve_role_model(settings, "understand")
         if model is None or isinstance(model, TestModel) or mcp is None:
             return None
         inputs = ShadowInputs(
@@ -1063,7 +1065,7 @@ async def _v2_enforce(
             port=McpSemanticPort(mcp, agent_id="v2_mission"),
         )
         outcome = await run_mission(
-            PydanticAiDraftLLM(model), PydanticAiAnswerLLM(model), inputs,
+            PydanticAiDraftLLM(model), PydanticAiAnswerLLM(resolve_role_model(settings, "answer")), inputs,
             mission_id=mission_id, clarify_mode=getattr(settings, "clarify_mode", "off"),
             graph_gcm=getattr(settings, "graph_gcm_mode", "off") != "off",
         )

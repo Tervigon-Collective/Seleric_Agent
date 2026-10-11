@@ -28,6 +28,7 @@ async def understand(
     prior_question: str = "",
     prior_offer: str = "",
     exemplars: Sequence[Mapping[str, Any]] = (),
+    instructions: str | None = None,
 ) -> tuple[QuestionDraft | Clarification, dict[str, Any]]:
     """Read ``question`` into a draft, or a clarification (A4: one retry, then ask).
 
@@ -42,4 +43,5 @@ async def understand(
         prior_offer=prior_offer,
         exemplars=[dict(e) for e in exemplars],
     )
-    return await call_understand(llm, instructions=INSTRUCTIONS, prompt=prompt)
+    # ``instructions``: a versioned prompt from the registry (pipeline); the built-in text otherwise.
+    return await call_understand(llm, instructions=instructions or INSTRUCTIONS, prompt=prompt)

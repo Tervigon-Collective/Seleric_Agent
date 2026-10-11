@@ -68,6 +68,7 @@ async def answer(
     spec: QuestionSpec | None,
     evidence: Evidence,
     read_model: SemanticReadModel,
+    instructions: str | None = None,
 ) -> tuple[AnswerDocument, dict[str, Any]]:
     """Draft → verify → (one revision) → render. Never raises."""
     stats: dict[str, Any] = {"attempts": 0}
@@ -79,7 +80,7 @@ async def answer(
     for attempt in (1, 2):
         stats["attempts"] = attempt
         try:
-            draft, usage = await llm(instructions=INSTRUCTIONS, prompt=prompt)
+            draft, usage = await llm(instructions=instructions or INSTRUCTIONS, prompt=prompt)
             stats.update(usage)
         except Exception as exc:
             _log.warning("answer_draft_failed attempt=%d", attempt, exc_info=True)

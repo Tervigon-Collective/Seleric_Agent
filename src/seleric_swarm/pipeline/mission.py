@@ -14,6 +14,7 @@ from datetime import time as dtime
 from typing import Any, Literal
 
 from seleric_swarm.answer import AnswerLLM, Evidence, TurnSummary, answer, turn_summary
+from seleric_swarm.config.llm_roles import load_prompt
 from seleric_swarm.contracts.pipeline import AnswerDocument, Clarification, QuestionSpec
 from seleric_swarm.observability import stage_span
 from seleric_swarm.pipeline._run_plan import PlanRun, run_plan
@@ -72,9 +73,13 @@ async def _run(
     with stage_span("understand", mission_id=mission_id) as span:
         draft, stats = await understand(llm, inputs.question, read_model=inputs.read_model,
                                         value_words=_value_words(inputs.resolution),
-                                        prior_question=inputs.prior_question, prior_offer=inputs.prior_offer)
+                                        prior_question=inputs.prior_question, prior_offer=inputs.prior_offer,
+                                        instructions=load_prompt("understand")[0])
         span.set_output(draft)
-    trace: dict[str, Any] = {"understand": {k: v for k, v in stats.items() if k != "latency_ms"}}
+    trace: dict[str, Any] = {
+        "understand": {k: v for k, v in stats.items() if k != "latency_ms"},
+        "prompts": {r: load_prompt(r)[1] for r in ("understand", "answer")},
+    }
     if isinstance(draft, Clarification):
         return _clarify_or_fallback(draft, clarify_mode, trace)
     draft = overview_as_exploration(draft, inputs.headline_metric_ids)
@@ -103,7 +108,8 @@ async def _run(
         return MissionV2(status="fallback", reason="no_data", spec=spec, run=run, trace=trace)
     evidence = Evidence(run.evidence)
     with stage_span("answer", mission_id=mission_id, inp=spec) as span:
-        doc, astats = await answer(answer_llm, inputs.question, spec=spec, evidence=evidence, read_model=inputs.read_model)
+        doc, astats = await answer(answer_llm, inputs.question, spec=spec, evidence=evidence, read_model=inputs.read_model,
+                                    instructions=load_prompt("answer")[0])
         span.set_output(doc)
     trace["answer"] = {k: v for k, v in astats.items() if k in ("attempts", "issues", "status")}
     if doc.draft.status == "failed":
