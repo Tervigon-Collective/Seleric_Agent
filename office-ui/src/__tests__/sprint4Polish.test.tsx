@@ -66,7 +66,34 @@ describe("answer feedback", () => {
     expect(submit).toHaveBeenCalledWith("t1", "m1", { rating: "down", note: "", runId: "r1" });
   });
 
-  it("sends an optional note with a down vote", async () => {
+  it("paints the verdict optimistically before the network settles", async () => {
+    useConversationStore.setState({ demoMode: false });
+    vi.spyOn(conversationsApi, "getFeedback").mockResolvedValue(null);
+    let resolve!: (value: Awaited<ReturnType<typeof conversationsApi.submitFeedback>>) => void;
+    vi.spyOn(conversationsApi, "submitFeedback").mockReturnValue(
+      new Promise((r) => { resolve = r; }),
+    );
+    act(() => root.render(<SelericFeedback {...feedbackProps(data)} />));
+    await act(async () => undefined);
+    act(() => (container.querySelector(
+      '[aria-label="Mark answer helpful"]',
+    ) as HTMLButtonElement).click());
+    // Highlight is applied without waiting for the pending request.
+    const up = container.querySelector('[aria-label="Mark answer helpful"]') as HTMLButtonElement;
+    expect(up.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(".message-feedback")?.className).toContain("message-feedback");
+    const input = container.querySelector(".feedback-note input") as HTMLInputElement;
+    expect(input).toBeTruthy();
+    await act(async () => {
+      resolve({
+        id: "f2", workspace_id: "w", owner_user_id: "u", thread_id: "t1",
+        message_id: "m1", run_id: "r1", rating: "up", note: "",
+        supersedes_id: null, created_at: "now",
+      });
+    });
+  });
+
+  it("sends an optional note with a verdict", async () => {
     useConversationStore.setState({ demoMode: false });
     vi.spyOn(conversationsApi, "getFeedback").mockResolvedValue(null);
     const submit = vi.spyOn(conversationsApi, "submitFeedback").mockResolvedValue({
@@ -76,16 +103,11 @@ describe("answer feedback", () => {
     });
     act(() => root.render(<SelericFeedback {...feedbackProps(data)} />));
     await act(async () => undefined);
-    // First down-vote records the bare verdict…
+    // The comment box opens with the verdict so a note can be attached.
     act(() => (container.querySelector(
       '[aria-label="Report a problem with this answer"]',
     ) as HTMLButtonElement).click());
-    expect(submit).toHaveBeenCalledTimes(1);
-    await act(async () => undefined);
-    // …then offers a detail field for the follow-up report.
-    act(() => (container.querySelector(
-      '[aria-label="Report a problem with this answer"]',
-    ) as HTMLButtonElement).click());
+    expect(submit).toHaveBeenLastCalledWith("t1", "m1", { rating: "down", note: "", runId: "r1" });
     const input = container.querySelector(".feedback-note input") as HTMLInputElement;
     expect(input).toBeTruthy();
     act(() => {
@@ -96,6 +118,32 @@ describe("answer feedback", () => {
     act(() => (container.querySelector(".feedback-note") as HTMLFormElement).requestSubmit());
     expect(submit).toHaveBeenLastCalledWith(
       "t1", "m1", { rating: "down", note: "wrong metric", runId: "r1" },
+    );
+  });
+
+  it("offers the comment box for a helpful vote too", async () => {
+    useConversationStore.setState({ demoMode: false });
+    vi.spyOn(conversationsApi, "getFeedback").mockResolvedValue(null);
+    const submit = vi.spyOn(conversationsApi, "submitFeedback").mockResolvedValue({
+      id: "f2", workspace_id: "w", owner_user_id: "u", thread_id: "t1",
+      message_id: "m1", run_id: "r1", rating: "up", note: "clear breakdown",
+      supersedes_id: null, created_at: "now",
+    });
+    act(() => root.render(<SelericFeedback {...feedbackProps(data)} />));
+    await act(async () => undefined);
+    act(() => (container.querySelector(
+      '[aria-label="Mark answer helpful"]',
+    ) as HTMLButtonElement).click());
+    const input = container.querySelector(".feedback-note input") as HTMLInputElement;
+    expect(input).toBeTruthy();
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "clear breakdown");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => (container.querySelector(".feedback-note") as HTMLFormElement).requestSubmit());
+    expect(submit).toHaveBeenLastCalledWith(
+      "t1", "m1", { rating: "up", note: "clear breakdown", runId: "r1" },
     );
   });
 

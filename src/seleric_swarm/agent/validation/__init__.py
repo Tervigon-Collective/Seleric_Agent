@@ -77,6 +77,7 @@ from seleric_swarm.agent.validation.coherence import ratio_incoherence
 from seleric_swarm.agent.validation.answer_audit import (
     escape_labels_in_tables,
     ragged_table,
+    repair_ragged_table_rows,
     strip_markdown_tables,
     _SENTENCE_END,
     _inside_identifier,
@@ -205,7 +206,11 @@ def _humanize_metric_ids(result: MissionResult, deps: SelericDeps) -> MissionRes
 
 def _escape_table_labels(result: MissionResult, deps: SelericDeps) -> MissionResult:
     """Escape, inside the answer's table rows, every fetched dimension value that holds "|" — a known wording slip
-    fixed in place instead of costing a revision (``ragged_table`` catches what this cannot)."""
+    fixed in place instead of costing a revision (``ragged_table`` catches what this cannot).
+
+    After escaping, pad any row that is still short of its header so a missing
+    trailing cell does not fail the whole mission (live 2026-10-11 MS3-1d7bed9535).
+    """
     text = result.final_response or ""
     if "|" not in text:
         return result
@@ -215,7 +220,7 @@ def _escape_table_labels(result: MissionResult, deps: SelericDeps) -> MissionRes
         dims = payload.get("dimensions") if isinstance(payload, dict) else None
         if isinstance(dims, dict):
             labels.update(str(v) for v in dims.values() if isinstance(v, str) and "|" in v)
-    fixed = escape_labels_in_tables(text, labels)
+    fixed = repair_ragged_table_rows(escape_labels_in_tables(text, labels))
     return result if fixed == text else result.model_copy(update={"final_response": fixed})
 
 

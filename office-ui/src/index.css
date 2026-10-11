@@ -540,6 +540,7 @@ button { color: inherit; }
   text-underline-offset: 2px; padding: 0 4px;
 }
 .message-feedback .feedback-error { color: var(--danger, #c0392b); }
+.message-feedback .feedback-saved { color: var(--success, #2e7d32); }
 .message-feedback .feedback-note { display: flex; gap: 6px; flex-basis: 100%; margin-top: 2px; }
 .message-feedback .feedback-note input {
   flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); border-radius: 7px;

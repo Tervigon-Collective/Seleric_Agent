@@ -183,6 +183,49 @@ def escape_labels_in_tables(text: str, labels: Iterable[str]) -> str:
     return "".join(out)
 
 
+_PAD_CELL = "—"
+
+
+def repair_ragged_table_rows(text: str) -> str:
+    """Pad short Markdown table rows with ``—`` so every data row matches its header width.
+
+    Escaping a label that holds "|" (see :func:`escape_labels_in_tables`) correctly
+    collapses a falsely-aligned row, and that can leave it one cell short of a
+    header the model wrote for the unescaped split — or simply omit a trailing
+    value. Without padding, ``ragged_table`` marks the draft self-contradicting
+    and the mission fails with INSUFFICIENT_EVIDENCE even though the rest of the
+    answer is backed (live 2026-10-11 MS3-1d7bed9535). Over-long rows are left
+    alone for ``ragged_table`` to catch.
+    """
+    if "|" not in (text or ""):
+        return text
+    out: list[str] = []
+    header_width: int | None = None
+    for line in text.splitlines(keepends=True):
+        body = line[:-1] if line.endswith("\n") else line
+        ending = "\n" if line.endswith("\n") else ""
+        stripped = body.strip()
+        if not stripped.startswith("|"):
+            header_width = None
+            out.append(line)
+            continue
+        cells = table_cells(stripped)
+        if header_width is None:
+            header_width = len(cells)
+            out.append(line)
+            continue
+        if all(set(c) <= set("-: ") for c in cells):
+            out.append(line)
+            continue
+        if len(cells) < header_width:
+            cells = [*cells, *([_PAD_CELL] * (header_width - len(cells)))]
+            # table_cells unescapes "\|"; re-escape so a label holding "|" stays one cell.
+            out.append("| " + " | ".join(table_cell(c) for c in cells) + " |" + ending)
+        else:
+            out.append(line)
+    return "".join(out)
+
+
 def ragged_table(text: str) -> str | None:
     """A table row whose cell count differs from its header's: its values sit under the wrong columns."""
     header: int | None = None

@@ -13,6 +13,7 @@ from seleric_swarm.analytics.visualization import (
     generate_visualization_spec,
     infer_chart_type_from_shape,
     reconcile_chart_type,
+    thin_evidence_for_chart,
 )
 from seleric_swarm.conversations.contracts import (
     Artifact,
@@ -297,6 +298,41 @@ async def test_generate_visualization_unwraps_finding_to_backing_evidence():
     assert chart.artifact_type == "chart_spec"
     assert set(chart.evidence_ids) == {id1, id2}
     assert chart.payload["chart_type"] == "line"
+
+
+def test_crowded_multi_metric_campaign_chart_keeps_one_ratio_metric():
+    """live 2026-10-11 MS3-5637552cae: spend+clicks+cvr+roas × many campaigns was unreadable."""
+    campaigns = [f"Camp-{i}" for i in range(10)]
+    evidence = []
+    for day in ("2026-10-09", "2026-10-10"):
+        for camp in campaigns:
+            for metric, unit, value in (
+                ("ad_spend", "INR", 1000.0),
+                ("clicks", "count", 50.0),
+                ("conversion_rate", "pct", 2.0),
+                ("gross_roas", "ratio", 1.5),
+            ):
+                evidence.append(
+                    _make_evidence(
+                        metric,
+                        f"{day}T00:00:00",
+                        f"{day}T23:59:59",
+                        value,
+                        unit=unit,
+                        dimensions={"campaign_name": camp},
+                    )
+                )
+    kept, warnings = thin_evidence_for_chart(evidence)
+    assert {e.metric_id for e in kept} == {"gross_roas"}
+    assert len({e.dimensions["campaign_name"] for e in kept}) <= 8
+    assert any("kept only" in w for w in warnings)
+
+    spec = generate_visualization_spec(
+        evidence, title="Campaign Performance Across Days", chart_type="grouped_bar"
+    )
+    assert spec["metrics"] == ["gross_roas"]
+    assert len(spec["series"]) <= 12
+    assert any("kept only" in w for w in spec.get("warnings", []))
 
 
 def test_visualization_spec_varying_dimensions_exclude_constant_filter():

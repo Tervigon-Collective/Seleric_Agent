@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import pytest
 
-from seleric_swarm.agent.validation.answer_audit import escape_labels_in_tables, ragged_table, table_cells
+from seleric_swarm.agent.validation.answer_audit import (
+    escape_labels_in_tables,
+    ragged_table,
+    repair_ragged_table_rows,
+    table_cells,
+)
 from seleric_swarm.services.markdown import table_cell
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import analytics
@@ -29,6 +34,23 @@ def test_known_labels_are_escaped_in_the_answers_table_rows_only() -> None:
     assert fixed.startswith(f"{PMAX} led.")  # prose untouched
     assert ragged_table(text) is not None and ragged_table(fixed) is None
     assert escape_labels_in_tables(fixed, {PMAX}) == fixed
+
+
+def test_short_row_after_pipe_escape_is_padded_not_failed() -> None:
+    # live 2026-10-11 MS3-1d7bed9535: escaping PMax left 8 cells under a 9-column header
+    header = (
+        "| Campaign | Spend D1 | Clicks D1 | CVR D1 | Spend D2 | Clicks D2 | CVR D2 | ROAS D1 | ROAS D2 |"
+    )
+    delim = "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    row = f"| {PMAX} | 5,442.84 | 268 | 2.82% | 4,967.34 | 366 | 0.92% | 1.175 |"
+    text = f"{header}\n{delim}\n{row}\n"
+    fixed = repair_ragged_table_rows(escape_labels_in_tables(text, {PMAX}))
+    assert ragged_table(fixed) is None
+    data = [ln for ln in fixed.splitlines() if ln.startswith("| ") and "---" not in ln][-1]
+    cells = table_cells(data)
+    assert cells[0] == PMAX and cells[-1] == "—" and len(cells) == 9
+
+
 
 
 @pytest.mark.asyncio

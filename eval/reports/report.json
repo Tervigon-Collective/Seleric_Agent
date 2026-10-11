@@ -1,61 +1,61 @@
 {
   "suite": "golden",
   "mode": "live",
-  "generated_at": "2026-10-10T22:39:36.885032+00:00",
+  "generated_at": "2026-10-11T08:04:52.230140+00:00",
   "case_count": 12,
   "score": {
     "overall": {
-      "spec_accuracy": 0.0,
-      "status_ok": 1.0,
+      "spec_accuracy": 0.8133053221288516,
+      "status_ok": 0.0,
       "value_correctness": 0.0,
       "revisions": 0.0,
-      "latency_ms": 26660.0,
+      "latency_ms": null,
       "llm_calls": null,
       "tokens": null
     },
     "by_tag": {
       "breakdown": {
-        "spec_accuracy": 0.0,
+        "spec_accuracy": 1.0,
         "status_ok": null,
         "value_correctness": null,
         "revisions": 0.0,
-        "latency_ms": 7592.0,
+        "latency_ms": null,
         "llm_calls": null,
         "tokens": null
       },
       "comparison": {
-        "spec_accuracy": 0.0,
-        "status_ok": 1.0,
+        "spec_accuracy": 0.5294117647058824,
+        "status_ok": 0.0,
         "value_correctness": null,
         "revisions": 0.0,
-        "latency_ms": 21343.0,
+        "latency_ms": null,
         "llm_calls": null,
         "tokens": null
       },
       "entity_comparison": {
-        "spec_accuracy": 0.0,
+        "spec_accuracy": 0.5882352941176471,
         "status_ok": null,
         "value_correctness": null,
         "revisions": 0.0,
-        "latency_ms": 40671.0,
+        "latency_ms": null,
         "llm_calls": null,
         "tokens": null
       },
       "follow_up": {
-        "spec_accuracy": 0.0,
+        "spec_accuracy": 0.5714285714285714,
         "status_ok": null,
         "value_correctness": null,
         "revisions": 0.0,
-        "latency_ms": 112647.0,
+        "latency_ms": null,
         "llm_calls": null,
         "tokens": null
       },
       "lookup": {
-        "spec_accuracy": 0.0,
-        "status_ok": 1.0,
+        "spec_accuracy": 1.0,
+        "status_ok": 0.0,
         "value_correctness": 0.0,
         "revisions": 0.0,
-        "latency_ms": 7265.4,
+        "latency_ms": null,
         "llm_calls": null,
         "tokens": null
       },
@@ -64,34 +64,34 @@
         "status_ok": null,
         "value_correctness": null,
         "revisions": 0.0,
-        "latency_ms": 15137.0,
+        "latency_ms": null,
         "llm_calls": null,
         "tokens": null
       },
       "roas": {
-        "spec_accuracy": 0.0,
-        "status_ok": 1.0,
+        "spec_accuracy": 1.0,
+        "status_ok": 0.0,
         "value_correctness": null,
         "revisions": 0.0,
-        "latency_ms": 7719.0,
+        "latency_ms": null,
         "llm_calls": null,
         "tokens": null
       },
       "trend": {
-        "spec_accuracy": 0.0,
-        "status_ok": 1.0,
+        "spec_accuracy": 1.0,
+        "status_ok": 0.0,
         "value_correctness": null,
         "revisions": 0.0,
-        "latency_ms": 8357.0,
+        "latency_ms": null,
         "llm_calls": null,
         "tokens": null
       },
       "why": {
-        "spec_accuracy": 0.0,
+        "spec_accuracy": 0.5865546218487395,
         "status_ok": null,
         "value_correctness": null,
         "revisions": 0.0,
-        "latency_ms": 81428.66666666667,
+        "latency_ms": null,
         "llm_calls": null,
         "tokens": null
       }
@@ -103,18 +103,52 @@
           "lookup"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
-          "status_ok": 1.0,
+          "spec_accuracy": 1.0,
+          "status_ok": 0.0,
           "value_correctness": 0.0,
           "revisions": 0.0,
-          "latency_ms": 7200.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "no_data",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "lookup",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "net_sales"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [
+            {
+              "match": {
+                "metric_id": "net_sales",
+                "start": "2026-09-02",
+                "end": "2026-09-02"
+              },
+              "expected": 97480.96143241807
+            }
+          ],
+          "spec_matched": 2,
           "spec_total": 2,
-          "status": "completed"
+          "status": "failed"
         }
       },
       {
@@ -123,18 +157,43 @@
           "lookup"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
-          "status_ok": 1.0,
+          "spec_accuracy": 1.0,
+          "status_ok": 0.0,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 7809.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "no_data",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "lookup",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "net_sales"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
+          "spec_matched": 2,
           "spec_total": 2,
-          "status": "completed"
+          "status": "failed"
         }
       },
       {
@@ -143,18 +202,43 @@
           "lookup"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
-          "status_ok": 1.0,
+          "spec_accuracy": 1.0,
+          "status_ok": 0.0,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 6851.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "no_data",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "lookup",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "gross_sales"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
+          "spec_matched": 2,
           "spec_total": 2,
-          "status": "completed"
+          "status": "failed"
         }
       },
       {
@@ -163,18 +247,40 @@
           "comparison"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
-          "status_ok": 1.0,
+          "spec_accuracy": 1.0,
+          "status_ok": 0.0,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 8221.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_shadow",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "clarification:invalid_spec",
+              "clarification": "invalid_spec"
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "period_comparison",
+                "needs_agent": false,
+                "steps": 4,
+                "metrics": [
+                  "net_sales"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
+          "spec_matched": 2,
           "spec_total": 2,
-          "status": "completed"
+          "status": "failed"
         }
       },
       {
@@ -183,18 +289,45 @@
           "trend"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
-          "status_ok": 1.0,
+          "spec_accuracy": 1.0,
+          "status_ok": 0.0,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 8357.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "no_data",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [
+                "windows"
+              ],
+              "plan": {
+                "template_id": "lookup",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "net_sales"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
+          "spec_matched": 2,
           "spec_total": 2,
-          "status": "completed"
+          "status": "failed"
         }
       },
       {
@@ -205,16 +338,41 @@
           "why"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
+          "spec_accuracy": 0.5882352941176471,
           "status_ok": null,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 40671.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "no_template",
+              "plan": {
+                "template_id": "agent",
+                "steps": 0
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [
+                "windows"
+              ],
+              "plan": {
+                "template_id": "agent",
+                "needs_agent": true,
+                "steps": 0,
+                "metrics": []
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
+          "spec_matched": 10,
           "spec_total": 17
         }
       },
@@ -229,11 +387,29 @@
           "status_ok": null,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 15137.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
+          "observed": {
+            "spec_source": null,
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "clarification:You asked to compare \u201cthe last 3 days versus today\u201d but didn\u2019t say which measure(s) to compare.",
+              "clarification": "You asked to compare \u201cthe last 3 days versus today\u201d but didn\u2019t say which measure(s) to compare."
+            },
+            "v2_shadow": {
+              "status": "clarification",
+              "disagree": [],
+              "clarification": {
+                "reason": "You didn't name which metric(s) to compare. I need to know what measure(s) you want shown (e.g., sales, orders, impressions), and whether you want totals or a per-day breakdown or any channel/product filter.",
+                "question": "Which metric(s) should I compare for \"the last 3 days versus today\"? Also tell me whether you want totals or a day-by-day breakdown, and whether to filter or split by any dimension (channel, country, product, etc.)."
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
           "spec_matched": 0,
           "spec_total": 2
         }
@@ -244,18 +420,43 @@
           "lookup"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
-          "status_ok": 1.0,
+          "spec_accuracy": 1.0,
+          "status_ok": 0.0,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 6748.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "no_data",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "lookup",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "net_sales"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
+          "spec_matched": 7,
           "spec_total": 7,
-          "status": "completed"
+          "status": "failed"
         }
       },
       {
@@ -265,18 +466,39 @@
           "roas"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
-          "status_ok": 1.0,
+          "spec_accuracy": 1.0,
+          "status_ok": 0.0,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 7719.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "no_template",
+              "plan": {
+                "template_id": "agent",
+                "steps": 0
+              }
+            },
+            "v2_shadow": {
+              "status": "clarification",
+              "disagree": [],
+              "clarification": {
+                "reason": "\u201cROAS\u201d can refer to multiple measures in the catalogue (e.g., Gross ROAS, Net ROAS, or P&L net ROAS). I need to know which one you mean before I fetch last week\u2019s value.",
+                "question": "Which ROAS do you want for last week?"
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
+          "spec_matched": 6,
           "spec_total": 6,
-          "status": "completed"
+          "status": "failed"
         }
       },
       {
@@ -285,16 +507,38 @@
           "why"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
+          "spec_accuracy": 0.6,
           "status_ok": null,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 90968.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_shadow",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "clarification:invalid_spec",
+              "clarification": "invalid_spec"
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "why",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "cac"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
+          "spec_matched": 6,
           "spec_total": 10
         }
       },
@@ -304,16 +548,41 @@
           "breakdown"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
+          "spec_accuracy": 1.0,
           "status_ok": null,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 7592.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "no_data",
+              "plan": {
+                "template_id": "breakdown",
+                "steps": 1
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "breakdown",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "ad_spend"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
+          "spec_matched": 7,
           "spec_total": 7
         }
       },
@@ -324,16 +593,46 @@
           "why"
         ],
         "metrics": {
-          "spec_accuracy": 0.0,
+          "spec_accuracy": 0.5714285714285714,
           "status_ok": null,
           "value_correctness": null,
           "revisions": 0.0,
-          "latency_ms": 112647.0,
+          "latency_ms": null,
           "llm_calls": null,
           "tokens": null
         },
         "details": {
-          "spec_matched": 0,
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "answer_failed",
+              "plan": {
+                "template_id": "why",
+                "steps": 1
+              },
+              "answer": {
+                "attempts": 1,
+                "issues": [],
+                "status": "failed"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "why",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "cac"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "truths": [],
+          "spec_matched": 4,
           "spec_total": 7
         }
       }

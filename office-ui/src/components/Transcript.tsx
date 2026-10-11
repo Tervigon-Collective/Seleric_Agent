@@ -60,12 +60,17 @@ export function SelericFeedback({ data }: DataMessagePartProps) {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!final || demoMode) return;
     let alive = true;
     conversationsApi.getFeedback(threadId, messageId)
-      .then((existing) => { if (alive && existing) setVote(existing.rating); })
+      .then((existing) => {
+        if (!alive || !existing) return;
+        setVote(existing.rating);
+        if (existing.note) setNote(existing.note);
+      })
       .catch(() => undefined);
     return () => { alive = false; };
   }, [final, demoMode, threadId, messageId]);
@@ -73,24 +78,34 @@ export function SelericFeedback({ data }: DataMessagePartProps) {
   // Draft/streaming messages carry a transient id — no voting until final.
   if (!final) return null;
 
-  const cast = (rating: "up" | "down", text?: string) => {
+  const save = (rating: "up" | "down", text: string) => {
     // Demo mode has no backend thread: keep the verdict local so the buttons
     // still respond instead of flashing "Couldn't save".
     if (demoMode) {
-      setVote(rating);
-      if (rating === "up" || text !== undefined) setNoteOpen(false);
+      setSaved(true);
       return;
     }
     setSaving(true);
     setFailed(false);
-    conversationsApi.submitFeedback(threadId, messageId, { rating, note: text ?? "", runId: runId ?? undefined })
-      .then(() => {
-        setVote(rating);
-        if (rating === "up" || text !== undefined) setNoteOpen(false);
-      })
+    conversationsApi.submitFeedback(threadId, messageId, {
+      rating, note: text, runId: runId ?? undefined,
+    })
+      .then(() => setSaved(true))
       .catch(() => setFailed(true))
       .finally(() => setSaving(false));
   };
+
+  // Optimistic: paint the verdict immediately so a click always responds, then
+  // persist in the background. Opening the comment box lets either verdict carry
+  // a training note — not just a down vote.
+  const cast = (rating: "up" | "down", text = note) => {
+    setVote(rating);
+    setSaved(false);
+    setNoteOpen(true);
+    save(rating, text);
+  };
+
+  const label = vote === "up" ? "What worked well?" : "What was wrong?";
 
   return (
     <div className="message-feedback">
@@ -100,37 +115,32 @@ export function SelericFeedback({ data }: DataMessagePartProps) {
         className={vote === "up" ? "active" : ""}
         aria-label="Mark answer helpful"
         aria-pressed={vote === "up"}
-        disabled={saving}
-        onClick={() => cast("up")}
+        onClick={() => (vote === "up" ? setNoteOpen((open) => !open) : cast("up"))}
       ><ThumbUpIcon size={13} /></button>
       <button
         type="button"
         className={vote === "down" ? "active" : ""}
         aria-label="Report a problem with this answer"
         aria-pressed={vote === "down"}
-        disabled={saving}
         onClick={() => (vote === "down" ? setNoteOpen((open) => !open) : cast("down"))}
       ><ThumbDownIcon size={13} /></button>
-      {vote === "down" && !noteOpen && (
-        <button type="button" className="feedback-note-toggle" onClick={() => setNoteOpen(true)}>
-          Add detail
-        </button>
-      )}
       {failed && <span className="feedback-error" role="alert">Couldn’t save — retry.</span>}
-      {noteOpen && (
+      {saved && !noteOpen && <span className="feedback-saved" role="status">Thanks — noted.</span>}
+      {noteOpen && vote && (
         <form
           className="feedback-note"
           onSubmit={(event) => {
             event.preventDefault();
-            cast("down", note.trim());
+            setSaved(false);
+            save(vote, note.trim());
           }}
         >
-          <label className="sr-only" htmlFor={`feedback-note-${messageId}`}>What was wrong?</label>
+          <label className="sr-only" htmlFor={`feedback-note-${messageId}`}>{label}</label>
           <input
             id={`feedback-note-${messageId}`}
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="What was wrong? (optional)"
+            placeholder={`${label} (optional)`}
             maxLength={2000}
           />
           <button type="submit" disabled={saving}>Send</button>
