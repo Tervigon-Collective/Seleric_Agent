@@ -92,8 +92,17 @@ def verify(draft: AnswerDraft, spec: QuestionSpec | None, evidence: Evidence) ->
                     _collect(item, evidence, cited)
 
     sets = [i for i in cited.values() if isinstance(i, ResultSet)]
+    findings = [i for i in cited.values() if isinstance(i, Derivation) and i.op.startswith("finding:")]
     if spec is not None and draft.status != "failed":
-        _coverage(spec, sets, v)
+        if findings and not sets:
+            # An investigation answer: its findings were computed over the spec's windows and
+            # measure, so coverage is checked on the premise finding instead of result sets.
+            premise = {str(f.params.get("metric_id")) for f in findings if f.op == "finding:premise"}
+            for m in spec.measures:
+                if m.metric_id and premise and m.metric_id not in premise:
+                    v.add("measure_not_covered", m.metric_id)
+        else:
+            _coverage(spec, sets, v)
         excluded = {(f.dimension, frozenset(f.values)) for f in spec.filters if f.operator == "not_in"}
         for rs in sets:
             carried = {(f.dimension, frozenset(f.values)) for f in rs.filters if f.operator == "not_in"}

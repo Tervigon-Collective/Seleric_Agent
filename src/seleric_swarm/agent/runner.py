@@ -1026,7 +1026,8 @@ def _start_v2_shadow(
             headline_metric_ids=tuple(_headline_metric_ids(runtime)),
             prior_spec=prior_spec(prior_turn_record),
             brand_prefs=brand_prefs().get(str(getattr(settings, "default_brand_id", "") or "")),
-            port=McpSemanticPort(mcp, agent_id="v2_shadow") if modes.answer != "off" and mcp is not None else None,
+            port=(McpSemanticPort(mcp, agent_id="v2_shadow").with_read_model(SemanticReadModel.from_legacy(catalogue))
+                  if modes.answer != "off" and mcp is not None else None),
         )
         answer_llm = (
             PydanticAiAnswerLLM(resolve_role_model(settings, "answer")) if llm is not None and modes.answer != "off" else None
@@ -1073,6 +1074,7 @@ async def _v2_enforce(
         model = resolve_role_model(settings, "understand")
         if model is None or isinstance(model, TestModel) or mcp is None:
             return None
+        read_model = SemanticReadModel.from_legacy(catalogue)
         inputs = ShadowInputs(
             question=query,
             as_of=as_of_dt.date(),
@@ -1084,7 +1086,7 @@ async def _v2_enforce(
             headline_metric_ids=tuple(_headline_metric_ids(runtime)),
             prior_spec=prior_spec(prior_turn_record),
             brand_prefs=brand_prefs().get(str(getattr(settings, "default_brand_id", "") or "")),
-            port=McpSemanticPort(mcp, agent_id="v2_mission"),
+            port=McpSemanticPort(mcp, agent_id="v2_mission").with_read_model(read_model),
             evidence_store=evidence_store,
         )
         outcome = await run_mission(

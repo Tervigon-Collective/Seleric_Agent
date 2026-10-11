@@ -72,6 +72,11 @@ class McpSemanticPort:
     def version(self) -> str:
         return self._model.version if self._model is not None else ""
 
+    def with_read_model(self, model: SemanticReadModel) -> McpSemanticPort:
+        """Use an already-loaded snapshot (the mission's frozen catalogue) instead of warming."""
+        self._model = model
+        return self
+
     def read_model(self) -> SemanticReadModel:
         return self._model if self._model is not None else SemanticReadModel()
 

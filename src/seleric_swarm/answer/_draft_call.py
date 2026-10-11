@@ -70,9 +70,10 @@ def evidence_prompt(question: str, spec: QuestionSpec | None, evidence: Evidence
         ditem: dict[str, Any] = {"ref": d.ref.id, "kind": "derivation", "op": d.op, "value": _short(d.value)}
         if d.error:
             ditem["error"] = d.error.code
-        subject = d.params.get("subject")
-        if subject:
-            ditem["subject"] = subject
+        for key in ("subject", "verdict", "baseline", "event", "share_of_change", "detail"):
+            value = d.params.get(key)
+            if value not in (None, ""):
+                ditem[key] = _short(value) if isinstance(value, float) else value
         items.append(ditem)
     body: dict[str, Any] = {"question": question, "evidence": items}
     if spec is not None:

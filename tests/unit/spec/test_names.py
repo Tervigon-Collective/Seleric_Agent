@@ -29,3 +29,15 @@ def test_words_used_when_id_missing_and_ambiguous_left_empty() -> None:
 def test_dimension_label_maps_to_id() -> None:
     d = resolve_draft_names(_draft(breakdown_dimensions=("Sales zone",), entity_dimension="sales_zone"), MODEL)
     assert d.breakdown_dimensions == ("zz_zone",) and d.entity_dimension == "zz_zone"
+
+
+def test_later_period_becomes_the_event() -> None:
+    from datetime import date
+
+    from seleric_swarm.contracts.pipeline import WindowSpec
+    from seleric_swarm.spec._compile import _later_is_event
+
+    early = WindowSpec(role="event", start=date(2026, 8, 1), end=date(2026, 8, 1))
+    late = WindowSpec(role="baseline", start=date(2026, 8, 2), end=date(2026, 8, 2))
+    out = {w.role: w.start for w in _later_is_event((early, late))}
+    assert out == {"event": date(2026, 8, 2), "baseline": date(2026, 8, 1)}

@@ -12,6 +12,7 @@ from seleric_swarm.contracts.pipeline import (
     QuestionDraft,
     QuestionSpec,
     RankingSpec,
+    WindowSpec,
 )
 from seleric_swarm.semantic import ConceptResolution, SemanticReadModel
 from seleric_swarm.spec._clarify import ClarifyMode, ambiguous_value, apply_mode, clarification_for
@@ -62,7 +63,7 @@ def compile_question_spec(
     exclusions = pick_exclusions(draft=draft, candidates=candidates)
     filters = (*filters, *exclusions)
 
-    windows = resolve_window_slots(draft.windows, as_of=as_of)
+    windows = _later_is_event(resolve_window_slots(draft.windows, as_of=as_of))
     grain = None if draft.grain == "none" else draft.grain
     breakdowns = tuple(
         dim
@@ -176,3 +177,14 @@ def scope_from_spec(spec: QuestionSpec) -> RequiredScope:
         temporal_grain=spec.grain,
         windows=windows,
     )
+
+
+def _later_is_event(windows: tuple[WindowSpec, ...]) -> tuple[WindowSpec, ...]:
+    """Two explicit periods compared: the later one is the event. The model sometimes labels them
+    in the order the user wrote them ("Aug 2 vs Aug 1"); swap the roles instead of refusing."""
+    by_role = {w.role: w for w in windows}
+    event, baseline = by_role.get("event"), by_role.get("baseline")
+    if event is None or baseline is None or baseline.end < event.start or baseline.start <= event.start:
+        return windows
+    swapped = {"event": "baseline", "baseline": "event"}
+    return tuple(w.model_copy(update={"role": swapped.get(w.role, w.role)}) for w in windows)

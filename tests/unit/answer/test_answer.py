@@ -151,3 +151,13 @@ def test_turn_summary_is_typed() -> None:
     assert t.offer == "Want it by week?" and t.metric_labels == ("Take",)
     assert t.entities == {"zz_zone": ("north",)} and t.top_items == ("north", "south")
     assert t.windows == (EV, BASE)
+
+
+def test_investigation_answer_covers_through_findings() -> None:
+    premise = Derivation(ref=Ref(kind="derivation", id="e1.f0"), op="finding:premise", inputs=(),
+                         params={"metric_id": "zz_take", "subject": "zz_take"}, value=-90.0, unit=None)
+    seg = Derivation(ref=Ref(kind="derivation", id="e1.f1"), op="finding:segment", inputs=(),
+                     params={"subject": "zz_zone=north"}, value=-90.0, unit=None)
+    draft = AnswerDraft(status="completed", claims=(claim("p", premise.ref, "support"), claim("s", seg.ref, "support")),
+                        blocks=(para("Take moved {p}; most of it was north ({s})."),))
+    assert verify(draft, SPEC, Evidence([premise, seg])).ok
