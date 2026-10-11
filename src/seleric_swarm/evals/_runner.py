@@ -99,6 +99,15 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
                                 if stage.get(k) is not None}
         elif key == "v2_shadow":
             diagnostics[key] = "absent (UNDERSTAND_V2_MODE/PLANNER_V2_MODE not set in this process?)"
+    mission = trace.get("v2_mission")
+    if isinstance(mission, dict) and isinstance(mission.get("spec"), dict):
+        sp = mission["spec"]
+        diagnostics["v2_spec"] = {
+            "shape": sp.get("shape"),
+            "measures": [m.get("metric_id") for m in sp.get("measures") or []],
+            "entities": sp.get("entities"),
+            "windows": [f"{w.get('role')} {w.get('start')}..{w.get('end')}" for w in sp.get("windows") or []],
+        }
     if not isinstance(spec, dict) or not spec:
         # The legacy path writes no spec; the v2 stages do (enforce first, then shadow).
         for key in ("v2_mission", "v2_shadow"):

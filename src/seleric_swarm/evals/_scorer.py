@@ -151,7 +151,12 @@ def score_case(
 
     details["observed"] = observed.diagnostics
     details["status"] = observed.status if not observed.error else f"{observed.status} ({observed.error})"
-    details["truths"] = [{"match": t.match, "expected": t.expected} for t in truths]
+    details["truths"] = [
+        {"match": t.match, "expected": t.expected,
+         # what the run produced for that match, so a miss shows the observed value
+         "observed": [getattr(r, "value", None) for r in observed.evidence if _row_matches(r, t.match)][:5]}
+        for t in truths
+    ]
     if case.expect.spec:
         matched, total = spec_matches(case.expect.spec, observed.spec)
         metrics["spec_accuracy"] = matched / total if total else None
