@@ -33,6 +33,7 @@ from seleric_swarm.contracts.pipeline import (
     QuestionSpec,
 )
 from seleric_swarm.observability import stage_span
+from seleric_swarm.pipeline._memory import apply_brand_defaults, with_assumptions
 from seleric_swarm.pipeline._run_plan import PlanRun, run_plan
 from seleric_swarm.plan import plan as build_plan
 from seleric_swarm.plan import plan_notes
@@ -71,6 +72,8 @@ class ShadowInputs:
     headline_metric_ids: tuple[str, ...] = ()
     port: SemanticPort | None = None
     as_of_time: datetime | None = None
+    prior_spec: QuestionSpec | None = None
+    brand_prefs: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -165,15 +168,18 @@ async def _run(
         if isinstance(draft, Clarification):
             outcome.status = "clarification"
             return outcome
+        draft, defaults = apply_brand_defaults(draft, inputs.brand_prefs)
         with stage_span("spec", mission_id=mission_id, inp=draft) as span:
             spec = compile_question_spec(
                 draft,
                 candidates_from_resolution(dict(inputs.resolution or {})),
                 inputs.read_model,
-                None,
+                inputs.prior_spec,
                 inputs.as_of,
                 clarify_mode=modes.clarify,
             )
+            if isinstance(spec, QuestionSpec):
+                spec = with_assumptions(spec, defaults)
             span.set_output(spec)
         outcome.spec = spec
         if isinstance(spec, Clarification):

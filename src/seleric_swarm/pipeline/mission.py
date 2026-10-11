@@ -17,6 +17,7 @@ from seleric_swarm.answer import AnswerLLM, Evidence, TurnSummary, answer, rende
 from seleric_swarm.config.llm_roles import load_prompt
 from seleric_swarm.contracts.pipeline import AnswerDocument, Clarification, QuestionSpec
 from seleric_swarm.observability import stage_span
+from seleric_swarm.pipeline._memory import apply_brand_defaults, with_assumptions
 from seleric_swarm.pipeline._run_plan import PlanRun, run_plan
 from seleric_swarm.pipeline._shadow import (
     Mode,
@@ -86,9 +87,12 @@ async def _run(
     draft = overview_as_exploration(draft, inputs.headline_metric_ids)
     if draft.kind != "analysis" and draft.kind != "exploration":
         return MissionV2(status="fallback", reason=f"kind:{draft.kind}", trace=trace)
+    draft, defaults = apply_brand_defaults(draft, inputs.brand_prefs)
     with stage_span("spec", mission_id=mission_id, inp=draft) as span:
         spec = compile_question_spec(draft, candidates_from_resolution(dict(inputs.resolution or {})), inputs.read_model,
-                                     None, inputs.as_of, clarify_mode=clarify_mode)
+                                     inputs.prior_spec, inputs.as_of, clarify_mode=clarify_mode)
+        if isinstance(spec, QuestionSpec):
+            spec = with_assumptions(spec, defaults)
         span.set_output(spec)
     if isinstance(spec, Clarification):
         return _clarify_or_fallback(spec, clarify_mode, trace)

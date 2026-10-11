@@ -7,6 +7,7 @@ legacy mission (``start_shadow`` / ``collect_shadow``) behind ``UNDERSTAND_V2_MO
 """
 
 from seleric_swarm.pipeline._engines import ExplorationMap, continue_exploration, follow_up_steps
+from seleric_swarm.pipeline._memory import apply_brand_defaults, brand_prefs, prior_spec
 from seleric_swarm.pipeline._run_plan import PlanReader, PlanRun, findings_as_derivations, run_plan
 from seleric_swarm.pipeline._shadow import (
     LegacyDecision,
@@ -26,10 +27,13 @@ __all__ = [
     "PlanRun",
     "ShadowInputs",
     "ShadowModes",
+    "apply_brand_defaults",
+    "brand_prefs",
     "collect_shadow",
     "continue_exploration",
     "findings_as_derivations",
     "follow_up_steps",
+    "prior_spec",
     "run_mission",
     "run_plan",
     "start_shadow",

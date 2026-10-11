@@ -96,7 +96,9 @@ from seleric_swarm.pipeline import (
     LegacyDecision,
     ShadowInputs,
     ShadowModes,
+    brand_prefs,
     collect_shadow,
+    prior_spec,
     run_mission,
     start_shadow,
 )
@@ -1022,6 +1024,8 @@ def _start_v2_shadow(
             prior_question=str((prior_turn_record or {}).get("query") or ""),
             prior_offer=str((prior_turn_record or {}).get("offer") or ""),
             headline_metric_ids=tuple(_headline_metric_ids(runtime)),
+            prior_spec=prior_spec(prior_turn_record),
+            brand_prefs=brand_prefs().get(str(getattr(settings, "default_brand_id", "") or "")),
             port=McpSemanticPort(mcp, agent_id="v2_shadow") if modes.answer != "off" and mcp is not None else None,
         )
         answer_llm = (
@@ -1062,6 +1066,8 @@ async def _v2_enforce(
             prior_question=str((prior_turn_record or {}).get("query") or ""),
             prior_offer=str((prior_turn_record or {}).get("offer") or ""),
             headline_metric_ids=tuple(_headline_metric_ids(runtime)),
+            prior_spec=prior_spec(prior_turn_record),
+            brand_prefs=brand_prefs().get(str(getattr(settings, "default_brand_id", "") or "")),
             port=McpSemanticPort(mcp, agent_id="v2_mission"),
         )
         outcome = await run_mission(
@@ -1289,6 +1295,12 @@ def _write_turn_record(
         if query_spec is not None:
             # Follow-ups amend this typed decision instead of re-guessing windows.
             record["query_spec"] = query_spec.dump()
+        # The v2 spec (enforce answer, else shadow) so the next turn's spec edits it (M5.2).
+        for key in ("v2_mission", "v2_shadow"):
+            stage = (result.trace or {}).get(key)
+            if isinstance(stage, dict) and isinstance(stage.get("spec"), dict):
+                record["v2_spec"] = stage["spec"]
+                break
         period = _answer_period(result.final_response or "")
         if period:
             record["period_start"], record["period_end"] = period

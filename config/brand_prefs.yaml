@@ -1,0 +1,8 @@
+# Per-brand defaults (M5.2) fed into the v2 spec as stated assumptions. Keys are brand ids.
+# default_window: a window expression used when the question names no period
+#   ({name: ...} or {unit: day|week|month, n: N}); assumptions are shown to the user.
+brands: {}
+# Example:
+#   brands:
+#     "123":
+#       default_window: {unit: day, n: 7}
