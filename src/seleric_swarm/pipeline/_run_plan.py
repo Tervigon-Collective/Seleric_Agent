@@ -97,7 +97,10 @@ class PlanRun:
             "step_errors": [rs.error.code for rs in self.result_sets if rs.error],
             "derivations": len(self.derivations),
             "derive_errors": [d.error.code for d in self.derivations if d.error],
-            "investigations": {k: v.status for k, v in self.investigations.items()},
+            "investigations": {
+                k: {"status": v.status, "findings": len(v.findings), "limitations": v.limitations[:4]}
+                for k, v in self.investigations.items()
+            },
             "explorations": {k: len(v.insights) for k, v in self.explorations.items()},
             "unsupported": self.unsupported,
             "deadline_hit": self.deadline_hit,

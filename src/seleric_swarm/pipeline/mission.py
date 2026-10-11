@@ -161,6 +161,7 @@ async def resolve_measures(draft: QuestionDraft, inputs: ShadowInputs, *, clarif
 
 def _clarify_or_fallback(c: Clarification, clarify_mode: Mode, trace: dict[str, Any]) -> MissionV2:
     trace["clarification"] = c.reason
+    trace["clarification_text"] = c.question_to_user[:200]
     if clarify_mode == "enforce" and c.reason != "understanding_unavailable":
         return MissionV2(status="clarify", clarification=c, trace=trace)
     return MissionV2(status="fallback", reason=f"clarification:{c.reason}", trace=trace)

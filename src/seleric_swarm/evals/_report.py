@@ -169,7 +169,7 @@ def render_markdown(report: Report) -> str:
         truths = "; ".join(f"{t['match'].get('metric_id')}={t['expected']}" for t in case.details.get("truths") or [])
         mission = obs.get("v2_mission")
         lines.append(f"- `{case.id}`: status {case.details.get('status')}; spec {spec_info}; evidence {obs.get('evidence_metrics')}; "
-                     f"truth {truths or '-'}; v2_mission {json.dumps(mission, default=str)[:300]}; v2_shadow {json.dumps(shadow, default=str)[:200]}")
+                     f"truth {truths or '-'}; v2_mission {json.dumps(mission, default=str)[:600]}; v2_shadow {json.dumps(shadow, default=str)[:200]}")
 
     comparison = report.comparison
     lines += ["", "## Baseline", ""]

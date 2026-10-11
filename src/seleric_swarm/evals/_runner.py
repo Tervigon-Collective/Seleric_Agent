@@ -95,7 +95,7 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
     for key in ("v2_mission", "v2_shadow"):
         stage = trace.get(key)
         if isinstance(stage, dict):
-            diagnostics[key] = {k: stage.get(k) for k in ("status", "reason", "disagree", "clarification", "plan", "run", "answer")
+            diagnostics[key] = {k: stage.get(k) for k in ("status", "reason", "clarification_text", "disagree", "clarification", "plan", "run", "answer")
                                 if stage.get(k) is not None}
         elif key == "v2_shadow":
             diagnostics[key] = "absent (UNDERSTAND_V2_MODE/PLANNER_V2_MODE not set in this process?)"

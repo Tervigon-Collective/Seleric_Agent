@@ -1050,6 +1050,10 @@ class _MissionEvidenceStore:
             self._store.put(Artifact(id=evidence_id, workspace_id=self._workspace, artifact_type="evidence",
                                      payload=payload, classification="factual", evidence_ids=[evidence_id],
                                      mission_id=self._mission))
+        except ValueError as exc:
+            # The same row read twice in a mission (two steps, same slice) has the same id: keep the first.
+            if "already exists" not in str(exc):
+                _log.warning("v2_evidence_put_failed", exc_info=True, extra={"evidence_id": evidence_id})
         except Exception:
             _log.warning("v2_evidence_put_failed", exc_info=True, extra={"evidence_id": evidence_id})
 
