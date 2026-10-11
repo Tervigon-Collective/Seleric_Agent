@@ -29,6 +29,7 @@ from seleric_swarm.contracts.pipeline import (
 from seleric_swarm.derive import derive
 from seleric_swarm.graph import MetricGraph, build_graph
 from seleric_swarm.investigate import (
+    Attributor,
     Finding,
     InvestigatePolicy,
     InvestigateRequest,
@@ -38,6 +39,7 @@ from seleric_swarm.investigate import (
 )
 from seleric_swarm.pipeline._context import build_context
 from seleric_swarm.pipeline._engines import ExplorationMap, run_composition, run_explore
+from seleric_swarm.pipeline._gcm import GcmAttributor
 from seleric_swarm.plan import execute
 from seleric_swarm.semantic import SemanticPort, SemanticReadModel
 
@@ -111,6 +113,7 @@ async def run_plan(
     health_sources: Sequence[HealthSource] | None = None,
     selector: Selector | None = None,
     policy: InvestigatePolicy | None = None,
+    graph_gcm: bool = False,
 ) -> PlanRun:
     run = PlanRun()
     windows: dict[str, WindowSpec] = {w.role: w for w in spec.windows}
@@ -131,8 +134,9 @@ async def run_plan(
                     built = build_context(reader)
                     providers = built[0] if providers is None else providers
                     health_sources = built[1] if health_sources is None else health_sources
+                attributor = GcmAttributor(port, read_model, g, as_of) if graph_gcm else None
                 state = await _investigate(step, spec, reader, read_model,
-                                           g, providers, health_sources, selector, policy)
+                                           g, providers, health_sources, selector, policy, attributor)
                 if state is not None:
                     run.investigations[step.step_id] = state
                     run.derivations += findings_as_derivations(step.step_id, state)
@@ -180,6 +184,7 @@ async def _investigate(
     health_sources: Sequence[HealthSource],
     selector: Selector | None,
     policy: InvestigatePolicy | None,
+    attributor: Attributor | None = None,
 ) -> InvestigationState | None:
     metric = step.params.get("metric_id")
     windows = {w.role: w for w in spec.windows}
@@ -191,7 +196,7 @@ async def _investigate(
         filters=tuple(f for f in spec.filters), direction=spec.direction,
     )
     inv = Investigation(reader, read_model, graph, providers=providers, health_sources=health_sources,
-                        selector=selector, policy=policy)
+                        selector=selector, policy=policy, attributor=attributor)
     return await inv.run(request)
 
 

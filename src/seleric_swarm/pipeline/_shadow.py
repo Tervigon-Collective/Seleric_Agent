@@ -50,6 +50,7 @@ class ShadowModes:
     clarify: Mode = "off"
     # Answer shadow runs the plan (real reads through ``port``) and drafts a v2 answer.
     answer: Mode = "off"
+    graph_gcm: Mode = "off"
 
     @property
     def active(self) -> bool:
@@ -180,7 +181,7 @@ async def _run(
                 outcome.notes = plan_notes(spec, inputs.read_model, as_of=as_of, headline_metric_ids=headline)
                 span.set_output(outcome.plan)
             if modes.answer != "off" and inputs.port is not None and not outcome.plan.needs_agent:
-                await _answer_shadow(answer_llm, inputs, spec, outcome, mission_id=mission_id)
+                await _answer_shadow(answer_llm, inputs, spec, outcome, mission_id=mission_id, modes=modes)
         outcome.status = "ok"
     except Exception as exc:
         _log.warning("pipeline_v2_shadow_failed", exc_info=True, extra={"mission_id": mission_id})
@@ -192,12 +193,15 @@ async def _run(
 
 
 async def _answer_shadow(
-    llm: AnswerLLM | None, inputs: ShadowInputs, spec: QuestionSpec, outcome: ShadowOutcome, *, mission_id: str
+    llm: AnswerLLM | None, inputs: ShadowInputs, spec: QuestionSpec, outcome: ShadowOutcome, *, mission_id: str,
+    modes: ShadowModes | None = None,
 ) -> None:
+    modes = modes or ShadowModes()
     assert outcome.plan is not None
     as_of = inputs.as_of_time or datetime.combine(inputs.as_of, dtime(23, 59))
     with stage_span("execute", mission_id=mission_id, inp=outcome.plan):
-        outcome.run = await run_plan(outcome.plan, spec, port=inputs.port, read_model=inputs.read_model, as_of=as_of)
+        outcome.run = await run_plan(outcome.plan, spec, port=inputs.port, read_model=inputs.read_model, as_of=as_of,
+                                   graph_gcm=modes.graph_gcm != "off")
     evidence = Evidence(outcome.run.evidence)
     with stage_span("answer", mission_id=mission_id, inp=spec) as span:
         doc, stats = await answer(llm, inputs.question, spec=spec, evidence=evidence, read_model=inputs.read_model)

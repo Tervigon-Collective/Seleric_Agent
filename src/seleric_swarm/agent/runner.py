@@ -1007,6 +1007,7 @@ def _start_v2_shadow(
         clarify=getattr(settings, "clarify_mode", "off"),
         # enforce runs the v2 answer path itself (_v2_enforce); shadow must not run it twice.
         answer="shadow" if getattr(settings, "answer_v2_mode", "off") == "shadow" else "off",
+        graph_gcm=getattr(settings, "graph_gcm_mode", "off"),
     )
     if not modes.active:
         return None
@@ -1064,6 +1065,7 @@ async def _v2_enforce(
         outcome = await run_mission(
             PydanticAiDraftLLM(model), PydanticAiAnswerLLM(model), inputs,
             mission_id=mission_id, clarify_mode=getattr(settings, "clarify_mode", "off"),
+            graph_gcm=getattr(settings, "graph_gcm_mode", "off") != "off",
         )
     except Exception:
         _log.warning("v2_enforce_failed", exc_info=True, extra={"mission_id": mission_id})

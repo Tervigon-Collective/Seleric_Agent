@@ -2,6 +2,7 @@
 
 from seleric_swarm.investigate.controller import Investigation
 from seleric_swarm.investigate.state import (
+    Attributor,
     Candidate,
     Finding,
     InvestigatePolicy,
@@ -13,6 +14,7 @@ from seleric_swarm.investigate.state import (
 )
 
 __all__ = [
+    "Attributor",
     "Candidate",
     "Finding",
     "InvestigatePolicy",

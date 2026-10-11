@@ -22,6 +22,7 @@ from seleric_swarm.context import (
 from seleric_swarm.contracts.pipeline import FilterSpec, WindowSpec
 from seleric_swarm.graph import MetricGraph
 from seleric_swarm.investigate.state import (
+    Attributor,
     Candidate,
     Finding,
     InvestigatePolicy,
@@ -57,10 +58,12 @@ class Investigation:
         health_sources: Sequence[HealthSource] = (),
         selector: Selector | None = None,
         policy: InvestigatePolicy | None = None,
+        attributor: Attributor | None = None,
     ) -> None:
         self.reader, self.model, self.graph = reader, read_model, graph
         self.providers, self.health_sources = providers, health_sources
         self.selector, self.policy = selector, policy or InvestigatePolicy()
+        self.attributor = attributor
 
     # ---------------------------------------------------------------- entry
     async def run(self, request: InvestigateRequest, state: InvestigationState | None = None) -> InvestigationState:
@@ -249,6 +252,17 @@ class Investigation:
             verdict = "supported_cause" if agrees else "not_moved" if not moved else "inconsistent" if edge.sign else "moved_unsigned"
             st.findings.append(Finding(kind="driver", stage="drivers", subject=edge.source, baseline=b, event=e,
                                        delta=e - b, verdict=verdict, detail=f"lag_days={edge.lag_days}"))
+
+        if self.attributor is not None:
+            try:
+                shares = await self.attributor(target=r.metric_id, baseline=r.baseline, event=r.event, filters=filters)
+            except Exception:
+                _log.warning("investigate_attribution_failed", exc_info=True)
+                shares = {}
+            for node, share in sorted(shares.items(), key=lambda kv: -abs(kv[1])):
+                if node != r.metric_id:
+                    st.findings.append(Finding(kind="driver", stage="drivers", subject=node, share_of_change=share,
+                                               verdict="gcm_attribution"))
 
     # ---------------------------------------------------------------- helpers
     async def _choose(self, st: InvestigationState, segs: list[Segment]) -> Segment:

@@ -109,3 +109,11 @@ class Selector(Protocol):
     """Chooses among typed candidates at a branch point (an LLM in production). Never edits numbers."""
 
     async def __call__(self, *, stage: Stage, candidates: list[Candidate]) -> tuple[str, str]: ...
+
+
+class Attributor(Protocol):
+    """Optional causal attribution of the outcome's change to graph nodes (e.g. DoWhy-GCM)."""
+
+    async def __call__(
+        self, *, target: str, baseline: WindowSpec, event: WindowSpec, filters: tuple[FilterSpec, ...]
+    ) -> dict[str, float]: ...

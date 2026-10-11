@@ -44,11 +44,12 @@ async def run_mission(
     *,
     mission_id: str,
     clarify_mode: Mode = "off",
+    graph_gcm: bool = False,
 ) -> MissionV2:
     started = time.perf_counter()
     out = MissionV2(status="fallback")
     try:
-        out = await _run(llm, answer_llm, inputs, mission_id=mission_id, clarify_mode=clarify_mode)
+        out = await _run(llm, answer_llm, inputs, mission_id=mission_id, clarify_mode=clarify_mode, graph_gcm=graph_gcm)
     except Exception as exc:
         _log.warning("pipeline_v2_mission_failed", exc_info=True, extra={"mission_id": mission_id})
         out = MissionV2(status="fallback", reason=f"error:{type(exc).__name__}")
@@ -57,7 +58,8 @@ async def run_mission(
 
 
 async def _run(
-    llm: DraftLLM | None, answer_llm: AnswerLLM | None, inputs: ShadowInputs, *, mission_id: str, clarify_mode: Mode
+    llm: DraftLLM | None, answer_llm: AnswerLLM | None, inputs: ShadowInputs, *, mission_id: str, clarify_mode: Mode,
+    graph_gcm: bool = False,
 ) -> MissionV2:
     if inputs.port is None or answer_llm is None or llm is None:
         return MissionV2(status="fallback", reason="v2_unavailable")
@@ -86,7 +88,7 @@ async def _run(
         return MissionV2(status="fallback", reason="no_template", spec=spec, trace=trace)
     as_of = inputs.as_of_time or datetime.combine(inputs.as_of, dtime(23, 59))
     with stage_span("execute", mission_id=mission_id, inp=plan):
-        run = await run_plan(plan, spec, port=inputs.port, read_model=inputs.read_model, as_of=as_of)
+        run = await run_plan(plan, spec, port=inputs.port, read_model=inputs.read_model, as_of=as_of, graph_gcm=graph_gcm)
     trace["run"] = run.summary()
     if run.unsupported:
         return MissionV2(status="fallback", reason="unsupported_engine", spec=spec, run=run, trace=trace)
