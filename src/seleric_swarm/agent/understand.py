@@ -23,9 +23,9 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
@@ -154,9 +154,14 @@ class Understanding(PlanSlots):
     grain: Literal["hour", "day", "week", "month", "none"] = Field(
         default="none", description="The time bucket the user asks to see results in, if any."
     )
-    direction: Literal["increase", "decrease", "either"] = Field(
-        default="either", description="The movement the user asks about, if any."
-    )
+    # Models often emit null for a plain lookup; treat that as the default
+    # ("either") instead of failing the whole understand call (live 2026-10-11
+    # golden lookup-net-sales-explicit-day: UnexpectedModelBehavior after
+    # direction=null exhausted output retries).
+    direction: Annotated[
+        Literal["increase", "decrease", "either"],
+        BeforeValidator(lambda v: "either" if v is None else v),
+    ] = Field(default="either", description="The movement the user asks about, if any.")
     part_of_whole: bool = Field(
         default=False,
         description=(
