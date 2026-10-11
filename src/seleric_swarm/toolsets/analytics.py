@@ -42,11 +42,7 @@ from seleric_swarm.analytics.breakdown import Segment, contributions, shares
 from seleric_swarm.analytics.chart_vocabulary import CHART_TYPES, normalize_chart_type
 from seleric_swarm.analytics.comparison import MetricPoint, period_deltas
 from seleric_swarm.analytics.grain import CALCULATION_VERSION, validate_grain_set
-from seleric_swarm.analytics.visualization import (
-    describe_evidence_shape,
-    generate_visualization_spec,
-    reconcile_chart_type,
-)
+from seleric_swarm.analytics.visualization import generate_visualization_spec
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.services.business_state.detectors import robust_zscore
 from seleric_swarm.services.markdown import table_cell
@@ -1041,12 +1037,12 @@ async def generate_visualization(
             f"{', '.join(CHART_TYPES)}.",
             error_code="VISUALIZATION_FAILED",
         )
-    shape = describe_evidence_shape(evidence)
-    resolved, chart_warnings = reconcile_chart_type(chart_type, shape)
-    spec = generate_visualization_spec(evidence, intent, title, chart_type=resolved)
+    spec = generate_visualization_spec(evidence, intent, title, chart_type=chart_type)
 
     if "error" in spec:
         return _refuse(spec["error"], error_code="VISUALIZATION_FAILED")
+
+    chart_warnings = list(spec.get("warnings") or [])
 
     # Idempotent: the same chart over the same evidence is one artifact. A
     # revision or a recovery retry of the mission re-asks for the chart it
@@ -1071,6 +1067,9 @@ async def generate_visualization(
         )
     )
 
+    note = ""
+    if chart_warnings:
+        note = " Adjusted for readability: " + "; ".join(chart_warnings) + "."
     return ToolResult(
         success=True,
         artifact_ids=[artifact.id],
@@ -1078,6 +1077,7 @@ async def generate_visualization(
             f"Generated {spec['chart_type']} chart visualization. It is attached to your answer "
             "automatically: do not link, embed or describe it as an image in final_response, and "
             "do not call generate_visualization again for the same evidence."
+            + note
         ),
         provenance=_provenance(evidence_ids),
         warnings=[f"chart adjusted: {w}" for w in chart_warnings],

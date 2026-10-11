@@ -41,6 +41,13 @@ _SINGLE_POINT_FORMS: frozenset[str] = frozenset(
     {"bar", "pie", "donut", "funnel", "radar", "heatmap"}
 )
 
+# Caps for a readable cartesian chart. Beyond these the legend and dual axes
+# drown the question (live 2026-10-11 MS3-5637552cae: ad_spend×clicks×cvr×roas
+# across ~12 campaigns → 40+ series on one grouped_bar). Prefer one metric and
+# the top entities by magnitude; never invent a second chart from user wording.
+_MAX_CHART_SERIES = 12
+_MAX_CHART_CATEGORIES = 8
+
 #: Forms that add series values together (visually or semantically). Every
 #: stacked segment must share one unit group — see ``infer_unit_group``.
 #: Composition forms (pie/donut/funnel) likewise require a single group:
@@ -584,6 +591,68 @@ def _build_heatmap(
     })
 
 
+def _pick_primary_metric(metrics: list[str], unit_groups: dict[str, str]) -> str:
+    """One metric for a crowded multi-metric chart: prefer ROAS, then any ratio, else first."""
+    ratio_metrics = [m for m in metrics if unit_groups.get(m) == "ratio"]
+    for mid in ratio_metrics:
+        if "roas" in mid.lower():
+            return mid
+    if ratio_metrics:
+        return ratio_metrics[0]
+    return metrics[0]
+
+
+def _category_key(item: EvidenceArtifact, dim_keys: list[str]) -> str:
+    return _dimension_key(item, dim_keys) if dim_keys else "Total"
+
+
+def thin_evidence_for_chart(
+    evidence: list[EvidenceArtifact],
+) -> tuple[list[EvidenceArtifact], list[str]]:
+    """Keep a chart readable: one metric when entities×metrics explode, top categories only.
+
+    Returns the thinned evidence and human warnings describing what was dropped.
+    Does not inspect user wording — only the evidence shape.
+    """
+    if not evidence:
+        return evidence, []
+    warnings: list[str] = []
+    metrics = list(dict.fromkeys(e.metric_id for e in evidence))
+    dim_keys = _varying_dimension_keys(evidence)
+    categories = sorted({_category_key(e, dim_keys) for e in evidence}) if dim_keys else []
+    projected = max(len(metrics), 1) * max(len(categories), 1)
+    kept = list(evidence)
+
+    if len(metrics) > 1 and len(categories) > 1 and projected > _MAX_CHART_SERIES:
+        groups = unit_groups_for_evidence(evidence)
+        primary = _pick_primary_metric(metrics, groups)
+        kept = [e for e in kept if e.metric_id == primary]
+        dropped = [m for m in metrics if m != primary]
+        warnings.append(
+            f"chart kept only {_format_metric_label(primary)} "
+            f"(dropped {', '.join(_format_metric_label(m) for m in dropped)}); "
+            "pass evidence for one metric per chart when comparing many entities"
+        )
+        metrics = [primary]
+
+    if dim_keys and len(categories) > _MAX_CHART_CATEGORIES:
+        totals: dict[str, float] = defaultdict(float)
+        for e in kept:
+            if e.value is None:
+                continue
+            totals[_category_key(e, dim_keys)] += abs(float(e.value))
+        ranked = sorted(totals, key=lambda k: totals[k], reverse=True)
+        keep_cats = set(ranked[:_MAX_CHART_CATEGORIES])
+        before = len(kept)
+        kept = [e for e in kept if _category_key(e, dim_keys) in keep_cats]
+        if len(kept) < before:
+            warnings.append(
+                f"chart shows top {_MAX_CHART_CATEGORIES} entities by magnitude "
+                f"({len(categories) - _MAX_CHART_CATEGORIES} others omitted for readability)"
+            )
+    return kept, warnings
+
+
 def generate_visualization_spec(
     evidence: list[EvidenceArtifact],
     intent: str = "",
@@ -601,7 +670,6 @@ def generate_visualization_spec(
     if not evidence:
         return {"error": "No evidence provided."}
 
-    shape = describe_evidence_shape(evidence)
     requested = normalize_chart_type(chart_type) if chart_type else None
     if chart_type and requested is None:
         return {
@@ -611,13 +679,24 @@ def generate_visualization_spec(
             )
         }
 
+    evidence, thin_warnings = thin_evidence_for_chart(evidence)
+
     # Only an explicitly requested form can draw from a single point; a
     # trend form over one period says nothing.
     if len(evidence) < 2 and requested not in _SINGLE_POINT_FORMS:
+        if thin_warnings:
+            return {
+                "error": (
+                    "Chart evidence was thinned for readability and left fewer than "
+                    "2 points. Pass evidence for one metric and the entities to plot."
+                )
+            }
         return {"error": "Insufficient data points for visualization. Need at least 2 data points."}
 
+    shape = describe_evidence_shape(evidence)
     unit_groups = unit_groups_for_evidence(evidence)
     resolved, warnings = reconcile_chart_type(requested, shape, unit_groups)
+    warnings = [*thin_warnings, *warnings]
 
     metrics = list(dict.fromkeys(e.metric_id for e in evidence))
     varying_dim_keys = _varying_dimension_keys(evidence)
