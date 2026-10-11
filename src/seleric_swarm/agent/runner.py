@@ -1048,7 +1048,8 @@ class _MissionEvidenceStore:
     def put_evidence(self, payload: dict[str, Any], evidence_id: str) -> None:
         try:
             self._store.put(Artifact(id=evidence_id, workspace_id=self._workspace, artifact_type="evidence",
-                                     payload=payload, classification="factual", mission_id=self._mission))
+                                     payload=payload, classification="factual", evidence_ids=[evidence_id],
+                                     mission_id=self._mission))
         except Exception:
             _log.warning("v2_evidence_put_failed", exc_info=True, extra={"evidence_id": evidence_id})
 

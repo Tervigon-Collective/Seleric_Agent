@@ -185,7 +185,9 @@ async def _run_step(
             query_filters.append({"dimension": dim, "operator": "equals", "values": values})
 
     elapsed_through: int | None = None
-    if step.elapsed_only:
+    # A day that has already finished needs no elapsed-hours cut: read it whole (replays, evals,
+    # and plans made just before midnight).
+    if step.elapsed_only and in_progress_day(as_of) is not None:
         elapsed_through, error = _elapsed_error(step, window, as_of, read_model)
         if error is not None:
             return _error(step, windows=windows, read_model=read_model, code=error[0], message=error[1])

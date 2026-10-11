@@ -125,3 +125,26 @@ async def test_deadline_keeps_what_it_has() -> None:
                          as_of=AS_OF, deadline_s=0.05)
     assert run.deadline_hit == ["queries"] and run.result_sets == []
     assert run.summary()["derive_errors"]  # derivations refuse on the missing inputs, never invent
+
+
+async def test_why_without_a_baseline_uses_the_window_before() -> None:
+    s = spec("why_single_metric").model_copy(update={"windows": (EVENT,)})
+    run = await run_plan(build_plan(s, MODEL, as_of=date(2026, 10, 10)), s, port=FactPort(), read_model=MODEL, as_of=AS_OF)
+    (state,) = run.investigations.values()
+    assert state.request.baseline.start == date(2026, 10, 8) and state.status == "done"
+
+
+async def test_resolve_measures_uses_concept_search() -> None:
+    from seleric_swarm.contracts.pipeline import MeasurePhrase, QuestionDraft
+    from seleric_swarm.pipeline import ShadowInputs
+    from seleric_swarm.pipeline.mission import resolve_measures
+    from seleric_swarm.semantic import ConceptResolution
+
+    class Port(FactPort):
+        async def resolve_concept(self, text, axes=None):  # type: ignore[no-untyped-def]
+            return ConceptResolution(kind="disambiguation", suggestions=("zz_take",))
+
+    draft = QuestionDraft(kind="analysis", shape="lookup", measures=(MeasurePhrase(words="money in", metric_id="Money"),))
+    inputs = ShadowInputs(question="q", as_of=date(2026, 10, 10), read_model=MODEL, port=Port())  # type: ignore[arg-type]
+    assert (await resolve_measures(draft, inputs, clarify_mode="off")).measures[0].metric_id == "zz_take"
+    assert (await resolve_measures(draft, inputs, clarify_mode="enforce")).measures[0].metric_id == "Money"

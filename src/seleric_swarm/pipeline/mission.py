@@ -15,7 +15,12 @@ from typing import Any, Literal
 
 from seleric_swarm.answer import AnswerLLM, Evidence, TurnSummary, answer, render, turn_summary
 from seleric_swarm.config.llm_roles import load_prompt
-from seleric_swarm.contracts.pipeline import AnswerDocument, Clarification, QuestionSpec
+from seleric_swarm.contracts.pipeline import (
+    AnswerDocument,
+    Clarification,
+    QuestionDraft,
+    QuestionSpec,
+)
 from seleric_swarm.observability import stage_span
 from seleric_swarm.pipeline._memory import apply_brand_defaults, with_assumptions
 from seleric_swarm.pipeline._run_plan import PlanRun, run_plan
@@ -87,6 +92,7 @@ async def _run(
     draft = overview_as_exploration(draft, inputs.headline_metric_ids)
     if draft.kind != "analysis" and draft.kind != "exploration":
         return MissionV2(status="fallback", reason=f"kind:{draft.kind}", trace=trace)
+    draft = await resolve_measures(draft, inputs, clarify_mode=clarify_mode)
     draft, defaults = apply_brand_defaults(draft, inputs.brand_prefs)
     with stage_span("spec", mission_id=mission_id, inp=draft) as span:
         spec = compile_question_spec(draft, candidates_from_resolution(dict(inputs.resolution or {})), inputs.read_model,
@@ -128,6 +134,29 @@ async def _run(
         return MissionV2(status="fallback", reason="answer_failed", spec=spec, run=run, trace=trace)
     turn = turn_summary(spec, doc.draft, evidence, inputs.read_model)
     return MissionV2(status="answered", doc=doc, spec=spec, run=run, turn=turn, trace=trace)
+
+
+async def resolve_measures(draft: QuestionDraft, inputs: ShadowInputs, *, clarify_mode: Mode) -> QuestionDraft:
+    """A measure the draft could not name exactly is resolved by the catalogue's concept search
+    (Core owns synonyms). With clarification off, an ambiguous concept takes its first suggestion."""
+    if inputs.port is None:
+        return draft
+    known = inputs.read_model.metric_ids()
+    labels = {(m.label or "").casefold(): m.id for m in inputs.read_model.metrics}
+    out = []
+    for m in draft.measures:
+        if m.metric_id in known or (m.metric_id or "").casefold() in labels or not m.words:
+            out.append(m)
+            continue
+        try:
+            res = await inputs.port.resolve_concept(m.words)
+        except Exception:
+            _log.warning("resolve_concept_failed", exc_info=True)
+            out.append(m)
+            continue
+        pick = res.metric_id or (res.suggestions[0] if res.suggestions and clarify_mode != "enforce" else None)
+        out.append(m.model_copy(update={"metric_id": pick}) if pick and pick in known else m)
+    return draft.model_copy(update={"measures": tuple(out)})
 
 
 def _clarify_or_fallback(c: Clarification, clarify_mode: Mode, trace: dict[str, Any]) -> MissionV2:

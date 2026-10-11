@@ -10,7 +10,7 @@ import asyncio
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from seleric_swarm.context import AsyncContextProvider, ContextProvider, HealthSource
@@ -217,7 +217,12 @@ async def _investigate(
 ) -> InvestigationState | None:
     metric = step.params.get("metric_id")
     windows = {w.role: w for w in spec.windows}
-    if not isinstance(metric, str) or "event" not in windows or "baseline" not in windows:
+    if isinstance(metric, str) and "event" in windows and "baseline" not in windows:
+        # "Why did X rise yesterday?": compare with the equal-length window just before.
+        ev = windows["event"]
+        span = ev.end - ev.start + timedelta(days=1)
+        windows["baseline"] = WindowSpec(role="baseline", start=ev.start - span, end=ev.start - timedelta(days=1))
+    if not isinstance(metric, str) or "event" not in windows:
         _log.info("investigate_skipped", extra={"step": step.step_id})
         return None
     request = InvestigateRequest(
