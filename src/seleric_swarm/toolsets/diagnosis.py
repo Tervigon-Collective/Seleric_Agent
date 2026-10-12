@@ -414,7 +414,11 @@ _DIRECTION_WORDS = {
 }
 
 
-def _summary(report: engine.DiagnosisReport, lineage: dict[str, engine.MetricMeta]) -> str:
+def _summary(
+    report: engine.DiagnosisReport,
+    lineage: dict[str, engine.MetricMeta],
+    levers: list[str] | None = None,
+) -> str:
     """What the model reads: the plain-language skeleton plus plain-language checks.
 
     Internal labels, ids and statistics stay in the artifact (provenance) for the
@@ -440,6 +444,7 @@ def _summary(report: engine.DiagnosisReport, lineage: dict[str, engine.MetricMet
             + (f" Moves almost identically with {', '.join(engine._label(x, lineage) for x in f.inseparable_from)}, so"
                " their effects cannot be told apart." if f.inseparable_from else "")
         )
+    lines += levers or []
     if report.data_quality:
         lines.append("DATA NOTES: " + " ".join(report.data_quality))
     lines.append(
@@ -448,6 +453,222 @@ def _summary(report: engine.DiagnosisReport, lineage: dict[str, engine.MetricMet
         "fill a table cell, column or period it does not give; no ids, snake_case labels, z-scores or field names."
     )
     return "\n".join(lines)
+
+
+def _lever_tree(
+    outcome: str, roots: list[str], lineage: dict[str, engine.MetricMeta], usable: Any,
+) -> tuple[list[str], list[tuple[str, tuple[str, ...]]]]:
+    """The volumes and the rates linking them, out from the outcome's additive parts, from lineage only.
+
+    A rate built on a volume of the tree joins it, and so do its other components: spend brings cost per
+    impression (and impressions), cost per click (and clicks); impressions bring clicks per impression and
+    any per-impression rate. A rate that shares a component with the outcome in the outcome's own unit is a
+    sibling of the outcome (another return on the same spend), not a lever of it.
+    """
+    out_meta = lineage.get(outcome, engine.MetricMeta(outcome))
+    volumes = [r for r in dict.fromkeys(roots) if lineage.get(r, engine.MetricMeta(r)).additive and usable(r)]
+    rates: list[tuple[str, tuple[str, ...]]] = []
+    frontier = list(volumes)
+    for _ in range(P.DIAG_LEVER_DEPTH):
+        nxt: list[str] = []
+        for x in frontier:
+            for r in lineage.values():
+                if r.additive or r.id == outcome or x not in r.depends_on or any(r.id == q for q, _ in rates):
+                    continue
+                if len(r.depends_on) > 2 or not usable(r.id):
+                    continue
+                if r.unit == out_meta.unit and set(r.depends_on) & set(out_meta.depends_on):
+                    continue
+                others = [d for d in r.depends_on if d != x]
+                if any(not lineage.get(o, engine.MetricMeta(o)).additive or not usable(o) for o in others):
+                    continue
+                rates.append((r.id, r.depends_on))
+                for o in others:
+                    if o not in volumes:
+                        volumes.append(o)
+                        nxt.append(o)
+        frontier = nxt
+    return volumes[: P.DIAG_LEVER_MAX_VOLUMES], [
+        (r, deps) for r, deps in rates if all(d in volumes[: P.DIAG_LEVER_MAX_VOLUMES] for d in deps)
+    ][: P.DIAG_LEVER_MAX_RATES]
+
+
+def _rate_orientation(
+    rate: dict[date, float], a: dict[date, float], b: dict[date, float], days: list[date],
+) -> tuple[bool, float] | None:
+    """(a divides b?, k) with rate = k·a/b (or k·b/a) on every day the three are finite, as the data verify."""
+    best: tuple[float, bool, float] | None = None
+    for a_over_b in (True, False):
+        ks = []
+        for d in days:
+            r, x, y = rate.get(d), a.get(d), b.get(d)
+            if r is None or x is None or y is None or not all(map(math.isfinite, (r, x, y))):
+                continue
+            num, den = (x, y) if a_over_b else (y, x)
+            if abs(num) > 1e-12 and abs(den) > 1e-12 and abs(r) > 1e-12:
+                ks.append(r / (num / den))
+        if len(ks) < 3:
+            continue
+        ks.sort()
+        k = ks[len(ks) // 2]
+        spread = sorted(abs(v / k - 1) for v in ks)[len(ks) // 2]
+        if spread <= P.DIAG_IDENTITY_TOLERANCE and (best is None or spread < best[0]):
+            best = (spread, a_over_b, k)
+    return None if best is None else (best[1], best[2])
+
+
+def _same_pair(a: tuple[float, float], b: tuple[float, float]) -> bool:
+    return all(math.isclose(x, y, rel_tol=1e-9, abs_tol=1e-12) for x, y in zip(a, b, strict=True))
+
+
+def _lever_values(
+    volumes: list[str], rates: list[tuple[str, tuple[str, ...]]], series: dict[str, dict[date, float]],
+    ref_days: list[date], event_days: list[date], history: list[date],
+) -> tuple[dict[str, tuple[float, float]], list[tuple[str, str, str]]]:
+    """Period values (reference, event) of every lever, rates as ratios of the period sums of their parts,
+    and the splits num = rate × den the data verify."""
+    vals: dict[str, tuple[float, float]] = {}
+    for v in volumes:
+        s = series.get(v) or {}
+        if any(d in s for d in event_days) or any(d in s for d in ref_days):
+            pair = (sum(s.get(d, 0.0) for d in ref_days), sum(s.get(d, 0.0) for d in event_days))
+            if not any(_same_pair(pair, seen) for seen in vals.values()):  # a catalogue twin: the same quantity
+                vals[v] = pair
+    splits: list[tuple[str, str, str]] = []
+    for r, deps in rates:
+        rs = series.get(r) or {}
+        if len(deps) == 2 and all(d in vals for d in deps):
+            o = _rate_orientation(rs, series.get(deps[0]) or {}, series.get(deps[1]) or {}, history)
+            if o is None:
+                continue
+            a_over_b, k = o
+            num, den = deps if a_over_b else deps[::-1]
+            (n0, n1), (d0, d1) = vals[num], vals[den]
+            pair = (k * n0 / d0, k * n1 / d1) if abs(d0) > 1e-12 and abs(d1) > 1e-12 else None
+            if pair is not None and not any(_same_pair(pair, seen) for seen in vals.values()):
+                vals[r] = pair
+                splits.append((num, r, den))
+        elif len(deps) == 1 and deps[0] in vals:
+            base = series.get(deps[0]) or {}
+            per: list[float] = []
+            for days in (ref_days, event_days):
+                w = [(rs[d], base[d]) for d in days if d in rs and d in base and math.isfinite(rs[d])]
+                tot = sum(b for _, b in w)
+                per.append(sum(x * b for x, b in w) / tot if tot else math.nan)
+            if all(math.isfinite(x) for x in per) and not any(_same_pair((per[0], per[1]), seen) for seen in vals.values()):
+                vals[r] = (per[0], per[1])
+    return vals, splits
+
+
+def _lever_lines(
+    scope: str, vals: dict[str, tuple[float, float]], splits: list[tuple[str, str, str]],
+    lineage: dict[str, engine.MetricMeta],
+) -> list[str]:
+    def one(m: str) -> str:
+        a, b = vals[m]
+        return f"{engine._label(m, lineage)} {engine._val(a, m, lineage)} → {engine._val(b, m, lineage)} ({engine._chg(b, a)})"
+
+    def move(m: str) -> float:
+        a, b = vals[m]
+        return abs(math.log(b / a)) if a > 0 and b > 0 else 0.0
+
+    parts = [f"{engine._label(n, lineage)} {engine._chg(vals[n][1], vals[n][0])} = "
+             f"{engine._label(d, lineage)} {engine._chg(vals[d][1], vals[d][0])} × "
+             f"{engine._label(r, lineage)} {engine._chg(vals[r][1], vals[r][0])}"
+             for n, r, d in splits if n in vals and r in vals and d in vals]
+    ranked = sorted((m for m in vals if not lineage.get(m, engine.MetricMeta(m)).additive), key=move, reverse=True)
+    lines = [f"{scope}: " + "; ".join(one(m) for m in vals if lineage.get(m, engine.MetricMeta(m)).additive)]
+    if parts:
+        lines.append(f"  how it splits: {'; '.join(parts)}")
+    if ranked:
+        lines.append(f"  rates, largest move first: {'; '.join(one(m) for m in ranked)}")
+    return lines
+
+
+async def _levers(
+    ctx: RunContext[SelericDeps], report: engine.DiagnosisReport, outcome: str,
+    lineage: dict[str, engine.MetricMeta], filters: dict[str, Any], event_days: list[date], ref_days: list[date],
+    hist_start: date, history: list[date], index: dict[str, str], tz: Any, units: dict[str, str],
+) -> tuple[list[str], list[str], dict[str, float]]:
+    """The outcome's parts, the rates that link them and how each moved — in total and in the segments that
+    carried the change (live 2026-10-09: "why did ROAS rise vs last week" stopped at margin and spend; the
+    analyst answer is one level down: Meta spend +82% bought cheaper impressions (cost per thousand −17%) that
+    clicked less (−16%)). Lineage proposes, the data verify; arithmetic only, never causes."""
+    if not event_days or not ref_days:
+        return [], [], {}
+    roots = [t.metric for t in report.decomposition] if report.decomposition else [outcome]
+    cat = ctx.deps.catalogue
+    basis, _ = cat.date_basis_for(outcome) if hasattr(cat, "date_basis_for") else (None, None)
+    # The first dimension in hierarchy order (platform before campaign before ad) with named segments, and in it
+    # the segment that added most to the change and the one that offset most: opposite moves (Meta's return falling
+    # while Google's rose, live 2026-10-09) are the story, and a "localised" test hides them.
+    where = next((d for d in report.dimensions if any(s.segment != _UNSET_SEGMENT for s in d.top)), None)
+    named = [s for s in (where.top if where else []) if s.segment != _UNSET_SEGMENT and s.share_of_change is not None]
+    picks = [min(named, key=lambda s: s.share_of_change, default=None), max(named, key=lambda s: s.share_of_change, default=None)]  # the offset first
+    segs = list(dict.fromkeys(s.segment for s in picks if s is not None))[: P.DIAG_LEVER_SEGMENTS]
+    seg_dim = where.dimension if where and segs else None
+
+    def usable(m: str) -> bool:
+        if not cat.has_metric(m) or not _supports_brand(ctx, m):
+            return False
+        if seg_dim and seg_dim not in set(cat.supported_dimensions_for(m)):
+            return False
+        b, _ = cat.date_basis_for(m) if hasattr(cat, "date_basis_for") else (None, None)
+        return not (basis and b and b != basis)
+
+    volumes, rates = _lever_tree(outcome, roots, lineage, usable)
+    if not rates:
+        return [], [], {}
+    metrics = list(dict.fromkeys([*volumes, *(r for r, _ in rates)]))
+    span_start, span_end = hist_start, max(event_days)
+    sem = asyncio.Semaphore(6)
+
+    async def get(m: str, dim: str | None) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        async with sem:
+            return await _fetch_daily(ctx, m, span_start, span_end, filters, dimension=dim)
+
+    jobs = [(m, None) for m in metrics] + ([(m, seg_dim) for m in metrics] if seg_dim else [])
+    results = await asyncio.gather(*(get(m, d) for m, d in jobs))
+    scopes: dict[str, dict[str, dict[date, float]]] = {"": {}}
+    args_for: dict[tuple[str, str | None], dict[str, Any]] = {}
+    for (m, d), (res, args) in zip(jobs, results, strict=True):
+        if args is None or res.get("_dropped_filters"):
+            continue
+        args_for[(m, d)] = args
+        if d is None:
+            scopes[""][m] = _parse_series(res, m)
+        else:
+            for seg, vals in _parse_segments(res, m, d).items():
+                if seg in segs:
+                    scopes.setdefault(seg, {})[m] = vals
+    lines: list[str] = []
+    evidence: list[str] = []
+    numbers: dict[str, float] = {}
+    cited = sorted({*ref_days, *event_days})
+    for seg in ["", *segs]:
+        series = scopes.get(seg) or {}
+        vals, splits = _lever_values(volumes, rates, series, ref_days, event_days, history)
+        if not any(not lineage.get(m, engine.MetricMeta(m)).additive for m in vals):
+            continue
+        label = f"{engine._label(seg_dim, lineage) if seg_dim else ''} {seg}".strip() if seg else "All"
+        lines += _lever_lines(label, vals, splits, lineage)
+        for m, (a, b) in vals.items():
+            numbers[f"lever:{seg or 'all'}:{m}:reference"] = a
+            numbers[f"lever:{seg or 'all'}:{m}:event"] = b
+            if (m, seg_dim if seg else None) in args_for:
+                evidence += _evidence_rows(
+                    ctx, m, series.get(m, {}), cited, args_for[(m, seg_dim if seg else None)], index, tz,
+                    {seg_dim: seg} if seg and seg_dim else None, unit=units.get(m),
+                )
+    if not lines:
+        return [], [], {}
+    head = (
+        f"LEVERS (arithmetic links, not causes; {ref_days[0]}..{ref_days[-1]} → {event_days[0]}..{event_days[-1]}): "
+        "each part of the outcome, the rates that link the parts and how each moved. Explain the change "
+        "through them — which volume grew, and which rate (price, click-through, attention, conversion) moved "
+        "against the outcome — first for the segment that moved most against it:"
+    )
+    return [head, *lines], evidence, numbers
 
 
 # A lever is judged against at least this many of its own normal days, and is out of line beyond this robust z.
@@ -1308,15 +1529,24 @@ async def _diagnose(
         named_metrics.update(driver_metrics)
         if own := _outcome_on_its_normal_days(metric_id, series, event_days, reference_days, history_days, lineage):
             named_text = own + "\n" + named_text
+    lever_ref = baseline or [
+        date.fromisoformat(x)
+        for x in ((report.event.previous_period.get("days") or []) if report.event else [])
+    ]
+    lever_lines, lever_ids, lever_numbers = await _levers(
+        ctx, report, metric_id, lineage, filters, event_days, sorted(lever_ref), hist_start, history_days, index, tz,
+        units,
+    )
+    evidence_ids += lever_ids
     finding = Finding(
         finding_type="diagnosis",
         statement=report.headline,
         evidence_ids=evidence_ids,
         # the named drivers' averages are derived here: recorded so the answer may print them
-        metrics={**_finding_metrics(report), **named_metrics},
+        metrics={**_finding_metrics(report), **named_metrics, **lever_numbers},
     )
     finding_id = _put_derived(ctx, "finding", finding, evidence_ids)
-    summary = _summary(report, lineage)
+    summary = _summary(report, lineage, lever_lines)
     if named_text:
         summary += "\n" + named_text
     if scope_line := _scope_line(filters):
