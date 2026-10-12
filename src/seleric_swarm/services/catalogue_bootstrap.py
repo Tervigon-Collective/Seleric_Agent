@@ -223,6 +223,24 @@ class CatalogueSnapshot:
                 return str(vol) if vol else None
         return None
 
+    def ratio_components_for(self, metric_id: str) -> dict | None:
+        """Signed ratio algebra for a ratio metric: numerator, denominator, multiplier.
+        Returns None for additive metrics or when not declared in the canonical contract."""
+        for meta in self.metrics:
+            if meta.id == metric_id:
+                rc = (meta.raw or {}).get("ratio_components")
+                return rc if rc else None
+        return None
+
+    def ratio_component_members_for(self, metric_id: str) -> dict[str, list[str]] | None:
+        """Resolved ratio component members per view (Cube measure names) from the canonical contract.
+        Returns None for additive metrics or when not declared."""
+        for meta in self.metrics:
+            if meta.id == metric_id:
+                rcm = (meta.raw or {}).get("ratio_component_members")
+                return rcm if rcm else None
+        return None
+
     def closest_metric_ids(self, query: str, n: int = 5) -> list[str]:
         """Best-effort id suggestions for a bad pick — feeds ``ModelRetry``."""
         import difflib
