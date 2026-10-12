@@ -176,7 +176,8 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
 
     elapsed = trace.get("elapsed_seconds")
     v2_latency, v2_tokens, v2_calls = _v2_costs(trace)
-    usage = trace.get("usage") if isinstance(trace.get("usage"), dict) else {}
+    raw_usage = trace.get("usage")
+    usage: dict[str, Any] = raw_usage if isinstance(raw_usage, dict) else {}
     if v2_tokens is None and isinstance(usage.get("total_tokens"), int):
         v2_tokens = usage["total_tokens"]
     if v2_calls is None and isinstance(usage.get("requests"), int):
