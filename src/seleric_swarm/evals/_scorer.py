@@ -19,6 +19,8 @@ a missing expectation is never scored as a pass):
 
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -35,8 +37,10 @@ HIGHER_IS_BETTER = (
     "sections_covered",
     "chart_reconciles",
     "numbers_grounded",
+    "mentions_ok",
+    "forbid_clean",
 )
-LOWER_IS_BETTER = ("revisions", "latency_ms", "llm_calls", "tokens", "query_calls")
+LOWER_IS_BETTER = ("revisions", "latency_ms", "llm_calls", "tokens", "query_calls", "cost_usd")
 SCORE_METRICS = HIGHER_IS_BETTER + LOWER_IS_BETTER
 
 # A value and its truth can be the *same* number carried through different
@@ -51,6 +55,67 @@ def _within(value: float, expected: float, tolerance: float) -> bool:
     """Compare two numbers allowing for float representation, not for error."""
     floor = REPRESENTATION_EPS * max(abs(expected), 1.0)
     return abs(value - expected) <= max(tolerance, floor)
+
+
+_FIGURE = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(%|k|K|m|M|L|lakh|Cr|cr|crore)?(?![\w])")
+_SCALES = {"k": 1e3, "K": 1e3, "m": 1e6, "M": 1e6, "L": 1e5, "lakh": 1e5, "Cr": 1e7, "cr": 1e7, "crore": 1e7}
+
+
+def response_figures(text: str, *, ignore_text: str = "") -> list[tuple[str, list[float], int]]:
+    """Figures a reader would take as claims: ``(raw, candidate values, decimals shown)``.
+
+    Candidates cover the ways one evidence value is printed: as is, x100 for a
+    share shown as a percent, and expanded K/M/L/Cr suffixes. Years, day-of-month
+    style small integers and anything the user typed themselves are not claims.
+    """
+    typed = {m.group(0).strip() for m in _FIGURE.finditer(ignore_text)}
+    out: list[tuple[str, list[float], int]] = []
+    for m in _FIGURE.finditer(text):
+        raw = m.group(0).strip()
+        whole, frac, suffix = m.group(1).replace(",", ""), m.group(2), m.group(3)
+        if raw in typed:
+            continue
+        number = float(f"{whole}.{frac}" if frac else whole)
+        if frac is None and suffix is None and ("," not in m.group(1)) and (number < 100 or 1900 <= number <= 2100):
+            continue
+        decimals = len(frac) if frac else 0
+        if suffix == "%":
+            candidates = [number, number / 100]
+        elif suffix in _SCALES:
+            candidates = [number * _SCALES[suffix]]
+        else:
+            candidates = [number]
+        out.append((raw, candidates, decimals))
+    return out
+
+
+def _print_match(figure: float, decimals: int, value: float) -> bool:
+    """True when ``value`` prints as ``figure`` at the shown precision."""
+    return abs(figure - value) <= 0.5 * 10.0 ** (-decimals) + REPRESENTATION_EPS * max(abs(value), 1.0)
+
+
+def figures_grounded(observed: ObservedCase, question: str = "") -> tuple[float | None, list[str]]:
+    """Fraction of the answer's figures that equal an evidence value as printed.
+
+    ``None`` when the answer states no figures, so a narrative answer is not
+    scored as grounded or ungrounded. Returns the ungrounded figures too.
+    """
+    figures = response_figures(observed.response_text, ignore_text=question)
+    if not figures:
+        return None, []
+    values = [float(e.value) for e in observed.evidence if isinstance(e.value, (int, float)) and not isinstance(e.value, bool)]
+    totals = [sum(values)] if values else []
+    pool = values + totals
+    ungrounded: list[str] = []
+    for raw, candidates, decimals in figures:
+        hit = any(
+            _print_match(c, decimals, v) or _print_match(c, decimals, v * 100)
+            for c in candidates
+            for v in pool
+        )
+        if not hit:
+            ungrounded.append(raw)
+    return 1.0 - len(ungrounded) / len(figures), ungrounded
 
 
 @dataclass(frozen=True)
@@ -264,12 +329,15 @@ def score_case(
         metrics["chart_reconciles"] = 1.0 if not step_errors else 0.0
     else:
         metrics["chart_reconciles"] = None
-    # Numbers are grounded when every evidence row carries an id (ObservedEvidence always does)
-    # and the response is not empty while status is completed/partial.
-    if observed.evidence:
-        metrics["numbers_grounded"] = 1.0
+    # Numbers are grounded when each figure the answer states equals an evidence
+    # value (or the sum of them) at the precision it prints. Narrative answers
+    # with no figures are unscored (None), never a pass.
+    grounded, ungrounded = figures_grounded(observed, question=observed.question)
+    if grounded is not None:
+        metrics["numbers_grounded"] = grounded
+        if ungrounded:
+            details["ungrounded_figures"] = ungrounded
     elif observed.status in ("completed", "partial") and observed.response_text:
-        # Narrative-only answer: score unknown rather than fail.
         metrics["numbers_grounded"] = None
     else:
         metrics["numbers_grounded"] = 0.0 if "report" in case.tags else None
@@ -278,6 +346,10 @@ def score_case(
 
     missing_mentions = [m for m in case.expect.must_mention if m not in observed.response_text]
     forbidden_hits = [f for f in case.expect.forbid if f in observed.response_text]
+    must = case.expect.must_mention
+    metrics["mentions_ok"] = (1.0 - len(missing_mentions) / len(must)) if must else None
+    metrics["forbid_clean"] = (0.0 if forbidden_hits else 1.0) if case.expect.forbid else None
+    metrics["cost_usd"] = observed.cost_usd
     if missing_mentions:
         details["missing_mentions"] = missing_mentions
     if forbidden_hits:
@@ -292,12 +364,24 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def percentile(values: list[float], q: float) -> float | None:
+    """Nearest-rank percentile; ``None`` for no data."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = max(1, math.ceil(q * len(ordered)))
+    return ordered[min(rank, len(ordered)) - 1]
+
+
 def aggregate(cases: list[EvalCase], scores: list[CaseScore]) -> SuiteScore:
     def _aggregate_for(subset: list[CaseScore]) -> dict[str, float | None]:
         result: dict[str, float | None] = {}
         for metric in SCORE_METRICS:
             present = [s.metrics[metric] for s in subset if s.metrics.get(metric) is not None]
             result[metric] = _mean([v for v in present if v is not None])
+        latencies = [s.metrics["latency_ms"] for s in subset if s.metrics.get("latency_ms") is not None]
+        result["latency_p50_ms"] = percentile([v for v in latencies if v is not None], 0.50)
+        result["latency_p95_ms"] = percentile([v for v in latencies if v is not None], 0.95)
         return result
 
     by_tag: dict[str, dict[str, float | None]] = {}
