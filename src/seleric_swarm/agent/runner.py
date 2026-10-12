@@ -69,6 +69,7 @@ from seleric_swarm.agent.understand import (
     diagnose_one_named_entity,
     understand,
 )
+from seleric_swarm.agent.usage_trace import usage_trace
 from seleric_swarm.agent.validation import run_validated_mission
 from seleric_swarm.api.office.registry import register_mission
 from seleric_swarm.api.office.v3_adapter import v3_raw_snapshot
@@ -1948,6 +1949,7 @@ async def run_v3_mission(
                             "understand": understood.stats,
                             "insights": insight_stats,
                             "stages_ms": dict(stages),
+                            "usage": usage_trace(deps.call_counts.get("run_usage")),
                         },
                     }
                 )

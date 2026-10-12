@@ -1351,6 +1351,8 @@ async def _validated(
     # without starving the first run.
     mission_budget = _usage_limits(deps.limits)
     mission_usage = RunUsage()
+    # Exported to trace["usage"] by the runner (agent/usage_trace.py).
+    deps.call_counts["run_usage"] = mission_usage
 
     result, history = await _run_agent(
         agent, deps, query, usage_limits=mission_budget, usage=mission_usage

@@ -46,6 +46,7 @@ class ObservedCase(BaseModel):
     latency_ms: float | None = None
     llm_calls: int | None = None
     tokens: int | None = None
+    cost_usd: float | None = None
     diagnostics: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
     # Which path actually produced the answer, and why it left the typed path.
@@ -175,6 +176,12 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
 
     elapsed = trace.get("elapsed_seconds")
     v2_latency, v2_tokens, v2_calls = _v2_costs(trace)
+    usage = trace.get("usage") if isinstance(trace.get("usage"), dict) else {}
+    if v2_tokens is None and isinstance(usage.get("total_tokens"), int):
+        v2_tokens = usage["total_tokens"]
+    if v2_calls is None and isinstance(usage.get("requests"), int):
+        v2_calls = usage["requests"]
+    cost = usage.get("cost_usd")
     if v2_latency is None and isinstance(elapsed, (int, float)):
         v2_latency = float(elapsed) * 1000
     status = str(payload.get("status") or "unknown")
@@ -225,6 +232,7 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
         latency_ms=v2_latency,
         llm_calls=v2_calls,
         tokens=v2_tokens,
+        cost_usd=float(cost) if isinstance(cost, (int, float)) else None,
         diagnostics={**diagnostics, "evidence_metrics": sorted({e.metric_id for e in evidence})[:10]},
         error=str(error_code) if error_code else None,
         route=route,

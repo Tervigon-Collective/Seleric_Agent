@@ -1,0 +1,6 @@
+# USD per million tokens, per deployment name. Deliberately empty: fill from your
+# Azure price sheet. A model with no entry reports cost_usd = null in trace["usage"].
+#
+# models:
+#   my-deployment-name: {input_per_mtok: 0.0, output_per_mtok: 0.0}
+models: {}
