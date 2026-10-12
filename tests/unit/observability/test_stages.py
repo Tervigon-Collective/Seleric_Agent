@@ -3,8 +3,8 @@
 Span assertions patch ``opentelemetry.trace.get_tracer`` to return a test-owned
 tracer backed by an in-memory exporter — a real OTel exporter without mutating
 the global tracer provider (which ``test_v3_mission_trace.py`` also sets, and
-OTel only allows one set per process). Redaction and store assertions use an
-injected temporary StageIOStore / StageTraceStore.
+OTel only allows one set per process). Store assertions use an injected
+temporary StageIOStore / StageTraceStore.
 """
 
 from __future__ import annotations
@@ -106,23 +106,23 @@ def test_set_gen_ai_adds_model_and_usage(otel_spans, stores) -> None:
     assert attrs["gen_ai.usage.output_tokens"] == 80
 
 
-def test_io_store_redacts_sensitive_fields(stores) -> None:
+def test_io_store_preserves_all_fields(stores) -> None:
     io_store, _ = stores
     inp = _In(question="q", api_token="super-secret-token")
     with stage_span(
         "understand",
-        mission_id="m-redact",
+        mission_id="m-preserve",
         inp=inp,
         io_store=io_store,
         trace_store=StageTraceStore(),
     ) as span:
         span.set_output(_Out(answer="a", secret_note="hidden-value"))
 
-    record = io_store.load("m-redact", "understand")
+    record = io_store.load("m-preserve", "understand")
     assert record is not None
-    assert record["input"]["api_token"] == "[REDACTED]"
-    assert record["output"]["secret_note"] == "[REDACTED]"
-    assert record["input"]["question"] == "q"  # non-sensitive kept
+    assert record["input"]["api_token"] == "super-secret-token"
+    assert record["output"]["secret_note"] == "hidden-value"
+    assert record["input"]["question"] == "q"
 
 
 def test_out_setter_receives_output(stores) -> None:

@@ -255,7 +255,7 @@ async def _answer_shadow(
         span.set_output(doc)
     outcome.answer = {
         "status": doc.draft.status,
-        "issues": verify(doc.draft, spec, evidence).codes(),
+        "issues": verify(doc.draft, spec, evidence, read_model=inputs.read_model).codes(),
         "attempts": stats.get("attempts"),
         "chars": len(doc.rendered_markdown),
         "evidence_ids": len(doc.evidence_ids),
@@ -269,9 +269,11 @@ def overview_as_exploration(
     headline_metric_ids: tuple[str, ...],
     *,
     read_model: SemanticReadModel | None = None,
+    scope_axes: tuple[tuple[str, str], ...] = (),
 ) -> QuestionDraft:
     """An overview that names a period is explored (the headline measures over that period);
-    without a period it stays an overview (the snapshot fast path answers it).
+    without a period it stays an overview (the snapshot fast path answers it). An overview
+    scoped to an entity, breakdown or catalogue axis is not the business headline: left as is.
 
     Headline ids that the live catalogue does not carry are dropped so one missing
     registry→catalogue mapping cannot fail the whole mission as ``invalid_spec``.
@@ -279,13 +281,67 @@ def overview_as_exploration(
     """
     if draft.kind != "overview" or not draft.names_period:
         return draft
-    ids = headline_metric_ids
+    if not draft.measures and (names_scope(draft) or scope_axes):
+        return draft
+    ids = _known_headlines(headline_metric_ids, read_model)
+    measures = draft.measures or tuple(MeasurePhrase(words=m, metric_id=m) for m in ids)
+    return draft.model_copy(update={"kind": "exploration", "measures": measures})
+
+
+def underspecified_as_exploration(
+    draft: QuestionDraft,
+    headline_metric_ids: tuple[str, ...],
+    *,
+    read_model: SemanticReadModel | None = None,
+    scope_axes: tuple[tuple[str, str], ...] = (),
+) -> QuestionDraft:
+    """Analysis/composition with no resolved measures cannot match a template.
+
+    Fall back to exploration over the configured headline set (same recovery the
+    overview path uses) so ``V2_NO_FALLBACK`` does not die as ``no_template``.
+    Objectives that already name measures are left alone, and so is any question that is not
+    open-ended: one scoped to an entity or breakdown, one whose words bound a catalogue axis
+    (``scope=product``), or one the model said it could not read without asking.
+    """
+    if draft.kind not in ("analysis", "exploration"):
+        return draft
+    if draft.measures or any(obj.measures for obj in draft.objectives):
+        return draft
+    # The headline set would answer a different question; leave the draft for the fidelity gate
+    # to refuse (→ legacy fallback).
+    if names_scope(draft) or scope_axes or draft.needs_clarification:
+        return draft
+    ids = _known_headlines(headline_metric_ids, read_model)
+    if not ids:
+        return draft
+    measures = tuple(MeasurePhrase(words=m, metric_id=m) for m in ids)
+    # Composition/why without a parent metric cannot plan; exploration can.
+    shape = draft.shape if draft.shape not in ("composition", "why_single_metric") else "lookup"
+    return draft.model_copy(update={"kind": "exploration", "shape": shape, "measures": measures})
+
+
+def names_scope(draft: QuestionDraft) -> bool:
+    """The draft narrows the question to an entity, a breakdown, or named values."""
+    if draft.entity_dimension.strip() or draft.entity_phrases or draft.exclusion_phrases:
+        return True
+    if any(d.strip() for d in draft.breakdown_dimensions):
+        return True
+    return any(
+        obj.entity_dimension.strip() or obj.entity_phrases or any(d.strip() for d in obj.breakdown_dimensions)
+        for obj in draft.objectives
+    )
+
+
+def _known_headlines(
+    headline_metric_ids: tuple[str, ...],
+    read_model: SemanticReadModel | None,
+) -> tuple[str, ...]:
+    ids = tuple(headline_metric_ids)
     if read_model is not None:
         known = read_model.metric_ids()
         if known:
             ids = tuple(mid for mid in headline_metric_ids if mid in known)
-    measures = draft.measures or tuple(MeasurePhrase(words=m, metric_id=m) for m in ids)
-    return draft.model_copy(update={"kind": "exploration", "measures": measures})
+    return ids
 
 
 def summarise(outcome: ShadowOutcome, legacy: LegacyDecision) -> dict[str, Any]:

@@ -257,6 +257,65 @@ async def acquire_queries(
     return [results[s.step_id] for s in steps if s.step_id in results]
 
 
+def _engine_metric_ids(section: SectionPlan) -> set[str]:
+    """Metric ids declared on EngineStep params (explore metric_ids / composition metric_id)."""
+    out: set[str] = set()
+    for step in section.plan.steps:
+        if not isinstance(step, EngineStep):
+            continue
+        mid = step.params.get("metric_id")
+        if isinstance(mid, str) and mid:
+            out.add(mid)
+        mids = step.params.get("metric_ids")
+        if isinstance(mids, (list, tuple)):
+            out.update(str(m) for m in mids if isinstance(m, str) and m)
+    return out
+
+
+def owned_result_sets(section: SectionPlan, result_sets: Sequence[ResultSet]) -> list[ResultSet]:
+    """Result sets belonging to a section — QuerySteps plus engine-produced sets.
+
+    Explore writes synthetic step ids ``x:{metric}:{dim}``; composition writes
+    ``{engine_step_id}.{metric}.{window}``. Counting only QueryStep ids falsely
+    marks engine-only sections as ``no_query_steps`` despite live evidence.
+    """
+    query_ids = {s.step_id for s in section.plan.steps if isinstance(s, QueryStep)}
+    engine_ids = {s.step_id for s in section.plan.steps if isinstance(s, EngineStep)}
+    engine_metrics = _engine_metric_ids(section)
+    has_explore = any(
+        isinstance(s, EngineStep) and s.engine == "explore" for s in section.plan.steps
+    )
+    owned: list[ResultSet] = []
+    for rs in result_sets:
+        if rs.step_id in query_ids:
+            owned.append(rs)
+            continue
+        if any(rs.step_id == eid or rs.step_id.startswith(eid + ".") for eid in engine_ids):
+            owned.append(rs)
+            continue
+        # Explore may resolve metrics at runtime when params.metric_ids is empty.
+        if rs.step_id.startswith("x:") and has_explore:
+            if not engine_metrics or rs.metric_id in engine_metrics:
+                owned.append(rs)
+            continue
+    return owned
+
+
+def owned_derivations(section: SectionPlan, derivations: Sequence[Any]) -> list[Any]:
+    """Derivations for a section (template DeriveSteps + composition ``e1.metric.delta``)."""
+    derive_ids = {s.step_id for s in section.plan.steps if isinstance(s, DeriveStep)}
+    engine_ids = {s.step_id for s in section.plan.steps if isinstance(s, EngineStep)}
+    out: list[Any] = []
+    for d in derivations:
+        rid = getattr(getattr(d, "ref", None), "id", None) or ""
+        if rid in derive_ids:
+            out.append(d)
+            continue
+        if any(rid == eid or rid.startswith(eid + ".") for eid in engine_ids):
+            out.append(d)
+    return out
+
+
 def section_coverage(
     section: SectionPlan,
     result_sets: Sequence[ResultSet],
@@ -274,23 +333,25 @@ def section_coverage(
             notes=(section.unsupported_reason or "no_template",),
             attempts=tuple(a for a in attempts if a.section_id == section.section_id),
         )
-    prefix = section.section_id + "."
-    owned = [rs for rs in result_sets if rs.step_id.startswith(prefix) or rs.step_id in {s.step_id for s in section.plan.steps if isinstance(s, QueryStep)}]
-    # Also match namespaced step ids exactly.
-    step_ids = {s.step_id for s in section.plan.steps if isinstance(s, QueryStep)}
-    owned = [rs for rs in result_sets if rs.step_id in step_ids]
+    owned = owned_result_sets(section, result_sets)
     acquired = tuple(rs.metric_id for rs in owned if rs.error is None and rs.rows)
     failed = tuple(rs.metric_id for rs in owned if rs.error is not None)
-    required = []
+    required: list[str] = []
     for step in section.plan.steps:
         if isinstance(step, QueryStep):
             required.append(step.metric_id)
+    if not required:
+        required = sorted(_engine_metric_ids(section))
     missing = tuple(m for m in dict.fromkeys(required) if m not in acquired and m not in failed)
     notes: list[str] = []
     status: str
-    if not owned and not required:
+    has_engine = any(isinstance(s, EngineStep) for s in section.plan.steps)
+    if not owned and not required and not has_engine:
         status = "unsupported"
         notes.append("no_query_steps")
+    elif not owned and has_engine and not acquired:
+        status = "unavailable" if attempts else "unsupported"
+        notes.append("required_metrics_missing" if required else "no_query_steps")
     elif failed and not acquired:
         status = "query_failed"
         notes.append("all_queries_failed")

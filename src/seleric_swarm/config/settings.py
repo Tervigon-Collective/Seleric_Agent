@@ -150,7 +150,7 @@ class Settings(BaseSettings):
     # = OTel + Langfuse (each when configured); "otel" / "langfuse" = one; "none" =
     # off. Read by observability.configure_tracing.
     trace_backend: Literal["none", "otel", "langfuse", "both"] = "both"
-    # Local redacted stage-input/output store (one JSON per stage) that makes a
+    # Local stage-input/output store (one JSON per stage) that makes a
     # mission replayable without Langfuse. Read by observability.stage_span.
     trace_local_dir: str = ".data/traces"
     # Stage-tracing rollout flag (M0.3): the pipeline reads this to decide whether

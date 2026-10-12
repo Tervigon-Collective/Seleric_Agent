@@ -156,3 +156,118 @@ def test_coverage_partial_when_one_section_fails() -> None:
     by_id = {s.section_id: s.status for s in coverage.sections}
     assert by_id["s1"] in ("complete", "provisional")
     assert by_id["s2"] in ("query_failed", "partial", "unavailable")
+
+
+def test_explore_engine_sets_count_as_coverage() -> None:
+    """Engine-only exploration must not be marked no_query_steps when x:* sets exist."""
+    from seleric_swarm.contracts.pipeline import (
+        AnalysisPlan,
+        EngineStep,
+        Ref,
+        ResultRow,
+        ResultSet,
+    )
+    from seleric_swarm.contracts.pipeline._report import SectionPlan
+
+    section = SectionPlan(
+        section_id="s1",
+        objective="Product sales analysis",
+        template_id="exploration",
+        plan=AnalysisPlan(
+            template_id="exploration",
+            steps=(
+                EngineStep(
+                    step_id="e1",
+                    engine="explore",
+                    params={"metric_ids": ["ad_spend", "net_profit"]},
+                ),
+            ),
+        ),
+        presentation_intent="narrative",
+    )
+    sets = [
+        ResultSet(
+            ref=Ref(kind="result_set", id="x:ad_spend:"),
+            step_id="x:ad_spend:",
+            metric_id="ad_spend",
+            unit="INR",
+            window=WINDOW,
+            breakdowns=(),
+            filters=(),
+            rows=(ResultRow(evidence_id="e1", dimensions={}, value=100.0),),
+        ),
+        ResultSet(
+            ref=Ref(kind="result_set", id="x:net_profit:campaign"),
+            step_id="x:net_profit:campaign",
+            metric_id="net_profit",
+            unit="INR",
+            window=WINDOW,
+            breakdowns=("campaign",),
+            filters=(),
+            rows=(ResultRow(evidence_id="e2", dimensions={"campaign": "A"}, value=50.0),),
+        ),
+    ]
+    cov = section_coverage(section, sets, read_model=MODEL)
+    assert cov.status in ("complete", "provisional")
+    assert "no_query_steps" not in cov.notes
+    assert "ad_spend" in cov.acquired_metrics
+    assert "net_profit" in cov.acquired_metrics
+
+
+def test_explore_without_sets_is_unavailable_not_complete() -> None:
+    from seleric_swarm.contracts.pipeline import AnalysisPlan, EngineStep
+    from seleric_swarm.contracts.pipeline._report import SectionPlan
+
+    section = SectionPlan(
+        section_id="s1",
+        objective="explore",
+        template_id="exploration",
+        plan=AnalysisPlan(
+            template_id="exploration",
+            steps=(
+                EngineStep(step_id="e1", engine="explore", params={"metric_ids": ["ad_spend"]}),
+            ),
+        ),
+        presentation_intent="narrative",
+    )
+    cov = section_coverage(section, [], read_model=MODEL)
+    assert cov.status in ("unsupported", "unavailable")
+    assert cov.status != "complete"
+
+
+def test_explore_empty_metric_ids_still_owns_x_sets() -> None:
+    """Explore may leave metric_ids empty and resolve from the question at runtime."""
+    from seleric_swarm.contracts.pipeline import (
+        AnalysisPlan,
+        EngineStep,
+        Ref,
+        ResultRow,
+        ResultSet,
+    )
+    from seleric_swarm.contracts.pipeline._report import SectionPlan
+
+    section = SectionPlan(
+        section_id="s1",
+        objective="Product sales analysis",
+        template_id="exploration",
+        plan=AnalysisPlan(
+            template_id="exploration",
+            steps=(EngineStep(step_id="e1", engine="explore", params={}),),
+        ),
+        presentation_intent="narrative",
+    )
+    sets = [
+        ResultSet(
+            ref=Ref(kind="result_set", id="x:ad_spend:"),
+            step_id="x:ad_spend:",
+            metric_id="ad_spend",
+            unit="INR",
+            window=WINDOW,
+            breakdowns=(),
+            filters=(),
+            rows=(ResultRow(evidence_id="e1", dimensions={}, value=100.0),),
+        ),
+    ]
+    cov = section_coverage(section, sets, read_model=MODEL)
+    assert cov.status in ("complete", "provisional")
+    assert "no_query_steps" not in cov.notes

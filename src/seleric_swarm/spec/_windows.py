@@ -201,11 +201,13 @@ def infer_absolute_window(text: str, as_of: date) -> WindowSpec | None:
         # Single day before month: ``11th October``.
         if month_at > 0:
             start_day = end_day = _digits(tokens[month_at - 1])
+    last = monthrange(year, month)[1]
     if start_day is None or end_day is None:
-        return None
+        # Named month with no day span: ``October``, ``month of October``.
+        # Whole calendar month, clipped to as_of when the month is still open.
+        start_day, end_day = 1, last
     if start_day > end_day:
         start_day, end_day = end_day, start_day
-    last = monthrange(year, month)[1]
     start_day = max(1, min(start_day, last))
     end_day = max(1, min(end_day, last))
     # If the named month is after as_of in the calendar year, prefer previous year
@@ -215,6 +217,12 @@ def infer_absolute_window(text: str, as_of: date) -> WindowSpec | None:
     if end > as_of and month > as_of.month + 1:
         start = date(year - 1, month, start_day)
         end = date(year - 1, month, end_day)
+        last = monthrange(start.year, month)[1]
+        end = date(start.year, month, min(end_day, last))
+    if end > as_of:
+        end = as_of
+    if start > end:
+        return None
     return WindowSpec(
         role="event",
         start=start,

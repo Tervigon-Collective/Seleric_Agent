@@ -28,7 +28,7 @@ def test_health_and_ping_and_mission(runtime, monkeypatch):
     assert "latency_ms" in body
     dumped = str(body)
     assert "sk-" not in dumped
-    assert "api_key" not in dumped.lower() or "[REDACTED]" in dumped
+    assert "api_key" not in dumped.lower()
 
     created = client.post(
         "/v1/missions",

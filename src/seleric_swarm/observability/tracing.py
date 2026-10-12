@@ -12,18 +12,6 @@ RunType = Literal["tool", "chain", "llm", "retriever", "embedding", "prompt", "p
 import structlog
 
 from seleric_swarm.config.settings import Settings
-from seleric_swarm.conversations.privacy import redact_data
-
-SENSITIVE_KEY_FRAGMENTS = (
-    "api_key",
-    "apikey",
-    "authorization",
-    "auth_token",
-    "password",
-    "secret",
-    "token",
-    "credential",
-)
 
 REQUIRED_SPAN_METADATA = (
     "request_id",
@@ -60,29 +48,23 @@ REQUIRED_LLM_RUN_METADATA = REQUIRED_SPAN_METADATA + (
 )
 
 
-def _is_sensitive_key(key: str) -> bool:
-    lowered = key.lower()
-    return any(fragment in lowered for fragment in SENSITIVE_KEY_FRAGMENTS)
-
-
 def redact_value(key: str, value: Any) -> Any:
-    if _is_sensitive_key(key):
-        return "[REDACTED]"
-    if isinstance(value, dict):
-        return redact_mapping(value)
-    if isinstance(value, list):
-        return [redact_value(key, item) for item in value]
-    return redact_data(value, key=key)
+    """Identity: trace/log values are not masked."""
+
+    del key  # retained for API compatibility with prior call sites
+    return value
 
 
 def redact_mapping(payload: Mapping[str, Any]) -> dict[str, Any]:
-    return {key: redact_value(key, value) for key, value in payload.items()}
+    """Copy mapping as-is so Langfuse / OTel / logs show true values."""
+
+    return dict(payload)
 
 
 def redact_processor(
     _logger: Any, _method: str, event_dict: MutableMapping[str, Any]
 ) -> MutableMapping[str, Any]:
-    return redact_mapping(event_dict)
+    return event_dict
 
 
 def configure_logging(settings: Settings) -> None:
@@ -247,7 +229,7 @@ def operation_span(
     name: str,
     attributes: Mapping[str, Any] | None = None,
 ) -> Iterator[Any]:
-    """Create a sanitized OTel span and propagate the active trace context."""
+    """Create an OTel span and propagate the active trace context."""
     try:
         from opentelemetry import trace
 
@@ -376,14 +358,14 @@ class SpanHandle:
             self._outputs = {"output": str(outputs)}
         if self._run is not None:
             try:
-                redacted = redact_mapping(self._outputs)
+                output = redact_mapping(self._outputs)
                 if hasattr(self._run, "update"):
-                    self._run.update(output=redacted)
+                    self._run.update(output=output)
                 elif hasattr(self._run, "end"):
                     self._run.end()
                 if hasattr(self._run, "set_trace_io"):
                     try:
-                        self._run.set_trace_io(output=redacted)
+                        self._run.set_trace_io(output=output)
                     except Exception:
                         pass
             except Exception:
@@ -393,14 +375,14 @@ class SpanHandle:
         if self._run is None or self._outputs is None:
             return
         try:
-            redacted = redact_mapping(self._outputs)
+            output = redact_mapping(self._outputs)
             if hasattr(self._run, "update"):
-                self._run.update(output=redacted)
+                self._run.update(output=output)
             elif hasattr(self._run, "end"):
                 self._run.end()
             if hasattr(self._run, "set_trace_io"):
                 try:
-                    self._run.set_trace_io(output=redacted)
+                    self._run.set_trace_io(output=output)
                 except Exception:
                     pass
         except Exception:

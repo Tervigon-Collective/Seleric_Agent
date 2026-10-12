@@ -27,6 +27,7 @@ from seleric_swarm.spec._validate import validate_question_spec
 from seleric_swarm.spec._windows import resolve_window_slots
 
 _DIRECTION = {"increase": "up", "decrease": "down", "either": "either"}
+_FAMILY_SHAPES = frozenset({"entity_comparison", "breakdown", "ranking", "composition"})
 
 
 def compile_question_spec(
@@ -75,10 +76,10 @@ def compile_question_spec(
         entity_dim = entities[0].dimension
         if entity_dim and entity_dim not in breakdowns:
             breakdowns = (*breakdowns, entity_dim)
-    # An entity comparison that names the family but no values ("the worst campaign"):
-    # keep the family dimension as the leading breakdown so the planner ranks the whole
-    # family instead of silently degrading to whole-account totals.
-    if draft.shape == "entity_comparison" and not entities:
+    # A comparative question that names the family but no values ("the worst campaign",
+    # "product sales"): keep the family dimension as the leading breakdown so the planner
+    # slices the whole family instead of silently degrading to whole-account totals.
+    if draft.shape in _FAMILY_SHAPES and not entities:
         entity_dim = (draft.entity_dimension or "").strip()
         if (
             entity_dim

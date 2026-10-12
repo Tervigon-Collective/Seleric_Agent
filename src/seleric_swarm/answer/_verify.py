@@ -1,11 +1,13 @@
 """Structural verification of an AnswerDraft against the spec and the evidence (M3.2 / AG-08).
 
-Every check reads typed objects; none reads prose for meaning. The only text check is
-"digits outside placeholders", done by character scan.
+Every check reads typed objects; none reads prose for meaning. The only text checks are
+"digits outside placeholders" (character scan) and catalogue dimension ids named in prose or
+``next_step`` (exact identifier match against the read model).
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +34,11 @@ from seleric_swarm.contracts.pipeline import (
 
 if TYPE_CHECKING:
     from seleric_swarm.answer._assemble import ReportSkeleton
+    from seleric_swarm.semantic import SemanticReadModel
+
+_IDENT = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+# Issues that mean the answer is about something other than the question; not shippable as partial.
+OFF_SCOPE_CODES = frozenset({"claim_off_entity", "ungrounded_dimension"})
 
 # Claim role -> derive ops that may back it (None = a plain ResultSet row is fine too).
 _ROLE_OPS: dict[str, frozenset[str]] = {
@@ -72,6 +79,7 @@ def verify(
     evidence: Evidence,
     *,
     skeleton: ReportSkeleton | None = None,
+    read_model: SemanticReadModel | None = None,
 ) -> Verdict:
     v = Verdict()
     claim_ids = {c.claim_id for c in draft.claims}
@@ -164,6 +172,8 @@ def verify(
 
     if draft.next_step and _asks_for_uploadable_data(draft.next_step):
         v.add("next_step_asks_for_data")
+    if read_model is not None and spec is not None and draft.status != "failed":
+        _verify_scope(draft, spec, evidence, sets, read_model, v)
 
     failed = [i for i in cited.values() if i.error is not None]
     if draft.status == "completed" and failed:
@@ -189,6 +199,49 @@ def verify(
     if draft.status != "failed" and not draft.claims and not has_structured:
         v.add("no_evidence")
     return v
+
+
+def _families(dims: set[str], read_model: SemanticReadModel) -> set[str]:
+    out: set[str] = set()
+    for d in dims:
+        out |= read_model.family_members(d)
+    return out
+
+
+def _verify_scope(
+    draft: AnswerDraft,
+    spec: QuestionSpec,
+    evidence: Evidence,
+    sets: list[ResultSet],
+    read_model: SemanticReadModel,
+    v: Verdict,
+) -> None:
+    """The answer stays on the question's entity: claims, prose and next_step."""
+    scope = _families({*spec.breakdowns, *(e.dimension for e in spec.entities)}, read_model)
+    if scope:
+        for claim in draft.claims:
+            item = evidence.get(claim.ref)
+            if (isinstance(item, ResultSet) and claim.row_key and item.breakdowns
+                    and not scope & set(item.breakdowns)):
+                v.add("claim_off_entity", f"{claim.claim_id}:{','.join(item.breakdowns)}")
+
+    known = read_model.dimension_ids()
+    grounded = _families(
+        {
+            *scope,
+            *(f.dimension for f in spec.filters),
+            *(d for rs in sets for d in rs.breakdowns),
+            *(f.dimension for rs in sets for f in rs.filters),
+        },
+        read_model,
+    )
+    for block in draft.blocks:
+        if isinstance(block, Paragraph):
+            for ident in sorted({i for i in _IDENT.findall(block.text) if i in known and i not in grounded}):
+                v.add("ungrounded_dimension", ident)
+    if scope and draft.next_step:
+        for ident in sorted({i for i in _IDENT.findall(draft.next_step) if i in known and i not in scope}):
+            v.add("next_step_off_entity", ident)
 
 
 def _verify_card(card: KpiCardBlock, evidence: Evidence, cited: dict[str, Item], v: Verdict) -> None:
@@ -222,6 +275,7 @@ def _has_internal_ids(text: str) -> bool:
 
 
 def _asks_for_uploadable_data(next_step: str) -> bool:
+    """True when next_step asks the user to supply/fetch catalogue data (AG-08)."""
     lowered = next_step.casefold()
     needles = (
         "upload",
@@ -230,8 +284,24 @@ def _asks_for_uploadable_data(next_step: str) -> bool:
         "paste the numbers",
         "export from",
         "give me the raw",
+        "run a query",
+        "run another query",
+        "run a joined query",
+        "joined query",
+        "query for ",
+        "query of ",
+        "pull the data",
+        "fetch the data",
+        "load the data",
     )
-    return any(n in lowered for n in needles)
+    if any(n in lowered for n in needles):
+        return True
+    # "provide/supply/fetch/pull … spend/orders/rows/metrics" without investigation framing
+    ask = ("provide ", "supply ", "fetch ", "pull ", "get me ", "send ")
+    dataish = (" data", " rows", " csv", " spend", " orders", " metrics", " numbers")
+    if any(a in lowered for a in ask) and any(d in lowered for d in dataish):
+        return True
+    return False
 
 
 def _collect(item: Item, evidence: Evidence, out: dict[str, Item], depth: int = 0) -> None:

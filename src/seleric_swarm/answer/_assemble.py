@@ -23,8 +23,51 @@ from seleric_swarm.contracts.pipeline import (
     TimeSeriesChartBlock,
 )
 from seleric_swarm.contracts.pipeline._report import ReportCoverage, ReportPlan, SectionPlan
+from seleric_swarm.pipeline._acquire import owned_derivations, owned_result_sets
 from seleric_swarm.pipeline._run_plan import PlanRun
 from seleric_swarm.semantic import SemanticReadModel
+
+# Machine coverage codes must not leak into business-facing limitations / LLM prompt.
+_INTERNAL_LIMITATION_CODES = frozenset({
+    "no_query_steps",
+    "all_queries_failed",
+    "required_metrics_missing",
+    "no_template",
+    "answer_unavailable",
+})
+
+
+def _humanize_limitation(note: str) -> str | None:
+    """Map internal coverage notes to user text; drop bare machine codes."""
+    raw = note.strip()
+    if not raw:
+        return None
+    # Section-prefixed: s1:no_query_steps
+    code = raw
+    if ":" in raw and raw.split(":", 1)[0].startswith("s") and raw.split(":", 1)[0][1:].isdigit():
+        code = raw.split(":", 1)[1]
+    if code in _INTERNAL_LIMITATION_CODES or code.startswith("unverified:"):
+        return None
+    if code.startswith("missing:"):
+        return f"Some requested metrics were not returned: {code.split(':', 1)[1]}."
+    if code.startswith("failed:"):
+        return f"Some catalogue queries failed: {code.split(':', 1)[1]}."
+    if code.startswith("freshness:"):
+        return "Some source views are stale or provisional."
+    if code == "window_includes_today":
+        return "Figures may still change because the window includes today."
+    if _INTERNAL_LIMITATION_CODES & {code} or code in _INTERNAL_LIMITATION_CODES:
+        return None
+    return raw
+
+
+def _public_limitations(notes: list[str] | tuple[str, ...]) -> list[str]:
+    out: list[str] = []
+    for n in notes:
+        h = _humanize_limitation(n)
+        if h and h not in out:
+            out.append(h)
+    return out
 
 ReportBlock = (
     KpiCardBlock
@@ -47,13 +90,11 @@ class ReportSkeleton:
 
 
 def _section_sets(section: SectionPlan, run: PlanRun) -> list[ResultSet]:
-    ids = {s.step_id for s in section.plan.steps}
-    return [rs for rs in run.result_sets if rs.step_id in ids and rs.error is None]
+    return [rs for rs in owned_result_sets(section, run.result_sets) if rs.error is None]
 
 
 def _section_derivations(section: SectionPlan, run: PlanRun) -> list[Derivation]:
-    ids = {s.step_id for s in section.plan.steps}
-    return [d for d in run.derivations if d.ref.id in ids and d.error is None]
+    return [d for d in owned_derivations(section, run.derivations) if d.error is None]
 
 
 def _kpi_cards(section: SectionPlan, sets: list[ResultSet], read_model: SemanticReadModel) -> list[KpiCardBlock]:
@@ -230,7 +271,7 @@ def assemble(
 ) -> ReportSkeleton:
     blocks: list[ReportBlock] = []
     insights: list[Insight] = []
-    limitations = list(coverage.limitations)
+    limitations = _public_limitations(coverage.limitations)
 
     for section in report_plan.sections:
         sets = _section_sets(section, run)
@@ -269,25 +310,32 @@ def assemble(
                 )
             )
 
-        if cov is not None and cov.status != "complete":
+        if cov is not None and cov.status not in ("complete", "provisional"):
+            pub = tuple(_public_limitations(cov.notes))
+            if pub or cov.status in ("unsupported", "unavailable", "query_failed"):
+                blocks.append(
+                    CoverageBlock(
+                        status=cov.status,
+                        notes=pub,
+                        section_id=section.section_id,
+                    )
+                )
+
+    # Overall coverage footer (skip when complete/provisional — no machine codes).
+    if coverage.status not in ("complete", "provisional"):
+        pub = tuple(_public_limitations(coverage.limitations)[:8])
+        if pub or coverage.status in ("unsupported", "unavailable", "query_failed"):
             blocks.append(
                 CoverageBlock(
-                    status=cov.status,
-                    notes=cov.notes,
-                    section_id=section.section_id,
+                    status=coverage.status,
+                    notes=pub,
+                    section_id="",
                 )
             )
 
-    # Overall coverage footer.
-    blocks.append(
-        CoverageBlock(
-            status=coverage.status,
-            notes=tuple(coverage.limitations[:8]),
-            section_id="",
-        )
-    )
-
-    status = "completed" if coverage.status == "complete" else (
+    # Provisional = every requested figure arrived and only the window is still open: the
+    # limitation says so; the answer itself is whole.
+    status = "completed" if coverage.status in ("complete", "provisional") else (
         "failed" if coverage.status in ("unsupported", "unavailable", "query_failed") and not any(
             isinstance(b, (KpiGridBlock, FunnelChartBlock, RankingChartBlock, RankingTableBlock, TimeSeriesChartBlock))
             for b in blocks

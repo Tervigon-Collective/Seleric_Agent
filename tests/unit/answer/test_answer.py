@@ -78,7 +78,7 @@ GOOD = AnswerDraft(
 def test_render_fills_numbers_and_tables() -> None:
     doc = render(GOOD, EVIDENCE, MODEL)
     assert "Take was INR 1,500 (+25.0% vs INR 1,200); north gave INR 900." in doc.rendered_markdown
-    assert "| zz_zone | Take |" in doc.rendered_markdown and "| south | INR 600 |" in doc.rendered_markdown
+    assert "| Zz zone | Take |" in doc.rendered_markdown and "| south | INR 600 |" in doc.rendered_markdown
     assert {"q1-0", "b1-0", "d1-0", "d1-1"} <= set(doc.evidence_ids)
 
 

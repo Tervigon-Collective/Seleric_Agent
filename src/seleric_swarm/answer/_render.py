@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from seleric_swarm.answer._evidence import Evidence, Resolved, resolve_claim
 from seleric_swarm.answer._format import MISSING, format_value
-from seleric_swarm.answer._text import fill
+from seleric_swarm.answer._text import bare_figures, placeholders, split
 from seleric_swarm.contracts.pipeline import (
     AnswerDocument,
     AnswerDraft,
@@ -50,14 +51,55 @@ def render(draft: AnswerDraft, evidence: Evidence, read_model: SemanticReadModel
         ids.update(dict.fromkeys(resolved.evidence_ids))
         return format_value(resolved, read_model)
 
+    def subject_of(claim_id: str, text: str) -> str:
+        """What a figure is, from the claim's typed ref. A figure the sentence introduces gets
+        only the row's names when the paragraph never names them; a bare list item gets the
+        row's names and the metric label."""
+        claim = claims.get(claim_id)
+        resolved = resolve_claim(evidence, claim) if claim else None
+        if claim is None or resolved is None:
+            return ""
+        names = display_names(claim.row_key, read_model)
+        named_in_text = all(n.casefold() in text.casefold() for n in names)
+        if claim_id not in bare_figures(text):
+            return "" if named_in_text else " / ".join(names)
+        metric = (read_model.label_for(resolved.metric_id) if resolved.metric_id else None) or ""
+        return ", ".join(x for x in (" / ".join(names), metric) if x)
+
+    def resolvable(claim_id: str) -> bool:
+        claim = claims.get(claim_id)
+        return claim is not None and resolve_claim(evidence, claim) is not None
+
+    def paragraph(text: str) -> str:
+        """Sentences citing a figure that cannot be resolved are left out (the limitations
+        carry what is missing); the rest print each figure with what it belongs to."""
+        kept = [s for s in _sentences(text) if all(resolvable(c) for c in placeholders(s))]
+        text = "".join(kept).strip()
+        out: list[str] = []
+        after_figure = False
+        for is_ph, chunk in split(text):
+            if not is_ph:
+                out.append(chunk)
+                after_figure = False
+                continue
+            if after_figure:
+                out.append(", ")  # two figures written back to back would print as one number
+            shown = value_of(chunk)
+            subject = subject_of(chunk, text)
+            out.append(f"{shown} ({subject})" if subject else shown)
+            after_figure = True
+        return "".join(out)
+
     md_parts: list[str] = []
+    tabled: set[str] = set()
     for block in draft.blocks:
         if isinstance(block, Paragraph):
-            md_parts.append(fill(block.text, value_of))
+            md_parts.append(paragraph(block.text))
         elif isinstance(block, TableBlock):
             item = evidence.get(block.result_set)
             if isinstance(item, ResultSet):
                 md_parts.append(_table(item, block, read_model))
+                tabled.add(item.ref.id)
                 ids.update(dict.fromkeys(r.evidence_id for r in item.rows))
                 parts.append(_table_part(item, block, read_model))
         elif isinstance(block, ChartBlock):
@@ -76,7 +118,10 @@ def render(draft: AnswerDraft, evidence: Evidence, read_model: SemanticReadModel
             chart = _typed_chart_part(block, evidence, read_model, ids)
             if chart:
                 parts.append(chart)
-            md_parts.append(_typed_chart_md(block, evidence, read_model))
+            # The chart widget carries the picture; its rows are listed in the text only
+            # when no table above already printed that same result set.
+            if not _already_tabled(block, tabled):
+                md_parts.append(_typed_chart_md(block, evidence, read_model))
         elif isinstance(block, RankingTableBlock):
             item = evidence.get(block.result_set)
             if isinstance(item, ResultSet):
@@ -87,16 +132,18 @@ def render(draft: AnswerDraft, evidence: Evidence, read_model: SemanticReadModel
                     caption=block.caption,
                 )
                 md_parts.append(_table(item, fake, read_model))
+                tabled.add(item.ref.id)
                 ids.update(dict.fromkeys(r.evidence_id for r in item.rows))
                 parts.append(_table_part(item, fake, read_model))
         elif isinstance(block, InsightBlock):
             md_parts.append(_insights_md(block))
         elif isinstance(block, CoverageBlock):
             md_parts.append(_coverage_md(block))
-    if draft.limitations:
-        md_parts.append("### Coverage and limitations\n" + "\n".join(f"- {cell(x)}" for x in draft.limitations))
-    if draft.next_step:
-        md_parts.append(draft.next_step)
+    public_lims = [plain_words(x) for x in draft.limitations if not _is_machine_limitation(x)]
+    if public_lims:
+        md_parts.append("### Coverage and limitations\n" + "\n".join(f"- {cell(x)}" for x in public_lims))
+    if draft.next_step and not _asks_for_data_next_step(draft.next_step):
+        md_parts.append(plain_words(draft.next_step))
     for claim in draft.claims:
         resolved = resolve_claim(evidence, claim)
         if resolved is not None:
@@ -128,8 +175,48 @@ def _dim_label(dimension: str, read_model: SemanticReadModel) -> str:
     for d in read_model.dimensions:
         if d.id == dimension:
             label = d.extra.get("label")
-            return str(label) if label else dimension
-    return dimension
+            if label:
+                return str(label)
+    # No catalogue label: the id as words, never the snake_case identifier.
+    words = dimension.replace("_", " ").strip()
+    return words[:1].upper() + words[1:]
+
+
+def display_names(dimensions: Mapping[str, Any], read_model: SemanticReadModel) -> list[str]:
+    """A row's names for a reader: a dimension the catalogue lists as another present
+    dimension's ``stable_key`` is that label's id, so only the label is shown."""
+    ids = {read_model.stable_key_for(d) for d in dimensions} - {None, ""}
+    named = [str(v) for d, v in dimensions.items() if d not in ids and v not in (None, "")]
+    return named or [str(v) for v in dimensions.values() if v not in (None, "")]
+
+
+def _sentences(text: str) -> list[str]:
+    """``text`` cut after each ``. ! ?`` that is followed by a space or the end (kept whole)."""
+    out: list[str] = []
+    start = 0
+    for i, ch in enumerate(text):
+        if ch in ".!?" and (i + 1 == len(text) or text[i + 1] in " \n"):
+            out.append(text[start : i + 1])
+            start = i + 1
+    if start < len(text):
+        out.append(text[start:])
+    return out
+
+
+def plain_words(text: str) -> str:
+    """Identifier-shaped tokens (``rows_not_shown``) written as words; nothing else changes."""
+    out: list[str] = []
+    for token in text.split(" "):
+        core = token.strip(".,;:!?()[]\"'")
+        if "_" in core and core.replace("_", "").isalnum() and core.islower() and not core.startswith("_"):
+            token = token.replace(core, core.replace("_", " "))
+        out.append(token)
+    return " ".join(out)
+
+
+def _already_tabled(block: Any, tabled: set[str]) -> bool:
+    ref = getattr(block, "ref", None)
+    return isinstance(block, RankingChartBlock) and ref is not None and ref.id in tabled
 
 
 def _resolve_card(
@@ -210,6 +297,7 @@ def _table_part(rs: ResultSet, block: TableBlock, read_model: SemanticReadModel)
                 **row.dimensions,
                 "value": row.value,
                 "evidence_id": row.evidence_id,
+                "label": " / ".join(display_names(row.dimensions, read_model)),
             }
         )
     return {
@@ -368,7 +456,7 @@ def _typed_chart_md(block: Any, evidence: Evidence, read_model: SemanticReadMode
                 row_metric = row.dimensions.get("metric")
                 if row_metric == "stage_dropoff":
                     continue
-                label = row.dimensions.get("stage") or row.dimensions.get("name") or str(row.dimensions)
+                label = _row_label(block, row.dimensions, read_model)
                 if row.value is None:
                     shown = _MISSING_EXPLAINED
                 elif row_metric in {"stage_conversion", "stage_dropoff"} and 0.0 <= float(row.value) <= 1.0:
@@ -400,6 +488,16 @@ def _typed_chart_md(block: Any, evidence: Evidence, read_model: SemanticReadMode
                     )
                 lines.append(f"- {label}: {shown}")
     return "\n".join(lines)
+
+
+def _row_label(block: Any, dimensions: dict[str, Any], read_model: SemanticReadModel) -> str:
+    """A row's name: the block's declared name/id key, then stage/name, then the values — never a dict repr."""
+    for key in (getattr(block, "name_key", ""), getattr(block, "id_key", ""), "stage", "name"):
+        value = dimensions.get(key) if key else None
+        if value not in (None, ""):
+            return str(value)
+    named = " / ".join(display_names(dimensions, read_model))
+    return named or str(getattr(block, "title", "") or "")
 
 
 def _legacy_chart_part(
@@ -447,16 +545,65 @@ def _insights_md(block: InsightBlock) -> str:
     return "\n".join(lines)
 
 
+_MACHINE_LIMITATION = frozenset({
+    "no_query_steps",
+    "all_queries_failed",
+    "required_metrics_missing",
+    "no_template",
+    "answer_unavailable",
+})
+
+
+def _is_machine_limitation(text: str) -> bool:
+    raw = text.strip()
+    if not raw:
+        return True
+    if raw.startswith("unverified:"):
+        return True
+    code = raw
+    if ":" in raw:
+        left, _, right = raw.partition(":")
+        if left.startswith("s") and left[1:].isdigit():
+            code = right
+    if code in _MACHINE_LIMITATION:
+        return True
+    return _looks_internal_id(raw)
+
+
+def _asks_for_data_next_step(next_step: str) -> bool:
+    lowered = next_step.casefold()
+    return any(
+        n in lowered
+        for n in (
+            "upload",
+            "run a query",
+            "run another query",
+            "run a joined query",
+            "joined query",
+            "query for ",
+            "query of ",
+            "provide the data",
+            "send me the csv",
+            "paste the numbers",
+            "pull the data",
+            "fetch the data",
+        )
+    )
+
+
 def _coverage_md(block: CoverageBlock) -> str:
-    if block.status == "complete" and not block.notes:
+    if block.status in ("complete", "provisional") and not block.notes:
+        return ""
+    notes = [
+        n for n in block.notes
+        if n and not _is_machine_limitation(n) and not _looks_internal_id(n)
+    ]
+    if not notes:
         return ""
     lines = [f"**Coverage ({block.status})**"]
-    for note in block.notes:
-        # Never expose internal step ids like q1/d1 in business-facing text.
-        if _looks_internal_id(note):
-            continue
+    for note in notes:
         lines.append(f"- {note}")
-    return "\n".join(lines) if len(lines) > 1 else ""
+    return "\n".join(lines)
 
 
 def _looks_internal_id(text: str) -> bool:

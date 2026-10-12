@@ -1,6 +1,6 @@
 """Replay a recorded mission's stages (M0.3).
 
-Loads the redacted stage input/output JSON that :func:`stage_span` wrote to the
+Loads the stage input/output JSON that :func:`stage_span` wrote to the
 local trace store (``settings.trace_local_dir``) and prints it, so a failed
 mission's understand input/output, plan, tool calls and validation verdict are
 inspectable without Langfuse.

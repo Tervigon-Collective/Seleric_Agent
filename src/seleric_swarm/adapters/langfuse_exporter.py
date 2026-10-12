@@ -2,7 +2,7 @@
 
 The single place outside :mod:`seleric_swarm.observability` that talks to the
 Langfuse SDK. It wraps the same low-level observation span the stage exporter
-uses, so stage and non-stage observations share redaction and metadata
+uses, so stage and non-stage observations share the same metadata
 conventions. Imports from ``observability`` (adapters -> observability, A1).
 
 The pipeline and the replay script use this to write observations for artifacts
@@ -31,7 +31,7 @@ class LangfuseObservation:
 
 
 class LangfuseExporter:
-    """Create redacted Langfuse observations for pipeline artifacts.
+    """Create Langfuse observations for pipeline artifacts.
 
     ``enabled=False`` (or missing Langfuse keys) makes every observation a no-op,
     so callers never branch on whether tracing is configured.

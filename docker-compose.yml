@@ -164,6 +164,9 @@ services:
     # doing?" always fell through to the agent loop).
     volumes:
       - domain_health:/app/.data/domain_health_snapshots
+      # Stage input/output records (scripts/replay_mission.py); the writable layer loses them
+      # on every recreate, so a reported mission could not be replayed.
+      - stage_traces:/app/.data/traces
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/readyz"]
       interval: 15s
@@ -270,6 +273,7 @@ services:
     # snapshots the api container's refresh loop writes (see api volumes).
     volumes:
       - domain_health:/app/.data/domain_health_snapshots
+      - stage_traces:/app/.data/traces
     depends_on:
       api:
         condition: service_healthy
@@ -403,6 +407,7 @@ volumes:
   seleric_postgres:
   seleric_minio:
   domain_health:
+  stage_traces:
 
 networks:
   default:

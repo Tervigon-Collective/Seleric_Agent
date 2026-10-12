@@ -198,15 +198,16 @@ def test_workspace_approver_expiry_executor_resume_and_compensation():
     assert repository.get_for_workspace(due.id, "workspace-1").status is ApprovalStatus.EXPIRED
 
 
-def test_span_attributes_are_redacted_and_context_propagates():
+def test_span_attributes_preserve_values_and_context_propagates():
     trace.set_tracer_provider(TracerProvider())
-    sanitized = redact_mapping({
+    attributes = {
         "authorization": "Bearer abcdefghijklmnop",
         "content": "email me at private@example.com token=supersecret",
-    })
-    assert sanitized["authorization"] == "[REDACTED]"
-    assert "private@example.com" not in str(sanitized["content"])
-    with operation_span("retrieval", "search", sanitized):
+    }
+    preserved = redact_mapping(attributes)
+    assert preserved["authorization"] == "Bearer abcdefghijklmnop"
+    assert preserved["content"] == attributes["content"]
+    with operation_span("retrieval", "search", preserved):
         context = current_trace_context()
         assert len(context["trace_id"]) == 32
         with operation_span("persistence", "read"):

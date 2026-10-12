@@ -11,7 +11,7 @@ from typing import Any, Protocol
 from seleric_swarm.answer._assemble import ReportSkeleton
 from seleric_swarm.answer._evidence import Evidence
 from seleric_swarm.answer._render import render
-from seleric_swarm.answer._verify import Verdict, verify
+from seleric_swarm.answer._verify import OFF_SCOPE_CODES, Verdict, verify
 from seleric_swarm.contracts.pipeline import AnswerDocument, AnswerDraft, Paragraph, QuestionSpec
 from seleric_swarm.semantic import SemanticReadModel
 
@@ -26,7 +26,12 @@ INSTRUCTIONS = (
     "say what is missing in limitations. next_step is one short offer of an investigation the "
     "connected catalogue can already answer — never ask the user to upload data Core can query. "
     "When a report skeleton is provided, write narrative paragraphs and choose which insights "
-    "to feature; do not invent chart points, KPI values, or internal step ids (q1, d1, s1.q2)."
+    "to feature; do not invent chart points, KPI values, or internal step ids (q1, d1, s1.q2). "
+    "Name the row (entity) and the measure each figure belongs to in the same sentence — never a "
+    "bare list of placeholders, and never describe a figure by its audience instead of its subject. Write plain business language: never quote field names, keys "
+    "or ids from the evidence listing, and never name a currency or unit yourself (a figure "
+    "prints with its own). limitations hold only what limits this answer — evidence that is "
+    "missing, failed or cut to its top rows — not things the question did not ask for."
 )
 
 _UNAVAILABLE = AnswerDraft(
@@ -168,7 +173,7 @@ async def answer(
             _log.warning("answer_draft_failed attempt=%d", attempt, exc_info=True)
             stats["error"] = type(exc).__name__
             continue
-        verdict = verify(draft, spec, evidence, skeleton=skeleton)
+        verdict = verify(draft, spec, evidence, skeleton=skeleton, read_model=read_model)
         if verdict.ok:
             break
         prompt = prompt + "\nREVISE. Structural problems: " + json.dumps([[i.code, i.detail] for i in verdict.issues])
@@ -192,11 +197,25 @@ async def answer(
         stats["status"] = "failed"
         return render(_UNAVAILABLE, evidence, read_model), stats
     stats["issues"] = verdict.codes()
+    if OFF_SCOPE_CODES & set(verdict.codes()):
+        # Still about another entity after the revision: not an answer to this question.
+        stats["status"] = "failed"
+        return render(_UNAVAILABLE, evidence, read_model), stats
+    updates: dict[str, object] = {}
+    if verdict.ok and draft.status == "partial" and skeleton is not None and skeleton.status == "completed":
+        # Coverage already knows whether evidence is missing or failed; the model's "partial"
+        # (it saw a row cut-off in its listing) must not downgrade a whole answer.
+        updates["status"] = "completed"
     if not verdict.ok and draft.status == "completed":
-        draft = draft.model_copy(update={
-            "status": "partial",
-            "limitations": (*draft.limitations, *(f"unverified:{c}" for c in dict.fromkeys(verdict.codes()))),
-        })
+        updates["status"] = "partial"
+        updates["limitations"] = (
+            *draft.limitations,
+            *(f"unverified:{c}" for c in dict.fromkeys(verdict.codes())),
+        )
+    if {"next_step_asks_for_data", "next_step_off_entity"} & set(verdict.codes()):
+        updates["next_step"] = ""
+    if updates:
+        draft = draft.model_copy(update=updates)
     draft = _merge_skeleton(draft, skeleton)
     stats["status"] = draft.status
     return render(draft, evidence, read_model), stats

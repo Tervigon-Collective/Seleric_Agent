@@ -25,6 +25,13 @@ from seleric_swarm.contracts.pipeline import (
 from seleric_swarm.contracts.pipeline._report import ReportCoverage, ReportPlan, ReportSpec
 from seleric_swarm.observability import stage_span
 from seleric_swarm.pipeline._acquire import run_report_plan
+from seleric_swarm.pipeline._fidelity import (
+    asked_dimensions,
+    explicit_metric_ids,
+    intent_lost,
+    scope_axes,
+    scope_uncovered,
+)
 from seleric_swarm.pipeline._memory import apply_brand_defaults, with_assumptions
 from seleric_swarm.pipeline._run_plan import PlanRun, run_plan
 from seleric_swarm.pipeline._shadow import (
@@ -33,10 +40,12 @@ from seleric_swarm.pipeline._shadow import (
     _value_words,
     overview_as_exploration,
     spec_json,
+    underspecified_as_exploration,
 )
 from seleric_swarm.plan import plan as build_plan
 from seleric_swarm.plan._report import plan_report, report_as_flat_plan, single_section_report_from_spec
 from seleric_swarm.spec import candidates_from_resolution, compile_question_spec
+from seleric_swarm.spec._names import resolve_draft_names
 from seleric_swarm.spec._report import compile_report_spec
 from seleric_swarm.toolsets import policy_config as P
 from seleric_swarm.understand import DraftLLM, understand
@@ -128,12 +137,20 @@ async def _run(
     }
     if isinstance(draft, Clarification):
         return _clarify_or_fallback(draft, clarify_mode, trace)
+    asked = resolve_draft_names(draft, inputs.read_model)
+    axes = scope_axes(candidates_from_resolution(dict(inputs.resolution or {})).axes)
     draft = overview_as_exploration(
-        draft, inputs.headline_metric_ids, read_model=inputs.read_model
+        draft, inputs.headline_metric_ids, read_model=inputs.read_model, scope_axes=axes
     )
+    defaulted_measures = not asked.measures and bool(draft.measures)
     if draft.kind != "analysis" and draft.kind != "exploration":
         return MissionV2(status="fallback", reason=f"kind:{draft.kind}", trace=trace)
     draft = await resolve_measures(draft, inputs, clarify_mode=clarify_mode)
+    resolved = draft
+    draft = underspecified_as_exploration(
+        draft, inputs.headline_metric_ids, read_model=inputs.read_model, scope_axes=axes
+    )
+    defaulted_measures = defaulted_measures or draft.measures != resolved.measures
     draft, defaults = apply_brand_defaults(draft, inputs.brand_prefs)
 
     # AG-08: multi-objective → ReportSpec; else legacy QuestionSpec wrapped as one section.
@@ -179,8 +196,8 @@ async def _run(
     if isinstance(spec, Clarification):
         return _clarify_or_fallback(spec, clarify_mode, trace)
 
-    # AG-08: if the user named an absolute range (e.g. 1-11th October) but the
-    # draft left windows empty, infer them from the question text.
+    # AG-08: if the user named a calendar span (e.g. 1-11th October, month of
+    # October) but the draft left windows empty, infer them from the question.
     if not spec.windows:
         from seleric_swarm.spec._windows import infer_absolute_window
 
@@ -192,6 +209,24 @@ async def _run(
             trace["window_inferred"] = f"{inferred.start}..{inferred.end}"
 
     trace["spec"] = spec_json(spec)
+    lost = intent_lost(
+        asked,
+        spec,
+        inputs.read_model,
+        report_spec=report_spec,
+        defaulted_measures=defaulted_measures,
+        axes=axes,
+    )
+    if lost:
+        trace["fidelity"] = lost
+        _log.info("v2_intent_lost", extra={"mission_id": mission_id, "lost": lost})
+        return MissionV2(
+            status="fallback",
+            reason="intent_lost:" + ";".join(lost),
+            spec=spec,
+            report_spec=report_spec,
+            trace=trace,
+        )
     if report_spec is not None:
         trace["report_spec"] = {
             "sections": [
@@ -288,6 +323,26 @@ async def _run(
         return MissionV2(
             status="fallback",
             reason="unsupported_engine",
+            spec=spec,
+            report_spec=report_spec,
+            report_plan=report_plan,
+            coverage=coverage,
+            run=run,
+            trace=trace,
+        )
+
+    uncovered = scope_uncovered(
+        asked_dimensions(asked, inputs.read_model),
+        explicit_metric_ids(inputs.question, resolved, inputs.read_model),
+        run.result_sets,
+        inputs.read_model,
+    )
+    if uncovered:
+        trace["fidelity"] = uncovered
+        _log.info("v2_scope_uncovered", extra={"mission_id": mission_id, "uncovered": uncovered})
+        return MissionV2(
+            status="fallback",
+            reason="scope_uncovered:" + ";".join(uncovered),
             spec=spec,
             report_spec=report_spec,
             report_plan=report_plan,

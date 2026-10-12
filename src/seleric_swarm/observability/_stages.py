@@ -5,7 +5,7 @@ M0.3. Every pipeline stage runs inside :func:`stage_span`, which:
 * opens an OTel span ``seleric.stage.<stage>`` carrying ``seleric.mission_id``,
   ``seleric.stage.input_fingerprint`` / ``output_fingerprint`` and, for LLM
   stages, the ``gen_ai.*`` attributes pinned to :data:`GENAI_SEMCONV_VERSION`;
-* persists the full redacted input/output JSON to a Langfuse observation;
+* persists the full input/output JSON to a Langfuse observation;
 * writes a compact per-stage record to the mission result's ``trace["stages"]``
   and to a local JSON store so a mission can be replayed (M0.4).
 
@@ -254,7 +254,7 @@ def _reset_stage_trace_store() -> None:
 
 
 class StageIOStore:
-    """Local, redacted JSON store of stage input/output, one file per stage.
+    """Local JSON store of stage input/output, one file per stage.
 
     This is what makes a mission replayable without Langfuse: the replay script
     (M0.4) reads these files to re-run a stage. Writes are guarded — a store

@@ -248,6 +248,12 @@ def ragged_table(text: str) -> str | None:
     return None
 
 
+def _is_table_caption(line: str) -> bool:
+    """A whole line in single underscores: the renderer's table caption."""
+    text = line.strip()
+    return len(text) > 2 and text.startswith("_") and text.endswith("_") and "__" not in text and "|" not in text
+
+
 def strip_markdown_tables(text: str) -> str:
     """Remove GFM Markdown tables from prose, leaving surrounding sentences.
 
@@ -268,6 +274,11 @@ def strip_markdown_tables(text: str) -> str:
             i += 2
             while i < len(lines) and "|" in lines[i] and lines[i].strip():
                 i += 1
+            # A table's italic caption line ("_Ranked by X_") belongs to the table: leaving it
+            # would print a title over nothing (live 2026-10-12 thread_c00b0cd6).
+            gap = i + 1 if i < len(lines) and not lines[i].strip() else i
+            if gap < len(lines) and _is_table_caption(lines[gap]):
+                i = gap + 1
             # Drop a single blank line that only existed to separate the table.
             if out and out[-1].strip() == "" and i < len(lines) and lines[i].strip() == "":
                 i += 1

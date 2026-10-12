@@ -1194,6 +1194,18 @@ async def stream_thread_events(
     return _stream_response(generate())
 
 
+def _row_labels(raw_parts: object) -> dict[str, str]:
+    """evidence_id → the row's display name, from the TABLE parts the report assembler wrote."""
+    labels: dict[str, str] = {}
+    for part in raw_parts if isinstance(raw_parts, list) else ():
+        content = part.get("content") if isinstance(part, dict) else None
+        rows = content.get("rows") if isinstance(content, dict) else None
+        for row in rows if isinstance(rows, list) else ():
+            if isinstance(row, dict) and row.get("evidence_id") and row.get("label"):
+                labels[str(row["evidence_id"])] = str(row["label"])
+    return labels
+
+
 def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]:
     """Transcript TEXT plus SOURCE rows so the office UI can show lookup evidence.
 
@@ -1216,6 +1228,7 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
         artifacts = raw.get("artifacts")
         nested = artifacts.get("evidence") if isinstance(artifacts, dict) else None
         evidence = nested if isinstance(nested, list) else []
+    row_labels = _row_labels(raw.get("parts"))
     for row in evidence:
         if not isinstance(row, dict):
             continue
@@ -1224,6 +1237,10 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
             continue
         metric = str(row.get("metric_or_fact") or row.get("title") or "Evidence")
         title = metric.removeprefix("metric.").replace("_", " ")
+        # A row of a breakdown names what it is for; a bare "93,251.70" under the metric does not.
+        entity = row_labels.get(evidence_id)
+        if entity:
+            title = f"{title} — {entity}"
         window_raw = row.get("time_range")
         window = window_raw if isinstance(window_raw, dict) else {}
         start = str(window["start"])[:10] if window.get("start") else None

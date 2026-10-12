@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+_MIN_INTRO_WORDS = 2
+
 
 def split(text: str) -> list[tuple[bool, str]]:
     """``[(is_placeholder, chunk)]``; an unclosed brace is plain text."""
@@ -32,3 +34,31 @@ def stray_digits(text: str) -> bool:
 
 def fill(text: str, value_of: Callable[[str], str]) -> str:
     return "".join(value_of(c) if is_ph else c for is_ph, c in split(text))
+
+
+def bare_figures(text: str) -> set[str]:
+    """Claim ids whose figure is stated with no phrase of its own saying what it is.
+
+    A clause runs from the last ``, ; :`` (or the paragraph start) to the placeholder. A
+    figure with no words in its clause, or one list item after a separator with fewer than
+    two ("Leaders: {c1}, {c2}"), is bare; "Gross sale rose to {c1}" is not. Characters and
+    word counts only — no word list.
+    """
+    out: set[str] = set()
+    clause = ""
+    listed = False
+    for is_ph, chunk in split(text):
+        if not is_ph:
+            for ch in ",;:":
+                if ch in chunk:
+                    chunk = chunk[chunk.rfind(ch) + 1 :]
+                    clause = ""
+                    listed = True
+            clause += chunk
+            continue
+        words = [w for w in clause.split() if any(c.isalpha() for c in w)]
+        if not words or (listed and len(words) < _MIN_INTRO_WORDS):
+            out.add(chunk)
+        clause = ""
+        listed = False
+    return out
