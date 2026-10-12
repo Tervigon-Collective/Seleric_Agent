@@ -151,7 +151,7 @@ def resolve_v3_model(
     return PatientModel(chain, health=MODEL_HEALTH)
 
 
-def resolve_planner_model(settings: Settings) -> Model:
+def resolve_planner_model(settings: Settings, *, effort: str | None = None) -> Model:
     """The planner's model: AZURE_OPENAI_PLANNER_MODEL on the same endpoint, else the
     agent's chain. The agent's reasoning-effort tuning is a per-deployment choice and
     is not carried over; AZURE_OPENAI_PLANNER_REASONING_EFFORT sets the planner's own
@@ -174,7 +174,8 @@ def resolve_planner_model(settings: Settings) -> Model:
     only = settings.model_copy(
         update={"azure_openai_models": json.dumps(chain), "azure_openai_fast_model": ""}
     )
-    effort = (getattr(settings, "azure_openai_planner_reasoning_effort", "") or "").strip()
+    if effort is None:
+        effort = (getattr(settings, "azure_openai_planner_reasoning_effort", "") or "").strip()
     return resolve_v3_model(
         only,
         role_tuning=False,

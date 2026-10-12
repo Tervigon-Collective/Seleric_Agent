@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     azure_openai_planner_model: str = ""
     # The planner's reasoning effort ("low", "medium", "high"); empty = provider default.
     azure_openai_planner_reasoning_effort: str = ""
+    # Effort for a second, deeper reading of a question the first reading calls a diagnosis (shape
+    # why_single_metric / composition). Empty = no second reading.
+    azure_openai_planner_diagnose_reasoning_effort: str = ""
     # Tool-call turns of the agent loop. Empty = the normal model chain, one model
     # for tools and the answer. Set with azure_openai_answer_model to split them.
     azure_openai_tool_model: str = ""

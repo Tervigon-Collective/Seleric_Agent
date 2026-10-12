@@ -1358,6 +1358,46 @@ def _write_turn_record(
         _log.warning("turn_record_write_failed", exc_info=True)
 
 
+_DIAGNOSIS_SHAPES = frozenset({"why_single_metric", "composition"})
+
+
+async def _deepen_diagnosis_reading(
+    runtime: SwarmRuntime,
+    first: Any,
+    query: str,
+    catalogue: Any,
+    values: dict[str, Any],
+    prior_turn_record: dict[str, Any] | None,
+) -> Any:
+    """A diagnosis fixes the event window, the baseline, the drivers and the scope, so a wrong reading costs the
+    whole mission. When the quick reading calls the question a diagnosis, read it once more at the higher
+    reasoning effort (AZURE_OPENAI_PLANNER_DIAGNOSE_REASONING_EFFORT). The deeper reading replaces the first only
+    when it succeeds; any failure keeps the quick one."""
+    deep_effort = (getattr(runtime.settings, "azure_openai_planner_diagnose_reasoning_effort", "") or "").strip()
+    quick = first.understanding
+    if not deep_effort or quick is None or getattr(quick, "shape", None) not in _DIAGNOSIS_SHAPES:
+        return first
+    if deep_effort == (getattr(runtime.settings, "azure_openai_planner_reasoning_effort", "") or "").strip():
+        return first
+    filters = value_filters_from_resolution(values)
+    deeper = await understand(
+        resolve_planner_model(runtime.settings, effort=deep_effort),
+        query,
+        catalogue=catalogue,
+        value_words=[vf.term for vf in filters],
+        value_meanings={
+            vf.term: f"{' / '.join(sorted(vf.dimensions))} = {', '.join(vf.values[:3])}" for vf in filters
+        },
+        prior_question=str((prior_turn_record or {}).get("query") or ""),
+        prior_offer=str((prior_turn_record or {}).get("offer") or ""),
+    )
+    if deeper.understanding is None:
+        return first
+    deeper.stats["deepened_from"] = {"shape": quick.shape, "effort": deep_effort}
+    deeper.stats["first_latency_ms"] = first.stats.get("latency_ms")
+    return deeper
+
+
 def _about_named_entities(plan_outcome: Any, deps: SelericDeps) -> bool:
     """The question is about particular entities: values it names filter the answer, or the plan compares entities."""
     stats = getattr(plan_outcome, "stats", None) or {}
@@ -1487,6 +1527,8 @@ async def run_v3_mission(
             prior_offer=str((prior_turn_record or {}).get("offer") or ""),
         )
         _stage("restyle_ms")
+    understood = await _deepen_diagnosis_reading(runtime, understood, query, catalogue, values, prior_turn_record)
+    _stage("understand_diagnose_ms")
     understanding = understood.understanding
     state_cutoff_hour(getattr(understanding, "through_hour", None))
     classification = classification_from(understanding)
