@@ -9,7 +9,10 @@ from seleric_swarm.contracts.pipeline import Claim, Derivation, Ref, ResultRow, 
 
 Item = ResultSet | Derivation
 
-# Derive ops whose value is a fraction (rendered as a percent).
+# Derive ops whose scalar value is a fraction (rendered as a percent).
+# funnel_stages is intentionally omitted: stage rows are absolute; only the
+# derivation's overall conversion (resolved with no row_key) is remapped to
+# ``share`` in ``Evidence.resolve``.
 FRACTION_OPS = frozenset({"share", "pct_change"})
 
 
@@ -70,12 +73,30 @@ class Evidence:
         key = dict(row_key or {})
         if isinstance(item, Derivation) and not key:
             ids = tuple(r.evidence_id for r in item.rows)
+            # funnel_stages.scalar = overall conversion (fraction). Remap op so
+            # format_value prints a percent without treating stage rows as %.
+            if item.op == "funnel_stages":
+                metric = item.params.get("metric_id")
+                return Resolved(
+                    item.value,
+                    None,
+                    metric if isinstance(metric, str) else None,
+                    "share",
+                    ids,
+                )
             return _resolved(item, item.value, ids)
         rows = [r for r in item.rows if all(r.dimensions.get(k) == v for k, v in key.items())]
         if not key:
             rows = [r for r in rows if not r.dimensions] or rows
         if len(rows) != 1:
             return None
+        if isinstance(item, Derivation) and item.op == "funnel_stages":
+            row = rows[0]
+            row_metric = row.dimensions.get("metric")
+            if row_metric in {"stage_conversion", "stage_dropoff"}:
+                return Resolved(row.value, None, None, "share", (row.evidence_id,))
+            # Absolute stage total — no unit inheritance from the derivation.
+            return Resolved(row.value, None, None, None, (row.evidence_id,))
         return _resolved(item, rows[0].value, (rows[0].evidence_id,))
 
     def _resolve_result_set(

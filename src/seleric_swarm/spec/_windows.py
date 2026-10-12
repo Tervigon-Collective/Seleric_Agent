@@ -7,6 +7,21 @@ from datetime import date, timedelta
 
 from seleric_swarm.contracts.pipeline import WindowEnding, WindowExpr, WindowSlot, WindowSpec
 
+_MONTHS = {
+    "january": 1, "jan": 1,
+    "february": 2, "feb": 2,
+    "march": 3, "mar": 3,
+    "april": 4, "apr": 4,
+    "may": 5,
+    "june": 6, "jun": 6,
+    "july": 7, "jul": 7,
+    "august": 8, "aug": 8,
+    "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10,
+    "november": 11, "nov": 11,
+    "december": 12, "dec": 12,
+}
+
 
 def _last_complete_day(anchor: date) -> date:
     return anchor - timedelta(days=1)
@@ -134,3 +149,76 @@ def resolve_window_slots(
     role_order = {"event": 0, "baseline": 1, "context": 2}
     out.sort(key=lambda window: role_order.get(window.role, 9))
     return tuple(out)
+
+
+def _digits(token: str) -> int | None:
+    cleaned = "".join(ch for ch in token if ch.isdigit())
+    if not cleaned:
+        return None
+    try:
+        return int(cleaned)
+    except ValueError:
+        return None
+
+
+def infer_absolute_window(text: str, as_of: date) -> WindowSpec | None:
+    """Parse an explicit day range the user wrote (e.g. ``1-11th October``).
+
+    Used when the understand draft named a period but left window slots empty.
+    Stdlib string ops only — no regex (keeps the layer free of ``re``).
+    """
+    if not text:
+        return None
+    lowered = text.casefold().replace(",", " ")
+    tokens = lowered.replace("/", " ").replace("(", " ").replace(")", " ").split()
+    month_at = -1
+    month = 0
+    year = as_of.year
+    for index, token in enumerate(tokens):
+        bare = token.strip(".,;:")
+        if bare in _MONTHS:
+            month_at = index
+            month = _MONTHS[bare]
+            # Optional year right after the month.
+            if index + 1 < len(tokens):
+                y = _digits(tokens[index + 1])
+                if y is not None and 2000 <= y <= 2100:
+                    year = y
+            break
+    if month_at < 0:
+        return None
+
+    # Look backward for ``1-11th`` / ``1 to 11`` / ``1–11``.
+    start_day = end_day = None
+    span = " ".join(tokens[max(0, month_at - 4) : month_at])
+    for sep in ("-", "–", "—", " to "):
+        if sep in span:
+            left, _, right = span.partition(sep)
+            start_day = _digits(left.strip().split()[-1] if left.strip() else "")
+            end_day = _digits(right.strip().split()[0] if right.strip() else "")
+            break
+    if start_day is None:
+        # Single day before month: ``11th October``.
+        if month_at > 0:
+            start_day = end_day = _digits(tokens[month_at - 1])
+    if start_day is None or end_day is None:
+        return None
+    if start_day > end_day:
+        start_day, end_day = end_day, start_day
+    last = monthrange(year, month)[1]
+    start_day = max(1, min(start_day, last))
+    end_day = max(1, min(end_day, last))
+    # If the named month is after as_of in the calendar year, prefer previous year
+    # only when as_of is early (Jan/Feb) and the month is late (Oct+). Otherwise keep year.
+    start = date(year, month, start_day)
+    end = date(year, month, end_day)
+    if end > as_of and month > as_of.month + 1:
+        start = date(year - 1, month, start_day)
+        end = date(year - 1, month, end_day)
+    return WindowSpec(
+        role="event",
+        start=start,
+        end=end,
+        source_span=text[:80],
+        token="absolute",
+    )

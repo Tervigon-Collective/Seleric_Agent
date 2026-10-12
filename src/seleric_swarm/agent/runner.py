@@ -1117,10 +1117,20 @@ async def _v2_enforce(
     doc = outcome.doc
     if outcome.turn is not None:
         trace["v2_turn"] = outcome.turn.model_dump(mode="json", exclude={"spec"})
+    parts = list(doc.parts)
+    charts = [
+        {
+            "chart_type": (p.get("content") or {}).get("chart_type"),
+            "artifact_id": (p.get("content") or {}).get("artifact_id"),
+            "data": (p.get("content") or {}).get("data"),
+        }
+        for p in parts
+        if isinstance(p, dict) and p.get("type") == "CHART"
+    ]
     return V3MissionResult(
         mission_id=mission_id, status=doc.draft.status, query=query, as_of=as_of_dt,
         final_response=doc.rendered_markdown, evidence_ids=list(doc.evidence_ids),
-        limitations=list(doc.draft.limitations), trace=trace,
+        limitations=list(doc.draft.limitations), parts=parts, charts=charts, trace=trace,
     )
 
 
@@ -1991,6 +2001,10 @@ async def run_v3_mission(
     lookup = _to_lookup(
         result, request_id=request_id, session_id=thread_id, evidence=evidence_views
     )
+    # AG-08: surface structured report parts/charts on the persisted raw snapshot
+    # so conversations._answer_parts can emit CHART / TABLE / KPI_GRID.
+    extra_parts = list(getattr(result, "parts", None) or [])
+    extra_charts = list(getattr(result, "charts", None) or raw.get("charts") or [])
     runtime.store.put(
         lookup,
         {
@@ -1999,6 +2013,11 @@ async def run_v3_mission(
             "owner_user_id": owner_user_id,
             "thread_id": thread_id,
             "run_id": run_id,
+            "parts": extra_parts or raw.get("parts") or [],
+            "charts": extra_charts,
+            "final_response": result.final_response or raw.get("final_response") or "",
+            "status": result.status,
+            "limitations": list(result.limitations or []),
         },
     )
     return {"route": "v3", "result": lookup.model_dump()}

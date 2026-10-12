@@ -9,5 +9,16 @@ Public interface:
 
 from seleric_swarm.plan._execute import PERIOD_KEY, execute
 from seleric_swarm.plan._registry import AGENT_TEMPLATE_ID, plan, plan_notes, template_ids
+from seleric_swarm.plan._report import plan_report, report_as_flat_plan, single_section_report_from_spec
 
-__all__ = ["AGENT_TEMPLATE_ID", "PERIOD_KEY", "execute", "plan", "plan_notes", "template_ids"]
+__all__ = [
+    "AGENT_TEMPLATE_ID",
+    "PERIOD_KEY",
+    "execute",
+    "plan",
+    "plan_notes",
+    "plan_report",
+    "report_as_flat_plan",
+    "single_section_report_from_spec",
+    "template_ids",
+]

@@ -10,9 +10,10 @@ from seleric_swarm.plan._templates._engines import (
     ExplorationTemplate,
     WhyTemplate,
 )
+from seleric_swarm.plan._templates._funnel import FunnelTemplate
+from seleric_swarm.plan._templates._ranking import RankingTemplate
 from seleric_swarm.plan._templates._single import (
     BreakdownTemplate,
-    FunnelTemplate,
     LookupTemplate,
     TrendTemplate,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "PeriodComparisonTemplate",
     "PlanContext",
     "Prepared",
+    "RankingTemplate",
     "Template",
     "TrendTemplate",
     "WhyTemplate",

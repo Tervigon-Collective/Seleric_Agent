@@ -88,6 +88,7 @@ class MessagePartType(StrEnum):
     TOOL_CALL = "TOOL_CALL"
     ARTIFACT = "ARTIFACT"
     CHART = "CHART"
+    KPI_GRID = "KPI_GRID"
     AGENT_STATUS = "AGENT_STATUS"
     APPROVAL = "APPROVAL"
     WARNING = "WARNING"

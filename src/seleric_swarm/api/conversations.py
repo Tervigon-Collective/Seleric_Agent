@@ -1277,6 +1277,31 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
                     },
                 )
             )
+    # AG-08: structured parts from the v2 report assembler (KPI_GRID / TABLE / CHART).
+    raw_parts = raw.get("parts")
+    if isinstance(raw_parts, list):
+        for part in raw_parts:
+            if not isinstance(part, dict):
+                continue
+            ptype = str(part.get("type") or "").upper()
+            content = part.get("content")
+            if ptype == "KPI_GRID" and isinstance(content, dict):
+                parts.append(MessagePart(type=MessagePartType.KPI_GRID, content=content))
+            elif ptype == "TABLE" and isinstance(content, dict):
+                parts.append(MessagePart(type=MessagePartType.TABLE, content=content))
+            elif ptype == "CHART" and isinstance(content, dict) and not raw_charts:
+                # Prefer explicit charts list when present; otherwise accept assembler charts.
+                chart_type = str(content.get("chart_type") or "bar")
+                parts.append(
+                    MessagePart(
+                        type=MessagePartType.CHART,
+                        content={
+                            "chart_type": chart_type,
+                            "artifact_id": content.get("artifact_id"),
+                            "data": content.get("data") or content,
+                        },
+                    )
+                )
     return parts
 
 

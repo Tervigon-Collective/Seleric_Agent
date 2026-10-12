@@ -239,7 +239,14 @@ EXPLORE_DEPTH: dict[str, tuple[int, int, int]] = {
 # deadline the run stops starting new steps and the answer is written from what is in hand.
 PLAN_DEADLINE_S: dict[str, float] = {
     "lookup": 10.0, "breakdown": 15.0, "trend": 15.0, "funnel": 20.0,
+    "ranking": 25.0, "report": 90.0,
     "period_comparison": 30.0, "entity_comparison": 30.0, "composition": 30.0,
     "why": 90.0, "exploration": 60.0,
 }
 PLAN_DEADLINE_DEFAULT_S: float = 45.0
+
+# AG-08 ranking eligibility: ratio denominator / volume must meet this floor.
+RANK_MIN_VOLUME: float = 1.0
+RANK_DEFAULT_LIMIT: int = 10
+# Cap rows on every sliced report query.
+REPORT_QUERY_LIMIT: int = 200

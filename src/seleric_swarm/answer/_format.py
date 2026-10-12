@@ -28,6 +28,13 @@ def format_value(resolved: Resolved, read_model: SemanticReadModel) -> str:
     unit = (resolved.unit or "").strip()
     if unit.lower() in {"percent", "pct", "%"}:
         return f"{value:.1f}%"
+    # Dimensionless "ratio" from derive/catalogue: fractions → percent; larger
+    # magnitudes are bare numbers. Never suffix the word "ratio" into answers.
+    if unit.lower() == "ratio":
+        if abs(value) <= 1.0:
+            sign = "+" if resolved.op == "pct_change" and value > 0 else ""
+            return f"{sign}{value * 100:.1f}%"
+        return _number(value)
     text = _number(value)
     if len(unit) == 3 and unit.isalpha() and unit.isupper():  # ISO currency code
         return f"{unit} {text}"

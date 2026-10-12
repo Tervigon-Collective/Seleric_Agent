@@ -188,8 +188,13 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
     for key in ("v2_mission", "v2_shadow"):
         stage = trace.get(key)
         if isinstance(stage, dict):
-            diagnostics[key] = {k: stage.get(k) for k in ("status", "reason", "clarification_text", "disagree", "clarification", "plan", "run", "answer")
+            diagnostics[key] = {k: stage.get(k) for k in ("status", "reason", "clarification_text", "disagree", "clarification", "plan", "run", "answer", "coverage", "report_spec")
                                 if stage.get(k) is not None}
+            if key == "v2_mission" and isinstance(stage.get("coverage"), dict):
+                diagnostics["coverage"] = stage["coverage"]
+            if key == "v2_mission" and isinstance(stage.get("run"), dict):
+                # Surface query_calls for AG-08 scoring even when nested.
+                diagnostics.setdefault("query_calls", stage["run"].get("query_calls"))
         elif key == "v2_shadow":
             diagnostics[key] = "absent (UNDERSTAND_V2_MODE/PLANNER_V2_MODE not set in this process?)"
     mission = trace.get("v2_mission")

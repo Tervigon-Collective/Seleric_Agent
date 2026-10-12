@@ -1,0 +1,154 @@
+{
+  "suite": "reports",
+  "mode": "record",
+  "generated_at": "2026-10-12T10:05:10.465845+00:00",
+  "case_count": 1,
+  "score": {
+    "overall": {
+      "spec_accuracy": null,
+      "status_ok": 0.0,
+      "value_correctness": null,
+      "revisions": 0.0,
+      "latency_ms": 50250.0,
+      "llm_calls": 1.0,
+      "tokens": 11893.0
+    },
+    "by_tag": {
+      "funnel": {
+        "spec_accuracy": null,
+        "status_ok": 0.0,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 50250.0,
+        "llm_calls": 1.0,
+        "tokens": 11893.0
+      },
+      "multi_objective": {
+        "spec_accuracy": null,
+        "status_ok": 0.0,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 50250.0,
+        "llm_calls": 1.0,
+        "tokens": 11893.0
+      },
+      "ranking": {
+        "spec_accuracy": null,
+        "status_ok": 0.0,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 50250.0,
+        "llm_calls": 1.0,
+        "tokens": 11893.0
+      },
+      "report": {
+        "spec_accuracy": null,
+        "status_ok": 0.0,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 50250.0,
+        "llm_calls": 1.0,
+        "tokens": 11893.0
+      }
+    },
+    "cases": [
+      {
+        "id": "report-full-funnel-meta-oct1-11",
+        "tags": [
+          "report",
+          "multi_objective",
+          "funnel",
+          "ranking"
+        ],
+        "metrics": {
+          "spec_accuracy": null,
+          "status_ok": 0.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 50250.0,
+          "llm_calls": 1.0,
+          "tokens": 11893.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "route": "failed",
+            "fallback_reason": "no_data",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "no_data",
+              "plan": {
+                "template_id": "funnel",
+                "steps": 9
+              },
+              "run": {
+                "result_sets": 5,
+                "step_errors": [
+                  "unknown_window_role",
+                  "unknown_window_role",
+                  "unknown_window_role",
+                  "unknown_window_role",
+                  "unknown_window_role"
+                ],
+                "derivations": 4,
+                "derive_errors": [
+                  "unit_mismatch",
+                  "zero_whole",
+                  "zero_whole",
+                  "zero_whole"
+                ],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [
+                "windows",
+                "filters"
+              ],
+              "plan": {
+                "template_id": "funnel",
+                "needs_agent": false,
+                "steps": 11,
+                "metrics": [
+                  "funnel_order_purchases",
+                  "funnel_order_revenue",
+                  "funnel_purchases",
+                  "funnel_revenue",
+                  "net_profit",
+                  "net_sales"
+                ]
+              }
+            },
+            "v2_spec": {
+              "shape": "funnel",
+              "measures": [
+                "funnel_order_purchases",
+                "funnel_order_revenue",
+                "net_profit",
+                "net_sales",
+                "gross_profit"
+              ],
+              "entities": [],
+              "windows": []
+            },
+            "evidence_metrics": []
+          },
+          "status": "failed",
+          "route": "failed",
+          "fallback_reason": "no_data",
+          "truths": []
+        }
+      }
+    ]
+  },
+  "comparison": {
+    "compared": false,
+    "baseline_path": null,
+    "passed": true,
+    "regressions": []
+  }
+}

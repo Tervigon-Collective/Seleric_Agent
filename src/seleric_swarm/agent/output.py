@@ -101,6 +101,9 @@ class MissionResult(BaseModel):
         ),
     )
     error_code: str | None = None
+    # AG-08: structured Office UI parts (CHART / TABLE / KPI_GRID). Additive.
+    parts: list[dict[str, Any]] = Field(default_factory=list)
+    charts: list[dict[str, Any]] = Field(default_factory=list)
     trace: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("evidence_ids", "finding_ids", "limitations", "not_values", mode="before")

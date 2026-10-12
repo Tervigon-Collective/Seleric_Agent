@@ -557,17 +557,25 @@ button { color: inherit; }
    =========================================================================== */
 
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+.kpi-grid__title { grid-column: 1 / -1; margin: 0; font-size: 14px; font-weight: 600; }
+.kpi-grid--loading, .kpi-grid--error, .kpi-grid--empty { display: block; padding: 12px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--text-dim); font-size: 13px; }
+.kpi-skeleton { height: 72px; border-radius: var(--radius); background: linear-gradient(90deg, var(--panel), var(--line), var(--panel)); background-size: 200% 100%; animation: kpi-shimmer 1.2s linear infinite; }
+@keyframes kpi-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .kpi-card {
   border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--panel); padding: 12px 14px; min-width: 0;
 }
+.kpi-card--missing .kpi-value { font-size: 13px; font-weight: 500; color: var(--text-dim); }
 .kpi-label { font-size: 12px; color: var(--text-dim); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kpi-value { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; margin-top: 2px; font-variant-numeric: tabular-nums; }
 .kpi-delta { font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; display: flex; gap: 6px; align-items: baseline; }
 .kpi-delta.up-good, .kpi-delta.down-good { color: var(--success); }
 .kpi-delta.up-bad, .kpi-delta.down-bad { color: var(--danger); }
 .kpi-delta.neutral { color: var(--text-dim); }
-.kpi-basis { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+.kpi-basis { font-size: 11px; color: var(--text-faint); margin-top: 2px; display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 767px) {
+  .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}
 
 .md-table-wrap, .part-table-wrap {
   margin: 12px 0; max-width: 100%; overflow-x: auto; overflow-y: hidden;

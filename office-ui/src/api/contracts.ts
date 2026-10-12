@@ -2,7 +2,7 @@ export type ThreadStatus = "ACTIVE" | "ARCHIVED" | "DELETED";
 export type MessageRole = "USER" | "ASSISTANT" | "SYSTEM" | "TOOL";
 export type MessagePartType =
   | "TEXT" | "TABLE" | "CODE" | "SOURCE" | "TOOL_CALL"
-  | "ARTIFACT" | "CHART" | "AGENT_STATUS" | "APPROVAL" | "WARNING";
+  | "ARTIFACT" | "CHART" | "KPI_GRID" | "AGENT_STATUS" | "APPROVAL" | "WARNING";
 
 export interface Thread {
   id: string;

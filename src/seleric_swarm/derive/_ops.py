@@ -399,6 +399,161 @@ def mix_shift_decomposition(
 
 OpFunc = Callable[[Sequence[DeriveInput], Mapping[str, JsonValue], SemanticReadModel], Outcome]
 
+def _op_funnel_stages(
+    inputs: Sequence[DeriveInput], params: Mapping[str, JsonValue], read_model: SemanticReadModel
+) -> Outcome:
+    """Recompute stage conversion / drop-off from certified counts (AG08-03).
+
+    Stages marked missing/incompatible in ``params.funnel`` become null rows —
+    never numeric zero. Largest supported leakage is recorded in params.
+    """
+    if len(inputs) < 1:
+        raise Refusal("input_count", "funnel_stages needs stage ResultSets")
+    funnel = params.get("funnel") if isinstance(params.get("funnel"), Mapping) else {}
+    stage_meta = list(funnel.get("stages") or []) if isinstance(funnel, Mapping) else []
+    # Inputs are the queried stages only (template skips missing ones). Match
+    # catalogue status by metric_id — never by input index against the full
+    # FunnelDefinition.stages list (that mis-labels later stages as "missing").
+    meta_by_metric = {
+        str(s.get("metric_id")): s
+        for s in stage_meta
+        if isinstance(s, Mapping) and s.get("metric_id")
+    }
+    values: list[float | None] = []
+    labels: list[str] = []
+    statuses: list[str] = []
+    units: list[str | None] = []
+    for index, item in enumerate(inputs):
+        mid = _metric_id(item) or f"stage_{index}"
+        labels.append(read_model.label_for(mid) or mid)
+        meta = meta_by_metric.get(mid) or {}
+        status = str(meta.get("status") or "ok")
+        statuses.append(status)
+        unit = None
+        if isinstance(item, ResultSet) and item.unit:
+            unit = str(item.unit).strip().lower() or None
+        if unit is None and mid:
+            declared = read_model.unit_for(mid)
+            unit = str(declared).strip().lower() or None if declared else None
+        units.append(unit)
+        if status in ("missing", "incompatible", "unsupported") or (
+            isinstance(item, ResultSet) and item.error is not None
+        ):
+            values.append(None)
+            continue
+        values.append(_value(item))
+
+    rows: list[ResultRow] = []
+    conversions: list[float | None] = []
+    dropoffs: list[float | None] = []
+    largest_leak: float | None = None
+    largest_leak_stage = ""
+    for index, (label, value, status) in enumerate(zip(labels, values, statuses)):
+        prev = values[index - 1] if index > 0 else None
+        conversion = None
+        dropoff = None
+        # Stage conversion is only meaningful when adjacent stages share a unit
+        # (count→count, INR→INR). Cross-unit pairs (e.g. purchases count vs
+        # revenue currency) must not invent a "rate" that then renders as %.
+        # Unknown units on both sides keep prior behaviour (allow conversion).
+        same_unit = index > 0 and (
+            units[index] == units[index - 1]
+            or (units[index] is None and units[index - 1] is None)
+        )
+        if (
+            index > 0
+            and status == "ok"
+            and statuses[index - 1] == "ok"
+            and same_unit
+            and value is not None
+            and prev not in (None, 0)
+        ):
+            conversion = value / prev
+            if 0.0 <= conversion <= 1.0:
+                dropoff = 1.0 - conversion
+                if largest_leak is None or dropoff > largest_leak:
+                    largest_leak = dropoff
+                    largest_leak_stage = label
+            else:
+                # Expansion across stages is not a funnel conversion; keep the
+                # absolute stage values only.
+                conversion = None
+        conversions.append(conversion)
+        dropoffs.append(dropoff)
+        rows.append(
+            ResultRow(
+                evidence_id=f"funnel:{index}:{label}",
+                dimensions={
+                    "stage": label,
+                    "stage_index": str(index),
+                    "status": status,
+                },
+                value=value,
+            )
+        )
+        if conversion is not None:
+            rows.append(
+                ResultRow(
+                    evidence_id=f"funnel:conv:{index}:{label}",
+                    dimensions={
+                        "stage": label,
+                        "stage_index": str(index),
+                        "metric": "stage_conversion",
+                        "status": status,
+                    },
+                    value=conversion,
+                )
+            )
+        if dropoff is not None:
+            rows.append(
+                ResultRow(
+                    evidence_id=f"funnel:drop:{index}:{label}",
+                    dimensions={
+                        "stage": label,
+                        "stage_index": str(index),
+                        "metric": "stage_dropoff",
+                        "status": status,
+                    },
+                    value=dropoff,
+                )
+            )
+
+    overall = None
+    first_idx = next((i for i, (v, s) in enumerate(zip(values, statuses)) if s == "ok" and v not in (None, 0)), None)
+    last_idx = next(
+        (i for i, (v, s) in reversed(list(enumerate(zip(values, statuses)))) if s == "ok" and v is not None),
+        None,
+    )
+    if first_idx is not None and last_idx is not None and first_idx != last_idx:
+        first_u, last_u = units[first_idx], units[last_idx]
+        first, last = values[first_idx], values[last_idx]
+        if first not in (None, 0) and last is not None and (
+            first_u == last_u or (first_u is None and last_u is None)
+        ):
+            candidate = last / first
+            if 0.0 <= candidate <= 1.0:
+                overall = candidate
+
+    # unit stays None: stage rows are heterogeneous (absolute counts/amounts plus
+    # conversion fractions). Putting unit="ratio" on the derivation made every
+    # absolute stage render as "N ratio". Overall conversion lives in ``value``
+    # (a fraction) and is formatted via the derive op at resolve time.
+    return Outcome(
+        value=overall,
+        unit=None,
+        rows=tuple(rows),
+        params=(
+            ("kind", str(params.get("kind") or funnel.get("kind") or "session")),
+            ("largest_leakage", largest_leak),
+            ("largest_leakage_stage", largest_leak_stage),
+            ("overall_conversion", overall),
+            ("disclosures", list(params.get("disclosures") or funnel.get("disclosures") or [])),
+            ("stage_count", len(values)),
+            ("supported_stages", sum(1 for s in statuses if s == "ok")),
+        ),
+    )
+
+
 OPS: dict[str, OpFunc] = {
     "sum": _op_sum,
     "share": _op_share,
@@ -410,4 +565,5 @@ OPS: dict[str, OpFunc] = {
     "reconcile": _op_reconcile,
     "rank": _op_rank,
     "join": _op_join,
+    "funnel_stages": _op_funnel_stages,
 }

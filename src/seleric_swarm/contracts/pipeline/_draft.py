@@ -31,8 +31,10 @@ PlanShape = Literal[
     "why_single_metric",
     "funnel",
     "composition",
+    "ranking",
     "other",
 ]
+PresentationIntent = Literal["kpis", "trend", "funnel", "ranking", "table", "narrative"]
 WindowRole = Literal["event", "baseline", "context"]
 WindowUnit = Literal["day", "week", "month", "quarter", "year"]
 WindowEnding = Literal["yesterday", "today", "as_of", "before_event"]
@@ -98,6 +100,24 @@ class ForecastSlots(BaseModel):
     horizon: ForecastHorizonSlot = Field(default_factory=ForecastHorizonSlot)
 
 
+class ObjectiveDraft(BaseModel):
+    """One analytical objective the user asked for (AG-08 multi-objective planning)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    objective: str = ""
+    shape: PlanShape = "other"
+    measures: tuple[MeasurePhrase, ...] = ()
+    entity_dimension: str = ""
+    entity_phrases: tuple[str, ...] = ()
+    breakdown_dimensions: tuple[str, ...] = ()
+    rank_by: MeasurePhrase | None = None
+    rank_order: Literal["desc", "asc"] = "desc"
+    top_n: int | None = None
+    presentation_intent: PresentationIntent = "narrative"
+    grain: Literal["hour", "day", "week", "month", "none"] = "none"
+
+
 class QuestionDraft(BaseModel):
     """Structured reading of the question. No calendar dates; no required catalogue ids."""
 
@@ -129,5 +149,7 @@ class QuestionDraft(BaseModel):
     restyles_prior: bool = False
     part_of_whole: bool = False
     forecast: ForecastSlots | None = None
+    # Distinct analytical goals inside one question (AG-08). Empty = single-section path.
+    objectives: tuple[ObjectiveDraft, ...] = ()
     reply: str = ""
     needs_clarification: str | None = None

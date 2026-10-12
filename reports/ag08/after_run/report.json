@@ -1,0 +1,1127 @@
+{
+  "suite": "reports_after",
+  "mode": "record",
+  "generated_at": "2026-10-12T10:20:25.933354+00:00",
+  "case_count": 1,
+  "score": {
+    "overall": {
+      "spec_accuracy": null,
+      "status_ok": 0.0,
+      "value_correctness": null,
+      "sections_covered": 0.8333333333333334,
+      "chart_reconciles": 1.0,
+      "numbers_grounded": 1.0,
+      "revisions": 0.0,
+      "latency_ms": 117382.0,
+      "llm_calls": 3.0,
+      "tokens": 19479.0,
+      "query_calls": 14.0
+    },
+    "by_tag": {
+      "funnel": {
+        "spec_accuracy": null,
+        "status_ok": 0.0,
+        "value_correctness": null,
+        "sections_covered": 0.8333333333333334,
+        "chart_reconciles": 1.0,
+        "numbers_grounded": 1.0,
+        "revisions": 0.0,
+        "latency_ms": 117382.0,
+        "llm_calls": 3.0,
+        "tokens": 19479.0,
+        "query_calls": 14.0
+      },
+      "multi_objective": {
+        "spec_accuracy": null,
+        "status_ok": 0.0,
+        "value_correctness": null,
+        "sections_covered": 0.8333333333333334,
+        "chart_reconciles": 1.0,
+        "numbers_grounded": 1.0,
+        "revisions": 0.0,
+        "latency_ms": 117382.0,
+        "llm_calls": 3.0,
+        "tokens": 19479.0,
+        "query_calls": 14.0
+      },
+      "ranking": {
+        "spec_accuracy": null,
+        "status_ok": 0.0,
+        "value_correctness": null,
+        "sections_covered": 0.8333333333333334,
+        "chart_reconciles": 1.0,
+        "numbers_grounded": 1.0,
+        "revisions": 0.0,
+        "latency_ms": 117382.0,
+        "llm_calls": 3.0,
+        "tokens": 19479.0,
+        "query_calls": 14.0
+      },
+      "report": {
+        "spec_accuracy": null,
+        "status_ok": 0.0,
+        "value_correctness": null,
+        "sections_covered": 0.8333333333333334,
+        "chart_reconciles": 1.0,
+        "numbers_grounded": 1.0,
+        "revisions": 0.0,
+        "latency_ms": 117382.0,
+        "llm_calls": 3.0,
+        "tokens": 19479.0,
+        "query_calls": 14.0
+      }
+    },
+    "cases": [
+      {
+        "id": "report-full-funnel-meta-oct1-11",
+        "tags": [
+          "report",
+          "multi_objective",
+          "funnel",
+          "ranking"
+        ],
+        "metrics": {
+          "spec_accuracy": null,
+          "status_ok": 0.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 117382.0,
+          "llm_calls": 3.0,
+          "tokens": 19479.0,
+          "sections_covered": 0.8333333333333334,
+          "chart_reconciles": 1.0,
+          "numbers_grounded": 1.0,
+          "query_calls": 14.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "route": "v2",
+            "fallback_reason": null,
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "funnel+ranking+lookup",
+                "steps": 17,
+                "sections": [
+                  {
+                    "id": "s1",
+                    "template_id": "funnel",
+                    "needs_agent": false,
+                    "steps": 3
+                  },
+                  {
+                    "id": "s2",
+                    "template_id": "funnel",
+                    "needs_agent": false,
+                    "steps": 3
+                  },
+                  {
+                    "id": "s3",
+                    "template_id": "funnel",
+                    "needs_agent": false,
+                    "steps": 6
+                  },
+                  {
+                    "id": "s4",
+                    "template_id": "ranking",
+                    "needs_agent": false,
+                    "steps": 2
+                  },
+                  {
+                    "id": "s5",
+                    "template_id": "agent",
+                    "needs_agent": true,
+                    "steps": 0
+                  },
+                  {
+                    "id": "s6",
+                    "template_id": "lookup",
+                    "needs_agent": false,
+                    "steps": 3
+                  }
+                ]
+              },
+              "run": {
+                "result_sets": 14,
+                "step_errors": [],
+                "derivations": 3,
+                "derive_errors": [],
+                "acquired_metrics": [
+                  "funnel_order_purchases",
+                  "funnel_order_revenue",
+                  "funnel_purchases",
+                  "funnel_revenue",
+                  "net_profit"
+                ],
+                "failed_metrics": [],
+                "query_calls": 14,
+                "cache_hits": 0,
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 2,
+                "input_tokens": 3733,
+                "output_tokens": 3532,
+                "model": "gpt-5-mini",
+                "issues": [
+                  "role_mismatch",
+                  "role_mismatch",
+                  "unresolved_claim"
+                ],
+                "status": "partial"
+              },
+              "coverage": {
+                "status": "partial",
+                "sections": [
+                  {
+                    "section_id": "s1",
+                    "status": "complete",
+                    "objective": "Full funnel diagnostic with daily trend and overall totals",
+                    "acquired_metrics": [
+                      "funnel_order_purchases",
+                      "funnel_order_revenue"
+                    ],
+                    "missing_metrics": [],
+                    "failed_metrics": [],
+                    "notes": [],
+                    "attempts": [
+                      {
+                        "section_id": "s1",
+                        "metric_id": "funnel_order_purchases",
+                        "args_hash": "fac4fe322659cc8e",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 1944.0,
+                        "recovered_from": "",
+                        "batched": false
+                      },
+                      {
+                        "section_id": "s1",
+                        "metric_id": "funnel_order_revenue",
+                        "args_hash": "a45e5dd08d6682d0",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 535.0,
+                        "recovered_from": "",
+                        "batched": false
+                      }
+                    ]
+                  },
+                  {
+                    "section_id": "s2",
+                    "status": "complete",
+                    "objective": "Drop-off analysis: stage-to-stage conversion rates and largest drop points",
+                    "acquired_metrics": [
+                      "funnel_purchases",
+                      "funnel_revenue"
+                    ],
+                    "missing_metrics": [],
+                    "failed_metrics": [],
+                    "notes": [],
+                    "attempts": [
+                      {
+                        "section_id": "s2",
+                        "metric_id": "funnel_purchases",
+                        "args_hash": "39b3e88c1c252d27",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 316.0,
+                        "recovered_from": "",
+                        "batched": false
+                      },
+                      {
+                        "section_id": "s2",
+                        "metric_id": "funnel_revenue",
+                        "args_hash": "0f0196d14c54bb5d",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 184.0,
+                        "recovered_from": "",
+                        "batched": false
+                      }
+                    ]
+                  },
+                  {
+                    "section_id": "s3",
+                    "status": "complete",
+                    "objective": "Top learnings and concise recommendations",
+                    "acquired_metrics": [
+                      "funnel_order_purchases",
+                      "funnel_order_revenue",
+                      "net_profit",
+                      "funnel_purchases",
+                      "funnel_revenue"
+                    ],
+                    "missing_metrics": [],
+                    "failed_metrics": [],
+                    "notes": [],
+                    "attempts": [
+                      {
+                        "section_id": "s3",
+                        "metric_id": "funnel_order_purchases",
+                        "args_hash": "fac4fe322659cc8e",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 71.0,
+                        "recovered_from": "",
+                        "batched": false
+                      },
+                      {
+                        "section_id": "s3",
+                        "metric_id": "funnel_order_revenue",
+                        "args_hash": "a45e5dd08d6682d0",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 66.0,
+                        "recovered_from": "",
+                        "batched": false
+                      },
+                      {
+                        "section_id": "s3",
+                        "metric_id": "funnel_purchases",
+                        "args_hash": "39b3e88c1c252d27",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 73.0,
+                        "recovered_from": "",
+                        "batched": false
+                      },
+                      {
+                        "section_id": "s3",
+                        "metric_id": "funnel_revenue",
+                        "args_hash": "0f0196d14c54bb5d",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 70.0,
+                        "recovered_from": "",
+                        "batched": false
+                      },
+                      {
+                        "section_id": "s3",
+                        "metric_id": "net_profit",
+                        "args_hash": "c36da3b201f80319",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 401.0,
+                        "recovered_from": "",
+                        "batched": false
+                      }
+                    ]
+                  },
+                  {
+                    "section_id": "s4",
+                    "status": "complete",
+                    "objective": "Meta Ads performance and top performer within Meta (filter ad_platform = meta)",
+                    "acquired_metrics": [
+                      "funnel_order_purchases",
+                      "funnel_order_purchases"
+                    ],
+                    "missing_metrics": [],
+                    "failed_metrics": [],
+                    "notes": [],
+                    "attempts": [
+                      {
+                        "section_id": "s4",
+                        "metric_id": "funnel_order_purchases",
+                        "args_hash": "9d6bed9c26550802",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 1,
+                        "latency_ms": 376.0,
+                        "recovered_from": "",
+                        "batched": false
+                      },
+                      {
+                        "section_id": "s4",
+                        "metric_id": "funnel_order_purchases",
+                        "args_hash": "fac4fe322659cc8e",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 86.0,
+                        "recovered_from": "",
+                        "batched": false
+                      }
+                    ]
+                  },
+                  {
+                    "section_id": "s5",
+                    "status": "unsupported",
+                    "objective": "Net profit performer across the account (identify best by Net profit)",
+                    "acquired_metrics": [],
+                    "missing_metrics": [],
+                    "failed_metrics": [],
+                    "notes": [
+                      "no_template"
+                    ],
+                    "attempts": []
+                  },
+                  {
+                    "section_id": "s6",
+                    "status": "complete",
+                    "objective": "Overall data KPIs for the period (totals for funnel and profit)",
+                    "acquired_metrics": [
+                      "funnel_order_purchases",
+                      "funnel_order_revenue",
+                      "net_profit"
+                    ],
+                    "missing_metrics": [],
+                    "failed_metrics": [],
+                    "notes": [],
+                    "attempts": [
+                      {
+                        "section_id": "s6",
+                        "metric_id": "funnel_order_purchases",
+                        "args_hash": "fac4fe322659cc8e",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 61.0,
+                        "recovered_from": "",
+                        "batched": false
+                      },
+                      {
+                        "section_id": "s6",
+                        "metric_id": "funnel_order_revenue",
+                        "args_hash": "a45e5dd08d6682d0",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 57.0,
+                        "recovered_from": "",
+                        "batched": false
+                      },
+                      {
+                        "section_id": "s6",
+                        "metric_id": "net_profit",
+                        "args_hash": "c36da3b201f80319",
+                        "ok": true,
+                        "error_code": "",
+                        "rows": 11,
+                        "latency_ms": 63.0,
+                        "recovered_from": "",
+                        "batched": false
+                      }
+                    ]
+                  }
+                ],
+                "query_calls": 14,
+                "cache_hits": 0,
+                "attempts": [
+                  {
+                    "section_id": "s1",
+                    "metric_id": "funnel_order_purchases",
+                    "args_hash": "fac4fe322659cc8e",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 1944.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s1",
+                    "metric_id": "funnel_order_revenue",
+                    "args_hash": "a45e5dd08d6682d0",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 535.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s2",
+                    "metric_id": "funnel_purchases",
+                    "args_hash": "39b3e88c1c252d27",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 316.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s2",
+                    "metric_id": "funnel_revenue",
+                    "args_hash": "0f0196d14c54bb5d",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 184.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s3",
+                    "metric_id": "funnel_order_purchases",
+                    "args_hash": "fac4fe322659cc8e",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 71.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s3",
+                    "metric_id": "funnel_order_revenue",
+                    "args_hash": "a45e5dd08d6682d0",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 66.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s3",
+                    "metric_id": "funnel_purchases",
+                    "args_hash": "39b3e88c1c252d27",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 73.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s3",
+                    "metric_id": "funnel_revenue",
+                    "args_hash": "0f0196d14c54bb5d",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 70.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s3",
+                    "metric_id": "net_profit",
+                    "args_hash": "c36da3b201f80319",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 401.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s4",
+                    "metric_id": "funnel_order_purchases",
+                    "args_hash": "9d6bed9c26550802",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 1,
+                    "latency_ms": 376.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s4",
+                    "metric_id": "funnel_order_purchases",
+                    "args_hash": "fac4fe322659cc8e",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 86.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s6",
+                    "metric_id": "funnel_order_purchases",
+                    "args_hash": "fac4fe322659cc8e",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 61.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s6",
+                    "metric_id": "funnel_order_revenue",
+                    "args_hash": "a45e5dd08d6682d0",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 57.0,
+                    "recovered_from": "",
+                    "batched": false
+                  },
+                  {
+                    "section_id": "s6",
+                    "metric_id": "net_profit",
+                    "args_hash": "c36da3b201f80319",
+                    "ok": true,
+                    "error_code": "",
+                    "rows": 11,
+                    "latency_ms": 63.0,
+                    "recovered_from": "",
+                    "batched": false
+                  }
+                ],
+                "limitations": [
+                  "s5:no_template"
+                ]
+              },
+              "report_spec": {
+                "sections": [
+                  {
+                    "id": "s1",
+                    "objective": "Full funnel diagnostic with daily trend and overall totals",
+                    "shape": "funnel",
+                    "metrics": [
+                      "funnel_order_purchases",
+                      "funnel_order_revenue"
+                    ],
+                    "intent": "funnel"
+                  },
+                  {
+                    "id": "s2",
+                    "objective": "Drop-off analysis: stage-to-stage conversion rates and largest drop points",
+                    "shape": "funnel",
+                    "metrics": [
+                      "funnel_purchases",
+                      "funnel_revenue"
+                    ],
+                    "intent": "trend"
+                  },
+                  {
+                    "id": "s3",
+                    "objective": "Top learnings and concise recommendations",
+                    "shape": "funnel",
+                    "metrics": [
+                      "funnel_order_purchases",
+                      "funnel_order_revenue",
+                      "net_profit",
+                      "funnel_purchases",
+                      "funnel_revenue"
+                    ],
+                    "intent": "narrative"
+                  },
+                  {
+                    "id": "s4",
+                    "objective": "Meta Ads performance and top performer within Meta (filter ad_platform = meta)",
+                    "shape": "entity_comparison",
+                    "metrics": [
+                      "funnel_order_purchases",
+                      "net_profit"
+                    ],
+                    "intent": "ranking"
+                  },
+                  {
+                    "id": "s5",
+                    "objective": "Net profit performer across the account (identify best by Net profit)",
+                    "shape": "ranking",
+                    "metrics": [
+                      "net_profit"
+                    ],
+                    "intent": "ranking"
+                  },
+                  {
+                    "id": "s6",
+                    "objective": "Overall data KPIs for the period (totals for funnel and profit)",
+                    "shape": "lookup",
+                    "metrics": [
+                      "funnel_order_purchases",
+                      "funnel_order_revenue",
+                      "net_profit"
+                    ],
+                    "intent": "kpis"
+                  }
+                ],
+                "windows": [
+                  "event 2026-10-01..2026-10-11"
+                ]
+              }
+            },
+            "coverage": {
+              "status": "partial",
+              "sections": [
+                {
+                  "section_id": "s1",
+                  "status": "complete",
+                  "objective": "Full funnel diagnostic with daily trend and overall totals",
+                  "acquired_metrics": [
+                    "funnel_order_purchases",
+                    "funnel_order_revenue"
+                  ],
+                  "missing_metrics": [],
+                  "failed_metrics": [],
+                  "notes": [],
+                  "attempts": [
+                    {
+                      "section_id": "s1",
+                      "metric_id": "funnel_order_purchases",
+                      "args_hash": "fac4fe322659cc8e",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 1944.0,
+                      "recovered_from": "",
+                      "batched": false
+                    },
+                    {
+                      "section_id": "s1",
+                      "metric_id": "funnel_order_revenue",
+                      "args_hash": "a45e5dd08d6682d0",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 535.0,
+                      "recovered_from": "",
+                      "batched": false
+                    }
+                  ]
+                },
+                {
+                  "section_id": "s2",
+                  "status": "complete",
+                  "objective": "Drop-off analysis: stage-to-stage conversion rates and largest drop points",
+                  "acquired_metrics": [
+                    "funnel_purchases",
+                    "funnel_revenue"
+                  ],
+                  "missing_metrics": [],
+                  "failed_metrics": [],
+                  "notes": [],
+                  "attempts": [
+                    {
+                      "section_id": "s2",
+                      "metric_id": "funnel_purchases",
+                      "args_hash": "39b3e88c1c252d27",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 316.0,
+                      "recovered_from": "",
+                      "batched": false
+                    },
+                    {
+                      "section_id": "s2",
+                      "metric_id": "funnel_revenue",
+                      "args_hash": "0f0196d14c54bb5d",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 184.0,
+                      "recovered_from": "",
+                      "batched": false
+                    }
+                  ]
+                },
+                {
+                  "section_id": "s3",
+                  "status": "complete",
+                  "objective": "Top learnings and concise recommendations",
+                  "acquired_metrics": [
+                    "funnel_order_purchases",
+                    "funnel_order_revenue",
+                    "net_profit",
+                    "funnel_purchases",
+                    "funnel_revenue"
+                  ],
+                  "missing_metrics": [],
+                  "failed_metrics": [],
+                  "notes": [],
+                  "attempts": [
+                    {
+                      "section_id": "s3",
+                      "metric_id": "funnel_order_purchases",
+                      "args_hash": "fac4fe322659cc8e",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 71.0,
+                      "recovered_from": "",
+                      "batched": false
+                    },
+                    {
+                      "section_id": "s3",
+                      "metric_id": "funnel_order_revenue",
+                      "args_hash": "a45e5dd08d6682d0",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 66.0,
+                      "recovered_from": "",
+                      "batched": false
+                    },
+                    {
+                      "section_id": "s3",
+                      "metric_id": "funnel_purchases",
+                      "args_hash": "39b3e88c1c252d27",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 73.0,
+                      "recovered_from": "",
+                      "batched": false
+                    },
+                    {
+                      "section_id": "s3",
+                      "metric_id": "funnel_revenue",
+                      "args_hash": "0f0196d14c54bb5d",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 70.0,
+                      "recovered_from": "",
+                      "batched": false
+                    },
+                    {
+                      "section_id": "s3",
+                      "metric_id": "net_profit",
+                      "args_hash": "c36da3b201f80319",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 401.0,
+                      "recovered_from": "",
+                      "batched": false
+                    }
+                  ]
+                },
+                {
+                  "section_id": "s4",
+                  "status": "complete",
+                  "objective": "Meta Ads performance and top performer within Meta (filter ad_platform = meta)",
+                  "acquired_metrics": [
+                    "funnel_order_purchases",
+                    "funnel_order_purchases"
+                  ],
+                  "missing_metrics": [],
+                  "failed_metrics": [],
+                  "notes": [],
+                  "attempts": [
+                    {
+                      "section_id": "s4",
+                      "metric_id": "funnel_order_purchases",
+                      "args_hash": "9d6bed9c26550802",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 1,
+                      "latency_ms": 376.0,
+                      "recovered_from": "",
+                      "batched": false
+                    },
+                    {
+                      "section_id": "s4",
+                      "metric_id": "funnel_order_purchases",
+                      "args_hash": "fac4fe322659cc8e",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 86.0,
+                      "recovered_from": "",
+                      "batched": false
+                    }
+                  ]
+                },
+                {
+                  "section_id": "s5",
+                  "status": "unsupported",
+                  "objective": "Net profit performer across the account (identify best by Net profit)",
+                  "acquired_metrics": [],
+                  "missing_metrics": [],
+                  "failed_metrics": [],
+                  "notes": [
+                    "no_template"
+                  ],
+                  "attempts": []
+                },
+                {
+                  "section_id": "s6",
+                  "status": "complete",
+                  "objective": "Overall data KPIs for the period (totals for funnel and profit)",
+                  "acquired_metrics": [
+                    "funnel_order_purchases",
+                    "funnel_order_revenue",
+                    "net_profit"
+                  ],
+                  "missing_metrics": [],
+                  "failed_metrics": [],
+                  "notes": [],
+                  "attempts": [
+                    {
+                      "section_id": "s6",
+                      "metric_id": "funnel_order_purchases",
+                      "args_hash": "fac4fe322659cc8e",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 61.0,
+                      "recovered_from": "",
+                      "batched": false
+                    },
+                    {
+                      "section_id": "s6",
+                      "metric_id": "funnel_order_revenue",
+                      "args_hash": "a45e5dd08d6682d0",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 57.0,
+                      "recovered_from": "",
+                      "batched": false
+                    },
+                    {
+                      "section_id": "s6",
+                      "metric_id": "net_profit",
+                      "args_hash": "c36da3b201f80319",
+                      "ok": true,
+                      "error_code": "",
+                      "rows": 11,
+                      "latency_ms": 63.0,
+                      "recovered_from": "",
+                      "batched": false
+                    }
+                  ]
+                }
+              ],
+              "query_calls": 14,
+              "cache_hits": 0,
+              "attempts": [
+                {
+                  "section_id": "s1",
+                  "metric_id": "funnel_order_purchases",
+                  "args_hash": "fac4fe322659cc8e",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 1944.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s1",
+                  "metric_id": "funnel_order_revenue",
+                  "args_hash": "a45e5dd08d6682d0",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 535.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s2",
+                  "metric_id": "funnel_purchases",
+                  "args_hash": "39b3e88c1c252d27",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 316.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s2",
+                  "metric_id": "funnel_revenue",
+                  "args_hash": "0f0196d14c54bb5d",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 184.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s3",
+                  "metric_id": "funnel_order_purchases",
+                  "args_hash": "fac4fe322659cc8e",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 71.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s3",
+                  "metric_id": "funnel_order_revenue",
+                  "args_hash": "a45e5dd08d6682d0",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 66.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s3",
+                  "metric_id": "funnel_purchases",
+                  "args_hash": "39b3e88c1c252d27",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 73.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s3",
+                  "metric_id": "funnel_revenue",
+                  "args_hash": "0f0196d14c54bb5d",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 70.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s3",
+                  "metric_id": "net_profit",
+                  "args_hash": "c36da3b201f80319",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 401.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s4",
+                  "metric_id": "funnel_order_purchases",
+                  "args_hash": "9d6bed9c26550802",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 1,
+                  "latency_ms": 376.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s4",
+                  "metric_id": "funnel_order_purchases",
+                  "args_hash": "fac4fe322659cc8e",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 86.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s6",
+                  "metric_id": "funnel_order_purchases",
+                  "args_hash": "fac4fe322659cc8e",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 61.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s6",
+                  "metric_id": "funnel_order_revenue",
+                  "args_hash": "a45e5dd08d6682d0",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 57.0,
+                  "recovered_from": "",
+                  "batched": false
+                },
+                {
+                  "section_id": "s6",
+                  "metric_id": "net_profit",
+                  "args_hash": "c36da3b201f80319",
+                  "ok": true,
+                  "error_code": "",
+                  "rows": 11,
+                  "latency_ms": 63.0,
+                  "recovered_from": "",
+                  "batched": false
+                }
+              ],
+              "limitations": [
+                "s5:no_template"
+              ]
+            },
+            "query_calls": 14,
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [
+                "windows",
+                "filters"
+              ],
+              "plan": {
+                "template_id": "funnel",
+                "needs_agent": false,
+                "steps": 6,
+                "metrics": [
+                  "funnel_order_purchases",
+                  "funnel_order_revenue",
+                  "gross_profit",
+                  "net_profit",
+                  "net_sales"
+                ]
+              }
+            },
+            "v2_spec": {
+              "shape": "funnel",
+              "measures": [
+                "funnel_order_purchases",
+                "funnel_order_revenue",
+                "funnel_purchases",
+                "funnel_revenue",
+                "funnel_order_purchases",
+                "funnel_order_revenue",
+                "net_profit",
+                "funnel_purchases",
+                "funnel_revenue",
+                "funnel_order_purchases",
+                "net_profit",
+                "net_profit",
+                "funnel_order_purchases",
+                "funnel_order_revenue",
+                "net_profit"
+              ],
+              "entities": [],
+              "windows": [
+                "event 2026-10-01..2026-10-11"
+              ]
+            },
+            "evidence_metrics": [
+              "funnel_order_purchases",
+              "funnel_order_revenue",
+              "funnel_purchases",
+              "funnel_revenue",
+              "net_profit"
+            ]
+          },
+          "status": "partial",
+          "route": "v2",
+          "fallback_reason": null,
+          "truths": []
+        }
+      }
+    ]
+  },
+  "comparison": {
+    "compared": false,
+    "baseline_path": null,
+    "passed": true,
+    "regressions": []
+  }
+}

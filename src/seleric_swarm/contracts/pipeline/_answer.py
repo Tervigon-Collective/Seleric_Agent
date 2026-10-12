@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from seleric_swarm.contracts.pipeline._blocks import (
+    CoverageBlock,
+    FunnelChartBlock,
+    InsightBlock,
+    KpiCardBlock,
+    KpiGridBlock,
+    RankingChartBlock,
+    RankingTableBlock,
+    TimeSeriesChartBlock,
+)
 from seleric_swarm.contracts.pipeline._question import Ref
 
 
@@ -44,12 +54,27 @@ class ChartBlock(BaseModel):
     title: str
 
 
+AnswerBlock = (
+    Paragraph
+    | TableBlock
+    | ChartBlock
+    | KpiCardBlock
+    | KpiGridBlock
+    | TimeSeriesChartBlock
+    | FunnelChartBlock
+    | RankingChartBlock
+    | RankingTableBlock
+    | InsightBlock
+    | CoverageBlock
+)
+
+
 class AnswerDraft(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     status: Literal["completed", "partial", "failed"]
     claims: tuple[Claim, ...]
-    blocks: tuple[Paragraph | TableBlock | ChartBlock, ...]
+    blocks: tuple[AnswerBlock, ...]
     limitations: tuple[str, ...] = ()
     next_step: str = ""
 
@@ -60,3 +85,5 @@ class AnswerDocument(BaseModel):
     draft: AnswerDraft
     rendered_markdown: str
     evidence_ids: tuple[str, ...]
+    # Structured message parts for Office UI (CHART / TABLE / KPI_GRID). Additive.
+    parts: tuple[dict[str, Any], ...] = ()

@@ -8,6 +8,7 @@ import { ChartRenderer, SelectionInsight } from "./charts/ChartRenderer";
 import { useChartVocabularyDrift } from "../api/chartContract";
 import { buildFollowUp, buildPointContext } from "../api/drillContext";
 import { DownloadIcon } from "./icons";
+import { KpiGrid } from "./report/KpiGrid";
 
 const text = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 const record = (value: unknown): Record<string, unknown> =>
@@ -67,8 +68,15 @@ function Table({ content }: { content: unknown }) {
     });
   }, [safeRows, sortKey, sortDir]);
 
+  const state = String(record(content).state || "");
+  if (state === "loading") {
+    return <p className="empty-note" aria-busy="true">Loading table…</p>;
+  }
+  if (state === "error") {
+    return <aside className="part-card warning" role="alert">Table could not be loaded from certified evidence.</aside>;
+  }
   if (!columns.length) {
-    return <p className="empty-note" role="status">No rows returned.</p>;
+    return <p className="empty-note" role="status">No rows returned from certified evidence.</p>;
   }
 
   const download = () => {
@@ -177,7 +185,19 @@ export function MessagePartRenderer({ part }: { part: MessagePart }) {
     }
     case "TOOL_CALL": return <aside className="part-card tool"><strong>Tool</strong><code>{text(value.tool)}</code><span>{text(value.status ?? "")}</span></aside>;
     case "ARTIFACT": return <button className="part-card artifact" onClick={() => showArtifact({ ...value, ...record(value.provenance) })}><strong>Artifact</strong><span>{text(value.title ?? value.artifact_id)}</span></button>;
-    case "CHART": return <ChartRenderer spec={value.data ?? value as any} />;
+    case "CHART": {
+      const spec = value.data ?? value;
+      if (!spec || (typeof spec === "object" && !(spec as any).data && !(spec as any).chart_type && !(spec as any).series)) {
+        return <aside className="part-card warning" role="alert">Chart is still loading or has no certified data.</aside>;
+      }
+      try {
+        return <ChartRenderer spec={spec as any} />;
+      } catch {
+        return <aside className="part-card warning" role="alert">Chart could not be rendered from certified evidence.</aside>;
+      }
+    }
+    case "KPI_GRID":
+      return <KpiGrid content={value} />;
     case "AGENT_STATUS": return <p className="part-status" aria-live="polite">{text(part.content)}</p>;
     case "APPROVAL": return <ApprovalCard value={value} />;
     case "WARNING": return <aside className="part-card warning" role="alert">{text(part.content)}</aside>;

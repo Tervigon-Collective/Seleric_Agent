@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from itertools import pairwise
-
 from seleric_swarm.contracts.pipeline import AnalysisPlan
 from seleric_swarm.plan._templates._base import PlanContext, Prepared, Steps, carried, is_analysis
 
@@ -66,27 +64,5 @@ class TrendTemplate(_PerMetric):
         return prepared.spec.grain or _TREND_GRAIN
 
 
-class FunnelTemplate:
-    """Each named stage over the event window, then each stage's share of the one before."""
-
-    id = "funnel"
-
-    def matches(self, prepared: Prepared) -> bool:
-        return is_analysis(prepared) and prepared.shape == "funnel" and len(prepared.metrics) >= 2
-
-    def build(self, prepared: Prepared, ctx: PlanContext) -> AnalysisPlan | None:
-        model = ctx.read_model
-        steps = Steps()
-        stage_ids = [
-            steps.query(
-                metric_id,
-                role=prepared.event,
-                breakdowns=carried(model, metric_id, prepared.breakdowns),
-                filters=prepared.spec.filters,
-                grain=prepared.spec.grain,
-            )
-            for metric_id in prepared.metrics
-        ]
-        for before, after in pairwise(stage_ids):
-            steps.derive("share", [after, before])
-        return steps.plan(self.id)
+# FunnelTemplate lives in _funnel.py (AG08-03): typed FunnelDefinition + funnel_stages.
+from seleric_swarm.plan._templates._funnel import FunnelTemplate  # noqa: E402,F401

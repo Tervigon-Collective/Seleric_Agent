@@ -219,6 +219,10 @@ class Steps:
             return None
         return AnalysisPlan(template_id=template_id, steps=tuple(self._steps))
 
+    @property
+    def has_steps(self) -> bool:
+        return bool(self._steps)
+
 
 def carried(model: SemanticReadModel, metric_id: str, dimensions: Sequence[str]) -> tuple[str, ...]:
     """The dimensions ``metric_id`` can be sliced by (directly, via a twin or a conformed sibling)."""

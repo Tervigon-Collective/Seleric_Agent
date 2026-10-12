@@ -26,6 +26,16 @@ _METRIC_KEYS = frozenset({
     "excluded_dimensions",
     "currency",
     "currency_default",
+    # Core SEM-14 canonical fields (AG-04)
+    "ratio_components",
+    "cube_mapping",
+    "formula",
+    "status",
+    "category",
+    "version",
+    "grain",
+    "data_owner",
+    "access_policy",
 })
 _DIMENSION_KEYS = frozenset({
     "id",
@@ -75,6 +85,16 @@ class MetricRecord(BaseModel):
     valid_for: dict[str, tuple[str, ...]] | None = None
     excluded_dimensions: dict[str, str] | None = None
     currency: str | None = None
+    # Core SEM-14 canonical fields (AG-04): authoritative formula/ratio from Core
+    ratio_components: dict[str, str] | None = None  # {"numerator": "...", "denominator": "..."}
+    cube_mapping: dict[str, str] | None = None      # {"view": "...", "measure": "..."}
+    formula: dict[str, Any] | None = None           # {"human_readable": "...", "authoritative_source": "...", "depends_on": [...]}
+    status: str = ""
+    category: str = ""
+    version: str = ""
+    grain: str = ""
+    data_owner: str = ""
+    access_policy: dict[str, Any] | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -338,6 +358,57 @@ class SemanticReadModel(BaseModel):
         metric = self._metric(metric_id)
         return metric.volume_metric if metric is not None else None
 
+    def grain_for(self, metric_id: str) -> str | None:
+        """Counting grain from Core (``session``, ``ad_day``, …); None when undeclared."""
+        metric = self._metric(metric_id)
+        if metric is None:
+            return None
+        grain = (metric.grain or "").strip()
+        if grain:
+            return grain
+        extra = metric.extra.get("grain")
+        return str(extra).strip() or None if extra else None
+
+    def view_for(self, metric_id: str) -> str | None:
+        """Cube/view id the metric binds to."""
+        metric = self._metric(metric_id)
+        if metric is None:
+            return None
+        if metric.view:
+            return metric.view
+        mapping = metric.cube_mapping or {}
+        view = mapping.get("view")
+        return view.strip() if isinstance(view, str) and view.strip() else None
+
+    def ratio_components_for(self, metric_id: str) -> dict[str, str] | None:
+        """``{numerator, denominator}`` when Core declares ratio algebra; else None."""
+        metric = self._metric(metric_id)
+        if metric is None:
+            return None
+        if metric.ratio_components:
+            return dict(metric.ratio_components)
+        raw = metric.extra.get("ratio_components")
+        if isinstance(raw, dict):
+            out = {str(k): str(v) for k, v in raw.items() if isinstance(v, (str, int))}
+            return out or None
+        return None
+
+    def category_for(self, metric_id: str) -> str | None:
+        metric = self._metric(metric_id)
+        if metric is None:
+            return None
+        cat = (metric.category or "").strip()
+        if cat:
+            return cat
+        extra = metric.extra.get("category")
+        return str(extra).strip() or None if extra else None
+
+    def view_freshness(self, view_id: str) -> str | None:
+        for view in self.views:
+            if view.id == view_id:
+                return view.freshness
+        return None
+
     def metrics_supporting_dimension(
         self, dimension: str, n: int = 6, like: str | None = None
     ) -> list[str]:
@@ -440,9 +511,26 @@ def _metric_from_row(row: dict[str, Any]) -> MetricRecord | None:
     parsed_excluded = (
         {str(key): str(value) for key, value in excluded.items()} if isinstance(excluded, dict) else None
     )
+    # Core SEM-14 canonical fields (AG-04)
+    ratio_components = row.get("ratio_components")
+    parsed_ratio: dict[str, str] | None = None
+    if isinstance(ratio_components, dict):
+        parsed_ratio = {str(k): str(v) for k, v in ratio_components.items() if isinstance(k, str) and isinstance(v, str)}
+    cube_mapping = row.get("cube_mapping")
+    parsed_cube: dict[str, str] | None = None
+    if isinstance(cube_mapping, dict):
+        parsed_cube = {str(k): str(v) for k, v in cube_mapping.items() if isinstance(k, str) and isinstance(v, str)}
+    formula = row.get("formula")
+    parsed_formula: dict[str, Any] | None = None
+    if isinstance(formula, dict):
+        parsed_formula = {str(k): v for k, v in formula.items() if isinstance(k, str)}
+    access_policy = row.get("access_policy")
+    parsed_access: dict[str, Any] | None = None
+    if isinstance(access_policy, dict):
+        parsed_access = {str(k): v for k, v in access_policy.items() if isinstance(k, str)}
     extra = {str(key): value for key, value in row.items() if key not in _METRIC_KEYS}
     return MetricRecord(
-        id=metric_id,
+        id=str(row.get("id") or ""),
         label=str(row.get("label") or row.get("display_name") or ""),
         view=str(row.get("view") or row.get("cube_view") or ""),
         unit=_opt_str(row.get("unit")),
@@ -457,6 +545,15 @@ def _metric_from_row(row: dict[str, Any]) -> MetricRecord | None:
         valid_for=parsed_valid,
         excluded_dimensions=parsed_excluded,
         currency=_opt_str(row.get("currency") or row.get("currency_default")),
+        ratio_components=parsed_ratio,
+        cube_mapping=parsed_cube,
+        formula=parsed_formula,
+        status=_opt_str(row.get("status")) or "",
+        category=_opt_str(row.get("category")) or "",
+        version=_opt_str(row.get("version")) or "",
+        grain=_opt_str(row.get("grain")) or "",
+        data_owner=_opt_str(row.get("data_owner")) or "",
+        access_policy=parsed_access,
         extra=extra,
     )
 

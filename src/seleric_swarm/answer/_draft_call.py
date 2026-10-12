@@ -8,6 +8,7 @@ import json
 import logging
 from typing import Any, Protocol
 
+from seleric_swarm.answer._assemble import ReportSkeleton
 from seleric_swarm.answer._evidence import Evidence
 from seleric_swarm.answer._render import render
 from seleric_swarm.answer._verify import Verdict, verify
@@ -22,7 +23,10 @@ INSTRUCTIONS = (
     "cite it as {claim_id}. Use role 'change' only for delta/pct_change derivations, 'share' "
     "only for share derivations, 'total' for a sum or an unsliced row. Use a table block for "
     "a result set with many rows. If evidence is missing or failed, set status 'partial' and "
-    "say what is missing in limitations. next_step is one short offer."
+    "say what is missing in limitations. next_step is one short offer of an investigation the "
+    "connected catalogue can already answer — never ask the user to upload data Core can query. "
+    "When a report skeleton is provided, write narrative paragraphs and choose which insights "
+    "to feature; do not invent chart points, KPI values, or internal step ids (q1, d1, s1.q2)."
 )
 
 _UNAVAILABLE = AnswerDraft(
@@ -34,9 +38,6 @@ _UNAVAILABLE = AnswerDraft(
 
 
 _MAX_ROWS = 20
-# Cap breakdown rows across all result sets, not just per set: a plan can emit
-# twenty result sets and a per-set cap alone lets the listing grow unbounded.
-# Single-value result sets are one value each and are never charged against it.
 _MAX_ROWS_TOTAL = 120
 
 
@@ -49,7 +50,14 @@ class AnswerLLM(Protocol):
     async def __call__(self, *, instructions: str, prompt: str) -> tuple[AnswerDraft, dict[str, Any]]: ...
 
 
-def evidence_prompt(question: str, spec: QuestionSpec | None, evidence: Evidence, read_model: SemanticReadModel) -> str:
+def evidence_prompt(
+    question: str,
+    spec: QuestionSpec | None,
+    evidence: Evidence,
+    read_model: SemanticReadModel,
+    *,
+    skeleton: ReportSkeleton | None = None,
+) -> str:
     """Compact JSON listing of what may be cited (ids, metric labels, row keys; values included
     so the model can choose what to say, never so it can type them)."""
     items: list[dict[str, Any]] = []
@@ -63,7 +71,6 @@ def evidence_prompt(question: str, spec: QuestionSpec | None, evidence: Evidence
         if rs.error:
             item["error"] = rs.error.code
         elif rs.breakdowns or len(rs.rows) != 1:
-            # The answer cites rows by key; values are shown only so the model can pick what to say.
             ordered = sorted(rs.rows, key=lambda r: -abs(r.value or 0.0))
             take = min(_MAX_ROWS, max(0, row_budget))
             item["rows"] = [[r.dimensions, _short(r.value)] for r in ordered[:take]]
@@ -77,7 +84,8 @@ def evidence_prompt(question: str, spec: QuestionSpec | None, evidence: Evidence
         ditem: dict[str, Any] = {"ref": d.ref.id, "kind": "derivation", "op": d.op, "value": _short(d.value)}
         if d.error:
             ditem["error"] = d.error.code
-        for key in ("subject", "verdict", "baseline", "event", "share_of_change", "detail"):
+        for key in ("subject", "verdict", "baseline", "event", "share_of_change", "detail",
+                    "largest_leakage", "largest_leakage_stage", "criterion"):
             value = d.params.get(key)
             if value not in (None, ""):
                 ditem[key] = _short(value) if isinstance(value, float) else value
@@ -91,7 +99,47 @@ def evidence_prompt(question: str, spec: QuestionSpec | None, evidence: Evidence
             "entities": {e.dimension: list(e.values) for e in spec.entities},
             "periods": [f"{w.role} {w.start}..{w.end}" for w in spec.windows],
         }
+    if skeleton is not None:
+        body["report_skeleton"] = {
+            "status": skeleton.status,
+            "block_kinds": [getattr(b, "kind", type(b).__name__) for b in skeleton.blocks],
+            "insights": [
+                {
+                    "id": i.insight_id,
+                    "movement": i.movement,
+                    "kind": i.explanation_kind,
+                    "next_check": i.next_check,
+                }
+                for i in skeleton.insights[:8]
+            ],
+            "limitations": skeleton.limitations[:8],
+            "note": "Server already built KPI/chart/table blocks from certified evidence. "
+                    "Return narrative paragraphs + claims only; do not invent numbers.",
+        }
     return json.dumps(body, default=str, separators=(",", ":"))
+
+
+def _merge_skeleton(draft: AnswerDraft, skeleton: ReportSkeleton | None) -> AnswerDraft:
+    """Prepend server-built report blocks; keep the model's narrative paragraphs/claims."""
+    if skeleton is None or not skeleton.blocks:
+        return draft
+    narrative = tuple(b for b in draft.blocks if isinstance(b, Paragraph))
+    # Prefer skeleton status when it is stricter than the model's.
+    status = draft.status
+    if skeleton.status == "partial" and status == "completed":
+        status = "partial"
+    if skeleton.status == "failed" and status != "failed" and not narrative and not draft.claims:
+        status = "failed"
+    limitations = tuple(dict.fromkeys([*draft.limitations, *skeleton.limitations]))
+    # Narrative leads for simple answers (lookup regression); structured
+    # blocks follow so charts/KPI grids still render after the prose.
+    return draft.model_copy(
+        update={
+            "status": status,
+            "blocks": (*narrative, *skeleton.blocks),
+            "limitations": limitations,
+        }
+    )
 
 
 async def answer(
@@ -102,12 +150,13 @@ async def answer(
     evidence: Evidence,
     read_model: SemanticReadModel,
     instructions: str | None = None,
+    skeleton: ReportSkeleton | None = None,
 ) -> tuple[AnswerDocument, dict[str, Any]]:
-    """Draft → verify → (one revision) → render. Never raises."""
+    """Draft → verify → (one revision) → merge skeleton → render. Never raises."""
     stats: dict[str, Any] = {"attempts": 0}
     if llm is None:
         return render(_UNAVAILABLE, evidence, read_model), {"status": "skipped"}
-    prompt = evidence_prompt(question, spec, evidence, read_model)
+    prompt = evidence_prompt(question, spec, evidence, read_model, skeleton=skeleton)
     draft: AnswerDraft | None = None
     verdict = Verdict()
     for attempt in (1, 2):
@@ -119,11 +168,27 @@ async def answer(
             _log.warning("answer_draft_failed attempt=%d", attempt, exc_info=True)
             stats["error"] = type(exc).__name__
             continue
-        verdict = verify(draft, spec, evidence)
+        verdict = verify(draft, spec, evidence, skeleton=skeleton)
         if verdict.ok:
             break
         prompt = prompt + "\nREVISE. Structural problems: " + json.dumps([[i.code, i.detail] for i in verdict.issues])
     if draft is None:
+        # Multi-objective reports may still ship a skeleton-only partial. Single-
+        # section callers treat answer_unavailable as failed (mission falls back).
+        multi_report = skeleton is not None and len({
+            getattr(b, "section_id", "") for b in skeleton.blocks if getattr(b, "section_id", "")
+        }) > 1
+        if multi_report and skeleton is not None and skeleton.blocks:
+            draft = AnswerDraft(
+                status="partial",
+                claims=(),
+                blocks=(),
+                limitations=tuple(skeleton.limitations) or ("answer_unavailable",),
+                next_step="",
+            )
+            draft = _merge_skeleton(draft, skeleton)
+            stats["status"] = draft.status
+            return render(draft, evidence, read_model), stats
         stats["status"] = "failed"
         return render(_UNAVAILABLE, evidence, read_model), stats
     stats["issues"] = verdict.codes()
@@ -132,5 +197,6 @@ async def answer(
             "status": "partial",
             "limitations": (*draft.limitations, *(f"unverified:{c}" for c in dict.fromkeys(verdict.codes()))),
         })
+    draft = _merge_skeleton(draft, skeleton)
     stats["status"] = draft.status
     return render(draft, evidence, read_model), stats

@@ -1,0 +1,9 @@
+# Single case for AG-08 before-trace reproduction.
+cases:
+  - id: report-full-funnel-meta-oct1-11
+    as_of: "2026-10-12"
+    turns:
+      - "I NEED Full Funnel Diagnostic (1-11th October). Drop Off Analysis, Top Learnings, Meta Ads, Top Performer and Net Profit Performer, and Overall Data."
+    tags: [report, multi_objective, funnel, ranking]
+    expect:
+      status: completed

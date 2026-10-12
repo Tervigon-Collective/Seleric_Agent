@@ -28,8 +28,15 @@ if TYPE_CHECKING:
     from seleric_swarm.evals._case import EvalCase
     from seleric_swarm.evals._runner import ObservedCase
 
-HIGHER_IS_BETTER = ("spec_accuracy", "status_ok", "value_correctness")
-LOWER_IS_BETTER = ("revisions", "latency_ms", "llm_calls", "tokens")
+HIGHER_IS_BETTER = (
+    "spec_accuracy",
+    "status_ok",
+    "value_correctness",
+    "sections_covered",
+    "chart_reconciles",
+    "numbers_grounded",
+)
+LOWER_IS_BETTER = ("revisions", "latency_ms", "llm_calls", "tokens", "query_calls")
 SCORE_METRICS = HIGHER_IS_BETTER + LOWER_IS_BETTER
 
 # A value and its truth can be the *same* number carried through different
@@ -235,6 +242,39 @@ def score_case(
     metrics["latency_ms"] = observed.latency_ms
     metrics["llm_calls"] = None if observed.llm_calls is None else float(observed.llm_calls)
     metrics["tokens"] = None if observed.tokens is None else float(observed.tokens)
+
+    # AG-08 report metrics (read from v2_mission diagnostics when present).
+    mission = (observed.diagnostics or {}).get("v2_mission") or {}
+    coverage = (observed.diagnostics or {}).get("coverage") or mission.get("coverage") or {}
+    run = mission.get("run") or {}
+    sections = coverage.get("sections") if isinstance(coverage, dict) else None
+    if isinstance(sections, list) and sections:
+        covered = sum(
+            1
+            for s in sections
+            if isinstance(s, dict) and s.get("status") in ("complete", "partial", "provisional")
+        )
+        metrics["sections_covered"] = covered / len(sections)
+    else:
+        metrics["sections_covered"] = None
+    # Charts reconcile when the run produced result sets without step errors on
+    # charted metrics, or when no charts were expected.
+    step_errors = run.get("step_errors") if isinstance(run, dict) else None
+    if isinstance(step_errors, list):
+        metrics["chart_reconciles"] = 1.0 if not step_errors else 0.0
+    else:
+        metrics["chart_reconciles"] = None
+    # Numbers are grounded when every evidence row carries an id (ObservedEvidence always does)
+    # and the response is not empty while status is completed/partial.
+    if observed.evidence:
+        metrics["numbers_grounded"] = 1.0
+    elif observed.status in ("completed", "partial") and observed.response_text:
+        # Narrative-only answer: score unknown rather than fail.
+        metrics["numbers_grounded"] = None
+    else:
+        metrics["numbers_grounded"] = 0.0 if "report" in case.tags else None
+    query_calls = run.get("query_calls") if isinstance(run, dict) else None
+    metrics["query_calls"] = float(query_calls) if isinstance(query_calls, (int, float)) else None
 
     missing_mentions = [m for m in case.expect.must_mention if m not in observed.response_text]
     forbidden_hits = [f for f in case.expect.forbid if f in observed.response_text]

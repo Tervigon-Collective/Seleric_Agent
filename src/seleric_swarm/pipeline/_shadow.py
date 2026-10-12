@@ -22,7 +22,6 @@ from datetime import date, datetime
 from datetime import time as dtime
 from typing import Any, Literal
 
-from seleric_swarm.answer import AnswerLLM, Evidence, answer, verify
 from seleric_swarm.config.llm_roles import load_prompt
 from seleric_swarm.contracts.pipeline import (
     AnalysisPlan,
@@ -220,19 +219,38 @@ async def _run(
 
 
 async def _answer_shadow(
-    llm: AnswerLLM | None, inputs: ShadowInputs, spec: QuestionSpec, outcome: ShadowOutcome, *, mission_id: str,
+    llm: "AnswerLLM" | None,
+    inputs: ShadowInputs,
+    spec: QuestionSpec,
+    outcome: ShadowOutcome,
+    *,
+    mission_id: str,
     modes: ShadowModes | None = None,
 ) -> None:
+    from seleric_swarm.answer import AnswerLLM, Evidence, answer, verify
+
     modes = modes or ShadowModes()
     assert outcome.plan is not None
     as_of = inputs.as_of_time or datetime.combine(inputs.as_of, dtime(23, 59))
     with stage_span("execute", mission_id=mission_id, inp=outcome.plan):
-        outcome.run = await run_plan(outcome.plan, spec, port=inputs.port, read_model=inputs.read_model, as_of=as_of,
-                                   graph_gcm=modes.graph_gcm != "off")
+        outcome.run = await run_plan(
+            outcome.plan,
+            spec,
+            port=inputs.port,
+            read_model=inputs.read_model,
+            as_of=as_of,
+            graph_gcm=modes.graph_gcm != "off",
+        )
     evidence = Evidence(outcome.run.evidence)
     with stage_span("answer", mission_id=mission_id, inp=spec) as span:
-        doc, stats = await answer(llm, inputs.question, spec=spec, evidence=evidence, read_model=inputs.read_model,
-                                   instructions=load_prompt("answer")[0])
+        doc, stats = await answer(
+            llm,
+            inputs.question,
+            spec=spec,
+            evidence=evidence,
+            read_model=inputs.read_model,
+            instructions=load_prompt("answer")[0],
+        )
         _apply_gen_ai(span, stats)
         span.set_output(doc)
     outcome.answer = {

@@ -1,0 +1,92 @@
+# AG-08 report cases. Truth is metrics_query args. Record with:
+#   V2_NO_FALLBACK=true uv run python scripts/eval_run.py --mode record --suite reports --cases eval/golden/reports.yaml
+# Replay:
+#   uv run python scripts/eval_run.py --mode replay --suite reports --cases eval/golden/reports.yaml
+cases:
+  - id: report-full-funnel-meta-oct1-11
+    as_of: "2026-10-12"
+    turns:
+      - "I NEED Full Funnel Diagnostic (1-11th October). Drop Off Analysis, Top Learnings, Meta Ads, Top Performer and Net Profit Performer, and Overall Data."
+    tags: [report, multi_objective, funnel, ranking]
+    expect:
+      # Partial is correct when any major section is unsupported; completed only when all are.
+      status: partial
+      must_mention: []
+      forbid: []
+
+  - id: report-funnel-missing-stage
+    as_of: "2026-10-12"
+    turns:
+      - "Show the website funnel drop-off from sessions to checkout to purchase for 1-11 October."
+    tags: [report, funnel, partial]
+    expect:
+      status: partial
+
+  - id: report-unknown-campaign-attribution
+    as_of: "2026-10-12"
+    turns:
+      - "Rank Meta campaigns by spend and attributed sales for 1-11 October."
+    tags: [report, ranking, attribution]
+    expect:
+      status: completed
+
+  - id: report-cross-view-financial
+    as_of: "2026-10-12"
+    turns:
+      - "Show ad spend from Meta and net profit for 1-11 October."
+    tags: [report, cross_view]
+    expect:
+      status: completed
+
+  - id: report-failed-derivation
+    as_of: "2026-10-12"
+    turns:
+      - "Funnel diagnostic sessions to purchases for 1-11 October with stage conversion rates."
+    tags: [report, derivation]
+    expect:
+      status: partial
+
+  - id: report-unclear-ranking-criterion
+    as_of: "2026-10-12"
+    turns:
+      - "Who were the top Meta performers for 1-11 October?"
+    tags: [report, ranking]
+    expect:
+      status: completed
+
+  - id: report-unavailable-graph-dimension
+    as_of: "2026-10-12"
+    turns:
+      - "Break down sessions by loyalty_tier for 1-11 October."
+    tags: [report, unsupported]
+    expect:
+      status: partial
+
+  - id: report-simple-lookup
+    as_of: "2026-10-12"
+    turns:
+      - "What was ad spend on 2026-10-05?"
+    tags: [report, lookup, regression]
+    expect:
+      status: completed
+      spec:
+        kind: analysis
+        measures:
+          - metric_id: ad_spend
+
+  - id: report-daily-trend
+    as_of: "2026-10-12"
+    turns:
+      - "Show daily ad spend from 1 to 11 October."
+    tags: [report, trend]
+    expect:
+      status: completed
+
+  - id: report-followup-one-section
+    as_of: "2026-10-12"
+    turns:
+      - "I NEED Full Funnel Diagnostic (1-11th October). Drop Off Analysis, Top Learnings, Meta Ads, Top Performer and Net Profit Performer, and Overall Data."
+      - "Now just update the Meta Ads ranking for the same period."
+    tags: [report, follow_up]
+    expect:
+      status: completed

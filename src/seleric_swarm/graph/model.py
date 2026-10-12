@@ -1,4 +1,6 @@
-"""Metric graph contracts (M4.2): identity edges from the catalogue, causal edges from config."""
+"""Metric graph contracts (M4.2): identity edges from the catalogue, causal edges from config.
+Cross-domain extensions (AG-06): verified joins, time basis, spend attribution, population attribution.
+"""
 
 from __future__ import annotations
 
@@ -19,6 +21,13 @@ class Edge(BaseModel):
     sign: Literal[1, -1, 0] = 0  # causal: expected direction, 0 = unknown
     lag_days: int = 0
     graph_id: str = ""
+    # Cross-domain diagnostic extensions (AG-06)
+    join_type: Literal["verified", "attributed", "derived"] = "derived"  # identity edge join basis
+    time_basis: Literal["event_time", "cohort_time", "order_time", "report_time"] = "event_time"
+    spend_attribution: Literal["direct", "allocated", "shared"] = "direct"
+    population_coverage: Literal["attributed", "unmatched", "partial"] = "attributed"
+    contribution_type: Literal["observed", "causal", "post_ad"] = "observed"
+    profit_level: Literal["post_ad", "contribution_margin", "net_profit"] = "post_ad"
 
 
 class SkippedNode(BaseModel):

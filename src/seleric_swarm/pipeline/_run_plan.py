@@ -128,6 +128,8 @@ class PlanRun:
     explorations: dict[str, ExplorationMap] = field(default_factory=dict)
     unsupported: list[str] = field(default_factory=list)  # engine ids the v2 path cannot run yet
     deadline_hit: list[str] = field(default_factory=list)  # steps skipped or cut by the latency tier
+    query_calls: int = 0  # AG-08: metrics_query invocations (after batching/cache)
+    cache_hits: int = 0
 
     @property
     def evidence(self) -> list[ResultSet | Derivation]:
@@ -139,6 +141,10 @@ class PlanRun:
             "step_errors": [rs.error.code for rs in self.result_sets if rs.error],
             "derivations": len(self.derivations),
             "derive_errors": [d.error.code for d in self.derivations if d.error],
+            "acquired_metrics": sorted({rs.metric_id for rs in self.result_sets if rs.error is None}),
+            "failed_metrics": sorted({rs.metric_id for rs in self.result_sets if rs.error is not None}),
+            "query_calls": self.query_calls or len(self.result_sets),
+            "cache_hits": self.cache_hits,
             "investigations": {
                 k: {"status": v.status, "findings": len(v.findings), "limitations": v.limitations[:4]}
                 for k, v in self.investigations.items()
