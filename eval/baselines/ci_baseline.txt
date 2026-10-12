@@ -1,0 +1,19 @@
+# CI baseline at refactor start (2026-10-12)
+# Bar per commit: no NEW failures vs this file. Do not fix unrelated entries here.
+ruff_errors: 315
+mypy_errors: 272
+import_linter_broken_contracts: 5
+pytest: 12 failed, 1720 passed, 31 skipped
+failing_tests:
+  - tests/contract/test_conversation_phase0.py::test_canonical_thread_run_attempt_and_attachment_contracts
+  - tests/contract/test_semantic_pickup.py::test_pickup_cases_are_not_in_the_golden_loader_by_accident
+  - tests/unit/evals/test_examples_separation.py::test_golden_dir_loads_shape_cases
+  - tests/unit/evals/test_examples_separation.py::test_entity_comparison_case_pins_shape_and_window_order
+  - tests/unit/plan/test_planner.py::test_breakdown_ranking_is_typed_on_the_rank_metric_step
+  - tests/unit/plan/test_planner.py::test_entity_comparison_ranks_then_compares_the_same_entities
+  - tests/unit/plan/test_planner.py::test_an_entity_comparison_naming_no_values_ranks_the_whole_family
+  - tests/unit/plan/test_planner.py::test_a_ranked_entity_over_two_windows_is_an_entity_comparison_whatever_the_label
+  - tests/unit/plan/test_planner.py::test_another_listed_entity_kind_is_its_own_ranking
+  - tests/unit/plan/test_planner.py::test_funnel_derives_each_stage_share_of_the_one_before
+  - tests/unit/spec/test_ag03_understanding.py::test_ag03_t01_plan_for_entity_comparison
+  - tests/unit/test_llm_roles.py::test_prompt_registry_serves_the_built_in_text
