@@ -48,6 +48,56 @@ class ObservedCase(BaseModel):
     tokens: int | None = None
     diagnostics: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+    # Which path actually produced the answer, and why it left the typed path.
+    # ``route`` is never inferred from the mission status: a "completed" mission
+    # can have been answered by the legacy loop, so the route is read from the
+    # trace (AG-00).
+    route: str = "unknown"
+    fallback_reason: str | None = None
+
+
+# Routes an answer can travel (AG-00): the typed v2 path, its shadow (observed
+# beside the legacy answer), the business-state snapshot fast path, the legacy
+# agent loop, a v2 clarification, or a failed run with no fallback.
+_ROUTE_V2 = "v2"
+_ROUTE_V2_CLARIFY = "v2_clarify"
+_ROUTE_V2_SHADOW = "v2_shadow"
+_ROUTE_BUSINESS_STATE = "business_state"
+_ROUTE_LEGACY = "legacy"
+_ROUTE_FAILED = "failed"
+_ROUTE_UNKNOWN = "unknown"
+
+
+def _route_from_trace(trace: dict[str, Any], status: str) -> tuple[str, str | None]:
+    """``(route, fallback_reason)`` for a mission, read from its trace.
+
+    A successful mission status is not evidence that the typed path answered:
+    the trace is the only place that says v2 answered, fell back or clarified.
+    """
+    if isinstance(trace.get("lookup"), str) and trace["lookup"] == "business_state_fast_path":
+        return _ROUTE_BUSINESS_STATE, None
+    mission = trace.get("v2_mission")
+    if isinstance(mission, dict):
+        stage = str(mission.get("status") or "")
+        reason = str(mission.get("reason") or "") or None
+        if stage == "answered":
+            return _ROUTE_V2, None
+        if stage == "clarify" or mission.get("clarification") is not None:
+            return _ROUTE_V2_CLARIFY, None
+        if stage == "fallback":
+            if status == "failed":
+                return _ROUTE_FAILED, reason
+            return _ROUTE_LEGACY, reason
+    if isinstance(trace.get("v2_shadow"), dict):
+        # Legacy answered; the typed path only observed.
+        if status == "failed":
+            return _ROUTE_FAILED, None
+        return _ROUTE_V2_SHADOW, None
+    if status == "failed":
+        return _ROUTE_FAILED, None
+    if trace:
+        return _ROUTE_LEGACY, None
+    return _ROUTE_UNKNOWN, None
 
 
 @runtime_checkable
@@ -127,8 +177,14 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
     v2_latency, v2_tokens, v2_calls = _v2_costs(trace)
     if v2_latency is None and isinstance(elapsed, (int, float)):
         v2_latency = float(elapsed) * 1000
+    status = str(payload.get("status") or "unknown")
+    route, fallback_reason = _route_from_trace(trace, status)
     spec = trace.get("spec")
-    diagnostics: dict[str, Any] = {"spec_source": "trace.spec" if isinstance(spec, dict) and spec else None}
+    diagnostics: dict[str, Any] = {
+        "spec_source": "trace.spec" if isinstance(spec, dict) and spec else None,
+        "route": route,
+        "fallback_reason": fallback_reason,
+    }
     for key in ("v2_mission", "v2_shadow"):
         stage = trace.get(key)
         if isinstance(stage, dict):
@@ -156,7 +212,7 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
     return ObservedCase(
         id=case.id,
         question=question,
-        status=str(payload.get("status") or "unknown"),
+        status=status,
         spec=spec if isinstance(spec, dict) else {},
         evidence=tuple(evidence),
         response_text=str(payload.get("final_response") or ""),
@@ -166,6 +222,8 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
         tokens=v2_tokens,
         diagnostics={**diagnostics, "evidence_metrics": sorted({e.metric_id for e in evidence})[:10]},
         error=str(error_code) if error_code else None,
+        route=route,
+        fallback_reason=fallback_reason,
     )
 
 

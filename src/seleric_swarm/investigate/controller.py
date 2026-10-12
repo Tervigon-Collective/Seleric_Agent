@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Sequence
+from typing import Literal
 
 from seleric_swarm.context import (
     AsyncContextProvider,
@@ -31,20 +32,28 @@ from seleric_swarm.investigate.state import (
     MetricReader,
     Segment,
     Selector,
+    aggregation_is_additive,
 )
+
+# Type alias for finding qualification (from Finding.qualification)
+FindingQualification = Literal[
+    "exact_accounting",
+    "observed_segment_contribution",
+    "directionally_consistent_hypothesis",
+    "untested_hypothesis",
+    "contradicted_hypothesis",
+    "causally_supported",
+]
 from seleric_swarm.semantic import SemanticReadModel
 
 _log = logging.getLogger("seleric.investigate")
 
-# Aggregations whose slices do not sum to the total (machine values, not business words).
-_NON_ADDITIVE = frozenset(
-    {"avg", "average", "mean", "median", "ratio", "rate", "percent", "percentage",
-     "count_distinct", "distinct", "unique", "min", "max", "last", "first"}
-)
-
 
 class _Budget(Exception):
     pass
+
+
+_PremiseStatus = Literal["premise_false", "not_material", "insufficient_evidence"]
 
 
 class Investigation:
@@ -64,6 +73,9 @@ class Investigation:
         self.providers, self.health_sources = providers, health_sources
         self.selector, self.policy = selector, policy or InvestigatePolicy()
         self.attributor = attributor
+        # Per-mission query deduplication: identical (metric, window, filters)
+        # reads are served from cache, never repeated (AG-02).
+        self._cache: dict[tuple, float | None | dict[str, float]] = {}
 
     # ---------------------------------------------------------------- entry
     async def run(self, request: InvestigateRequest, state: InvestigationState | None = None) -> InvestigationState:
@@ -107,12 +119,22 @@ class Investigation:
 
     # ---------------------------------------------------------------- reads
     async def _total(self, st: InvestigationState, metric: str, window: WindowSpec, filters: tuple[FilterSpec, ...]) -> float | None:
+        key = ("total", metric, window, filters)
+        if key in self._cache:
+            return self._cache[key]  # type: ignore[return-value]
         self._spend(st)
-        return await self.reader.total(metric, window, filters)
+        value = await self.reader.total(metric, window, filters)
+        self._cache[key] = value
+        return value
 
     async def _breakdown(self, st: InvestigationState, metric: str, window: WindowSpec, dim: str, filters: tuple[FilterSpec, ...]) -> dict[str, float]:
+        key = ("breakdown", metric, window, dim, filters)
+        if key in self._cache:
+            return self._cache[key]  # type: ignore[return-value]
         self._spend(st)
-        return await self.reader.breakdown(metric, window, dim, filters)
+        value = await self.reader.breakdown(metric, window, dim, filters)
+        self._cache[key] = value
+        return value
 
     def _spend(self, st: InvestigationState) -> None:
         if st.reads >= self.policy.max_reads:
@@ -120,19 +142,34 @@ class Investigation:
         st.reads += 1
 
     # ---------------------------------------------------------------- stages
+    # Premise outcomes that end the run, each with its own status. ``opposite`` is
+    # a *refuted* premise; ``not_material`` is one that did not move; a window we
+    # could not read is *insufficient evidence*, never "false" (AG-01).
+    _PREMISE_STOP: dict[str, _PremiseStatus] = {
+        "opposite": "premise_false",
+        "not_material": "not_material",
+        "insufficient_evidence": "insufficient_evidence",
+    }
+
     async def _premise(self, st: InvestigationState) -> bool:
         r = st.request
         st.baseline_total = await self._total(st, r.metric_id, r.baseline, r.filters)
         st.event_total = await self._total(st, r.metric_id, r.event, r.filters)
-        change = st.change
         base = st.baseline_total
-        material = change is not None and base is not None and abs(change) > self.policy.min_change_ratio * max(abs(base), 1e-9)
-        wrong_way = change is not None and ((r.direction == "up" and change < 0) or (r.direction == "down" and change > 0))
-        verdict = "confirmed" if material and not wrong_way else "opposite" if wrong_way and material else "not_material"
+        event = st.event_total
+        if base is None or event is None:
+            # A missing read is not evidence that the premise is false.
+            verdict = "insufficient_evidence"
+            change = None
+        else:
+            change = event - base
+            material = abs(change) > self.policy.min_change_ratio * max(abs(base), 1e-9)
+            wrong_way = (r.direction == "up" and change < 0) or (r.direction == "down" and change > 0)
+            verdict = "opposite" if material and wrong_way else "confirmed" if material else "not_material"
         st.findings.append(Finding(kind="premise", stage="premise", subject=r.metric_id, baseline=base,
-                                   event=st.event_total, delta=change, verdict=verdict))
+                                   event=event, delta=change, verdict=verdict))
         if verdict != "confirmed":
-            st.status, st.stage = "premise_false", "stop"
+            st.status, st.stage = self._PREMISE_STOP[verdict], "stop"
             return False
         st.stage = "health"
         return True
@@ -144,10 +181,16 @@ class Investigation:
         st.health = gather_health(self.health_sources, window, metrics, self.model)
         for h in st.health:
             st.findings.append(Finding(kind="health", stage="health", subject=h.metric_id, verdict=h.status, detail=h.detail))
-        if any(h.status == "incomplete" and h.metric_id == r.metric_id for h in st.health):
-            st.status, st.stage = "unhealthy", "stop"
-            st.limitations.append("data_incomplete")
-            return False
+        target = [h for h in st.health if h.metric_id == r.metric_id]
+        # Incomplete or unverifiable data about the metric under investigation is a
+        # stop, with the reason kept distinct; caveats below that are recorded, not fatal.
+        for status, limitation in (("incomplete", "data_incomplete"), ("unknown", "data_unknown")):
+            if any(h.status == status for h in target):
+                st.status, st.stage = "unhealthy", "stop"
+                st.limitations.append(limitation)
+                return False
+        if any(h.status == "provisional" for h in st.health):
+            st.limitations.append("data_provisional")
         if st.health:
             st.limitations.append("data_health_issues")
         st.stage = "decompose"
@@ -164,23 +207,43 @@ class Investigation:
                                     await self._total(st, e.source, r.event, r.filters))
         contributions: dict[str, float] = {}
         if {"numerator", "denominator"} <= roles:
-            # r = n/d: Δln r = Δln n − Δln d; each side's share of Δr is its share of Δln r.
-            lr = _log_ratio(st.baseline_total, st.event_total)
-            for e in edges:
-                if e.role in ("numerator", "denominator"):
-                    lc = _log_ratio(*values[e.source])
-                    if lr and lc is not None:
-                        contributions[e.source] = change * (lc if e.role == "numerator" else -lc) / lr
+            # r = n/d: exact decomposition — numerator effect (n1-n0)/d0,
+            # denominator effect n1*(d0-d1)/(d0*d1); these sum exactly to Δr.
+            n0 = n1 = d0 = d1 = None
+            for edge in edges:
+                if edge.role == "numerator":
+                    n0, n1 = values.get(edge.source, (None, None))
+                elif edge.role == "denominator":
+                    d0, d1 = values.get(edge.source, (None, None))
+            if n0 is not None and n1 is not None and d0 is not None and d1 is not None:
+                num_effect: float = (n1 - n0) / d0
+                den_effect: float = n1 * (d0 - d1) / (d0 * d1)
+                contributions = {edge.source: (num_effect if edge.role == "numerator" else den_effect)
+                                 for edge in edges if edge.role in ("numerator", "denominator")}
         else:
             for e in edges:
                 if e.role == "term":
                     b, ev = values[e.source]
                     if b is not None and ev is not None:
                         contributions[e.source] = (e.coefficient if e.coefficient is not None else 1.0) * (ev - b)
+        explained = 0.0
         for metric, contrib in sorted(contributions.items(), key=lambda kv: -abs(kv[1])):
             b, ev = values[metric]
             st.findings.append(Finding(kind="component", stage="decompose", subject=metric, baseline=b, event=ev,
-                                       delta=contrib, share_of_change=_share(contrib, change)))
+                                       delta=contrib, share_of_change=_share(contrib, change),
+                                       qualification="exact_accounting"))
+            explained += contrib
+        st.unexplained_residual = change - explained
+        if st.unexplained_residual is not None and abs(st.unexplained_residual) > 1e-9 * max(abs(change), 1.0):
+            st.findings.append(Finding(kind="limitation", stage="decompose", subject=r.metric_id,
+                                       delta=st.unexplained_residual, verdict="unexplained_residual",
+                                       detail=f"{st.unexplained_residual:g} of {change:g} not accounted for"))
+        missing = [e.source for e in edges if values.get(e.source, (None, None))[0] is None
+                   or values.get(e.source, (None, None))[1] is None]
+        if missing:
+            st.limitations.append("decomposition_incomplete")
+            st.findings.append(Finding(kind="limitation", stage="decompose", subject=",".join(missing),
+                                       verdict="missing_components", qualification="untested_hypothesis"))
         st.stage = "localise"
 
     async def _localise(self, st: InvestigationState) -> None:
@@ -192,8 +255,7 @@ class Investigation:
         start = st.depth  # max_depth counts per run, so "dig deeper" can go further
         while True:
             used = {f.dimension for f in (*r.filters, *st.path)}
-            dims = [d for d in self.model.supported_dimensions_for(r.metric_id)
-                    if d not in used and not self.model.is_time_dimension(d)]
+            dims = self._prioritise_dimensions(r.metric_id, used)
             filters = (*r.filters, *st.path)
             parent_b = await self._total(st, r.metric_id, r.baseline, filters) if st.path else st.baseline_total
             parent_e = await self._total(st, r.metric_id, r.event, filters) if st.path else st.event_total
@@ -202,6 +264,7 @@ class Investigation:
             for dim in dims:
                 b = await self._breakdown(st, r.metric_id, r.baseline, dim, filters)
                 e = await self._breakdown(st, r.metric_id, r.event, dim, filters)
+                self._note_entity_changes(st, dim, b, e)
                 segs = sorted((_segment(dim, k, b.get(k, 0.0), e.get(k, 0.0), parent_delta) for k in set(b) | set(e)),
                               key=lambda s: -abs(s.delta))
                 if segs:
@@ -214,7 +277,8 @@ class Investigation:
             chosen = await self._choose(st, best)
             st.findings.append(Finding(kind="segment", stage="localise", depth=st.depth, subject=f"{chosen.dimension}={chosen.value}",
                                        baseline=chosen.baseline, event=chosen.event, delta=chosen.delta,
-                                       share_of_change=chosen.share_of_change, path=st.path))
+                                       share_of_change=chosen.share_of_change, path=st.path,
+                                       qualification="observed_segment_contribution"))
             total_change = st.change or 0.0
             st.explained_share = max(st.explained_share, _share(chosen.delta, total_change) or 0.0)
             if (chosen.share_of_change < self.policy.recurse_share or st.depth + 1 - start >= self.policy.max_depth
@@ -224,6 +288,44 @@ class Investigation:
             st.path = (*st.path, FilterSpec(dimension=chosen.dimension, operator="in", values=(chosen.value,)))
             st.depth += 1
         st.stage = "context"
+
+    def _prioritise_dimensions(self, metric_id: str, used: set[str]) -> list[str]:
+        """Order candidate dimensions by declared hierarchy level, then cap breadth.
+
+        Business hierarchies (campaign → ad set → ad) come before unsupported or
+        unranked dimensions. Within the same level, preserve the catalogue's
+        declared order so stable tests aren't affected. Only the top
+        ``max_dimensions_per_level`` are queried, so a level never fans out
+        across every dimension (AG-02).
+        """
+        dims = [d for d in self.model.supported_dimensions_for(metric_id)
+                if d not in used and not self.model.is_time_dimension(d)]
+
+        def level(dim: str) -> int | None:
+            return self.model.dimension_hierarchy_level(dim)
+
+        # Tie-break by original index to preserve declared order for equal levels
+        original_index = {d: i for i, d in enumerate(dims)}
+        ranked = sorted(dims, key=lambda d: (level(d) if level(d) is not None else 999, original_index[d]))
+        return ranked[: self.policy.max_dimensions_per_level]
+
+    def _note_entity_changes(self, st: InvestigationState, dim: str, baseline: dict[str, float], event: dict[str, float]) -> None:
+        """Flag segments that appeared or disappeared between windows.
+
+        A renamed entity shows up as one disappearance plus one appearance; both
+        are recorded as observations, not merged, because identity resolution is
+        Core's call (AG-02 / AG03-T04).
+        """
+        gone = sorted(set(baseline) - set(event))
+        new = sorted(set(event) - set(baseline))
+        for value in gone:
+            st.findings.append(Finding(kind="limitation", stage="localise", subject=f"{dim}={value}",
+                                       verdict="entity_disappeared", baseline=baseline[value],
+                                       qualification="observed_segment_contribution"))
+        for value in new:
+            st.findings.append(Finding(kind="limitation", stage="localise", subject=f"{dim}={value}",
+                                       verdict="entity_appeared", event=event[value],
+                                       qualification="observed_segment_contribution"))
 
     async def _context(self, st: InvestigationState) -> None:
         r = st.request
@@ -249,9 +351,19 @@ class Investigation:
             moved = abs(e - b) > self.policy.min_change_ratio * max(abs(b), 1e-9)
             expected = edge.sign * (1 if change > 0 else -1)
             agrees = moved and expected != 0 and (e - b) * expected > 0
-            verdict = "supported_cause" if agrees else "not_moved" if not moved else "inconsistent" if edge.sign else "moved_unsigned"
+            # Direction agreement is a hypothesis, not causal proof. Only the GCM
+            # attributor — a separate identification and testing process — earns
+            # "causally_supported" (AG-02).
+            if agrees:
+                verdict = "directionally_consistent"
+                qualification: FindingQualification = "directionally_consistent_hypothesis"
+            elif not moved:
+                verdict, qualification = "not_moved", "untested_hypothesis"
+            else:
+                verdict, qualification = "inconsistent" if edge.sign else "moved_unsigned", "contradicted_hypothesis"
             st.findings.append(Finding(kind="driver", stage="drivers", subject=edge.source, baseline=b, event=e,
-                                       delta=e - b, verdict=verdict, detail=f"lag_days={edge.lag_days}"))
+                                       delta=e - b, verdict=verdict, detail=f"lag_days={edge.lag_days}",
+                                       qualification=qualification))
 
         if self.attributor is not None:
             try:
@@ -262,7 +374,7 @@ class Investigation:
             for node, share in sorted(shares.items(), key=lambda kv: -abs(kv[1])):
                 if node != r.metric_id:
                     st.findings.append(Finding(kind="driver", stage="drivers", subject=node, share_of_change=share,
-                                               verdict="gcm_attribution"))
+                                               verdict="gcm_attribution", qualification="causally_supported"))
 
     # ---------------------------------------------------------------- helpers
     async def _choose(self, st: InvestigationState, segs: list[Segment]) -> Segment:
@@ -283,9 +395,8 @@ class Investigation:
         return segs[0]
 
     def _additive(self, metric_id: str) -> bool:
-        aggregation = (self.model.aggregation_for(metric_id) or "").lower()
         roles = {e.role for e in self.graph.parents(metric_id, "identity")}
-        return aggregation not in _NON_ADDITIVE and "denominator" not in roles
+        return aggregation_is_additive(self.model.aggregation_for(metric_id)) and "denominator" not in roles
 
 
 def _segment(dim: str, value: str, b: float, e: float, parent_delta: float) -> Segment:

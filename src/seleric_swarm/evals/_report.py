@@ -146,14 +146,15 @@ def render_markdown(report: Report) -> str:
             row = [f"{metric}"] + [_format(report.score.by_tag[t].get(metric)) for t in tags]
             lines.append("| " + " | ".join(row) + " |")
 
-    lines += ["", "## Cases", "", "| id | tags | status_ok | value_correctness | spec_accuracy | revisions |"]
-    lines.append("|---|---|---|---|---|---|")
+    lines += ["", "## Cases", "", "| id | tags | route | status_ok | value_correctness | spec_accuracy | revisions |"]
+    lines.append("|---|---|---|---|---|---|---|")
     for case in report.score.cases:
         case_metrics = case.metrics
         lines.append(
-            "| {id} | {tags} | {status} | {value} | {spec} | {revisions} |".format(
+            "| {id} | {tags} | {route} | {status} | {value} | {spec} | {revisions} |".format(
                 id=case.id,
                 tags=",".join(case.tags),
+                route=case.details.get("route") or "unknown",
                 status=_format(case_metrics.get("status_ok")),
                 value=_format(case_metrics.get("value_correctness")),
                 spec=_format(case_metrics.get("spec_accuracy")),
@@ -166,11 +167,16 @@ def render_markdown(report: Report) -> str:
         obs = case.details.get("observed") or {}
         shadow = obs.get("v2_shadow")
         spec_info = f"{case.details.get('spec_matched', '-')}/{case.details.get('spec_total', '-')} from {obs.get('spec_source')}"
-        truths = "; ".join(f"{t['match'].get('metric_id')}={t['expected']} (got {t.get('observed')})"
-                           for t in case.details.get("truths") or [])
+        truths = "; ".join(
+            f"{t['match'].get('metric_id')}={t['expected']} (got {t.get('observed')}, {t.get('matched') and 'match' or t.get('reason')})"
+            for t in case.details.get("truths") or []
+        )
         mission = obs.get("v2_mission")
-        lines.append(f"- `{case.id}`: status {case.details.get('status')}; spec {spec_info}; evidence {obs.get('evidence_metrics')}; "
-                     f"truth {truths or '-'}; v2_spec {json.dumps(obs.get('v2_spec'), default=str)[:300]}; v2_mission {json.dumps(mission, default=str)[:600]}; v2_shadow {json.dumps(shadow, default=str)[:200]}")
+        route = case.details.get("route") or "unknown"
+        fallback = case.details.get("fallback_reason")
+        lines.append(f"- `{case.id}`: route {route}{f' (fallback: {fallback})' if fallback else ''}; status {case.details.get('status')}; spec {spec_info}; "
+                     f"evidence {obs.get('evidence_metrics')}; truth {truths or '-'}; "
+                     f"v2_mission {json.dumps(mission, default=str)[:600]}; v2_shadow {json.dumps(shadow, default=str)[:200]}")
 
     comparison = report.comparison
     lines += ["", "## Baseline", ""]

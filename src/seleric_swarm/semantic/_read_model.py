@@ -288,6 +288,12 @@ class SemanticReadModel(BaseModel):
         dim = self._dimension(dimension)
         return bool(dim and dim.is_time)
 
+    def dimension_hierarchy_level(self, dimension: str) -> int | None:
+        dim = self._dimension(dimension)
+        if dim is None or not dim.hierarchy:
+            return None
+        return dim.hierarchy.get("level")
+
     def metric_ids(self) -> frozenset[str]:
         return frozenset(metric.id for metric in self.metrics)
 

@@ -32,6 +32,19 @@ HIGHER_IS_BETTER = ("spec_accuracy", "status_ok", "value_correctness")
 LOWER_IS_BETTER = ("revisions", "latency_ms", "llm_calls", "tokens")
 SCORE_METRICS = HIGHER_IS_BETTER + LOWER_IS_BETTER
 
+# A value and its truth can be the *same* number carried through different
+# representations: the truth is read from a live query, the evidence value is a
+# JSON/JSONB round-trip, so the last bit can differ (~1e-16 relative). This floor
+# absorbs that representation error while staying 7 orders of magnitude below any
+# real numeric mistake, so a wrong value or window still fails (AG-00).
+REPRESENTATION_EPS = 1e-9
+
+
+def _within(value: float, expected: float, tolerance: float) -> bool:
+    """Compare two numbers allowing for float representation, not for error."""
+    floor = REPRESENTATION_EPS * max(abs(expected), 1.0)
+    return abs(value - expected) <= max(tolerance, floor)
+
 
 @dataclass(frozen=True)
 class ResolvedTruth:
@@ -116,30 +129,76 @@ def _bare(metric_id: Any) -> str:
     return str(metric_id or "").rsplit(".", 1)[-1]
 
 
+def _iso_day(value: Any) -> str | None:
+    """The calendar day of a date/datetime string, ignoring any time component."""
+    if isinstance(value, str) and value:
+        return value[:10]
+    if hasattr(value, "isoformat"):
+        return str(value.isoformat())[:10]
+    return None
+
+
+def _window_matches(row_window: dict[str, Any], match: dict[str, Any]) -> bool:
+    """The truth names its window; an evidence row on another window is not it.
+
+    A truth with no window matches any window; a truth with a window requires the
+    row to carry the same one, so a right number on the wrong day fails (AG-00-T06).
+    """
+    start, end = match.get("start"), match.get("end")
+    if start is None and end is None:
+        return True
+    want_start = _iso_day(start) or _iso_day(end)
+    want_end = _iso_day(end) or _iso_day(start)
+    row_start = _iso_day((row_window or {}).get("start"))
+    row_end = _iso_day((row_window or {}).get("end"))
+    return row_start == want_start and row_end == want_end
+
+
 def _row_matches(row: Any, match: dict[str, Any]) -> bool:
     metric = match.get("metric_id", match.get("metric"))
     if metric is not None and _bare(getattr(row, "metric_id", None)) != _bare(metric):
         return False
     wanted_dims = match.get("dimensions") or match.get("dimension_values") or {}
     row_dims = getattr(row, "dimensions", {}) or {}
-    return all(row_dims.get(k) == v for k, v in wanted_dims.items())
+    if not all(row_dims.get(k) == v for k, v in wanted_dims.items()):
+        return False
+    return _window_matches(getattr(row, "window", {}) or {}, match)
+
+
+def _truth_detail(observed: ObservedCase, truth: ResolvedTruth) -> dict[str, Any]:
+    """What the run produced for one truth, and whether it matched.
+
+    Distinguishes *why* a truth missed: no evidence row at all ("missing"), a row
+    on a different window ("wrong_window"), a row with no numeric value
+    ("non_numeric"), or a numeric value that disagrees ("value_mismatch").
+    """
+    candidates = [row for row in observed.evidence if _row_matches(row, truth.match)]
+    observed_values = [getattr(row, "value", None) for row in candidates][:5]
+    matched = False
+    reason = "missing"
+    for row in candidates:
+        value = _numeric(row.value)
+        if value is None:
+            reason = "non_numeric"
+            continue
+        if truth.expected is not None and _within(value, truth.expected, truth.tolerance):
+            matched, reason = True, "matched"
+            break
+        reason = "value_mismatch"
+    return {
+        "match": truth.match,
+        "expected": truth.expected,
+        "observed": observed_values,
+        "matched": matched,
+        "reason": reason,
+    }
 
 
 def value_correctness(observed: ObservedCase, truths: list[ResolvedTruth]) -> float | None:
     scored = [truth for truth in truths if truth.expected is not None]
     if not scored:
         return None
-    correct = 0
-    for truth in scored:
-        expected = truth.expected
-        if expected is None:
-            continue
-        candidates = [row for row in observed.evidence if _row_matches(row, truth.match)]
-        for row in candidates:
-            value = _numeric(row.value)
-            if value is not None and abs(value - expected) <= truth.tolerance:
-                correct += 1
-                break
+    correct = sum(1 for truth in scored if _truth_detail(observed, truth)["matched"])
     return correct / len(scored)
 
 
@@ -151,12 +210,11 @@ def score_case(
 
     details["observed"] = observed.diagnostics
     details["status"] = observed.status if not observed.error else f"{observed.status} ({observed.error})"
-    details["truths"] = [
-        {"match": t.match, "expected": t.expected,
-         # what the run produced for that match, so a miss shows the observed value
-         "observed": [getattr(r, "value", None) for r in observed.evidence if _row_matches(r, t.match)][:5]}
-        for t in truths
-    ]
+    details["route"] = observed.route
+    details["fallback_reason"] = observed.fallback_reason
+    # Per-truth outcome and *why* it missed, so a numerical failure is explainable
+    # from the report alone (AG-00).
+    details["truths"] = [_truth_detail(observed, t) for t in truths]
     if case.expect.spec:
         matched, total = spec_matches(case.expect.spec, observed.spec)
         metrics["spec_accuracy"] = matched / total if total else None

@@ -5,8 +5,8 @@ A deep "why" as a code state machine: premise → health → decompose → local
 
 ## Interface
 `Investigation(reader, read_model, graph, providers=, health_sources=, selector=, policy=).run(request, state=None) -> InvestigationState`
-- `premise`: event vs baseline; not material or opposite to the asked direction → `premise_false`.
-- `health`: `context` health sources; `incomplete` on the metric → `unhealthy`; other issues → limitation.
+- `premise`: event vs baseline; opposite to the asked direction → `premise_false`; no material change → `not_material`; a window that could not be read → `insufficient_evidence` (ADR-007).
+- `health`: `context` health sources; `incomplete` or `unknown` on the metric → `unhealthy`; `provisional` → limitation; other issues → limitation.
 - `decompose`: identity edges from `graph` (additive terms: coef·Δ; ratio: log-share of Δln r).
 - `localise`/`recurse`: per carried dimension, the top same-direction segment; drill while share ≥ `recurse_share` and depth < `max_depth`; additive metrics only.
 - `context`: calendar/incident events in the event window.

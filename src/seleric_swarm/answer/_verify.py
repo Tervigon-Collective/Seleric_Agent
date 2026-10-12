@@ -57,7 +57,7 @@ def verify(draft: AnswerDraft, spec: QuestionSpec | None, evidence: Evidence) ->
 
     for claim in draft.claims:
         resolved = resolve_claim(evidence, claim)
-        item = evidence.get(claim.ref) if claim.ref.kind != "evidence" else None
+        item = evidence.get(claim.ref)
         if resolved is None:
             v.add("unresolved_claim", claim.claim_id)
             continue

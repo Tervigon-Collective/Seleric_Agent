@@ -11,6 +11,20 @@ from seleric_swarm.contracts.pipeline import FilterSpec, WindowSpec
 
 Stage = Literal["premise", "health", "decompose", "localise", "recurse", "context", "drivers", "stop"]
 
+# Aggregations whose slices do not sum to the total. Summing an average, ratio, rate
+# or distinct count across rows would invent a number, so readers must not do it
+# (AG-01). One definition, shared by the investigation controller and the pipeline
+# reader so the two cannot drift.
+NON_ADDITIVE_AGGREGATIONS = frozenset(
+    {"avg", "average", "mean", "median", "ratio", "rate", "percent", "percentage",
+     "count_distinct", "distinct", "unique", "min", "max", "last", "first"}
+)
+
+
+def aggregation_is_additive(aggregation: str | None) -> bool:
+    """Whether per-slice values of a metric with this aggregation can be summed."""
+    return (aggregation or "").strip().lower() not in NON_ADDITIVE_AGGREGATIONS
+
 
 class InvestigateRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -32,6 +46,7 @@ class InvestigatePolicy(BaseModel):
     explained_target: float = 0.8
     min_change_ratio: float = 0.02  # |Δ| / |baseline| below this = no material change
     max_reads: int = 60
+    max_dimensions_per_level: int = 5  # cap breadth at each localisation level
 
 
 class Segment(BaseModel):
@@ -60,18 +75,35 @@ class Finding(BaseModel):
     verdict: str = ""
     detail: str = ""
     path: tuple[FilterSpec, ...] = ()
+    # How much trust the finding carries (AG-02): exact accounting, observed
+    # segment contribution, or a hypothesis at some strength. Direction agreement
+    # alone never becomes "causally_supported".
+    qualification: Literal[
+        "exact_accounting",
+        "observed_segment_contribution",
+        "directionally_consistent_hypothesis",
+        "untested_hypothesis",
+        "contradicted_hypothesis",
+        "causally_supported",
+    ] = "untested_hypothesis"
 
 
 class InvestigationState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = 1
+    # v2 (AG-01): premise outcomes are split into ``not_material`` (no material
+    # change) and ``insufficient_evidence`` (a window could not be read), which
+    # were both previously collapsed into ``premise_false``. See ADR-007.
+    schema_version: int = 2
     request: InvestigateRequest
     stage: Stage = "premise"
-    status: Literal["running", "done", "premise_false", "unhealthy", "budget"] = "running"
+    status: Literal[
+        "running", "done", "premise_false", "not_material", "insufficient_evidence", "unhealthy", "budget"
+    ] = "running"
     baseline_total: float | None = None
     event_total: float | None = None
     explained_share: float = 0.0
+    unexplained_residual: float | None = None  # change not accounted for by components (AG-02)
     path: tuple[FilterSpec, ...] = ()
     depth: int = 0
     reads: int = 0

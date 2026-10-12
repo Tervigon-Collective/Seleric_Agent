@@ -78,8 +78,23 @@ async def test_segment_collapse_found_at_depth_two() -> None:
 async def test_premise_false_stops() -> None:
     st = await Investigation(Reader(*facts({("north", "mob"): 10.0})), MODEL, GRAPH).run(req(direction="up"))
     assert st.status == "premise_false" and [f.kind for f in st.findings] == ["premise"]
+    assert st.findings[0].verdict == "opposite"
     flat = await Investigation(Reader(*facts({})), MODEL, GRAPH).run(req())
-    assert flat.status == "premise_false" and flat.findings[0].verdict == "not_material"
+    assert flat.status == "not_material" and flat.findings[0].verdict == "not_material"
+
+
+async def test_premise_insufficient_evidence_stops() -> None:
+    """A window that could not be read is not a false premise (AG-01)."""
+
+    class Missing(Reader):
+        async def total(self, metric_id, window, filters):
+            if window.role == "event":
+                return None
+            return await super().total(metric_id, window, filters)
+
+    st = await Investigation(Missing(*facts({("north", "mob"): 10.0})), MODEL, GRAPH).run(req())
+    assert st.status == "insufficient_evidence" and st.findings[0].verdict == "insufficient_evidence"
+    assert st.event_total is None and st.baseline_total is not None
 
 
 async def test_festival_is_cited() -> None:
@@ -107,11 +122,15 @@ async def test_ratio_decomposes_to_numerator_and_skips_localise() -> None:
     assert "localise_skipped_non_additive" in st.limitations
 
 
-async def test_driver_supported_only_when_it_moved_the_expected_way() -> None:
+async def test_driver_direction_agreement_is_not_causal_proof() -> None:
     down = await Investigation(Reader(*facts({("north", "mob"): 10.0}, visits=(100.0, 70.0))), MODEL, GRAPH).run(req())
-    assert [f.verdict for f in down.findings if f.kind == "driver"] == ["supported_cause"]
+    drivers = [f for f in down.findings if f.kind == "driver" and f.subject == "zz_visits"]
+    assert drivers and drivers[0].verdict == "directionally_consistent"
+    assert drivers[0].qualification == "directionally_consistent_hypothesis"
     up = await Investigation(Reader(*facts({("north", "mob"): 10.0}, visits=(100.0, 130.0))), MODEL, GRAPH).run(req())
-    assert [f.verdict for f in up.findings if f.kind == "driver"] == ["inconsistent"]
+    drivers = [f for f in up.findings if f.kind == "driver" and f.subject == "zz_visits"]
+    assert drivers and drivers[0].verdict == "inconsistent"
+    assert drivers[0].qualification == "contradicted_hypothesis"
 
 
 async def test_budget_and_selector() -> None:

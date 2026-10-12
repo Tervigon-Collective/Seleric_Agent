@@ -32,7 +32,16 @@ class Evidence:
         }
 
     def get(self, ref: Ref) -> Item | None:
-        return self._items.get(ref.id)
+        # Direct item lookup by ref.id (ResultSet/Driver ref.id)
+        item = self._items.get(ref.id)
+        if item is not None:
+            return item
+        # Row reference: return the owning ResultSet
+        if ref.kind == "evidence":
+            hit = self._rows.get(ref.id)
+            if hit is not None:
+                return hit[1]  # owner ResultSet
+        return None
 
     def derivations(self) -> tuple[Derivation, ...]:
         return tuple(i for i in self._items.values() if isinstance(i, Derivation))
@@ -43,11 +52,17 @@ class Evidence:
     def resolve(self, ref: Ref, row_key: Mapping[str, str] | None = None) -> Resolved | None:
         """One value for ``ref`` (+ ``row_key``); None when it does not name exactly one value."""
         if ref.kind == "evidence":
+            # First try as a row reference (keyed by row's evidence_id)
             hit = self._rows.get(ref.id)
-            if hit is None:
-                return None
-            row, owner = hit
-            return _resolved(owner, row.value, (row.evidence_id,))
+            if hit is not None:
+                row, owner = hit
+                return _resolved(owner, row.value, (row.evidence_id,))
+            # Fall back to a ResultSet reference (keyed by ResultSet's ref.id)
+            # with optional row_key to pick a specific row.
+            found = self._items.get(ref.id)
+            if found is not None and isinstance(found, ResultSet) and found.error is None:
+                return self._resolve_result_set(found, row_key)
+            return None
         found = self._items.get(ref.id)
         if found is None or found.error is not None:
             return None
@@ -62,6 +77,17 @@ class Evidence:
         if len(rows) != 1:
             return None
         return _resolved(item, rows[0].value, (rows[0].evidence_id,))
+
+    def _resolve_result_set(
+        self, rs: ResultSet, row_key: Mapping[str, str] | None
+    ) -> Resolved | None:
+        key = dict(row_key or {})
+        rows = [r for r in rs.rows if all(r.dimensions.get(k) == v for k, v in key.items())]
+        if not key:
+            rows = [r for r in rows if not r.dimensions] or rows
+        if len(rows) != 1:
+            return None
+        return _resolved(rs, rows[0].value, (rows[0].evidence_id,))
 
 
 def _resolved(item: Item, value: float | None, ids: tuple[str, ...]) -> Resolved:

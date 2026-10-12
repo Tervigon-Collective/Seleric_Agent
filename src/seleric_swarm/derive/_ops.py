@@ -367,6 +367,36 @@ def _op_join(
     return Outcome(value=None, unit=results[0].unit, rows=tuple(surviving))
 
 
+def mix_shift_decomposition(
+    baseline_weights: Mapping[str, float],
+    event_weights: Mapping[str, float],
+    baseline_rates: Mapping[str, float],
+    event_rates: Mapping[str, float],
+) -> dict[str, float]:
+    """Split a ratio's change into within-segment, mix and interaction parts.
+
+    For r = Σ wᵢ·rᵢ the exact identity is
+
+        Δr = Σ w₀ᵢ·Δrᵢ  +  Σ Δwᵢ·r₀ᵢ  +  Σ Δwᵢ·Δrᵢ
+             within        mix          interaction
+
+    where Δrᵢ = r₁ᵢ − r₀ᵢ and Δwᵢ = w₁ᵢ − w₀ᵢ. Segments present in only one window
+    enter with the missing side as 0, so a new/disappeared entity shows up in the
+    mix and interaction terms rather than being silently attributed to a segment
+    value change (AG-02).
+    """
+    within = mix = interaction = 0.0
+    for key in set(baseline_weights) | set(event_weights):
+        w0 = baseline_weights.get(key, 0.0)
+        w1 = event_weights.get(key, 0.0)
+        r0 = baseline_rates.get(key, 0.0)
+        r1 = event_rates.get(key, 0.0)
+        within += w0 * (r1 - r0)
+        mix += (w1 - w0) * r0
+        interaction += (w1 - w0) * (r1 - r0)
+    return {"within": within, "mix": mix, "interaction": interaction}
+
+
 OpFunc = Callable[[Sequence[DeriveInput], Mapping[str, JsonValue], SemanticReadModel], Outcome]
 
 OPS: dict[str, OpFunc] = {

@@ -2,6 +2,7 @@
 
 from seleric_swarm.investigate.controller import Investigation
 from seleric_swarm.investigate.state import (
+    NON_ADDITIVE_AGGREGATIONS,
     Attributor,
     Candidate,
     Finding,
@@ -11,6 +12,7 @@ from seleric_swarm.investigate.state import (
     MetricReader,
     Segment,
     Selector,
+    aggregation_is_additive,
 )
 
 __all__ = [
@@ -22,6 +24,8 @@ __all__ = [
     "Investigation",
     "InvestigationState",
     "MetricReader",
+    "NON_ADDITIVE_AGGREGATIONS",
     "Segment",
     "Selector",
+    "aggregation_is_additive",
 ]

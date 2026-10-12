@@ -10,6 +10,7 @@ from seleric_swarm.context.model import (
     ContextProvider,
     ContextWindow,
     DataHealth,
+    DataHealthStatus,
     HealthSource,
 )
 from seleric_swarm.context.registry import (
@@ -28,6 +29,7 @@ __all__ = [
     "ContextProvider",
     "ContextWindow",
     "DataHealth",
+    "DataHealthStatus",
     "EventReader",
     "FreshnessHealth",
     "HealthSource",

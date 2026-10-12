@@ -33,12 +33,19 @@ class ContextEvent(BaseModel):
     metric_ids: tuple[str, ...] = ()  # empty = every metric
 
 
+# "ok" is trustworthy, "late"/"incident" are caveats, "provisional" is early data
+# that may still move, "incomplete" is missing coverage, and "unknown" is a view
+# whose freshness could not be established. The last three are distinct facts and
+# are not interchangeable (AG-01).
+DataHealthStatus = Literal["ok", "late", "incomplete", "incident", "provisional", "unknown"]
+
+
 class DataHealth(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     metric_id: str
     day: date | None = None
-    status: Literal["ok", "late", "incomplete", "incident"]
+    status: DataHealthStatus
     detail: str = ""
 
 

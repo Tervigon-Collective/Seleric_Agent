@@ -2,11 +2,27 @@
 
 from __future__ import annotations
 
-from seleric_swarm.context.model import ContextWindow, DataHealth
+from seleric_swarm.context.model import ContextWindow, DataHealth, DataHealthStatus
 from seleric_swarm.semantic import SemanticReadModel
 
-# Machine freshness statuses that mean the view is current; anything else is reported as late.
+# Machine freshness statuses mapped to the health vocabulary. Current views are
+# silent; anything unrecognised is "unknown" (not assumed late) so an unsupported
+# status is visible rather than silently trusted or silently downgraded (AG-01).
 _CURRENT = frozenset({"fresh", "ok", "current", "up_to_date"})
+_STATUS_MAP: dict[str, DataHealthStatus] = {
+    "late": "late",
+    "delayed": "late",
+    "stale": "late",
+    "incomplete": "incomplete",
+    "partial": "incomplete",
+    "incident": "incident",
+    "provisional": "provisional",
+    "preliminary": "provisional",
+    "estimated": "provisional",
+    "unknown": "unknown",
+    "unavailable": "unknown",
+    "error": "unknown",
+}
 
 
 class FreshnessHealth:
@@ -23,7 +39,12 @@ class FreshnessHealth:
             record = by_id.get(metric_id)
             if record is None:
                 continue
-            status = views.get(record.view)
-            if status and status.strip().lower() not in _CURRENT:
-                out.append(DataHealth(metric_id=metric_id, status="late", detail=f"{record.view}: {status}"))
+            raw = views.get(record.view)
+            if not raw:
+                continue
+            token = raw.strip().lower()
+            if token in _CURRENT:
+                continue
+            mapped = _STATUS_MAP.get(token, "unknown")
+            out.append(DataHealth(metric_id=metric_id, status=mapped, detail=f"{record.view}: {raw}"))
         return out

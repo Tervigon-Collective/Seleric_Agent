@@ -37,6 +37,7 @@ from seleric_swarm.investigate import (
     Investigation,
     InvestigationState,
     Selector,
+    aggregation_is_additive,
 )
 from seleric_swarm.pipeline._context import build_context
 from seleric_swarm.pipeline._engines import ExplorationMap, run_composition, run_explore
@@ -53,6 +54,11 @@ class PlanReader:
     def __init__(self, port: SemanticPort | None, read_model: SemanticReadModel, as_of: datetime) -> None:
         self.port, self.model, self.as_of = port, read_model, as_of
         self._n = 0
+        # Per-mission query deduplication cache (AG-05).
+        self._cache: dict[tuple, float | None | dict[str, float]] = {}  # type: ignore[assignment]
+
+    def _cache_key(self, kind: str, metric_id: str, window: WindowSpec, *extra) -> tuple:
+        return (kind, metric_id, window.role, window.start, window.end, extra)
 
     async def _rows(self, metric_id: str, window: WindowSpec, breakdowns: tuple[str, ...], filters: tuple[FilterSpec, ...]) -> ResultSet:
         self._n += 1
@@ -61,20 +67,56 @@ class PlanReader:
         (rs,) = await execute([step], windows={window.role: window}, port=self.port, read_model=self.model, as_of=self.as_of)
         return rs
 
+    def _additive(self, metric_id: str) -> bool:
+        return aggregation_is_additive(self.model.aggregation_for(metric_id))
+
     async def total(self, metric_id: str, window: WindowSpec, filters: tuple[FilterSpec, ...]) -> float | None:
+        key = self._cache_key("total", metric_id, window, filters)
+        if key in self._cache:
+            return self._cache[key]  # type: ignore[return-value]
         rs = await self._rows(metric_id, window, (), filters)
         if rs.error is not None or not rs.rows:
             return None
         values = [r.value for r in rs.rows if r.value is not None]
-        return values[0] if len(values) == 1 else (sum(values) if values else None)
+        if not values:
+            return None
+        if len(values) == 1:
+            self._cache[key] = values[0]
+            return values[0]
+        # Several rows for one window: only an additive metric can be totalled by
+        # summing its slices. Summing an average, ratio or distinct count would
+        # invent a number that was never read, so we return "unknown" instead (AG-01).
+        if self._additive(metric_id):
+            result = sum(values)
+            self._cache[key] = result
+            return result
+        _log.warning("total_multi_row_non_additive", extra={"metric_id": metric_id, "rows": len(values)})
+        return None
 
     async def breakdown(self, metric_id: str, window: WindowSpec, dimension: str, filters: tuple[FilterSpec, ...]) -> dict[str, float]:
+        cache_key = self._cache_key("breakdown", metric_id, window, dimension, filters)
+        if cache_key in self._cache:
+            return self._cache[cache_key]  # type: ignore[return-value]
         rs = await self._rows(metric_id, window, (dimension,), filters)
+        if rs.error is not None:
+            return {}
+        additive = self._additive(metric_id)
         out: dict[str, float] = {}
         for r in rs.rows:
-            key = r.dimensions.get(dimension)
-            if key is not None and r.value is not None:
-                out[key] = out.get(key, 0.0) + r.value
+            dim_key = r.dimensions.get(dimension)
+            if dim_key is None or r.value is None:
+                continue
+            if additive:
+                out[dim_key] = out.get(dim_key, 0.0) + r.value
+                continue
+            if dim_key in out:
+                # A non-additive slice repeated over rows cannot be combined by
+                # summing; drop the key rather than publish an invented total (AG-01).
+                _log.warning("breakdown_duplicate_key_non_additive", extra={"metric_id": metric_id, "dimension": dimension, "key": dim_key})
+                out.pop(dim_key, None)
+                continue
+            out[dim_key] = r.value
+        self._cache[cache_key] = out
         return out
 
 
