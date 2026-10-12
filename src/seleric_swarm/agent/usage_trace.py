@@ -42,15 +42,43 @@ def load_prices(path: Path | None = None) -> dict[str, dict[str, float]]:
     return out
 
 
+def models_in_play(settings: Any) -> list[str]:
+    """Deployment names that can serve one mission, in configured order.
+
+    A tool/answer split or a fallback chain means the tokens come from more than
+    one model, so a single price cannot be applied to the total.
+    """
+
+    def _names(value: Any) -> list[str]:
+        return [n.strip() for n in str(value or "").split(",") if n.strip()]
+
+    names: list[str] = []
+    answer = _names(getattr(settings, "azure_openai_answer_model", ""))
+    tool = _names(getattr(settings, "azure_openai_tool_model", ""))
+    primary_fn = getattr(settings, "primary_model", None)
+    primary = _names(primary_fn() if callable(primary_fn) else getattr(settings, "azure_openai_model", ""))
+    names += (tool or primary) + answer if answer else primary
+    names += _names(getattr(settings, "azure_openai_models", ""))
+    names += _names(getattr(settings, "llm_fallback_model", ""))
+    names += _names(getattr(settings, "llm_fallback_models", ""))
+    return list(dict.fromkeys(names))
+
+
 def usage_trace(
     run_usage: Any,
     *,
-    model: str | None = None,
+    models: list[str] | None = None,
     prices: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any] | None:
-    """Plain-dict usage for the trace, or ``None`` when no usage was recorded."""
+    """Plain-dict usage for the trace, or ``None`` when no usage was recorded.
+
+    ``cost_usd`` is set only when exactly one model is in play and it has a
+    price; with several models the mix is not priced at any one model's rate.
+    """
     if run_usage is None:
         return None
+    models = models or []
+    model = models[0] if len(models) == 1 else None
     input_tokens = int(getattr(run_usage, "input_tokens", 0) or 0)
     output_tokens = int(getattr(run_usage, "output_tokens", 0) or 0)
     price = (prices if prices is not None else load_prices()).get(model or "")
@@ -69,6 +97,6 @@ def usage_trace(
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "total_tokens": input_tokens + output_tokens,
-        "model": model,
+        "models": models,
         "cost_usd": cost,
     }

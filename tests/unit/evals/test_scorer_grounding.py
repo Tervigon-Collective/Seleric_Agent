@@ -64,3 +64,19 @@ def test_latency_percentiles_and_cost_in_aggregate():
     agg = aggregate(cases, scores).overall
     assert agg["latency_p50_ms"] == 100.0 and agg["latency_p95_ms"] == 300.0
     assert abs(agg["cost_usd"] - 0.2) < 1e-9
+
+
+def test_derived_figures_and_negatives_are_grounded():
+    # relative change, absolute change and share derived from two evidence values
+    text = "Sales rose 12.0% from 1,000,000 to 1,120,000, up by 120,000."
+    assert figures_grounded(_obs(text, [1_120_000, 1_000_000]))[0] == 1.0
+    # a negative evidence value printed as a magnitude
+    assert figures_grounded(_obs("Profit fell by 1,234 versus plan.", [-1234]))[0] == 1.0
+    # derived-looking but invented stays ungrounded
+    assert figures_grounded(_obs("Sales rose 45.0%.", [1_120_000, 1_000_000]))[0] == 0.0
+
+
+def test_cost_is_reported_not_gated():
+    from seleric_swarm.evals._scorer import HIGHER_IS_BETTER, LOWER_IS_BETTER, REPORT_ONLY
+
+    assert "cost_usd" in REPORT_ONLY and "cost_usd" not in HIGHER_IS_BETTER + LOWER_IS_BETTER

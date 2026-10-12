@@ -40,8 +40,10 @@ HIGHER_IS_BETTER = (
     "mentions_ok",
     "forbid_clean",
 )
-LOWER_IS_BETTER = ("revisions", "latency_ms", "llm_calls", "tokens", "query_calls", "cost_usd")
-SCORE_METRICS = HIGHER_IS_BETTER + LOWER_IS_BETTER
+LOWER_IS_BETTER = ("revisions", "latency_ms", "llm_calls", "tokens", "query_calls")
+# Reported and aggregated, never gated as a regression: there is no cost cap.
+REPORT_ONLY = ("cost_usd",)
+SCORE_METRICS = HIGHER_IS_BETTER + LOWER_IS_BETTER + REPORT_ONLY
 
 # A value and its truth can be the *same* number carried through different
 # representations: the truth is read from a live query, the evidence value is a
@@ -94,6 +96,32 @@ def _print_match(figure: float, decimals: int, value: float) -> bool:
     return abs(figure - value) <= 0.5 * 10.0 ** (-decimals) + REPRESENTATION_EPS * max(abs(value), 1.0)
 
 
+_MAX_PAIR_VALUES = 40
+
+
+def _candidate_pool(values: list[float]) -> list[float]:
+    """Evidence values plus what an answer derives from them, as magnitudes.
+
+    Direction is carried by the words ("fell by"), so magnitudes are compared.
+    Derived: the total, and for each pair ``|a-b|``, ``|a-b|/|b|`` and ``a/b``
+    (a change, its relative change, a share). Pairs are capped.
+    """
+    base = [v for v in values if not math.isnan(v)]
+    pool = list(base)
+    if base:
+        pool.append(sum(base))
+    capped = base[:_MAX_PAIR_VALUES]
+    for i, a in enumerate(capped):
+        for j, b in enumerate(capped):
+            if i == j:
+                continue
+            pool.append(abs(a - b))
+            if b:
+                pool.append(abs(a - b) / b)
+                pool.append(a / b)
+    return pool
+
+
 def figures_grounded(observed: ObservedCase, question: str = "") -> tuple[float | None, list[str]]:
     """Fraction of the answer's figures that equal an evidence value as printed.
 
@@ -103,9 +131,8 @@ def figures_grounded(observed: ObservedCase, question: str = "") -> tuple[float 
     figures = response_figures(observed.response_text, ignore_text=question)
     if not figures:
         return None, []
-    values = [float(e.value) for e in observed.evidence if isinstance(e.value, (int, float)) and not isinstance(e.value, bool)]
-    totals = [sum(values)] if values else []
-    pool = values + totals
+    values = [abs(float(e.value)) for e in observed.evidence if isinstance(e.value, (int, float)) and not isinstance(e.value, bool)]
+    pool = _candidate_pool(values)
     ungrounded: list[str] = []
     for raw, candidates, decimals in figures:
         hit = any(
