@@ -20,6 +20,7 @@ pipeline.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -89,6 +90,7 @@ class StageSpanHandle:
     observation, and are what make a mission replayable."""
 
     __slots__ = (
+        "_gen_ai",
         "_inp",
         "_io",
         "_langfuse",
@@ -98,6 +100,7 @@ class StageSpanHandle:
         "_out_setter",
         "_output",
         "_stage",
+        "_started",
         "_trace",
     )
 
@@ -111,6 +114,7 @@ class StageSpanHandle:
         io_store: StageIOStore,
         trace_store: StageTraceStore,
         operation: str | None,
+        started: float | None = None,
     ) -> None:
         self._stage = stage
         self._mission_id = mission_id
@@ -122,6 +126,8 @@ class StageSpanHandle:
         self._otel: Any = None
         self._langfuse: Any = None
         self._output: BaseModel | None = None
+        self._started = time.perf_counter() if started is None else started
+        self._gen_ai: dict[str, Any] = {}
 
     def bind(self, otel: Any, langfuse: Any) -> None:
         self._otel = otel
@@ -140,7 +146,12 @@ class StageSpanHandle:
         self._trace.record(
             self._mission_id,
             self._stage,
-            {"stage": self._stage, "operation": self._operation, "output_fingerprint": out_fp},
+            {
+                "stage": self._stage,
+                "operation": self._operation,
+                "output_fingerprint": out_fp,
+                **self._gen_ai,
+            },
         )
         self._io.save(
             self._mission_id,
@@ -149,6 +160,8 @@ class StageSpanHandle:
             out=output,
             out_fingerprint=out_fp,
         )
+        if self._gen_ai:
+            self._io.merge(self._mission_id, self._stage, dict(self._gen_ai))
         if self._out_setter is not None:
             self._out_setter(output)
 
@@ -162,10 +175,28 @@ class StageSpanHandle:
         """Attach model + token-usage attributes to an LLM stage's span."""
         self._set_attr(_GENAI_REQUEST_MODEL, model)
         self._set_attr(_GENAI_RESPONSE_MODEL, model)
+        self._gen_ai["model"] = model
         if input_tokens is not None:
             self._set_attr(_GENAI_USAGE_INPUT, input_tokens)
+            self._gen_ai["input_tokens"] = int(input_tokens)
         if output_tokens is not None:
             self._set_attr(_GENAI_USAGE_OUTPUT, output_tokens)
+            self._gen_ai["output_tokens"] = int(output_tokens)
+
+    def duration_ms(self) -> int:
+        """Wall-clock elapsed since the stage opened."""
+        return round((time.perf_counter() - self._started) * 1000)
+
+    def finish(self) -> None:
+        """Record the stage wall-clock in the trace store and IO file.
+
+        Called once on context exit, so stages that never call ``set_output``
+        (e.g. ``execute``) still contribute a duration. Records are merged, so
+        ``set_output``'s fingerprint and any gen_ai usage survive.
+        """
+        extra = {"duration_ms": self.duration_ms(), **self._gen_ai}
+        self._trace.record(self._mission_id, self._stage, extra)
+        self._io.merge(self._mission_id, self._stage, extra)
 
     def set_attribute(self, key: str, value: Any) -> None:
         self._set_attr(key, value)
@@ -200,7 +231,7 @@ class StageTraceStore:
         self._missions: dict[str, dict[str, dict[str, Any]]] = {}
 
     def record(self, mission_id: str, stage: str, record: dict[str, Any]) -> None:
-        self._missions.setdefault(mission_id, {})[stage] = record
+        self._missions.setdefault(mission_id, {}).setdefault(stage, {}).update(record)
 
     def pop(self, mission_id: str) -> dict[str, Any]:
         return self._missions.pop(mission_id, {})
@@ -257,6 +288,22 @@ class StageIOStore:
                 "output_fingerprint": out_fingerprint,
                 "error": error,
             }
+            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception:  # noqa: S110 - a store write must never fail the stage
+            pass
+
+    def merge(self, mission_id: str, stage: str, extra: dict[str, Any]) -> None:
+        """Add fields (duration, token usage) to an existing stage file, or create it."""
+        try:
+            path = self._path(mission_id, stage)
+            if path.exists():
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    payload = {}
+            else:
+                payload = {}
+                path.parent.mkdir(parents=True, exist_ok=True)
+            payload.update(extra)
             path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         except Exception:  # noqa: S110 - a store write must never fail the stage
             pass
@@ -325,6 +372,7 @@ def stage_span(
         io_store=io_store,
         trace_store=trace_store,
         operation=operation,
+        started=time.perf_counter(),
     )
 
     otel_cm = _start_otel_span(f"{_STAGE_SPAN_PREFIX}{stage}", attributes) if enabled else nullcontext()
@@ -345,6 +393,10 @@ def stage_span(
                 handle.record_error(exc)
                 io_store.save(mission_id, stage, inp=inp, error=str(exc))
                 raise
+            finally:
+                if otel_span is not None and hasattr(otel_span, "set_attribute"):
+                    otel_span.set_attribute("seleric.stage.duration_ms", handle.duration_ms())
+                handle.finish()
 
 
 @contextmanager
@@ -378,6 +430,9 @@ class _NullIOStore(StageIOStore):
         super().__init__(Path("/dev/null"))
 
     def save(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+    def merge(self, *args: Any, **kwargs: Any) -> None:
         return None
 
 

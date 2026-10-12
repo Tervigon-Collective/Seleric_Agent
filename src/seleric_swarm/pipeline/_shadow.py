@@ -46,6 +46,18 @@ _log = logging.getLogger("seleric.pipeline.shadow")
 Mode = Literal["off", "shadow", "enforce"]
 
 
+def _apply_gen_ai(span: Any, stats: dict[str, Any]) -> None:
+    """Push an LLM stage's model + token usage onto its span (M0.3/M5.1)."""
+    model = stats.get("model")
+    if not model:
+        return
+    span.set_gen_ai(
+        model=str(model),
+        input_tokens=stats.get("input_tokens"),
+        output_tokens=stats.get("output_tokens"),
+    )
+
+
 @dataclass(frozen=True)
 class ShadowModes:
     understand: Mode = "off"
@@ -162,9 +174,12 @@ async def _run(
                 prior_offer=inputs.prior_offer,
                 instructions=load_prompt("understand")[0],
             )
+            _apply_gen_ai(span, stats)
             span.set_output(draft)
         if not isinstance(draft, Clarification):
-            draft = overview_as_exploration(draft, inputs.headline_metric_ids)
+            draft = overview_as_exploration(
+                draft, inputs.headline_metric_ids, read_model=inputs.read_model
+            )
         outcome.draft, outcome.stats = draft, dict(stats)
         if isinstance(draft, Clarification):
             outcome.status = "clarification"
@@ -218,6 +233,7 @@ async def _answer_shadow(
     with stage_span("answer", mission_id=mission_id, inp=spec) as span:
         doc, stats = await answer(llm, inputs.question, spec=spec, evidence=evidence, read_model=inputs.read_model,
                                    instructions=load_prompt("answer")[0])
+        _apply_gen_ai(span, stats)
         span.set_output(doc)
     outcome.answer = {
         "status": doc.draft.status,
@@ -225,15 +241,32 @@ async def _answer_shadow(
         "attempts": stats.get("attempts"),
         "chars": len(doc.rendered_markdown),
         "evidence_ids": len(doc.evidence_ids),
+        "input_tokens": stats.get("input_tokens"),
+        "output_tokens": stats.get("output_tokens"),
     }
 
 
-def overview_as_exploration(draft: QuestionDraft, headline_metric_ids: tuple[str, ...]) -> QuestionDraft:
+def overview_as_exploration(
+    draft: QuestionDraft,
+    headline_metric_ids: tuple[str, ...],
+    *,
+    read_model: SemanticReadModel | None = None,
+) -> QuestionDraft:
     """An overview that names a period is explored (the headline measures over that period);
-    without a period it stays an overview (the snapshot fast path answers it)."""
+    without a period it stays an overview (the snapshot fast path answers it).
+
+    Headline ids that the live catalogue does not carry are dropped so one missing
+    registry→catalogue mapping cannot fail the whole mission as ``invalid_spec``.
+    An empty read model (tests / warm-up) keeps the ids as written — same rule as the planner.
+    """
     if draft.kind != "overview" or not draft.names_period:
         return draft
-    measures = draft.measures or tuple(MeasurePhrase(words=m, metric_id=m) for m in headline_metric_ids)
+    ids = headline_metric_ids
+    if read_model is not None:
+        known = read_model.metric_ids()
+        if known:
+            ids = tuple(mid for mid in headline_metric_ids if mid in known)
+    measures = draft.measures or tuple(MeasurePhrase(words=m, metric_id=m) for m in ids)
     return draft.model_copy(update={"kind": "exploration", "measures": measures})
 
 

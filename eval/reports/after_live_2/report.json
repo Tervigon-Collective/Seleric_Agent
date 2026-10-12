@@ -1,0 +1,916 @@
+{
+  "suite": "golden",
+  "mode": "live",
+  "generated_at": "2026-10-11T13:47:18.157382+00:00",
+  "case_count": 12,
+  "score": {
+    "overall": {
+      "spec_accuracy": 0.8865546218487395,
+      "status_ok": 1.0,
+      "value_correctness": 0.0,
+      "revisions": 0.0,
+      "latency_ms": 21927.416666666668,
+      "llm_calls": 1.9166666666666667,
+      "tokens": 5875.583333333333
+    },
+    "by_tag": {
+      "breakdown": {
+        "spec_accuracy": 0.7142857142857143,
+        "status_ok": null,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 20468.0,
+        "llm_calls": 2.0,
+        "tokens": 5603.0
+      },
+      "comparison": {
+        "spec_accuracy": 0.7843137254901961,
+        "status_ok": 1.0,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 25275.333333333332,
+        "llm_calls": 1.6666666666666667,
+        "tokens": 6685.0
+      },
+      "entity_comparison": {
+        "spec_accuracy": 0.35294117647058826,
+        "status_ok": null,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 18085.0,
+        "llm_calls": 1.0,
+        "tokens": 4782.0
+      },
+      "follow_up": {
+        "spec_accuracy": 0.5714285714285714,
+        "status_ok": null,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 21560.0,
+        "llm_calls": 2.0,
+        "tokens": 5909.0
+      },
+      "lookup": {
+        "spec_accuracy": 1.0,
+        "status_ok": 1.0,
+        "value_correctness": 0.0,
+        "revisions": 0.0,
+        "latency_ms": 19813.4,
+        "llm_calls": 2.0,
+        "tokens": 5485.0
+      },
+      "period_comparison": {
+        "spec_accuracy": 1.0,
+        "status_ok": null,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 37487.0,
+        "llm_calls": 2.0,
+        "tokens": 9758.0
+      },
+      "roas": {
+        "spec_accuracy": 1.0,
+        "status_ok": 1.0,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 25293.0,
+        "llm_calls": 2.0,
+        "tokens": 6171.0
+      },
+      "trend": {
+        "spec_accuracy": 1.0,
+        "status_ok": 1.0,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 19731.0,
+        "llm_calls": 2.0,
+        "tokens": 5481.0
+      },
+      "why": {
+        "spec_accuracy": 0.6414565826330533,
+        "status_ok": null,
+        "value_correctness": null,
+        "revisions": 0.0,
+        "latency_ms": 22040.666666666668,
+        "llm_calls": 1.6666666666666667,
+        "tokens": 5575.0
+      }
+    },
+    "cases": [
+      {
+        "id": "lookup-net-sales-yesterday",
+        "tags": [
+          "lookup"
+        ],
+        "metrics": {
+          "spec_accuracy": 1.0,
+          "status_ok": 1.0,
+          "value_correctness": 0.0,
+          "revisions": 0.0,
+          "latency_ms": 22544.0,
+          "llm_calls": 2.0,
+          "tokens": 6023.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              },
+              "run": {
+                "result_sets": 1,
+                "step_errors": [],
+                "derivations": 0,
+                "derive_errors": [],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 726,
+                "output_tokens": 1068,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "completed"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "lookup",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "net_sales"
+                ]
+              }
+            },
+            "evidence_metrics": [
+              "net_sales"
+            ]
+          },
+          "status": "completed",
+          "truths": [
+            {
+              "match": {
+                "metric_id": "net_sales",
+                "start": "2026-09-02",
+                "end": "2026-09-02"
+              },
+              "expected": 97480.96143241807
+            }
+          ],
+          "spec_matched": 2,
+          "spec_total": 2
+        }
+      },
+      {
+        "id": "lookup-net-sales-explicit-day",
+        "tags": [
+          "lookup"
+        ],
+        "metrics": {
+          "spec_accuracy": 1.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 19267.0,
+          "llm_calls": 2.0,
+          "tokens": 5439.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              },
+              "run": {
+                "result_sets": 1,
+                "step_errors": [],
+                "derivations": 0,
+                "derive_errors": [],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 733,
+                "output_tokens": 687,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "completed"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "lookup",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "net_sales"
+                ]
+              }
+            },
+            "evidence_metrics": [
+              "net_sales"
+            ]
+          },
+          "status": "completed",
+          "truths": [],
+          "spec_matched": 2,
+          "spec_total": 2
+        }
+      },
+      {
+        "id": "lookup-gross-sales-yesterday",
+        "tags": [
+          "lookup"
+        ],
+        "metrics": {
+          "spec_accuracy": 1.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 14792.0,
+          "llm_calls": 2.0,
+          "tokens": 4578.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              },
+              "run": {
+                "result_sets": 1,
+                "step_errors": [],
+                "derivations": 0,
+                "derive_errors": [],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 726,
+                "output_tokens": 592,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "completed"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "lookup",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "gross_sales"
+                ]
+              }
+            },
+            "evidence_metrics": [
+              "gross_sales"
+            ]
+          },
+          "status": "completed",
+          "truths": [],
+          "spec_matched": 2,
+          "spec_total": 2
+        }
+      },
+      {
+        "id": "compare-net-sales-two-days",
+        "tags": [
+          "comparison"
+        ],
+        "metrics": {
+          "spec_accuracy": 1.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 20254.0,
+          "llm_calls": 2.0,
+          "tokens": 5515.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "period_comparison",
+                "steps": 4
+              },
+              "run": {
+                "result_sets": 2,
+                "step_errors": [],
+                "derivations": 2,
+                "derive_errors": [],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 840,
+                "output_tokens": 1415,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "completed"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "period_comparison",
+                "needs_agent": false,
+                "steps": 4,
+                "metrics": [
+                  "net_sales"
+                ]
+              }
+            },
+            "evidence_metrics": [
+              "net_sales"
+            ]
+          },
+          "status": "completed",
+          "truths": [],
+          "spec_matched": 2,
+          "spec_total": 2
+        }
+      },
+      {
+        "id": "trend-net-sales-this-week",
+        "tags": [
+          "trend"
+        ],
+        "metrics": {
+          "spec_accuracy": 1.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 19731.0,
+          "llm_calls": 2.0,
+          "tokens": 5481.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              },
+              "run": {
+                "result_sets": 1,
+                "step_errors": [],
+                "derivations": 0,
+                "derive_errors": [],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 728,
+                "output_tokens": 1205,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "completed"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "lookup",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "net_sales"
+                ]
+              }
+            },
+            "evidence_metrics": [
+              "net_sales"
+            ]
+          },
+          "status": "completed",
+          "truths": [],
+          "spec_matched": 2,
+          "spec_total": 2
+        }
+      },
+      {
+        "id": "spec-th383-entity-comparison",
+        "tags": [
+          "entity_comparison",
+          "comparison",
+          "why"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.35294117647058826,
+          "status_ok": null,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 18085.0,
+          "llm_calls": 1.0,
+          "tokens": 4782.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "fallback",
+              "reason": "no_template",
+              "plan": {
+                "template_id": "agent",
+                "steps": 0
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [
+                "shape",
+                "windows"
+              ],
+              "plan": {
+                "template_id": "agent",
+                "needs_agent": true,
+                "steps": 0,
+                "metrics": []
+              }
+            },
+            "evidence_metrics": []
+          },
+          "status": "failed",
+          "truths": [],
+          "spec_matched": 6,
+          "spec_total": 17
+        }
+      },
+      {
+        "id": "spec-last3-vs-today",
+        "tags": [
+          "period_comparison",
+          "comparison"
+        ],
+        "metrics": {
+          "spec_accuracy": 1.0,
+          "status_ok": null,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 37487.0,
+          "llm_calls": 2.0,
+          "tokens": 9758.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "period_comparison",
+                "steps": 40
+              },
+              "run": {
+                "result_sets": 20,
+                "step_errors": [],
+                "derivations": 20,
+                "derive_errors": [],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 1926,
+                "output_tokens": 4329,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "completed"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "period_comparison",
+                "needs_agent": false,
+                "steps": 40,
+                "metrics": [
+                  "ad_spend",
+                  "cac",
+                  "contribution_margin_pct",
+                  "conversion_rate",
+                  "mer",
+                  "net_profit",
+                  "net_roas",
+                  "net_sales",
+                  "orders",
+                  "repeat_rate"
+                ],
+                "notes": [
+                  "no measure named: compared the business headline measures"
+                ]
+              }
+            },
+            "evidence_metrics": [
+              "ad_spend",
+              "cac",
+              "contribution_margin_pct",
+              "conversion_rate",
+              "mer",
+              "net_profit",
+              "net_roas",
+              "net_sales",
+              "orders",
+              "repeat_rate"
+            ]
+          },
+          "status": "completed",
+          "truths": [],
+          "spec_matched": 2,
+          "spec_total": 2
+        }
+      },
+      {
+        "id": "spec-net-sales-yesterday",
+        "tags": [
+          "lookup"
+        ],
+        "metrics": {
+          "spec_accuracy": 1.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 17171.0,
+          "llm_calls": 2.0,
+          "tokens": 5214.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              },
+              "run": {
+                "result_sets": 1,
+                "step_errors": [],
+                "derivations": 0,
+                "derive_errors": [],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 726,
+                "output_tokens": 1230,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "completed"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "lookup",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "net_sales"
+                ]
+              }
+            },
+            "evidence_metrics": [
+              "net_sales"
+            ]
+          },
+          "status": "completed",
+          "truths": [],
+          "spec_matched": 7,
+          "spec_total": 7
+        }
+      },
+      {
+        "id": "spec-last-week-roas",
+        "tags": [
+          "lookup",
+          "roas"
+        ],
+        "metrics": {
+          "spec_accuracy": 1.0,
+          "status_ok": 1.0,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 25293.0,
+          "llm_calls": 2.0,
+          "tokens": 6171.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "lookup",
+                "steps": 1
+              },
+              "run": {
+                "result_sets": 1,
+                "step_errors": [],
+                "derivations": 0,
+                "derive_errors": [],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 729,
+                "output_tokens": 1063,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "completed"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "agent",
+                "needs_agent": true,
+                "steps": 0,
+                "metrics": []
+              }
+            },
+            "evidence_metrics": [
+              "net_roas"
+            ]
+          },
+          "status": "completed",
+          "truths": [],
+          "spec_matched": 6,
+          "spec_total": 6
+        }
+      },
+      {
+        "id": "spec-why-cac-yesterday",
+        "tags": [
+          "why"
+        ],
+        "metrics": {
+          "spec_accuracy": 1.0,
+          "status_ok": null,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 26477.0,
+          "llm_calls": 2.0,
+          "tokens": 6034.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "why",
+                "steps": 1
+              },
+              "run": {
+                "result_sets": 0,
+                "step_errors": [],
+                "derivations": 1,
+                "derive_errors": [],
+                "investigations": {
+                  "e1": {
+                    "status": "done",
+                    "findings": 1,
+                    "limitations": [
+                      "localise_skipped_non_additive"
+                    ]
+                  }
+                },
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 751,
+                "output_tokens": 1598,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "partial"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "why",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "cac"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "status": "partial",
+          "truths": [],
+          "spec_matched": 10,
+          "spec_total": 10
+        }
+      },
+      {
+        "id": "spec-ads-by-platform",
+        "tags": [
+          "breakdown"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.7142857142857143,
+          "status_ok": null,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 20468.0,
+          "llm_calls": 2.0,
+          "tokens": 5603.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "breakdown",
+                "steps": 1
+              },
+              "run": {
+                "result_sets": 1,
+                "step_errors": [],
+                "derivations": 0,
+                "derive_errors": [],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 749,
+                "output_tokens": 1010,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "completed"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [],
+              "plan": {
+                "template_id": "breakdown",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "ad_spend"
+                ]
+              }
+            },
+            "evidence_metrics": [
+              "ad_spend"
+            ]
+          },
+          "status": "completed",
+          "truths": [],
+          "spec_matched": 5,
+          "spec_total": 7
+        }
+      },
+      {
+        "id": "spec-followup-keeps-windows",
+        "tags": [
+          "follow_up",
+          "why"
+        ],
+        "metrics": {
+          "spec_accuracy": 0.5714285714285714,
+          "status_ok": null,
+          "value_correctness": null,
+          "revisions": 0.0,
+          "latency_ms": 21560.0,
+          "llm_calls": 2.0,
+          "tokens": 5909.0
+        },
+        "details": {
+          "observed": {
+            "spec_source": "v2_mission",
+            "v2_mission": {
+              "status": "answered",
+              "reason": "",
+              "plan": {
+                "template_id": "why",
+                "steps": 1
+              },
+              "run": {
+                "result_sets": 0,
+                "step_errors": [],
+                "derivations": 1,
+                "derive_errors": [],
+                "investigations": {
+                  "e1": {
+                    "status": "done",
+                    "findings": 1,
+                    "limitations": [
+                      "localise_skipped_non_additive"
+                    ]
+                  }
+                },
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "input_tokens": 731,
+                "output_tokens": 1738,
+                "model": "fallback:gpt-5-mini,gpt-4o-code,Llama-4-Maverick-17B-128E-Instruct-FP8",
+                "issues": [],
+                "status": "partial"
+              }
+            },
+            "v2_shadow": {
+              "status": "ok",
+              "disagree": [
+                "windows"
+              ],
+              "plan": {
+                "template_id": "why",
+                "needs_agent": false,
+                "steps": 1,
+                "metrics": [
+                  "cac"
+                ]
+              }
+            },
+            "evidence_metrics": []
+          },
+          "status": "partial",
+          "truths": [],
+          "spec_matched": 4,
+          "spec_total": 7
+        }
+      }
+    ]
+  },
+  "comparison": {
+    "compared": false,
+    "baseline_path": null,
+    "passed": true,
+    "regressions": []
+  }
+}

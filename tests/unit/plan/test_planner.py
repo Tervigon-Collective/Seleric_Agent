@@ -169,6 +169,17 @@ def test_entity_comparison_ranks_then_compares_the_same_entities() -> None:
     assert len(_derives(p)) == 4
 
 
+def test_an_entity_comparison_naming_no_values_ranks_the_whole_family() -> None:
+    """'the worst campaign' with no named values and no measure: the family breakdown in the
+    spec must drive an entity_comparison plan on the headline measure that carries it, not a
+    silent whole-account period_comparison."""
+    spec = _spec(shape="entity_comparison", windows=(EVENT, BASELINE), measures=(), breakdowns=("zz_stall",))
+    p = plan(spec, _model(), headline_metric_ids=("zz_visits",))
+    assert p.template_id == "entity_comparison"
+    rank = _queries(p)[0]
+    assert (rank.step_id, rank.breakdowns) == ("rank", ("zz_stall",))
+
+
 def test_a_ranked_entity_over_two_windows_is_an_entity_comparison_whatever_the_label() -> None:
     ranking = RankingSpec(by_metric_id="zz_take", order="desc", limit=5)
     spec = _spec(shape="period_comparison", windows=(EVENT, BASELINE), ranking=ranking,

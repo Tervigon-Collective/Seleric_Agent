@@ -76,7 +76,9 @@ def test_build_prompt_no_channel_words():
     )
     # The word "meta" appears in value_words section, but not as a concept word
     # in the catalogue vocabulary section
-    vocab_section = prompt.split("Catalogue vocabulary")[1] if "Catalogue vocabulary" in prompt else ""
+    vocab_section = next(
+        block for block in prompt.split("\n\n") if block.startswith("Catalogue vocabulary")
+    )
     assert "meta" not in vocab_section.lower()
 
 
@@ -126,6 +128,37 @@ def test_build_prompt_with_exemplars():
     assert "Verified examples" in prompt
     assert "What were net sales last week" in prompt
     assert "lookup" in prompt
+
+
+def _big_read_model(n: int = 200) -> SemanticReadModel:
+    metrics = [{"id": f"metric_{i}", "label": f"Unrelated Metric {i}"} for i in range(n)]
+    metrics.append({"id": "net_sales", "label": "Net Sales"})
+    return SemanticReadModel.from_payload({
+        "metrics": metrics,
+        "dimensions": [{"id": "channel"}],
+        "hierarchies": [{"id": "traffic", "levels": ["channel", "campaign"]}],
+    })
+
+
+def test_catalogue_is_bounded_but_keeps_a_named_measure():
+    """A measure the message names is listed even when it sorts last; the rest are trimmed."""
+    prompt = build_prompt("What were net sales yesterday?", read_model=_big_read_model(), value_words=[])
+    assert "Net Sales" in prompt
+    assert prompt.count("- Unrelated Metric") < 200
+
+
+def test_catalogue_orders_stable_sections_before_measures():
+    """Dimensions and levels lead (cacheable prefix); query-ranked measures follow."""
+    prompt = build_prompt("net sales", read_model=_read_model(), value_words=[])
+    catalogue = prompt.split("Catalogue vocabulary", 1)[1]
+    assert catalogue.index("Dimensions:") < catalogue.index("Measures")
+    assert catalogue.index("Hierarchy levels:") < catalogue.index("Measures")
+
+
+def test_catalogue_trims_when_message_names_no_measure():
+    """A message with no measure still yields a small bounded list, not the whole catalogue."""
+    prompt = build_prompt("how is the business doing today?", read_model=_big_read_model(), value_words=[])
+    assert prompt.count("- Unrelated Metric") < 200
 
 
 def test_question_draft_model_validates():

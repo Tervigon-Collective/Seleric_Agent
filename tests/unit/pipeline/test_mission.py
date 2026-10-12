@@ -88,3 +88,38 @@ async def test_overview_with_a_period_is_explored() -> None:
     out = await run_mission(_understand(overview), _answer_llm, inputs, mission_id="m")
     assert out.trace["plan"]["template_id"] == "exploration"
     assert out.run is not None and out.run.explorations
+
+
+def test_overview_drops_headline_metrics_missing_from_the_catalogue() -> None:
+    """Business-status over a period seeds the configured headline; catalogue drift must not
+    fail the mission as clarification:invalid_spec (live: net_roas absent from MCP)."""
+    from seleric_swarm.pipeline._shadow import overview_as_exploration
+    from tests.unit.pipeline.test_engines import MODEL as X_MODEL
+
+    overview = QuestionDraft(kind="overview", shape="trend", names_period=True,
+                             windows=(WindowSlot(role="event", expr=WindowExpr(name="last_week"),
+                                                 source_span="last 7 completed days"),))
+    seeded = overview_as_exploration(
+        overview, ("zz_take", "net_roas", "cac", "zz_missing"), read_model=X_MODEL
+    )
+    assert seeded.kind == "exploration"
+    assert [m.metric_id for m in seeded.measures] == ["zz_take"]
+
+
+async def test_overview_with_unknown_headline_ids_still_answers() -> None:
+    from tests.unit.pipeline.test_engines import AS_OF as X_AS_OF
+    from tests.unit.pipeline.test_engines import MODEL as X_MODEL
+    from tests.unit.pipeline.test_engines import DailyPort
+
+    overview = QuestionDraft(kind="overview", shape="trend", names_period=True,
+                             windows=(WindowSlot(role="event", expr=WindowExpr(name="last_week"), source_span="last week"),))
+    inputs = ShadowInputs(
+        question="What is the current business status for the last 7 completed days?",
+        as_of=X_AS_OF.date(), as_of_time=X_AS_OF, read_model=X_MODEL, port=DailyPort(),  # type: ignore[arg-type]
+        headline_metric_ids=("zz_take", "net_roas", "cac"),
+    )
+    out = await run_mission(_understand(overview), _answer_llm, inputs, mission_id="m")
+    assert out.status == "answered", out.trace
+    assert out.reason != "clarification:invalid_spec"
+    assert out.spec is not None
+    assert [m.metric_id for m in out.spec.measures] == ["zz_take"]

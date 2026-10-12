@@ -1,12 +1,12 @@
 {
   "suite": "golden",
   "mode": "live",
-  "generated_at": "2026-10-11T09:13:45.088370+00:00",
+  "generated_at": "2026-10-11T11:20:35.394141+00:00",
   "case_count": 12,
   "score": {
     "overall": {
       "spec_accuracy": 0.8966386554621849,
-      "status_ok": 0.8571428571428571,
+      "status_ok": 1.0,
       "value_correctness": 0.0,
       "revisions": 0.0,
       "latency_ms": null,
@@ -52,7 +52,7 @@
       },
       "lookup": {
         "spec_accuracy": 1.0,
-        "status_ok": 0.8,
+        "status_ok": 1.0,
         "value_correctness": 0.0,
         "revisions": 0.0,
         "latency_ms": null,
@@ -70,7 +70,7 @@
       },
       "roas": {
         "spec_accuracy": 1.0,
-        "status_ok": 0.0,
+        "status_ok": 1.0,
         "value_correctness": null,
         "revisions": 0.0,
         "latency_ms": null,
@@ -149,7 +149,9 @@
                 ]
               }
             },
-            "evidence_metrics": []
+            "evidence_metrics": [
+              "net_sales"
+            ]
           },
           "status": "completed",
           "truths": [
@@ -218,7 +220,9 @@
                 ]
               }
             },
-            "evidence_metrics": []
+            "evidence_metrics": [
+              "net_sales"
+            ]
           },
           "status": "completed",
           "truths": [],
@@ -278,7 +282,9 @@
                 ]
               }
             },
-            "evidence_metrics": []
+            "evidence_metrics": [
+              "gross_sales"
+            ]
           },
           "status": "completed",
           "truths": [],
@@ -338,7 +344,9 @@
                 ]
               }
             },
-            "evidence_metrics": []
+            "evidence_metrics": [
+              "net_sales"
+            ]
           },
           "status": "completed",
           "truths": [],
@@ -398,7 +406,9 @@
                 ]
               }
             },
-            "evidence_metrics": []
+            "evidence_metrics": [
+              "net_sales"
+            ]
           },
           "status": "completed",
           "truths": [],
@@ -481,16 +491,7 @@
               },
               "run": {
                 "result_sets": 20,
-                "step_errors": [
-                  "unsupported_query",
-                  "unsupported_query",
-                  "unsupported_query",
-                  "unsupported_query",
-                  "unsupported_query",
-                  "unsupported_query",
-                  "unsupported_query",
-                  "unsupported_query"
-                ],
+                "step_errors": [],
                 "derivations": 20,
                 "derive_errors": [],
                 "investigations": {},
@@ -499,38 +500,38 @@
                 "deadline_hit": []
               },
               "answer": {
-                "attempts": 2,
+                "attempts": 1,
                 "issues": [],
-                "status": "partial"
+                "status": "completed"
               }
             },
             "v2_shadow": {
               "status": "ok",
               "disagree": [],
               "plan": {
-                "template_id": "period_comparison",
-                "needs_agent": false,
-                "steps": 40,
-                "metrics": [
-                  "ad_spend",
-                  "cac",
-                  "contribution_margin_pct",
-                  "conversion_rate",
-                  "mer",
-                  "net_profit",
-                  "net_roas",
-                  "net_sales",
-                  "orders",
-                  "repeat_rate"
-                ],
+                "template_id": "agent",
+                "needs_agent": true,
+                "steps": 0,
+                "metrics": [],
                 "notes": [
                   "no measure named: compared the business headline measures"
                 ]
               }
             },
-            "evidence_metrics": []
+            "evidence_metrics": [
+              "ad_spend",
+              "cac",
+              "contribution_margin_pct",
+              "conversion_rate",
+              "mer",
+              "net_profit",
+              "net_roas",
+              "net_sales",
+              "orders",
+              "repeat_rate"
+            ]
           },
-          "status": "partial",
+          "status": "completed",
           "truths": [],
           "spec_matched": 2,
           "spec_total": 2
@@ -588,7 +589,9 @@
                 ]
               }
             },
-            "evidence_metrics": []
+            "evidence_metrics": [
+              "net_sales"
+            ]
           },
           "status": "completed",
           "truths": [],
@@ -604,7 +607,7 @@
         ],
         "metrics": {
           "spec_accuracy": 1.0,
-          "status_ok": 0.0,
+          "status_ok": 1.0,
           "value_correctness": null,
           "revisions": 0.0,
           "latency_ms": null,
@@ -615,11 +618,26 @@
           "observed": {
             "spec_source": "v2_mission",
             "v2_mission": {
-              "status": "fallback",
-              "reason": "no_template",
+              "status": "answered",
+              "reason": "",
               "plan": {
-                "template_id": "agent",
-                "steps": 0
+                "template_id": "lookup",
+                "steps": 1
+              },
+              "run": {
+                "result_sets": 1,
+                "step_errors": [],
+                "derivations": 0,
+                "derive_errors": [],
+                "investigations": {},
+                "explorations": {},
+                "unsupported": [],
+                "deadline_hit": []
+              },
+              "answer": {
+                "attempts": 1,
+                "issues": [],
+                "status": "completed"
               }
             },
             "v2_shadow": {
@@ -632,9 +650,11 @@
                 "metrics": []
               }
             },
-            "evidence_metrics": []
+            "evidence_metrics": [
+              "net_roas"
+            ]
           },
-          "status": "failed",
+          "status": "completed",
           "truths": [],
           "spec_matched": 6,
           "spec_total": 6
@@ -658,8 +678,8 @@
           "observed": {
             "spec_source": "v2_mission",
             "v2_mission": {
-              "status": "fallback",
-              "reason": "answer_failed",
+              "status": "answered",
+              "reason": "",
               "plan": {
                 "template_id": "why",
                 "steps": 1
@@ -667,9 +687,17 @@
               "run": {
                 "result_sets": 0,
                 "step_errors": [],
-                "derivations": 0,
+                "derivations": 1,
                 "derive_errors": [],
-                "investigations": {},
+                "investigations": {
+                  "e1": {
+                    "status": "done",
+                    "findings": 1,
+                    "limitations": [
+                      "localise_skipped_non_additive"
+                    ]
+                  }
+                },
                 "explorations": {},
                 "unsupported": [],
                 "deadline_hit": []
@@ -677,7 +705,7 @@
               "answer": {
                 "attempts": 1,
                 "issues": [],
-                "status": "failed"
+                "status": "partial"
               }
             },
             "v2_shadow": {
@@ -694,7 +722,7 @@
             },
             "evidence_metrics": []
           },
-          "status": "failed",
+          "status": "partial",
           "truths": [],
           "spec_matched": 6,
           "spec_total": 10
@@ -752,7 +780,9 @@
                 ]
               }
             },
-            "evidence_metrics": []
+            "evidence_metrics": [
+              "ad_spend"
+            ]
           },
           "status": "completed",
           "truths": [],
@@ -788,22 +818,24 @@
               "run": {
                 "result_sets": 0,
                 "step_errors": [],
-                "derivations": 0,
+                "derivations": 1,
                 "derive_errors": [],
-                "investigations": {},
+                "investigations": {
+                  "e1": {
+                    "status": "done",
+                    "findings": 1,
+                    "limitations": [
+                      "localise_skipped_non_additive"
+                    ]
+                  }
+                },
                 "explorations": {},
                 "unsupported": [],
                 "deadline_hit": []
               },
               "answer": {
-                "attempts": 2,
-                "issues": [
-                  "unresolved_claim",
-                  "unresolved_claim",
-                  "unresolved_claim",
-                  "measure_not_covered",
-                  "window_not_covered"
-                ],
+                "attempts": 1,
+                "issues": [],
                 "status": "partial"
               }
             },

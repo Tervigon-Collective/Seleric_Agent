@@ -65,6 +65,40 @@ def _revisions(trace: dict[str, Any]) -> int:
     return 0
 
 
+def _v2_costs(trace: dict[str, Any]) -> tuple[float | None, int | None, int | None]:
+    """``(latency_ms, tokens, llm_calls)`` from the v2 stage trace.
+
+    The v2 stages record wall-clock (``latency_ms``) and per-stage token usage; the
+    legacy path records none of them. Prefer the enforce mission trace, else shadow.
+    """
+    stage = trace.get("v2_mission")
+    if not isinstance(stage, dict):
+        stage = trace.get("v2_shadow")
+    if not isinstance(stage, dict):
+        return None, None, None
+    raw_latency = stage.get("latency_ms")
+    latency = float(raw_latency) if isinstance(raw_latency, (int, float)) else None
+    understand = stage.get("understand") if isinstance(stage.get("understand"), dict) else {}
+    answer = stage.get("answer") if isinstance(stage.get("answer"), dict) else {}
+    token_parts: list[float] = []
+    for container in (understand, answer):
+        for key in ("input_tokens", "output_tokens"):
+            value = container.get(key) if isinstance(container, dict) else None
+            if isinstance(value, (int, float)):
+                token_parts.append(float(value))
+    tokens = int(sum(token_parts)) if token_parts else None
+    calls = 0
+    counted = False
+    for container in (understand, answer):
+        for key in ("attempt", "attempts"):
+            value = container.get(key) if isinstance(container, dict) else None
+            if isinstance(value, int):
+                calls += value
+                counted = True
+                break
+    return latency, tokens, (calls if counted else None)
+
+
 def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any]) -> ObservedCase:
     trace = payload.get("trace") if isinstance(payload.get("trace"), dict) else {}
     assert isinstance(trace, dict)
@@ -90,6 +124,9 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
         )
 
     elapsed = trace.get("elapsed_seconds")
+    v2_latency, v2_tokens, v2_calls = _v2_costs(trace)
+    if v2_latency is None and isinstance(elapsed, (int, float)):
+        v2_latency = float(elapsed) * 1000
     spec = trace.get("spec")
     diagnostics: dict[str, Any] = {"spec_source": "trace.spec" if isinstance(spec, dict) and spec else None}
     for key in ("v2_mission", "v2_shadow"):
@@ -124,7 +161,9 @@ def _observed_from_payload(case: EvalCase, question: str, payload: dict[str, Any
         evidence=tuple(evidence),
         response_text=str(payload.get("final_response") or ""),
         revisions=_revisions(trace),
-        latency_ms=float(elapsed) * 1000 if isinstance(elapsed, (int, float)) else None,
+        latency_ms=v2_latency,
+        llm_calls=v2_calls,
+        tokens=v2_tokens,
         diagnostics={**diagnostics, "evidence_metrics": sorted({e.metric_id for e in evidence})[:10]},
         error=str(error_code) if error_code else None,
     )

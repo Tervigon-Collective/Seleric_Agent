@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 
 from seleric_swarm.answer import Evidence, answer, render, turn_summary, verify
+from seleric_swarm.answer._draft_call import _MAX_ROWS_TOTAL, evidence_prompt
 from seleric_swarm.contracts.pipeline import (
     AnswerDraft,
     Claim,
@@ -161,3 +163,23 @@ def test_investigation_answer_covers_through_findings() -> None:
     draft = AnswerDraft(status="completed", claims=(claim("p", premise.ref, "support"), claim("s", seg.ref, "support")),
                         blocks=(para("Take moved {p}; most of it was north ({s})."),))
     assert verify(draft, SPEC, Evidence([premise, seg])).ok
+
+
+def test_evidence_prompt_bounds_breakdown_rows_across_result_sets() -> None:
+    """Many multi-row result sets stay within the global row budget, not 20 each."""
+    sets = [
+        rs(f"b{i}", EV, [({"zz_zone": f"z{j}"}, float(j + 1)) for j in range(30)], breakdowns=("zz_zone",))
+        for i in range(10)
+    ]
+    body = json.loads(evidence_prompt("how did take move by zone?", None, Evidence(sets), MODEL))
+    total_rows = sum(len(item.get("rows", [])) for item in body["evidence"])
+    assert total_rows <= _MAX_ROWS_TOTAL
+    assert any("rows_not_shown" in item for item in body["evidence"])
+
+
+def test_evidence_prompt_keeps_single_value_rows() -> None:
+    """Single-value result sets are not charged against the breakdown row budget."""
+    sets = [rs(f"v{i}", EV, [({}, float(i + 1))]) for i in range(25)]
+    body = json.loads(evidence_prompt("take?", None, Evidence(sets), MODEL))
+    assert len(body["evidence"]) == 25
+    assert all("value" in item for item in body["evidence"])

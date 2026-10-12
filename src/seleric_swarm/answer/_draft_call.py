@@ -34,6 +34,10 @@ _UNAVAILABLE = AnswerDraft(
 
 
 _MAX_ROWS = 20
+# Cap breakdown rows across all result sets, not just per set: a plan can emit
+# twenty result sets and a per-set cap alone lets the listing grow unbounded.
+# Single-value result sets are one value each and are never charged against it.
+_MAX_ROWS_TOTAL = 120
 
 
 def _short(value: float | None) -> float | None:
@@ -49,6 +53,7 @@ def evidence_prompt(question: str, spec: QuestionSpec | None, evidence: Evidence
     """Compact JSON listing of what may be cited (ids, metric labels, row keys; values included
     so the model can choose what to say, never so it can type them)."""
     items: list[dict[str, Any]] = []
+    row_budget = _MAX_ROWS_TOTAL
     for rs in evidence.result_sets():
         item: dict[str, Any] = {
             "ref": rs.ref.id, "kind": "result_set",
@@ -60,9 +65,11 @@ def evidence_prompt(question: str, spec: QuestionSpec | None, evidence: Evidence
         elif rs.breakdowns or len(rs.rows) != 1:
             # The answer cites rows by key; values are shown only so the model can pick what to say.
             ordered = sorted(rs.rows, key=lambda r: -abs(r.value or 0.0))
-            item["rows"] = [[r.dimensions, _short(r.value)] for r in ordered[:_MAX_ROWS]]
-            if len(rs.rows) > _MAX_ROWS:
-                item["rows_not_shown"] = len(rs.rows) - _MAX_ROWS
+            take = min(_MAX_ROWS, max(0, row_budget))
+            item["rows"] = [[r.dimensions, _short(r.value)] for r in ordered[:take]]
+            row_budget -= take
+            if len(rs.rows) > take:
+                item["rows_not_shown"] = len(rs.rows) - take
         else:
             item["value"] = _short(rs.rows[0].value)
         items.append(item)

@@ -103,7 +103,9 @@ def prepare(spec: QuestionSpec, ctx: PlanContext) -> Prepared:
     ranking = spec.ranking if spec.ranking and _known(model, spec.ranking.by_metric_id) else None
 
     entity = spec.entities[0].dimension if spec.entities else None
-    if entity is None and ranking is not None and spec.breakdowns:
+    if entity is None and spec.breakdowns and (
+        ranking is not None or spec.shape == "entity_comparison"
+    ):
         entity = spec.breakdowns[0]
     breakdowns = tuple(d for d in spec.breakdowns if not model.is_time_dimension(d))
 

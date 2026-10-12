@@ -75,6 +75,17 @@ def compile_question_spec(
         entity_dim = entities[0].dimension
         if entity_dim and entity_dim not in breakdowns:
             breakdowns = (*breakdowns, entity_dim)
+    # An entity comparison that names the family but no values ("the worst campaign"):
+    # keep the family dimension as the leading breakdown so the planner ranks the whole
+    # family instead of silently degrading to whole-account totals.
+    if draft.shape == "entity_comparison" and not entities:
+        entity_dim = (draft.entity_dimension or "").strip()
+        if (
+            entity_dim
+            and not read_model.is_time_dimension(entity_dim)
+            and entity_dim not in breakdowns
+        ):
+            breakdowns = (entity_dim, *breakdowns)
     # Several named values on one family for a comparison shape → breakdown too.
     if draft.shape in ("breakdown", "entity_comparison", "composition"):
         for filt in filters:

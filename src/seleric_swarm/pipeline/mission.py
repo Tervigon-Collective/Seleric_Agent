@@ -39,6 +39,18 @@ from seleric_swarm.understand import DraftLLM, understand
 _log = logging.getLogger("seleric.pipeline.mission")
 
 
+def _apply_gen_ai(span: Any, stats: dict[str, Any]) -> None:
+    """Push an LLM stage's model + token usage onto its span (M0.3/M5.1)."""
+    model = stats.get("model")
+    if not model:
+        return
+    span.set_gen_ai(
+        model=str(model),
+        input_tokens=stats.get("input_tokens"),
+        output_tokens=stats.get("output_tokens"),
+    )
+
+
 @dataclass
 class MissionV2:
     status: Literal["answered", "clarify", "fallback"]
@@ -82,6 +94,7 @@ async def _run(
                                         value_words=_value_words(inputs.resolution),
                                         prior_question=inputs.prior_question, prior_offer=inputs.prior_offer,
                                         instructions=load_prompt("understand")[0])
+        _apply_gen_ai(span, stats)
         span.set_output(draft)
     trace: dict[str, Any] = {
         "understand": {k: v for k, v in stats.items() if k != "latency_ms"},
@@ -89,7 +102,9 @@ async def _run(
     }
     if isinstance(draft, Clarification):
         return _clarify_or_fallback(draft, clarify_mode, trace)
-    draft = overview_as_exploration(draft, inputs.headline_metric_ids)
+    draft = overview_as_exploration(
+        draft, inputs.headline_metric_ids, read_model=inputs.read_model
+    )
     if draft.kind != "analysis" and draft.kind != "exploration":
         return MissionV2(status="fallback", reason=f"kind:{draft.kind}", trace=trace)
     draft = await resolve_measures(draft, inputs, clarify_mode=clarify_mode)
@@ -123,8 +138,10 @@ async def _run(
     with stage_span("answer", mission_id=mission_id, inp=spec) as span:
         doc, astats = await answer(answer_llm, inputs.question, spec=spec, evidence=evidence, read_model=inputs.read_model,
                                     instructions=load_prompt("answer")[0])
+        _apply_gen_ai(span, astats)
         span.set_output(doc)
-    trace["answer"] = {k: v for k, v in astats.items() if k in ("attempts", "issues", "status")}
+    trace["answer"] = {k: v for k, v in astats.items()
+                       if k in ("attempts", "issues", "status", "input_tokens", "output_tokens", "model")}
     if run.deadline_hit and doc.draft.status != "failed":
         # M5.3: the answer was written from a run the latency tier cut short; say so.
         cut = doc.draft.model_copy(update={"status": "partial", "limitations": (

@@ -177,6 +177,39 @@ def test_entity_comparison_merges_entities() -> None:
     assert len(result.entities) == 1
     assert set(result.entities[0].values) == {"CAMP-A", "CAMP-B"}
     assert result.windows[0].role == "event"
+
+
+def test_entity_comparison_without_named_values_keeps_the_family_dimension() -> None:
+    """'The worst campaign today' names the family, not its values: the family dimension must
+    survive compilation as a breakdown so the planner can rank the whole family."""
+    draft = QuestionDraft(
+        kind="analysis",
+        shape="entity_comparison",
+        entity_dimension="zz_campaign",
+        windows=(
+            WindowSlot(role="event", expr=WindowExpr(name="yesterday")),
+            WindowSlot(role="baseline", expr=WindowExpr(unit="day", n=2, ending="before_event")),
+        ),
+    )
+    result = compile_question_spec(draft, SpecCandidates(), _model(), None, date(2026, 10, 10))
+    assert isinstance(result, QuestionSpec)
+    assert result.entities == ()
+    assert result.breakdowns == ("zz_campaign",)
+
+
+def test_entity_comparison_without_values_never_breaks_down_by_time() -> None:
+    draft = QuestionDraft(
+        kind="analysis",
+        shape="entity_comparison",
+        entity_dimension="zz_day",
+        windows=(
+            WindowSlot(role="event", expr=WindowExpr(name="yesterday")),
+            WindowSlot(role="baseline", expr=WindowExpr(unit="day", n=2, ending="before_event")),
+        ),
+    )
+    result = compile_question_spec(draft, SpecCandidates(), _model(), None, date(2026, 10, 10))
+    assert isinstance(result, QuestionSpec)
+    assert result.breakdowns == ()
     assert result.windows[1].role == "baseline"
     assert result.windows[1].token == "prior_2d"
 

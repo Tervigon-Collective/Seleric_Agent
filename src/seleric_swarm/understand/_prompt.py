@@ -12,6 +12,15 @@ from typing import Any
 
 from seleric_swarm.semantic import SemanticReadModel
 
+# Token budget for the understand prompt: the catalogue holds ~228 measure labels
+# and the full dump dominates the prompt. Only measures whose label shares a word
+# with the message are named; the rest are left to concept search (mission
+# ``resolve_measures``), which resolves a measure the draft names in ``words``
+# even when ``metric_id`` is empty. A small stable fallback keeps the list usable
+# when the message names no measure at all.
+_MAX_MEASURE_LABELS = 80
+_MEASURE_FALLBACK = 30
+
 INSTRUCTIONS = (
     "Read the user's message to a business-analytics assistant and fill QuestionDraft, or return "
     "Clarification when the question cannot be read without asking (see needs_clarification). Do not "
@@ -66,16 +75,13 @@ def build_prompt(
     prior_offer: str = "",
     exemplars: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Build the understand prompt from the read model and context."""
-    parts = [f"Message: {query}"]
+    """Build the understand prompt from the read model and context.
 
-    if prior_question or prior_offer:
-        prior = ["Previous turn:"]
-        if prior_question:
-            prior.append(f"- the user asked: {prior_question[:300]}")
-        if prior_offer:
-            prior.append(f"- the answer ended by offering: {prior_offer[:300]}")
-        parts.append("\n".join(prior))
+    The stable, query-independent part of the catalogue (dimensions and hierarchy
+    levels) leads the prompt so it forms a reusable prefix for provider prompt
+    caching; the message and the query-ranked measures follow.
+    """
+    parts = [_render_catalogue_for_prompt(read_model, query=query, prior_question=prior_question)]
 
     if value_words:
         meanings = value_meanings or {}
@@ -88,8 +94,15 @@ def build_prompt(
             )
         )
 
-    # Catalogue concept labels, dimension labels, hierarchy levels — NO metric ids
-    parts.append(_render_catalogue_for_prompt(read_model))
+    if prior_question or prior_offer:
+        prior = ["Previous turn:"]
+        if prior_question:
+            prior.append(f"- the user asked: {prior_question[:300]}")
+        if prior_offer:
+            prior.append(f"- the answer ended by offering: {prior_offer[:300]}")
+        parts.append("\n".join(prior))
+
+    parts.append(f"Message: {query}")
 
     if exemplars:
         parts.append(
@@ -105,25 +118,58 @@ def build_prompt(
     return "\n\n".join(parts)
 
 
-def _render_catalogue_for_prompt(read_model: SemanticReadModel) -> str:
+def _words(text: str) -> list[str]:
+    """Lowercase alphanumeric words. No regex: the ``understand`` layer forbids ``re`` (Rule A2)."""
+    cleaned = "".join(ch if ch.isalnum() else " " for ch in text.casefold())
+    return cleaned.split()
+
+
+def _measure_labels(read_model: SemanticReadModel, query: str, prior_question: str) -> list[str]:
+    """Measure labels whose words overlap the message, topped up to a small floor.
+
+    Only the read model's own labels and the user's words are used (Rule A2); no
+    metric or channel literal lives here.
+    """
+    words = {w for w in _words(f"{query} {prior_question}") if len(w) >= 3}
+    matched: list[str] = []
+    rest: list[str] = []
+    for metric in read_model.metrics:
+        label = (metric.label or metric.id).strip()
+        if not label:
+            continue
+        label_words = set(_words(label))
+        (matched if words & label_words else rest).append(label)
+    picked: list[str] = []
+    seen: set[str] = set()
+    for label in matched:
+        if label not in seen:
+            seen.add(label)
+            picked.append(label)
+    if len(picked) < _MEASURE_FALLBACK:
+        for label in rest:
+            if label not in seen:
+                seen.add(label)
+                picked.append(label)
+            if len(picked) >= _MEASURE_FALLBACK:
+                break
+    return picked[:_MAX_MEASURE_LABELS]
+
+
+def _render_catalogue_for_prompt(
+    read_model: SemanticReadModel, *, query: str = "", prior_question: str = ""
+) -> str:
     """Render catalogue for the understand prompt: labels and dimension names only.
 
     No metric ids, no channel words, no concept words that could bias the model.
     Only the human-readable labels and dimension names the user would use.
+
+    Dimensions and hierarchy levels come first (identical across every mission, so
+    they form a cacheable prompt prefix); measures follow, bounded to the labels
+    relevant to this message.
     """
     lines = ["Catalogue vocabulary (use these labels and dimension names in your draft):"]
 
-    # Metric labels (human-readable names)
-    metric_labels = []
-    for metric in read_model.metrics:
-        label = metric.label or metric.id
-        if label:
-            metric_labels.append(f"- {label}")
-    if metric_labels:
-        lines.append("Measures (labels only):")
-        lines.extend(metric_labels)
-
-    # Dimension labels
+    # Dimension labels (query-independent: kept whole and first for prompt caching)
     dim_labels = []
     for dim in read_model.dimensions:
         label = dim.id
@@ -134,7 +180,7 @@ def _render_catalogue_for_prompt(read_model: SemanticReadModel) -> str:
         lines.append("Dimensions:")
         lines.extend(dim_labels)
 
-    # Hierarchy levels
+    # Hierarchy levels (query-independent)
     hier_labels = []
     for hier in read_model.hierarchies:
         if hier.levels:
@@ -142,5 +188,11 @@ def _render_catalogue_for_prompt(read_model: SemanticReadModel) -> str:
     if hier_labels:
         lines.append("Hierarchy levels:")
         lines.extend(hier_labels)
+
+    # Measure labels (query-ranked, bounded)
+    metric_labels = [f"- {label}" for label in _measure_labels(read_model, query, prior_question)]
+    if metric_labels:
+        lines.append("Measures (labels only):")
+        lines.extend(metric_labels)
 
     return "\n".join(lines)
