@@ -10,8 +10,6 @@ from typing import Protocol
 
 from seleric_swarm.conversations.contracts import (
     ActivityEvent,
-    ApprovalDecisionEvent,
-    ApprovalRequest,
     Artifact,
     Attachment,
     EpisodicEvent,
@@ -19,7 +17,6 @@ from seleric_swarm.conversations.contracts import (
     MemoryPreference,
     Message,
     MessageFeedback,
-    RollbackRecord,
     Run,
     RunAttempt,
     RunAttemptStatus,
@@ -237,30 +234,6 @@ class SearchRepository(Protocol):
     ) -> list[SearchResult]: ...
 
 
-class ApprovalRepository(Protocol):
-    def create(self, approval: ApprovalRequest) -> ApprovalRequest: ...
-    def get(
-        self, approval_id: str, workspace_id: str, owner_user_id: str
-    ) -> ApprovalRequest | None: ...
-    def get_for_workspace(
-        self, approval_id: str, workspace_id: str
-    ) -> ApprovalRequest | None: ...
-    def get_by_idempotency(
-        self, workspace_id: str, owner_user_id: str, idempotency_key: str
-    ) -> ApprovalRequest | None: ...
-    def transition(
-        self,
-        approval_id: str,
-        expected_status: str,
-        approval: ApprovalRequest,
-        event: ApprovalDecisionEvent,
-    ) -> ApprovalRequest | None: ...
-    def list_events(self, approval_id: str) -> list[ApprovalDecisionEvent]: ...
-    def add_rollback(self, record: RollbackRecord) -> RollbackRecord: ...
-    def get_rollback(self, approval_id: str) -> RollbackRecord | None: ...
-    def list_due(self, now: datetime) -> list[ApprovalRequest]: ...
-
-
 class FeedbackRepository(Protocol):
     """Append-only answer feedback. A re-vote supersedes the prior row for
     the same message; rows are never edited in place."""
@@ -308,7 +281,6 @@ class ConversationRepositories:
     memories: MemoryRepository
     thread_summaries: ThreadSummaryRepository
     search: SearchRepository
-    approvals: ApprovalRepository
     feedback: FeedbackRepository
     # Optional: only the postgres backend wires this today; nothing reads it yet.
     # None-default so the file/in-memory builders construct without it.

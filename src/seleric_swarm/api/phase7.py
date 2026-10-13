@@ -1,24 +1,13 @@
-"""Phase 7 scoped search, diagnostics, replay metadata, and approval APIs."""
+"""Scoped search, run diagnostics and replay metadata APIs."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from seleric_swarm.api.ready import effective_capabilities
-from seleric_swarm.conversations.contracts import (
-    ApprovalRequest,
-    ApprovalStatus,
-    Principal,
-    SearchResult,
-)
-from seleric_swarm.conversations.phase7 import (
-    ApprovalExpiryService,
-    transition_approval,
-)
+from seleric_swarm.conversations.contracts import Principal, SearchResult
 from seleric_swarm.conversations.repositories import ConversationRepositories
 from seleric_swarm.observability.tracing import langfuse_trace_url, operation_span
 from seleric_swarm.runtime import SwarmRuntime
@@ -55,23 +44,6 @@ def _admin(request: Request) -> Principal:
     return principal
 
 
-def _approval_for_principal(
-    repository: Any,
-    approval_id: str,
-    principal: Principal,
-) -> ApprovalRequest | None:
-    approval = repository.get(approval_id, principal.workspace_id, principal.user_id)
-    if approval is not None:
-        return approval
-    approval = repository.get_for_workspace(approval_id, principal.workspace_id)
-    if approval is None:
-        return None
-    roles = {role.lower() for role in principal.roles}
-    if approval.required_role.lower() not in roles and not principal.is_admin:
-        return None
-    return approval
-
-
 @router.get("/search", response_model=list[SearchResult])
 def search(
     request: Request,
@@ -93,111 +65,6 @@ def search(
         return repositories.search.search(
             q, principal.workspace_id, principal.user_id, kinds=selected, limit=limit
         )
-
-
-class CreateApprovalBody(BaseModel):
-    action_type: str = Field(min_length=1, max_length=200)
-    action_preview: dict[str, Any]
-    required_role: str = Field(min_length=1, max_length=100)
-    idempotency_key: str = Field(min_length=1, max_length=200)
-    run_id: str | None = None
-    dry_run: bool = True
-    checkpoint_resume_token: str | None = None
-    expires_in_seconds: int = Field(default=3600, ge=1, le=604800)
-
-
-@router.post("/approvals", response_model=ApprovalRequest, status_code=status.HTTP_201_CREATED)
-def create_approval(body: CreateApprovalBody, request: Request) -> ApprovalRequest:
-    principal = _principal(request)
-    repositories = _repositories(request)
-    if body.run_id:
-        run = repositories.runs.get(body.run_id)
-        if run is None or not principal.owns(
-            workspace_id=run.workspace_id, user_id=run.requested_by_user_id
-        ):
-            raise HTTPException(status_code=404, detail="run not found")
-    now = datetime.now(UTC)
-    approval = ApprovalRequest(
-        workspace_id=principal.workspace_id,
-        owner_user_id=principal.user_id,
-        run_id=body.run_id,
-        action_type=body.action_type,
-        action_preview=body.action_preview,
-        required_role=body.required_role,
-        idempotency_key=body.idempotency_key,
-        dry_run=body.dry_run,
-        checkpoint_resume_token=body.checkpoint_resume_token,
-        expires_at=now + timedelta(seconds=body.expires_in_seconds),
-    )
-    with operation_span(
-        "persistence",
-        "approval_request",
-        {"action_type": body.action_type, "workspace_id": principal.workspace_id},
-    ):
-        return repositories.approvals.create(approval)
-
-
-class ApprovalDecisionBody(BaseModel):
-    decision: Literal["APPROVED", "REJECTED", "CANCELLED", "EXECUTED", "ROLLED_BACK"]
-    reason: str | None = Field(default=None, max_length=1000)
-
-
-@router.get("/approvals/{approval_id}")
-def get_approval(approval_id: str, request: Request) -> dict[str, Any]:
-    principal = _principal(request)
-    repository = _repositories(request).approvals
-    ApprovalExpiryService(repository).sweep()
-    approval = _approval_for_principal(repository, approval_id, principal)
-    if approval is None:
-        raise HTTPException(status_code=404, detail="approval not found")
-    return {
-        "approval": approval,
-        "events": repository.list_events(approval.id),
-    }
-
-
-@router.post("/approvals/{approval_id}/decision", response_model=ApprovalRequest)
-def decide_approval(
-    approval_id: str, body: ApprovalDecisionBody, request: Request
-) -> ApprovalRequest:
-    principal = _principal(request)
-    runtime = _runtime(request)
-    repository = _repositories(request).approvals
-    ApprovalExpiryService(repository).sweep()
-    approval = _approval_for_principal(repository, approval_id, principal)
-    if approval is None:
-        raise HTTPException(status_code=404, detail="approval not found")
-    target = ApprovalStatus(body.decision)
-    try:
-        if target is ApprovalStatus.EXECUTED:
-            if runtime.action_execution is None:
-                raise LookupError("action execution service unavailable")
-            updated, _outcome = runtime.action_execution.execute(
-                approval,
-                principal,
-                allow_write_actions=runtime.settings.allow_write_actions,
-            )
-            return updated
-        if target is ApprovalStatus.ROLLED_BACK:
-            if runtime.action_execution is None:
-                raise LookupError("action execution service unavailable")
-            updated, _record = runtime.action_execution.rollback(approval, principal)
-            return updated
-        updated = transition_approval(
-            repository,
-            approval,
-            target,
-            principal,
-            reason=body.reason,
-            allow_write_actions=runtime.settings.allow_write_actions,
-        )
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except (ValueError, RuntimeError) as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return updated
 
 
 @router.get("/admin/runs/{run_id}/diagnostics")
@@ -255,13 +122,6 @@ def backend_capabilities(request: Request) -> dict[str, bool]:
     _admin(request)
     runtime = _runtime(request)
     return effective_capabilities(runtime)
-
-
-@router.post("/admin/approvals/expire")
-def expire_approvals(request: Request) -> dict[str, int]:
-    _admin(request)
-    repository = _repositories(request).approvals
-    return {"expired": ApprovalExpiryService(repository).sweep()}
 
 
 @router.post("/admin/runs/{run_id}/replay")

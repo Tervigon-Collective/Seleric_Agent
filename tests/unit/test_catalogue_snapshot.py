@@ -8,9 +8,6 @@ top-k guess.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
-from seleric_swarm.agent import runner
 from seleric_swarm.services.catalogue_bootstrap import (
     CatalogueBootstrap,
     CatalogueMetricMeta,
@@ -75,19 +72,5 @@ def test_bootstrap_snapshot_reflects_cache() -> None:
     assert "brand" in snap.dimensions
 
 
-def test_mission_prompt_embeds_catalogue() -> None:
-    prompt = runner._mission_prompt(
-        "what is net sales",
-        datetime(2026, 9, 18, tzinfo=UTC),
-        "Asia/Kolkata",
-        catalogue=_snapshot(),
-    )
-    assert "[catalogue]" in prompt
-    assert "net_sales: Net Sales" in prompt
 
 
-def test_mission_prompt_without_catalogue_has_no_block() -> None:
-    prompt = runner._mission_prompt(
-        "hi", datetime(2026, 9, 18, tzinfo=UTC), "Asia/Kolkata"
-    )
-    assert "[catalogue]" not in prompt

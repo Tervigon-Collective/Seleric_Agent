@@ -137,7 +137,7 @@ class PostgresMissionStore:
                          for event_position, event in enumerate(events, start=1)]
             if live_seqs:
                 placeholders = ", ".join(f":s{i}" for i in range(len(live_seqs)))
-                params = {f"s{i}": seq for i, seq in enumerate(live_seqs)}
+                params: dict[str, Any] = {f"s{i}": seq for i, seq in enumerate(live_seqs)}
                 params["mission_id"] = result.mission_id
                 conn.execute(
                     self._text(

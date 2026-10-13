@@ -31,9 +31,9 @@ def apply_driver_level(
 ) -> tuple[list[DailyPoint], dict[str, Any]] | None:
     """Rescale ``days`` to the driver-implied level. None when it cannot be done."""
     pairs = [
-        (v, driver.get(d.isoformat()))
+        (v, dv)
         for d, v in zip(frame_dates, target, strict=False)
-        if v is not None and driver.get(d.isoformat()) is not None
+        if v is not None and (dv := driver.get(d.isoformat())) is not None
     ][-EFFICIENCY_DAYS:]
     t_sum = sum(v for v, _ in pairs)
     d_sum = sum(x for _, x in pairs)

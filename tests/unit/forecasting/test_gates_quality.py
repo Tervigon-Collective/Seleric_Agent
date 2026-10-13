@@ -15,7 +15,10 @@ from seleric_swarm.forecasting.gates import (
     cutoff_for,
     leakage_canary_mask,
 )
-from seleric_swarm.forecasting.policies import FeatureBundle, ForecastPolicies, load_forecast_policies
+from seleric_swarm.forecasting.policies import (
+    FeatureBundle,
+    load_forecast_policies,
+)
 from seleric_swarm.forecasting.quality import assess_series
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 

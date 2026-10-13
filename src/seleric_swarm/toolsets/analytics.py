@@ -29,7 +29,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from pydantic_ai import RunContext
 
@@ -1182,7 +1182,7 @@ def _fmt_merge_value(value: float | None, *, metric_id: str = "") -> str:
     if is_percent_share_metric(metric_id):
         return format_metric_value(value, metric_id=metric_id)
     if abs(value - round(value)) < 1e-9 and abs(value) >= 1:
-        return f"{int(round(value)):,}"
+        return f"{round(value):,}"
     # plain figures: "2.178e+04" for 21,776.21 is read as a different number (live 2026-10-08, MS3-ed23dd03e2)
     if abs(value) >= 100:
         return f"{value:,.2f}"
@@ -1523,8 +1523,8 @@ async def derive_metric(
     metrics_index: dict[str, float] = {}
     null_rows = 0
     for slot in sorted(complete, key=lambda s: (s[0], s[1], s[2]))[:_MAX_MERGE_SERIES_ROWS]:
-        num = float(complete[slot][numerator_metric].value)
-        den = float(complete[slot][denominator_metric].value)
+        num = float(complete[slot][numerator_metric].value or 0.0)
+        den = float(complete[slot][denominator_metric].value or 0.0)
         value = _compute(num, den)
         if value is None:
             null_rows += 1

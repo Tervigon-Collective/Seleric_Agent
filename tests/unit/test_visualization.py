@@ -418,6 +418,8 @@ _TWO_METRIC_EVIDENCE = [
 
 def test_every_declared_chart_form_builds_a_spec():
     for chart_type in CHART_TYPES:
+        if chart_type == "causal_graph":  # drawn from a diagnosis (causal/graph_chart.py), not from evidence rows
+            continue
         # Stacking/composition forms need unit-compatible evidence; the mixed
         # revenue+orders fixture is intentionally incompatible (see below).
         evidence = (
@@ -459,7 +461,11 @@ def test_stacked_bar_rejects_mixed_currency_and_counts():
 
 
 def test_mixed_unit_default_is_grouped_not_stacked():
-    from seleric_swarm.analytics.visualization import describe_evidence_shape, infer_chart_type_from_shape, unit_groups_for_evidence
+    from seleric_swarm.analytics.visualization import (
+        describe_evidence_shape,
+        infer_chart_type_from_shape,
+        unit_groups_for_evidence,
+    )
 
     evidence = _mixed_unit_evidence()
     shape = describe_evidence_shape(evidence)

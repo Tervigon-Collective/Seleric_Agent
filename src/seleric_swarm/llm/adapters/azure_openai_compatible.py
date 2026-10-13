@@ -43,7 +43,6 @@ from seleric_swarm.llm.tracing import (
     llm_run_name,
 )
 
-
 # model -> learned request fixes ("max_completion_tokens", "drop_temperature").
 _LEARNED_PARAM_FIXES: dict[str, set[str]] = {}
 # One SDK client per event loop and connection settings. A client per mission

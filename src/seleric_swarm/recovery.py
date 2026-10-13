@@ -610,18 +610,6 @@ async def _main() -> None:
     runtime = build_runtime()
     if runtime.conversations is None:
         raise RuntimeError("conversation repositories are not configured")
-    provider = runtime.checkpoint_provider
-    if provider is not None:
-        for _ in range(10):
-            try:
-                await provider.setup()
-                break
-            except Exception as exc:
-                _log.warning("recovery_checkpoint_provider_setup_retry", exc_info=exc)
-                await asyncio.sleep(2)
-        else:
-            await provider.setup()
-
     recovery = RunRecoveryService(
         runtime.conversations.runs,
         retry_delay_s=runtime.settings.run_retry_delay_s,
@@ -647,51 +635,47 @@ async def _main() -> None:
             retry_jitter_s=runtime.settings.run_retry_jitter_s,
             max_concurrency=runtime.settings.run_max_concurrency,
         )
-    try:
-        if args.once:
-            if worker is not None:
-                worker_result = await worker.run_once(limit=args.limit)
-                print(
-                    f"claimed={worker_result.claimed} completed={worker_result.completed} "
-                    f"retryable={worker_result.retryable} failed={worker_result.failed}"
-                )
-            else:
-                recovery_result = recovery.recover_expired(limit=args.limit)
-                print(
-                    f"retryable={recovery_result.retryable} failed={recovery_result.failed} "
-                    f"already_retryable={recovery_result.already_retryable}"
-                )
+    if args.once:
+        if worker is not None:
+            worker_result = await worker.run_once(limit=args.limit)
+            print(
+                f"claimed={worker_result.claimed} completed={worker_result.completed} "
+                f"retryable={worker_result.retryable} failed={worker_result.failed}"
+            )
         else:
-            if worker is not None:
-                stop = asyncio.Event()
-                loop = asyncio.get_running_loop()
-                for sig in (signal.SIGTERM, signal.SIGINT):
-                    with contextlib.suppress(NotImplementedError, RuntimeError):
-                        loop.add_signal_handler(sig, stop.set)
-                listener_stop = threading.Event()
-                if runtime.settings.persistence_backend == "postgres" and runtime.settings.database_url:
-                    listen_for_runs(runtime.settings.database_url, worker.wake, loop, listener_stop)
+            recovery_result = recovery.recover_expired(limit=args.limit)
+            print(
+                f"retryable={recovery_result.retryable} failed={recovery_result.failed} "
+                f"already_retryable={recovery_result.already_retryable}"
+            )
+    else:
+        if worker is not None:
+            stop = asyncio.Event()
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                with contextlib.suppress(NotImplementedError, RuntimeError):
+                    loop.add_signal_handler(sig, stop.set)
+            listener_stop = threading.Event()
+            if runtime.settings.persistence_backend == "postgres" and runtime.settings.database_url:
+                listen_for_runs(runtime.settings.database_url, worker.wake, loop, listener_stop)
+            try:
+                await worker.run_forever(
+                    poll_interval_s=args.interval,
+                    limit=args.limit,
+                    stop=stop,
+                    drain_timeout_s=runtime.settings.run_drain_timeout_s,
+                )
+            finally:
+                listener_stop.set()
+        else:
+            while True:
                 try:
-                    await worker.run_forever(
-                        poll_interval_s=args.interval,
-                        limit=args.limit,
-                        stop=stop,
-                        drain_timeout_s=runtime.settings.run_drain_timeout_s,
-                    )
-                finally:
-                    listener_stop.set()
-            else:
-                while True:
-                    try:
-                        recovery.recover_expired(limit=args.limit)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as exc:
-                        _log.error("run_recovery_service_poll_error", exc_info=exc)
-                    await asyncio.sleep(max(0.1, args.interval))
-    finally:
-        if provider is not None:
-            await provider.close()
+                    recovery.recover_expired(limit=args.limit)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    _log.error("run_recovery_service_poll_error", exc_info=exc)
+                await asyncio.sleep(max(0.1, args.interval))
 
 
 def main() -> None:

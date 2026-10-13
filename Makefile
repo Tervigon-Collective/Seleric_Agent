@@ -18,11 +18,9 @@ typecheck:
 validate:
 	uv run python scripts/validate_repo.py
 
-# Deterministic eval: golden-dataset gate, no network, runs in CI.
-# (The old `seleric_swarm.eval` CLI package was deleted in the V3 refactor;
-# eval/suites/lookup_v1.yaml is orphaned swarm-era config.)
+# Live eval against the running API (:8090): the 6 test_agent questions, ClickHouse-checked.
 eval:
-	uv run pytest tests/unit/test_v3_golden_dataset.py -q
+	python3 eval/regress/run_regression.py eval/regress/test_agent6.json eval/regress/results/latest 1
 
 office-ui-test:
 	npm --prefix office-ui test

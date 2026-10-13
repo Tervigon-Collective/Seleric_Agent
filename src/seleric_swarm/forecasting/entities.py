@@ -182,7 +182,7 @@ async def _volume_by_entity(
             dimensions=[dimension],
             filters=filters,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _log.warning("entity_volume_fetch_failed metric=%s dim=%s err=%s", metric_id, dimension, exc)
         return {}, 0.0, [f"entity_volume_fetch_failed:{type(exc).__name__}"]
 
@@ -228,6 +228,6 @@ async def _volume_by_entity(
                     account_total += float(raw)
                 except (TypeError, ValueError):
                     continue
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return volumes, account_total, warnings

@@ -49,8 +49,8 @@ def describe_dataset(
     dropped = [c for c in candidates if c not in frame.past_covariates]
     lines = [
         f"DATASET PREPARATION for {label}:",
-        f"- window: {frame.context_start.isoformat()} to {frame.cutoff.isoformat()} "
-        f"({observed} observed days of {n - gap} calendar days; cutoff is {lag_days} day(s) before the forecast date)",
+        (f"- window: {frame.context_start.isoformat()} to {frame.cutoff.isoformat()} "
+        f"({observed} observed days of {n - gap} calendar days; cutoff is {lag_days} day(s) before the forecast date)"),
     ]
     if gap:
         lines.append(f"- {gap} unobserved day(s) between the cutoff and the forecast start are kept as gaps, not filled")

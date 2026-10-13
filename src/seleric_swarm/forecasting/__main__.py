@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from datetime import date
+from typing import Any
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -54,11 +55,12 @@ def explain_forecast(artifact_id: str) -> dict:
                     ).scalar()
                 if body is not None:
                     data = json.loads(body) if isinstance(body, str) else body
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 return {"artifact_id": artifact_id, "found": False, "error": type(exc).__name__}
     if not isinstance(data, dict):
         return {"artifact_id": artifact_id, "found": False}
-    payload = data.get("payload") if isinstance(data.get("payload"), dict) else data
+    raw_payload = data.get("payload")
+    payload: dict[str, Any] = raw_payload if isinstance(raw_payload, dict) else data
     targets = payload.get("targets") or []
     return {
         "artifact_id": artifact_id,

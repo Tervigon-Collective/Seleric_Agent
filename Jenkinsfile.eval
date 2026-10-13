@@ -1,10 +1,6 @@
-// Eval gate (M0.4). Replay runs on every PR in CI (.github/workflows/ci.yml);
-// this Jenkins job runs the *live* suite before deploy and blocks a regression
-// against the committed baseline.
-//
-// Credentials expected (Jenkins credential ids):
-//   seleric-mcp-url, seleric-mcp-token, azure-openai-endpoint,
-//   azure-openai-key, database-url
+// Static gates. The live eval is `eval/regress/run_regression.py` (golden 30, the 6, replay11),
+// run against the deployed API and checked in ClickHouse; it is not a Jenkins stage because it
+// needs the running stack (see plans/SLIM_LOOP_PLAN.md).
 pipeline {
   agent any
 
@@ -25,43 +21,14 @@ pipeline {
       steps {
         sh 'uv run ruff check .'
         sh 'uv run mypy src'
-        sh 'uv run lint-imports'
         sh 'uv run python scripts/lint_semantic_literals.py'
       }
     }
 
-    stage('Replay suite (deterministic)') {
+    stage('Unit tests') {
       steps {
-        sh 'uv run python scripts/eval_run.py --mode replay --suite golden --compare eval/baselines/golden.json'
+        sh 'uv run pytest -q tests/unit tests/api tests/contract'
       }
-    }
-
-    stage('Live suite (catalogue truth)') {
-      environment {
-        APP_ENV = 'staging'
-        SELERIC_MCP_URL = credentials('seleric-mcp-url')
-        SELERIC_MCP_TOKEN = credentials('seleric-mcp-token')
-        AZURE_OPENAI_ENDPOINT = credentials('azure-openai-endpoint')
-        AZURE_OPENAI_API_KEY = credentials('azure-openai-key')
-        DATABASE_URL = credentials('database-url')
-      }
-      steps {
-        sh 'uv run python scripts/eval_run.py --mode live --suite golden --compare eval/baselines/golden.json'
-      }
-    }
-  }
-
-  post {
-    always {
-      archiveArtifacts artifacts: 'eval/reports/**', allowEmptyArchive: true
-      publishHTML(target: [
-        allowMissing: true,
-        alwaysLinkToLastBuild: true,
-        keepAll: true,
-        reportDir: 'eval/reports',
-        reportFiles: 'report.md',
-        reportName: 'Seleric eval report'
-      ])
     }
   }
 }

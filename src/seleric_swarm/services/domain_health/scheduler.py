@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Literal
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.exploration.space import default_brand_id
@@ -35,6 +36,7 @@ def build_headline_snapshot(
     signals = [sig for s in snapshots for sig in s.headline_signals]
     # UNAVAILABLE if we couldn't gather any headline metric; DEGRADED if any
     # contributing domain snapshot was itself degraded/unavailable.
+    status: Literal["OK", "DEGRADED", "UNAVAILABLE"]
     if not metrics:
         status = "UNAVAILABLE"
     elif any(s.status != "OK" for s in snapshots):

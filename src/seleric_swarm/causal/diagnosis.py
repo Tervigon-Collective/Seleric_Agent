@@ -48,7 +48,7 @@ import math
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from itertools import combinations, permutations
-from typing import Any, Literal
+from typing import Any, Literal, TypeGuard
 
 from seleric_swarm.causal.dowhy_service import TimeSeriesEffect, estimate_time_series_effect
 from seleric_swarm.toolsets import policy_config as P
@@ -93,7 +93,8 @@ def lineage_from_definitions(definitions: dict[str, dict[str, Any]]) -> dict[str
     for mid, d in definitions.items():
         if not isinstance(d, dict):
             continue
-        formula = d.get("formula") if isinstance(d.get("formula"), dict) else {}
+        raw_formula = d.get("formula")
+        formula: dict[str, Any] = raw_formula if isinstance(raw_formula, dict) else {}
         view = (d.get("cube_mapping") or {}).get("view") or d.get("view") or ""
         out[mid] = MetricMeta(
             id=mid,
@@ -150,7 +151,7 @@ def lineage_in_degree(lineage: dict[str, MetricMeta]) -> dict[str, int]:
 
 
 # --------------------------------------------------------------------------- helpers
-def _finite(v: Any) -> bool:
+def _finite(v: Any) -> TypeGuard[float]:
     return isinstance(v, (int, float)) and math.isfinite(float(v))
 
 
@@ -279,15 +280,18 @@ def _verify(
     for d in days:
         y = series.get(outcome, {}).get(d)
         xs = [series.get(m, {}).get(d) for m, _ in factors]
-        if not _finite(y) or not all(_finite(x) for x in xs):
+        if not _finite(y):
+            continue
+        finite_xs = [float(x) for x in xs if _finite(x)]
+        if len(finite_xs) != len(xs):
             continue
         prod = 1.0
         ok = True
-        for (_, e), x in zip(factors, xs, strict=True):
+        for (_, e), x in zip(factors, finite_xs, strict=True):
             if x <= 0:
                 ok = False
                 break
-            prod *= float(x) ** e
+            prod *= x**e
         if not ok or y == 0 or prod == 0:
             continue
         ks.append(float(y) / prod)
@@ -1221,8 +1225,10 @@ def _event_value(
         vals = _additive_factor_values(inp, window, identity)
         evs = [vals[m][0] for m, _ in identity.factors]
         rfs = [vals[m][1] for m, _ in identity.factors]
-        if all(v is not None for v in (*evs, *rfs)):
-            return identity.value(evs), identity.value(rfs), f"recomputed from {identity.describe()}"
+        evs_f = [v for v in evs if v is not None]
+        rfs_f = [v for v in rfs if v is not None]
+        if len(evs_f) == len(evs) and len(rfs_f) == len(rfs):
+            return identity.value(evs_f), identity.value(rfs_f), f"recomputed from {identity.describe()}"
     ev, rf = _daily_window(series, window)
     note = "" if len(window.event_days) == 1 else "multi-day rate taken as the mean of daily values (approximate)"
     return ev, rf, note
@@ -1904,7 +1910,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
         ref_kind = _reference_kind(profile)
         if any(len(v) < 2 for v in refs.values()):
             refs, ref_kind = reference_days(event_days, history, outliers, P.DIAG_REFERENCE_WEEKS)
-            factors = {}
+            factors: dict[date, dict[date, float]] = {}
         else:
             factors = {}
             for d in event_days:
@@ -1944,14 +1950,16 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     prev_days = [d - timedelta(days=n_ev) for d in event_days]
     prev_vals = [ys.get(d) for d in prev_days]
     previous: dict[str, Any] = {"days": [d.isoformat() for d in prev_days]}
-    if all(_finite(v) for v in prev_vals):
-        pv = sum(float(v) for v in prev_vals) if meta_y.additive else _mean([float(v) for v in prev_vals])
+    prev_finite = [v for v in prev_vals if _finite(v)]
+    if len(prev_finite) == len(prev_vals):
+        pv = sum(prev_finite) if meta_y.additive else _mean(prev_finite)
         ev_vals = [float(ys[d]) for d in event_days if _finite(ys.get(d))]
         ev_simple = sum(ev_vals) if meta_y.additive else _mean(ev_vals)
         previous.update({"value": pv, "delta": ev_simple - pv, "delta_pct": _rel(ev_simple - pv, pv)})
     prev_direction: Direction | None = None
     if previous.get("delta") and abs(previous.get("delta_pct") or 0.0) >= 0.05:
         prev_direction = "up" if previous["delta"] > 0 else "down"
+    premise: Literal["confirmed", "contradicted", "not_unusual", "not_stated", "vs_previous_only"]
     if inp.claimed_direction is None:
         premise = "not_stated"
     elif direction is not None and direction != inp.claimed_direction and (
@@ -1971,6 +1979,12 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
         if w_ev > 0 and 0 < y_rf < 1:
             sampling_extra["binomial_z"] = (y_ev - y_rf) / math.sqrt(y_rf * (1 - y_rf) / w_ev)
             sampling_extra["events_counted"] = y_ev * w_ev
+    profile_sampling: dict[str, Any] = {}
+    if not baseline and profile is not None and rel_err is not None:
+        profile_sampling = {
+            "typical_deviation": profile.scale, "scale": "log" if profile.use_log else "relative",
+            "history_windows": len(profile.errors), "percentile_vs_history": profile.percentile(rel_err),
+        }
     event = EventSummary(
         metric=y, actual=y_ev, reference=y_rf, delta=delta, delta_pct=_rel(delta, y_rf),
         expected_by_model=None, z_score=z, unusual=unusual, direction=direction, premise=premise,
@@ -1982,11 +1996,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
         sampling=({
             "test": "two-sample rank test of the daily values in the two periods", "p_value": p_period,
             **sampling_extra,
-        } if baseline else {
-            "typical_deviation": profile.scale, "scale": "log" if profile.use_log else "relative", "history_windows": len(profile.errors),
-            "percentile_vs_history": profile.percentile(rel_err),
-            **sampling_extra,
-        }),
+        } if baseline else {**profile_sampling, **sampling_extra}),
     )
 
     report = DiagnosisReport(
@@ -2042,9 +2052,9 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             for dim, seg in (inp.segments.get(rate_m) or {}).items():
                 if r_window is None or dim not in (inp.segments.get(base_m) or {}):
                     continue
-                f = _analyse_rate_dimension(dim, seg, inp.segments[base_m][dim], r_window, inp.series[rate_m], inp.series.get(base_m))
-                if f is not None:
-                    report.chain_dimensions.append(f)
+                rate_finding = _analyse_rate_dimension(dim, seg, inp.segments[base_m][dim], r_window, inp.series[rate_m], inp.series.get(base_m))
+                if rate_finding is not None:
+                    report.chain_dimensions.append(rate_finding)
             report.chain_dimensions.sort(key=lambda f: (not f.simpsons_paradox, not f.localised, -abs(f.hot_share or 0.0)))
 
     # ---- layer 3: localisation ------------------------------------------------------
@@ -2215,7 +2225,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             if xr is None or not _finite(xv):
                 per_day_dx = []
                 break
-            per_day_dx.append(float(xv) - xr)
+            per_day_dx.append(xv - xr)
         if not per_day_dx:
             report.drivers.append(DriverFinding(
                 driver=c, classification="insufficient_evidence", status="insufficient_evidence",
@@ -2237,8 +2247,8 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
                 rr = x_prof.referencer.refs(d)
                 if len(rr) < 2:
                     continue
-                rr, f = x_prof.referencer.trimmed(d, rr)
-                e = _err(float(xs[d]), _mean([float(xs[r]) * f[r] for r in rr]), x_prof.use_log, x_prof.offset)
+                rr, ref_factors = x_prof.referencer.trimmed(d, rr)
+                e = _err(float(xs[d]), _mean([float(xs[r]) * ref_factors[r] for r in rr]), x_prof.use_log, x_prof.offset)
                 if e is not None:
                     lead_moves.append(x_prof.day_z(e))
         # Moved = beyond one typical deviation on the event day or the day before,
@@ -2267,14 +2277,14 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             min_rows_per_covariate=P.DIAG_MIN_ROWS_PER_COVARIATE,
             min_rows=P.MIN_OBSERVATION_ROWS, placebo_shifts=P.DIAG_PLACEBO_SHIFTS,
         )
-        finding = DriverFinding(
+        driver_finding = DriverFinding(
             driver=c, classification=None, status="insufficient_evidence", reason=est.reason,
             n_rows=est.n_rows, estimator=f"DoWhy {est.estimator} on an explicit DAG; {est.uncertainty_method} interval",
             naive_association=est.naive_association, inseparable_from=sorted(clusters[c]),
         )
         if est.status != "estimated" or est.effect is None:
-            finding.classification = "insufficient_evidence"
-            report.drivers.append(finding)
+            driver_finding.classification = "insufficient_evidence"
+            report.drivers.append(driver_finding)
             continue
         beta = est.effect
         lo, hi = est.confidence_interval
@@ -2288,70 +2298,70 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
         lo_, hi_ = est.confidence_interval
         if not (lo_ > 0 or hi_ < 0):
             status = "ruled_out"  # no adjusted effect: the reason already says so
-            finding.ruled_out_because = "no_effect"
+            driver_finding.ruled_out_because = "no_effect"
         elif not moved:
             status = "ruled_out"
-            finding.ruled_out_because = "did_not_move"
+            driver_finding.ruled_out_because = "did_not_move"
             why = f"{c} did not move unusually on or just before the event" + (f" (z={x_z:.1f})" if x_z is not None else "") + f"; {why}"
         elif not aligned:
             status = "ruled_out"
-            finding.ruled_out_because = "wrong_direction"
+            driver_finding.ruled_out_because = "wrong_direction"
             why = f"{c} moved in the direction that would push {y} the other way; {why}"
-        finding.classification = cls
-        finding.status = status
-        finding.reason = why
-        finding.effect_per_unit = beta
-        finding.effect_ci = [lo, hi]
-        finding.p_value = est.p_value
-        finding.driver_event = x_ev
-        finding.driver_reference = x_rf
-        finding.driver_delta = dx
-        finding.driver_z = x_z
-        finding.driver_moved_before_or_at_event = moved
-        finding.contribution = contribution
-        finding.contribution_ci = [c_lo, c_hi]
+        driver_finding.classification = cls
+        driver_finding.status = status
+        driver_finding.reason = why
+        driver_finding.effect_per_unit = beta
+        driver_finding.effect_ci = [lo, hi]
+        driver_finding.p_value = est.p_value
+        driver_finding.driver_event = x_ev
+        driver_finding.driver_reference = x_rf
+        driver_finding.driver_delta = dx
+        driver_finding.driver_z = x_z
+        driver_finding.driver_moved_before_or_at_event = moved
+        driver_finding.contribution = contribution
+        driver_finding.contribution_ci = [c_lo, c_hi]
         # The model is daily: additive outcomes sum the event days, rates average them.
-        finding.share_of_change = contribution / delta if abs(delta) > 1e-12 else None
-        finding.causal_path = f"{c} → {y}"
-        finding.adjustment_set = est.adjustment_set
-        finding.graph_edges = [list(e) for e in est.graph_edges]
-        finding.identified_estimand = est.identified_estimand
-        finding.direction_evidence = est.temporal
-        finding.refutations = est.refutations
-        finding.assumptions = [
+        driver_finding.share_of_change = contribution / delta if abs(delta) > 1e-12 else None
+        driver_finding.causal_path = f"{c} → {y}"
+        driver_finding.adjustment_set = est.adjustment_set
+        driver_finding.graph_edges = [list(e) for e in est.graph_edges]
+        driver_finding.identified_estimand = est.identified_estimand
+        driver_finding.direction_evidence = est.temporal
+        driver_finding.refutations = est.refutations
+        driver_finding.assumptions = [
             f"No unmeasured same-day common cause of {c} and {y} beyond day-of-week, trend and yesterday's values.",
             f"{y} does not cause {c} within the same day.",
             "Effect is linear in the range observed and stable over the history window.",
         ]
-        report.drivers.append(finding)
+        report.drivers.append(driver_finding)
         if status == "implicated" and cls in ("supported_cause", "likely_contributor"):
-            implicated.append(finding)
+            implicated.append(driver_finding)
 
     rank = {"supported_cause": 0, "likely_contributor": 1, "correlation": 2, "insufficient_evidence": 3, None: 4}
     status_rank = {"implicated": 0, "ruled_out": 1, "insufficient_evidence": 2, "excluded": 3}
     report.drivers.sort(key=lambda f: (status_rank[f.status], rank[f.classification], -abs(f.share_of_change or 0.0)))
 
     # ---- competing hypotheses & verdict ---------------------------------------------
-    for f in report.drivers:
-        if f.status != "implicated" or f.classification not in ("supported_cause", "likely_contributor"):
+    for drv in report.drivers:
+        if drv.status != "implicated" or drv.classification not in ("supported_cause", "likely_contributor"):
             report.competing_hypotheses.append({
-                "hypothesis": f"{f.driver} drove the change", "status": f.status,
-                "classification": f.classification, "reason": f.reason,
+                "hypothesis": f"{drv.driver} drove the change", "status": drv.status,
+                "classification": drv.classification, "reason": drv.reason,
             })
-    for dim in dims:
-        if dim.broad_based:
+    for dim_finding in dims:
+        if dim_finding.broad_based:
             report.competing_hypotheses.append({
-                "hypothesis": f"the change is specific to some {dim.dimension} values",
+                "hypothesis": f"the change is specific to some {dim_finding.dimension} values",
                 "status": "ruled_out",
-                "reason": f"every {dim.dimension} moved roughly in proportion (specificity {dim.specificity:.2f})",
+                "reason": f"every {dim_finding.dimension} moved roughly in proportion (specificity {dim_finding.specificity:.2f})",
             })
     if implicated:
         # One estimate per inseparable cluster: collinear drivers carry the same signal.
         counted: list[DriverFinding] = []
-        for f in sorted(implicated, key=lambda f: -abs(f.contribution or 0.0)):
-            if not any(f.driver in g.inseparable_from for g in counted):
-                counted.append(f)
-        explained = sum(f.contribution or 0.0 for f in counted)
+        for drv in sorted(implicated, key=lambda drv: -abs(drv.contribution or 0.0)):
+            if not any(drv.driver in g.inseparable_from for g in counted):
+                counted.append(drv)
+        explained = sum(drv.contribution or 0.0 for drv in counted)
         report.unexplained_share = 1.0 - explained / delta if abs(delta) > 1e-12 else None
         if len(implicated) > 1:
             report.assumptions.append(
@@ -2362,7 +2372,7 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     # below answers that even when the daily values overlap.
     if not (unusual or notable) and not baseline:
         report.verdict = "no_unusual_change"
-    elif any(f.classification == "supported_cause" for f in implicated):
+    elif any(drv.classification == "supported_cause" for drv in implicated):
         report.verdict = "explained" if (report.unexplained_share is not None and abs(report.unexplained_share) < 0.5) else "partially_explained"
     elif implicated:
         report.verdict = "partially_explained"
@@ -2371,13 +2381,14 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     else:
         report.verdict = "root_cause_not_identified"
     cited = [y, *(t.metric for t in report.decomposition), *(t.metric for t in report.bridge), *(t.metric for t in report.chain),
-             *(f.driver for f in report.drivers if f.status in ("implicated", "ruled_out"))]
-    for m in dict.fromkeys(cited):
-        add = inp.lineage.get(m, MetricMeta(m)).additive
+             *(drv.driver for drv in report.drivers if drv.status in ("implicated", "ruled_out"))]
+    for cm in dict.fromkeys(cited):
+        add = inp.lineage.get(cm, MetricMeta(cm)).additive
         for days, into in ((prev_days, report.previous_values), (event_days, report.event_values)):
-            vals = [inp.series.get(m, {}).get(d) for d in days]
-            if all(_finite(v) for v in vals):
-                into[m] = sum(float(v) for v in vals) if add else _mean([float(v) for v in vals])
+            vals = [inp.series.get(cm, {}).get(d) for d in days]
+            finite_vals = [v for v in vals if _finite(v)]
+            if len(finite_vals) == len(vals):
+                into[cm] = sum(finite_vals) if add else _mean(finite_vals)
     report.headline = _headline(report)
     report.narrative = _narrative(report, _display_lineage(inp.lineage, inp.series))
     return report
@@ -2505,7 +2516,7 @@ def _headline(r: DiagnosisReport) -> str:
     causes = [f for f in r.drivers if f.status == "implicated" and f.classification in ("supported_cause", "likely_contributor")]
     if causes:
         parts.append("; ".join(
-            f"{f.driver} is a {f.classification.replace('_', ' ')} (~{_pct(f.share_of_change).lstrip('+')} of the change)"
+            f"{f.driver} is a {(f.classification or '').replace('_', ' ')} (~{_pct(f.share_of_change).lstrip('+')} of the change)"
             for f in causes[:3]
         ) + ".")
     else:
@@ -2579,7 +2590,8 @@ _MULTIPLE_UNIT = "multiple"
 def _val(v: float | None, metric: str, lineage: dict[str, MetricMeta]) -> str:
     if v is None or not math.isfinite(v):
         return "n/a"
-    unit = (lineage.get(metric).unit if lineage.get(metric) else "") or ""
+    meta = lineage.get(metric)
+    unit = (meta.unit if meta else "") or ""
     if unit == _MULTIPLE_UNIT:
         return f"{v:.2f}x"
     from seleric_swarm.services.metrics import is_percent_share_metric, percent_points
@@ -2630,7 +2642,10 @@ def _usual_for(e: EventSummary) -> str:
 
 
 def _usual_blend(e: EventSummary) -> str:
-    return "recent same weekdays" if _same_weekday(e) else "the most recent normal days"
+    return (
+        "recent same weekdays, scaled to the recent overall level (so a recent surge or slump moves it)"
+        if _same_weekday(e) else "the most recent normal days, scaled to the recent overall level"
+    )
 
 
 def _reference_words(e: EventSummary) -> str:
@@ -2868,7 +2883,7 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
             "ALSO OUTSIDE ITS OWN NORMAL RANGE (places to look, not causes): " + "; ".join(named) + "."
         )
     if len(r.previous_values) > 1:
-        prev_label = r.event.previous_period.get("days", ["the day before"])
+        prev_label = r.event.previous_period.get("days", ["the day before"]) if r.event else ["the day before"]
         out.append(
             f"PREVIOUS DAY ({', '.join(prev_label)}), if a comparison table needs it: "
             + "; ".join(f"{_label(m, lineage)} {_val(v, m, lineage)}" for m, v in r.previous_values.items())

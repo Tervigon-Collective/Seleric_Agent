@@ -151,7 +151,7 @@ def test_tool_plans_from_metadata_and_grounds_every_number():
             assert c.query["graph_edges"] and c.query["adjustment_set"] is not None
             if c.evidence_classification == "CAUSALLY_SUPPORTED":
                 assert c.refutation_checks
-        else:
+        elif a.artifact_type != "chart_spec":  # the causal graph chart is a spec, not evidence
             EvidenceArtifact.model_validate(a.payload)
     assert "REPORTING RULES" in res.summary and "ANSWER SKELETON" in res.summary
     assert "zz_" not in res.summary.split("REPORTING RULES")[0]  # labels, never ids, reach the model

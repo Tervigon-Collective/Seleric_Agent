@@ -15,12 +15,12 @@ import argparse
 import json
 import os
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from seleric_swarm.models.evaluation import score_forecast_artifact
-from seleric_swarm.paths import repo_root
+from seleric_swarm.paths import repo_root, reports_dir
 
 _INTERVAL = timedelta(hours=24)
 
@@ -43,7 +43,7 @@ def score_payload(
 
 
 def is_due(stamp: Path, *, now: datetime | None = None, interval: timedelta = _INTERVAL) -> bool:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if not stamp.exists():
         return True
     try:
@@ -51,12 +51,12 @@ def is_due(stamp: Path, *, now: datetime | None = None, interval: timedelta = _I
     except ValueError:
         return True
     if last.tzinfo is None:
-        last = last.replace(tzinfo=timezone.utc)
+        last = last.replace(tzinfo=UTC)
     return now - last >= interval
 
 
 def mark_ran(stamp: Path, *, now: datetime | None = None) -> None:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     stamp.parent.mkdir(parents=True, exist_ok=True)
     stamp.write_text(now.isoformat(), encoding="utf-8")
 
@@ -124,11 +124,11 @@ def load_recent_forecasts(*, limit: int = 20) -> list[dict[str, Any]]:
 
 def write_score(artifact_key: str, scores: dict[str, Any], *, out_dir: Path | None = None) -> Path:
     day = date.today().isoformat()
-    root = out_dir or (repo_root() / "reports" / "forecasting" / "scores" / day)
+    root = out_dir or (reports_dir() / "forecasting" / "scores" / day)
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{artifact_key}.json"
     path.write_text(
-        json.dumps({"artifact": artifact_key, "scored_at": datetime.now(timezone.utc).isoformat(), "scores": scores}, indent=2),
+        json.dumps({"artifact": artifact_key, "scored_at": datetime.now(UTC).isoformat(), "scores": scores}, indent=2),
         encoding="utf-8",
     )
     return path
@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=20)
     args = parser.parse_args(argv)
 
-    stamp = Path(args.stamp) if args.stamp else repo_root() / "reports" / "forecasting" / "scores" / ".last"
+    stamp = Path(args.stamp) if args.stamp else reports_dir() / "forecasting" / "scores" / ".last"
     if args.if_due and not is_due(stamp):
         print(json.dumps({"status": "skipped", "reason": "not_due"}))
         return 0
@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         payloads = load_recent_forecasts(limit=args.limit)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(json.dumps({"status": "skipped", "reason": f"db:{type(exc).__name__}"}))
         return 0
     if not payloads:
@@ -193,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         written = asyncio.run(_run())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(json.dumps({"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}))
         return 0
     if args.if_due:

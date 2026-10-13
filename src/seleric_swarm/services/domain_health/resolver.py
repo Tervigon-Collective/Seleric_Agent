@@ -157,6 +157,7 @@ class DomainStateResolver:
         resolved: list[ResolvedMetric] = []
         query_ids: list[str] = []
         status: DomainStatus = "OK"
+        unavailable = 0
         for entry in block.get("metrics", []):
             metric_id = entry["metric_id"]
             windowed_point = entry.get("feature_class") == "windowed_point"
@@ -180,8 +181,10 @@ class DomainStateResolver:
             )
             state = await self._business_state.get_metric_state(request)
 
+            # One metric the catalogue cannot answer (status=broken, retired) degrades the domain; it is UNAVAILABLE
+            # only when none of its metrics answered. Before, a single broken metric hid the whole domain.
             if state.status == "UNAVAILABLE":
-                status = "UNAVAILABLE"
+                unavailable += 1
             elif state.status == "PARTIAL" and status == "OK":
                 status = "DEGRADED"
 
@@ -213,6 +216,8 @@ class DomainStateResolver:
             if query_id:
                 query_ids.append(str(query_id))
 
+        if unavailable:
+            status = "UNAVAILABLE" if unavailable == len(resolved) else "DEGRADED"
         return DomainStateSnapshot(
             domain=domain,
             brand_id=brand_id,

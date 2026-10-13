@@ -82,12 +82,12 @@ async def test_gated_model_fails_instantly_while_cooling_without_a_network_call(
 # --- PatientModel: a chain-wide transient failure waits instead of killing the mission ---------------
 # live thread_e75c2615: LLM_RATE_LIMITED failed the mission twice; each run retry restarted from scratch.
 
-from contextlib import asynccontextmanager  # noqa: E402
+from contextlib import asynccontextmanager
 
-from pydantic_ai.exceptions import FallbackExceptionGroup  # noqa: E402
-from pydantic_ai.models.test import TestModel  # noqa: E402
+from pydantic_ai.exceptions import FallbackExceptionGroup
+from pydantic_ai.models.test import TestModel
 
-from seleric_swarm.agent.model_health import PatientModel, is_transient  # noqa: E402
+from seleric_swarm.agent.model_health import PatientModel, is_transient
 
 
 def _rate_limited() -> FallbackExceptionGroup:

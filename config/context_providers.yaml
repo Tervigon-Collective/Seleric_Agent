@@ -1,4 +1,0 @@
-providers:
-  calendar: {enabled: true}
-  incidents: {enabled: true}
-  freshness: {enabled: true}

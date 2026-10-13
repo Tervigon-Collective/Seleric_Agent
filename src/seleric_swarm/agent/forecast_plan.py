@@ -1,77 +1,71 @@
-"""Compile a typed ForecastPlan from Understanding slots — code only, no LLM."""
+"""Compile a typed ForecastPlan from the tool call's metric ids and horizon — code only, no LLM."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from seleric_swarm.agent.plan import MetricSlot, TermResolver, _resolve_metrics
 from seleric_swarm.forecasting.gates import check_certified
 from seleric_swarm.forecasting.horizon import resolve_horizon
 from seleric_swarm.forecasting.policies import (
     ForecastPolicies,
+    assert_catalogue_dimensions,
     catalogue_forecast_block,
     default_policies,
-    assert_catalogue_dimensions,
 )
 from seleric_swarm.forecasting.types import ForecastPlan, ForecastPlanTarget
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 
 
 async def compile_forecast_plan(
-    understanding: Any,
+    targets: Sequence[str],
     *,
     catalogue: CatalogueSnapshot,
-    resolver: TermResolver | None = None,
     as_of: date | datetime,
-    scope: Any | None = None,
+    horizon_days: int = 14,
+    entity_dimension: str | None = None,
+    entity_values: Sequence[str] = (),
     policies: ForecastPolicies | None = None,
     timezone: str = "Asia/Kolkata",
     canonical: Any | None = None,
 ) -> ForecastPlan:
-    """Follow the ``plan_from_slots`` pattern: LLM supplies slots, code decides the rest."""
+    """Code decides the rest: eligibility, horizon clamps, derived-ratio expansion."""
     policies = policies or default_policies()
     as_of_d = as_of.date() if isinstance(as_of, datetime) else as_of
 
-    slots = getattr(understanding, "forecast", None)
-    metric_slots = _metric_slots(understanding, slots)
-    resolved_ids, notes = await _resolve_metrics(metric_slots, resolver, catalogue)
-    if canonical is not None:
-        resolved_ids = [canonical(mid) if callable(canonical) else mid for mid in resolved_ids]
-    # Prefer bare catalogue ids (strip metric. prefix when present)
-    resolved_ids = [_bare(mid) for mid in resolved_ids]
-    # Derived policy targets (aov, net_roas, …) may not be catalogue metrics —
-    # accept the slot's metric_id when it is a known derived spec.
-    for slot in metric_slots:
-        bare = _bare(slot.metric_id.strip()) if slot.metric_id else ""
-        if bare and bare in policies.derived and bare not in resolved_ids:
-            resolved_ids.append(bare)
-    resolved_ids = list(dict.fromkeys(resolved_ids))
+    known = catalogue.metric_ids()
+    plan_notes: list[str] = []
+    resolved_ids: list[str] = []
+    for raw in targets:
+        mid = _bare(str(raw))
+        if not mid:
+            continue
+        if canonical is not None and callable(canonical):
+            mid = _bare(canonical(mid))
+        # Derived policy targets (aov, net_roas, ...) may not be catalogue metrics.
+        if (known and mid not in known) and mid not in policies.derived:
+            plan_notes.append(f"no catalogue metric for '{raw}'")
+            continue
+        if mid not in resolved_ids:
+            resolved_ids.append(mid)
 
     horizon = resolve_horizon(
-        slots,
+        {"n": horizon_days, "unit": "day", "period_word": "next_n"},
         as_of=as_of_d,
         timezone=timezone,
         max_horizon_days=policies.defaults.max_horizon_days,
     )
 
-    entity_dimension = (
-        (getattr(slots, "entity_dimension", None) if slots is not None else None)
-        or getattr(understanding, "entity_dimension", None)
-        or None
-    )
-    if entity_dimension == "":
-        entity_dimension = None
-    entity_values = _entity_values(scope)
+    entity_dimension = (entity_dimension or "").strip() or None
+    entity_values = [str(v) for v in entity_values if str(v).strip()]
 
-    targets: list[ForecastPlanTarget] = []
-    plan_notes = list(notes)
+    targets_out: list[ForecastPlanTarget] = []
 
     # Validate entity dimensions against catalogue, dropping deprecated/unknown ones
     catalogue_dim_ids = set(catalogue.dimensions)
     policies, dim_warnings = assert_catalogue_dimensions(policies, catalogue_dim_ids, catalogue)
-    for warning in dim_warnings:
-        plan_notes.append(warning)
+    plan_notes.extend(dim_warnings)
 
     # Expand derived ratios into component targets + recomposition metadata.
     expanded: list[str] = []
@@ -121,12 +115,15 @@ async def compile_forecast_plan(
             maturity = policy.eligibility.maturity_days if policy else 0
         max_maturity = max(max_maturity, maturity)
 
-        if entity_dimension and not catalogue.carries(mid, entity_dimension):
-            # Empty catalogue snapshot (tests) cannot prove support — only refuse
-            # when the catalogue actually lists dimensions for the metric.
-            if catalogue.supported_dimensions_for(mid):
-                status = "refused"
-                reasons = [*reasons, "T_ENTITY_UNSUPPORTED"]
+        # Empty catalogue snapshot (tests) cannot prove support — only refuse
+        # when the catalogue actually lists dimensions for the metric.
+        if (
+            entity_dimension
+            and not catalogue.carries(mid, entity_dimension)
+            and catalogue.supported_dimensions_for(mid)
+        ):
+            status = "refused"
+            reasons = [*reasons, "T_ENTITY_UNSUPPORTED"]
 
         if status == "refused" and "T_POLICY_MISSING" in reasons:
             # Eligible certified metric not yet in policy → provisional (P2).
@@ -147,7 +144,7 @@ async def compile_forecast_plan(
                 reasons = [*reasons, "T_CERTIFIED"]
 
         bundle = policy.approved_bundle() if policy else None
-        targets.append(
+        targets_out.append(
             ForecastPlanTarget(
                 metric_id=mid,
                 label=catalogue.label_for(mid) or mid,
@@ -174,7 +171,7 @@ async def compile_forecast_plan(
         )
 
     for mid, parts in derived_meta.items():
-        targets.append(
+        targets_out.append(
             ForecastPlanTarget(
                 metric_id=mid,
                 label=catalogue.label_for(mid) or mid,
@@ -190,7 +187,7 @@ async def compile_forecast_plan(
 
     cutoff = compute_cutoff(as_of=as_of_d, maturity_days=max_maturity)
     return ForecastPlan(
-        targets=targets,
+        targets=targets_out,
         entity_dimension=entity_dimension,
         entity_values=entity_values,
         horizon=horizon,
@@ -206,8 +203,8 @@ def render_forecast_plan(plan: ForecastPlan) -> str:
     lines = [
         "Forecast plan:",
         f"- as_of: {plan.as_of.isoformat()}  cutoff: {plan.cutoff.isoformat()}",
-        f"- horizon: {plan.horizon.start.isoformat()} .. {plan.horizon.end.isoformat()} "
-        f"({plan.horizon.n_days} days, {plan.horizon.period_word})",
+        (f"- horizon: {plan.horizon.start.isoformat()} .. {plan.horizon.end.isoformat()} "
+        f"({plan.horizon.n_days} days, {plan.horizon.period_word})"),
     ]
     if plan.entity_dimension:
         lines.append(
@@ -224,29 +221,6 @@ def render_forecast_plan(plan: ForecastPlan) -> str:
     for note in plan.notes:
         lines.append(f"- note: {note}")
     return "\n".join(lines)
-
-
-def _metric_slots(understanding: Any, slots: Any | None) -> list[MetricSlot]:
-    if slots is not None:
-        targets = getattr(slots, "targets", None)
-        if targets:
-            return list(targets)
-    return list(getattr(understanding, "metrics", None) or [])
-
-
-def _entity_values(scope: Any | None) -> list[str]:
-    if scope is None:
-        return []
-    filters = getattr(scope, "value_filters", None) or []
-    values: list[str] = []
-    for f in filters:
-        if isinstance(f, dict):
-            for v in f.get("values") or f.get("member_values") or []:
-                values.append(str(v))
-        else:
-            for v in getattr(f, "values", None) or []:
-                values.append(str(v))
-    return values
 
 
 def _bare(metric_id: str) -> str:

@@ -122,11 +122,3 @@ async def test_endpoint_falls_back_to_agent_loop_when_stale(monkeypatch):
     assert out["source"] == "agent_loop"
 
 
-def test_overview_fast_path_kill_switch(monkeypatch):
-    # Routing is by the understand call's kind == "overview", not by phrases; the
-    # env kill switch still turns the snapshot answer off.
-    from seleric_swarm.agent import runner
-
-    assert runner._business_state_fast_path_enabled() is True
-    monkeypatch.setenv("BUSINESS_STATE_FAST_PATH", "0")
-    assert runner._business_state_fast_path_enabled() is False

@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 K = TypeVar("K")
 V = TypeVar("V")
 
 
-class MissionQueryCache(Generic[K, V]):
+class MissionQueryCache[K, V]:
     """Plain memoization, no TTL/eviction — a mission run is bounded
     (``ExecutionLimits``) and short-lived, so unlike ``utils/ttl_cache.py``
     (long-lived, cross-request) this never needs to expire an entry before

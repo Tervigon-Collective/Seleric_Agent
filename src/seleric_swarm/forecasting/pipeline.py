@@ -15,18 +15,18 @@ from seleric_swarm.analytics.grain import CALCULATION_VERSION
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.forecasting.assembler import assemble_feature_frame, compute_cutoff
 from seleric_swarm.forecasting.bakeoff import run_bakeoff
-from seleric_swarm.forecasting.dataset import describe_dataset
-from seleric_swarm.forecasting.driver import apply_driver_level, fetch_candidates
-from seleric_swarm.forecasting.entities import entity_filter, select_entities, sum_mismatch_warning
-from seleric_swarm.forecasting.scope import brand_filters, principal_brand_id
-from seleric_swarm.forecasting.selection import select_driver, selection_facts
 from seleric_swarm.forecasting.chart import build_forecast_chart_spec
-from seleric_swarm.forecasting.insights import build_insight_facts, render_insight_facts
+from seleric_swarm.forecasting.dataset import describe_dataset
 from seleric_swarm.forecasting.derive import horizon_totals, ratio_from_components
+from seleric_swarm.forecasting.driver import apply_driver_level, fetch_candidates
 from seleric_swarm.forecasting.engines import route_and_forecast
+from seleric_swarm.forecasting.entities import entity_filter, select_entities, sum_mismatch_warning
 from seleric_swarm.forecasting.features import candidate_features
+from seleric_swarm.forecasting.insights import build_insight_facts, render_insight_facts
 from seleric_swarm.forecasting.policies import ForecastPolicies, default_policies
 from seleric_swarm.forecasting.quality import is_blocking
+from seleric_swarm.forecasting.scope import brand_filters, principal_brand_id
+from seleric_swarm.forecasting.selection import select_driver, selection_facts
 from seleric_swarm.forecasting.types import (
     ForecastPlan,
     ForecastPlanTarget,
@@ -177,7 +177,7 @@ async def run_forecast(
                 min_history_days=policies.defaults.min_history_days,
                 filters=brand_filters(brand_id, filters),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _log.warning("forecast_assemble_failed entity=%s", entity_value, exc_info=True)
             if entity_value is None and len(slices) == 1:
                 return ForecastOutcome(
@@ -233,7 +233,7 @@ async def run_forecast(
             key = _forecast_key(t.metric_id, entity_value)
             ets_id = _ets_model_id(registry, t.metric_id)
             provisional = t.status == "provisional" or t.bundle_id is None
-            label_of = lambda m: deps.catalogue.label_for(m) or m  # noqa: E731
+            label_of = lambda m: deps.catalogue.label_for(m) or m
             pool = _candidate_pool(t, deps, policies)
             lag_days = max(1, (plan.as_of - plan.cutoff).days)
             dataset_lines[key] = describe_dataset(
@@ -326,7 +326,7 @@ async def run_forecast(
                                 **adj[1],
                             )
                     driver_info[key] = info
-                except Exception:  # noqa: BLE001
+                except Exception:
                     _log.warning("forecast_feature_selection_failed metric=%s", key, exc_info=True)
                     warnings.append(f"{key}:feature_selection_failed")
 
@@ -408,10 +408,10 @@ async def run_forecast(
     if plan.entity_dimension and entity_vals:
         for mid in {t.metric_id for t in active}:
             ent_totals = [
-                float(forecasts[k].total_mean)
+                tm
                 for v in entity_vals
                 for k in [_forecast_key(mid, v)]
-                if k in forecasts and forecasts[k].total_mean is not None and forecasts[k].status != "refused"
+                if k in forecasts and (tm := forecasts[k].total_mean) is not None and forecasts[k].status != "refused"
             ]
             # Compare entity sum to itself only when we also have an account slice;
             # with entity-only slices, warn if coverage from selection was incomplete.
@@ -428,8 +428,8 @@ async def run_forecast(
             warnings=warnings or ["all_refused"],
         )
 
+    assert primary_frame is not None
     frame = primary_frame
-    assert frame is not None
     artifact = _build_artifact(
         plan=plan,
         forecasts=forecasts,
@@ -600,7 +600,7 @@ def _store_trace(
                 mission_id=deps.mission_id,
             )
         ).id
-    except Exception:  # noqa: BLE001
+    except Exception:
         _log.warning("forecast_trace_store_failed", exc_info=True)
         return None
 
@@ -630,7 +630,7 @@ def _store_input(deps: Any, frame: Any, plan: ForecastPlan) -> str | None:
             )
         )
         return art.id
-    except Exception:  # noqa: BLE001
+    except Exception:
         _log.warning("forecast_input_store_failed", exc_info=True)
         return None
 
@@ -662,7 +662,7 @@ def _store_artifacts(
             )
         )
         forecast_id = stored.id
-    except Exception:  # noqa: BLE001
+    except Exception:
         _log.warning("forecast_artifact_store_failed", exc_info=True)
 
     for mid, fc in forecasts.items():
@@ -700,7 +700,7 @@ def _store_artifacts(
                 )
             )
             prediction_ids.append(art.id)
-        except Exception:  # noqa: BLE001
+        except Exception:
             _log.warning("prediction_artifact_store_failed metric=%s", mid, exc_info=True)
     return forecast_id, prediction_ids
 
@@ -760,7 +760,7 @@ def _store_forecast_finding(
                 mission_id=deps.mission_id,
             )
         ).id
-    except Exception:  # noqa: BLE001
+    except Exception:
         _log.warning("forecast_finding_store_failed", exc_info=True)
         return None
 
@@ -783,7 +783,7 @@ def _insights_and_charts(
     chart_ids: list[str] = []
     try:
         dates = [_date.fromisoformat(i[:10]) for i in frame.index]
-    except Exception:  # noqa: BLE001
+    except Exception:
         dates = []
     nonneg = {t.metric_id: t.nonnegative for t in plan.targets}
     ev = list(evidence_ids) or ([f"forecast_frame:{frame.content_hash}"] if frame.content_hash else [])
@@ -809,7 +809,7 @@ def _insights_and_charts(
             if facts.get("latest_actual_date"):
                 lines.append(f"- latest mature actual used: {facts['latest_actual_date']}")
             lines = [*(dataset_lines or {}).get(key, []), *lines]
-            if (bakeoff_lines or {}).get(key):
+            if bakeoff_lines and bakeoff_lines.get(key):
                 lines.append(bakeoff_lines[key])
             di = (driver_info or {}).get(key)
             if di and di.get("selection_line"):
@@ -824,7 +824,7 @@ def _insights_and_charts(
                     "continues at its recent pace; if it changes materially, so will the outcome."
                 )
             insights[key] = lines
-        except Exception:  # noqa: BLE001
+        except Exception:
             _log.warning("forecast_insights_failed metric=%s", key, exc_info=True)
         try:
             chart_metric = key if fc.entity_value else mid
@@ -846,7 +846,7 @@ def _insights_and_charts(
                 )
             )
             chart_ids.append(art.id)
-        except Exception:  # noqa: BLE001
+        except Exception:
             _log.warning("forecast_chart_store_failed metric=%s", key, exc_info=True)
     return insights, chart_ids
 
@@ -918,7 +918,7 @@ def _refuse_skeleton(plan: ForecastPlan, reason: str) -> str:
 
 
 def _ets_model_id(registry: Any, metric_id: str) -> str | None:
-    bare = metric_id[len("metric.") :] if metric_id.startswith("metric.") else metric_id
+    bare = metric_id.removeprefix("metric.")
     for target in (f"metric.{bare}", bare, metric_id):
         for rec in registry.for_target(target):
             if rec.status == "approved" and rec.model_type == "forecast":
@@ -944,7 +944,7 @@ def _candidate_pool(t: ForecastPlanTarget, deps: Any, policies: ForecastPolicies
     from seleric_swarm.forecasting.features import load_feature_priors, module_of
 
     priors = load_feature_priors()
-    bare = lambda m: m.removeprefix("metric.")  # noqa: E731
+    bare = lambda m: m.removeprefix("metric.")
     pool = [bare(m) for m in [*t.drivers, *priors.metric_hints.get(t.metric_id, [])]]
     if not pool:
         try:
@@ -953,7 +953,7 @@ def _candidate_pool(t: ForecastPlanTarget, deps: Any, policies: ForecastPolicies
             for meta in deps.catalogue.metrics:
                 if module_of(meta.id, deps.catalogue) in neighbours and module_of(meta.id, deps.catalogue) != "calendar":
                     pool.append(bare(meta.id))
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     blocked = set(policies.blocked_features)
     out = [m for m in dict.fromkeys(pool) if m != bare(t.metric_id) and m not in blocked]

@@ -731,7 +731,7 @@ async def search_semantics(ctx: RunContext[SelericDeps], query: str) -> ToolResu
         prior_hint = ""
         if prior_metric_ids:
             prior_hint = (
-                f" Your earlier searches found these metrics: {', '.join(prior_metric_ids[:5])}. "
+                f" Your earlier searches found these metrics: {', '.join(str(m) for m in prior_metric_ids[:5])}. "
                 "Pass one of these to query_metrics."
             )
         return ToolResult(
@@ -2142,21 +2142,6 @@ def _cross_view_metric_filter(
     return None
 
 
-def _scoped_to_named_values(ctx: RunContext[SelericDeps], metric_id: str, dimensions: dict[str, Any]) -> dict[str, Any]:
-    """The one value of a kind the question names ("Meta campaigns") scopes every query the model makes, as it does
-    the executor's: follow-up queries for the ranked campaigns dropped it and the gate sent the answer back for
-    unscoped figures (regression 2026-10-10 Q9, Q10, Q28). Not when the question weighs the value against the
-    whole, and several named values of one kind stay a comparison (the model breaks down by them)."""
-    scope = getattr(ctx.deps, "required_scope", None)
-    if scope is None or getattr(scope, "values_weighed_against_whole", False) or not getattr(scope, "value_filters", ()):
-        return dimensions
-    from seleric_swarm.agent.executor import _with_named_values
-
-    scoped = _with_named_values(ctx.deps, metric_id, dimensions) or {}
-    added = {k: v for k, v in scoped.items() if k not in dimensions and v not in ("", None, [])}
-    return {**dimensions, **added}
-
-
 async def query_metrics(
     ctx: RunContext[SelericDeps],
     metric_id: str,
@@ -2215,15 +2200,14 @@ async def query_metrics(
     if (unknown := await _reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     dimensions = _sanitize_dimensions(dimensions)
-    dimensions = _scoped_to_named_values(ctx, metric_id, dimensions)
     # Only lists the model wrote compare entities; a concept's bound filter is
     # a definition ("WhatsApp" = utm_medium whatsapp|wa) and stays pooled.
     asked_lists = {k for k, v in dimensions.items() if isinstance(v, list)}
-    if bound_filter := ctx.deps.query_cache.peek(f"concept_filter:{metric_id}"):
-        if isinstance(bound_filter, dict):
-            for k, v in bound_filter.items():
-                if k not in dimensions:
-                    dimensions[k] = v
+    bound_filter = ctx.deps.query_cache.peek(f"concept_filter:{metric_id}")
+    if isinstance(bound_filter, dict):
+        for k, v in bound_filter.items():
+            if k not in dimensions:
+                dimensions[k] = v
     asked_metric = metric_id
     metric_id, dimensions, structured_filters, renamed, conform_notes, named_period = _conform_dimensions(
         ctx, metric_id, dimensions, [MetricFilter.model_validate(f) for f in (filters or [])]
@@ -2245,12 +2229,11 @@ async def query_metrics(
     if (pinned := _pin_to_resolved_window(ctx, period_start, period_end)) is not None:
         period_start, period_end, window_note = pinned
     window = ctx.deps.resolved_window
-    if window is not None and period_start is None and period_end is None:
-        # The question named a period; use it rather than collapsing to as_of,
-        # which is today and therefore still empty while the day is in flight.
-        if window.start and window.end:
-            period_start = datetime.fromisoformat(window.start).replace(tzinfo=ctx.deps.as_of.tzinfo)
-            period_end = datetime.fromisoformat(window.end).replace(tzinfo=ctx.deps.as_of.tzinfo)
+    # The question named a period; use it rather than collapsing to as_of,
+    # which is today and therefore still empty while the day is in flight.
+    if window is not None and period_start is None and period_end is None and window.start and window.end:
+        period_start = datetime.fromisoformat(window.start).replace(tzinfo=ctx.deps.as_of.tzinfo)
+        period_end = datetime.fromisoformat(window.end).replace(tzinfo=ctx.deps.as_of.tzinfo)
     period_end = period_end or ctx.deps.as_of
     period_start = period_start or period_end
     breakdown = [k for k, v in dimensions.items() if not v]
@@ -2283,18 +2266,18 @@ async def query_metrics(
         breakdown = [k for k in breakdown if k not in date_breakdown]
         if grain == "none":
             grain = "day"
-    filters = [
+    query_filters: list[dict[str, Any]] = [
         {"dimension": k, "operator": "equals", "values": list(v) if isinstance(v, list) else [v]}
         for k, v in dimensions.items()
         if v and not ctx.deps.catalogue.is_time_dimension(k)
     ]
-    filters += [f.model_dump() for f in structured_filters]
+    query_filters += [f.model_dump() for f in structured_filters]
     # A ranked limit excludes rows with an empty breakdown value in the query: otherwise it is spent on them first
     # (live 2026-10-06: net_profit by campaign_name x sub_channel, limit=5 -> 4 of the top 5 had no campaign). An
     # unranked breakdown keeps them, so their total is reported and subtotalled instead of vanishing (golden Q17
     # 2026-10-09: channel x campaign dropped every order without a campaign — the whole unattributed channel).
     if order and limit:
-        filters += [
+        query_filters += [
             {"dimension": k, "operator": "set", "values": []}
             for k in breakdown
             if not ctx.deps.catalogue.is_time_dimension(k) and not _is_scope_dimension(ctx, k)
@@ -2314,7 +2297,7 @@ async def query_metrics(
             metric_id=metric_id,
             dimensions=dimensions,
             breakdown=breakdown,
-            filters=filters,
+            filters=query_filters,
             grain=grain,
             period_start=period_start,
             period_end=period_end,
@@ -2328,7 +2311,7 @@ async def query_metrics(
         end=period_end.date().isoformat(),
         grain=None if grain == "none" else grain,
         dimensions=breakdown or None,
-        filters=filters or None,
+        filters=query_filters or None,
         sort=sort,
         limit=limit,
         inject_default_brand=supports_brand,
@@ -2338,13 +2321,14 @@ async def query_metrics(
     _cache_eligible = (
         grain == "none"
         and not breakdown
-        and not filters
+        and not query_filters
         and limit is None
         and not pool_listed_values
     )
     if _cache_eligible:
-        from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
         import logging
+
+        from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
         _log = logging.getLogger(__name__)
         try:
             cached = await SnapshotStore().afind_metric(metric_id)
@@ -2374,17 +2358,17 @@ async def query_metrics(
         # silently answers a different question and still reports success (live
         # Suspender-Boots trace).
         kept_filters = [
-            f for f in filters if not _is_scope_dimension(ctx, f["dimension"])
+            f for f in query_filters if not _is_scope_dimension(ctx, f["dimension"])
         ]
-        if len(kept_filters) != len(filters):
-            filters = kept_filters
+        if len(kept_filters) != len(query_filters):
+            query_filters = kept_filters
             args = build_metrics_query_args(
                 measure=metric_id,
                 start=period_start.date().isoformat(),
                 end=period_end.date().isoformat(),
                 grain=None if grain == "none" else grain,
                 dimensions=breakdown or None,
-                filters=filters or None,
+                filters=query_filters or None,
                 sort=sort,
                 limit=limit,
                 inject_default_brand=supports_brand,
@@ -2439,7 +2423,7 @@ async def query_metrics(
         # ponytail: one extra Cube query per zero-row filtered miss; cached by
         # args so a re-issued identical query pays it only once.
         non_brand = [
-            f for f in filters
+            f for f in query_filters
             if not _is_scope_dimension(ctx, f["dimension"]) and f.get("operator") != "set"
         ]
         hint = ""
@@ -2471,7 +2455,7 @@ async def query_metrics(
     # failed result — no artifacts written, no ModelRetry (which could exhaust into a crash).
     rank_note: str | None = None
     if (picked := await _rank_large_breakdown(
-        ctx, metric_id, breakdown, grain, order, limit, rows, dimensions, filters,
+        ctx, metric_id, breakdown, grain, order, limit, rows, dimensions, query_filters,
         period_start.date().isoformat(), period_end.date().isoformat(), supports_brand,
     )) is not None:
         rows, rank_note = picked
@@ -2531,7 +2515,7 @@ async def query_metrics(
                 if row_val is not None and str(row_val) not in ("", "None", "null", "none", "NULL"):
                     row_dimensions[k] = str(row_val)
                 elif isinstance(v, (list, tuple, set)):
-                    row_dimensions[k] = ",".join(str(x) for x in v) if len(v) > 1 else str(list(v)[0])
+                    row_dimensions[k] = ",".join(str(x) for x in v) if len(v) > 1 else str(next(iter(v)))
                 else:
                     row_dimensions[k] = str(v)
             for key in breakdown:
@@ -2680,7 +2664,7 @@ async def query_metrics(
             metric_id=metric_id,
             dimensions=dimensions,
             breakdown=breakdown,
-            filters=filters,
+            filters=query_filters,
             grain=grain,
             period_start=period_start,
             period_end=period_end,
@@ -2888,7 +2872,7 @@ async def drilldown(
             drilldown_args["to_level"] = dimension
     else:
         drilldown_args = {"parent_query_id": parent_query_id, "target_dimensions": list(targets)}
-    fetch_drilldown = lambda: ctx.deps.mcp_client.call(  # noqa: E731
+    fetch_drilldown = lambda: ctx.deps.mcp_client.call(
         agent_id=_AGENT_ID, capability="seleric.metrics_drilldown", arguments=drilldown_args
     )
     try:

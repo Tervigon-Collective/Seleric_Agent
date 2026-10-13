@@ -79,7 +79,7 @@ def build_insight_facts(
         avg = statistics.mean(fc)
         if avg:
             rel = {k: statistics.mean(v) / avg - 1.0 for k, v in by_dow.items()}
-            hi, lo = max(rel, key=rel.get), min(rel, key=rel.get)
+            hi, lo = max(rel, key=lambda k: rel[k]), min(rel, key=lambda k: rel[k])
             facts["weekday_peak"] = {"day": _WEEKDAYS[hi], "vs_avg_pct": rel[hi] * 100}
             facts["weekday_trough"] = {"day": _WEEKDAYS[lo], "vs_avg_pct": rel[lo] * 100}
             facts["weekday_spread_pct"] = (rel[hi] - rel[lo]) * 100
@@ -106,15 +106,15 @@ def build_insight_facts(
         events = []
         for entry in cfg.festivals:
             for iso in entry.dates:
-                d = date.fromisoformat(iso[:10])
+                ev_date = date.fromisoformat(iso[:10])
                 lead = timedelta(days=cfg.pre_festival_days)
-                if start - timedelta(days=0) <= d <= end:
+                if start - timedelta(days=0) <= ev_date <= end:
                     events.append({"event": entry.id.replace("_", " "), "date": iso[:10], "kind": "in_window"})
-                elif d > end and d - end <= lead + timedelta(days=0):
+                elif ev_date > end and ev_date - end <= lead + timedelta(days=0):
                     events.append({"event": entry.id.replace("_", " "), "date": iso[:10], "kind": "just_after"})
         if events:
             facts["calendar_events"] = events
-    except Exception:  # noqa: BLE001 - advisory only
+    except Exception:
         pass
 
     # 8. Same-day prior-year anchor when the history reaches back far enough.
@@ -128,7 +128,7 @@ def build_insight_facts(
         if len(ly) >= max(3, n // 2):
             facts["same_period_last_year_daily_mean"] = statistics.mean(ly)
             facts["level_vs_last_year_pct"] = _pct(fc_total / n, statistics.mean(ly))
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     return facts
 

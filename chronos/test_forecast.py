@@ -13,7 +13,6 @@ import time
 from typing import Any
 
 import httpx
-
 from forecast import get_load_meta, get_pipeline, make_synthetic_series, predict_series
 
 BASE_URL = os.getenv("CHRONOS_BASE_URL", "http://127.0.0.1:8112")
@@ -135,7 +134,7 @@ def test5_stability(base_url: str, n: int = 10) -> dict[str, Any]:
             payload = resp.json()
             _validate_forecast_payload(payload, expected_series=1, horizon=7)
             latencies.append(elapsed)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             failures += 1
             print(f"stability request {i + 1} failed: {exc}", file=sys.stderr)
 
@@ -185,6 +184,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

@@ -12,16 +12,12 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from pydantic_ai import Agent
 from pydantic_ai.messages import ModelResponse, ToolCallPart, ToolReturnPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
-from seleric_swarm.agent.output import MissionResult, ToolResult
+from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.agent.progress import _tool_problem
-from seleric_swarm.agent.validation import EvidenceValidator, run_validated_mission
-from seleric_swarm.agent.validation.answer_audit import total_mismatch
 from seleric_swarm.conversations.contracts import (
     Artifact,
     ArtifactProvenance,
@@ -102,57 +98,17 @@ def _seed(store: InMemoryArtifactStore, values: list[float] = DAILY) -> list[str
 # -- total audit ---------------------------------------------------------------
 
 
-def test_peak_value_beside_a_no_total_sentence_is_not_a_total_claim() -> None:
-    # Draft 5 verbatim shape: one paragraph, a peak value, then "No total is reported".
-    text = _table() + (
-        "\nInterpretation: The largest single-day spend in the period was 78,943.28 INR on "
-        "2026-09-05. No total is reported to avoid the prior mismatch between table sum and "
-        "stated total; please let me know if you want the exact summed total.\n"
-    )
-    assert total_mismatch(text) is None
 
 
-@pytest.mark.parametrize("wrong", ["1,072,316", "1,292,917", "1,252,927"])
-def test_wrong_totals_on_a_long_table_are_still_caught(wrong: str) -> None:
-    assert total_mismatch(f"Total spend was INR {wrong}.\n\n" + _table()) is not None
 
 
-@pytest.mark.parametrize(
-    "claim",
-    [
-        f"{sum(DAILY):,.2f}",  # the whole column
-        f"{sum(DAILY[-3:]):,.2f}",  # a consecutive run ("last 3 days")
-        f"{sum(DAILY[:-1]):,.2f}",  # all but one row ("excluding today")
-    ],
-)
-def test_legitimate_totals_on_a_long_table_reconcile(claim: str) -> None:
-    assert total_mismatch(f"Spend totalled {claim}.\n\n" + _table()) is None
 
 
 # -- zero-tool gate ------------------------------------------------------------
 
 
-def test_answer_from_already_fetched_evidence_is_not_a_preamble() -> None:
-    store = InMemoryArtifactStore()
-    _seed(store)
-    result = MissionResult(
-        status="completed",
-        final_response="Daily spend is in the table." + "\n\n" + _table(),
-        trace={"steps": [{"kind": "tool_call", "tool": "final_result"}]},
-    )
-    outcome = EvidenceValidator().validate(result, deps=_deps(store))
-    assert "before any other tool" not in (outcome.reason or "")
 
 
-def test_preamble_with_no_mission_evidence_is_still_rejected() -> None:
-    result = MissionResult(
-        status="completed",
-        final_response="Let me fetch the data now.",
-        trace={"steps": [{"kind": "tool_call", "tool": "final_result"}]},
-    )
-    outcome = EvidenceValidator().validate(result, deps=_deps())
-    assert not outcome.ok
-    assert "before any other tool" in (outcome.reason or "")
 
 
 # -- revision loop -------------------------------------------------------------
@@ -173,83 +129,10 @@ def _user_prompts(messages: list) -> int:
     return sum(1 for m in messages for p in getattr(m, "parts", []) if p.part_kind == "user-prompt")
 
 
-@pytest.mark.asyncio
-async def test_revision_continues_the_conversation() -> None:
-    fetches = 0
-
-    def model(messages: list, _info: AgentInfo) -> ModelResponse:
-        returns = [
-            p for m in messages for p in m.parts if isinstance(p, ToolReturnPart) and p.tool_name == "fetch"
-        ]
-        if not returns:
-            return ModelResponse(parts=[ToolCallPart("fetch", {})])
-        if _user_prompts(messages) == 1:
-            return _final("")  # rejected: empty answer
-        return _final("the revised answer is complete")
-
-    agent = Agent(FunctionModel(model), deps_type=SelericDeps, output_type=MissionResult)
-
-    @agent.tool_plain
-    def fetch() -> str:
-        nonlocal fetches
-        fetches += 1
-        return "rows"
-
-    result = await run_validated_mission(agent, _deps(), "q")
-    assert result.status == "completed"
-    assert result.final_response == "the revised answer is complete"
-    # The revision saw the first run's tool result instead of starting blind.
-    assert fetches == 1
-    assert result.trace["validation"]["revisions"][0]["reason"]
 
 
-@pytest.mark.asyncio
-async def test_a_miscopied_citation_is_repaired_without_a_revision() -> None:
-    """Live 2026-10-08: a cited id that resolves to nothing cost a full revision (15
-    runs in a week). An id with no close mission artifact is dropped, and an answer
-    left citing nothing cites the mission's own evidence."""
-    store = InMemoryArtifactStore()
-    _seed(store)
-    good = "Spend totalled " + f"{sum(DAILY):,.2f}.\n\n" + _table()
-    calls = 0
-
-    def model(_m: list, _i: AgentInfo) -> ModelResponse:
-        nonlocal calls
-        calls += 1
-        return _final(good, ["artifact_does_not_exist"])
-
-    agent = Agent(FunctionModel(model), deps_type=SelericDeps, output_type=MissionResult)
-    deps = _deps(store)
-    result = await run_validated_mission(agent, deps, "q")
-
-    assert result.status == "completed"
-    assert calls == 1
-    assert "artifact_does_not_exist" not in result.evidence_ids
-    assert set(result.evidence_ids) == {a.id for a in store.list_for_mission(deps.mission_id) if a.artifact_type == "evidence"}
 
 
-@pytest.mark.asyncio
-async def test_a_stalled_revision_ships_the_draft_without_its_wrong_total() -> None:
-    """The same figures rejected for the same reason twice: the loop stops instead of
-    spending more revisions, and ships the table without the mis-added total rather
-    than failing the mission (live 2026-10-08 MS3-28737df764)."""
-    store = InMemoryArtifactStore()
-    _seed(store)
-    calls = 0
-
-    def model(_m: list, _i: AgentInfo) -> ModelResponse:
-        nonlocal calls
-        calls += 1
-        return _final("Spend totalled 1,252,927.\n\n" + _table())
-
-    agent = Agent(FunctionModel(model), deps_type=SelericDeps, output_type=MissionResult)
-    result = await run_validated_mission(agent, _deps(store), "q")
-    assert calls == 2
-    assert result.status == "partial"
-    assert "1,252,927" not in result.final_response
-    assert _table().strip().splitlines()[0] in result.final_response
-    assert "VALIDATION_STALLED" in result.limitations
-    assert any("did not reconcile" in item for item in result.limitations)
 
 
 # -- progress ------------------------------------------------------------------

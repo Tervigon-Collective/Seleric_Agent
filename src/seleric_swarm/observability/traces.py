@@ -21,6 +21,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from opentelemetry import trace
+
 from seleric_swarm.observability.tracing import _langfuse_span
 
 _TRACER_NAME = "seleric.v3.mission"

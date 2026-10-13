@@ -40,8 +40,8 @@ async def test_read_capabilities_are_live_and_ad_platform_tools_are_not(runtime)
         "seleric.google_accounts_list_accessible",
     ):
         assert cap not in gw.capabilities
-    # insights_explain was removed from the adapter (dead — never called).
-    assert "seleric.insights_explain" not in gw.capabilities
+    # insights_explain is a read tool again (the loop calls it).
+    assert "seleric.insights_explain" in gw.capabilities
 
     resolved = await gw.call(
         agent_id="v3_agent",

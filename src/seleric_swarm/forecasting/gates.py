@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, timedelta
-from typing import Any, Iterable, Literal
+from typing import Any, Literal
 
 from seleric_swarm.forecasting.policies import ForecastPolicies
 from seleric_swarm.forecasting.types import GateDecision

@@ -9,7 +9,14 @@ from pydantic import ValidationError
 
 from seleric_swarm.api import conversations as conversations_api
 from seleric_swarm.api.security import ApiSecurityMiddleware
-from seleric_swarm.conversations import Message, MessageFeedback, MessagePart, MessagePartType, MessageRole, Thread
+from seleric_swarm.conversations import (
+    Message,
+    MessageFeedback,
+    MessagePart,
+    MessagePartType,
+    MessageRole,
+    Thread,
+)
 from seleric_swarm.conversations.memory import build_in_memory_repositories
 from seleric_swarm.persistence.memory import InMemoryMissionStore
 

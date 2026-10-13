@@ -53,7 +53,7 @@ def some_function():
             "--src", str(src_dir),
             "--catalogue", str(catalogue_file),
             "--allowlist", str(allowlist_file),
-        ], capture_output=True, text=True, cwd=tmpdir)
+        ], capture_output=True, text=True, cwd=tmpdir, check=False)
 
         # Should fail with exit code 1
         assert result.returncode == 1, f"Expected exit code 1, got {result.returncode}. stdout: {result.stdout}, stderr: {result.stderr}"
@@ -98,7 +98,7 @@ def some_function():
             "--src", str(src_dir),
             "--catalogue", str(catalogue_file),
             "--allowlist", str(allowlist_file),
-        ], capture_output=True, text=True, cwd=tmpdir)
+        ], capture_output=True, text=True, cwd=tmpdir, check=False)
 
         # Should pass with exit code 0
         assert result.returncode == 0, f"Expected exit code 0, got {result.returncode}. stderr: {result.stderr}"
@@ -140,7 +140,7 @@ def parse_date(value: str):
             "--src", str(src_dir),
             "--catalogue", str(catalogue_file),
             "--allowlist", str(allowlist_file),
-        ], capture_output=True, text=True, cwd=tmpdir)
+        ], capture_output=True, text=True, cwd=tmpdir, check=False)
 
         # Should pass - machine formats in adapters are allowed
         assert result.returncode == 0, f"Expected exit code 0, got {result.returncode}. stderr: {result.stderr}"

@@ -212,8 +212,6 @@ def effective_capabilities(
     readiness = readiness or check_readiness(runtime)
     checks = readiness["checks"]
     repositories = runtime.conversations
-    action_execution = runtime.action_execution
-    executors = getattr(action_execution, "executors", {}) if action_execution else {}
     embedding_ready = bool(
         runtime.settings.search_embedding_model
         and runtime.settings.azure_openai_endpoint
@@ -224,10 +222,6 @@ def effective_capabilities(
         "vector_search": repositories is not None
         and embedding_ready
         and bool(checks["database"]["ok"]),
-        "approval_audit": repositories is not None and bool(checks["database"]["ok"]),
-        "scheduled_expiry": runtime.run_queue is not None and bool(checks["queue"]["ok"]),
-        "action_execution": bool(executors),
-        "write_actions": bool(runtime.settings.allow_write_actions and executors),
         "immutable_audit": repositories is not None and bool(checks["database"]["ok"]),
         "replay_execution": False,
     }

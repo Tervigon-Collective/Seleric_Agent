@@ -31,9 +31,12 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import itertools
+import json
 import math
 import statistics
 import time
+from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
@@ -43,6 +46,7 @@ from seleric_swarm.agent.artifacts import CausalArtifact, EvidenceArtifact, Find
 from seleric_swarm.agent.dependencies import DIAGNOSIS_FAILED, DIAGNOSIS_OK, SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal import diagnosis as engine
+from seleric_swarm.causal.graph_chart import build_causal_graph_spec
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.exploration import space
 from seleric_swarm.semantic import McpSemanticPort
@@ -150,7 +154,7 @@ def _plan_dimensions(ctx: RunContext[SelericDeps], outcome: str, cap: int) -> li
     """The dimensions to segment by: those the question named as where to look first (when the outcome carries
     them), then the catalogue's own plan."""
     planned = space.plan_dimensions(ctx.deps.catalogue, outcome, cap)
-    hints = getattr(getattr(ctx.deps, "required_scope", None), "segment_hints", frozenset()) or frozenset()
+    hints: Any = getattr(getattr(ctx.deps, "required_scope", None), "segment_hints", frozenset()) or frozenset()
     if not hints:
         return planned
     carried = set(ctx.deps.catalogue.supported_dimensions_for(outcome))
@@ -229,6 +233,95 @@ async def _fetch_daily(
     result["_args"] = args
     result["_dropped_filters"] = dropped
     return result, (None if result.get("error") else args)
+
+
+# One multi-measure query serves every metric of a catalogue view that is asked for with the same window, scope and
+# dimension: a diagnosis reads ~100 candidate series, and one query per metric (182 calls, 74 s of server time in the
+# live profile of 2026-10-13) dominated its wall time and used the mission's whole query budget. Each metric's slice is
+# stored under the key its own single-measure query would have used, so the fetch below finds it and nothing else
+# changes. Any failure leaves the metrics to the individual path.
+_BATCH_MAX_MEASURES = 24
+_BATCH_CONCURRENCY = 6
+
+
+def _view_of(ctx: RunContext[SelericDeps]) -> dict[str, str]:
+    return {m.id: m.view for m in ctx.deps.catalogue.metrics if m.view}
+
+
+def _slice_for(payload: dict[str, Any], measures: list[str], metric_id: str) -> dict[str, Any] | None:
+    """The single-measure result a combined query implies for ``metric_id`` (None when the server did not return it)."""
+    columns = [c for c in payload.get("columns") or [] if isinstance(c, str)]
+    if metric_id not in columns:
+        return None
+    others = set(measures) - {metric_id}
+    provenance = dict(payload.get("provenance") or {})
+    provenance["metric_ids"] = [metric_id]
+    return {
+        **payload,
+        "columns": [c for c in columns if c not in others],
+        "rows": [{k: v for k, v in row.items() if k not in others} for row in payload.get("rows") or [] if isinstance(row, dict)],
+        "provenance": provenance,
+    }
+
+
+async def _prefetch_daily(
+    ctx: RunContext[SelericDeps], jobs: Sequence[tuple[str, str | None]], start: date, end: date, filters: dict[str, Any],
+) -> None:
+    views = _view_of(ctx)
+    groups: dict[str, list[tuple[str, str]]] = {}  # group key -> [(metric_id, its single-measure cache key)]
+    group_args: dict[str, dict[str, Any]] = {}
+    for metric_id, dimension in dict.fromkeys(jobs):
+        flt, _ = _filters_for(ctx, metric_id, filters)
+        args = build_metrics_query_args(
+            measure=metric_id, start=start.isoformat(), end=end.isoformat(), grain="day",
+            dimensions=[dimension] if dimension else None, filters=flt or None,
+            inject_default_brand=_supports_brand(ctx, metric_id),
+        )
+        key = semantic._cache_key("seleric.metrics_query", args)
+        view = views.get(metric_id)
+        if not view or ctx.deps.query_cache.peek(key) is not None:
+            continue
+        rest = {k: v for k, v in args.items() if k != "measures"}
+        gk = json.dumps([view, rest], sort_keys=True, default=str)
+        groups.setdefault(gk, []).append((metric_id, key))
+        group_args.setdefault(gk, rest)
+    chunks = [
+        (gk, members[i : i + _BATCH_MAX_MEASURES])
+        for gk, members in groups.items() if len(members) > 1
+        for i in range(0, len(members), _BATCH_MAX_MEASURES)
+    ]
+    sem = asyncio.Semaphore(_BATCH_CONCURRENCY)
+
+    async def one(gk: str, members: list[tuple[str, str]]) -> None:
+        measures = [m for m, _ in members]
+        async with sem:
+            payload = await semantic._cached_metrics_query(ctx, {"measures": measures, **group_args[gk]})
+        if payload.get("error"):
+            return
+        # Measures on different time axes come back composed: one part per axis, each a plain result of its own.
+        parts = payload["parts"] if isinstance(payload.get("parts"), list) else [payload]
+        for part in parts:
+            if not isinstance(part, dict) or part.get("error") or not isinstance(part.get("rows"), list):
+                continue
+            in_part = [m for m in measures if m in (part.get("columns") or [])]
+            for metric_id, key in members:
+                if metric_id in in_part:
+                    piece = _slice_for(part, in_part, metric_id)
+                    if piece is not None:
+                        ctx.deps.query_cache.set(key, piece)
+
+    if len(chunks) > 0:
+        await asyncio.gather(*(one(gk, members) for gk, members in chunks))
+
+
+async def _fetch_all(
+    ctx: RunContext[SelericDeps], jobs: Sequence[tuple[str, str | None]], start: date, end: date, filters: dict[str, Any],
+    guarded: Any = None,
+) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
+    """``_fetch_daily`` for every (metric, dimension) job, after one batched prefetch per view."""
+    await _prefetch_daily(ctx, jobs, start, end, filters)
+    run = guarded or (lambda coro: coro)
+    return list(await asyncio.gather(*(run(_fetch_daily(ctx, m, start, end, filters, dimension=d)) for m, d in jobs)))
 
 
 def _parse_series(result: dict[str, Any], metric_id: str) -> dict[date, float]:
@@ -335,13 +428,13 @@ def _finding_metrics(report: engine.DiagnosisReport) -> dict[str, float]:
             put(f"decomposition.{t.metric}.{k}", getattr(t, k))
         if abs(t.reference) > 1e-12:
             put(f"decomposition.{t.metric}.pct_change", t.event / t.reference - 1)
-    for t in report.bridge:
+    for bt in report.bridge:
         for k in ("event", "reference", "contribution", "share_of_change", "previous", "contribution_vs_previous"):
-            put(f"bridge.{t.metric}.{k}", getattr(t, k))
-        if abs(t.reference) > 1e-12:
-            put(f"bridge.{t.metric}.pct_change", t.event / t.reference - 1)
-        if t.previous and abs(t.previous) > 1e-12 and t.contribution_vs_previous is not None:
-            put(f"bridge.{t.metric}.pct_change_vs_previous", t.sign * t.contribution_vs_previous / t.previous)
+            put(f"bridge.{bt.metric}.{k}", getattr(bt, k))
+        if abs(bt.reference) > 1e-12:
+            put(f"bridge.{bt.metric}.pct_change", bt.event / bt.reference - 1)
+        if bt.previous and abs(bt.previous) > 1e-12 and bt.contribution_vs_previous is not None:
+            put(f"bridge.{bt.metric}.pct_change_vs_previous", bt.sign * bt.contribution_vs_previous / bt.previous)
     put("bridge.residual", report.bridge_residual)
     put("bridge.residual_vs_previous", report.bridge_residual_vs_previous)
     for t in report.chain:
@@ -544,9 +637,9 @@ def _lever_values(
             a_over_b, k = o
             num, den = deps if a_over_b else deps[::-1]
             (n0, n1), (d0, d1) = vals[num], vals[den]
-            pair = (k * n0 / d0, k * n1 / d1) if abs(d0) > 1e-12 and abs(d1) > 1e-12 else None
-            if pair is not None and not any(_same_pair(pair, seen) for seen in vals.values()):
-                vals[r] = pair
+            rate_pair = (k * n0 / d0, k * n1 / d1) if abs(d0) > 1e-12 and abs(d1) > 1e-12 else None
+            if rate_pair is not None and not any(_same_pair(rate_pair, seen) for seen in vals.values()):
+                vals[r] = rate_pair
                 splits.append((num, r, den))
         elif len(deps) == 1 and deps[0] in vals:
             base = series.get(deps[0]) or {}
@@ -604,7 +697,7 @@ async def _levers(
     # while Google's rose, live 2026-10-09) are the story, and a "localised" test hides them.
     where = next((d for d in report.dimensions if any(s.segment != _UNSET_SEGMENT for s in d.top)), None)
     named = [s for s in (where.top if where else []) if s.segment != _UNSET_SEGMENT and s.share_of_change is not None]
-    picks = [min(named, key=lambda s: s.share_of_change, default=None), max(named, key=lambda s: s.share_of_change, default=None)]  # the offset first
+    picks = [min(named, key=lambda s: s.share_of_change or 0.0, default=None), max(named, key=lambda s: s.share_of_change or 0.0, default=None)]  # the offset first
     segs = list(dict.fromkeys(s.segment for s in picks if s is not None))[: P.DIAG_LEVER_SEGMENTS]
     seg_dim = where.dimension if where and segs else None
 
@@ -623,12 +716,12 @@ async def _levers(
     span_start, span_end = hist_start, max(event_days)
     sem = asyncio.Semaphore(6)
 
-    async def get(m: str, dim: str | None) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    async def guard(coro: Any) -> Any:
         async with sem:
-            return await _fetch_daily(ctx, m, span_start, span_end, filters, dimension=dim)
+            return await coro
 
-    jobs = [(m, None) for m in metrics] + ([(m, seg_dim) for m in metrics] if seg_dim else [])
-    results = await asyncio.gather(*(get(m, d) for m, d in jobs))
+    jobs: list[tuple[str, str | None]] = [(m, None) for m in metrics] + ([(m, seg_dim) for m in metrics] if seg_dim else [])
+    results = await _fetch_all(ctx, jobs, span_start, span_end, filters, guard)
     scopes: dict[str, dict[str, dict[date, float]]] = {"": {}}
     args_for: dict[tuple[str, str | None], dict[str, Any]] = {}
     for (m, d), (res, args) in zip(jobs, results, strict=True):
@@ -638,9 +731,9 @@ async def _levers(
         if d is None:
             scopes[""][m] = _parse_series(res, m)
         else:
-            for seg, vals in _parse_segments(res, m, d).items():
+            for seg, seg_vals in _parse_segments(res, m, d).items():
                 if seg in segs:
-                    scopes.setdefault(seg, {})[m] = vals
+                    scopes.setdefault(seg, {})[m] = seg_vals
     lines: list[str] = []
     evidence: list[str] = []
     numbers: dict[str, float] = {}
@@ -766,7 +859,7 @@ def _outcome_on_its_normal_days(
     ev = [vals[d] for d in event_days if d in vals and math.isfinite(vals[d])]
     if len(usual) < _NORMAL_MIN_DAYS or not ev:
         return ""
-    show = lambda v: engine._val(v, metric, lineage)  # noqa: E731
+    show = lambda v: engine._val(v, metric, lineage)
     return (
         f"THE OUTCOME ON ITS OWN NORMAL DAYS: {engine._label(metric, lineage)} ranged {show(min(usual))}–"
         f"{show(max(usual))} (median {show(statistics.median(usual))}) over {len(usual)} normal days; "
@@ -824,7 +917,7 @@ def _ratio_split(
     if not forms:
         return "", {}
     bases = sorted({b for _, v in [out, *forms.values()] for b in v})
-    vec = lambda v: np.array([v.get(b, 0.0) for b in bases])  # noqa: E731
+    vec = lambda v: np.array([v.get(b, 0.0) for b in bases])
 
     def avg(metric: str, days: list[date]) -> float | None:
         vals = [v for d in days if (v := series.get(metric, {}).get(d)) is not None]
@@ -903,11 +996,12 @@ def _ratio_split(
         others = [c for c in cands if c not in chosen]
         if others and (sub := split(vec(forms[m][1]), others, exact=True)) is not None:
             parts = [factor_text(c, engine._label(c, lineage), forms[c][0], forms[c][1], s2, m) for c, s2 in sub[0].items()]
-            if all(parts):
+            texts = [p for p in parts if p is not None]
+            if len(texts) == len(parts):
                 nested.append(
                     f"{engine._label(m, lineage)} itself = "
                     + " ".join(("× " if s2 > 0 else "÷ ") + engine._label(c, lineage) for c, s2 in sub[0].items()).lstrip("× ")
-                    + ": " + "; ".join(t for _, t in sorted(parts, key=lambda p: -abs(p[0])))  # type: ignore[index]
+                    + ": " + "; ".join(t for _, t in sorted(texts, key=lambda p: -abs(p[0])))
                 )
     if res_form:
         got = factor_text("residual", res_label(res_form), 1.0, res_form, 1, outcome)
@@ -1014,7 +1108,7 @@ def _funnel_ladder(
          and lineage[m].unit == "count" and lineage[m].view != num_view and volume(m) >= volume(last)),
         key=lambda m: -volume(m),
     )
-    shown = lambda m: engine._label(m, lineage)  # noqa: E731
+    shown = lambda m: engine._label(m, lineage)
 
     def ratio(a: str, b: str, days: list[date]) -> float | None:
         shared = [d for d in days if d in series.get(a, {}) and d in series.get(b, {})]
@@ -1039,7 +1133,7 @@ def _funnel_ladder(
     figures: dict[str, float] = {}
     names: list[str] = []
     cum = 0.0
-    for lo, hi in zip(seq, seq[1:], strict=False):
+    for lo, hi in itertools.pairwise(seq):
         ev, rf = ratio(hi, lo, event_days), ratio(hi, lo, reference_days)
         if ev is None or rf is None:
             return "", {}, []
@@ -1061,8 +1155,8 @@ def _funnel_ladder(
             names.append(label)
         figures[f"{shown_label} | event"], figures[f"{shown_label} | reference"] = shown_ev, shown_rf
         figures[f"{shown_label} | effect on {outcome} %"] = math.exp(eff) * 100 - 100
-        rows.append((eff, f"{shown_label} {unit}{show(shown_rf)} → {unit}{show(shown_ev)} ({engine._chg(shown_ev, shown_rf)}), "
-                          f"moving {shown(outcome)} {math.exp(eff) * 100 - 100:+.1f}%"))
+        rows.append((eff, (f"{shown_label} {unit}{show(shown_rf)} → {unit}{show(shown_ev)} ({engine._chg(shown_ev, shown_rf)}), "
+                          f"moving {shown(outcome)} {math.exp(eff) * 100 - 100:+.1f}%")))
     figures[f"{outcome} | lever ladder change %"] = math.exp(cum) * 100 - 100
     rows.sort(key=lambda r: -abs(r[0]))
     return (
@@ -1154,6 +1248,9 @@ async def _diagnose(
     compared with the equal-length period just before it. The result then
     splits the difference between the two periods exactly by component and by
     segment; upstream drivers are not estimated for period comparisons.
+
+    ``search_breadth``: 0 (default) is right for almost every question. 1 and 2 widen the search to more segmenting
+    dimensions and more candidate drivers and add ~7-15 s each; use them only after a run at 0 localised nothing.
 
     ``drivers``: catalogue metric ids the user names as possible explanations ("check whether it came from CPM,
     CTR, checkout conversion …" — resolve each to its id first). Each one is fetched and reported with how it
@@ -1324,7 +1421,7 @@ async def _diagnose(
         [metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts, *bridge_pool,
          *ladder_ends, *change_log, *unit_counts]
     ))
-    series_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters)) for m in series_ids))
+    series_results = await _fetch_all(ctx, [(m, None) for m in series_ids], hist_start, ev_end, filters, guarded)
 
     quality: list[str] = []
     series: dict[str, dict[date, float]] = {}
@@ -1366,15 +1463,15 @@ async def _diagnose(
     history_days = sorted(d for d in series[metric_id] if d < ev_start and d not in partial)
     numerator, weight = (None, None) if out_meta.additive else _rate_parts(metric_id, lineage, series, history_days)
     seg_jobs = [(metric_id, d) for d in dims] + [(m, d) for m in (weight, numerator) if m for d in dims]
-    seg_results = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters, dimension=d)) for m, d in seg_jobs))
+    seg_results = await _fetch_all(ctx, seg_jobs, hist_start, ev_end, filters, guarded)
     segments: dict[str, dict[str, dict[str, dict[date, float]]]] = {}
     seg_args: dict[tuple[str, str], dict[str, Any]] = {}
     for (m, d), (res, args) in zip(seg_jobs, seg_results, strict=True):
         if args is None or len(res.get("rows") or []) > _MAX_SEGMENT_ROWS:
             continue
-        parsed = _parse_segments(res, m, d)
-        if len(parsed) >= 2:
-            segments.setdefault(m, {})[d] = parsed
+        seg_parsed = _parse_segments(res, m, d)
+        if len(seg_parsed) >= 2:
+            segments.setdefault(m, {})[d] = seg_parsed
             seg_args[(m, d)] = args
 
     # Phase B: segments for every chain rate the data actually verify (the
@@ -1394,13 +1491,13 @@ async def _diagnose(
             if d in base_dims:
                 jobs_b += [(rate_m, d), (base_m, d)]
     jobs_b = [j for j in dict.fromkeys(jobs_b) if j not in seg_args]
-    res_b = await asyncio.gather(*(guarded(_fetch_daily(ctx, m, hist_start, ev_end, filters, dimension=d)) for m, d in jobs_b))
+    res_b = await _fetch_all(ctx, jobs_b, hist_start, ev_end, filters, guarded)
     for (m, d), (res, args) in zip(jobs_b, res_b, strict=True):
         if args is None or len(res.get("rows") or []) > _MAX_SEGMENT_ROWS:
             continue
-        parsed = _parse_segments(res, m, d)
-        if len(parsed) >= 2:
-            segments.setdefault(m, {})[d] = parsed
+        seg_parsed = _parse_segments(res, m, d)
+        if len(seg_parsed) >= 2:
+            segments.setdefault(m, {})[d] = seg_parsed
             seg_args[(m, d)] = args
 
     inp = engine.DiagnosisInput(
@@ -1444,12 +1541,12 @@ async def _diagnose(
                     )
     for dim in report.dimensions[:3]:
         for s in dim.top[:3]:
-            for m in (metric_id, weight, numerator):
-                if m and (m, dim.dimension) in seg_args:
-                    vals = segments[m][dim.dimension].get(s.segment, {})
+            for mm in (metric_id, weight, numerator):
+                if mm and (mm, dim.dimension) in seg_args:
+                    vals = segments[mm][dim.dimension].get(s.segment, {})
                     evidence_ids += _evidence_rows(
-                        ctx, m, vals, cited_days, seg_args[(m, dim.dimension)], index, tz, {dim.dimension: s.segment},
-                        unit=units.get(m),
+                        ctx, mm, vals, cited_days, seg_args[(mm, dim.dimension)], index, tz, {dim.dimension: s.segment},
+                        unit=units.get(mm),
                     )
     if not evidence_ids:
         return _refuse(f"diagnosis of {metric_id} produced no citable evidence")
@@ -1480,6 +1577,23 @@ async def _diagnose(
             method=f.estimator or "backdoor.linear_regression",
         )
         artifact_ids.append(_put_derived(ctx, "causal", causal, ev_ids))
+    # One chart for the union of DoWhy DAGs so the UI can show causal structure.
+    graph_spec = build_causal_graph_spec(report, outcome=metric_id)
+    if graph_spec is not None:
+        chart = ctx.deps.artifact_store.put(
+            Artifact(
+                workspace_id=ctx.deps.principal.workspace_id,
+                artifact_type="chart_spec",
+                payload=graph_spec,
+                classification="derived",
+                evidence_ids=list(evidence_ids),
+                provenance=ArtifactProvenance(
+                    evidence_ids=list(evidence_ids), calculation_version=_CALCULATION_VERSION
+                ),
+                mission_id=ctx.deps.mission_id,
+            )
+        )
+        artifact_ids.append(chart.id)
     named_text, named_metrics = "", {}
     # The drivers (and the levers below) are compared with what the user compares with: the comparison period, else
     # the period just before the event ("why did CAC increase yesterday" = against the day before). The blended

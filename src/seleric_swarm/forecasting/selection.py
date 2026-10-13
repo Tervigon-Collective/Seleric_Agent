@@ -90,7 +90,7 @@ def select_driver(
     last_origin = max(target) - timedelta(days=HORIZON)
     for mid, series in candidates.items():
         cand = {date.fromisoformat(k[:10]): v for k, v in series.items()}
-        if len(cand) < 90 or len(set(round(v, 6) for v in cand.values())) < 5:
+        if len(cand) < 90 or len({round(v, 6) for v in cand.values()}) < 5:
             continue
         errs, base = _score(target, cand, last_origin=last_origin, lag=lag)
         if len(errs) < MIN_ORIGINS:

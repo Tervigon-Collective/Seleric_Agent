@@ -48,7 +48,7 @@ class _RecordingEngine:
             def __enter__(self_inner) -> _RecordingConn:
                 return conn
 
-            def __exit__(self_inner, *exc: Any) -> None:
+            def __exit__(self_inner, *exc: object) -> None:
                 return None
 
         return _Ctx()

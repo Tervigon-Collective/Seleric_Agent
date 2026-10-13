@@ -22,9 +22,6 @@ import pytest
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
-from seleric_swarm.agent.scope import RequiredScope, ValueFilter, build_required_scope
-from seleric_swarm.agent.validation import EvidenceValidator
-from seleric_swarm.agent.validation.signals import check_scope_coverage
 from seleric_swarm.conversations.contracts import (
     Artifact,
     ArtifactProvenance,
@@ -143,11 +140,6 @@ _ALIASES = {"source": "source_name", "order source": "source_name", "vendor": "v
 _DIMS = frozenset({"source_name", "vendor", "lt_platform"})
 
 
-def test_build_required_scope_extracts_resolvable_breakdown():
-    scope = build_required_scope(
-        "orders by source last 5 days", alias_index=_ALIASES, dimension_ids=_DIMS
-    )
-    assert scope.breakdowns == frozenset({frozenset({"source_name"})})
 
 
 def _evidence_artifact(
@@ -177,23 +169,8 @@ def _evidence_artifact(
     )
 
 
-def test_scope_coverage_not_applicable_without_breakdown():
-    store = InMemoryArtifactStore()
-    _evidence_artifact(store, day=1, dimensions={})
-    out = check_scope_coverage(store.list_for_mission(_MISSION), RequiredScope())
-    assert out.status == "NOT_APPLICABLE"
-    assert not out.gaps
 
 
-def test_scope_coverage_missing_breakdown_blocks():
-    store = InMemoryArtifactStore()
-    for d in range(1, 6):  # bare aggregate — no source_name grouping (the trace)
-        _evidence_artifact(store, day=d, dimensions={})
-    out = check_scope_coverage(
-        store.list_for_mission(_MISSION), RequiredScope(breakdowns=frozenset({"source_name"}))
-    )
-    assert out.status == "INSUFFICIENT"
-    assert out.gaps and out.gaps[0].blocking
 
 
 def _filtered_evidence(store: InMemoryArtifactStore, *, day: int, dimension: str, value: str) -> None:
@@ -226,66 +203,14 @@ def _filtered_evidence(store: InMemoryArtifactStore, *, day: int, dimension: str
     )
 
 
-def test_value_filter_satisfied_by_applied_filter_not_grouping():
-    # MS3-0648c0208b regression: a value filter (brand_id=20) applied as a Cube
-    # filter leaves dimensions={}, but the constraint IS covered. Judging it by
-    # grouping keys alone killed a complete, correctly-filtered answer.
-    store = InMemoryArtifactStore()
-    for d in range(1, 6):
-        _filtered_evidence(store, day=d, dimension="brand_id", value="20")
-    scope = RequiredScope(
-        value_filters=(ValueFilter(term="acme", dimensions=frozenset({"brand_id"}), values=("20",)),)
-    )
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
-    assert out.status == "OK", out.gaps
-    assert not out.gaps
 
 
-def test_value_filter_still_blocks_when_neither_filtered_nor_grouped():
-    store = InMemoryArtifactStore()
-    for d in range(1, 6):
-        _evidence_artifact(store, day=d, dimensions={})  # no filter, no grouping
-    scope = RequiredScope(
-        value_filters=(ValueFilter(term="acme", dimensions=frozenset({"brand_id"}), values=("20",)),)
-    )
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
-    assert out.status == "INSUFFICIENT"
-    assert out.gaps and out.gaps[0].blocking
 
 
-def test_scope_coverage_satisfied_when_grouped():
-    store = InMemoryArtifactStore()
-    for d in range(1, 6):
-        _evidence_artifact(store, day=d, dimensions={"source_name": "web"})
-    out = check_scope_coverage(
-        store.list_for_mission(_MISSION), RequiredScope(breakdowns=frozenset({"source_name"}))
-    )
-    assert out.status == "OK"
-    assert not out.gaps
 
 
-def test_ambiguous_breakdown_sibling_satisfies_coverage():
-    # L4 regression: "by channel" resolves to a candidate set {channel,
-    # lt_channel}; grouping by the sibling lt_channel must satisfy coverage,
-    # not force a REVISE loop.
-    store = InMemoryArtifactStore()
-    for d in range(1, 6):
-        _evidence_artifact(store, day=d, dimensions={"lt_channel": "ig_feed"})
-    scope = RequiredScope(breakdowns=frozenset({frozenset({"channel", "lt_channel"})}))
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
-    assert out.status == "OK"
-    assert not out.gaps
 
 
-def test_ambiguous_breakdown_requires_at_least_one_candidate():
-    # Grouping by nothing still fails, even with an ambiguous candidate set.
-    store = InMemoryArtifactStore()
-    for d in range(1, 6):
-        _evidence_artifact(store, day=d, dimensions={})
-    scope = RequiredScope(breakdowns=frozenset({frozenset({"channel", "lt_channel"})}))
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
-    assert out.status == "INSUFFICIENT"
-    assert out.gaps and out.gaps[0].blocking
 
 
 def _catalogue(dim_to_metrics: dict[str, list[str]]):
@@ -303,102 +228,18 @@ def _catalogue(dim_to_metrics: dict[str, list[str]]):
     return CatalogueSnapshot(metrics=metrics, dimensions=tuple(dim_to_metrics))
 
 
-def test_unsupported_breakdown_is_not_blocking():
-    # MS3-dc65868b71 regression: "net sales by hour_of_day/session_day_of_week" —
-    # no queryable metric carries those dims, so no revision can ever group by them.
-    # The gap must be informational (non-blocking), not a REVISE loop to exhaustion.
-    store = InMemoryArtifactStore()
-    for d in range(1, 6):
-        _evidence_artifact(store, day=d, dimensions={}, grain="day")
-    scope = RequiredScope(breakdowns=frozenset({frozenset({"hour_of_day", "session_day_of_week"})}))
-    # The answer's metric (attributed_orders) supports report_date, not hour/session-day;
-    # the dims exist on OTHER metrics (ad/web), but those measure a different thing.
-    cat = _catalogue({
-        "report_date": ["attributed_orders"],
-        "hour_of_day": ["meta_clicks_hourly"],
-        "session_day_of_week": ["session_add_to_carts"],
-    })
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, cat)
-    assert out.status == "OK", out.gaps
-    assert out.gaps and out.gaps[0].blocking is False
 
 
-def test_supported_but_dropped_breakdown_still_blocks():
-    # Protection intact: a breakdown a metric DOES support, but the answer isn't
-    # grouped by it, is the silent-drop bug — still blocking.
-    store = InMemoryArtifactStore()
-    for d in range(1, 6):
-        _evidence_artifact(store, day=d, dimensions={})
-    scope = RequiredScope(breakdowns=frozenset({frozenset({"source_name"})}))
-    # The answer's own metric (attributed_orders) DOES support source_name but the
-    # evidence isn't grouped by it — the silent-drop bug, still blocking.
-    cat = _catalogue({"source_name": ["attributed_orders"], "report_date": ["attributed_orders"]})
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, cat)
-    assert out.status == "INSUFFICIENT"
-    assert out.gaps and out.gaps[0].blocking is True
 
 
-def test_period_total_satisfies_grain_request():
-    # MS3-a794c66a66 regression: "gross sales last week vs this month" fetches two
-    # period totals (grain="none"). The window IS a week, so a single total is the
-    # correct answer — it must NOT be flagged as a "week grain" gap, else the
-    # revision loop is unsatisfiable and a correct answer ships as partial.
-    store = InMemoryArtifactStore()
-    _evidence_artifact(store, day=1, dimensions={}, grain="none")
-    _evidence_artifact(store, day=2, dimensions={}, grain="none")
-    scope = RequiredScope(temporal_grain="week")
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
-    assert out.status == "OK", out.gaps
-    assert not out.gaps
 
 
-def test_genuine_grain_mismatch_still_blocks():
-    # The check must still fire when bucketed evidence exists at the wrong grain:
-    # a day-grain question answered only with month buckets cannot be aggregated
-    # down, so it is a real coverage gap.
-    store = InMemoryArtifactStore()
-    for d in range(1, 4):
-        _evidence_artifact(store, day=d, dimensions={}, grain="month")
-    scope = RequiredScope(temporal_grain="day")
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope)
-    assert out.status == "INSUFFICIENT"
-    assert out.gaps and out.gaps[0].blocking
 
 
-def _validation_deps(store: InMemoryArtifactStore, scope: RequiredScope) -> SelericDeps:
-    return SelericDeps(
-        mission_id=_MISSION,
-        as_of=datetime.now(UTC),
-        principal=Principal(principal_id="p1", workspace_id="ws1", user_id="u1"),
-        thread_id="t1",
-        run_id="r1",
-        trace_id="tr1",
-        context=ContextBundle(),
-        mcp_client=None,  # not touched by the sync checks
-        artifact_store=store,
-        limits=ExecutionLimits(),
-        required_scope=scope,
-    )
 
 
-def test_missing_breakdown_forces_revise_end_to_end():
-    store = InMemoryArtifactStore()
-    for d in range(1, 11):  # clean series so only the missing breakdown drives the verdict
-        _evidence_artifact(store, day=d, dimensions={})
-    deps = _validation_deps(store, RequiredScope(breakdowns=frozenset({"source_name"})))
-    outcome = EvidenceValidator().score(deps)
-    assert outcome.verdict == "REVISE"
-    assert outcome.ok is False
 
 
-def test_grouped_breakdown_does_not_trip_verdict():
-    store = InMemoryArtifactStore()
-    for d in range(1, 11):
-        _evidence_artifact(store, day=d, dimensions={"source_name": "web"})
-    deps = _validation_deps(store, RequiredScope(breakdowns=frozenset({"source_name"})))
-    outcome = EvidenceValidator().score(deps)
-    # scope coverage is satisfied → it contributes no REVISE reason.
-    assert "breakdown" not in (outcome.reason or "")
 
 
 def _metric_evidence(store: InMemoryArtifactStore, metric_id: str, dimensions: dict[str, str]) -> str:
@@ -426,57 +267,5 @@ def _metric_evidence(store: InMemoryArtifactStore, metric_id: str, dimensions: d
     return artifact.id
 
 
-def test_every_reported_metric_must_carry_the_named_value():
-    """Live 2026-10-05 MS3-c97c9fea15: a "Meta ads report" filtered orders to
-    Meta but reported spend/impressions/clicks for Meta + Google; one filtered
-    metric used to cover the whole answer."""
-    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
-
-    store = InMemoryArtifactStore()
-    orders = _metric_evidence(store, "orders", {"platform": "meta"})
-    spend = _metric_evidence(store, "ad_spend", {})
-    sales = _metric_evidence(store, "net_sales", {})  # cannot carry ad_platform: exempt
-    catalogue = CatalogueSnapshot(
-        metrics=(
-            CatalogueMetricMeta(id="orders", view="commerce", supported_dimensions=["platform"]),
-            CatalogueMetricMeta(id="ad_spend", view="paid_media", supported_dimensions=["ad_platform"]),
-            CatalogueMetricMeta(id="net_sales", view="commerce", supported_dimensions=["order_date"]),
-        )
-    )
-    scope = RequiredScope(
-        value_filters=(ValueFilter(term="meta", dimensions=frozenset({"ad_platform", "platform"}), values=("meta",)),)
-    )
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, catalogue, cited=[orders, spend, sales])
-    assert out.status == "INSUFFICIENT"
-    assert "ad_spend" in out.gaps[0].description and "net_sales" not in out.gaps[0].description
-
-    # Re-fetched filtered, the same answer passes; an uncited exploratory fetch does not block.
-    spend_meta = _metric_evidence(store, "ad_spend", {"ad_platform": "meta"})
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, catalogue, cited=[orders, spend_meta])
-    assert out.status == "OK", out.gaps
 
 
-def test_values_compared_side_by_side_are_rows_not_a_scope():
-    """Live 2026-10-09 MS3-c0f21457ca: "across Meta, Google, organic …" — each value is
-    a row of the comparison, so totals beside them are not a scope leak; a value that
-    appears nowhere in the evidence still blocks."""
-    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
-
-    store = InMemoryArtifactStore()
-    meta = _metric_evidence(store, "orders", {"platform": "meta"})
-    google = _metric_evidence(store, "orders", {"platform": "google"})
-    total = _metric_evidence(store, "ad_spend", {})
-    catalogue = CatalogueSnapshot(
-        metrics=(
-            CatalogueMetricMeta(id="orders", view="commerce", supported_dimensions=["platform"]),
-            CatalogueMetricMeta(id="ad_spend", view="paid_media", supported_dimensions=["platform"]),
-        )
-    )
-    named = lambda term: ValueFilter(term=term, dimensions=frozenset({"platform"}), values=(term,))  # noqa: E731
-    scope = RequiredScope(value_filters=(named("meta"), named("google")))
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, catalogue, cited=[meta, google, total])
-    assert out.status == "OK", out.gaps
-
-    scope = RequiredScope(value_filters=(named("meta"), named("google"), named("whatsapp")))
-    out = check_scope_coverage(store.list_for_mission(_MISSION), scope, catalogue, cited=[meta, google, total])
-    assert out.status == "INSUFFICIENT" and "whatsapp" in out.gaps[0].description

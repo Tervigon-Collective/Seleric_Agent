@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     persistence_backend: Literal["memory", "postgres", "file"] = "memory"
     persistence_path: str = ".data/persistence"
     database_url: str = ""
-    checkpoint_backend: Literal["none", "memory", "postgres"] = "none"
     cancellation_backend: Literal["memory", "redis"] = "memory"
     event_notifier_backend: Literal["auto", "memory", "redis"] = "auto"
     redis_url: str = ""
@@ -146,17 +145,6 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = ""
     otel_exporter_otlp_headers: str = ""
     otel_trace_sample_ratio: float = 1.0
-    # Tracing backend (M0.3): which backends receive stage/mission traces. "both"
-    # = OTel + Langfuse (each when configured); "otel" / "langfuse" = one; "none" =
-    # off. Read by observability.configure_tracing.
-    trace_backend: Literal["none", "otel", "langfuse", "both"] = "both"
-    # Local stage-input/output store (one JSON per stage) that makes a
-    # mission replayable without Langfuse. Read by observability.stage_span.
-    trace_local_dir: str = ".data/traces"
-    # Stage-tracing rollout flag (M0.3): the pipeline reads this to decide whether
-    # to wrap each stage in stage_span. off = legacy path only; shadow = trace
-    # beside legacy; enforce = trace and consume. Consumed by pipeline/ (M1.2+).
-    stage_tracing_mode: Literal["off", "shadow", "enforce"] = "off"
     search_embedding_model: str = ""
 
     mcp_config_path: str = "config/mcp_servers.yaml"
@@ -180,9 +168,6 @@ class Settings(BaseSettings):
     # (glossary-backed) + get_metric_definitions instead of paying the dump on
     # every model turn. Flip on to revert to the in-prompt catalogue.
     catalogue_in_prompt: bool = False
-    jev_base_url: str = ""
-    jev_api_key: str = ""
-    jev_timeout_s: float = 1.0
     metric_registry_path: str = "config/metric_registry.yaml"
 
     a2a_public_base_url: str = ""
@@ -211,7 +196,6 @@ class Settings(BaseSettings):
     agent_retries: int = 2
     completion_threshold: float = 0.90
 
-    allow_write_actions: bool = False
 
     # V3 refactor (docs/refactor/) — when True, conversations and
     # POST /v1/missions run Agent[SelericDeps, MissionResult] instead of
@@ -242,24 +226,6 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("scope_dimension_ids", "SCOPE_DIMENSION_IDS"),
     )
-    # Verified examples (M1.3): the understand stage reads this to decide whether
-    # to inject verified examples as exemplars. off = no exemplars; shadow =
-    # retrieve + log, don't inject; enforce = inject into the prompt.
-    verified_examples_mode: Literal["off", "shadow", "enforce"] = "off"
-    # M1.4: ask instead of guessing (spec._clarify). shadow records the would-be question on the spec.
-    clarify_mode: Literal["off", "shadow", "enforce"] = "off"
-    # M2.1: typed template planner (seleric_swarm.plan). shadow plans beside the legacy advisory plan.
-    # M1.1: v2 understand → spec stages (seleric_swarm.understand/spec). shadow runs them in the
-    # background beside the legacy path and records disagreements in trace["v2_shadow"].
-    understand_v2_mode: Literal["off", "shadow", "enforce"] = "enforce"
-    planner_v2_mode: Literal["off", "shadow", "enforce"] = "enforce"
-    answer_v2_mode: Literal["off", "shadow", "enforce"] = "enforce"
-    investigate_mode: Literal["off", "shadow", "enforce"] = "enforce"
-    graph_gcm_mode: Literal["off", "shadow", "enforce"] = "off"
-    # How long a finished mission waits for the v2 shadow before cancelling it (raise it for evals).
-    v2_shadow_timeout_s: float = 2.0
-    # V2_NO_FALLBACK=true: under enforce, a v2 miss fails with its reason instead of using the agent loop.
-    v2_no_fallback: bool = False
 
     workflow_version: str = "1.0.0"
 
@@ -378,7 +344,6 @@ class Settings(BaseSettings):
         "qdrant_url",
         "qdrant_collection",
         "qdrant_embedding_model",
-        "jev_base_url",
         "a2a_public_base_url",
         "api_host",
         "redis_url",
@@ -402,7 +367,6 @@ class Settings(BaseSettings):
         "langfuse_secret_key",
         "api_key",
         "seleric_mcp_token",
-        "jev_api_key",
         "qdrant_api_key",
     )
     @classmethod
@@ -437,7 +401,6 @@ class Settings(BaseSettings):
             "shutdown_timeout_s": self.shutdown_timeout_s,
             "clamav_timeout_s": self.clamav_timeout_s,
             "readiness_timeout_s": self.readiness_timeout_s,
-            "jev_timeout_s": self.jev_timeout_s,
         }
         invalid = [name for name, value in positive.items() if value <= 0]
         if invalid:
@@ -478,8 +441,6 @@ class Settings(BaseSettings):
             errors.append("Azure LLM endpoint, API key, and model must be configured")
         if self.persistence_backend != "postgres" or not self.database_url.strip():
             errors.append("PostgreSQL persistence and database_url are required")
-        if self.checkpoint_backend != "postgres":
-            errors.append("checkpoint_backend=postgres is required")
         if self.cancellation_backend != "redis" or not self.redis_url.strip():
             errors.append("Redis cancellation and redis_url are required")
         if self.resolved_event_notifier_backend() != "redis" or not self.redis_url.strip():

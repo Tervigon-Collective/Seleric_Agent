@@ -327,9 +327,7 @@ def is_percent_share_metric(metric_id: str, unit: str | None = None) -> bool:
         return True
     if u in {"ratio", "rate"} and _SHARE_HINT.search(mid):
         return True
-    if not u and _SHARE_HINT.search(mid):
-        return True
-    return False
+    return bool(not u and _SHARE_HINT.search(mid))
 
 
 def percent_points(value: float) -> float:

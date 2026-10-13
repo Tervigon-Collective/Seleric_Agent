@@ -88,8 +88,8 @@ def test_forecast_series_uses_path_final_step():
         period_start = None
 
     # Build fake evidence-like objects
+    from datetime import UTC, datetime
     from types import SimpleNamespace
-    from datetime import datetime, UTC
 
     evidence = [
         SimpleNamespace(value=v, period_start=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=i))

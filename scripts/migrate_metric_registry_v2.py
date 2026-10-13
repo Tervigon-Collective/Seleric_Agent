@@ -22,7 +22,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "config" / "metric_registry.yaml"
-REGISTRY_ON_V2 = re.compile(r"^# Semantic v2: catalogue_metric = catalogue_v2 ids", re.M)
+REGISTRY_ON_V2 = re.compile(r"^# Semantic v2: catalogue_metric = catalogue_v2 ids", re.MULTILINE)
 # v1 registry ids that never existed in the v1 catalogue (meta ad-attribution, pre-serve names):
 # their v2 meaning is Meta-attributed paid orders / revenue.
 LEGACY = {

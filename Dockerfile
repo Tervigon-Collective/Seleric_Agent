@@ -59,7 +59,7 @@ COPY --from=ui-builder /ui/dist ./office-ui/dist
 
 RUN mkdir -p /app/.data/attachments \
         /app/.data/domain_health_snapshots \
-        /app/.data/traces \
+        /app/.data/reports \
     && chown -R seleric:seleric /app/.data
 
 ENV PATH="/app/.venv/bin:$PATH" \
@@ -77,7 +77,6 @@ ENV PATH="/app/.venv/bin:$PATH" \
     MALWARE_SCANNER_BACKEND=clamav \
     LANGFUSE_TRACING=true \
     LANGSMITH_TRACING=false \
-    ALLOW_WRITE_ACTIONS=false \
     MCP_CONFIG_PATH=config/mcp_servers.yaml \
     METRIC_REGISTRY_PATH=config/metric_registry.yaml \
     PROMPT_VERSIONS_PATH=config/prompt_versions.yaml \

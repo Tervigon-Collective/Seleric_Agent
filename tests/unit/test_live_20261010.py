@@ -6,7 +6,6 @@ from __future__ import annotations
 import random
 from datetime import date, timedelta
 
-from seleric_swarm.agent.scope import ValueFilter, promote_verbatim_values, value_filters_from_resolution
 from seleric_swarm.toolsets import diagnosis
 
 _QUESTION = (
@@ -46,33 +45,12 @@ _RESOLUTION = {"status": "ok", "terms": [
 ]}
 
 
-def test_a_name_written_out_whole_is_an_exact_value_and_its_fragments_go():
-    promoted = promote_verbatim_values(_RESOLUTION, _QUESTION)
-    assert [t["term"] for t in promoted["terms"]] == ["th-383-suspender-26sep-adv+", "other", "campaign"]
-    assert value_filters_from_resolution(promoted)[0] == ValueFilter(
-        term="th-383-suspender-26sep-adv+",
-        dimensions=frozenset({"campaign_name", "acquisition_campaign"}),
-        values=("TH-383-SUSPENDER-26SEP-ADV+",),
-    )
-    # "Adv+" (zero rows) no longer becomes a filter
-    assert not any("Adv+" in vf.values for vf in value_filters_from_resolution(promoted))
 
 
-def test_a_shorter_name_inside_a_longer_one_is_not_a_second_value():
-    promoted = promote_verbatim_values(_RESOLUTION, _QUESTION)
-    values = [v for vf in value_filters_from_resolution(promoted) for v in vf.values]
-    assert "TH-383-SUSPENDER" not in values
 
 
-def test_a_name_not_written_out_whole_stays_a_hint():
-    question = "why did suspender 26sep campaigns drop"
-    assert promote_verbatim_values(_RESOLUTION, question) == _RESOLUTION
 
 
-def test_a_fragment_the_question_also_uses_on_its_own_is_kept():
-    question = "TH-383-SUSPENDER-26SEP-ADV+ against the other suspender ads"
-    terms = [t["term"] for t in promote_verbatim_values(_RESOLUTION, question)["terms"]]
-    assert "suspender" in terms and "26sep" not in terms
 
 
 def _sales_lineage() -> dict:
@@ -150,49 +128,14 @@ def _campaign_catalogue():
     )
 
 
-def _comparison_reading(**over):
-    from seleric_swarm.agent.plan import MetricSlot
-    from seleric_swarm.agent.understand import Understanding
-
-    base = dict(
-        shape="entity_comparison", entity_dimension="acquisition_campaign", rank_by=None,
-        metrics=[MetricSlot(words="ad spend", metric_id="ad_spend"), MetricSlot(words="CTR", metric_id="ctr"),
-                 MetricSlot(words="orders", metric_id="orders")],
-        breakdown_dimensions=[], breakdown_words="", kind="analysis", names_period=True, direction="decrease",
-    )
-    return Understanding(**{**base, **over})
 
 
-_NAMED = ValueFilter(term="th-383-suspender-26sep-adv+", dimensions=frozenset({"campaign_name", "acquisition_campaign"}),
-                     values=("TH-383-SUSPENDER-26SEP-ADV+",))
 
 
-def test_one_named_campaign_against_its_own_days_is_diagnosed_on_what_it_returned():
-    from seleric_swarm.agent.understand import diagnose_one_named_entity
-
-    out = diagnose_one_named_entity(_comparison_reading(), [_NAMED], _campaign_catalogue(), ["net_sales", "net_roas"])
-    assert out.shape == "why_single_metric"
-    # the outcome is the first headline ratio the campaign carries; the measures read are its levers
-    assert [s.metric_id for s in out.metrics] == ["net_roas", "ad_spend", "ctr", "orders"]
 
 
-def test_the_measure_entities_are_judged_by_is_the_outcome():
-    from seleric_swarm.agent.plan import MetricSlot
-    from seleric_swarm.agent.understand import diagnose_one_named_entity
-
-    reading = _comparison_reading(rank_by=MetricSlot(words="orders", metric_id="orders"))
-    out = diagnose_one_named_entity(reading, [_NAMED], _campaign_catalogue(), ["net_roas"])
-    assert [s.metric_id for s in out.metrics] == ["orders", "ad_spend", "ctr"] and out.rank_by is None
 
 
-def test_several_named_campaigns_stay_a_comparison():
-    from seleric_swarm.agent.understand import diagnose_one_named_entity
-
-    two = ValueFilter(term="a", dimensions=frozenset({"campaign_name"}), values=("A-1", "B-2"))
-    reading = _comparison_reading()
-    assert diagnose_one_named_entity(reading, [two], _campaign_catalogue(), ["net_roas"]) is reading
-    other = ValueFilter(term="meta", dimensions=frozenset({"ad_platform"}), values=("meta",))
-    assert diagnose_one_named_entity(reading, [other], _campaign_catalogue(), ["net_roas"]) is reading
 
 
 def test_a_lever_outside_its_own_usual_range_leads_the_drivers():
@@ -217,15 +160,6 @@ def test_a_lever_outside_its_own_usual_range_leads_the_drivers():
     assert figures["cpm | z vs its own normal days"] > 2 > abs(figures["clicks | z vs its own normal days"])
 
 
-def test_a_headline_ratio_the_reading_holds_is_the_outcome():
-    from seleric_swarm.agent.plan import MetricSlot
-    from seleric_swarm.agent.understand import diagnose_one_named_entity
-
-    reading = _comparison_reading(metrics=[MetricSlot(words="ad spend", metric_id="ad_spend"),
-                                           MetricSlot(words="net ROAS", metric_id="net_roas")])
-    cat = _campaign_catalogue()
-    out = diagnose_one_named_entity(reading, [_NAMED], cat, ["net_sales", "ctr", "net_roas"])
-    assert [s.metric_id for s in out.metrics] == ["net_roas", "ad_spend"]
 
 
 def test_the_outcome_is_placed_among_its_own_normal_days():

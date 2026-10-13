@@ -1,0 +1,68 @@
+[
+ {
+  "q": "Why did my sales drop yesterday?",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ },
+ {
+  "q": "yes",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ },
+ {
+  "q": "which day had the lowest sale this last week",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ },
+ {
+  "q": "2026-10-11, why did it had the lowest sale",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ },
+ {
+  "q": "you can get product level gross sales",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ },
+ {
+  "q": "Give me the total analysis till this month of October , full funnel analysis",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ },
+ {
+  "q": "check hypothesis",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ },
+ {
+  "q": "check Hypothesis: Likely causes include broader/lower-intent audiences, creative/landing mismatch, or UX friction under higher volume.",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ },
+ {
+  "q": "can you pin point which campaign gave the low intent traffic and which were actually profitables",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ },
+ {
+  "q": "run a focused campaign funnel drill for the top 10 campaigns (LPV \u2192 sessions \u2192 add_to_carts \u2192 orders \u2192 contribution_margin / ROAS) to confirm per-campaign conversion rates and isolate whether audience, creative or landing UX is driving low efficiency.",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ },
+ {
+  "q": "Return the same top-10 but with campaign-level net_sales (or product-level orders) to compute ROAS (net_sales/ad_spend) and per-campaign conversion rates LPV\u2192orders and sessions\u2192orders precisely \u2014 run this to confirm which campaigns to scale/back-off.",
+  "aspect": "replay11",
+  "session": "replay11",
+  "checks": []
+ }
+]

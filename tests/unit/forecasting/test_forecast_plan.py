@@ -7,8 +7,6 @@ from datetime import date
 import pytest
 
 from seleric_swarm.agent.forecast_plan import compile_forecast_plan, render_forecast_plan
-from seleric_swarm.agent.plan import MetricSlot
-from seleric_swarm.agent.understand import ForecastHorizonSlot, ForecastSlots, Understanding
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 
 
@@ -29,29 +27,10 @@ def _catalogue() -> CatalogueSnapshot:
     )
 
 
-def _u(**kw) -> Understanding:
-    base = {
-        "kind": "forecast",
-        "shape": "lookup",
-        "entity_dimension": "",
-        "rank_by": None,
-        "metrics": [MetricSlot(words="net sales", metric_id="net_sales")],
-        "breakdown_dimensions": [],
-        "breakdown_words": "",
-        "names_period": False,
-        "forecast": ForecastSlots(
-            targets=[MetricSlot(words="net sales", metric_id="net_sales")],
-            horizon=ForecastHorizonSlot(n=14, unit="day"),
-        ),
-    }
-    base.update(kw)
-    return Understanding.model_validate(base)
-
-
 @pytest.mark.asyncio
 async def test_compile_net_sales_validated():
     plan = await compile_forecast_plan(
-        _u(),
+        ["net_sales"],
         catalogue=_catalogue(),
         as_of=date(2026, 10, 9),
     )
@@ -67,14 +46,7 @@ async def test_compile_net_sales_validated():
 
 @pytest.mark.asyncio
 async def test_compile_derived_aov():
-    u = _u(
-        metrics=[MetricSlot(words="aov", metric_id="aov")],
-        forecast=ForecastSlots(
-            targets=[MetricSlot(words="aov", metric_id="aov")],
-            horizon=ForecastHorizonSlot(n=7),
-        ),
-    )
-    plan = await compile_forecast_plan(u, catalogue=_catalogue(), as_of=date(2026, 10, 9))
+    plan = await compile_forecast_plan(["aov"], catalogue=_catalogue(), as_of=date(2026, 10, 9), horizon_days=7)
     ids = {t.metric_id for t in plan.targets}
     assert "net_sales" in ids and "orders" in ids
     derived = [t for t in plan.targets if t.is_derived]
@@ -108,14 +80,7 @@ async def test_compile_derived_mer_and_conversion_rate():
         )
     )
     for mid in ("mer", "conversion_rate"):
-        u = _u(
-            metrics=[MetricSlot(words=mid, metric_id=mid)],
-            forecast=ForecastSlots(
-                targets=[MetricSlot(words=mid, metric_id=mid)],
-                horizon=ForecastHorizonSlot(n=7),
-            ),
-        )
-        plan = await compile_forecast_plan(u, catalogue=cat, as_of=date(2026, 10, 9))
+        plan = await compile_forecast_plan([mid], catalogue=cat, as_of=date(2026, 10, 9), horizon_days=7)
         derived = [t for t in plan.targets if t.is_derived and t.metric_id == mid]
         assert len(derived) == 1, mid
 
@@ -131,14 +96,7 @@ async def test_compile_provisional_unlisted_certified():
             ),
         )
     )
-    u = _u(
-        metrics=[MetricSlot(words="refunds", metric_id="refunds")],
-        forecast=ForecastSlots(
-            targets=[MetricSlot(words="refunds", metric_id="refunds")],
-            horizon=ForecastHorizonSlot(n=14),
-        ),
-    )
-    plan = await compile_forecast_plan(u, catalogue=cat, as_of=date(2026, 10, 9))
+    plan = await compile_forecast_plan(["refunds"], catalogue=cat, as_of=date(2026, 10, 9))
     active = [t for t in plan.targets if t.metric_id == "refunds"]
     assert len(active) == 1
     assert active[0].status == "provisional"
@@ -157,14 +115,9 @@ async def test_compile_refuses_uncertified_unlisted():
             ),
         )
     )
-    u = _u(
-        metrics=[MetricSlot(words="experimental", metric_id="experimental_score")],
-        forecast=ForecastSlots(
-            targets=[MetricSlot(words="experimental", metric_id="experimental_score")],
-            horizon=ForecastHorizonSlot(n=7),
-        ),
+    plan = await compile_forecast_plan(
+        ["experimental_score"], catalogue=cat, as_of=date(2026, 10, 9), horizon_days=7
     )
-    plan = await compile_forecast_plan(u, catalogue=cat, as_of=date(2026, 10, 9))
     active = [t for t in plan.targets if t.metric_id == "experimental_score"]
     assert len(active) == 1
     assert active[0].status == "refused"
@@ -183,14 +136,9 @@ async def test_compile_entity_horizon_clamp():
             ),
         )
     )
-    u = _u(
-        entity_dimension="lt_platform",
-        forecast=ForecastSlots(
-            targets=[MetricSlot(words="net sales", metric_id="net_sales")],
-            horizon=ForecastHorizonSlot(n=60, unit="day"),
-        ),
+    plan = await compile_forecast_plan(
+        ["net_sales"], catalogue=cat, as_of=date(2026, 10, 9), horizon_days=60, entity_dimension="lt_platform"
     )
-    plan = await compile_forecast_plan(u, catalogue=cat, as_of=date(2026, 10, 9))
     assert plan.entity_dimension == "lt_platform"
     assert plan.horizon.n_days == 30  # clamped by entity policy
     assert any("entity_horizon_clamped" in n for n in plan.notes)

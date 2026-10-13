@@ -1,0 +1,41 @@
+[
+ {
+  "q": "Why did my sales drop yesterday?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q1",
+  "reference": "q1"
+ },
+ {
+  "q": "Which Meta campaigns are wasting money?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q2"
+ },
+ {
+  "q": "Which products are profitable after returns and advertising costs?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q3"
+ },
+ {
+  "q": "Why is ROAS increasing while net profit is declining?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q4"
+ },
+ {
+  "q": "Compare last week's performance against this week and identify the likely causes.",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q5",
+  "session": "q56"
+ },
+ {
+  "q": "Break that down by product and channel.",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q6",
+  "session": "q56"
+ }
+]

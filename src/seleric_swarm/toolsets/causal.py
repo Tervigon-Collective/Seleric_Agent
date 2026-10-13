@@ -17,7 +17,7 @@ from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal.service import estimate_from_evidence
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
-from seleric_swarm.toolsets.analytics import _load_evidence as _load_evidence
+from seleric_swarm.toolsets.analytics import _load_evidence
 from seleric_swarm.toolsets.policy_config import (
     DEFAULT_CAUSAL_ESTIMATOR,
     MIN_HISTORY_DAYS,

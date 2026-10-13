@@ -42,7 +42,7 @@ from seleric_swarm.models.service import (
     model_registry_from_yaml,
 )
 from seleric_swarm.toolsets import policy_config as policy
-from seleric_swarm.toolsets.analytics import _load_evidence as _load_evidence
+from seleric_swarm.toolsets.analytics import _load_evidence
 
 _registry_cache: dict[str, object] = {}
 

@@ -98,7 +98,7 @@ def _parent_for_leaf(metric_id: str, definitions: dict[str, dict[str, Any]]) -> 
     ]
     if "net_sales" in parents:
         return "net_sales"
-    return sorted(parents)[0] if parents else None
+    return min(parents) if parents else None
 
 
 def _window(

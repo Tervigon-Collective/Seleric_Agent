@@ -24,10 +24,12 @@ Design constraints
   invisible when the call is scoped to ``paidmedia`` or ``commerce``.
 """
 from __future__ import annotations
+
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
 if TYPE_CHECKING:
     from seleric_swarm.protocols.mcp.gateway import MCPGateway
 log = logging.getLogger(__name__)
@@ -131,7 +133,7 @@ class CatalogueSnapshot:
             if not values or allowed is None:
                 return member
             lowered = {a.lower() for a in allowed}
-            if all((str(v).lower() in lowered for v in values)):
+            if all(str(v).lower() in lowered for v in values):
                 return member
         return None
 
@@ -169,10 +171,10 @@ class CatalogueSnapshot:
         return dimension in self.time_dimensions
 
     def metric_ids(self) -> frozenset[str]:
-        return frozenset((m.id for m in self.metrics))
+        return frozenset(m.id for m in self.metrics)
 
     def has_metric(self, metric_id: str) -> bool:
-        return any((m.id == metric_id for m in self.metrics))
+        return any(m.id == metric_id for m in self.metrics)
 
     def label_for(self, metric_id: str) -> str | None:
         """The catalogue display name of a metric (None when unknown or not carried)."""
@@ -310,7 +312,7 @@ class CatalogueSnapshot:
             lines.append(f'- {meta.id}: {label}{suffix}')
         if self.dimensions:
             keys = dict(self.stable_keys)
-            lines.append('Dimensions: ' + ', '.join((f'{d} (key: {keys[d]})' if d in keys else d for d in sorted(self.dimensions))))
+            lines.append('Dimensions: ' + ', '.join(f'{d} (key: {keys[d]})' if d in keys else d for d in sorted(self.dimensions)))
         return '\n'.join(lines)
 
 class CatalogueBootstrap:
@@ -405,7 +407,7 @@ class CatalogueBootstrap:
         """Explicit catalogue dimensions plus those listed on cached metrics."""
         ids = set(self._dimension_aliases)
         for meta in self._cache.values():
-            ids.update((d for d in meta.supported_dimensions or [] if d))
+            ids.update(d for d in meta.supported_dimensions or [] if d)
         return ids
 
     def alias_index(self) -> dict[str, str]:
@@ -473,7 +475,7 @@ class CatalogueBootstrap:
                 if dim.get('family'):
                     self._dimension_families[did] = (str(dim['family']), int(dim.get('family_rank') or 0))
                 if dim.get('allowed_values'):
-                    self._dimension_values[did] = tuple((str(v) for v in dim['allowed_values']))
+                    self._dimension_values[did] = tuple(str(v) for v in dim['allowed_values'])
         defaults = payload.get('grain_defaults') or {}
         self._grain_defaults = dict(defaults) if isinstance(defaults, dict) else {}
         return len(self._cache)
@@ -607,67 +609,3 @@ class CatalogueBootstrap:
             if meta.id == metric_id:
                 return meta.ratio_components
         return None
-
-    def ratio_component_members_for(self, metric_id: str) -> dict[str, list[str]] | None:
-        """Resolved ratio component members per view (Cube measure names) from the canonical contract.
-    Returns None for additive metrics or when not declared."""
-        for meta in self.metrics:
-            if meta.id == metric_id:
-                rcm = (meta.raw or {}).get('ratio_component_members')
-                return rcm if rcm else None
-        return None
-
-    def closest_metric_ids(self, query: str, n: int=5) -> list[str]:
-        """Best-effort id suggestions for a bad pick -- feeds ``ModelRetry``."""
-        import difflib
-        pool: set[str] = set()
-        for meta in self.metrics:
-            pool.add(meta.id)
-            for alias in meta.raw.get('aliases') or []:
-                if alias:
-                    pool.add(str(alias))
-        matches = difflib.get_close_matches(query, sorted(pool), n=n, cutoff=0.4)
-        alias_to_id = {str(a): meta.id for meta in self.metrics for a in meta.raw.get('aliases') or [] if a}
-        seen: list[str] = []
-        for match in matches:
-            resolved = alias_to_id.get(match, match)
-            if resolved in self.metric_ids() and resolved not in seen:
-                seen.append(resolved)
-        return seen
-
-    def render_compact(self) -> str:
-        """Ids and labels only, plus the dimension ids -- for a call that picks ids from
-    the catalogue but does not query (the planner's slot reader). About a third of
-    ``render``: no aliases, units or per-metric dimension lists."""
-        if not self.metrics:
-            return ''
-        lines = ['Metrics (id: label):']
-        lines += [f'- {m.id}: {m.label or m.id}' for m in sorted(self.metrics, key=lambda m: m.id)]
-        if self.dimensions:
-            lines.append('Dimensions: ' + ', '.join(sorted(self.dimensions)))
-        return '\n'.join(lines)
-
-    def render(self) -> str:
-        """Compact one-line-per-metric listing for the mission prompt."""
-        if not self.metrics:
-            return ''
-        lines = ["Full metric catalogue -- resolve the user's metric by matching this list and use the id exactly as written (Cube validates it):"]
-        for meta in sorted(self.metrics, key=lambda m: m.id):
-            raw = meta.raw or {}
-            bits: list[str] = []
-            unit = raw.get('unit')
-            if unit:
-                bits.append(f'unit={unit}')
-            aliases = [str(a) for a in raw.get('aliases') or [] if a]
-            if aliases:
-                bits.append(f'aliases={', '.join(aliases)}')
-            dims = [d for d in meta.supported_dimensions or [] if d]
-            if dims:
-                bits.append(f'dims={', '.join(dims)}')
-            suffix = f' ({'; '.join(bits)})' if bits else ''
-            label = meta.label or meta.id
-            lines.append(f'- {meta.id}: {label}{suffix}')
-        if self.dimensions:
-            keys = dict(self.stable_keys)
-            lines.append('Dimensions: ' + ', '.join((f'{d} (key: {keys[d]})' if d in keys else d for d in sorted(self.dimensions))))
-        return '\n'.join(lines)

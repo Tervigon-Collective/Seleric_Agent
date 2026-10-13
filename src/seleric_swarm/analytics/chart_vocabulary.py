@@ -26,6 +26,7 @@ ChartType = Literal[
     "scatter",
     "radar",
     "heatmap",
+    "causal_graph",
 ]
 
 #: Every form the spec builder can emit, in render order.
@@ -41,6 +42,7 @@ CHART_TYPES: tuple[ChartType, ...] = (
     "scatter",
     "radar",
     "heatmap",
+    "causal_graph",
 )
 
 SUPPORTED_CHART_TYPES: tuple[ChartType, ...] = CHART_TYPES
@@ -128,6 +130,13 @@ CHART_TYPE_ALIASES: dict[str, ChartType] = {
     "heatmap_chart": "heatmap",
     "density": "heatmap",
     "matrix": "heatmap",
+    # causal DAG from diagnosis / DoWhy-GCM
+    "dag": "causal_graph",
+    "gcm": "causal_graph",
+    "gcm_graph": "causal_graph",
+    "causal": "causal_graph",
+    "causal_dag": "causal_graph",
+    "dowhy_graph": "causal_graph",
 }
 
 _CHART_TYPE_METADATA: dict[str, dict[str, Any]] = {
@@ -206,6 +215,13 @@ _CHART_TYPE_METADATA: dict[str, dict[str, Any]] = {
         "family": "matrix",
         "description": "Magnitude at the intersection of two dimensions.",
         "axes": "category x, category y",
+        "stacking": "none",
+    },
+    "causal_graph": {
+        "label": "Causal graph",
+        "family": "graph",
+        "description": "Directed acyclic graph of treatments, confounders and the outcome from diagnosis.",
+        "axes": "nodes and directed edges",
         "stacking": "none",
     },
 }

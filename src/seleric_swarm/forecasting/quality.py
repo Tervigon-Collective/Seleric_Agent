@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import math
 import statistics
+from collections.abc import Iterable
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -69,7 +70,7 @@ def assess_series(
     out = list(values)
     verdicts: list[QualityVerdict] = []
     observed = _observed(out)
-    n_present = sum(1 for v in out if v is not None)
+    action: Literal["pass", "mask", "drop", "block", "warn", "refuse"]
 
     # Q_STALE
     if expected_last_day is not None and index:
@@ -209,7 +210,7 @@ def assess_series(
                         run_start = i
                 else:
                     if run_start is not None and i - run_start >= 2:
-                        dates = [index[j].isoformat() for j in range(run_start, i)]
+                        zero_dates = [index[j].isoformat() for j in range(run_start, i)]
                         for j in range(run_start, i):
                             out[j] = None
                         verdicts.append(
@@ -218,12 +219,12 @@ def assess_series(
                                 series=series,
                                 action="mask",
                                 detail=f"masked {i - run_start} consecutive zeros (p05={p05:.4g})",
-                                dates=dates,
+                                dates=zero_dates,
                             )
                         )
                     run_start = None
             if run_start is not None and len(out) - run_start >= 2:
-                dates = [index[j].isoformat() for j in range(run_start, len(out))]
+                zero_dates = [index[j].isoformat() for j in range(run_start, len(out))]
                 for j in range(run_start, len(out)):
                     out[j] = None
                 verdicts.append(
@@ -232,7 +233,7 @@ def assess_series(
                         series=series,
                         action="mask",
                         detail=f"masked {len(out) - run_start} trailing zeros",
-                        dates=dates,
+                        dates=zero_dates,
                     )
                 )
 
@@ -277,7 +278,7 @@ def assess_series(
         base = statistics.median(prior)
         if base > 0 and v < 0.5 * base:
             j = i
-            while j < len(out) and (out[j] is None or out[j] < 0.5 * base):
+            while j < len(out) and ((cur := out[j]) is None or cur < 0.5 * base):
                 j += 1
             after = [x for x in out[j : j + 14] if x is not None][:7]
             run_obs = sum(1 for x in out[i:j] if x is not None)
@@ -329,10 +330,10 @@ def assess_series(
     # Q_LEVEL_SHIFT — warn (simple mean split last 90 vs prior)
     if len(index) >= 120 and len(obs_now) >= 60:
         recent_cut = index[-1] - timedelta(days=90)
-        recent = [v for d, v in zip(index, out, strict=True) if d > recent_cut and v is not None]
-        prior = [v for d, v in zip(index, out, strict=True) if d <= recent_cut and v is not None]
-        if len(recent) >= 14 and len(prior) >= 30:
-            m_r, m_p = statistics.mean(recent), statistics.mean(prior)
+        recent_vals = [v for d, v in zip(index, out, strict=True) if d > recent_cut and v is not None]
+        prior_vals = [v for d, v in zip(index, out, strict=True) if d <= recent_cut and v is not None]
+        if len(recent_vals) >= 14 and len(prior_vals) >= 30:
+            m_r, m_p = statistics.mean(recent_vals), statistics.mean(prior_vals)
             if m_p != 0 and abs(m_r - m_p) / abs(m_p) > 0.5:
                 verdicts.append(
                     QualityVerdict(

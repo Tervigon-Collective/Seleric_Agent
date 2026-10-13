@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import calendar
 from datetime import date, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from seleric_swarm.forecasting.types import HorizonWindow
 from seleric_swarm.services.time_range import as_of_date
@@ -36,10 +36,9 @@ def resolve_horizon(
     n, unit, period_word, until = _parse_slots(slots, default_days=default_days)
 
     if until is not None:
-        start = anchor if until >= anchor else anchor
+        start = anchor
         end = until
-        if end < start:
-            end = start
+        end = max(end, start)
         n_days = (end - start).days + 1
     elif period_word == "rest_of_month":
         start = anchor
@@ -109,7 +108,7 @@ def _parse_slots(
     if period_word not in ("next_n", "rest_of_month", "next_month", "this_quarter"):
         period_word = "next_n"
     unit_raw = str(_get(horizon, "unit", "day") or "day")
-    unit: HorizonUnit = unit_raw if unit_raw in ("day", "week", "month") else "day"
+    unit: HorizonUnit = cast(HorizonUnit, unit_raw) if unit_raw in ("day", "week", "month") else "day"
     n = int(_get(horizon, "n", default_days) or default_days)
     until_iso = _get(horizon, "until_iso", None)
     until: date | None = None

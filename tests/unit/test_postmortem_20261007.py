@@ -24,8 +24,6 @@ from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.agent.model_health import HealthGatedChatModel, ModelHealth, PatientModel
 from seleric_swarm.agent.output import MissionResult
-from seleric_swarm.agent.validation import EvidenceValidator, run_validated_mission
-from seleric_swarm.agent.validation.answer_audit import replace_metric_ids, total_mismatch
 from seleric_swarm.conversations.contracts import (
     Artifact,
     ArtifactProvenance,
@@ -122,19 +120,8 @@ _DRAFT = (
 )
 
 
-def test_a_far_away_ratio_is_not_read_as_the_total_and_id_columns_are_not_summed() -> None:
-    assert total_mismatch(_DRAFT, frozenset({"campaign_id"})) is None
-    # A wrong total next to its word is still caught.
-    wrong = _DRAFT.replace("₹99,221.31 total", "₹99,999.00 total")
-    reason = total_mismatch(wrong, frozenset({"campaign_id"}))
-    assert reason is not None and "481,002" not in reason
 
 
-def test_metric_ids_are_written_as_their_display_names() -> None:
-    labels = {"total_sales": "Total sales", "gross_roas": "ROAS"}
-    text = "total_sales rose. Today the total_sales figure and gross_roas fell; my_total_sales_x stays."
-    out = replace_metric_ids(text, labels)
-    assert out == "Total sales rose. Today the total sales figure and ROAS fell; my_total_sales_x stays."
 
 
 # -- revision loop -------------------------------------------------------------------
@@ -151,63 +138,12 @@ def _final(text: str, status: str = "completed", evidence_ids: list[str] | None 
     )
 
 
-@pytest.mark.asyncio
-async def test_a_model_failure_during_a_revision_ships_the_best_draft() -> None:
-    store = InMemoryArtifactStore()
-    _evidence(store, "ad_spend", TODAY, TODAY, 100.0)
-    calls = 0
-
-    def model(_messages, _info) -> ModelResponse:
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return _final("Spend was 100.", evidence_ids=["artifact_missing"])
-        raise UnexpectedModelBehavior("Invalid response from openai chat completions endpoint")
-
-    agent = Agent(FunctionModel(model), deps_type=SelericDeps, output_type=MissionResult)
-    result = await run_validated_mission(agent, _deps(store, revisions=3), "q")
-    assert result.status == "partial"
-    assert result.final_response == "Spend was 100."
-    assert result.limitations[0] == "MODEL_UNAVAILABLE"
 
 
-@pytest.mark.asyncio
-async def test_a_model_failure_without_any_draft_still_fails_the_attempt() -> None:
-    def model(_messages, _info) -> ModelResponse:
-        raise UnexpectedModelBehavior("boom")
-
-    agent = Agent(FunctionModel(model), deps_type=SelericDeps, output_type=MissionResult)
-    with pytest.raises(UnexpectedModelBehavior):
-        await run_validated_mission(agent, _deps(), "q")
 
 
-@pytest.mark.asyncio
-async def test_a_leaked_metric_id_is_fixed_without_a_revision() -> None:
-    store = InMemoryArtifactStore()
-    aid = _evidence(store, "total_sales", TODAY, TODAY, 36014.0)
-    agent = Agent(
-        FunctionModel(lambda _m, _i: _final("Today total_sales is 36,014.", evidence_ids=[aid])),
-        deps_type=SelericDeps,
-        output_type=MissionResult,
-    )
-    result = await run_validated_mission(agent, _deps(store), "q")
-    assert result.final_response == "Today total sales is 36,014."
-    assert result.trace["validation"]["revisions_used"] == 0
 
 
-def test_a_partial_answer_that_offers_its_own_remaining_work_is_revised() -> None:
-    result = MissionResult(
-        mission_id="MS3-pm",
-        status="partial",
-        query="q",
-        as_of=TODAY,
-        final_response=(
-            "Spend was 100.\n\nWould you like me to (A) fetch the touchpoint drilldown now, or (B) "
-            "re-run the diagnosis after the day ends?"
-        ),
-    )
-    outcome = EvidenceValidator().validate(result, deps=_deps())
-    assert not outcome.ok and "offering to run the remaining work" in (outcome.reason or "")
 
 
 # -- like-for-like windows -----------------------------------------------------------
@@ -228,30 +164,10 @@ def _spend_answer(store, *, today_dims=None, base_dims=None) -> MissionResult:
     )
 
 
-def test_a_change_between_a_3_day_total_and_a_partial_day_is_rejected(at_noon) -> None:
-    store = InMemoryArtifactStore()
-    outcome = EvidenceValidator().validate(_spend_answer(store), deps=_deps(store))
-    assert not outcome.ok and outcome.self_contradicting
-    assert "not comparable" in (outcome.reason or "") and "elapsed_only" in (outcome.reason or "")
 
 
-def test_unequal_complete_windows_are_rejected_too(monkeypatch) -> None:
-    # The next day: every window is complete, only the lengths differ.
-    monkeypatch.setattr(elapsed, "now_in", lambda tz: datetime(2026, 10, 8, 9, 0, tzinfo=IST))
-    store = InMemoryArtifactStore()
-    outcome = EvidenceValidator().validate(_spend_answer(store), deps=_deps(store))
-    assert not outcome.ok and "3 days" in (outcome.reason or "")
-    assert "still in progress" not in (outcome.reason or "")
 
 
-def test_a_per_day_comparison_over_elapsed_hours_passes(at_noon) -> None:
-    store = InMemoryArtifactStore()
-    tag = {elapsed.ELAPSED_KEY: "12:00"}
-    result = _spend_answer(store, today_dims=tag, base_dims=tag)
-    # 197,401.81 over 3 days is 65,800.60 a day; 26,040.83 is 60.4% below it.
-    result = result.model_copy(update={"final_response": "Spend is 60% below the per-day average."})
-    outcome = EvidenceValidator().validate(result, deps=_deps(store))
-    assert outcome.reason is None or "not comparable" not in outcome.reason
 
 
 # -- query_metrics(elapsed_only=True) ------------------------------------------------
@@ -354,46 +270,10 @@ class _HourAwareMcp(_Mcp):
         return {"rows": rows, "provenance": {"query_id": "q1", "currency": "INR"}}
 
 
-def _comparing_today(deps: SelericDeps) -> SelericDeps:
-    import dataclasses
-
-    from seleric_swarm.agent.scope import RequiredScope, RequiredWindow
-
-    windows = (
-        RequiredWindow(TODAY.date().replace(day=4), TODAY.date().replace(day=6)),
-        RequiredWindow(TODAY.date(), TODAY.date()),
-    )
-    return dataclasses.replace(deps, required_scope=RequiredScope(windows=windows))
 
 
-@pytest.mark.asyncio
-async def test_a_reference_window_compared_with_today_also_gets_the_same_hours(at_noon) -> None:
-    deps = _comparing_today(_deps(mcp=_HourAwareMcp([])))
-    result = await semantic.query_metrics(
-        _Ctx(deps),
-        "ad_spend",
-        period_start=datetime(2026, 10, 4, tzinfo=IST),
-        period_end=datetime(2026, 10, 6, tzinfo=IST),
-    )
-    assert result.success
-    assert "ad_spend=720 over 2026-10-04..2026-10-06" in result.summary
-    assert "SAME HOURS AS TODAY" in result.summary and "per-day average 120.00 over 3 days" in result.summary
-    assert len(result.artifact_ids) == 2
 
 
-@pytest.mark.asyncio
-async def test_a_ranking_keeps_its_entities_and_gets_the_note_instead(at_noon) -> None:
-    deps = _comparing_today(_deps(mcp=_HourAwareMcp([])))
-    result = await semantic.query_metrics(
-        _Ctx(deps),
-        "ad_spend",
-        period_start=datetime(2026, 10, 4, tzinfo=IST),
-        period_end=datetime(2026, 10, 6, tzinfo=IST),
-        order="desc",
-        limit=5,
-    )
-    assert result.success and "SAME HOURS AS TODAY" not in result.summary
-    assert "query this window with elapsed_only=True as well" in result.summary
 
 
 @pytest.mark.asyncio
@@ -415,100 +295,17 @@ async def test_elapsed_only_names_what_a_finer_breakdown_leaves_out(at_noon) -> 
     assert "25 of the period's ad_spend has no ad_name value" in result.summary
 
 
-def test_a_derailed_limitation_is_sent_back() -> None:
-    result = MissionResult(
-        mission_id="MS3-pm",
-        status="completed",
-        query="q",
-        as_of=TODAY,
-        final_response="Spend was 100.",
-        limitations=["I'm going to redo properly. Apologies. (End) " * 40],
-    )
-    outcome = EvidenceValidator().validate(result, deps=_deps())
-    assert not outcome.ok and "limitations entry" in (outcome.reason or "")
 
 
-def test_a_comparison_question_carries_both_windows() -> None:
-    from seleric_swarm.agent import runner
-    from seleric_swarm.agent.scope import required_windows_from_resolved
-
-    window = runner._question_window("last 3 days vs today", "Asia/Kolkata", "2026-10-07")
-    assert [str(w) for w in required_windows_from_resolved(window)] == ["2026-10-04..2026-10-06", "2026-10-07"]
 
 
-def test_a_bare_value_from_a_data_mission_is_sent_back() -> None:
-    store = InMemoryArtifactStore()
-    aid = _evidence(store, "ad_spend", TODAY, TODAY, 4431.03)
-    result = MissionResult(
-        mission_id="MS3-pm", status="completed", query="q", as_of=TODAY, final_response="4431.03", evidence_ids=[aid]
-    )
-    outcome = EvidenceValidator().validate(result, deps=_deps(store))
-    assert not outcome.ok and "bare value" in (outcome.reason or "")
 
 
-def test_figures_without_any_citation_are_auto_cited_from_mission_store() -> None:
-    """Forgotten cites must not burn revisions when the mission already holds evidence.
-
-    Live 2026-10-07 (cbe854 run_e568): figures were correct but evidence_ids empty
-    → REVISE loop → INSUFFICIENT_EVIDENCE. Auto-cite fills ids from the store.
-    """
-    store = InMemoryArtifactStore()
-    aid = _evidence(store, "ad_spend", TODAY, TODAY, 4431.03)
-    result = MissionResult(
-        mission_id="MS3-pm",
-        status="completed",
-        query="q",
-        as_of=TODAY,
-        final_response="Ad spend today is INR 4,431.03 so far.",
-    )
-    outcome = EvidenceValidator().validate(result, deps=_deps(store))
-    assert outcome.ok or "cites no evidence_ids" not in (outcome.reason or "")
-    assert aid in result.evidence_ids
 
 
-def test_figures_without_citation_still_fail_when_store_has_no_evidence() -> None:
-    """Auto-cite only applies when mission evidence exists; otherwise keep the gate."""
-    store = InMemoryArtifactStore()
-    # finding alone still makes data_mission true via _WORK_ARTIFACT_TYPES, but
-    # auto-cite only fills artifact_type=evidence — so the gate must still fire
-    # when there are no evidence rows to attach.
-    store.put(
-        Artifact(
-            workspace_id="ws-1",
-            artifact_type="finding",
-            payload={"finding_type": "note", "statement": "x", "evidence_ids": ["raw:x"], "metrics": {}},
-            classification="derived",
-            evidence_ids=["raw:x"],
-            provenance=ArtifactProvenance(calculation_version="test"),
-            mission_id="MS3-pm",
-        )
-    )
-    result = MissionResult(
-        mission_id="MS3-pm",
-        status="completed",
-        query="q",
-        as_of=TODAY,
-        final_response="Ad spend today is INR 4,431.03 so far.",
-    )
-    outcome = EvidenceValidator().validate(result, deps=_deps(store))
-    assert not outcome.ok and "cites no evidence_ids" in (outcome.reason or "")
 
 
 # ---------------------------------------------------------------- 2026-10-07 night (golden set)
-def test_digits_inside_an_entity_name_are_not_a_stated_total():
-    from seleric_swarm.agent.validation.answer_audit import header_key, total_mismatch
-
-    answer = (
-        "Suspender ad sales total INR 11,896.34.\n\n"
-        "| Campaign | Ad name | Sales (INR) |\n| --- | --- | ---: |\n"
-        "| TH-383-SUSPENDER-29SEP | TH-383-SUSPENDER-UGC | 7,611.74 |\n"
-        "| TH-445-PROSUSPENDERBOOTS-6OCT | TH-445-PROSUSPENDERBOOTS-UGC | 4,284.60 |\n\n"
-        "The rows reconcile exactly to the total; TH-383-SUSPENDER-UGC provided ~64% of it."
-    )
-    labels = frozenset({header_key("Campaign"), header_key("Ad name")})
-    assert total_mismatch(answer, labels) is None
-    # A genuinely wrong total is still caught.
-    assert total_mismatch(answer.replace("11,896.34", "12,896.34"), labels) is not None
 
 
 def test_a_baseline_window_disjoint_from_the_named_period_is_not_pulled_back():
@@ -533,131 +330,11 @@ def test_a_baseline_window_disjoint_from_the_named_period_is_not_pulled_back():
     assert drift[1].date().isoformat() == "2026-10-06"
 
 
-def test_a_signed_bridge_and_a_two_row_change_are_the_tables_own_arithmetic():
-    """Live 2026-10-08 (Q15): "−18,586.67" read as unsigned, and the change between
-    the event-day and previous-day rows was called a wrong total."""
-    from seleric_swarm.agent.validation.answer_audit import total_mismatch
-
-    bridge = (
-        "Net profit fell by INR −18,585.67 in total.\n\n| Component | Change (INR) |\n| --- | ---: |\n"
-        "| Gross sales | −50,768.00 |\n| Discounts | +951.00 |\n| Returns | +4,023.33 |\n"
-        "| COGS | +16,745.00 |\n| Ad spend | +10,463.00 |\n"
-    )
-    assert total_mismatch(bridge) is None
-    assert total_mismatch(bridge.replace("−18,585.67", "−19,585.67")) is not None
-    rows = (
-        "The total change in net profit was INR −18,586.67.\n\n| Date | Net profit (INR) |\n| --- | ---: |\n"
-        "| 2026-10-02 | -11,641.95 |\n| 2026-10-01 | 6,944.72 |\n"
-    )
-    assert total_mismatch(rows) is None
-    assert total_mismatch(rows.replace("18,586.67", "19,586.67")) is not None
 
 
-def test_a_period_comparison_that_names_no_measure_is_not_planned():
-    """Golden Q6 (2026-10-08): an empty-metric plan made the agent ask which metrics."""
-    from datetime import date
-
-    from seleric_swarm.agent.plan import PlanSlots, compose_plan
-    from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
-
-    slots = PlanSlots(shape="period_comparison")
-    windows = [(date(2026, 10, 1), date(2026, 10, 7)), (date(2026, 9, 1), date(2026, 9, 7))]
-    plan, notes = compose_plan(
-        slots, metric_ids=[], rank_id=None, windows=windows, catalogue=CatalogueSnapshot(), as_of=None
-    )
-    assert plan is None and "no usable step" in notes
 
 
-def test_a_pipe_inside_a_cell_does_not_shift_the_columns():
-    """Golden Q16 (2026-10-08): "[Google Build] Brand Search | 5th March" split a row,
-    so a correct total was rejected twice."""
-    from seleric_swarm.agent.validation.answer_audit import table_cells, total_mismatch
-
-    assert table_cells(r"| Brand Search \| 5th March | -3,558.22 |") == ["Brand Search | 5th March", "-3,558.22"]
-    from seleric_swarm.agent.validation.answer_audit import realign_markdown_tables
-
-    shifted = (
-        "| Campaign | Ad spend (INR) | Net ROAS | Orders | Product gross sale (INR) |\n"
-        "| --- | ---: | ---: | ---: | ---: |\n"
-        "| [Google Build] PMax - Seasonal New | 27th May | 21,776.21 | 2.15 | 41 | 46,819.05 |\n"
-        "| TH-149-SCRATCHLOUNGE-6OCT | 8,145.42 | 1.46 | 9 | 19,694.94 |\n"
-    )
-    fixed = realign_markdown_tables(shifted)
-    assert r"[Google Build] PMax - Seasonal New \| 27th May" in fixed
-    assert table_cells(fixed.splitlines()[2]) == [
-        "[Google Build] PMax - Seasonal New | 27th May",
-        "21,776.21",
-        "2.15",
-        "41",
-        "46,819.05",
-    ]
-    assert realign_markdown_tables(fixed) == fixed
-    escaped = (
-        "The three campaigns lost INR -9,767.0 in total.\n\n| Campaign | Net profit |\n| --- | ---: |\n"
-        "| Brand Search \\| 5th March | -3,558.22 |\n| TH-383-SUSPENDER-26SEP-ADV+ | -3,122.10 |\n"
-        "| Demand Gen \\| Hero Products | -3,086.68 |\n"
-    )
-    assert total_mismatch(escaped, frozenset({"campaign"})) is None
-    assert total_mismatch(escaped.replace("9,767.0", "9,867.0"), frozenset({"campaign"})) is not None
 
 
-def test_a_rollup_of_fetched_rows_along_their_own_dimension_is_backed():
-    """Golden Q17 (2026-10-08): per-channel and total sums of rows fetched at
-    channel × sub-channel grain were rejected as unbacked until the mission failed."""
-    from datetime import UTC, datetime
-
-    from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
-    from seleric_swarm.agent.validation import _mission_values
-    from seleric_swarm.conversations.contracts import ContextBundle, Principal
-    from seleric_swarm.conversations.contracts import Artifact
-    from seleric_swarm.state.artifacts import InMemoryArtifactStore
-
-    store = InMemoryArtifactStore()
-    deps = SelericDeps(
-        mission_id="m1", as_of=datetime(2026, 10, 8, tzinfo=UTC),
-        principal=Principal(principal_id="p", workspace_id="w", user_id="u"),
-        thread_id="t", run_id="r", trace_id="tr", context=ContextBundle(), mcp_client=NullMcpClient(),
-        artifact_store=store, limits=ExecutionLimits(),
-    )
-    rows = [("meta", "ig_feed", 261300.64), ("meta", "fb_feed", 96145.28), ("google", "pmax", 169356.01)]
-    for channel, sub, value in rows:
-        store.put(Artifact(
-            workspace_id="w", artifact_type="evidence", classification="factual", mission_id="m1",
-            evidence_ids=[f"q:{channel}:{sub}"],
-            payload={"metric_id": "product_net_revenue", "dimensions": {"finance_channel": channel, "sub_channel": sub},
-                     "grain": "none", "period_start": "2026-08-09", "period_end": "2026-10-07", "value": value},
-        ))
-    values = _mission_values(deps)
-    assert any(abs(v - 357445.92) < 0.01 for v in values)  # Meta = its two rows
-    assert any(abs(v - 526801.93) < 0.01 for v in values)  # every row of the query
-    assert not any(abs(v - 430656.65) < 0.01 for v in values)  # ig_feed + pmax: no shared dimension value
 
 
-@pytest.mark.asyncio
-async def test_a_period_to_date_cuts_only_the_last_day_at_the_elapsed_hours(at_noon) -> None:
-    # Live 2026-10-08 golden Q6 "this month vs the same number of days last month": every reference day was cut
-    # at the current hour (Sep 1-8: 465,132 vs 696,778 of complete days). Like for like for a period to date is
-    # the complete days plus the last day through the elapsed hours.
-    import dataclasses
-
-    from seleric_swarm.agent.scope import RequiredScope, RequiredWindow
-
-    deps = dataclasses.replace(
-        _deps(mcp=_Mcp(_hour_rows())),
-        required_scope=RequiredScope(windows=(
-            RequiredWindow(TODAY.date().replace(day=5), TODAY.date()),
-            RequiredWindow(TODAY.date().replace(day=2), TODAY.date().replace(day=4)),
-        )),
-    )
-    result = await semantic.query_metrics(
-        _Ctx(deps),
-        "ad_spend",
-        period_start=datetime(2026, 10, 4, tzinfo=IST),
-        period_end=datetime(2026, 10, 6, tzinfo=IST),
-        elapsed_only=True,
-    )
-    assert result.success, result.summary
-    # Oct 4 and 5 complete (240 each) + Oct 6 through 12:00 (120).
-    assert "total=600.0" in result.summary
-    assert "counting every complete day and 2026-10-06 only 00:00-12:00" in result.summary
-    assert "period to date" in result.summary

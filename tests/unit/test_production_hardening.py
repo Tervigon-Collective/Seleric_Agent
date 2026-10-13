@@ -69,7 +69,6 @@ def test_production_requires_minio_scanner_and_external_provider() -> None:
         azure_openai_model="model",
         persistence_backend="postgres",
         database_url="postgresql+psycopg://database",
-        checkpoint_backend="postgres",
         cancellation_backend="redis",
         event_notifier_backend="redis",
         redis_url="redis://redis",
@@ -117,7 +116,6 @@ def test_readiness_degrades_when_database_probe_fails() -> None:
         blob_store=SimpleNamespace(root=Path("."), scanner=None),
         run_queue=SimpleNamespace(enqueue=lambda _run_id: None),
         mcp=SimpleNamespace(capabilities=set()),
-        action_execution=None,
     )
     payload = check_readiness(runtime, timeout_s=0.1)
     assert payload["ready"] is False
@@ -126,9 +124,8 @@ def test_readiness_degrades_when_database_probe_fails() -> None:
 
 def test_capabilities_reflect_effective_adapters() -> None:
     runtime = SimpleNamespace(
-        settings=Settings(_env_file=None, app_env="test", allow_write_actions=True),
+        settings=Settings(_env_file=None, app_env="test"),
         conversations=object(),
-        action_execution=SimpleNamespace(executors={}),
         run_queue=None,
     )
     readiness = {
@@ -140,9 +137,6 @@ def test_capabilities_reflect_effective_adapters() -> None:
     capabilities = effective_capabilities(runtime, readiness)
     assert capabilities["hybrid_search"] is True
     assert capabilities["vector_search"] is False
-    assert capabilities["action_execution"] is False
-    assert capabilities["write_actions"] is False
-    assert capabilities["scheduled_expiry"] is False
 
 
 def test_ci_and_container_configuration_are_hardened() -> None:

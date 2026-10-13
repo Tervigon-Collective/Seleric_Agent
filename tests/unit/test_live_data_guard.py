@@ -6,15 +6,10 @@ The guard is enforced in code (tool availability), not left to the prompt.
 
 from __future__ import annotations
 
-import contextlib
-import dataclasses
 from datetime import UTC, datetime
 
 import pytest
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from seleric_swarm.agent.agent import _STILL_AVAILABLE_WITHOUT_LIVE_DATA, build_seleric_agent
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
@@ -41,50 +36,8 @@ def _deps() -> SelericDeps:
     )
 
 
-@pytest.mark.asyncio
-async def test_data_tools_disappear_after_the_first_unavailable_fetch():
-    offered: list[set[str]] = []
-
-    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        offered.append({t.name for t in info.function_tools})
-        if len(offered) == 1:
-            return ModelResponse(
-                parts=[ToolCallPart("query_metrics", {"metric_id": "net_sales"})]
-            )
-        return ModelResponse(parts=[TextPart("done")])
-
-    agent = build_seleric_agent(model=FunctionModel(model))
-    deps = _deps()
-    # The plain-text reply is not a valid MissionResult, so the run itself may
-    # error; only the tools offered to the model are under test here.
-    with contextlib.suppress(Exception):
-        await agent.run("net sales yesterday", deps=deps)
-
-    assert len(offered) >= 2
-    assert "query_metrics" in offered[0]
-    assert deps.call_counts.get(semantic.LIVE_DATA_UNAVAILABLE) == 1
-    assert offered[1] == offered[1] & _STILL_AVAILABLE_WITHOUT_LIVE_DATA
-    assert "query_metrics" not in offered[1]
-    assert "find_metrics" in offered[1]
 
 
-@pytest.mark.asyncio
-async def test_a_conversational_mission_is_offered_no_tools_at_all():
-    """Live: "thanks!" made the agent look up and report a CAC figure."""
-    from seleric_swarm.agent.agent import CONVERSATIONAL
-
-    offered: list[set[str]] = []
-
-    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        offered.append({t.name for t in info.function_tools})
-        return ModelResponse(parts=[TextPart("You're welcome!")])
-
-    deps = _deps()
-    deps.call_counts[CONVERSATIONAL] = 1
-    with contextlib.suppress(Exception):
-        await build_seleric_agent(model=FunctionModel(model)).run("thanks!", deps=deps)
-
-    assert offered and offered[0] == set()
 
 
 @pytest.mark.asyncio
@@ -113,33 +66,6 @@ class _RowsMcp:
         return {"rows": [{"net_sales": "1000"}], "provenance": {}}
 
 
-@pytest.mark.asyncio
-async def test_query_metrics_is_withdrawn_after_the_duplicate_hard_stop():
-    """Live 2026-09-25: a model repeating an identical query_metrics call hit the
-    ModelRetry hard stop until pydantic_ai's retry limit killed the mission. The
-    general repeat guard replays the result and withdraws the tool instead."""
-    from seleric_swarm.agent.limits import withdrawn_tools
-
-    offered: list[set[str]] = []
-    call = {"metric_id": "net_sales", "dimensions": {}}
-
-    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        tools = {t.name for t in info.function_tools}
-        offered.append(tools)
-        if "query_metrics" in tools:
-            return ModelResponse(parts=[ToolCallPart("query_metrics", call)])
-        return ModelResponse(parts=[TextPart("done")])
-
-    agent = build_seleric_agent(model=FunctionModel(model))
-    mcp = _RowsMcp()
-    deps = dataclasses.replace(_deps(), mcp_client=mcp)
-    with contextlib.suppress(Exception):
-        await agent.run("net sales yesterday", deps=deps)
-
-    assert "query_metrics" in withdrawn_tools(deps)
-    # fetch, replay, replay+withdraw — then the tool is gone instead of a 4th call.
-    assert [("query_metrics" in t) for t in offered[:4]] == [True, True, True, False]
-    assert mcp.calls == 1
 
 
 class _UnknownBrandMcp:
@@ -151,27 +77,3 @@ class _UnknownBrandMcp:
         return {"kind": "unknown", "term": arguments.get("text"), "suggestions": []}
 
 
-@pytest.mark.asyncio
-async def test_any_tool_repeated_with_identical_arguments_is_replayed_then_withdrawn():
-    """Live 2026-09-25 "pawtech sales last week": catalogue_resolve_brand was
-    called ~30x with the same argument. The guard is generic — no per-tool code."""
-    from seleric_swarm.agent.limits import withdrawn_tools
-
-    offered: list[set[str]] = []
-
-    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        tools = {t.name for t in info.function_tools}
-        offered.append(tools)
-        if "resolve_brand" in tools and len(offered) < 10:
-            return ModelResponse(parts=[ToolCallPart("resolve_brand", {"name": "pawtech"})])
-        return ModelResponse(parts=[TextPart("done")])
-
-    agent = build_seleric_agent(model=FunctionModel(model))
-    mcp = _UnknownBrandMcp()
-    deps = dataclasses.replace(_deps(), mcp_client=mcp)
-    with contextlib.suppress(Exception):
-        await agent.run("pawtech sales", deps=deps)
-
-    assert mcp.calls == 1  # executed once, replayed after
-    assert "resolve_brand" in withdrawn_tools(deps)
-    assert [("resolve_brand" in t) for t in offered[:4]] == [True, True, True, False]

@@ -188,11 +188,11 @@ class ForecastPolicies(BaseModel):
             # P0 only auto-admits targets listed in the file.
             return "refused", ["T_POLICY_MISSING"]
         status = policy.eligibility.status
-        reasons: list[str] = []
+        policy_reasons: list[str] = []
         if entity and entity not in policy.entities and policy.entities:
-            reasons.append("T_ENTITY_UNSUPPORTED")
-            return "refused", reasons
-        return status, reasons
+            policy_reasons.append("T_ENTITY_UNSUPPORTED")
+            return "refused", policy_reasons
+        return status, policy_reasons
 
     def target(self, metric_id: str) -> TargetPolicy | None:
         return self.targets.get(metric_id)
@@ -235,10 +235,9 @@ def assert_catalogue_ids(policies: ForecastPolicies, metric_ids: set[str]) -> li
             unknown.append(mid)
     for spec in policies.derived.values():
         for mid in (spec.numerator, spec.denominator):
+            # derived components may exist only in the catalogue
             if mid not in metric_ids and mid not in policies.targets:
-                # derived components may exist only in the catalogue
-                if mid not in metric_ids:
-                    unknown.append(mid)
+                unknown.append(mid)
     for mid in policies.blocked_features:
         if mid not in metric_ids:
             unknown.append(mid)

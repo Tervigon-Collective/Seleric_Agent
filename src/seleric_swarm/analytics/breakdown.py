@@ -84,7 +84,7 @@ def shares(
     if not measured:
         return None
 
-    children_sum = sum(float(s.value) for s in measured)  # type: ignore[arg-type]
+    children_sum = sum(float(s.value) for s in measured if s.value is not None)
     total = independent_total if independent_total is not None else children_sum
 
     reconciled: bool | None = None
@@ -143,7 +143,7 @@ def contributions(
     if not paired:
         return [], 0.0
 
-    total_delta = sum(float(a.value) - float(b.value) for a, b in paired)  # type: ignore[arg-type]
+    total_delta = sum(float(a.value) - float(b.value) for a, b in paired if a.value is not None and b.value is not None)
 
     out: list[Contribution] = []
     for a, b in paired:

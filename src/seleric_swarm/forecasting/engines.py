@@ -105,7 +105,7 @@ class ChronosEngine:
         past_cov = {k: list(frame.past_covariates[k])[lo:ctx_len] for k in past_names}
         future_cov = {
             k: {
-                "past": list((frame.future_covariates[k].get("past") or []))[lo:ctx_len],
+                "past": list(frame.future_covariates[k].get("past") or [])[lo:ctx_len],
                 "future": list(frame.future_covariates[k].get("future") or []),
             }
             for k in known_names
@@ -422,13 +422,17 @@ def _steps_to_days(
     days: list[DailyPoint] = []
     for i, step in enumerate(steps):
         ts = step.get("timestamp") or (horizon_start + timedelta(days=i)).isoformat()
-        mean = float(step.get("mean") if step.get("mean") is not None else step.get("p50") or 0.0)
-        p10 = float(step.get("p10") if step.get("p10") is not None else mean)
-        p50 = float(step.get("p50") if step.get("p50") is not None else mean)
-        p90 = float(step.get("p90") if step.get("p90") is not None else mean)
+        mean_raw = step.get("mean")
+        mean = float(mean_raw if mean_raw is not None else step.get("p50") or 0.0)
+
+        def _q(key: str, default: float, step: dict[str, Any] = step) -> float:
+            raw = step.get(key)
+            return float(raw) if raw is not None else default
+
+        p10, p50, p90 = _q("p10", mean), _q("p50", mean), _q("p90", mean)
         # map arbitrary quantile keys if present
         for q in quantiles:
-            key = f"p{int(round(q * 100))}"
+            key = f"p{round(q * 100)}"
             if key in step and key == "p10":
                 p10 = float(step[key])
             elif key in step and key == "p50":

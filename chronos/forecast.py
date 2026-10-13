@@ -127,7 +127,7 @@ def _extract_quantiles(row: pd.Series, q_levels: list[float]) -> dict[str, float
     """Map Chronos predict_df quantile columns to p10/p50/p90-style keys."""
     quantiles: dict[str, float] = {}
     for q in q_levels:
-        key_candidates = (q, str(q), f"{q:.1f}", f"{q:.2f}", f"q{q}", f"p{int(round(q * 100))}")
+        key_candidates = (q, str(q), f"{q:.1f}", f"{q:.2f}", f"q{q}", f"p{round(q * 100)}")
         value = None
         for key in key_candidates:
             if key in row.index:
@@ -140,7 +140,7 @@ def _extract_quantiles(row: pd.Series, q_levels: list[float]) -> dict[str, float
                     break
         if value is None:
             raise KeyError(f"missing quantile {q} in prediction columns: {list(row.index)}")
-        quantiles[f"p{int(round(q * 100))}"] = value
+        quantiles[f"p{round(q * 100)}"] = value
     return quantiles
 
 
@@ -399,7 +399,7 @@ def predict_v2(
                         "mean": mean_val,
                         **quantiles,
                     }
-                    vals = [point[f"p{int(round(q*100))}"] for q in q_levels]
+                    vals = [point[f"p{round(q*100)}"] for q in q_levels]
                     if vals != sorted(vals):
                         raise ValueError(
                             f"quantile ordering violated for {task.task_id}/{tname_s}: {vals}"
@@ -419,7 +419,7 @@ def predict_v2(
                     "mean": mean_val,
                     **quantiles,
                 }
-                vals = [point[f"p{int(round(q*100))}"] for q in q_levels]
+                vals = [point[f"p{round(q*100)}"] for q in q_levels]
                 if vals != sorted(vals):
                     raise ValueError(f"quantile ordering violated for {task.task_id}/{tname_s}: {vals}")
                 by_target[tname_s].append(point)

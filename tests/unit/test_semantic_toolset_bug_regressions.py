@@ -312,6 +312,7 @@ async def test_drilldown_routes_to_a_supporting_metric_instead_of_a_doomed_drill
     on the metric's view — route to a metric whose view supports it, before any
     query, naming the redirect."""
     from dataclasses import replace
+
     from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 
     mcp = FakeMcpClient({"seleric.metrics_query": {"query_id": "q1", "rows": [{"refund_count": "5"}]}})
@@ -775,6 +776,7 @@ async def test_order_grain_metric_by_product_redirects_to_its_grain_twin():
     alphabetical metrics and the model answered with net revenue / the brand total. The catalogue's
     grain_twins name the product-grain metric; it is the one offered."""
     from pydantic_ai import ModelRetry
+
     from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 
     prod_dims = ["product_title", "sku", "order_date"]

@@ -29,7 +29,6 @@ from seleric_swarm.conversations.contracts import (
     ThreadSummary,
 )
 from seleric_swarm.conversations.phase7 import (
-    InMemoryApprovalRepository,
     InMemorySearchRepository,
     QueryEmbeddingHook,
 )
@@ -1160,7 +1159,6 @@ def build_in_memory_repositories(
             memories,
             query_embedder=query_embedder,
         ),
-        approvals=InMemoryApprovalRepository(),
         feedback=InMemoryFeedbackRepository(),
         unit_of_work=unit_of_work,
     )

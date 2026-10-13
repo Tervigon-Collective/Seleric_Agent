@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from seleric_swarm.config.settings import Settings
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import SeriesPoint
+from seleric_swarm.exploration.space import default_brand_id
 from seleric_swarm.paths import repo_root
 from seleric_swarm.services.business_state.detectors import robust_zscore
 from seleric_swarm.services.business_state.features import compute_features
@@ -34,7 +35,6 @@ from seleric_swarm.services.domain_health.models import DomainStateSnapshot, Res
 from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles
 from seleric_swarm.services.domain_health.scheduler import ALL_DOMAINS, build_headline_snapshot
 from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
-from seleric_swarm.exploration.space import default_brand_id
 
 
 def _parse_days(window: str | None, default: int) -> int:
@@ -74,7 +74,7 @@ async def _fetch_all_series(
     for mid, task in tasks.items():
         try:
             points, prov = await task
-        except Exception as exc:  # noqa: BLE001 - one bad metric must not sink the backfill
+        except Exception as exc:
             print(f"  ! {mid}: fetch failed ({type(exc).__name__}: {str(exc)[:80]})")
             continue
         if prov.get("error"):

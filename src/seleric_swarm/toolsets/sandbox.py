@@ -273,6 +273,10 @@ async def run_python(
     workdir = _workdir(ctx.deps.mission_id)
     before = {p.name for p in workdir.iterdir()} if workdir.exists() else set()
     evidence_dicts = [e.model_dump(mode="json") for e in evidence]
+    for row, evidence_id in zip(evidence_dicts, evidence_ids, strict=False):  # which query a row came from, for filtering
+        artifact = ctx.deps.artifact_store.get(evidence_id)
+        if (query_id := getattr(getattr(artifact, "provenance", None), "query_version", None)):
+            row["query_id"] = query_id
 
     os_facade = _WorkdirOs(str(workdir))
     safe_builtins = dict(_SAFE_BUILTINS)
@@ -284,6 +288,7 @@ async def run_python(
         "os": os_facade,
     }
     _bind_namespace_builtins(sandbox_globals, safe_builtins)
+    defined_names = sorted(k for k in sandbox_globals if not k.startswith("__"))
 
     holder: dict[str, Any] = {}
     stdout = io.StringIO()
@@ -310,9 +315,14 @@ async def run_python(
 
     if "error" in holder:
         err = holder["error"]
+        sample = ", ".join(sorted(evidence_dicts[0])) if evidence_dicts else ""
         return _fix_the_script(
             f"sandbox code raised {type(err).__name__}: {err}. "
-            f"Fix the script and retry.\n{holder.get('tb', '')[-800:]}"
+            f"Fix the script and retry.\n{holder.get('tb', '')[-800:]}\n"
+            f"The only data available is `evidence`: a list of {len(evidence_dicts)} row dicts"
+            + (f" with keys {sample}" if sample else "")
+            + " (there is no variable per query id; filter on row['query_id']). Set `result`; no `return`. "
+            f"Defined names: {', '.join(defined_names)}."
         )
 
     result = holder.get("result")

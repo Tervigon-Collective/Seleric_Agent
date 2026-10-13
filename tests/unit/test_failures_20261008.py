@@ -94,16 +94,6 @@ async def test_scoring_tools_score_a_findings_measurements_never_the_finding() -
     assert sorted(e.value for e in ev) == [1.0, 2.0]
 
 
-def test_a_breakdowns_row_count_is_a_fetched_fact() -> None:
-    """MS3-8c381f3641: "all 173 products" was rejected as a total against the revenue column."""
-    from seleric_swarm.agent.validation import _mission_values
-
-    store = InMemoryArtifactStore()
-    for i in range(5):
-        _row(store, f"p{i}", 10.0 + i)
-    values = _mission_values(_deps(store))
-    assert 5.0 in values
-    assert 60.0 in values  # the column total is still there
 
 
 def _catalogue() -> CatalogueSnapshot:

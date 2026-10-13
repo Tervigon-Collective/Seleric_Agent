@@ -251,7 +251,7 @@ async def _fetch_many(
                     dimensions=dimensions,
                     filters=filters,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 _log.warning("forecast_fetch_failed metric=%s err=%s", mid, exc)
                 return mid, {}, {**query, "error": type(exc).__name__}
         day_values: dict[str, float] = {}

@@ -88,7 +88,7 @@ def _partition(
             unplaceable.append(r)
         elif ratio is False:
             counts.append(r)
-        elif 0.0 <= float(r.value) <= 1.0:
+        elif r.value is not None and 0.0 <= float(r.value) <= 1.0:
             steps.append((float(r.value), r))
         else:
             unplaceable.append(r)

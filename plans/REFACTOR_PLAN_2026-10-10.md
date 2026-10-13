@@ -1,3 +1,5 @@
+> **Superseded by [SLIM_LOOP_PLAN.md](SLIM_LOOP_PLAN.md) (2026-10-13).** Kept for history only; do not build from this plan.
+
 # Seleric_Agent — modular refactor plan
 
 **Agents: read [`plans/AGENT_CHAT.md`](AGENT_CHAT.md) before every session.** Post findings and talk there. Update the status board in this file when a module starts, blocks, or lands. Do not commit unless explicitly told. When a commit is requested, it goes on `gaurav`.

@@ -20,8 +20,6 @@ from pydantic_ai import ModelRetry
 from test_semantic_toolset_bug_regressions import FakeRunContext, _deps
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
-from seleric_swarm.agent.scope import RequiredScope, ValueFilter
-from seleric_swarm.agent.validation.signals import check_scope_coverage
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 from seleric_swarm.toolsets import semantic
 
@@ -185,22 +183,6 @@ def test_carries_follows_siblings_and_twins():
     assert not SNAP.carries("sessions", "product_title")  # nothing carries it
 
 
-def test_scope_coverage_accepts_a_conformed_sibling():
-    from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
-
-    ev = EvidenceArtifact(metric_id="net_profit", dimensions={"finance_channel": "meta"}, grain="none",
-                          as_of=SEP["period_end"], period_start=SEP["period_start"], period_end=SEP["period_end"],
-                          value=1.0, source_query={"measure": "net_profit"})
-    art = Artifact(workspace_id="ws-1", artifact_type="evidence", payload=ev.model_dump(mode="json"),
-                   classification="factual", evidence_ids=["raw:1"], provenance=ArtifactProvenance(query_version="q"),
-                   mission_id="m1")
-    scope = RequiredScope(breakdowns=frozenset({frozenset({"platform"})}),
-                          value_filters=(ValueFilter("meta", frozenset({"platform"}), ("meta",)),))
-    # the answer grouped by finance_channel — the conformed sibling of the asked platform — covers both
-    assert check_scope_coverage([art], scope, catalogue=SNAP, cited=[art.id]).status == "OK"
-    # without the family (an older snapshot) the same evidence would not cover it
-    bare = replace(SNAP, dimension_families=())
-    assert check_scope_coverage([art], scope, catalogue=bare, cited=[art.id]).status != "OK"
 
 
 @pytest.mark.asyncio
@@ -219,17 +201,6 @@ async def test_a_value_gap_is_never_answered_by_a_grain_twin():
     assert not mcp.calls
 
 
-@pytest.mark.asyncio
-async def test_two_measures_collapsing_onto_one_id_are_reported():
-    from seleric_swarm.agent.plan import MetricSlot, _resolve_metrics
-
-    async def resolver(words: list[str]) -> dict[str, str | None]:
-        return {w: "orders" for w in words}
-
-    ids, notes = await _resolve_metrics(
-        [MetricSlot(words="purchases", metric_id=""), MetricSlot(words="checkouts", metric_id="")], resolver, SNAP)
-    assert ids == ["orders"]
-    assert any("'checkouts' resolved to orders, like an earlier measure" in n for n in notes)
 
 
 def _spend_sub_channel_snap() -> CatalogueSnapshot:

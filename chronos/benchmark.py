@@ -12,7 +12,6 @@ from typing import Any
 
 import httpx
 import psutil
-
 from forecast import get_load_meta, get_pipeline, make_synthetic_series, predict_series
 
 BASE_URL = os.getenv("CHRONOS_BASE_URL", "http://127.0.0.1:8112")
@@ -71,7 +70,7 @@ def wait_ready(base_url: str, timeout_s: float = 600.0) -> dict[str, Any]:
             if resp.status_code == 200:
                 return resp.json()
             last_err = resp.text
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             last_err = str(exc)
         time.sleep(2)
     raise TimeoutError(f"/ready not ready within {timeout_s}s: {last_err}")

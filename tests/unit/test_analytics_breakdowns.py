@@ -26,16 +26,16 @@ from seleric_swarm.analytics.funnel import (
     transitions,
     unplaceable_steps,
 )
-from seleric_swarm.services.catalogue_bootstrap import (
-    CatalogueMetricMeta,
-    CatalogueSnapshot,
-)
 from seleric_swarm.conversations.contracts import (
     Artifact,
     ArtifactProvenance,
     ContextBundle,
     Principal,
     PrincipalAuthMethod,
+)
+from seleric_swarm.services.catalogue_bootstrap import (
+    CatalogueMetricMeta,
+    CatalogueSnapshot,
 )
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import analytics

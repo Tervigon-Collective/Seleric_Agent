@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.responses import PlainTextResponse
@@ -118,7 +120,7 @@ def test_mcp_probe_uses_a_cheap_call_not_the_rate_limited_listing():
     calls: list[str] = []
 
     class _Mcp:
-        capabilities = {"seleric.modules_list", "seleric.catalogue_list_metrics"}
+        capabilities: ClassVar[set[str]] = {"seleric.modules_list", "seleric.catalogue_list_metrics"}
 
         async def call(self, *, agent_id, capability, arguments):
             calls.append(capability)

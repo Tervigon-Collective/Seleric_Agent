@@ -19,7 +19,6 @@ import logging
 import statistics
 import time
 from dataclasses import dataclass, field
-from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -39,7 +38,7 @@ SECOND_ROUND = 3
 _TASKS_PER_REQUEST = 8
 _CONCURRENCY = 2
 _CACHE_TTL_S = 6 * 3600
-_CACHE: dict[tuple, tuple[float, "BakeoffResult"]] = {}
+_CACHE: dict[tuple, tuple[float, BakeoffResult]] = {}
 
 
 @dataclass

@@ -159,16 +159,6 @@ class MemoryStatus(StrEnum):
     PENDING_CONSENT = "PENDING_CONSENT"
 
 
-class ApprovalStatus(StrEnum):
-    REQUESTED = "REQUESTED"
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
-    EXPIRED = "EXPIRED"
-    CANCELLED = "CANCELLED"
-    EXECUTED = "EXECUTED"
-    ROLLED_BACK = "ROLLED_BACK"
-
-
 class Thread(ContractModel):
     id: str = Field(default_factory=lambda: _id("thread"))
     workspace_id: str
@@ -686,38 +676,3 @@ class SearchResult(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class ApprovalRequest(ContractModel):
-    id: str = Field(default_factory=lambda: _id("approval"))
-    workspace_id: str
-    owner_user_id: str
-    run_id: str | None = None
-    action_type: str
-    action_preview: dict[str, Any]
-    required_role: str
-    status: ApprovalStatus = ApprovalStatus.REQUESTED
-    idempotency_key: str
-    dry_run: bool = True
-    checkpoint_resume_token: str | None = None
-    expires_at: datetime | None = None
-    created_at: datetime = Field(default_factory=_utc_now)
-    updated_at: datetime = Field(default_factory=_utc_now)
-
-
-class ApprovalDecisionEvent(ContractModel):
-    id: str = Field(default_factory=lambda: _id("approval_event"))
-    approval_id: str
-    from_status: ApprovalStatus | None = None
-    to_status: ApprovalStatus
-    actor_principal_id: str
-    reason: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=_utc_now)
-
-
-class RollbackRecord(ContractModel):
-    id: str = Field(default_factory=lambda: _id("rollback"))
-    approval_id: str
-    actor_principal_id: str
-    action: dict[str, Any] = Field(default_factory=dict)
-    outcome: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=_utc_now)

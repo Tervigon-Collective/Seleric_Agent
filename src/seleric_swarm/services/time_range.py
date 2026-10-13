@@ -275,7 +275,7 @@ def _explicit_ranges(text: str, anchor: date | None = None) -> TimeRangeV1 | Non
         other = (rest.start, rest.end) if rest is not None and rest.start and rest.end else None
         if other is not None and other != (a0.isoformat(), a1.isoformat()):
             return TimeRangeV1(kind="comparison", start=a0.isoformat(), end=a1.isoformat(), start_b=other[0],
-                               end_b=other[1], relative_token=f"custom vs {(rest.relative_token or 'custom')}")
+                               end_b=other[1], relative_token=f"custom vs {(rest.relative_token if rest else None) or 'custom'}")
         return TimeRangeV1(kind="absolute", start=a0.isoformat(), end=a1.isoformat(), relative_token="custom")
     return None
 
@@ -396,8 +396,8 @@ def _single_window(text: str, anchor: date) -> TimeRangeV1 | None:
         (a_start, a_end), (b_start, b_end) = bare[0], bare[1]
         return TimeRangeV1(kind="comparison", start=a_start, end=a_end, start_b=b_start, end_b=b_end)
     if len(bare) == 1:
-        start, end = bare[0]
-        return TimeRangeV1(kind="absolute", start=start, end=end)
+        only_start, only_end = bare[0]
+        return TimeRangeV1(kind="absolute", start=only_start, end=only_end)
 
     dates = _ISO_DAY.findall(text)
     if len(dates) >= 2:
@@ -461,8 +461,8 @@ def _single_window(text: str, anchor: date) -> TimeRangeV1 | None:
     # mission and September (this month) in another (live L1 vs L7).
     if re.search(r"\blast\s+month\b", lower):
         prev = _sub_months(anchor, 1)
-        start, end = _month_range(prev.year, prev.month)
-        return TimeRangeV1(kind="absolute", start=start, end=end, relative_token="last_month")
+        m_start, m_end = _month_range(prev.year, prev.month)
+        return TimeRangeV1(kind="absolute", start=m_start, end=m_end, relative_token="last_month")
     if re.search(r"\blast\s+week\b", lower):
         this_monday = anchor - timedelta(days=anchor.weekday())
         start = this_monday - timedelta(weeks=1)
@@ -547,13 +547,13 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
             )
         if token == "last_month":
             prev = _sub_months(anchor, 1)
-            start, end = _month_range(prev.year, prev.month)
-            return TimeRangeV1(kind="absolute", start=start, end=end, relative_token=token)
+            m_start, m_end = _month_range(prev.year, prev.month)
+            return TimeRangeV1(kind="absolute", start=m_start, end=m_end, relative_token=token)
         if token == "last_week":
             this_monday = anchor - timedelta(days=anchor.weekday())
-            start = this_monday - timedelta(weeks=1)
-            end = this_monday - timedelta(days=1)
-            return TimeRangeV1(kind="absolute", start=start.isoformat(), end=end.isoformat(), relative_token=token)
+            wk_start = this_monday - timedelta(weeks=1)
+            wk_end = this_monday - timedelta(days=1)
+            return TimeRangeV1(kind="absolute", start=wk_start.isoformat(), end=wk_end.isoformat(), relative_token=token)
         if token == "last_year":
             y = anchor.year - 1
             return TimeRangeV1(kind="absolute", start=date(y, 1, 1).isoformat(), end=date(y, 12, 31).isoformat(), relative_token=token)

@@ -36,8 +36,9 @@ import importlib
 import json
 import logging
 import time
+from collections.abc import Coroutine
 from dataclasses import dataclass
-from typing import Any, Coroutine
+from typing import Any
 
 from seleric_swarm.config.settings import Settings, get_settings
 
@@ -268,7 +269,7 @@ class LatencyLog:
         self._ttft: dict[str, float] = {}
 
     def on_metrics(self, event: Any) -> None:
-        metrics = getattr(event, "metrics", None)
+        metrics: Any = getattr(event, "metrics", None)
         kind = getattr(metrics, "type", "")
         speech_id = getattr(metrics, "speech_id", None)
         if not speech_id:
@@ -291,7 +292,7 @@ class LatencyLog:
             )
 
 
-def build_voice_agent(runner: "VoiceTurnRunner") -> Any:
+def build_voice_agent(runner: VoiceTurnRunner) -> Any:
     """The conversational agent: chats directly, delegates data questions to Seleric."""
 
     from livekit.agents import Agent
@@ -363,7 +364,7 @@ def _normalize_for_speech(text: str) -> str:
     import re
 
     # "Period: <range> · Currency: <ccy> · Data as of <date>." -> one aside.
-    def _footer(m: "re.Match[str]") -> str:
+    def _footer(m: re.Match[str]) -> str:
         date = m.group("date")
         date_m = re.match(r"(\d{4})-(\d{2})-(\d{2})", date)
         spoken = _spoken_date(*date_m.groups()) if date_m else date.strip()
@@ -376,7 +377,7 @@ def _normalize_for_speech(text: str) -> str:
     )
 
     # "2026-09-01..2026-09-28" -> "September first to September twenty-eighth"
-    def _date_range(m: "re.Match[str]") -> str:
+    def _date_range(m: re.Match[str]) -> str:
         y1, mo1, d1, y2, mo2, d2 = m.groups()
         return f"{_spoken_date(y1, mo1, d1)} to {_spoken_date(y2, mo2, d2)}"
 
@@ -403,7 +404,7 @@ def _normalize_for_speech(text: str) -> str:
         "thousand": 1_000, "k": 1_000,
     }
 
-    def _rupees(m: "re.Match[str]") -> str:
+    def _rupees(m: re.Match[str]) -> str:
         sign = m.group("sign")
         try:
             amount = float(m.group("num").replace(",", ""))

@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.responses import Response, StreamingResponse
 
-from seleric_swarm.config.settings import helper_chat_model
 from seleric_swarm.agent.runner import run_v3_mission
 from seleric_swarm.api.async_missions import (
     cancel_running_mission,
@@ -29,6 +28,7 @@ from seleric_swarm.api.ready import check_readiness
 from seleric_swarm.api.request_id import RequestIdMiddleware
 from seleric_swarm.api.security import ApiSecurityMiddleware
 from seleric_swarm.bootstrap import build_runtime
+from seleric_swarm.config.settings import helper_chat_model
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.observability.tracing import (
     configure_opentelemetry,
@@ -103,7 +103,7 @@ async def _business_state_refresh_loop(runtime: Any) -> None:
         try:
             snapshots = await run_once(resolver, store)
             log.info("business_state_refreshed domains=%d", len(snapshots))
-        except Exception:  # noqa: BLE001 - a refresh failure must never kill the loop
+        except Exception:
             log.warning("business_state_refresh_failed", exc_info=True)
         await asyncio.sleep(interval)
 
@@ -113,10 +113,6 @@ async def lifespan(_app: FastAPI):
     global _runtime
     if _runtime is None:
         _runtime = build_runtime()
-    checkpoint_provider = getattr(_runtime, "checkpoint_provider", None)
-    checkpoint_setup = getattr(checkpoint_provider, "setup", None)
-    if checkpoint_setup is not None:
-        await checkpoint_setup()
     asyncio.create_task(_warmup_catalogue(_runtime))
     asyncio.create_task(_business_state_refresh_loop(_runtime))
     try:
@@ -128,7 +124,6 @@ async def lifespan(_app: FastAPI):
             notifier = getattr(activity_events, "notifier", None)
             shutdown = asyncio.gather(
                 _close_component(getattr(rt, "run_queue", None)),
-                _close_component(getattr(rt, "checkpoint_provider", None)),
                 _close_component(notifier),
                 _close_component(rt.mcp, "aclose"),
                 return_exceptions=True,
@@ -176,10 +171,9 @@ except Exception:
 # but an import failure while voice is switched ON is fatal, not a warning that
 # would leave a silent 404 in production.
 try:
-    from seleric_swarm.voice.token import router as _voice_router
-
     # Registers GET /v1/voice/dev on the same router (dev surfaces only).
     from seleric_swarm.voice import dev_page as _voice_dev_page  # noqa: F401
+    from seleric_swarm.voice.token import router as _voice_router
 
     app.include_router(_voice_router)
 except Exception:
@@ -765,9 +759,15 @@ def get_mission_trace(mission_id: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="mission not found")
     require_mission_access(request, raw if isinstance(raw, dict) else {}, runtime)
 
-    trace = (raw or {}).get("trace") if isinstance(raw, dict) else None
-    if not isinstance(trace, dict):
-        trace = result.trace.model_dump() if result is not None else {}
+    # raw.trace used to be a request/session stub that hid stats/steps/grounding
+    # sitting on result.trace — merge so the richer side wins key-by-key.
+    raw_trace = (raw or {}).get("trace") if isinstance(raw, dict) else None
+    result_trace = result.trace.model_dump() if result is not None and result.trace is not None else {}
+    if not isinstance(raw_trace, dict):
+        raw_trace = {}
+    if not isinstance(result_trace, dict):
+        result_trace = {}
+    trace = {**raw_trace, **{k: v for k, v in result_trace.items() if v is not None}}
 
     list_events = getattr(store, "list_events", None)
     if list_events is None:
@@ -778,11 +778,24 @@ def get_mission_trace(mission_id: str, request: Request) -> dict[str, Any]:
         events = list_events(mission_id, family=None, after_seq=0, limit=1000)
 
     status = (raw or {}).get("status") if isinstance(raw, dict) else (result.status if result else None)
+    # Inspector Causal tab: diagnosis DAGs live on chart_spec artifacts, not in chat.
+    causal_graphs: list[dict[str, Any]] = []
+    if isinstance(raw, dict):
+        for chart in raw.get("charts") or []:
+            if not isinstance(chart, dict):
+                continue
+            data = chart.get("data") if isinstance(chart.get("data"), dict) else chart
+            if not isinstance(data, dict):
+                continue
+            ctype = str(chart.get("chart_type") or data.get("chart_type") or "")
+            if ctype in {"causal_graph", "dag", "gcm", "gcm_graph", "causal_dag", "dowhy_graph"}:
+                causal_graphs.append(data)
     return {
         "mission_id": mission_id,
         "status": status,
         "trace": trace,
         "events": events,
+        "causal_graphs": causal_graphs,
     }
 
 

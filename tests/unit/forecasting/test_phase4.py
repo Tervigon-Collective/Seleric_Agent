@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from seleric_swarm.evals.golden_dataset import load_golden_dataset
 from seleric_swarm.forecasting.__main__ import explain_forecast
 from seleric_swarm.forecasting.derive import horizon_totals
 from seleric_swarm.forecasting.policies import clear_policy_cache, load_forecast_policies
@@ -43,16 +42,3 @@ def test_explain_backtest_report():
     assert "chronos-2" in explained["backtest_summary"]
 
 
-def test_forecast_golden_questions_present():
-    cases = {c.id: c for c in load_golden_dataset()}
-    expected = {
-        "forecast-net-sales-14d",
-        "forecast-orders-by-platform",
-        "forecast-aov-next-week",
-        "forecast-sparse-sku",
-        "forecast-refunds",
-    }
-    assert expected <= set(cases)
-    assert cases["forecast-aov-next-week"].expected["derived"] is True
-    assert cases["forecast-sparse-sku"].expected["refusal"] == "Q_SPARSE_ENTITY"
-    assert cases["forecast-refunds"].expected["reason"] == "T_PROVISIONAL"

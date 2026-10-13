@@ -65,14 +65,6 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
-      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-enforce}
-      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-enforce}
-      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-enforce}
-      CLARIFY_MODE: ${CLARIFY_MODE:-off}
-      V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
-      GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
-      V2_NO_FALLBACK: ${V2_NO_FALLBACK:-false}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -85,7 +77,6 @@ services:
       # In-network URL only. Do not reuse host DATABASE_URL from .env (that
       # points at 127.0.0.1:POSTGRES_PUBLISH_PORT for local tools/API).
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
-      CHECKPOINT_BACKEND: ${CHECKPOINT_BACKEND:-postgres}
       CANCELLATION_BACKEND: ${CANCELLATION_BACKEND:-redis}
       EVENT_NOTIFIER_BACKEND: ${EVENT_NOTIFIER_BACKEND:-redis}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -108,18 +99,13 @@ services:
       LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}
       LANGFUSE_PROJECT_ID: ${LANGFUSE_PROJECT_ID:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
-      ALLOW_WRITE_ACTIONS: "false"
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
       AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
       AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
-      AZURE_OPENAI_FAST_MODEL: ${AZURE_OPENAI_FAST_MODEL:-}
-      AZURE_OPENAI_PLANNER_MODEL: ${AZURE_OPENAI_PLANNER_MODEL:-}
-      AZURE_OPENAI_PLANNER_REASONING_EFFORT: ${AZURE_OPENAI_PLANNER_REASONING_EFFORT:-}
       AZURE_OPENAI_HELPER_MODEL: ${AZURE_OPENAI_HELPER_MODEL:-}
-      AZURE_OPENAI_STRONG_REASONING_EFFORT: ${AZURE_OPENAI_STRONG_REASONING_EFFORT:-}
       QDRANT_URL: ${QDRANT_ENDPOINT:-}
       QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       QDRANT_EMBEDDING_MODEL: ${QDRANT_EMBEDDING_MODEL:-text-embedding-3-small}
@@ -135,9 +121,6 @@ services:
       LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
-      JEV_BASE_URL: ${JEV_BASE_URL:-}
-      JEV_API_KEY: ${JEV_API_KEY:-}
-      JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}
       AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-240}
       MISSION_TIMEOUT_S: ${MISSION_TIMEOUT_S:-420}
       BUSINESS_STATE_REFRESH_ENABLED: "0"
@@ -164,9 +147,6 @@ services:
     # doing?" always fell through to the agent loop).
     volumes:
       - domain_health:/app/.data/domain_health_snapshots
-      # Stage input/output records (scripts/replay_mission.py); the writable layer loses them
-      # on every recreate, so a reported mission could not be replayed.
-      - stage_traces:/app/.data/traces
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/readyz"]
       interval: 15s
@@ -192,14 +172,6 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
-      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-enforce}
-      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-enforce}
-      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-enforce}
-      CLARIFY_MODE: ${CLARIFY_MODE:-off}
-      V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
-      GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
-      V2_NO_FALLBACK: ${V2_NO_FALLBACK:-false}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -210,7 +182,6 @@ services:
       # In-network URL only. Do not reuse host DATABASE_URL from .env (that
       # points at 127.0.0.1:POSTGRES_PUBLISH_PORT for local tools/API).
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
-      CHECKPOINT_BACKEND: ${CHECKPOINT_BACKEND:-postgres}
       CANCELLATION_BACKEND: ${CANCELLATION_BACKEND:-redis}
       EVENT_NOTIFIER_BACKEND: ${EVENT_NOTIFIER_BACKEND:-redis}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -235,18 +206,13 @@ services:
       LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}
       LANGFUSE_PROJECT_ID: ${LANGFUSE_PROJECT_ID:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
-      ALLOW_WRITE_ACTIONS: "false"
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
       AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
       AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
-      AZURE_OPENAI_FAST_MODEL: ${AZURE_OPENAI_FAST_MODEL:-}
-      AZURE_OPENAI_PLANNER_MODEL: ${AZURE_OPENAI_PLANNER_MODEL:-}
-      AZURE_OPENAI_PLANNER_REASONING_EFFORT: ${AZURE_OPENAI_PLANNER_REASONING_EFFORT:-}
       AZURE_OPENAI_HELPER_MODEL: ${AZURE_OPENAI_HELPER_MODEL:-}
-      AZURE_OPENAI_STRONG_REASONING_EFFORT: ${AZURE_OPENAI_STRONG_REASONING_EFFORT:-}
       QDRANT_URL: ${QDRANT_ENDPOINT:-}
       QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       QDRANT_EMBEDDING_MODEL: ${QDRANT_EMBEDDING_MODEL:-text-embedding-3-small}
@@ -256,9 +222,6 @@ services:
       CHRONOS_BASE_URL: ${CHRONOS_BASE_URL:-http://seleric_agent-chronos-1:8112}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
-      JEV_BASE_URL: ${JEV_BASE_URL:-}
-      JEV_API_KEY: ${JEV_API_KEY:-}
-      JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}
       AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-240}
       MISSION_TIMEOUT_S: ${MISSION_TIMEOUT_S:-420}
       BUSINESS_STATE_REFRESH_ENABLED: "0"
@@ -273,7 +236,6 @@ services:
     # snapshots the api container's refresh loop writes (see api volumes).
     volumes:
       - domain_health:/app/.data/domain_health_snapshots
-      - stage_traces:/app/.data/traces
     depends_on:
       api:
         condition: service_healthy
@@ -292,14 +254,6 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
-      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-enforce}
-      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-enforce}
-      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-enforce}
-      CLARIFY_MODE: ${CLARIFY_MODE:-off}
-      V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
-      GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
-      V2_NO_FALLBACK: ${V2_NO_FALLBACK:-false}
       # /app is root-owned and the container runs as uid 10001, so the default
       # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
       # /app/var and every snapshot save raised PermissionError. Point writer and
@@ -326,9 +280,6 @@ services:
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
       AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
-      AZURE_OPENAI_FAST_MODEL: ${AZURE_OPENAI_FAST_MODEL:-}
-      AZURE_OPENAI_PLANNER_MODEL: ${AZURE_OPENAI_PLANNER_MODEL:-}
-      AZURE_OPENAI_PLANNER_REASONING_EFFORT: ${AZURE_OPENAI_PLANNER_REASONING_EFFORT:-}
       AZURE_OPENAI_HELPER_MODEL: ${AZURE_OPENAI_HELPER_MODEL:-}
       VOICE_NARRATION_ENABLED: ${VOICE_NARRATION_ENABLED:-true}
       VOICE_MISSION_TIMEOUT_S: ${VOICE_MISSION_TIMEOUT_S:-600}
@@ -357,15 +308,8 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # Refactor v2 flags (off|shadow|enforce). Shadow writes trace["v2_shadow"]; answers unchanged.
-      UNDERSTAND_V2_MODE: ${UNDERSTAND_V2_MODE:-enforce}
-      PLANNER_V2_MODE: ${PLANNER_V2_MODE:-enforce}
-      ANSWER_V2_MODE: ${ANSWER_V2_MODE:-enforce}
-      CLARIFY_MODE: ${CLARIFY_MODE:-off}
-      V2_SHADOW_TIMEOUT_S: ${V2_SHADOW_TIMEOUT_S:-2}
-      GRAPH_GCM_MODE: ${GRAPH_GCM_MODE:-off}
-      V2_NO_FALLBACK: ${V2_NO_FALLBACK:-false}
       SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
+      SELERIC_REPORTS_DIR: /app/.data/reports
       LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
       PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
@@ -376,9 +320,6 @@ services:
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
       AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
-      AZURE_OPENAI_FAST_MODEL: ${AZURE_OPENAI_FAST_MODEL:-}
-      AZURE_OPENAI_PLANNER_MODEL: ${AZURE_OPENAI_PLANNER_MODEL:-}
-      AZURE_OPENAI_PLANNER_REASONING_EFFORT: ${AZURE_OPENAI_PLANNER_REASONING_EFFORT:-}
       AZURE_OPENAI_HELPER_MODEL: ${AZURE_OPENAI_HELPER_MODEL:-}
       SELERIC_MCP_URL: ${COMPOSE_SELERIC_MCP_URL:-${SELERIC_MCP_URL:-}}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
@@ -398,6 +339,7 @@ services:
       - seleric-mcp_default
     volumes:
       - domain_health:/app/.data/domain_health_snapshots
+      - forecast_reports:/app/.data/reports
     depends_on:
       api:
         condition: service_healthy
@@ -407,7 +349,7 @@ volumes:
   seleric_postgres:
   seleric_minio:
   domain_health:
-  stage_traces:
+  forecast_reports:
 
 networks:
   default:

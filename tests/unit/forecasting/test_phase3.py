@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
+from typing import ClassVar
 
 import pytest
 
 from seleric_swarm.agent.forecast_plan import compile_forecast_plan
-from seleric_swarm.agent.plan import MetricSlot
-from seleric_swarm.agent.understand import ForecastHorizonSlot, ForecastSlots, Understanding
 from seleric_swarm.forecasting.policies import load_forecast_policies
 from seleric_swarm.forecasting.scope import brand_filters, principal_brand_id
 from seleric_swarm.forecasting.score import is_due, score_payload
@@ -36,43 +35,6 @@ def test_catalogue_entity_not_in_block_refused():
     assert "T_ENTITY_UNSUPPORTED" in reasons
 
 
-@pytest.mark.asyncio
-async def test_compile_uses_catalogue_forecast_block():
-    cat = CatalogueSnapshot(
-        metrics=(
-            CatalogueMetricMeta(
-                id="refunds",
-                label="Refunds",
-                raw={
-                    "status": "certified",
-                    "forecast": {"status": "validated", "maturity_days": 7, "nonnegative": True},
-                },
-            ),
-        )
-    )
-    plan = await compile_forecast_plan(
-        Understanding.model_validate(
-            {
-                "kind": "forecast",
-                "shape": "lookup",
-                "entity_dimension": "",
-                "rank_by": None,
-                "metrics": [MetricSlot(words="refunds", metric_id="refunds")],
-                "breakdown_dimensions": [],
-                "breakdown_words": "",
-                "names_period": False,
-                "forecast": ForecastSlots(
-                    targets=[MetricSlot(words="refunds", metric_id="refunds")],
-                    horizon=ForecastHorizonSlot(n=7),
-                ),
-            }
-        ),
-        catalogue=cat,
-        as_of=date(2026, 10, 10),
-    )
-    target = next(t for t in plan.targets if t.metric_id == "refunds")
-    assert target.status == "validated"
-    assert "T_CATALOGUE" in target.reason_codes
 
 
 def test_brand_filters_pin_workspace_brand():
@@ -89,7 +51,7 @@ def test_brand_filters_pin_workspace_brand():
 
 def test_principal_brand_from_workspace_config():
     class _Ctx:
-        workspace_config = {"brand_id": "42"}
+        workspace_config: ClassVar[dict[str, str]] = {"brand_id": "42"}
 
     class _Deps:
         context = _Ctx()
@@ -117,8 +79,30 @@ def test_score_payload_pairs_mature_days():
 
 def test_score_job_is_due(tmp_path):
     stamp = tmp_path / ".last"
-    now = datetime(2026, 10, 10, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 10, tzinfo=UTC)
     assert is_due(stamp, now=now)
     stamp.write_text(now.isoformat(), encoding="utf-8")
     assert not is_due(stamp, now=now + timedelta(hours=1))
     assert is_due(stamp, now=now + timedelta(hours=25))
+
+
+@pytest.mark.asyncio
+async def test_compile_uses_catalogue_forecast_block():
+    cat = CatalogueSnapshot(
+        metrics=(
+            CatalogueMetricMeta(
+                id="refunds",
+                label="Refunds",
+                raw={
+                    "status": "certified",
+                    "forecast": {"status": "validated", "maturity_days": 7, "nonnegative": True},
+                },
+            ),
+        )
+    )
+    plan = await compile_forecast_plan(
+        ["refunds"], catalogue=cat, as_of=date(2026, 10, 10), horizon_days=7
+    )
+    target = next(t for t in plan.targets if t.metric_id == "refunds")
+    assert target.status == "validated"
+    assert "T_CATALOGUE" in target.reason_codes

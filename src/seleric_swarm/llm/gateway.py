@@ -77,7 +77,7 @@ class LLMGateway:
                 if not exc.retryable:
                     raise
                 continue
-            except Exception as exc:  # noqa: BLE001 - unexpected adapter error
+            except Exception:
                 # Non-LLMError must still close the probe: leaving _probing=True
                 # here wedges the breaker (no success/failure ever recorded).
                 self._breakers[spec.id].record_failure()

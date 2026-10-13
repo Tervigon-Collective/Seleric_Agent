@@ -7,7 +7,6 @@ from sqlalchemy import create_engine
 
 from seleric_swarm.api.v3_state import configure_v3_persistence, configure_v3_postgres
 from seleric_swarm.cancellation import build_cancellation_backend
-from seleric_swarm.checkpointing import build_checkpoint_provider
 from seleric_swarm.config.settings import Settings, get_settings
 from seleric_swarm.conversations.blobs import (
     BlobStore,
@@ -16,13 +15,12 @@ from seleric_swarm.conversations.blobs import (
     MinioBlobStore,
 )
 from seleric_swarm.conversations.events import ActivityEventSink, build_event_notifier
-from seleric_swarm.conversations.phase7 import ActionExecutionService, build_query_embedder
+from seleric_swarm.conversations.phase7 import build_query_embedder
 from seleric_swarm.conversations.postgres import build_conversation_repositories
 from seleric_swarm.llm.factory import build_llm
 from seleric_swarm.llm.metering import MeteredLLMPort
 from seleric_swarm.observability.tracing import (
     configure_langfuse_env,
-    configure_langsmith_env,
     configure_logging,
     configure_opentelemetry,
 )
@@ -155,12 +153,8 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
                 redis_url=settings.redis_url,
             ),
         ),
-        checkpoint_provider=build_checkpoint_provider(
-            settings.checkpoint_backend, settings.database_url
-        ),
         cancellation=build_cancellation_backend(settings.cancellation_backend, settings.redis_url),
         blob_store=blob_store,
-        action_execution=ActionExecutionService(conversations.approvals, {}),
     )
     # BusinessStateService holds a runtime reference (needs mcp/metrics at call
     # time, not construction time) -- built after so the two aren't circular.

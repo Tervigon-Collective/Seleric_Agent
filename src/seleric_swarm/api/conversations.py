@@ -736,7 +736,8 @@ async def enhance_query(body: EnhanceQueryRequest, request: Request) -> EnhanceQ
     if not original:
         raise HTTPException(status_code=422, detail="query is required")
 
-    from seleric_swarm.services.query_enhance import QueryEnhanceError, enhance_query as _enhance
+    from seleric_swarm.services.query_enhance import QueryEnhanceError
+    from seleric_swarm.services.query_enhance import enhance_query as _enhance
 
     request_id = getattr(getattr(request, "state", None), "request_id", None)
     try:
@@ -1213,7 +1214,7 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
     the Chart widget already exposes the same rows on its Table tab, so keeping
     both rendered the series twice (live 2026-10-08 stacked-bar thread).
     """
-    from seleric_swarm.agent.validation.answer_audit import strip_markdown_tables
+    from seleric_swarm.agent.answer_text import strip_markdown_tables
 
     text = final_response
     raw_charts = raw.get("charts")
@@ -1278,6 +1279,9 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
                 continue
             artifact_id = chart.get("artifact_id")
             chart_type = str(chart.get("chart_type") or "").strip()
+            # Causal DAGs from diagnosis belong in the inspector sidebar, not the transcript.
+            if chart_type in {"causal_graph", "dag", "gcm", "gcm_graph", "causal_dag", "dowhy_graph"}:
+                continue
             if not chart_type:
                 _log.warning(
                     "CHART part without chart_type for artifact %r; rendering as bar", artifact_id
@@ -1615,6 +1619,22 @@ async def _execute_submission(
             )
         )
         evidence = raw.get("evidence")
+        # Debug console (test_agent parity): ship loop stats/grounding/steps on
+        # the terminal answer event so the UI does not need a second round-trip.
+        raw_trace_value = raw.get("trace")
+        raw_trace: dict[str, Any] = raw_trace_value if isinstance(raw_trace_value, dict) else {}
+        causal_graphs = [
+            chart for chart in (raw.get("charts") or [])
+            if isinstance(chart, dict)
+            and str(chart.get("chart_type") or (chart.get("data") or {}).get("chart_type") or "")
+            in {"causal_graph", "dag", "gcm", "gcm_graph", "causal_dag", "dowhy_graph"}
+        ] if isinstance(raw.get("charts"), list) else []
+        # chart rows are {chart_type, artifact_id, data}; data is the full spec.
+        causal_payloads = []
+        for chart in causal_graphs:
+            data = chart.get("data") if isinstance(chart.get("data"), dict) else chart
+            if isinstance(data, dict) and (data.get("nodes") or data.get("links")):
+                causal_payloads.append(data)
         sink.emit(
             running,
             "answer.completed",
@@ -1627,6 +1647,10 @@ async def _execute_submission(
                 "status": str(mission_status or final_status.value).lower(),
                 "final_response": final_response,
                 "evidence": evidence if isinstance(evidence, list) else [],
+                "stats": raw_trace.get("stats") if isinstance(raw_trace.get("stats"), dict) else None,
+                "grounding": raw_trace.get("grounding") if isinstance(raw_trace.get("grounding"), dict) else None,
+                "steps": raw_trace.get("steps") if isinstance(raw_trace.get("steps"), list) else None,
+                "causal_graphs": causal_payloads or None,
             },
         )
         summary_thread = repositories.threads.get(run.thread_id)

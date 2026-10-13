@@ -7,7 +7,7 @@ dependencies = [
   "dowhy>=0.14",
   "fastapi>=0.115",
   "httpx>=0.28",
-  "langgraph>=1.2",
+  "jsonschema>=4.23",
   "minio>=7.2.20",
   "numpy>=2.0",
   "openai>=1.60",
@@ -24,7 +24,6 @@ dependencies = [
   "structlog>=25.0",
   "tenacity>=9.0",
   "uvicorn[standard]>=0.34",
-  "langgraph-checkpoint-postgres>=3.1.2",
   "opentelemetry-api>=1.45.0",
   "opentelemetry-sdk>=1.45.0",
   "opentelemetry-exporter-otlp-proto-http>=1.45.0",
@@ -51,7 +50,6 @@ dev = [
   "ruff>=0.9",
   "mypy>=1.14",
   "types-PyYAML>=6.0",
-  "import-linter>=2.1",
 ]
 
 [project.scripts]
@@ -63,14 +61,23 @@ seleric-voice = "seleric_swarm.voice.worker:main"
 
 [tool.ruff]
 line-length = 100
+target-version = "py312"
 
 [tool.ruff.lint]
 ignore = ["BLE001"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/seleric_swarm/orchestration/runner.py" = ["S110"]
 "src/seleric_swarm/observability/tracing.py" = ["S110"]
-"src/seleric_swarm/eval/evaluators.py" = ["SIM103"]
+# Best-effort telemetry / enrichment: a failure here must never fail the mission.
+"src/seleric_swarm/observability/traces.py" = ["S110"]
+"src/seleric_swarm/forecasting/{entities,insights,pipeline}.py" = ["S110"]
+"src/seleric_swarm/protocols/mcp/servers/seleric_remote.py" = ["S110"]
+"src/seleric_swarm/toolsets/analytics.py" = ["S112"]
+"src/seleric_swarm/voice/worker.py" = ["S110"]
+# Offline scoring / backtest CLIs use the wall-clock date.
+"src/seleric_swarm/forecasting/{score,backtest}.py" = ["DTZ011", "DTZ003"]
+# `v != v` is the NaN test in the standalone Chronos service.
+"chronos/*.py" = ["PLR0124"]
 "src/seleric_swarm/llm/adapters/fake.py" = ["TRY203", "DTZ005"]
 "src/seleric_swarm/services/time_range.py" = ["DTZ005"]
 
@@ -90,133 +97,12 @@ module = [
   "scipy",
   "scipy.*",
   "livekit.*",
+  "networkx",
+  "networkx.*",
+  "jsonschema",
+  "jsonschema.*",
 ]
 ignore_missing_imports = true
-
-[tool.importlinter]
-root_package = "seleric_swarm"
-include_external_packages = true
-
-# Highest layer first. Legacy packages (agent, toolsets, …) stay outside this
-# contract until their code moves. See docs/ADR/ADR-005-modular-pipeline.md.
-[[tool.importlinter.contracts]]
-name = "layers"
-type = "layers"
-layers = [
-  "seleric_swarm.api",
-  "seleric_swarm.pipeline",
-  "seleric_swarm.adapters",
-  "seleric_swarm.investigate",
-  "seleric_swarm.understand | seleric_swarm.spec | seleric_swarm.plan | seleric_swarm.derive | seleric_swarm.answer | seleric_swarm.context | seleric_swarm.graph",
-  "seleric_swarm.semantic",
-  "seleric_swarm.contracts",
-]
-
-[[tool.importlinter.contracts]]
-name = "L2 does not decide intent with regex or reach I/O SDKs"
-type = "forbidden"
-source_modules = [
-  "seleric_swarm.understand",
-  "seleric_swarm.spec",
-  "seleric_swarm.plan",
-  "seleric_swarm.derive",
-  "seleric_swarm.answer",
-  "seleric_swarm.investigate",
-  "seleric_swarm.context",
-  "seleric_swarm.graph",
-]
-forbidden_modules = [
-  "re",
-  "httpx",
-  "openai",
-  "pydantic_ai",
-  "seleric_swarm.adapters",
-]
-
-[[tool.importlinter.contracts]]
-name = "derive, answer, context, and graph stay independent"
-type = "independence"
-modules = [
-  "seleric_swarm.derive",
-  "seleric_swarm.answer",
-  "seleric_swarm.context",
-  "seleric_swarm.graph",
-]
-
-[[tool.importlinter.contracts]]
-name = "semantic private modules"
-type = "protected"
-protected_modules = [
-  "seleric_swarm.semantic._fake",
-  "seleric_swarm.semantic._mcp_port",
-  "seleric_swarm.semantic._port",
-  "seleric_swarm.semantic._read_model",
-]
-allowed_importers = ["seleric_swarm.semantic"]
-
-[[tool.importlinter.contracts]]
-name = "pipeline contract private modules"
-type = "protected"
-protected_modules = [
-  "seleric_swarm.contracts.pipeline._answer",
-  "seleric_swarm.contracts.pipeline._draft",
-  "seleric_swarm.contracts.pipeline._errors",
-  "seleric_swarm.contracts.pipeline._plan",
-  "seleric_swarm.contracts.pipeline._question",
-  "seleric_swarm.contracts.pipeline._results",
-]
-allowed_importers = ["seleric_swarm.contracts.pipeline"]
-
-[[tool.importlinter.contracts]]
-name = "observability private modules"
-type = "protected"
-protected_modules = ["seleric_swarm.observability._stages"]
-allowed_importers = ["seleric_swarm.observability"]
-
-[[tool.importlinter.contracts]]
-name = "evals private modules"
-type = "protected"
-protected_modules = [
-  "seleric_swarm.evals._case",
-  "seleric_swarm.evals._cassette",
-  "seleric_swarm.evals._report",
-  "seleric_swarm.evals._runner",
-  "seleric_swarm.evals._scorer",
-]
-allowed_importers = ["seleric_swarm.evals"]
-
-# A9: each new package exposes its interface through __init__ only.
-[[tool.importlinter.contracts]]
-name = "understand private modules"
-type = "protected"
-protected_modules = ["seleric_swarm.understand._call", "seleric_swarm.understand._prompt", "seleric_swarm.understand.examples._store"]
-allowed_importers = ["seleric_swarm.understand"]
-
-[[tool.importlinter.contracts]]
-name = "spec private modules"
-type = "protected"
-protected_modules = [
-  "seleric_swarm.spec._clarify",
-  "seleric_swarm.spec._compile",
-  "seleric_swarm.spec._edit",
-  "seleric_swarm.spec._filters",
-  "seleric_swarm.spec._validate",
-  "seleric_swarm.spec._windows",
-]
-allowed_importers = ["seleric_swarm.spec"]
-
-[[tool.importlinter.contracts]]
-name = "plan private modules"
-type = "protected"
-protected_modules = ["seleric_swarm.plan._execute", "seleric_swarm.plan._registry", "seleric_swarm.plan._templates"]
-allowed_importers = ["seleric_swarm.plan"]
-
-[[tool.importlinter.contracts]]
-name = "derive private modules"
-type = "protected"
-protected_modules = ["seleric_swarm.derive._engine", "seleric_swarm.derive._ops"]
-allowed_importers = ["seleric_swarm.derive"]
-
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
@@ -228,8 +114,6 @@ markers = [
 filterwarnings = [
   # langsmith still imports pydantic.v1 on Python 3.13
   "ignore:Failing to pass a value to the 'type_params' parameter:DeprecationWarning",
-  # langgraph isinstance(RunnableSequence) probes pydantic v1 __fields__
-  "ignore:The `__fields__` attribute is deprecated",
   # Proactor / httpx teardown noise on Windows when transports close late
   "ignore::ResourceWarning",
 ]

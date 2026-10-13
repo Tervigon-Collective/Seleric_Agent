@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
-from seleric_swarm.agent.scope import RequiredScope
+from seleric_swarm.agent.scope_model import RequiredScope
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 from seleric_swarm.state.cache import MissionQueryCache
@@ -77,17 +77,6 @@ class ExecutionLimits:
 
 
 @dataclass(frozen=True)
-class JevConfig:
-    """Jev (openjev) endpoint for in-tool typed decisions (action risk #4,
-    knowledge relevance #5). Empty base_url/api_key ⇒ every Jev call fails open
-    to a no-op, so the tools behave exactly as before when Jev is unconfigured."""
-
-    base_url: str = ""
-    api_key: str = ""
-    timeout: float = 1.0
-
-
-@dataclass(frozen=True)
 class SelericDeps:
     mission_id: str
     as_of: datetime
@@ -134,7 +123,6 @@ class SelericDeps:
     # fetch path can hold a caller to the window the question asked for.
     # ``None`` when the question names no relative period: nothing to enforce.
     resolved_window: TimeRangeV1 | None = None
-    jev: JevConfig = field(default_factory=JevConfig)
     # Hard constraints the query demanded (requested breakdowns resolved to
     # catalogue dimension ids), captured once in the runner. Read by
     # validation/signals.py::check_scope_coverage to prove the executed evidence

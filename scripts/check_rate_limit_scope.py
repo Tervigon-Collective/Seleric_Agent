@@ -34,7 +34,7 @@ def probe(client: OpenAI, model: str) -> None:
         response = exc.response
         retry_after = response.headers.get("retry-after") if response is not None else None
         print(f"{model}: 429 rate-limited (retry-after={retry_after})")
-    except Exception as exc:  # noqa: BLE001 - this is a diagnostic script
+    except Exception as exc:
         print(f"{model}: {type(exc).__name__}: {exc}")
 
 

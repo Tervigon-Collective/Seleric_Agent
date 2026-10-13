@@ -1,8 +1,0 @@
-# LLM roles (M5.1). Each role names its deployment (empty = the agent's model chain),
-# reasoning effort (empty = provider default), per-request timeout, and prompt version
-# (config/prompts/<role>/<version>.md; empty = the newest file). Env AZURE_OPENAI_<ROLE>_MODEL wins.
-roles:
-  understand: {deployment: "", reasoning_effort: "", timeout_s: 30, prompt: v2}
-  answer: {deployment: "", reasoning_effort: "", timeout_s: 60, prompt: v2}
-  select: {deployment: "", reasoning_effort: "", timeout_s: 20, prompt: ""}
-  tool_loop: {deployment: "", reasoning_effort: "", timeout_s: 120, prompt: ""}

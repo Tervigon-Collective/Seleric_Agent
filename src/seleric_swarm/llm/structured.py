@@ -56,7 +56,7 @@ def with_schema_instruction(request: LLMRequest, schema: type[BaseModel]) -> LLM
     )
 
 
-def parse_structured(raw: LLMResponse, schema: type[T]) -> T:
+def parse_structured[T: BaseModel](raw: LLMResponse, schema: type[T]) -> T:
     payload = extract_json_object(raw.text)
     try:
         return schema.model_validate(payload)

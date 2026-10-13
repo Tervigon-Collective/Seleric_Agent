@@ -56,6 +56,7 @@ def test_canonical_thread_run_attempt_and_attachment_contracts():
         "TABLE",
         "CODE",
         "SOURCE",
+        "KPI_GRID",
         "TOOL_CALL",
         "ARTIFACT",
         "CHART",

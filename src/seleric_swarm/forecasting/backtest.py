@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from seleric_swarm.models.evaluation import bias, coverage, horizon_total_ape, mase, wql
-from seleric_swarm.paths import repo_root
+from seleric_swarm.paths import repo_root, reports_dir
 
 
 def rolling_cutoffs(
@@ -85,10 +85,10 @@ def write_report(
     out_dir: Path | None = None,
 ) -> Path:
     day = date.today().isoformat()
-    root = out_dir or (repo_root() / "reports" / "forecasting" / day)
+    root = out_dir or (reports_dir() / "forecasting" / day)
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{target}.json"
-    summary = {
+    summary: dict[str, Any] = {
         "target": target,
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "folds": folds,
@@ -230,10 +230,10 @@ async def _chronos_univariate(
                 )
                 return None
             payload = resp.json()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"chronos fold failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return None
-    steps = []
+    steps: list[Any] = []
     tasks = payload.get("tasks") or []
     if tasks:
         steps = ((tasks[0].get("targets") or {}).get("y") or {}).get("forecast") or []
@@ -315,7 +315,7 @@ async def evaluate_target(
                 interval_z=Z_80,
             )
             fold["ets"] = score_fold(actuals, path.lows, path.points, path.highs, insample=history)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             rejected.append({"cutoff": cutoff.isoformat(), "engine": "ets", "reason": type(exc).__name__})
 
         if chronos_url:
@@ -445,7 +445,7 @@ def main(argv: list[str] | None = None) -> int:
             past_covariates=[],
             known_future=[],
             metrics=means.get(winner, {}),
-            report_path=str(path.relative_to(repo_root())),
+            report_path=str(path),
         )
     )
     print(json.dumps({"report": str(path), "winner": winner, "mean_by_engine": means}, indent=2))

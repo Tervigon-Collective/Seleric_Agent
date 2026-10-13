@@ -109,7 +109,7 @@ async def test_uncacheable_result_is_refetched() -> None:
     async def fetch() -> dict:
         return next(results)
 
-    ok = lambda r: not r.get("error")  # noqa: E731
+    ok = lambda r: not r.get("error")
     assert (await cache.get_or_fetch("k", fetch, cacheable=ok))["error"]
     assert await cache.get_or_fetch("k", fetch, cacheable=ok) == {"rows": [1]}
     assert cache.peek("k") == {"rows": [1]}

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from seleric_swarm.semantic import SemanticReadModel
-from seleric_swarm.graph import build_graph
-from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap, CatalogueMetricMeta
+from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap
 
 # Core v2 catalogue payload (subset of Core's certified metrics)
 CORE_PAYLOAD = {
@@ -183,34 +182,8 @@ def test_ag04_t04_core_metadata_preserved() -> None:
     assert cac.access_policy == {"roles_allowed": ["analyst", "exec", "finance", "growth_lead"]}
 
 
-def test_ag04_t05_ratio_graph_from_core_canonical() -> None:
-    """Identity graph uses Core's canonical ratio_components (SEM-14)."""
-    model = SemanticReadModel.from_payload(CORE_PAYLOAD)
-    graph = build_graph(model, None)
-    # CAC: ad_spend (numerator) -> cac, new_customers (denominator) -> cac
-    cac_parents = {e.source for e in graph.parents("cac", "identity")}
-    assert "ad_spend" in cac_parents
-    assert "new_customers" in cac_parents
-    # Verify roles
-    num_edge = next(e for e in graph.parents("cac", "identity") if e.role == "numerator")
-    den_edge = next(e for e in graph.parents("cac", "identity") if e.role == "denominator")
-    assert num_edge.source == "ad_spend"
-    assert den_edge.source == "new_customers"
-    # BE ROAS: order_pnl_net_sales (num), contribution_margin (den)
-    roas_parents = {e.source for e in graph.parents("be_roas", "identity")}
-    assert "order_pnl_net_sales" in roas_parents
-    assert "contribution_margin" in roas_parents
 
 
-def test_ag04_t06_additive_graph_from_core_formula_depends_on() -> None:
-    """Additive/composite graph uses Core's formula.depends_on with coefficients."""
-    model = SemanticReadModel.from_payload(CORE_PAYLOAD)
-    graph = build_graph(model, None)
-    # net_sales depends on order_pnl_net_sales, returns, cancels
-    ns_parents = {e.source for e in graph.parents("net_sales", "identity")}
-    assert "order_pnl_net_sales" in ns_parents
-    assert "returns" in ns_parents
-    assert "cancels" in ns_parents
 
 
 def test_ag04_t07_catalogue_bootstrap_preserves_core_fields() -> None:
@@ -267,5 +240,3 @@ def test_ag04_t10_core_semantic_port_enforce_mode() -> None:
             assert metric.version != ""
             assert metric.grain != ""
 
-
-from seleric_swarm.graph import build_graph

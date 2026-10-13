@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 
 import pytest
 
@@ -51,7 +51,7 @@ class _Response:
         for line in self._lines:
             yield line
 
-    async def __aenter__(self) -> "_Response":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *_: object) -> None:

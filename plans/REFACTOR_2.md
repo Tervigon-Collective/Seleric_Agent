@@ -1,3 +1,5 @@
+> **Superseded by [SLIM_LOOP_PLAN.md](SLIM_LOOP_PLAN.md) (2026-10-13).** Kept for history only; do not build from this plan.
+
 # Seleric refactor: one reasoning loop, deterministic Core analysis, one verification framework
 
 ## Context

@@ -31,7 +31,6 @@ from seleric_swarm.conversations.contracts import (
 from seleric_swarm.conversations.file_store import build_file_repositories
 from seleric_swarm.conversations.memory import build_in_memory_repositories
 from seleric_swarm.conversations.phase7 import (
-    PostgresApprovalRepository,
     PostgresSearchRepository,
     QueryEmbeddingHook,
 )
@@ -1883,7 +1882,6 @@ def build_conversation_repositories(
             thread_summaries=PostgresThreadSummaryRepository(database),
             episodic_events=PostgresEpisodicEventRepository(database),
             search=PostgresSearchRepository(database, query_embedder=query_embedder),  # type: ignore[arg-type]
-            approvals=PostgresApprovalRepository(database),  # type: ignore[arg-type]
             feedback=PostgresFeedbackRepository(database),
             unit_of_work=unit_of_work if not transactional else None,
         )

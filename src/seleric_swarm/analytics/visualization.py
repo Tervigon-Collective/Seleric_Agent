@@ -132,9 +132,7 @@ def stacking_allowed(chart_type: str, groups: dict[str, str] | None) -> bool:
     known = _known_groups(groups)
     if len(known) > 1:
         return False
-    if "ratio" in known:
-        return False
-    return True
+    return "ratio" not in known
 
 
 def stacking_warning(chart_type: str, groups: dict[str, str]) -> str:

@@ -159,6 +159,7 @@ def configure_opentelemetry(settings: Settings) -> bool:
         return _otel_configured
     try:
         import base64
+
         from opentelemetry import trace
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.resources import Resource
@@ -448,7 +449,7 @@ def _langfuse_span(
         client = get_client()
         cm = client.start_as_current_observation(
             name=name,
-            as_type=as_type,  # type: ignore[arg-type]
+            as_type=as_type,  # type: ignore[arg-type,call-overload]
             metadata=redact_mapping(metadata),
             input=redact_mapping(inputs) if inputs else None,
         )

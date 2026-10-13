@@ -53,14 +53,11 @@ TOOLS = (
     "modules_list",
     "metrics_query",
     "metrics_drilldown",
+    "insights_explain",
     "semantic_sql",
     # Meta/Google ad-platform tools are not listed: they are third-party APIs
     # outside the certified Cube serve views and the gateway no longer exposes
     # them by default (SELERIC_MCP_ADS_TOOLS).
-    "actions_list_available",
-    "actions_propose",
-    "actions_commit",
-    "actions_status",
 )
 
 
@@ -84,6 +81,8 @@ class SelericMCPTransport:
         self._hard_timeout_s = timeout_s + 10.0
         self._ids = itertools.count(1)
         self._session_id: str | None = None
+        # The server's own usage guide, from the initialize result (empty until a session exists).
+        self.instructions: str = ""
         self._init_lock = asyncio.Lock()
         self._fallback_client: httpx.AsyncClient | None = None
         self._loop_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient] = (
@@ -133,6 +132,7 @@ class SelericMCPTransport:
                 },
             }
             resp = await self._post_with_retry(body)
+            self.instructions = str((_parse_jsonrpc_response(resp).get("result") or {}).get("instructions") or "")
             session_id = resp.headers.get("mcp-session-id")
             if not session_id:
                 raise RuntimeError("seleric mcp did not return an Mcp-Session-Id on initialize")
@@ -182,6 +182,24 @@ class SelericMCPTransport:
                 continue
             return parsed if isinstance(parsed, dict) else {"value": parsed}
         return result if isinstance(result, dict) else {}
+
+    async def list_tools(self) -> list[dict[str, Any]]:
+        """The server's tool definitions (name, description, inputSchema), one JSON-RPC ``tools/list`` round trip."""
+        await self._ensure_session()
+        session = self._session_id
+        body = {"jsonrpc": "2.0", "id": next(self._ids), "method": "tools/list", "params": {}}
+        try:
+            resp = await self._post_with_retry(body)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404 or session is None:
+                raise
+            self._drop_session(session)
+            await self._ensure_session()
+            resp = await self._post_with_retry(body)
+        payload = _parse_jsonrpc_response(resp)
+        if "error" in payload:
+            raise RuntimeError(f"seleric mcp error listing tools: {payload['error']}")
+        return list((payload.get("result") or {}).get("tools") or [])
 
     async def _post_with_retry(self, body: dict[str, Any]) -> httpx.Response:
         """3 attempts, short exponential backoff, transient failures only.

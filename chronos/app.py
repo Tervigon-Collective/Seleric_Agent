@@ -8,8 +8,6 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field, field_validator, model_validator
-
 from forecast import (
     QUANTILE_LEVELS,
     SeriesInput,
@@ -19,6 +17,7 @@ from forecast import (
     predict_series,
     predict_v2,
 )
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 MAX_SERIES = int(os.getenv("MAX_SERIES_PER_REQUEST", "10"))
 QUEUE_WAIT_SECONDS = float(os.getenv("QUEUE_WAIT_SECONDS", "15"))
@@ -181,7 +180,7 @@ async def predict(body: PredictRequest) -> dict[str, Any]:
                 body.quantile_levels,
                 body.batch_size,
             )
-        except Exception as exc:  # noqa: BLE001 - surface inference errors cleanly
+        except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return result
     finally:
@@ -218,7 +217,7 @@ async def forecast_v2(body: V2ForecastRequest) -> dict[str, Any]:
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return result
     finally:

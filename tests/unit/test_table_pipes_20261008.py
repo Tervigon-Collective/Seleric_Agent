@@ -9,13 +9,6 @@ from __future__ import annotations
 
 import pytest
 
-from seleric_swarm.agent.validation.answer_audit import (
-    escape_labels_in_tables,
-    ragged_table,
-    repair_ragged_table_rows,
-    table_cells,
-)
-from seleric_swarm.services.markdown import table_cell
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import analytics
 from tests.unit.test_analytics_toolset import FakeRunContext, _deps, _put_evidence
@@ -23,58 +16,24 @@ from tests.unit.test_analytics_toolset import FakeRunContext, _deps, _put_eviden
 PMAX = "[Google Build] PMax - Seasonal New | 27th May"
 
 
-def test_a_cell_keeps_its_pipe_inside_and_escapes_once() -> None:
-    assert table_cells(f"| {table_cell(PMAX)} | 21,776.21 | 2.15 |") == [PMAX, "21,776.21", "2.15"]
-    assert table_cell(table_cell(PMAX)) == table_cell(PMAX)
-
-
-def test_known_labels_are_escaped_in_the_answers_table_rows_only() -> None:
-    text = f"{PMAX} led.\n\n| Campaign | Spend |\n| --- | ---: |\n| {PMAX} | 21,776.21 |\n"
-    fixed = escape_labels_in_tables(text, {PMAX, "TH-149"})
-    assert fixed.startswith(f"{PMAX} led.")  # prose untouched
-    assert ragged_table(text) is not None and ragged_table(fixed) is None
-    assert escape_labels_in_tables(fixed, {PMAX}) == fixed
-
-
-def test_short_row_after_pipe_escape_is_padded_not_failed() -> None:
-    # live 2026-10-11 MS3-1d7bed9535: escaping PMax left 8 cells under a 9-column header
-    header = (
-        "| Campaign | Spend D1 | Clicks D1 | CVR D1 | Spend D2 | Clicks D2 | CVR D2 | ROAS D1 | ROAS D2 |"
-    )
-    delim = "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
-    row = f"| {PMAX} | 5,442.84 | 268 | 2.82% | 4,967.34 | 366 | 0.92% | 1.175 |"
-    text = f"{header}\n{delim}\n{row}\n"
-    fixed = repair_ragged_table_rows(escape_labels_in_tables(text, {PMAX}))
-    assert ragged_table(fixed) is None
-    data = [ln for ln in fixed.splitlines() if ln.startswith("| ") and "---" not in ln][-1]
-    cells = table_cells(data)
-    assert cells[0] == PMAX and cells[-1] == "—" and len(cells) == 9
 
 
 
 
-@pytest.mark.asyncio
-async def test_the_merge_reads_every_row_of_the_cited_queries_and_escapes_names() -> None:
-    store = InMemoryArtifactStore()
-    first: dict[str, str] = {}
-    for metric, values in (("ad_spend", {PMAX: 21776.21, "TH-149": 39700.96}), ("net_roas", {PMAX: 2.15, "TH-149": 0.93})):
-        for name, value in values.items():
-            aid = _put_evidence(store, metric=metric, grain="none", start="2026-10-01", end="2026-10-07", value=value,
-                                dimensions={"campaign_name": name})
-            first.setdefault(metric, aid)
-    out = await analytics.merge_evidence_breakdowns(FakeRunContext(_deps(store)), list(first.values()))
-    assert out.success, out.summary
-    rows = [line for line in out.summary.splitlines() if line.startswith("| ") and "---" not in line][1:]
-    assert len(rows) == 2 and ragged_table(out.summary) is None
-    assert any(table_cells(r)[0] == PMAX and table_cells(r)[1:3] == ["21,776.21", "2.15"] for r in rows)
+
+
+
+
 
 
 @pytest.mark.asyncio
 async def test_rows_with_no_breakdown_value_are_counted_not_dropped_silently(monkeypatch) -> None:
     # live 2026-10-08: 7 Suspender Boots orders came from ads missing from the ad dimension; the answer never said so
-    from seleric_swarm.toolsets import semantic
-    from tests.unit.test_postmortem_20261007 import IST, _Ctx, _deps as _pm_deps
     from datetime import datetime
+
+    from seleric_swarm.toolsets import semantic
+    from tests.unit.test_postmortem_20261007 import IST, _Ctx
+    from tests.unit.test_postmortem_20261007 import _deps as _pm_deps
 
     class _Mcp:
         async def call(self, *, agent_id, capability, arguments):
@@ -98,9 +57,10 @@ async def test_a_companion_fetched_as_its_own_top_n_is_fetched_again_not_reporte
     for name, value in (("A", 100.0), ("B", 90.0)):
         ids.append(_put_evidence(store, metric="net_sales", grain="none", start="2026-10-01", end="2026-10-07",
                                  value=value, dimensions={"campaign_name": name}))
+    from datetime import UTC, datetime
+
     from seleric_swarm.agent.artifacts import EvidenceArtifact
     from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
-    from datetime import UTC, datetime
 
     profit = EvidenceArtifact(metric_id="net_profit", dimensions={"campaign_name": "A"}, grain="none",
                               as_of=datetime(2026, 10, 8, tzinfo=UTC), period_start=datetime(2026, 10, 1, tzinfo=UTC),
@@ -120,7 +80,8 @@ async def test_a_multi_dimension_breakdown_reports_subtotals_and_shares_as_a_fin
     from datetime import datetime
 
     from seleric_swarm.toolsets import semantic
-    from tests.unit.test_postmortem_20261007 import IST, _Ctx, _deps as _pm_deps
+    from tests.unit.test_postmortem_20261007 import IST, _Ctx
+    from tests.unit.test_postmortem_20261007 import _deps as _pm_deps
 
     class _Mcp:
         async def call(self, *, agent_id, capability, arguments):
@@ -146,7 +107,8 @@ async def test_rows_without_one_breakdown_value_stay_in_the_subtotals() -> None:
     from datetime import datetime
 
     from seleric_swarm.toolsets import semantic
-    from tests.unit.test_postmortem_20261007 import IST, _Ctx, _deps as _pm_deps
+    from tests.unit.test_postmortem_20261007 import IST, _Ctx
+    from tests.unit.test_postmortem_20261007 import _deps as _pm_deps
 
     class _Mcp:
         def __init__(self):
@@ -170,49 +132,14 @@ async def test_rows_without_one_breakdown_value_stay_in_the_subtotals() -> None:
     assert "campaign_name value and is not listed" in result.summary
 
 
-def test_an_entity_the_rank_metric_cannot_carry_falls_back_to_an_asked_breakdown() -> None:
-    # golden Q16 2026-10-09: "which campaigns, products and channels contributed" ranked net profit by entity_name
-    from datetime import date
-
-    from seleric_swarm.agent.plan import MetricSlot, PlanSlots, compose_plan
-    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
-
-    catalogue = CatalogueSnapshot(
-        metrics=(CatalogueMetricMeta(id="np", label="Net profit", supported_dimensions=["campaign_name", "channel"],
-                                     raw={"aggregation": "additive"}),),
-        dimensions=("campaign_name", "channel", "entity_name"),
-    )
-    slots = PlanSlots(shape="entity_comparison", entity_dimension="entity_name", rank_by=MetricSlot(words="net profit"),
-                      metrics=[MetricSlot(words="net profit")], breakdown_dimensions=["campaign_name", "channel"])
-    windows = [(date(2026, 10, 1), date(2026, 10, 1)), (date(2026, 10, 2), date(2026, 10, 2))]
-    plan, notes = compose_plan(slots, metric_ids=["np"], rank_id="np", windows=windows, catalogue=catalogue, as_of=None)
-    assert plan is not None and plan.steps[0].dimensions == ["campaign_name"]
-    assert any("ranked by campaign_name instead" in n for n in notes)
 
 
-def test_a_worst_entities_question_ranks_ascending() -> None:
-    # golden Q16 2026-10-09: "which campaigns contributed to the loss" ranked the most profitable first
-    from datetime import date
-
-    from seleric_swarm.agent.plan import MetricSlot, PlanSlots, compose_plan
-    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
-
-    catalogue = CatalogueSnapshot(
-        metrics=(CatalogueMetricMeta(id="np", label="Net profit", supported_dimensions=["campaign_name"],
-                                     raw={"aggregation": "additive"}),),
-        dimensions=("campaign_name",),
-    )
-    slots = PlanSlots(shape="entity_comparison", entity_dimension="campaign_name", rank_by=MetricSlot(words="net profit"),
-                      rank_order="asc", metrics=[MetricSlot(words="net profit")])
-    windows = [(date(2026, 10, 1), date(2026, 10, 1)), (date(2026, 10, 2), date(2026, 10, 2))]
-    plan, _ = compose_plan(slots, metric_ids=["np"], rank_id="np", windows=windows, catalogue=catalogue, as_of=None)
-    assert plan is not None and "order='asc'" in plan.steps[0].ranking
 
 
 def test_an_unavailable_snapshot_does_not_shadow_the_last_good_one(tmp_path) -> None:
     # live 2026-10-09: an empty business snapshot dated today was read instead of yesterday's full one
-    from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
     from seleric_swarm.services.domain_health.models import DomainStateSnapshot
+    from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
 
     store = SnapshotStore(base_dir=tmp_path)
     good = DomainStateSnapshot(domain="business", brand_id="20", as_of="2026-10-08", computed_at="2026-10-09T05:57:36",

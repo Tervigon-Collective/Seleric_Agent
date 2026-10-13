@@ -83,8 +83,8 @@ class SnapshotStore:
         max_age_hours: float = 2.0,
     ) -> tuple[ResolvedMetric, DomainStateSnapshot] | None:
         """Return a fresh ResolvedMetric and its snapshot from any domain, or None."""
-        from seleric_swarm.services.domain_health.scheduler import ALL_DOMAINS
         from seleric_swarm.services.business_state.formatter import is_stale
+        from seleric_swarm.services.domain_health.scheduler import ALL_DOMAINS
 
         for domain in ALL_DOMAINS:
             snapshot = await self.aget_latest(domain)

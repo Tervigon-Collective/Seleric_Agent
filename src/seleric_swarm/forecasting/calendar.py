@@ -6,7 +6,6 @@ import calendar as _cal
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -152,9 +151,9 @@ def split_past_future(
             raise ValueError(
                 f"{name}: need {context_len + horizon_len} values, got {len(values)}"
             )
-        past = [float(v) for v in values[:context_len]]
-        future = [float(v) for v in values[context_len : context_len + horizon_len]]
-        result[name] = {"past": past, "future": future}  # type: ignore[assignment]
+        past: list[float | None] = [float(v) for v in values[:context_len]]
+        future: list[float | None] = [float(v) for v in values[context_len : context_len + horizon_len]]
+        result[name] = {"past": past, "future": future}
     return result
 
 

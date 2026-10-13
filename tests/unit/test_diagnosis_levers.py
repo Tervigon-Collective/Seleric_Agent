@@ -18,11 +18,15 @@ import numpy as np
 import pytest
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
-from seleric_swarm.agent.dependencies import DIAGNOSIS_FAILED, ExecutionLimits, SelericDeps
+from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.agent.output import MissionResult
-from seleric_swarm.agent.validation import EvidenceValidator
 from seleric_swarm.contracts.lookup import TimeRangeV1
-from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance, ContextBundle, Principal
+from seleric_swarm.conversations.contracts import (
+    Artifact,
+    ArtifactProvenance,
+    ContextBundle,
+    Principal,
+)
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
 from seleric_swarm.toolsets import diagnosis
@@ -75,7 +79,7 @@ def _data() -> dict[str, dict[date, float]]:
     value = buyers * basket
     edits = np.zeros(n)
     edits[i] = 4.0
-    S = lambda a: {d: float(v) for d, v in zip(DAYS, a, strict=True)}  # noqa: E731
+    S = lambda a: {d: float(v) for d, v in zip(DAYS, a, strict=True)}
     return {
         "zz_cost": S(cost), "zz_views": S(views), "zz_taps": S(taps), "zz_buyers": S(buyers), "zz_value": S(value),
         "zz_yield": S(value / cost), "zz_cost_per_view": S(cost / views), "zz_tap_rate": S(taps / views),
@@ -248,23 +252,8 @@ def _answer(status: str = "completed") -> MissionResult:
     })
 
 
-def test_an_answer_whose_diagnosis_was_refused_is_sent_back():
-    deps = _deps(FakeMcp())
-    _seeded(deps)
-    deps.call_counts[DIAGNOSIS_FAILED] = "the comparison period must end before 2026-10-07"
-    outcome = EvidenceValidator().validate(_answer(), deps=deps)
-    assert not outcome.ok
-    assert "diagnose_metric_change was refused" in (outcome.reason or "")
 
 
-def test_a_partial_answer_is_not_blocked_and_a_later_success_clears_the_gate():
-    deps = _deps(FakeMcp())
-    _seeded(deps)
-    deps.call_counts[DIAGNOSIS_FAILED] = "refused"
-    assert "diagnose_metric_change was refused" not in (EvidenceValidator().validate(_answer("partial"), deps=deps).reason or "")
-    res = _diagnose(deps)  # a successful diagnosis through the tool clears the record
-    assert res.success and DIAGNOSIS_FAILED not in deps.call_counts
-    assert "diagnose_metric_change was refused" not in (EvidenceValidator().validate(_answer(), deps=deps).reason or "")
 
 
 # --------------------------------------------------------------------------------------- ladder hygiene, scope echo
@@ -304,7 +293,7 @@ def test_a_stage_that_widens_in_either_window_is_not_a_step():
 
 
 def test_a_second_count_of_the_closing_event_is_dropped():
-    text, _, stages = _ladder({"zz_buyers_ledger": [20.0] * 8 + [20.0, 15.0]}, {"zz_buyers_ledger": ("sales", "")}, ["zz_views", "zz_buyers_ledger"])
+    _text, _, stages = _ladder({"zz_buyers_ledger": [20.0] * 8 + [20.0, 15.0]}, {"zz_buyers_ledger": ("sales", "")}, ["zz_views", "zz_buyers_ledger"])
     assert "zz_buyers_ledger" not in stages and stages[-2:] == ["zz_buyers", "zz_value"], stages
 
 

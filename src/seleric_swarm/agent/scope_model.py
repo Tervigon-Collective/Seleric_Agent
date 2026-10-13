@@ -1,9 +1,4 @@
-"""The scope a question demands, as plain frozen types (no parsing here).
-
-Split out of ``agent/scope.py`` so stage modules (``seleric_swarm.spec``) can build a
-``RequiredScope`` without importing that module's legacy regex helpers (A1/A2). The
-classes are re-exported from ``agent/scope.py`` unchanged, so existing imports keep working.
-"""
+"""The scope a question demands, as plain frozen types (no parsing here)."""
 
 from __future__ import annotations
 
