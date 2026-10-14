@@ -305,7 +305,68 @@ status                    # open | supported | ruled_out | superseded | merged
 competitors[], children[]
 ```
 
-### 4.5 What the LLM does and does not do
+### 4.5 When the real reason is not among the hypotheses
+
+The generator can only propose what the data shows. The real cause may be outside it: a metric the catalogue does
+not have (stock-outs, site errors, a competitor sale), a slice it did not split by, a lag it did not try, or two
+causes acting together. The engine cannot guarantee the cause is in the ledger, so it has to **detect when it is
+not**, search further where it can, and otherwise say so. The rule: being confidently wrong is worse than saying
+"I don't know".
+
+**1. The unknown is always in the ledger.** Every investigation carries a **residual hypothesis**, "something not
+in the data", whose share is the unexplained part of the change, with an interval. It is never removed. Other
+hypotheses are not compared only with each other; they have to take share away from the residual.
+
+**2. Signals that the cause is missing.** Each of these is computed, not judged:
+
+| Signal | How it is computed | What it means |
+| --- | --- | --- |
+| **Reconstruction gap** | Put the drivers' actual event values through the fitted model (the SCM from §6.4) and predict Y for the event days. Gap = actual − predicted, with an interval | The accepted causes do not reproduce the event. This is the main check: an explanation has to reproduce what happened, not just correlate with it |
+| **Root noise attribution** | `gcm.attribute_anomalies` gives a large share to **Y's own noise term**, or to a node's noise with no measured parent | The break happened in a mechanism we observe only as an output, so the cause is upstream and not measured |
+| **Structured residual** | Take the residual series (Y minus the explained part). Run ruptures and RiskLoc on it | If the residual still breaks at t0, or concentrates in one slice, something specific is missing, and it sits *there* (date + slice). Pure noise in the residual means the explanation is complete |
+| **Latent confounding** | FCI / LPCMCI return `↔` or `o→` edges into Y | An unmeasured common cause; the linked metric may be a proxy, not the cause |
+| **Size mismatch** | The best hypothesis's move × elasticity covers much less than ΔY | It is real but too small; something else carries the rest |
+| **Failed predictions** | A hypothesis predicted Y normal in slices where O did not move, but Y fell there too | O is a co-symptom of a wider cause |
+| **Proxy blame** | The best "cause" broke on the same day as Y, in every slice, with no precedence | Both are likely effects of a third thing (the most common wrong answer: blaming the nearest metric that moved) |
+
+**3. Widening when a signal fires.** In this order, cheapest first:
+
+- **Localise the residual:** run RiskLoc on the residual, not on Y. "The unexplained 35% sits in mobile ∧ Android
+  from 10-09" narrows where the missing cause is, even before it is named.
+- **Widen what is observed:** other catalogue views not yet scanned (inventory, returns, payments, site
+  performance, pricing), finer dimensions (SKU, pincode, app version), other entities linked through conformed
+  dimensions.
+- **Widen the form of the hypothesis:** longer lags and adstock (delayed effects), interactions (two causes that
+  matter only together), thresholds (stock at zero, budget cap hit). The generator gets these as extra relation
+  types, still without metric names.
+- **Recurse on the residual:** treat the residual series as a new outcome and run the scan → generate → test loop
+  on it (it counts against the same depth and time limits).
+
+**4. Name what is missing.** If the residual stays structured after widening, the engine does not hand the residual
+to the nearest metric. It reports what it can establish and what data would decide the rest:
+
+```text
+Explained:   62% — Meta spend cut in Karnataka (supported cause)
+Unexplained: 38% [24%, 51%] — starts 2026-10-09, concentrated in Android app orders,
+             reproduced by no metric in the catalogue.
+Missing data that would test it: app crash / error rate, Android checkout funnel events.
+Context to check (not tested): an app release around 2026-10-09.
+```
+
+The LLM may add **untested** context candidates here (a release, a festival, a competitor sale), labelled as not
+tested. They help the person know where to look and are never counted as causes.
+
+**5. Verdict rules that respect it.** `explained` requires the reconstruction gap's interval to include 0 **and** a
+residual with no break and no localisation. A large but structured residual caps the verdict at
+`partially_explained`, however strong the accepted causes are. (This tightens §7.)
+
+**6. Measuring it.** Evaluation has to include worlds where the planted cause is **deliberately hidden** from the
+engine (the metric is generated but removed from the catalogue). The key number is the **false attribution
+rate**: how often the engine names a visible metric as the cause when the true one was hidden. The target is that
+it says "unexplained, sits in slice S from date D" instead. Track it next to precision and recall on the worlds where
+the cause is visible.
+
+### 4.6 What the LLM does and does not do
 
 - It does **not** create, choose or judge hypotheses. Generation, ranking and verdicts are deterministic and
   reproducible: the same data gives the same ledger.
@@ -345,15 +406,15 @@ flowchart TD
     OP --> W3["WHERE: layer 3 / RiskLoc"]
     OP --> W4["WHY: graph, estimate, attribute, refute"]
     W1 & W2 & W3 & W4 --> U["Update ledger: verdicts, shares, contradictions"]
-    U --> NH{"Unexplained share high,<br/>or a prediction failed?"}
-    NH -- "yes" --> G
+    U --> NH{"Cause missing? reconstruction gap,<br/>structured residual, Y's own noise,<br/>failed prediction"}
+    NH -- "yes: localise residual, widen views / lags / forms" --> G
     NH -- "no" --> C{"Child question?"}
     C -- "localised to segment S" --> SUB["Recurse: same question scoped to S<br/>(depth + 1)"]
     C -- "change sits on component M" --> SUB2["Recurse: why did M change?<br/>(depth + 1)"]
     C -- "no" --> S{"Stop?"}
     SUB & SUB2 --> R
     S -- "explained share ≥ 70%, competitors ruled out" --> A["Conclude: causal chain"]
-    S -- "budget or no testable hypothesis left" --> B["Conclude: located / insufficient evidence,<br/>name the missing data"]
+    S -- "budget, or residual still structured after widening" --> B["Conclude: explained part + unexplained share,<br/>where/when it sits, the data that would test it"]
     S -- "otherwise" --> P
 ```
 
@@ -521,7 +582,7 @@ Order is by value per effort; each step is usable on its own.
 | 6 | **Discovery**: FCI on panel (causal-learn), PCMCI+ on account series (tigramite, if licence OK), bootstrap stability, graph cache | `causal/discovery.py` | Run offline/nightly per brand first; on-demand later |
 | 7 | **GCM attribution** (`attribute_anomalies`, `distribution_change`) on the cached graph; PyRCA HT as an eval-only cross-check | `causal/attribution.py` | Lifts the 7-day limit on drivers |
 | 8 | **Scheduler + recursion** (preconditions, info/cost ranking, depth/branch/time bounds), exposed as an `investigate` tool; interactive and async "deep" modes | `causal/scheduler.py`, `agent/local_tools.py`, `agent/prompt.py` | Prompt rule changes from "call diagnose" to "open ≥ 3 hypotheses, call investigate" |
-| 9 | **Evaluation**: synthetic worlds with a known root cause (planted spend cut in one segment, planted tracking break, planted mix shift, pure noise), plus the existing `eval/regress` sets | `tests/unit/causal/`, `eval/` | Measure precision of `explained` and how often H1/H0 are wrongly rejected |
+| 9 | **Evaluation**: synthetic worlds with a known root cause (planted spend cut in one segment, planted tracking break, planted mix shift, pure noise), **worlds where the cause is hidden from the catalogue (false attribution rate)**, plus the existing `eval/regress` sets | `tests/unit/causal/`, `eval/` | Measure precision of `explained` and how often H1/H0 are wrongly rejected |
 
 Dependencies to add: `ruptures`, `causal-learn`, `tigramite` (after licence review), `pyrca` (dev/eval).
 Run discovery and attribution in the existing forkserver pool (`causal/estimate_pool.py`) so they do not block
@@ -545,7 +606,11 @@ the event loop.
   outcome (upstream, component, slice, mix, event, second measurement), ranks them by precedence, graph
   proximity, size match and scope, and widens the search until it has three credible ones or can say there are
   fewer. Null and measurement hypotheses are always added; new hypotheses are generated when the unexplained share
-  stays high or a prediction fails.
+  stays high or a prediction fails. Because the real cause may not be in the data at all, a residual "not in the
+  data" hypothesis is always kept, and the engine checks whether the accepted causes reproduce the event
+  (reconstruction gap, structured residual, anomaly assigned to the outcome's own noise). If they don't, it
+  localises the residual and widens the search. If that still fails, it reports the unexplained share, where and
+  when it sits, and which missing data would decide it, instead of blaming the nearest metric that moved.
 - **Recursive loop:** yes, bounded (depth 3, 2 children, ~25 operators), recursing down WHERE (scope to the
   located segment) and down WHAT (move up the funnel to the component that moved). The next step is chosen from the
   ledger state, not a fixed order. A 3-deep tree does not fit the current 150 s turn, so it needs an async
