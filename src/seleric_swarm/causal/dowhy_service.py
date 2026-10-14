@@ -550,7 +550,7 @@ def estimate_time_series_effect(
 
         model = CausalModel(data=data[[Y, T, *adjust]], treatment=T, outcome=Y, graph=graph)
         estimand = model.identify_effect()
-        backdoor = list(estimand.get_backdoor_variables() or [])
+        backdoor = sorted(estimand.get_backdoor_variables() or [])
         if not backdoor and adjust:
             result.reason = "DoWhy could not identify a backdoor adjustment set for this graph"
             return result

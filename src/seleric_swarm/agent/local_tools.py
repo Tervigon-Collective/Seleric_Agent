@@ -106,7 +106,11 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
         if summary is None:
             summary = result if isinstance(result, str) else json.dumps(result, default=str)
         state.steps.append({"kind": "tool_call", "tool": fn.__name__, "args": {k: str(v)[:200] for k, v in kwargs.items()}})
-        state.steps.append({"kind": "tool_return", "tool": fn.__name__, "ok": not failed, "ms": ms, "result": str(summary)[:2000]})
+        step = {"kind": "tool_return", "tool": fn.__name__, "ok": not failed, "ms": ms, "result": str(summary)[:2000]}
+        source = getattr(getattr(result, "provenance", None), "source_metadata", None)
+        if isinstance(source, dict) and isinstance(source.get("phase_ms"), dict):
+            step["phase_ms"] = source["phase_ms"]
+        state.steps.append(step)
         _remember_figures(state, result)
         if raises_effort:  # the engine did the causal reasoning; the steps after it report its result
             set_loop_effort(LOOP_WRITEUP_EFFORT)

@@ -1336,6 +1336,7 @@ async def _diagnose(
             "entity to see which of them moved and whether each moved at all"
         )
 
+    marks: list[tuple[str, float]] = [("start", time.perf_counter())]
     definitions = await _all_definitions(ctx)
     if metric_id not in definitions:
         return _refuse(f"no catalogue definition for {metric_id}; cannot read its lineage")
@@ -1401,7 +1402,15 @@ async def _diagnose(
         [metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts, *bridge_pool,
          *ladder_ends, *change_log, *unit_counts]
     ))
+    marks.append(("plan", time.perf_counter()))
+    # An additive outcome's segment queries need only the dimensions, so they run beside the series fetch (the two
+    # share the semaphore, so the server sees no more concurrent queries than before).
+    seg_early: asyncio.Future[Any] | None = (
+        asyncio.ensure_future(_fetch_all(ctx, [(metric_id, d) for d in dims], hist_start, ev_end, filters, guarded))
+        if out_meta.additive else None
+    )
     series_results = await _fetch_all(ctx, [(m, None) for m in series_ids], hist_start, ev_end, filters, guarded)
+    marks.append(("fetch_series", time.perf_counter()))
 
     quality: list[str] = []
     series: dict[str, dict[date, float]] = {}
@@ -1412,6 +1421,8 @@ async def _diagnose(
     for m, (res, args) in zip(series_ids, series_results, strict=True):
         if args is None:
             if m == metric_id:
+                if seg_early is not None:
+                    seg_early.cancel()
                 return _data.fetch_failure(f"diagnose_metric_change({metric_id})", res.get("error"))
             quality.append(f"{m}: fetch failed ({str(res.get('error'))[:120]})")
             continue
@@ -1439,11 +1450,14 @@ async def _diagnose(
             if currency := str((res.get("provenance") or {}).get("currency") or "").strip():
                 units[m] = currency
     if metric_id not in series:
+        if seg_early is not None:
+            seg_early.cancel()
         return _refuse(f"no daily data for {metric_id} over {hist_start}..{ev_end}")
     history_days = sorted(d for d in series[metric_id] if d < ev_start and d not in partial)
     numerator, weight = (None, None) if out_meta.additive else _rate_parts(metric_id, lineage, series, history_days)
     seg_jobs = [(metric_id, d) for d in dims] + [(m, d) for m in (weight, numerator) if m for d in dims]
-    seg_results = await _fetch_all(ctx, seg_jobs, hist_start, ev_end, filters, guarded)
+    seg_results = await (seg_early if seg_early is not None else _fetch_all(ctx, seg_jobs, hist_start, ev_end, filters, guarded))
+    marks.append(("fetch_segments", time.perf_counter()))
     segments: dict[str, dict[str, dict[str, dict[date, float]]]] = {}
     seg_args: dict[tuple[str, str], dict[str, Any]] = {}
     for (m, d), (res, args) in zip(seg_jobs, seg_results, strict=True):
@@ -1472,6 +1486,7 @@ async def _diagnose(
                 jobs_b += [(rate_m, d), (base_m, d)]
     jobs_b = [j for j in dict.fromkeys(jobs_b) if j not in seg_args]
     res_b = await _fetch_all(ctx, jobs_b, hist_start, ev_end, filters, guarded)
+    marks.append(("fetch_chain_segments", time.perf_counter()))
     for (m, d), (res, args) in zip(jobs_b, res_b, strict=True):
         if args is None or len(res.get("rows") or []) > _MAX_SEGMENT_ROWS:
             continue
@@ -1493,6 +1508,7 @@ async def _diagnose(
         if not ctx.deps.budget.consume("causal_queries").ok:
             inp.candidate_drivers = inp.candidate_drivers[: max(0, len(inp.candidate_drivers) - 1)]
     report = await asyncio.to_thread(engine.diagnose, inp)
+    marks.append(("engine", time.perf_counter()))
     report.data_quality = [*notes, *quality, *report.data_quality]
 
     # ---- evidence + derived artifacts ------------------------------------------------
@@ -1627,11 +1643,13 @@ async def _diagnose(
         date.fromisoformat(x)
         for x in ((report.event.previous_period.get("days") or []) if report.event else [])
     ]
+    marks.append(("evidence", time.perf_counter()))
     lever_lines, lever_ids, lever_numbers = await _levers(
         ctx, report, metric_id, lineage, filters, event_days, sorted(lever_ref), hist_start, history_days, index, tz,
         units,
     )
     evidence_ids += lever_ids
+    marks.append(("levers", time.perf_counter()))
     finding = Finding(
         finding_type="diagnosis",
         statement=report.headline,
@@ -1653,7 +1671,10 @@ async def _diagnose(
         summary=summary,
         provenance=ArtifactProvenance(
             evidence_ids=evidence_ids, calculation_version=_CALCULATION_VERSION,
-            source_metadata={"diagnosis": report.as_dict(), "finding_id": finding_id},
+            source_metadata={
+                "diagnosis": report.as_dict(), "finding_id": finding_id,
+                "phase_ms": {b[0]: round((b[1] - a[1]) * 1000) for a, b in itertools.pairwise(marks)},
+            },
         ),
         warnings=list(report.data_quality),
     )

@@ -50,7 +50,8 @@ from datetime import date, timedelta
 from itertools import combinations, permutations
 from typing import Any, Literal, TypeGuard
 
-from seleric_swarm.causal.dowhy_service import TimeSeriesEffect, estimate_time_series_effect
+from seleric_swarm.causal.dowhy_service import TimeSeriesEffect
+from seleric_swarm.causal.estimate_pool import estimate_many
 from seleric_swarm.toolsets import policy_config as P
 
 _log = logging.getLogger(__name__)
@@ -1835,6 +1836,19 @@ def _bridge(
     return terms, described, residual, residual_prev
 
 
+@dataclass
+class _PendingDriver:
+    """A driver that moved at the event: its estimate is queued and read once all of them are in."""
+
+    driver: str
+    kwargs: dict[str, Any]
+    moved: bool
+    x_z: float | None
+    x_ev: float | None
+    x_rf: float | None
+    dx: float
+
+
 def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
     y = inp.outcome
     ys = inp.series.get(y, {})
@@ -2196,6 +2210,67 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
             clusters[b].append(a)
 
     implicated: list[DriverFinding] = []
+    pending: list[tuple[int, _PendingDriver]] = []
+
+    def finish(pend: _PendingDriver, est: TimeSeriesEffect) -> DriverFinding:
+        c, moved, x_z, x_ev, x_rf, dx = pend.driver, pend.moved, pend.x_z, pend.x_ev, pend.x_rf, pend.dx
+        driver_finding = DriverFinding(
+            driver=c, classification=None, status="insufficient_evidence", reason=est.reason,
+            n_rows=est.n_rows, estimator=f"DoWhy {est.estimator} on an explicit DAG; {est.uncertainty_method} interval",
+            naive_association=est.naive_association, inseparable_from=sorted(clusters[c]),
+        )
+        if est.status != "estimated" or est.effect is None:
+            driver_finding.classification = "insufficient_evidence"
+            return driver_finding
+        beta = est.effect
+        lo, hi = est.confidence_interval
+        contribution = beta * dx
+        c_lo, c_hi = sorted((lo * dx, hi * dx))
+        aligned = _sign(contribution) == _sign(delta) and _sign(delta) != 0
+        cls, why = _classify_driver(est, moved, aligned)
+        # classification = what the history says about X -> Y in general;
+        # status = whether X explains THIS event (it must have moved, the right way).
+        status: Literal["implicated", "ruled_out"] = "implicated"
+        lo_, hi_ = est.confidence_interval
+        if not (lo_ > 0 or hi_ < 0):
+            status = "ruled_out"  # no adjusted effect: the reason already says so
+            driver_finding.ruled_out_because = "no_effect"
+        elif not moved:
+            status = "ruled_out"
+            driver_finding.ruled_out_because = "did_not_move"
+            why = f"{c} did not move unusually on or just before the event" + (f" (z={x_z:.1f})" if x_z is not None else "") + f"; {why}"
+        elif not aligned:
+            status = "ruled_out"
+            driver_finding.ruled_out_because = "wrong_direction"
+            why = f"{c} moved in the direction that would push {y} the other way; {why}"
+        driver_finding.classification = cls
+        driver_finding.status = status
+        driver_finding.reason = why
+        driver_finding.effect_per_unit = beta
+        driver_finding.effect_ci = [lo, hi]
+        driver_finding.p_value = est.p_value
+        driver_finding.driver_event = x_ev
+        driver_finding.driver_reference = x_rf
+        driver_finding.driver_delta = dx
+        driver_finding.driver_z = x_z
+        driver_finding.driver_moved_before_or_at_event = moved
+        driver_finding.contribution = contribution
+        driver_finding.contribution_ci = [c_lo, c_hi]
+        # The model is daily: additive outcomes sum the event days, rates average them.
+        driver_finding.share_of_change = contribution / delta if abs(delta) > 1e-12 else None
+        driver_finding.causal_path = f"{c} → {y}"
+        driver_finding.adjustment_set = est.adjustment_set
+        driver_finding.graph_edges = [list(e) for e in est.graph_edges]
+        driver_finding.identified_estimand = est.identified_estimand
+        driver_finding.direction_evidence = est.temporal
+        driver_finding.refutations = est.refutations
+        driver_finding.assumptions = [
+            f"No unmeasured same-day common cause of {c} and {y} beyond day-of-week, trend and yesterday's values.",
+            f"{y} does not cause {c} within the same day.",
+            "Effect is linear in the range observed and stable over the history window.",
+        ]
+        return driver_finding
+
     for c in drivers:
         xs = inp.series[c]
         others = {o: inp.series[o] for o in drivers if o != c and o not in clusters[c]}
@@ -2270,72 +2345,24 @@ def diagnose(inp: DiagnosisInput) -> DiagnosisReport:
                 driver_moved_before_or_at_event=False,
             ))
             continue
-        est = estimate_time_series_effect(
-            outcome=ys, treatment=xs, others=others, days=history,
-            treatment_name=c, outcome_name=y, alpha=P.DIAG_ALPHA,
-            refuter_tolerance=P.DIAG_REFUTER_TOLERANCE,
-            min_rows_per_covariate=P.DIAG_MIN_ROWS_PER_COVARIATE,
-            min_rows=P.MIN_OBSERVATION_ROWS, placebo_shifts=P.DIAG_PLACEBO_SHIFTS,
-        )
-        driver_finding = DriverFinding(
-            driver=c, classification=None, status="insufficient_evidence", reason=est.reason,
-            n_rows=est.n_rows, estimator=f"DoWhy {est.estimator} on an explicit DAG; {est.uncertainty_method} interval",
-            naive_association=est.naive_association, inseparable_from=sorted(clusters[c]),
-        )
-        if est.status != "estimated" or est.effect is None:
-            driver_finding.classification = "insufficient_evidence"
-            report.drivers.append(driver_finding)
-            continue
-        beta = est.effect
-        lo, hi = est.confidence_interval
-        contribution = beta * dx
-        c_lo, c_hi = sorted((lo * dx, hi * dx))
-        aligned = _sign(contribution) == _sign(delta) and _sign(delta) != 0
-        cls, why = _classify_driver(est, moved, aligned)
-        # classification = what the history says about X -> Y in general;
-        # status = whether X explains THIS event (it must have moved, the right way).
-        status: Literal["implicated", "ruled_out"] = "implicated"
-        lo_, hi_ = est.confidence_interval
-        if not (lo_ > 0 or hi_ < 0):
-            status = "ruled_out"  # no adjusted effect: the reason already says so
-            driver_finding.ruled_out_because = "no_effect"
-        elif not moved:
-            status = "ruled_out"
-            driver_finding.ruled_out_because = "did_not_move"
-            why = f"{c} did not move unusually on or just before the event" + (f" (z={x_z:.1f})" if x_z is not None else "") + f"; {why}"
-        elif not aligned:
-            status = "ruled_out"
-            driver_finding.ruled_out_because = "wrong_direction"
-            why = f"{c} moved in the direction that would push {y} the other way; {why}"
-        driver_finding.classification = cls
-        driver_finding.status = status
-        driver_finding.reason = why
-        driver_finding.effect_per_unit = beta
-        driver_finding.effect_ci = [lo, hi]
-        driver_finding.p_value = est.p_value
-        driver_finding.driver_event = x_ev
-        driver_finding.driver_reference = x_rf
-        driver_finding.driver_delta = dx
-        driver_finding.driver_z = x_z
-        driver_finding.driver_moved_before_or_at_event = moved
-        driver_finding.contribution = contribution
-        driver_finding.contribution_ci = [c_lo, c_hi]
-        # The model is daily: additive outcomes sum the event days, rates average them.
-        driver_finding.share_of_change = contribution / delta if abs(delta) > 1e-12 else None
-        driver_finding.causal_path = f"{c} → {y}"
-        driver_finding.adjustment_set = est.adjustment_set
-        driver_finding.graph_edges = [list(e) for e in est.graph_edges]
-        driver_finding.identified_estimand = est.identified_estimand
-        driver_finding.direction_evidence = est.temporal
-        driver_finding.refutations = est.refutations
-        driver_finding.assumptions = [
-            f"No unmeasured same-day common cause of {c} and {y} beyond day-of-week, trend and yesterday's values.",
-            f"{y} does not cause {c} within the same day.",
-            "Effect is linear in the range observed and stable over the history window.",
-        ]
-        report.drivers.append(driver_finding)
-        if status == "implicated" and cls in ("supported_cause", "likely_contributor"):
-            implicated.append(driver_finding)
+        pending.append((len(report.drivers), _PendingDriver(
+            driver=c, moved=moved, x_z=x_z, x_ev=x_ev, x_rf=x_rf, dx=dx,
+            kwargs={
+                "outcome": ys, "treatment": xs, "others": others, "days": history,
+                "treatment_name": c, "outcome_name": y, "alpha": P.DIAG_ALPHA,
+                "refuter_tolerance": P.DIAG_REFUTER_TOLERANCE,
+                "min_rows_per_covariate": P.DIAG_MIN_ROWS_PER_COVARIATE,
+                "min_rows": P.MIN_OBSERVATION_ROWS, "placebo_shifts": P.DIAG_PLACEBO_SHIFTS,
+            },
+        )))
+        # Holds this driver's place in the report until the estimates, run side by side below, are in.
+        report.drivers.append(DriverFinding(driver=c, classification=None, status="insufficient_evidence", reason=""))
+
+    for (slot, pend), est in zip(pending, estimate_many([p.kwargs for _, p in pending]), strict=True):
+        found = finish(pend, est)
+        report.drivers[slot] = found
+        if found.status == "implicated" and found.classification in ("supported_cause", "likely_contributor"):
+            implicated.append(found)
 
     rank = {"supported_cause": 0, "likely_contributor": 1, "correlation": 2, "insufficient_evidence": 3, None: 4}
     status_rank = {"implicated": 0, "ruled_out": 1, "insufficient_evidence": 2, "excluded": 3}

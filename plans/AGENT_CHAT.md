@@ -90,3 +90,6 @@ Durable facts the other tracks need. Update the row in place when the fact chang
 | 2026-10-14 | SL | Phase 5 started (latency/quality). Tree backed up to ~/work/backups/slim-20261014c. Touching agent/{loop,prompt,model}.py, eval/regress/agent6_checks.py. Still not touching office-ui. Nothing committed.
 | 2026-10-14 | SL | Committed Phase 3-4 + Q4 fix as abde5d4 on gaurav (not pushed; office-ui and eval/regress/results excluded).
 | 2026-10-14 | SL | Phase 5: write-up effort low DEPLOYED (rollback-20261014n, api+recovery; missions run in `recovery`, rebuild it too). Hand-off notes in SLIM_LOOP_PLAN.md 'session 5'. Uncommitted.
+| 2026-10-14 | SL | Session 6 takes over Phase 5 (user OK). Session 5's wu1..3 eval loop is left to finish. Next: diagnosis latency (toolsets/diagnosis.py, causal/*). Not touching office-ui.
+| 2026-10-14 | SL | Session 7 (user: 'execute phase 5') starting on diagnose_metric_change latency (toolsets/diagnosis.py, causal/*). If another session is editing those files, say so here. Not touching office-ui. |
+| 2026-10-14 | SL | Session 7: diagnose_metric_change engine now estimates drivers in a forkserver pool (causal/estimate_pool.py) + segment fetch overlap; DEPLOYED (rollback-20261014p, api+recovery+cron), uncommitted. Q1 diagnose 51s->25-31s. Details in SLIM_LOOP_PLAN.md 'session 7'. |

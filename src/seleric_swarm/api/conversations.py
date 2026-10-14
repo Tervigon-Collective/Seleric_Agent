@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import tempfile
+import threading
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -24,6 +25,7 @@ from seleric_swarm.api.async_missions import (
     run_mission_job,
     seed_running_mission,
 )
+from seleric_swarm.causal import estimate_pool
 from seleric_swarm.conversations.blobs import (
     BlobStore,
     BlobValidationError,
@@ -1914,6 +1916,8 @@ class SubmissionRunExecutor:
 
 
 def build_submission_executor(runtime: SwarmRuntime) -> SubmissionRunExecutor:
+    # The diagnosis tool estimates its drivers in worker processes; start them now so no mission waits for their imports.
+    threading.Thread(target=estimate_pool.warm, name="diagnosis-pool-warm", daemon=True).start()
     repositories = _repositories(runtime)
     return SubmissionRunExecutor(runtime, repositories)
 
