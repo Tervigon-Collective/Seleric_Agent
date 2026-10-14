@@ -1,0 +1,52 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_5af4a8118cb744039ba084f85f240fbe",
+ "mission": "MS3-8f0d1ee1c0",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 88,
+ "elapsed_s": 82.857,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 10,
+ "llm_calls": 8,
+ "grounding": {
+  "derived": [],
+  "numbers": 20,
+  "measured": 20,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer \u2014 yes. In the last 30 days (order-date P&L basis) these Meta campaigns produced negative net profit (they spent ad budget but lost money):\n\nTop 10 Meta campaigns losing money (last 30 days, order-date P&L)\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Net profit: \u2212\u20b941,921; Ad spend: \u20b973,137. (Measured)\n- TH-383-SUSPENDER-29SEP \u2014 Net profit: \u2212\u20b931,273; Ad spend: \u20b956,657. (Measured)\n- DOG TOY CS-24SEP \u2014 Net profit: \u2212\u20b922,264; Ad spend: \u20b934,634. (Measured)\n- TH-222-WINGBIRD-23SEP \u2014 Net profit: \u2212\u20b919,699; Ad spend: \u20b973,105. (Measured)\n- CAT TOY CS-26SEP \u2014 Net profit: \u2212\u20b917,581; Ad spend: \u20b933,853. (Measured)\n- TH-012-SNUGBOO-23SEP \u2014 Net profit: \u2212\u20b914,767; Ad spend: \u20b928,555. (Measured)\n- TH-445-PROSUSPENDERBOOTS-25SEP \u2014 Net profit: \u2212\u20b913,516; Ad spend: \u20b929,675. (Measured)\n- TH-336-PAWTECH-26SEP \u2014 Net profit: \u2212\u20b910,545; Ad spend: \u20b966,628. (Measured)\n- TH-348-FUSIONHARNESS-03OCT \u2014 Net profit: \u2212\u20b99,675; Ad spend: \u20b914,667. (Measured)\n- TH-068_WILD-23SEP-CV \u2014 Net profit: \u2212\u20b99,520; Ad spend: \u20b919,893. (Measured)\n\nNotes, caveats and next steps\n- Basis: net profit and ad spend are from the order-date P&L (metrics net profit and ad spend (P&L basis)). Time range: last_30d (2026-09-14 to 2026-10-13). Currency: INR. (Measured)\n- The query was scoped to the default brand (Tilting Heads) because you didn\u2019t specify a brand. If you want another brand, tell me which one. (Measured)\n- Today\u2019s data is partial but this report ends 2026-10-13 (complete). Provenance: order_pnl view; hourly freshness. (Measured)\n- Hypothesis: campaigns with negative net profit may be (a) targeting low-margin products, (b) having poor creative/landing conversion, or (c) incurring high returns/discounts raising net COGS \u2014 I haven\u2019t tested causes yet. (Hypothesis)\n\nSuggested follow-up (pick one)\n- Drill into the #1 losing campaign (TH-383-SUSPENDER-26SEP-ADV+) by channel/creative/product and see whether poor conversion, low AOV or high returns explain it \u2014 I can run that now.\nperiod \u00b7 INR \u00b7 data through 2026-10-13."
+}

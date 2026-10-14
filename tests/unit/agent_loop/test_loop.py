@@ -300,3 +300,18 @@ async def test_run_python_name_error_restates_what_data_exists():
     run = [ToolCallPart("run_python", {"code": "result = q_1['rows']", "query_ids": ["q_1"]}, tool_call_id="c2")]
     await _turn(_scripted(calls, run, answer))
     assert "NameError" in seen[0] and "only data available is `evidence`" in seen[0] and "query_id" in seen[0]
+
+
+@pytest.mark.asyncio
+async def test_a_filtered_final_step_is_retried_from_the_gathered_evidence():
+    call = [ToolCallPart("metrics_query", {"measures": ["net_sales"]}, tool_call_id="c1")]
+    junk = "catalogue. If needed. Never invent. " * 60
+    queries: list[int] = []
+
+    def retry(messages: list[ModelMessage]) -> list[Any]:
+        queries.append(sum(isinstance(p, ToolReturnPart) for m in messages for p in m.parts))
+        return [TextPart("Net sales were ₹42,177.")]
+
+    result, gw, _ = await _turn(_scripted(call, [TextPart(junk)], retry))
+    assert result.stats["degenerate_retries"] == 1 and "42,177" in result.answer
+    assert len(gw.calls) == 1 and queries == [1]  # no second fetch; the retry saw the first tool result

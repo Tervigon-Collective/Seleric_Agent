@@ -17,7 +17,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   useShellStore.getState().setWorkspace("conversation");
-  useShellStore.setState({ sidebarOpen: true, detailsOpen: true, detailTab: "Activity" });
+  useShellStore.setState({ sidebarOpen: true, detailsOpen: true, detailTab: "Debug" });
   useConversationStore.setState({ demoMode: true, error: null });
 });
 afterEach(() => {
@@ -87,30 +87,16 @@ describe("activity phases", () => {
     expect(phases[1].events.map((e) => e.summary)).toEqual(["Metrics ready", "Fetching metrics"]);
   });
 
-  it("renders phases without raw sequence numbers in the panel", () => {
-    useConversationStore.setState({
-      selectedThreadId: "t1",
-      threads: [thread("t1", "Sales")],
-      messages: { t1: [] },
-    });
-    useOffice.getState().hydrate({
-      missionId: "m1", query: "Sales", status: "working", route: "swarm", stage: "working",
-      leadershipEpoch: 0, lastSeq: 2, agents: [], board: { steps: [] },
-      handoffs: [], artifacts: {}, unresolvedQuestions: [], limitations: [],
-      finalResponse: null, timeline: [],
-    });
-    for (const e of [
+  it("keeps sequence numbers out of visible phase summaries", () => {
+    const phases = groupActivityPhases([
       event({ eventId: "e1", seq: 11, missionId: "m1", agentId: "retriever_agent", summary: "Fetching metrics" }),
       event({ eventId: "e2", seq: 12, missionId: "m1", agentId: "retriever_agent", summary: "Metrics ready" }),
-    ]) {
-      useOffice.getState().ingestEvent(e);
-    }
-    act(() => root.render(<DetailPanel />));
-    expect(container.textContent).toContain("retriever");
-    expect(container.textContent).toContain("2 steps");
-    expect(container.textContent).not.toContain("#11");
-    // Raw events stay expandable for diagnosis.
-    expect(container.querySelector(".activity-phase ul")).toBeTruthy();
+    ], "swarm");
+    expect(phases).toHaveLength(1);
+    expect(phases[0].agent).toBe("retriever");
+    expect(phases[0].count).toBe(2);
+    expect(phases[0].events.map((row) => row.summary)).toEqual(["Metrics ready", "Fetching metrics"]);
+    expect(phases[0].events.every((row) => !row.summary.includes("#"))).toBe(true);
   });
 });
 

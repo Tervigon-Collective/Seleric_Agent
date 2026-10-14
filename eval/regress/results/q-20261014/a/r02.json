@@ -1,0 +1,49 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_44f82ce5fbf44b4dacd2fdbe1df67c17",
+ "mission": "MS3-dd15e87045",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 72,
+ "elapsed_s": 70.033,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 7,
+ "llm_calls": 6,
+ "grounding": {
+  "derived": [],
+  "numbers": 33,
+  "measured": 33,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": false,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer \u2014 these Meta campaigns ran at a net loss (order-date P&L) in the last 30 days (2026-09-14..2026-10-13). Top 10 money-losers by net profit (most negative first):\n\nMeasured (order-date P&L, Meta, paid only, default brand Tilting Heads) \u2014 last 30 days:\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend: \u20b973,136.85; Contribution margin: \u20b931,216.02; Net profit: \u20b9-41,920.83203758388; Orders: 34. (Measured)\n- TH-383-SUSPENDER-29SEP \u2014 Ad spend: \u20b956,656.66; Contribution margin: \u20b925,383.73; Net profit: \u20b9-31,272.93181758389; Orders: 26. (Measured)\n- DOG TOY CS-24SEP \u2014 Ad spend: \u20b934,634.24; Contribution margin: \u20b912,369.75; Net profit: \u20b9-22,264.494100000004; Orders: 19. (Measured)\n- TH-222-WINGBIRD-23SEP \u2014 Ad spend: \u20b973,104.85; Contribution margin: \u20b953,405.37; Net profit: \u20b9-19,699.47622663877; Orders: 77. (Measured)\n- CAT TOY CS-26SEP \u2014 Ad spend: \u20b933,853.42; Contribution margin: \u20b916,271.97; Net profit: \u20b9-17,581.445497959176; Orders: 18. (Measured)\n- TH-012-SNUGBOO-23SEP \u2014 Ad spend: \u20b928,554.50; Contribution margin: \u20b913,787.87; Net profit: \u20b9-14,766.628657627121; Orders: 17. (Measured)\n- TH-445-PROSUSPENDERBOOTS-25SEP \u2014 Ad spend: \u20b929,674.59; Contribution margin: \u20b916,158.97; Net profit: \u20b9-13,515.623457627116; Orders: 14. (Measured)\n- TH-336-PAWTECH-26SEP \u2014 Ad spend: \u20b966,628.22; Contribution margin: \u20b956,083.2148; Net profit: \u20b9-10,545.005199999992; Orders: 42. (Measured)\n- TH-348-FUSIONHARNESS-03OCT \u2014 Ad spend: \u20b914,667.41; Contribution margin: \u20b94,992.28; Net profit: \u20b9-9,675.131499999996; Orders: 5. (Measured)\n- TH-068_WILD-23SEP-CV \u2014 Ad spend: \u20b919,892.90; Contribution margin: \u20b910,373.19; Net profit: \u20b9-9,519.709199999998; Orders: 11. (Measured)\n\nNotes / caveats:\n- Basis: order-date P&L net profit = contribution margin \u2212 ad spend (P&L basis) (catalogue definition). (Measured)\n- Freshness: data refreshed 2026-10-13T18:44 (IST). (Measured)\n- These are last-30d totals; a campaign can be losing because of high spend, low orders, product margins or returns \u2014 we haven\u2019t decomposed causes yet. (Hypothesis)\n\nPeriod \u00b7 INR \u00b7 data as of 2026-10-13 (cube refresh 2026-10-13T18:44 IST). Want me to (1) drill into adsets/creatives for the top 5 losers, or (2) run a cause diagnosis (conversion, AOV, returns, or MER) for a specific campaign?"
+}

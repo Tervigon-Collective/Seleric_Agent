@@ -57,6 +57,8 @@ TURN_BUDGET_S = float(os.getenv("AGENT_TURN_BUDGET_S", "150"))  # soft: tools ar
 VERIFY_NUMBERS = os.getenv("AGENT_VERIFY_NUMBERS", "1") == "1"
 BUDGET_NOTICE = ("Tool budget reached. Write the final answer now from the evidence gathered (no tool calls); "
                  "state what remains unverified.")
+RETRY_NOTICE = ("Your previous reply was unusable. Write the final answer now from the evidence already gathered; "
+                "call a tool only if something essential is still missing.")
 DEGENERATE_ANSWER = ("I couldn't produce a reliable answer: the model returned unusable output twice. "
                      "Please retry.")
 
@@ -243,7 +245,11 @@ async def run_turn(
         if degenerate(answer, _finish_reason(messages)):
             stats["degenerate_retries"] += 1
             emit_progress(mission_id, "agent.revising", "The model returned unusable output — retrying once", {"reason": "degenerate"})
-            answer, messages = await run(question, history)
+            if state.tool_calls and isinstance(messages[-1], ModelResponse):
+                # evidence is already gathered: redo only the filtered / runaway step instead of the whole turn
+                answer, messages = await run(RETRY_NOTICE, messages[:-1])
+            else:
+                answer, messages = await run(question, history)
             if degenerate(answer, _finish_reason(messages)):
                 answer, limitations = DEGENERATE_ANSWER, ["DEGENERATE_OUTPUT"]
     except UsageLimitExceeded as exc:

@@ -18,7 +18,7 @@ beforeEach(() => {
   root = createRoot(container);
   useConversationStore.getState().reset();
   useShellStore.getState().setWorkspace("conversation");
-  useShellStore.setState({ sidebarOpen: true, detailsOpen: false, detailTab: "Evidence" });
+  useShellStore.setState({ sidebarOpen: true, detailsOpen: false, detailTab: "Debug" });
   useConversationStore.setState({ demoMode: true, error: null });
 });
 afterEach(() => {

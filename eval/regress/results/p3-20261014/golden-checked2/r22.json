@@ -1,0 +1,39 @@
+{
+ "n": 22,
+ "aspect": "reconciliation",
+ "q": "give me a net profit breakdown, waterfall for September 2026",
+ "thread": "thread_ad082835f6d746719dba8ccbc0f9bb85",
+ "mission": "MS3-c885cf9ac5",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 13,
+ "elapsed_s": 10.537,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 16,
+  "measured": 16,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "break_down_metric"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": false,
+   "what": "number -172226.96 (live)"
+  },
+  {
+   "ok": true,
+   "what": "not 'residual'"
+  }
+ ],
+ "answer": "Net profit for Sept 2026 was a loss of \u20b91,527,829 (Measured). The certified P&L waterfall (reconciles exactly) is:\n\n- P&L gross sales: \u20b92,253,539 (Measured)  \n  - less P&L discounts: \u2212\u20b9110,359 (Measured)  \n  - less P&L return revenue: \u2212\u20b91,524,155 (Measured)  \n  - less P&L cancel revenue: \u2212\u20b979,775 (Measured)  \n= P&L net sales: \u20b9539,251 (Measured)\n\n- less P&L net COGS: \u2212\u20b9873,758 (Measured)  \n  - of which product cost: \u20b9553,170 (Measured)  \n  - operating cost: \u20b9320,588 (Measured)  \n    - shipping: \u20b9164,428 (Measured)  \n    - packaging: \u20b924,925 (Measured)  \n    - payment gateway fees: \u20b929,437 (Measured)  \n    - RTO cost: \u20b9101,798 (Measured)\n\n= P&L contribution margin: \u2212\u20b9334,507 (Measured)\n\n- less P&L ad spend: \u2212\u20b91,193,322 (Measured)\n\n= P&L net profit: \u2212\u20b91,527,829 (Measured)\n\nNotes: all lines come from the certified P&L view for 2026-09-01..2026-09-30 and were returned reconciled by the catalogue break_down_metric call (no derivations needed).  \n\n2026-09-01..2026-09-30 \u00b7 INR \u00b7 data as of 2026-10-14.  \nWould you like this waterfall broken down by channel (P&L net sales, ad spend and contribution by channel) next?"
+}

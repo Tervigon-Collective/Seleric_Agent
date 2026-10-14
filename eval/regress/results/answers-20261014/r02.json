@@ -1,0 +1,50 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_6d95485595b24864be3ce4d354d6101b",
+ "mission": "MS3-b2b9edfb53",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 50,
+ "elapsed_s": 46.372,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 8,
+ "llm_calls": 6,
+ "grounding": {
+  "derived": [],
+  "numbers": 17,
+  "measured": 17,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "metrics_query",
+  "run_python",
+  "run_python",
+  "metrics_drilldown"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Meta campaigns spent \u20b94,17,161 last week (2026-10-07 to 2026-10-13) but generated a net loss of \u20b91,69,213. The campaigns with the lowest efficiency (Net ROAS below 1) and highest losses are:\n\n| Campaign Name               | Ad Spend (\u20b9) | Net ROAS | Net Profit (\u20b9) | Orders |\n|-----------------------------|--------------|----------|----------------|--------|\n| TH-383-SUSPENDER-29SEP      | 24,101       | 0.56     | -10,703        | 10     |\n| TH-383-SUSPENDER-26SEP-ADV+ | 23,526       | 0.48     | -12,229        | 8      |\n| DOG DAD T-SHIRT-CS-06OCT    | 12,323       | 0.45     | -6,776         | 8      |\n| DOG SHOES-CR-7OCT           | 10,704       | 0.42     | -6,201         | 5      |\n| DOG MOM T-SHIRT-CS-06OCT    | 10,268       | 0.37     | -6,519         | 4      |\n\nThese campaigns are underperforming, with low returns on ad spend and significant losses.\n\nPeriod: 2026-10-07 to 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Should we analyze specific campaign settings or audience targeting for these underperforming campaigns?"
+}

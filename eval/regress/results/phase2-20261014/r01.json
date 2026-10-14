@@ -1,0 +1,69 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_a6bba688737d472cb968993197f70e2a",
+ "mission": "MS3-cee1e7c2fe",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 92,
+ "elapsed_s": 89.675,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 7,
+ "llm_calls": 9,
+ "grounding": {
+  "derived": [],
+  "numbers": 29,
+  "measured": 29,
+  "misbound": [
+   "34,377 on the line about 2026-10-13 is not in that row; it is in the row for 2026-10-11",
+   "136,061 on the line about 2026-10-13 is not in that row; it is in the row for 2026-10-05",
+   "34,377 on the line about 2026-10-13 is not in that row; it is in the row for 2026-10-11",
+   "136,061 on the line about 2026-10-13 is not in that row; it is in the row for 2026-10-05"
+  ],
+  "problems": [
+   "wrong row: 34,377 on the line about 2026-10-13 is not in that row; it is in the row for 2026-10-11",
+   "wrong row: 136,061 on the line about 2026-10-13 is not in that row; it is in the row for 2026-10-05"
+  ],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "diagnose_metric_change",
+  "metrics_query",
+  "run_python",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 42177.333233606856})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 42177.333233606856})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 42177.333233606856})"
+  }
+ ],
+ "answer": "Short answer \u2014 the premise is wrong: sales did not drop yesterday. Measured: Net sales rose.\n\nEvidence (previous \u2192 event)\n- Net sales (2026-10-12) = \u20b942,177 \u2192 (2026-10-13) = \u20b991,220 (+116.0%). Measured\n\nWhat moved (exact accounting decomposition; these numbers come from the diagnostic)\n- Total net-sales change (signed): \u20b949,042 (reconciled). Measured\n- Main contributors to that increase (amount = effect on Net sales; share of the Net-sales change):\n  - Gross sales: effect +\u20b956,180 (115.0%). Measured\n    - Gross profit: +\u20b927,083 (55.0%). Measured\n    - Gross COGS: +\u20b917,570 (36.0%). Measured\n    - Product P&L ad spend (allocated): +\u20b911,527 (24.0%). Measured\n  - Net-sales deductions: \u2212\u20b93,517 (\u22127.0%). Measured\n  - Product P&L discounts: \u2212\u20b93,620 (\u22127.0%). Measured\n\nWhere the lift concentrated\n- By ad platform: Meta jumped from \u20b96,290 \u2192 \u20b947,854 and explains ~85% of the change vs the comparison period. Measured\n- Some ads/states showed large jumps (examples in the diagnostic: ad TH-152\u2026 \u20b90\u2192\u20b92,263; DOG TOYS-CS \u20b9593\u2192\u20b94,345; MADHYA PRADESH \u20b90\u2192\u20b93,537). Measured\n\nContext: Net sales on 2026-10-13 (\u20b991,220) sits inside the recent normal range (14-day range \u20b934,377\u2013\u20b9136,061; median \u20b980,154). Measured\n\nInterpretation / confidence\n- This is an exact period-to-period decomposition (accounting identity), not a causal proof of why those lines moved. The diagnostic found no single tested upstream cause labelled \u201csupported_cause\u201d; the components above are the factual drivers of the difference. Measured\n- Data note: a few tax fields failed to fetch (warnings in the diagnostic). Measured\n\nWould you like a drilldown by Meta campaign or by product to see which campaigns/products caused the Oct 13 jump? I can run that next.\n\nDaily \u00b7 INR \u00b7 data as of 2026-10-13 (order date)\n\n\u26a0 Not verified against the data: wrong row: 34,377 on the line about 2026-10-13 is not in that row; it is in the row for 2026-10-11; wrong row: 136,061 on the line about 2026-10-13 is not in that row; it is in the row for 2026-10-05"
+}

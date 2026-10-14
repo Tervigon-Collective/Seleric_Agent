@@ -1,0 +1,32 @@
+{
+ "n": 2,
+ "aspect": "replay11",
+ "q": "yes",
+ "thread": "thread_9f38bd15c9a64605b49237051da3d0d6",
+ "mission": "MS3-243146a611",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 67,
+ "elapsed_s": 64.704,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 17,
+  "measured": 17,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Net sales did not drop \u2014 they rose from \u20b940,119 on 2026-10-12 to \u20b991,220 on 2026-10-13 (+127%). Measured evidence:\n\n- Totals (previous \u2192 yesterday) \u2014 Measured\n  - Net sales: \u20b940,119 \u2192 \u20b991,220\n  - Orders: 26 \u2192 45\n  - Net AOV: \u20b91,543 \u2192 \u20b92,027\n\n- Contribution to the increase \u2014 Derived (exact accounting split)\n  - Orders explained ~66% of the uplift; higher Net AOV explained ~34%.\n\n- Platform-level driver \u2014 Measured\n  - Meta net sales: \u20b96,290 \u2192 \u20b947,854 (meta accounts for ~81% of the day-over-day increase).\n\n- Campaigns / ads flagged (places that broke from their usual range) \u2014 Measured\n  - Campaign TH-471-PLAYSCRATCHLOUNGE-13OCT-PMF: \u20b90 \u2192 \u20b924,962 (major part of Meta\u2019s jump).\n  - Ad DOG TOYS\u2011CS: \u20b9593 \u2192 \u20b94,345\n  - Ad TH-152\u2011TANGLELEASH_SI207_BN537: \u20b90 \u2192 \u20b92,263\n\nContext: Period: 2026-10-12 vs 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext step: Shall I show a campaign-level breakdown for Meta on 2026-10-13 (top campaigns by net sales) so we can confirm which campaign(s) to inspect next?"
+}

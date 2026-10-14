@@ -49,7 +49,7 @@ def compute_features(
                 if "SPARSE_HISTORY" not in flags:
                     flags.append("SPARSE_HISTORY")
                 continue
-            pct = (values[-1] - values[-2]) / values[-2] * 100
+            pct = (values[-1] - values[-2]) / abs(values[-2]) * 100  # abs: a loss-to-profit swing must read as up
             features[feature_id] = FeatureValue(
                 value=pct, window=spec.get("window"), strategy_version=STRATEGY_VERSION
             )

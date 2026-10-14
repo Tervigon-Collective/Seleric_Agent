@@ -1,0 +1,25 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_c4981390da4c4d71affaa7850a8a5934",
+ "mission": "MS3-d8206dcd64",
+ "run_status": "FAILED",
+ "status": "failed",
+ "wall_s": 42,
+ "elapsed_s": null,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 0,
+ "llm_calls": null,
+ "grounding": null,
+ "tools": [],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": null,
+   "what": "tool checks skipped: trace.steps carries no tool calls (pre-slim-loop system)"
+  }
+ ],
+ "answer": "v2 pipeline could not answer: intent_lost:dimension:publisher_platform"
+}

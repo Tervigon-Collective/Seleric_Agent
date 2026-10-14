@@ -1,0 +1,48 @@
+{
+ "n": 6,
+ "aspect": "test_agent6",
+ "q": "Break that down by product and channel.",
+ "thread": "thread_8780c5fd618a41c2bfb377ac116845f6",
+ "mission": "MS3-8f0076d1a6",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 34,
+ "elapsed_s": 30.909,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 27,
+  "measured": 27,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: product breakdown"
+  },
+  {
+   "ok": true,
+   "what": "tool: channel breakdown"
+  },
+  {
+   "ok": true,
+   "what": "tool: reuses prior scope (drilldown or same window)"
+  }
+ ],
+ "answer": "Summary\n- Big drops are concentrated in specific product \u00d7 channel pairs on IG feed: several high-revenue SKUs that sold last week on ig_feed dropped to zero or near-zero this week so far, explaining most of the net sales fall. There are also a few new/product gains this week (mostly small).\n\nTop product \u00d7 channel drops (last week \u2192 this week so far)\n- Meow Scratch Lounge \u2014 ig_feed: \u20b962,899 \u2192 \u20b90 (\u2212\u20b962,899, \u2212100.0%) \u2014 Measured. Orders 29 \u2192 0 (\u221229) \u2014 Measured.  \n- Pawveralls Suspender Boots \u2014 ig_feed: \u20b940,450 \u2192 \u20b90 (\u2212\u20b940,450, \u2212100.0%) \u2014 Measured. Orders 24 \u2192 0 (\u221224).  \n- WingBird Smart Flapping Toy \u2014 ig_feed: \u20b937,099 \u2192 \u20b92,202 (\u2212\u20b934,897, \u221294.1%) \u2014 Measured. Orders 38 \u2192 2 (\u221236).  \n- PawTech Cleaner 500ml \u2014 ig_feed: \u20b924,355 \u2192 \u20b90 (\u2212\u20b924,355, \u2212100.0%) \u2014 Measured. Orders 12 \u2192 0 (\u221212).  \n- Pawveralls Pro Suspender Boots \u2014 exchange_replacement: \u20b925,414 \u2192 \u20b96,777 (\u2212\u20b918,636, \u221273.3%) \u2014 Measured. Orders 13 \u2192 3 (\u221210).  \n- SnugSole Boots \u2014 ig_feed: \u20b916,771 \u2192 \u20b91,525 (\u2212\u20b915,247, \u221290.9%) \u2014 Measured. Orders 10 \u2192 1 (\u22129).  \n\nNotable gains (new this week)\n- Play Scratch Lounge \u2014 ig_feed: \u20b90 \u2192 \u20b918,553 (+\u20b918,553) \u2014 Measured (8 orders).  \n- VoiceBond Toy \u2014 ig_feed: \u20b90 \u2192 \u20b94,829 (+\u20b94,829) \u2014 Measured (2 orders).  \n(Other smaller gains listed in results.)\n\nInterpretation and likely causes\n- Measured: the revenue loss is concentrated in IG feed performance for a handful of high-value SKUs (multiple dropped to zero).  \n- Hypothesis (plausible): campaign or ad-level pause/creative issue on IG for those SKUs or budget reallocation \u2014 consistent with the earlier finding that ad spend fell and correlated with sales drops. \u2014 Hypothesis (not yet proven).  \n- Alternate/partial contributors: changes in availability (out-of-stock), price/discounting, or tracking/attribution changes for IG could produce the pattern; these require product- or campaign-level checks.\n\nData notes and provenance\n- All figures are Measured from the product view (product_* metrics) comparing 2026-10-05..2026-10-11 (last week) vs 2026-10-12..2026-10-13 (this week so far). Currency INR. Source queries: product view (freshness: last refresh 2026-10-13T20:22:35 IST).  \n\nSuggested follow-up\n- Run a drill by campaign_id and ad_platform for the top 6 dropped product\u00d7channel rows to confirm whether IG campaigns were paused or budget reduced (I can run that now)."
+}

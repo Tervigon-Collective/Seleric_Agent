@@ -1,0 +1,31 @@
+{
+ "n": 1,
+ "aspect": "golden",
+ "q": "What were net sales yesterday?",
+ "thread": "thread_922e541d350a471d9d290e376c1399da",
+ "mission": "MS3-71bc6efa82",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 13,
+ "elapsed_s": 11.75,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 2,
+  "measured": 2,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_concept",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Net sales yesterday (2026-10-12): \u20b942,177\n\nEvidence\n- 2026-10-12 \u2014 Net sales: \u20b942,177 \u2014 Tag: **Measured** (from commerce.net_sales)\n- Notes: query used default brand Tilting Heads (no brand filter). Data freshness: last cube refresh 2026-10-13T17:14:57.804Z; commerce view refreshes hourly.\n\nPeriod \u00b7 INR \u00b7 data as of 2026-10-13T17:14:57.804Z\n\nWould you like this broken down by channel or product next?"
+}

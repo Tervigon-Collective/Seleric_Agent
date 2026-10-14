@@ -1,0 +1,38 @@
+{
+ "n": 1,
+ "aspect": "replay11",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_9f38bd15c9a64605b49237051da3d0d6",
+ "mission": "MS3-23f5cc261e",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 67,
+ "elapsed_s": 62.68,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 9,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 20,
+  "measured": 20,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Net sales didn\u2019t drop \u2014 it rose from \u20b940,119 on 2026-10-12 to \u20b991,220 on 2026-10-13 (+127%). \n\nEvidence (previous \u2192 yesterday)\n- Net sales: \u20b940,119 \u2192 \u20b991,220. (Measured)\n- Orders: 26 \u2192 45. (Measured)\n- Net AOV: \u20b91,543 \u2192 \u20b92,027. (Measured)\n- Ad spend (allocated): \u20b938,661 \u2192 \u20b950,439. (Measured)\n- Clicks: 3,433 \u2192 4,236. (Measured)\n- Impressions: 133,023 \u2192 147,284. (Measured)\n- Conversion rate: 0.46% \u2192 1.08%. (Measured)\n\nWhat this says (short):\n- The change is an increase driven ~66% by higher order volume and ~34% by higher AOV (Derived from the exact bridge the system produced). Meta platform activity explains most of the lift (meta net sales rose from ~\u20b96.3k \u2192 ~\u20b947.9k). The system found no single lever that fell outside its normal range \u2014 this is a positive spike, not a drop.\n\nPeriod: 2026-10-12 vs 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext step: Shall I drill into which campaigns or products on Meta drove the jump yesterday?"
+}

@@ -15,6 +15,7 @@ import {
 import { SelericAssistantRuntimeProvider } from "./providers/SelericAssistantRuntime";
 import { useConversationStore } from "./stores/conversation";
 import { useShellStore } from "./stores/shell";
+import { isTraceableMissionId, useOffice } from "./store";
 import { readRoute, writeRoute } from "./routing";
 
 /** Copy-link sharing: the URL already encodes the thread, so the link reopens it. */
@@ -84,6 +85,7 @@ export default function App() {
   const selectedThreadId = useConversationStore((s) => s.selectedThreadId);
   const threads = useConversationStore((s) => s.threads);
   const currentTitle = threads.find((t) => t.id === selectedThreadId)?.title || null;
+  const missionId = useOffice((s) => s.missionId);
   useEffect(() => {
     // Narrow viewports always start with panels folded; desktop keeps the
     // last inspector choice from localStorage (see shell store).
@@ -101,8 +103,17 @@ export default function App() {
     return () => { alive = false; };
   }, [loadThreads, selectThread]);
   useEffect(() => {
-    if (routingReady) writeRoute({ workspace, threadId: selectedThreadId });
-  }, [routingReady, workspace, selectedThreadId]);
+    if (!routingReady) return;
+    writeRoute({
+      workspace,
+      threadId: selectedThreadId,
+      ...(isTraceableMissionId(missionId)
+        ? { missionId }
+        : selectedThreadId
+          ? {}
+          : { missionId: null }),
+    });
+  }, [routingReady, workspace, selectedThreadId, missionId]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -191,7 +202,7 @@ export default function App() {
           aria-label="Toggle conversation details"
           aria-expanded={detailsOpen}
           onClick={toggleDetails}
-          title="Inspector (activity, context, sources)"
+          title="Inspector (causal, debug, memory)"
         ><PanelRightIcon /></button>
         <button className="icon-btn" onClick={() => setDiagnosticsOpen(true)}
           aria-label="Open admin diagnostics" title="Diagnostics"><SlidersIcon /></button>

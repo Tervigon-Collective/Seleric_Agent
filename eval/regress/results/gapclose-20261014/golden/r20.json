@@ -1,0 +1,48 @@
+{
+ "n": 20,
+ "aspect": "golden",
+ "q": "What was the average order value and COD order count by product in September?",
+ "thread": "thread_ba1c3eecdf1b4e39b9b9a644b13a7d05",
+ "mission": "MS3-e163ee0593",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 42,
+ "elapsed_s": 38.102,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 7,
+ "grounding": {
+  "derived": [],
+  "numbers": 0,
+  "measured": 0,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_dimension",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "show_table",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": false,
+   "what": "any of ['September', '2026-09']"
+  },
+  {
+   "ok": true,
+   "what": "not 'partial day'"
+  },
+  {
+   "ok": true,
+   "what": "not 'not available'"
+  }
+ ],
+ "answer": "I couldn't produce a reliable answer: the model returned unusable output twice. Please retry."
+}

@@ -907,7 +907,7 @@ button { color: inherit; }
    =========================================================================== */
 
 .detail-panel {
-  width: 320px; flex: 0 0 320px; min-height: 0;
+  width: 360px; flex: 0 0 360px; min-height: 0;
   border-left: 1px solid var(--line);
   display: flex; flex-direction: column; position: relative;
   background: var(--panel);
@@ -957,6 +957,120 @@ button { color: inherit; }
 .activity-dot.fail { background: var(--st-failed); }
 .activity-row strong { display: block; font-size: 12px; font-weight: 600; }
 .activity-row small { color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* Diagnosis causal DAG — inspector sidebar only (never in the transcript). */
+.causal-panel-section { display: flex; flex-direction: column; gap: 8px; }
+.causal-graph-panel { display: flex; flex-direction: column; gap: 14px; }
+.causal-graph-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 6px;
+}
+.causal-graph-card-head h3 { margin: 0; font-size: 12.5px; font-weight: 650; min-width: 0; }
+.causal-graph-card-head .chart-download { flex: none; }
+.causal-graph-modal {
+  width: min(1280px, calc(100vw - 24px));
+  max-height: calc(100vh - 32px);
+}
+.causal-graph-legend {
+  display: flex; flex-direction: column; gap: 4px; margin: 6px 0 0; padding: 0;
+  list-style: none; font-size: 11px; color: var(--text-dim);
+}
+.causal-graph-legend .swatch {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
+  vertical-align: middle;
+}
+.causal-graph-legend .swatch.outcome { background: var(--accent); }
+.causal-graph-legend .swatch.driver { background: #ff9f0a; }
+.causal-graph-legend .swatch.confounder { background: var(--text-dim); }
+.causal-graph-note {
+  margin: 6px 0 0; font-size: 11px; color: var(--text-faint); line-height: 1.4;
+}
+.causal-graph-nodes { margin: 6px 0 0; padding-left: 16px; font-size: 11.5px; }
+.causal-graph-nodes li { margin-bottom: 4px; }
+.causal-graph-nodes strong { display: block; font-size: 12px; }
+.causal-graph-nodes small { color: var(--text-faint); }
+.causal-graph-card details summary {
+  cursor: pointer; color: var(--text-faint); font-size: 11px; margin-top: 6px;
+}
+
+/* test_agent-style loop debug console (stats grid + event log) */
+.loop-debug-section { display: flex; flex-direction: column; min-height: 0; gap: 0; }
+.loop-debug-section h2 { margin-bottom: 10px; }
+.session-debug { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.session-debug-hint {
+  margin: 0 0 2px; font-size: 11px; color: var(--text-faint);
+}
+.session-debug-run {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.session-debug-run.live { border-color: var(--line-strong); }
+.session-debug-run > summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: var(--sidebar);
+  user-select: none;
+}
+.session-debug-run > summary::-webkit-details-marker { display: none; }
+.session-debug-run > summary::before {
+  content: "▸";
+  color: var(--text-faint);
+  font-size: 11px;
+  flex: none;
+}
+.session-debug-run[open] > summary::before { content: "▾"; }
+.session-debug-run-index {
+  flex: none;
+  font-weight: 650; color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+.session-debug-run-query {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 550;
+}
+.session-debug-run-status {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--text-faint); font-weight: 650;
+}
+.session-debug-run-status.running { color: var(--accent); }
+.session-debug-run-status.completed { color: var(--st-done); }
+.session-debug-run-status.failed { color: var(--st-failed); }
+.session-debug-run .loop-debug { padding: 8px 10px 10px; }
+.session-debug-run .loop-debug-events { max-height: min(36vh, 360px); }
+.loop-debug { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.loop-debug-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+}
+.loop-debug-stat {
+  background: var(--sidebar); border-radius: 6px; padding: 5px 8px;
+}
+.loop-debug-stat span { display: block; font-size: 11px; color: var(--text-faint); }
+.loop-debug-stat b { font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 650; overflow-wrap: anywhere; }
+.loop-debug-events {
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  max-height: min(52vh, 520px); overflow: auto; min-height: 120px;
+}
+.loop-debug-ev { border-bottom: 1px solid var(--line); padding: 4px 0; }
+.loop-debug-ev .h { display: flex; gap: 6px; }
+.loop-debug-ev .h b { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
+.loop-debug-ev .h b.ok { color: var(--st-done); }
+.loop-debug-ev .h b.bad { color: var(--st-failed); }
+.loop-debug-ev details summary {
+  cursor: pointer; color: var(--text-faint); font-size: 11px; margin-top: 2px;
+}
+.loop-debug-ev details pre {
+  white-space: pre-wrap; word-break: break-all; background: var(--sidebar);
+  padding: 6px; border-radius: 4px; max-height: 280px; overflow: auto; margin: 4px 0;
+  font: inherit;
+}
+.debug .loop-debug-stats { margin-top: 6px; }
+.debug .loop-debug-events { max-height: 28vh; }
 .source-row { padding: 10px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .source-row:last-child { border-bottom: 0; }
 .source-row strong, .source-row small { display: block; font-size: 12px; }
@@ -1206,7 +1320,7 @@ button.btn:hover { border-color: var(--line-strong); }
 
 @media (max-width: 1200px) {
   .thread-sidebar { width: 224px; flex-basis: 224px; }
-  .detail-panel { width: 300px; flex-basis: 300px; }
+  .detail-panel { width: 340px; flex-basis: 340px; }
 }
 
 @media (max-width: 1023px) {

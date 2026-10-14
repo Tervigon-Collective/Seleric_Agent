@@ -197,3 +197,9 @@ def test_a_percentage_must_follow_from_the_figures_beside_it():
     assert not right["unmatched"], right
     # one operand on the line is not enough to bind it: the other may be stated elsewhere
     assert not grounding("Orders rose 36.8% (to 26).", [data])["unmatched"]
+
+
+def test_iso_timestamp_is_a_date_not_numbers():
+    # test_agent/test_grounding.py case 17 (sha e1d2087e): the freshness footer must not read as figures
+    assert not answer_numbers("data as of 2026-10-13T16:35:25Z and refresh 2026-10-13T16:35:25.274Z")
+    assert [n["value"] for n in answer_numbers("₹5,472 as of 2026-10-13T16:35:25Z")] == [5472]

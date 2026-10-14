@@ -16,7 +16,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   useShellStore.getState().setWorkspace("conversation");
-  useShellStore.setState({ sidebarOpen: true, detailsOpen: true, detailTab: "Activity" });
+  useShellStore.setState({ sidebarOpen: true, detailsOpen: true, detailTab: "Debug" });
   useConversationStore.setState({ demoMode: true, error: null });
 });
 afterEach(() => {
@@ -42,8 +42,10 @@ describe("conversation shell rendering and accessibility", () => {
     expect(container.querySelector("a")?.getAttribute("rel")).toBe("noreferrer");
   });
 
-  it("does not show activity when no conversation is selected", () => {
+  it("does not show stale run events when no conversation is selected", () => {
     useConversationStore.setState({ selectedThreadId: null, threads: [] });
+    useShellStore.setState({ detailsOpen: true, detailTab: "Debug" });
+    useOffice.getState().reset();
     useOffice.getState().ingestEvent({
       eventId: "stale-event",
       seq: 1,
@@ -53,38 +55,31 @@ describe("conversation shell rendering and accessibility", () => {
       summary: "Stale activity",
     });
     act(() => root.render(<App />));
-    expect(container.textContent).toContain("Select or start a conversation");
+    expect(container.textContent).toContain("Run a question to see loop timing");
     expect(container.textContent).not.toContain("Stale activity");
   });
 
-  it("renders thread evidence and supports arrow-key tab navigation", () => {
+  it("keeps Debug, Causal, and Memory and supports arrow-key tab navigation", () => {
     useConversationStore.setState({
       selectedThreadId: "t1",
       threads: [{
         id: "t1", workspace_id: "w", owner_user_id: "u", project_id: null,
         title: "Research", status: "ACTIVE", metadata: {}, created_at: "now", updated_at: "now",
       }],
-      messages: {
-        t1: [{
-          id: "m1", thread_id: "t1", workspace_id: "w", user_id: null,
-          role: "ASSISTANT", run_id: "r1", parent_message_id: null, created_at: "now",
-          parts: [{ type: "SOURCE", content: {
-            evidence_id: "EV-1", title: "Quarterly report",
-            url: "https://example.com/report", excerpt: "Revenue increased.",
-          } }],
-        }],
-      },
+      messages: { t1: [] },
     });
+    useShellStore.setState({ detailsOpen: true, detailTab: "Debug" });
     act(() => root.render(<DetailPanel />));
-    const activity = container.querySelector('[role="tab"][aria-selected="true"]') as HTMLButtonElement;
-    act(() => activity.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
-    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Memory");
-    act(() => (container.querySelector("#detail-tab-evidence") as HTMLButtonElement).click());
-    expect(container.textContent).toContain("Quarterly report");
-    expect(container.textContent).toContain("Revenue increased.");
+    const labels = [...container.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
+    expect(labels).toEqual(["Debug", "Causal", "Memory"]);
+    const debug = container.querySelector('[role="tab"][aria-selected="true"]') as HTMLButtonElement;
+    act(() => debug.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Causal");
+    act(() => (container.querySelector("#detail-tab-memory") as HTMLButtonElement).click());
+    expect(container.textContent).toContain("Saved memories");
   });
 
-  it("shows prior user asks in the Evidence tab for follow-ups", () => {
+  it("opens the Debug tab by default in the slim inspector", () => {
     useConversationStore.setState({
       selectedThreadId: "t1",
       threads: [{
@@ -92,35 +87,12 @@ describe("conversation shell rendering and accessibility", () => {
         title: "Sales", status: "ACTIVE", metadata: {},
         created_at: "now", updated_at: "now",
       }],
-      messages: {
-        t1: [
-          {
-            id: "m1", thread_id: "t1", workspace_id: "w", user_id: "u",
-            role: "USER", run_id: "r1", parent_message_id: null, created_at: "now",
-            parts: [{ type: "TEXT", content: "gross sales today" }],
-          },
-          {
-            id: "m2", thread_id: "t1", workspace_id: "w", user_id: null,
-            role: "ASSISTANT", run_id: "r1", parent_message_id: "m1", created_at: "now",
-            parts: [
-              { type: "TEXT", content: "gross sales: 4789.73 (2026-09-18)" },
-              { type: "SOURCE", content: { evidence_id: "EV-1", title: "gross sales", excerpt: "4789.73 for 2026-09-18" } },
-            ],
-          },
-          {
-            id: "m3", thread_id: "t1", workspace_id: "w", user_id: "u",
-            role: "USER", run_id: "r2", parent_message_id: "m2", created_at: "now",
-            parts: [{ type: "TEXT", content: "gross sale" }],
-          },
-        ],
-      },
+      messages: { t1: [] },
     });
+    useShellStore.setState({ detailsOpen: true, detailTab: "Debug" });
     act(() => root.render(<DetailPanel />));
-    act(() => (container.querySelector("#detail-tab-evidence") as HTMLButtonElement).click());
-    expect(container.textContent).toContain("gross sale");
-    expect(container.textContent).toContain("Prior asks");
-    expect(container.textContent).toContain("gross sales today");
-    expect(container.textContent).toContain("4789.73 for 2026-09-18");
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Debug");
+    expect(container.textContent).toMatch(/Debug|Run a question|loop timing|Loading trace/);
   });
 
   it("provides functional conversation and detail panel controls", () => {

@@ -1,0 +1,66 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_a1880cf073c3424d88567c3553c775b7",
+ "mission": "MS3-c2384ee3a6",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 80,
+ "elapsed_s": 78.484,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 9,
+ "llm_calls": 6,
+ "grounding": {
+  "derived": [
+   "30.2%",
+   "152.7%"
+  ],
+  "numbers": 20,
+  "measured": 18,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "diagnose_metric_change",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 42177.333233606856})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 42177.333233606856})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 42177.333233606856})"
+  }
+ ],
+ "answer": "Short answer \u2014 the data doesn't agree with the premise: sales did not drop yesterday versus the day before. Measured: Net sales were \u20b991,220 on 2026-10-13, up 116.0% from \u20b942,177 on 2026-10-12. Versus the modelled \"usual\" day the 13th was 12.0% below usual (usual = \u20b9103,273), but that shortfall sits inside the normal day-to-day range and the diagnosis found no supported causal driver.\n\nKey measured evidence (previous \u2192 event)\n- Net sales: \u20b942,177 \u2192 \u20b991,220 (+116.0%) \u2014 Measured  \n- Orders: 26 \u2192 45 (+73.1%) \u2014 Measured  \n- Ad spend (P&L basis): \u20b938,661 \u2192 \u20b950,337 (+30.2%) \u2014 Measured  \n- Conversion rate: 0.46% \u2192 1.16% (+152.7%) \u2014 Measured  \n- Add-to-cart events: 317 \u2192 180 \u2014 Measured  \n- Sessions: 3,254 \u2192 3,434 \u2014 Measured\n\nWhat the diagnosis concluded\n- No single upstream cause was identified as \"the cause\". The statistical engine found the day\u2019s movement is within normal variation and lacked a supported causal estimate.  \n- Sessions and Ad spend moved together with sales (correlation), but direction (caused vs reacting) is not established.  \n- The arithmetic decomposition (gross sales, discounts, returns, P&L lines) reconciles the change exactly and highlights which lines moved; none passed the causal test.\n\nTagging: Measured = straight from the diagnosis/result; no Derived causal claim.\n\n2026-10-12\u20132026-10-13 \u00b7 INR \u00b7 data as of 2026-10-14 03:37 IST.  \nWould you like a campaign-level or product-level drilldown for 2026-10-13 so I can show which campaigns/products moved and test drivers more granularly?"
+}

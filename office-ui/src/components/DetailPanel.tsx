@@ -1,11 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { conversationsApi } from "../api/conversations";
-import type { MessagePart, MetricDefinitionView } from "../api/contracts";
+import { useEffect, useMemo, useRef } from "react";
 import type { SwarmUIEvent } from "../types";
+import { readRoute } from "../routing";
+import { isTraceableMissionId } from "../store";
 import { useConversationStore } from "../stores/conversation";
 import { useMissionRuntimeStore } from "../stores/missionRuntime";
 import { type DetailTab, useShellStore } from "../stores/shell";
 import { XIcon } from "./icons";
+import { CausalGraphPanel } from "./CausalGraphPanel";
+import { LoopDebugConsole } from "./LoopDebugConsole";
+import type { ChartSpec } from "./charts/ChartRenderer";
+
+/** Prefer a real MS* id from store, live timeline, or URL (Debug must survive refresh). */
+function resolveMissionId(
+  storeId: string | null,
+  timeline: SwarmUIEvent[],
+): string | null {
+  if (isTraceableMissionId(storeId) || storeId === "pending") return storeId;
+  const fromTimeline = [...timeline]
+    .reverse()
+    .map((event) => event.missionId)
+    .find((id) => isTraceableMissionId(id));
+  if (fromTimeline) return fromTimeline;
+  const fromUrl = readRoute().missionId;
+  if (isTraceableMissionId(fromUrl)) return fromUrl;
+  return storeId;
+}
 
 export type ActivityPhaseEvent = { key: string; summary: string; title: string };
 export type ActivityPhase = { key: string; agent: string; headline: string; count: number; events: ActivityPhaseEvent[] };
@@ -13,7 +32,7 @@ export type ActivityPhase = { key: string; agent: string; headline: string; coun
 /**
  * Collapse a raw event stream into per-agent phases (newest first). Consecutive
  * events from one agent form a phase; consecutive duplicate summaries merge.
- * Sequence numbers stay out of the visible text (kept as `title` tooltips).
+ * Kept exported for activity/run-status helpers and tests.
  */
 export function groupActivityPhases(events: SwarmUIEvent[], route: string | null): ActivityPhase[] {
   const rows = events.slice(-60).reverse();
@@ -38,38 +57,22 @@ export function groupActivityPhases(events: SwarmUIEvent[], route: string | null
   return out;
 }
 
-const TABS: DetailTab[] = ["Evidence", "Definitions", "Activity", "Memory", "Artifacts"];
-
-function dotClass(summary: unknown): string {
-  const text = typeof summary === "string" ? summary.toLowerCase() : "";
-  if (/fail|error|cancel|retry/.test(text)) return "activity-dot fail";
-  if (/wait|retry|validat|check/.test(text)) return "activity-dot warn";
-  if (/complet|done|answer|finish/.test(text)) return "activity-dot ok";
-  return "activity-dot";
-}
+const TABS: DetailTab[] = ["Debug", "Causal", "Memory"];
 
 export function DetailPanel() {
   const tab = useShellStore((s) => s.detailTab);
   const setTab = useShellStore((s) => s.setDetailTab);
   const toggleDetails = useShellStore((s) => s.toggleDetails);
-  const selectedArtifact = useShellStore((s) => s.selectedArtifact);
   const timeline = useMissionRuntimeStore((s) => s.timeline);
-  const artifacts = useMissionRuntimeStore((s) => s.artifacts);
-  const query = useMissionRuntimeStore((s) => s.query);
-  const route = useMissionRuntimeStore((s) => s.route);
-  const stage = useMissionRuntimeStore((s) => s.stage);
+  const storeMissionId = useMissionRuntimeStore((s) => s.missionId);
+  const setMissionId = useMissionRuntimeStore((s) => s.setMissionId);
+  const loopDebug = useMissionRuntimeStore((s) => s.loopDebug);
+  const causalGraphs = useMissionRuntimeStore((s) => s.causalGraphs);
+  const submitting = useConversationStore((s) => s.submitting);
   const threadId = useConversationStore((s) => s.selectedThreadId);
-  const messages = useConversationStore((s) => threadId ? s.messages[threadId] ?? [] : []);
-  const userTurns = messages.flatMap((message) => {
-    if (message.role !== "USER") return [];
-    const text = message.parts
-      .filter((part) => part.type === "TEXT" && typeof part.content === "string")
-      .map((part) => String(part.content).trim())
-      .filter(Boolean)
-      .join("\n");
-    return text ? [text] : [];
-  });
-  const priorAsks = userTurns.slice(0, -1).slice(-4);
+  const currentRunId = useConversationStore((s) => s.currentRunId);
+  const messagesByThread = useConversationStore((s) => s.messages);
+  const threadMessages = threadId ? (messagesByThread[threadId] ?? []) : [];
   const memories = useConversationStore((s) => s.memories);
   const usedMemories = useConversationStore((s) => s.usedMemories);
   const memoryOptedOut = useConversationStore((s) => s.memoryOptedOut);
@@ -81,64 +84,18 @@ export function DetailPanel() {
   const archiveMemory = useConversationStore((s) => s.archiveMemory);
   const deleteMemory = useConversationStore((s) => s.deleteMemory);
   const setMemoryOptOut = useConversationStore((s) => s.setMemoryOptOut);
+  // No selected thread → no mission (ignore leftover store/URL from a prior chat).
   const visibleTimeline = threadId ? timeline : [];
-  const sources = messages.flatMap((message) =>
-    message.parts.filter((part) => part.type === "SOURCE").map(sourceView),
+  const missionId = useMemo(
+    () => (threadId ? resolveMissionId(storeMissionId, visibleTimeline) : null),
+    [threadId, storeMissionId, visibleTimeline],
   );
-  // Governed definitions for exactly the metrics this thread's evidence uses —
-  // one card per distinct metric, never one row per evidence point.
-  const demoMode = useConversationStore((s) => s.demoMode);
-  const [definitions, setDefinitions] = useState<MetricDefinitionView[] | null>(null);
-  const [definitionsError, setDefinitionsError] = useState<string | null>(null);
   useEffect(() => {
-    if (tab !== "Definitions" || definitions !== null || demoMode) return;
-    let alive = true;
-    setDefinitionsError(null);
-    conversationsApi.listMetricDefinitions()
-      .then((items) => { if (alive) setDefinitions(items); })
-      .catch((error) => {
-        if (alive) setDefinitionsError(error instanceof Error ? error.message : "Unable to load definitions");
-      });
-    return () => { alive = false; };
-  }, [tab, definitions, demoMode]);
-
-  const definitionCards = useMemo(() => {
-    const match = (title: string): MetricDefinitionView | null => {
-      if (!definitions) return null;
-      const normalized = title.toLowerCase().trim();
-      const keyForm = normalized.replace(/\s+/g, "_");
-      return definitions.find((entry) =>
-        entry.key === keyForm
-        || entry.id === `metric.${keyForm}`
-        || entry.aliases.some((alias) => alias.toLowerCase() === normalized),
-      ) ?? null;
-    };
-    const groups = new Map<string, {
-      key: string; title: string; definition: MetricDefinitionView | null; values: string[];
-    }>();
-    for (const source of sources) {
-      const definition = match(source.title);
-      const key = definition ? `def:${definition.key}` : `raw:${source.title.toLowerCase().trim()}`;
-      if (!groups.has(key)) {
-        groups.set(key, {
-          key,
-          title: definition ? titleCase(definition.name) : source.title,
-          definition,
-          values: [],
-        });
-      }
-      if (source.excerpt) groups.get(key)!.values.push(source.excerpt);
+    if (threadId && isTraceableMissionId(missionId) && missionId !== storeMissionId) {
+      setMissionId(missionId);
     }
-    return [...groups.values()];
-  }, [sources, definitions]);
+  }, [threadId, missionId, storeMissionId, setMissionId]);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-
-  // Each phase reads as one meaningful step; the raw events stay one click
-  // away inside an expandable group.
-  const activityPhases = useMemo(
-    () => groupActivityPhases(visibleTimeline, route),
-    [visibleTimeline, route],
-  );
 
   useEffect(() => {
     if (tab === "Memory") void loadMemories();
@@ -182,122 +139,30 @@ export function DetailPanel() {
         role="tabpanel"
         aria-labelledby={`detail-tab-${tab.toLowerCase()}`}
       >
-        {tab === "Evidence" && (
-          <section>
-            <h2>Analysis context</h2>
-            <dl>
-              <dt>Question</dt><dd>{userTurns[userTurns.length - 1] || query || "No active analysis"}</dd>
-              {priorAsks.length > 0 && <>
-                <dt>Prior asks</dt>
-                <dd><ol className="prior-asks">{priorAsks.map((text, index) => <li key={`${index}-${text}`}>{text}</li>)}</ol></dd>
-              </>}
-              <dt>Route</dt><dd>{route || "Pending"}</dd>
-              <dt>Stage</dt><dd>{stage}</dd>
-            </dl>
-            <h2 style={{ marginTop: 20 }}>Sources ({sources.length})</h2>
-            {sources.map((source, index) => <article className="source-row" key={`${source.id}-${index}`}>
-              <strong>{source.url
-                ? <a href={source.url} target="_blank" rel="noreferrer">{source.title}</a>
-                : source.title}</strong>
-              {source.excerpt && <p>{source.excerpt}</p>}
-              <small>{source.id}</small>
-            </article>)}
-            {!sources.length && <Empty text="No sources have been attached to this thread yet." />}
+        {tab === "Causal" && (
+          <section className="causal-panel-section">
+            <h2>Causal graph</h2>
+            <CausalGraphPanel
+              missionId={missionId}
+              graphs={(causalGraphs as ChartSpec[] | null) ?? null}
+              live={submitting}
+            />
           </section>
         )}
-        {tab === "Definitions" && (
-          <section>
-            <h2>Definitions used in this analysis</h2>
-            {definitions === null && !definitionsError && !demoMode && (
-              <p className="empty-note" role="status">Loading governed definitions…</p>
-            )}
-            {definitionsError && (
-              <p className="empty-note" role="alert">
-                {definitionsError}{" "}
-                <button
-                  type="button"
-                  onClick={() => { setDefinitions(null); setDefinitionsError(null); }}
-                  style={{ textDecoration: "underline", background: "none", border: 0, cursor: "pointer", color: "inherit", padding: 0 }}
-                >Retry</button>
-              </p>
-            )}
-            {definitionCards.map((card) => (
-              <article className="def-card" key={card.key}>
-                <strong>{card.title}</strong>
-                {card.definition?.formula
-                  ? <p className="def-formula">{card.title} = {card.definition.formula.replaceAll("_", " ")}</p>
-                  : <p className="def-formula missing">No catalogue definition attached to this name.</p>}
-                {card.definition?.description && <p className="def-desc">{card.definition.description}</p>}
-                {card.definition && (
-                  <div className="def-chips">
-                    {card.definition.unit && <span>Unit: {card.definition.unit}</span>}
-                    <span>Grain: {card.definition.grain}</span>
-                    {card.definition.domain && <span>{card.definition.domain}</span>}
-                    <span>v{card.definition.version}</span>
-                  </div>
-                )}
-                <details>
-                  <summary>
-                    {card.values.length} value{card.values.length === 1 ? "" : "s"} in this thread
-                  </summary>
-                  <ul className="def-values">
-                    {card.values.map((value, index) => <li key={index}>{value}</li>)}
-                    {!card.values.length && <li>No reported values.</li>}
-                  </ul>
-                </details>
-              </article>
-            ))}
-            {!definitionCards.length && !definitionsError && (
-              <Empty text="No metrics have been resolved in this thread yet. Definitions appear here when a run attaches evidence." />
-            )}
-            {(selectedArtifact || Object.keys(artifacts).length > 0) && (
-              <>
-                <h2 style={{ marginTop: 20 }}>Derivation</h2>
-                {selectedArtifact && (
-                  <div className="artifact-detail">
-                    <h3>{String(selectedArtifact.title ?? selectedArtifact.artifact_id ?? "Artifact")}</h3>
-                    <dl>
-                      <dt>Evidence</dt><dd>{safeList(selectedArtifact.evidence_ids ?? selectedArtifact.evidence_refs)}</dd>
-                      <dt>Calculation</dt><dd>{safeValue(selectedArtifact.calculation_version)}</dd>
-                      <dt>Query</dt><dd>{safeValue(selectedArtifact.query_version)}</dd>
-                      <dt>Prompt</dt><dd>{safeValue(selectedArtifact.prompt_version)}</dd>
-                      <dt>Tool</dt><dd>{safeValue(selectedArtifact.tool_version)}</dd>
-                      <dt>Model</dt><dd>{safeValue(selectedArtifact.model_version)}</dd>
-                    </dl>
-                  </div>
-                )}
-              </>
-            )}
-          </section>
-        )}
-        {tab === "Activity" && (
-          <section>
-            <h2>Run activity</h2>
-            {activityPhases.map((phase, index) => phase.events.length > 1 ? (
-              <details className="activity-phase" key={phase.key} open={index === 0}>
-                <summary>
-                  <span className={dotClass(phase.headline)} aria-hidden="true" />
-                  <div>
-                    <strong>{phase.agent} · {phase.count} steps</strong>
-                    <small>{phase.headline}</small>
-                  </div>
-                </summary>
-                <ul className="activity-events">
-                  {phase.events.map((event) => (
-                    <li key={event.key} title={event.title}>{event.summary}</li>
-                  ))}
-                </ul>
-              </details>
-            ) : (
-              <div className="activity-row" key={phase.key}>
-                <span className={dotClass(phase.headline)} aria-hidden="true" />
-                <div>
-                  <strong>{phase.headline}</strong>
-                  <small>{phase.agent}</small>
-                </div>
-              </div>
-            ))}
-            {!activityPhases.length && <Empty text={threadId ? "Activity appears here while this conversation runs." : "Select or start a conversation to see its activity."} />}
+        {tab === "Debug" && (
+          <section className="loop-debug-section">
+            <h2>Debug</h2>
+            <LoopDebugConsole
+              missionId={missionId}
+              timeline={visibleTimeline}
+              stats={loopDebug?.stats}
+              grounding={loopDebug?.grounding}
+              steps={loopDebug?.steps}
+              live={submitting}
+              threadId={threadId}
+              messages={threadMessages}
+              currentRunId={currentRunId}
+            />
           </section>
         )}
         {tab === "Memory" && <section className="memory-panel">
@@ -327,48 +192,10 @@ export function DetailPanel() {
           />)}
           {!memories.length && <Empty text="No saved memories for this thread." />}
         </section>}
-        {tab === "Artifacts" && <section><h2>Artifacts</h2>
-          {selectedArtifact && <div className="artifact-detail">
-            <h3>{String(selectedArtifact.title ?? selectedArtifact.artifact_id ?? "Artifact")}</h3>
-            <dl>
-              <dt>Evidence</dt><dd>{safeList(selectedArtifact.evidence_ids ?? selectedArtifact.evidence_refs)}</dd>
-              <dt>Calculation</dt><dd>{safeValue(selectedArtifact.calculation_version)}</dd>
-              <dt>Query</dt><dd>{safeValue(selectedArtifact.query_version)}</dd>
-              <dt>Prompt</dt><dd>{safeValue(selectedArtifact.prompt_version)}</dd>
-              <dt>Tool</dt><dd>{safeValue(selectedArtifact.tool_version)}</dd>
-              <dt>Model</dt><dd>{safeValue(selectedArtifact.model_version)}</dd>
-            </dl>
-          </div>}
-          {Object.entries(artifacts).map(([type, count]) => <div className="artifact-row" key={type}><span>{type}</span><b>{count}</b></div>)}
-          {!selectedArtifact && !Object.keys(artifacts).length && <Empty text="Generated analyses, charts, and files appear here." />}
-        </section>}
       </div>
     </aside>
   );
 }
-
-const sourceView = (part: MessagePart) => {
-  const content = part.content && typeof part.content === "object" && !Array.isArray(part.content)
-    ? part.content as Record<string, unknown>
-    : {};
-  const rawUrl = typeof content.url === "string" ? content.url : "";
-  return {
-    id: String(content.evidence_id ?? content.id ?? part.metadata?.evidence_id ?? "Source"),
-    title: String(content.title ?? content.name ?? (rawUrl || "Source")),
-    url: /^https?:\/\//.test(rawUrl) ? rawUrl : null,
-    excerpt: typeof content.excerpt === "string"
-      ? content.excerpt
-      : typeof content.snippet === "string" ? content.snippet : null,
-  };
-};
-
-const titleCase = (value: string) =>
-  value.split(" ").map((word) => word ? word[0].toUpperCase() + word.slice(1) : word).join(" ");
-
-const safeValue = (value: unknown) =>
-  typeof value === "string" || typeof value === "number" ? String(value) : "Not recorded";
-const safeList = (value: unknown) =>
-  Array.isArray(value) ? value.filter((item) => typeof item === "string").join(", ") || "None" : "None";
 
 function Empty({ text }: { text: string }) {
   return <p className="empty-note">{text}</p>;
@@ -387,19 +214,20 @@ function MemoryRow({ memory, readonly = false, onEdit, onPin, onMove, onArchive,
   memory: MemoryView; readonly?: boolean; onEdit?: () => void; onPin?: () => void;
   onMove?: () => void; onArchive?: () => void; onDelete?: () => void;
 }) {
-  return <article className="memory-row">
-    <div><strong>{memory.pinned ? "Pinned · " : ""}{displayMemory(memory.content)}</strong>
-      <small>{memory.type} · {memory.status} · {Math.round(memory.confidence * 100)}% confidence</small>
-      <details><summary>Provenance</summary>
-        <small>Messages: {memory.source_message_ids.join(", ") || "none"}</small>
-        <small>Evidence: {memory.source_evidence_ids.join(", ") || "none"}</small>
-        <pre>{JSON.stringify(memory.provenance, null, 2)}</pre>
-      </details>
-    </div>
-    {!readonly && <div className="memory-actions">
-      <button onClick={onEdit}>Edit</button><button onClick={onPin}>{memory.pinned ? "Unpin" : "Pin"}</button>
-      <button onClick={onMove}>Move</button>
-      <button onClick={onArchive}>Archive</button><button onClick={onDelete}>Delete</button>
-    </div>}
-  </article>;
+  return (
+    <article className="memory-row">
+      <strong>{displayMemory(memory.content)}</strong>
+      <small>{memory.type} · {memory.pinned ? "pinned" : "unpinned"} · conf {memory.confidence.toFixed(2)}</small>
+      <small>Evidence: {memory.source_evidence_ids.join(", ") || "none"}</small>
+      {!readonly && (
+        <div className="memory-actions">
+          <button type="button" onClick={onEdit}>Edit</button>
+          <button type="button" onClick={onPin}>{memory.pinned ? "Unpin" : "Pin"}</button>
+          <button type="button" onClick={onMove}>Move</button>
+          <button type="button" onClick={onArchive}>Archive</button>
+          <button type="button" onClick={onDelete}>Delete</button>
+        </div>
+      )}
+    </article>
+  );
 }

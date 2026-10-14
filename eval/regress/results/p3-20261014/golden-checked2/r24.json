@@ -1,0 +1,61 @@
+{
+ "n": 24,
+ "aspect": "diagnosis",
+ "q": "Why did CAC increase yesterday? Check whether the change came from CPM, CTR, CPC, landing-page conversion, checkout conversion, product mix, or channel mix. Rank the drivers by likely contribution.",
+ "thread": "thread_9cc5dd8352264ad4a10f3a18edc5e6dc",
+ "mission": "MS3-08dac23756",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 155,
+ "elapsed_s": 152.607,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 20,
+ "llm_calls": 7,
+ "grounding": {
+  "derived": [
+   "17.5%",
+   "5.3%"
+  ],
+  "numbers": 20,
+  "measured": 18,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "run_python",
+  "run_python",
+  "diagnose_metric_change",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "all of ['CPM', 'CTR', 'CPC']"
+  },
+  {
+   "ok": true,
+   "what": "does not lead with 'product CAC'"
+  }
+ ],
+ "answer": "Short answer \u2014 the premise was incorrect: CAC fell yesterday, it did not increase.\n\nKey evidence (previous \u2192 2026-10-13)\n- CAC (Derived): \u20b94,296 \u2192 \u20b92,100.  \n- Ad spend (Measured): \u20b938,661 \u2192 \u20b950,404 (+30.4%).  \n- New customers (Measured): 9 \u2192 24 (+166.7%).  \n- CPM (Measured, shown rounded): \u20b9291 \u2192 \u20b9342 \u2014 change computed from those rounded figures: 17.5% (Derived from the shown values).  \n- CTR (Derived): 2.6% \u2192 2.9%.  \n- CPC (Measured, shown rounded): \u20b911.3 \u2192 \u20b911.9 \u2014 change computed from those rounded figures: 5.3% (Derived from the shown values).  \n- Landing-page views (Measured): 734 \u2192 1,242 (+69.2%).  \n- Checkout rate (Measured): 0.98% \u2192 1.63% (+66.0%).  \n\nWhy (ranked likely contributors, labels)\n1) New customer surge \u2014 largest contributor to the CAC decrease (Derived: customer rise more than offset higher spend).  \n2) Ad spend increase \u2014 opposed the CAC improvement (Measured).  \n3) Funnel uplift (landing-page \u2192 checkout \u2192 purchase) \u2014 positive driver of new customers (Measured \u2192 Hypothesis: explains conversion lift).  \n4) Channel mix \u2014 Meta delivered most of the new-customer gain (Measured).  \n5) Product mix \u2014 insufficient evidence to call it a driver (Hypothesis / insufficient evidence).\n\n2026-10-12 \u2192 2026-10-13 \u00b7 INR \u00b7 data fresh to 2026-10-13 (hourly sync)\n\nWould you like a per-campaign CAC / spend / new customers breakdown for 2026-10-13?"
+}

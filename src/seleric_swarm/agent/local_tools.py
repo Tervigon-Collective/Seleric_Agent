@@ -111,6 +111,8 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
         if isinstance(source, dict) and isinstance(source.get("phase_ms"), dict):
             step["phase_ms"] = source["phase_ms"]
         state.steps.append(step)
+        if failed:  # MCP failures are recorded by the toolset; a helper that returns ok:false must show up the same way
+            state.errors.append(f"{fn.__name__}: {str(summary)[:300]}")
         _remember_figures(state, result)
         if raises_effort:  # the engine did the causal reasoning; the steps after it report its result
             set_loop_effort(LOOP_WRITEUP_EFFORT)

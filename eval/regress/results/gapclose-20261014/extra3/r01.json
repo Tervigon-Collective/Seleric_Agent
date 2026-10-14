@@ -1,0 +1,30 @@
+{
+ "n": 1,
+ "aspect": "forecast+chart",
+ "q": "Forecast orders and order-date net sales for the next 7 days and show the daily values in a chart",
+ "thread": "thread_099ac550cdb34411bb3fa03d8e627fd2",
+ "mission": "MS3-f1403a1660",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 19.789,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 22,
+  "measured": 22,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "forecast_metrics"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Forecast (7 days): expect ~307 orders (80% uncertainty wide; daily avg ~44) and \u20b9558,617 net sales (mean) for 2026-10-14 \u2192 2026-10-20; the 10\u201390% total range is ~307 (orders mean; p10/p90 wide) and \u20b90\u20131,545,438 for net sales (provisional forecast, model ETS).\n\nEvidence\n- Summary (7-day horizon)\n  - Orders \u2014 mean total: 307; daily average: 43.8 (vs last 7 days 43, +1.9%); p10/p90 total bounds: implied by wide day bands (model uncertainty high).\n  - Net sales (order-date) \u2014 mean total: \u20b9558,617; daily average: \u20b979,802 (vs last 7 days \u20b978,530, +1.6%); p10=\u20b90 total, p90=\u20b91,545,438 total.\n- Window shape and drivers (from the forecast model)\n  - Strongest day projected: 2026-10-18 (orders ~48; net sales ~\u20b986,367). Weakest: 2026-10-16.\n  - Weekly rhythm: Sundays stronger, Fridays weaker; festival Dussehra (2026-10-20) falls inside the window.\n  - Model anchors: Orders forecast uses recent ad spend signal; Net sales anchored to Orders (ratio \u2248 \u20b91,804.90 per order).\n  - Uncertainty: 80% prediction band is large (typically 239\u2013277% of median day); several days have a non-zero chance of near-zero outcomes. Forecast status: provisional (cutoff 2026-10-12), ETS engine.\n\nChart\n- A forecast chart (history, median path and P10\u2013P90 bands) for daily orders and daily net sales across 2026-10-14..2026-10-20 is attached to this answer.\n\nPeriod: 2026-10-14..2026-10-20 \u00b7 Currency: INR \u00b7 Data as of 2026-10-12\n\nNext step suggestion: Would you like the 7-day forecast broken down by ad platform (Meta vs Google) or by product category?"
+}

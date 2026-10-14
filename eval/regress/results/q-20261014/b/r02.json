@@ -1,0 +1,47 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_e280945a72084eadaccef5dfcae11889",
+ "mission": "MS3-14ecde57a2",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 50,
+ "elapsed_s": 47.458,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 20,
+  "measured": 20,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer \u2014 these Meta campaigns lost money (order-date P&L net profit < 0) in the last 30 days; top offenders by ad spend:\n\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend: \u20b973,137 (Measured); Net profit: \u2212\u20b941,921 (Measured)  \n- TH-222-WINGBIRD-23SEP \u2014 Ad spend: \u20b973,105 (Measured); Net profit: \u2212\u20b919,699 (Measured)  \n- TH-336-PAWTECH-26SEP \u2014 Ad spend: \u20b966,628 (Measured); Net profit: \u2212\u20b910,545 (Measured)  \n- TH-149-SCRATCHLOUNGE-25SEP \u2014 Ad spend: \u20b957,333 (Measured); Net profit: \u2212\u20b97,028 (Measured)  \n- TH-383-SUSPENDER-29SEP \u2014 Ad spend: \u20b956,657 (Measured); Net profit: \u2212\u20b931,273 (Measured)  \n- DOG TOY CS-24SEP \u2014 Ad spend: \u20b934,634 (Measured); Net profit: \u2212\u20b922,264 (Measured)  \n- CAT TOY CS-26SEP \u2014 Ad spend: \u20b933,853 (Measured); Net profit: \u2212\u20b917,581 (Measured)  \n- TH-445-PROSUSPENDERBOOTS-25SEP \u2014 Ad spend: \u20b929,675 (Measured); Net profit: \u2212\u20b913,516 (Measured)  \n- TH-012-SNUGBOO-23SEP \u2014 Ad spend: \u20b928,555 (Measured); Net profit: \u2212\u20b914,767 (Measured)  \n- TH-149-SCRATCHLOUNGE-6OCT \u2014 Ad spend: \u20b920,481 (Measured); Net profit: \u2212\u20b92,154 (Measured)\n\nNotes and scope\n- Metric basis: Net profit = net sales \u2212 net COGS \u2212 ad spend (order-date P&L) (Measured from catalogue).  \n- Query window: last 30 days (2026-09-14 to 2026-10-13), ad_platform = Meta, paid only, default brand = Tilting Heads (no brand filter was passed). (Measured)  \n- Freshness: data refreshed 2026-10-13T19:00:07.192Z (hourly source). (Measured)\n\nSuggested next step\nWould you like me to (A) drill these campaigns down by adset/creative/product to find what\u2019s causing losses, or (B) show a ranked \u201closs per \u20b9 spent\u201d so you can prioritise pauses? I can run either now.\n\n2026-09-14..2026-10-13 \u00b7 INR \u00b7 data refreshed 2026-10-13T19:00:07.192Z"
+}

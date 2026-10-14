@@ -263,7 +263,7 @@ function CopyButton() {
 function DetailsButton() {
   const openInspector = useShellStore((s) => s.openInspector);
   return (
-    <button type="button" aria-label="Open evidence inspector" title="Evidence and run details" onClick={() => openInspector("Evidence")}>
+    <button type="button" aria-label="Open inspector" title="Debug, causal, and memory" onClick={() => openInspector("Debug")}>
       Details
     </button>
   );
@@ -304,8 +304,8 @@ function RunningLine() {
           ))}
         </ol>
       </div>
-      <button type="button" className="view-activity" onClick={() => openInspector("Activity")}>
-        View activity
+      <button type="button" className="view-activity" onClick={() => openInspector("Debug")}>
+        View debug
       </button>
       <button type="button" onClick={() => void cancelRun()}>Stop</button>
     </div>

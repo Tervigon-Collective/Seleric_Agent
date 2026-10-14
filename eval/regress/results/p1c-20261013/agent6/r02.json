@@ -1,0 +1,81 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_90c4f819f0bc4ff29e0d28d258eadfcc",
+ "mission": "MS3-98bb423e48",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 67,
+ "elapsed_s": 64.379,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [
+   "10,867",
+   "0.7x",
+   "67.6%",
+   "6,587",
+   "0.6x",
+   "58.9%",
+   "6,472",
+   "0.3x",
+   "25.1%",
+   "6,285",
+   "0.3x",
+   "26.5%",
+   "5,768",
+   "0.8x",
+   "80.8%",
+   "4,006",
+   "0.3x",
+   "32.7%",
+   "3,828",
+   "0.6x",
+   "60.6%",
+   "3,235",
+   "0.3x",
+   "26.8%",
+   "2,874",
+   "0.3x",
+   "34.1%",
+   "2,770",
+   "0.7x",
+   "74.2%",
+   "315",
+   "1.0x",
+   "95.3%"
+  ],
+  "numbers": 59,
+  "measured": 26,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": false,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer \u2014 these Meta campaigns lost more on ad spend than they earned (order_pnl view, 2026-10-06..2026-10-12, default brand Tilting Heads). Top offenders by absolute waste:\n\n(Shown: campaign \u2014 ad spend \u2014 net sales \u2014 waste (ad_spend \u2212 net_sales) \u2014 ROAS)\n- TH-383-SUSPENDER-29SEP \u2014 \u20b933,602 \u2014 \u20b922,735 \u2014 \u20b910,867 \u2014 0.7x (67.6%)  \n- CAT TOY CS-26SEP \u2014 \u20b916,021 \u2014 \u20b99,434 \u2014 \u20b96,587 \u2014 0.6x (58.9%)  \n- TH-445-PROSUSPENDERBOOTS-6OCT \u2014 \u20b98,638 \u2014 \u20b92,167 \u2014 \u20b96,472 \u2014 0.3x (25.1%)  \n- TH-348-FUSIONHARNESS-03OCT \u2014 \u20b98,552 \u2014 \u20b92,267 \u2014 \u20b96,285 \u2014 0.3x (26.5%)  \n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 \u20b930,109 \u2014 \u20b924,341 \u2014 \u20b95,768 \u2014 0.8x (80.8%)  \n- DOG SHOES-10OCT-CS \u2014 \u20b95,472 \u2014 \u20b90 \u2014 \u20b95,472 \u2014 0.0x (0.0%)  \n- TH-279-BATHEASEBRUSH-07OCT \u2014 \u20b95,947 \u2014 \u20b91,941 \u2014 \u20b94,006 \u2014 0.3x (32.7%)  \n- DOG MOM T-SHIRT-CS-06OCT \u2014 \u20b99,713 \u2014 \u20b95,884 \u2014 \u20b93,828 \u2014 0.6x (60.6%)  \n- TH-447-CABANADREAMBED-06OCT \u2014 \u20b94,421 \u2014 \u20b91,186 \u2014 \u20b93,235 \u2014 0.3x (26.8%)  \n- TH-054-TOTE-17AUG \u2014 \u20b94,363 \u2014 \u20b91,489 \u2014 \u20b92,874 \u2014 0.3x (34.1%)  \n- DOG SHOES-CR-7OCT \u2014 \u20b910,704 \u2014 \u20b97,934 \u2014 \u20b92,770 \u2014 0.7x (74.2%)  \n- TH-445-PROSUSPENDERBOOTS-25SEP \u2014 \u20b96,816 \u2014 \u20b96,500 \u2014 \u20b9315 \u2014 1.0x (95.3%)\n\nWhat I pulled and how:\n- Measured: order_pnl_ad_spend and order_pnl_net_sales per campaign for 2026-10-06..2026-10-12 (filtered ad_platform=meta). Data refreshed 2026-10-13T17:34Z.  \n- Derived: waste = ad_spend \u2212 net_sales (rounded), ROAS = net_sales / ad_spend.\n\nNotes & next probes (hypotheses):\n- Some high-spend campaigns (suspender creatives) are top waste by absolute rupees \u2014 consider pausing or reallocating. (Hypothesis)\n- For root cause, run diagnose_metric_change on any campaign above (suggest TH-383-SUSPENDER-29SEP and DOG SHOES-10OCT-CS) to test whether poor CTR, low conversion, or targeting/creative edits explain the loss.\n\nPeriod \u00b7 INR \u00b7 data refreshed 2026-10-13 17:34 IST. Would you like me to run diagnose_metric_change on the top 3 offenders or pause budgets for any now?"
+}

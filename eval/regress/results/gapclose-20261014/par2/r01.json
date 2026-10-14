@@ -1,0 +1,57 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_0c257863655c47cfa84f005369ca35e4",
+ "mission": "MS3-72b0d57869",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 47,
+ "elapsed_s": 44.725,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 12,
+  "measured": 12,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.15})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.15})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.15})"
+  }
+ ],
+ "answer": "Net sales did not drop yesterday \u2014 they rose to \u20b991,220 (up 127% vs 2026-10-12). Measured.\n\nEvidence\n- 2026-10-12 (previous day): Net sales = \u20b940,119 (Measured)  \n- 2026-10-13 (yesterday): Net sales = \u20b991,220 (Measured) \u2014 change +127.4% (Measured)  \n- Key contributors to the increase (Measured): Orders 26 \u2192 45 (+73%); Net AOV \u20b91,543 \u2192 \u20b92,027 (+31%).\n\nWhat the analysis found\n- The statistical decomposition shows the entire rise is explained arithmetically by more orders and higher AOV; the automated cause-finding returned no supported upstream cause (no tested driver met the threshold to be labelled a cause).  \n- Metrics that moved together with sales (correlations, not proven causes): sessions and ad spend (ad spend \u20b938,661 \u2192 \u20b950,440).  \n- No unusual bid edits or payment anomalies were found in the data examined.\n\nPeriod: 2026-10-12 .. 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext step suggestion: would you like me to drill into which campaigns, products or ads drove the extra orders yesterday?"
+}

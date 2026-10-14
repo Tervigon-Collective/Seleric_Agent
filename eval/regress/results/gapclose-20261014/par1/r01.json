@@ -1,0 +1,56 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_dcf8b2a4750f43ec9e3be2d9d18b4dbb",
+ "mission": "MS3-d8c9b93563",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 59,
+ "elapsed_s": 55.436,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 13,
+  "measured": 13,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.15})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.15})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.15})"
+  }
+ ],
+ "answer": "Sales did not drop \u2014 measured net sales rose from \u20b940,119 on 2026-10-12 to \u20b991,220 on 2026-10-13 (+127%). (Measured)\n\nEvidence\n- Net sales (order-date): 2026-10-12 = \u20b940,119 \u2192 2026-10-13 = \u20b991,220 (Measured)\n- Orders: 26 \u2192 45 (Measured)\n- Net AOV: \u20b91,543 \u2192 \u20b92,027 (Measured)\n- Sessions: 3,254 \u2192 3,434 (Measured)\n- Ad spend (P&L basis): \u20b938,661 \u2192 \u20b950,440 (Measured)\n\nWhat the diagnosis found (short)\n- The day\u2019s net sales (\u20b991k) sit within the business\u2019s normal daily range; the routine decomposition shows higher orders and a higher AOV drove the increase. No upstream cause (for example, a single campaign edit or an anomalous clicks drop) met the statistical threshold to be called a cause. Some metrics (sessions, ad spend, add\u2011to\u2011carts) moved together with sales but directionality wasn\u2019t established.\n\nPeriod: 2026-10-13 (order-date) \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext step: want me to break yesterday\u2019s change down by ad platform or top campaigns to see which segments contributed most?"
+}

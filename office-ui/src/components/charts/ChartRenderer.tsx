@@ -20,6 +20,22 @@ export interface ChartSeries {
   values_key?: string;
 }
 
+export interface CausalGraphNode {
+  id: string;
+  name?: string;
+  role?: "outcome" | "driver" | "confounder" | string;
+  classification?: string | null;
+  status?: string | null;
+  share_of_change?: number | null;
+}
+
+export interface CausalGraphLink {
+  source: string;
+  target: string;
+  kind?: "treatment" | "adjustment" | string;
+  classification?: string | null;
+}
+
 export interface ChartSpec {
   chart_type: string;
   title?: string;
@@ -30,6 +46,9 @@ export interface ChartSpec {
   yAxis?: Array<Record<string, unknown>>;
   radar?: { indicator: Array<{ name: string; max: number }> };
   data: Record<string, any>[];
+  /** DoWhy DAG nodes/links when ``chart_type`` is ``causal_graph``. */
+  nodes?: CausalGraphNode[];
+  links?: CausalGraphLink[];
   warnings?: string[];
   downloadable_csv_url?: string;
 }
@@ -244,7 +263,7 @@ export function SelectionInsight({ columns, row, onClose, drill }: {
           {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
           {copied ? "Copied" : "Copy"}
         </button>
-        <button type="button" onClick={() => openInspector("Evidence")}>Evidence</button>
+        <button type="button" onClick={() => openInspector("Debug")}>Debug</button>
         <button type="button" onClick={onClose} aria-label="Clear selection">Clear</button>
       </div>
     </div>
@@ -606,6 +625,50 @@ function renderHeatmap(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpt
   return option;
 }
 
+function renderCausalGraph(spec: ChartSpec, theme: ChartThemeColors, _opts: RenderOpts = {}): ChartOption {
+  const nodes = (spec.nodes ?? []).map((node) => ({
+    id: node.id,
+    name: node.name || node.id,
+    category: node.role === "outcome" ? 0 : node.role === "driver" ? 1 : 2,
+    symbolSize: node.role === "outcome" ? 40 : node.role === "driver" ? 30 : 22,
+    itemStyle: {
+      color: node.role === "outcome"
+        ? theme.accent
+        : node.status === "ruled_out"
+          ? theme.faint
+          : node.classification === "supported_cause"
+            ? "#30D158"
+            : node.role === "driver" ? "#FF9F0A" : theme.dim,
+    },
+    label: { show: true, color: theme.text, fontSize: 11 },
+  }));
+  const links = (spec.links ?? []).map((link) => ({
+    source: link.source,
+    target: link.target,
+    lineStyle: {
+      color: link.kind === "treatment" ? theme.accent : theme.lineStrong,
+      width: link.kind === "treatment" ? 2.2 : 1.2,
+      type: link.kind === "treatment" ? "solid" : "dashed",
+      curveness: 0.1,
+    },
+  }));
+  // Fallback sample nodes so vocabulary smoke tests with an empty bar-like fixture still build.
+  const data = nodes.length ? nodes : [{ id: "outcome", name: "outcome", category: 0, symbolSize: 28, label: { show: true } }];
+  return {
+    backgroundColor: "transparent",
+    series: [{
+      type: "graph",
+      layout: "force",
+      roam: true,
+      categories: [{ name: "Outcome" }, { name: "Driver" }, { name: "Confounder" }],
+      data,
+      links,
+      edgeSymbol: ["none", "arrow"],
+      force: { repulsion: 200, edgeLength: 80 },
+    }],
+  };
+}
+
 type Renderer = (spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts) => ChartOption | null;
 
 /** Explicit form -> renderer table. Adding a form means adding it here. */
@@ -621,6 +684,7 @@ const RENDERERS: Record<ChartType, Renderer> = {
   funnel: (spec, theme, opts) => renderSlices(spec, 'funnel', theme, opts),
   radar: renderRadar,
   heatmap: renderHeatmap,
+  causal_graph: renderCausalGraph,
 };
 
 export function renderChartOption(
@@ -812,7 +876,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
       <p className="empty-note" role="alert">
         This chart uses an unsupported form{unsupported ? ` (${unsupported})` : ''}.
         Supported forms: line, area, bar, stacked_bar, grouped_bar, pie, donut, funnel, scatter,
-        radar, heatmap.
+        radar, heatmap, causal_graph.
       </p>
     );
   }

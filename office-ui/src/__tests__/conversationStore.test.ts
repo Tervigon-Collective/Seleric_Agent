@@ -380,6 +380,48 @@ describe("conversation store submit", () => {
     expect(messages.at(-1)?.parts[1]?.type).toBe("SOURCE");
   });
 
+  it("clears Stop/isRunning on answer.completed without waiting for run.completed", () => {
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: "t1",
+      currentRunId: "run-1",
+      submitting: true,
+      progress: "Writing the answer",
+      thinkingText: "checking tor…",
+      messages: { t1: [] },
+    });
+    vi.spyOn(conversationsApi, "listMessages").mockResolvedValue([]);
+    useConversationStore.getState().applyRunEvent({
+      id: "event-answer",
+      thread_id: "t1",
+      workspace_id: "w1",
+      run_id: "run-1",
+      sequence: 4,
+      event_type: "answer.completed",
+      actor_type: null,
+      actor_id: null,
+      title: null,
+      summary: null,
+      evidence_ids: [],
+      payload: {
+        mission_id: "MS-1",
+        final_response: "Confirm and I'll fetch.",
+        message_id: "assistant-1",
+      },
+      metadata: {},
+      started_at: null,
+      completed_at: null,
+      duration_ms: null,
+      created_at: "2026-10-14T10:00:00Z",
+    });
+    const state = useConversationStore.getState();
+    expect(state.submitting).toBe(false);
+    expect(state.progress).toBeNull();
+    expect(state.thinkingText).toBeNull();
+    // Keep the run id until terminal so late artifact events still apply.
+    expect(state.currentRunId).toBe("run-1");
+  });
+
   it("hydrates v3 route from run.started so Activity is not stuck on Swarm", () => {
     useConversationStore.setState({
       demoMode: false,

@@ -1,0 +1,28 @@
+{
+ "n": 4,
+ "aspect": "golden",
+ "q": "What is the current business status for the last 7 completed days?",
+ "thread": "thread_3c88b65fa4754f3dbc737af40cdfa015",
+ "mission": "MS3-ec48120533",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 13,
+ "elapsed_s": 11.308,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 0,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 11,
+  "measured": 11,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Short answer \u2014 status: DEGRADED for the last 7 completed days (2026-10-06\u20262026-10-12).\n\nKey evidence (7\u2011day window = 2026-10-06..2026-10-12; figures from the system)\n- Net sales (7\u2011day average): Measured \u20b978,818 \u00b7 Freshness: CURRENT.  \n- Ad spend (7\u2011day average): Measured \u20b956,512 \u00b7 Freshness: CURRENT.  \n- Orders (7\u2011day average): Measured 43 orders \u00b7 Freshness: CURRENT.  \n- Net profit per order (7\u2011day average): Measured \u2212\u20b911,852 \u00b7 Freshness: CURRENT.  \n- Purchase conversion rate (7\u2011day average): Measured 0.7% (0.0076) \u00b7 Freshness: CURRENT.  \n- Snapshot headline day (2026\u201110\u201112) vs prior day: Net sales \u20b942,177 (\u219122.7% day-on-day); Spend \u20b938,661 (\u21933.5% day-on-day); Orders 26 (\u219136.8% day-on-day). All these are single\u2011day comparisons reported by the snapshot. (Measured)\n\nNotes / caveats\n- Several unit\u2011economy metrics (MER, net ROAS, CAC, repeat rate, contribution %) are UNKNOWN / not reported in the snapshot for this window. (Measured)\n- The snapshot rates the business status as DEGRADED because average net profit per order is negative and ad spend comprises a large share of net sales \u2014 the exact decomposition should be diagnosed before acting. (Measured + Derived)\n\nSuggested next step\n- Do you want a diagnosis of the drivers behind the degraded status (e.g., whether high ad spend, falling conversion, rising COGS or returns are responsible)? I can run a causal diagnosis and drilldowns. \n\nPeriod \u00b7 currency: 2026-10-06..2026-10-12 \u00b7 INR \u00b7 data as of 2026-10-12."
+}

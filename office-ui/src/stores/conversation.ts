@@ -3,8 +3,49 @@ import { conversationsApi, conversationScope } from "../api/conversations";
 import type { ActivityEvent, MemoryItem, Message, Thread } from "../api/contracts";
 import { ApiError } from "../api/http";
 import { subscribeToRunEvents, subscribeToThreadEvents } from "../api/runEvents";
-import { useOffice } from "../store";
+import { traceApi } from "../api/trace";
+import { readRoute } from "../routing";
+import { isTraceableMissionId, useOffice } from "../store";
 import type { SwarmUIEvent } from "../types";
+
+/** Reload Debug / Causal from the mission record so they survive refresh + thread switches. */
+async function restoreInspectorFromTrace(missionId: string, threadId: string): Promise<void> {
+  if (!isTraceableMissionId(missionId)) return;
+  try {
+    const response = await traceApi.get(missionId);
+    if (useConversationStore.getState().selectedThreadId !== threadId) return;
+    if (useOffice.getState().missionId && useOffice.getState().missionId !== missionId) {
+      // A newer submit already moved on.
+      if (isTraceableMissionId(useOffice.getState().missionId)) return;
+    }
+    const stats = response.trace?.stats && typeof response.trace.stats === "object"
+      ? response.trace.stats as Record<string, unknown> : null;
+    const grounding = response.trace?.grounding && typeof response.trace.grounding === "object"
+      ? response.trace.grounding as Record<string, unknown> : null;
+    const steps = Array.isArray(response.trace?.steps)
+      ? response.trace.steps.filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+      : null;
+    if (stats || grounding || steps) {
+      useOffice.getState().setLoopDebug({ stats, grounding, steps });
+    }
+    const graphs = Array.isArray(response.causal_graphs)
+      ? response.causal_graphs.filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+      : [];
+    useOffice.getState().setCausalGraphs(graphs.length ? graphs : null);
+  } catch {
+    /* mission may still be running or purged */
+  }
+}
+
+function preferMissionId(...candidates: Array<string | null | undefined>): string | null {
+  for (const id of candidates) {
+    if (isTraceableMissionId(id)) return id;
+  }
+  for (const id of candidates) {
+    if (id) return id;
+  }
+  return null;
+}
 
 interface ConversationState {
   threads: Thread[];
@@ -176,6 +217,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         if (event.run_id !== follow.runId) {
           if (state.submitting || TERMINAL_EVENTS.includes(event.event_type)) return;
           follow.runId = event.run_id;
+          const payload = event.payload && typeof event.payload === "object"
+            ? event.payload as Record<string, unknown> : {};
+          const mid = optionalString(payload.mission_id);
+          if (isTraceableMissionId(mid)) useOffice.getState().setMissionId(mid);
           set({ currentRunId: event.run_id, submitting: true, progress: null, error: null });
           void conversationsApi.listMessages(threadId).then((messages) => {
             if (get().selectedThreadId !== threadId) return;
@@ -319,10 +364,12 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         .reverse()
         .map((event) => optionalString(payloadOf(event).route))
         .find(Boolean) ?? null;
-      const missionId = [...runEvents]
+      const fromEvents = [...runEvents]
         .reverse()
         .map((event) => optionalString(payloadOf(event).mission_id))
-        .find(Boolean) ?? latestRunId ?? "conversation";
+        .find(Boolean);
+      const fromUrl = readRoute().missionId;
+      const missionId = preferMissionId(fromEvents, fromUrl, latestRunId, "conversation") ?? "conversation";
       office.hydrate({
         missionId,
         query: messageText(latestUserMessage),
@@ -392,6 +439,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         }));
       } else {
         set((s) => ({ messages: { ...s.messages, [id]: messages }, loading: false, submitting: false, currentRunId: null, progress: null }));
+      }
+      // Debug/Causal live in the mission record — rehydrate after reset() cleared them.
+      if (isTraceableMissionId(missionId)) {
+        void restoreInspectorFromTrace(missionId, id);
       }
     } catch (error) {
       if (generation === selectionGeneration && get().selectedThreadId === id) {
@@ -575,6 +626,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         generation !== submissionGeneration
         || get().selectedThreadId !== threadId
       ) return;
+      useOffice.getState().setLoopDebug(null);
+      useOffice.getState().setCausalGraphs(null);
       useOffice.getState().hydrate({
         missionId: result.mission_id,
         query: value,
@@ -811,6 +864,15 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       || (state.currentRunId && event.run_id !== state.currentRunId)
     ) return;
     const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
+    // Keep Debug/Causal keyed to the real mission id as soon as any event carries it
+    // (submit may still be on "pending"; refresh may have fallen back to run_id).
+    const eventMissionId = optionalString(payload.mission_id);
+    if (isTraceableMissionId(eventMissionId)) {
+      const current = useOffice.getState().missionId;
+      if (!isTraceableMissionId(current)) {
+        useOffice.getState().setMissionId(eventMissionId);
+      }
+    }
     // Live answer streaming: accumulate answer.delta into an optimistic
     // assistant message; answer.reset clears a revised-away draft. The full
     // message fetched on answer.completed is authoritative and replaces this.
@@ -883,6 +945,25 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         timeline: [],
       });
     }
+    if (event.event_type === "answer.completed" || terminal) {
+      const stats = payload.stats && typeof payload.stats === "object"
+        ? payload.stats as Record<string, unknown> : null;
+      const grounding = payload.grounding && typeof payload.grounding === "object"
+        ? payload.grounding as Record<string, unknown> : null;
+      const steps = Array.isArray(payload.steps)
+        ? payload.steps.filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+        : null;
+      if (stats || grounding || steps) {
+        useOffice.getState().setLoopDebug({ stats, grounding, steps });
+      }
+      if (Array.isArray(payload.causal_graphs)) {
+        const graphs = payload.causal_graphs.filter(
+          (row): row is Record<string, unknown> => !!row && typeof row === "object",
+        );
+        useOffice.getState().setCausalGraphs(graphs.length ? graphs : null);
+        // Stay on Debug by default; Causal is there when a DAG exists.
+      }
+    }
     if (streamedAnswer && (event.event_type === "answer.completed" || terminal)) {
       const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
       const parts: Message["parts"] = [{ type: "TEXT", content: streamedAnswer }];
@@ -928,6 +1009,12 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return { messages: { ...s.messages, [event.thread_id]: next }, error: null };
       });
     }
+    // Stop / isRunning tracks whether the user can send again. The answer is
+    // done at answer.completed; run.completed only arrives after post-answer
+    // persist (summary + artifacts), which used to leave Stop stuck on.
+    if (event.event_type === "answer.completed" && get().selectedThreadId === event.thread_id) {
+      set({ submitting: false, progress: null, thinkingText: null });
+    }
     if (event.event_type === "answer.completed" || terminal) {
       void conversationsApi.listMessages(event.thread_id).then((messages) => {
         const current = get();
@@ -935,7 +1022,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           current.selectedThreadId !== event.thread_id
           || (current.currentRunId && event.run_id !== current.currentRunId)
         ) return;
-        set((s) => ({ messages: { ...s.messages, [event.thread_id]: messages }, submitting: !terminal && s.submitting, error: null }));
+        // Never revive submitting from a stale refetch — answer.completed (or
+        // a newer submit) owns that flag now.
+        set((s) => ({ messages: { ...s.messages, [event.thread_id]: messages }, error: null }));
       });
     }
     if (terminal) {

@@ -1,0 +1,47 @@
+{
+ "n": 1,
+ "aspect": "user-report",
+ "q": "gross sale and ad spend by product this month , excluding exchanges",
+ "thread": "thread_e25e78d976b7468c808f7b848286db42",
+ "mission": "MS3-1dbcae48d5",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 30,
+ "elapsed_s": 25.13,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 20,
+  "measured": 20,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_term",
+  "catalogue_resolve_values",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "any of ['Pawveralls Suspender Boots']"
+  },
+  {
+   "ok": true,
+   "what": "any of ['Meow Scratch Lounge']"
+  },
+  {
+   "ok": true,
+   "what": "not 'Not verified'"
+  }
+ ],
+ "answer": "Here are this month\u2019s product-level gross sales and allocated ad spend (exchanges excluded). Lead: totals are shown per product (order-date 2026-10-01 \u2192 2026-10-13, exchange platform/channel rows removed). All figures are measured.\n\nTop 10 products (Gross sale \u00b7 Product ad spend)\n- Pawveralls Suspender Boots \u2014 \u20b9144,010 \u00b7 \u20b999,459  (**Measured**)\n- Meow Scratch Lounge \u2014 \u20b9124,950 \u00b7 \u20b961,352  (**Measured**)\n- PawTech Cleaner with Paw Cleanser 500ml \u2014 \u20b980,641 \u00b7 \u20b938,788  (**Measured**)\n- WingBird Smart Flapping Toy \u2014 \u20b979,261 \u00b7 \u20b951,202  (**Measured**)\n- Pawveralls Pro Suspender Boots \u2014 \u20b959,298 \u00b7 \u20b927,321  (**Measured**)\n- SnugSole Boots \u2014 \u20b933,035 \u00b7 \u20b918,974  (**Measured**)\n- FusionGrip Harness \u2014 \u20b931,767 \u00b7 \u20b918,186  (**Measured**)\n- PocketPup Tote Bag \u2014 \u20b923,037 \u00b7 \u20b910,620  (**Measured**)\n- Play Scratch Lounge \u2014 \u20b920,332 \u00b7 \u20b94,450  (**Measured**)\n- WildTrail Boots \u2014 \u20b916,432 \u00b7 \u20b96,384  (**Measured**)\n\nNotes / scope\n- Query used product_gross_sale and product_ad_spend on order_date 2026-10-01..2026-10-13, dimension product_title. Filters: platform \u2260 \"exchange\" and channel \u2260 \"exchange_replacement\" (your \u201cexcluding exchanges\u201d applied). (Measured)\n- Data is scoped to the default brand (Tilting Heads). (Measured)\n- Window ends today (2026-10-13); today is partial so totals are partial and may increase as today\u2019s data completes. (Measured)\n\nWould you like the full top-50 list, a CSV download, or this broken down by campaign or ad_platform next? \n\nPeriod \u00b7 INR \u00b7 data as of 2026-10-13 23:00 IST."
+}

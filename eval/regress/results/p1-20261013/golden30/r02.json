@@ -1,0 +1,35 @@
+{
+ "n": 2,
+ "aspect": "golden",
+ "q": "What were net sales, orders, and ad spend yesterday?",
+ "thread": "thread_b1371e18dc6c48108f9a1536c7f073fb",
+ "mission": "MS3-7fafa59cb1",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 12.701,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 2,
+  "measured": 2,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Yesterday (2026-10-12):\n- Net sales: \u20b942,177 \u2014 Measured (net_sales for 2026-10-12). Freshness: commerce view last refresh 2026-10-13T17:14:57.804Z.\n- Orders: 26 \u2014 Measured (orders for 2026-10-12). Freshness: commerce view last refresh 2026-10-13T17:15:11.385Z.\n- Ad spend: \u20b938,661 \u2014 Measured (ad_spend for 2026-10-12). Freshness: paid_media view last refresh 2026-10-13T17:15:11.301Z.\n\nContext: 2026-10-12 \u00b7 INR \u00b7 data current as of the provenance refresh times above. \nWould you like these broken down by channel (Meta vs Google) or compared with the same weekday last week?"
+}

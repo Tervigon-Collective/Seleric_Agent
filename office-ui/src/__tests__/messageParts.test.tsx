@@ -5,7 +5,7 @@ import { MessagePartRenderer } from "../components/MessagePartRenderer";
 import { useShellStore } from "../stores/shell";
 
 describe("typed message part rendering", () => {
-  beforeEach(() => useShellStore.setState({ selectedArtifact: null, detailTab: "Activity" }));
+  beforeEach(() => useShellStore.setState({ selectedArtifact: null, detailTab: "Debug" }));
   const draw = (part: Parameters<typeof MessagePartRenderer>[0]["part"]) => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -29,7 +29,7 @@ describe("typed message part rendering", () => {
       },
     });
     act(() => container.querySelector("button")?.click());
-    expect(useShellStore.getState().detailTab).toBe("Artifacts");
+    expect(useShellStore.getState().detailTab).toBe("Debug");
     expect(useShellStore.getState().selectedArtifact?.calculation_version).toBe("1");
   });
 

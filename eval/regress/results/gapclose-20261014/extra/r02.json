@@ -1,0 +1,30 @@
+{
+ "n": 2,
+ "aspect": "explore",
+ "q": "What looks unusual in the last 14 days?",
+ "thread": "thread_cc10ca897ef44e0181f4b5ee3f41ed13",
+ "mission": "MS3-041bc19f4c",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 18.822,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 10,
+  "measured": 10,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "explore_data"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Top unusual signals: ad spend, product ad spend, sessions and P&L sales all moved sharply in the 2026-09-30 \u2192 2026-10-12 window. (Measured)\n\nEvidence\n- Product ad spend (allocated): \u20b9500,375, up 253% vs prior 13 days. (Measured)\n- Ad spend: \u20b9694,496, up 170% vs prior 13 days. (Measured)\n- Sessions: 53,795, up 113% vs prior 13 days. (Measured)\n- Net sales (order P&L basis): \u20b9977,639, up 87% vs prior 13 days \u2014 the lift is concentrated in three adsets (Ad group 1, (not set), Broad Advantage+). (Measured)\n- P&L net sales (P&L net sales): \u20b9954,517, reported as a large negative swing versus the previous period (the exploration flagged a \u2212272% change vs prior 13 days) \u2014 this is an anomalous sign note from the probe and should be investigated because it contrasts with the order-P&L net sales increase. (Measured)\n\nContext: Period: 2026-09-30\u20132026-10-12 \u00b7 Currency: INR \u00b7 Data as of 2026-10-12.\n\nNext step: Shall I run a diagnose_metric_change on ad spend and net sales (P&L basis) for 2026-09-30 \u2192 2026-10-12 to explain these movements?"
+}

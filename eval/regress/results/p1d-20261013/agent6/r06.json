@@ -1,0 +1,58 @@
+{
+ "n": 6,
+ "aspect": "test_agent6",
+ "q": "Break that down by product and channel.",
+ "thread": "thread_f0cda3891fdb4a8da50783afe97a70a6",
+ "mission": "MS3-2b37e7107d",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 46,
+ "elapsed_s": 44.318,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 8,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [
+   "500",
+   "500"
+  ],
+  "numbers": 24,
+  "measured": 22,
+  "misbound": [
+   "1,371 on the line about PawTech Cleaner with Paw Cleanser 500ml is not in that row; it is in the row for Paw Cleanser",
+   "1,371 on the line about PawTech Cleaner with Paw Cleanser 500ml is not in that row; it is in the row for Paw Cleanser"
+  ],
+  "problems": [
+   "wrong row: 1,371 on the line about PawTech Cleaner with Paw Cleanser 500ml is not in that row; it is in the row for Paw Cleanser"
+  ],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: product breakdown"
+  },
+  {
+   "ok": true,
+   "what": "tool: channel breakdown"
+  },
+  {
+   "ok": true,
+   "what": "tool: reuses prior scope (drilldown or same window)"
+  }
+ ],
+ "answer": "Answer \u2014 broken down by product and by channel (previous \u2192 current)\n\nTop products by product_order_net_sales (previous 2026-10-05..2026-10-06 \u2192 current 2026-10-12..2026-10-13)\n- Meow Scratch Lounge: \u20b945,293 \u2192 not in top rows this week (no matching product_title returned). \u2014 Measured  \n- Pawveralls Suspender Boots: \u20b937,593 \u2192 \u20b916,780. \u2014 Measured  \n- WingBird Smart Flapping Toy: \u20b926,775 \u2192 \u20b94,501. \u2014 Measured  \n- PawTech Cleaner with Paw Cleanser 500ml: \u20b918,655 \u2192 \u20b91,371. \u2014 Measured  \n- FusionGrip Harness: \u20b917,238 \u2192 \u20b94,024. \u2014 Measured\n\nTop channels by net_sales (previous \u2192 current)\n- ig_feed: \u20b9116,203 \u2192 \u20b945,626. \u2014 Measured  \n- exchange_replacement: \u20b937,948 \u2192 \u20b935,407. \u2014 Measured  \n- google_pmax: \u20b928,909 \u2192 \u20b912,958. \u2014 Measured  \n- google_search: \u20b921,250 \u2192 \u20b914,591. \u2014 Measured  \n- fb_feed: \u20b919,437 \u2192 \u20b95,913. \u2014 Measured  \n- unattributed: \u20b912,827 \u2192 \u20b915,196. \u2014 Measured\n\nSynthesis \u2014 what the data shows\n- The largest falls in net sales sit with a handful of previously top-selling products (Meow Scratch Lounge, Pawveralls, WingBird, PawTech) and with paid-social channels (ig_feed, fb_feed). \u2014 Measured  \n- ad-driven channels (ig_feed + fb_feed) together dropped materially vs the prior window while exchange_replacement and unattributed held or rose. \u2014 Derived (inputs: channel net_sales rows above)\n\nLikely causes to investigate\n- Meta delivery or campaign edits affecting high-converting products/creatives (pauses, budget cuts, disapprovals). \u2014 Hypothesis  \n- Lower ad spend or click/landing performance on Meta for the flagged products; run a product \u00d7 ad_platform drill or a diagnose on net_sales scoped to ad_platform=meta with drivers [product_order_ad_spend, product_clicks] to test this. \u2014 Hypothesis / Next step\n\nData notes\n- All numbers are from product_pnl and commerce queries (product_order_net_sales, product_order_ad_spend, net_sales, orders). Current window ends 2026-10-13 and is partial; treat it as partial. \u2014 Measured / Data note\n\nPeriod \u00b7 currency \u00b7 data as of\n2026-10-05..2026-10-06 vs 2026-10-12..2026-10-13 \u00b7 INR \u00b7 data as of 2026-10-13 23:25 IST\n\nNext: run product \u00d7 ad_platform drill for these two windows, or run a diagnose_metric_change for net_sales scoped to ad_platform=meta?\n\n\u26a0 Not verified against the data: wrong row: 1,371 on the line about PawTech Cleaner with Paw Cleanser 500ml is not in that row; it is in the row for Paw Cleanser"
+}

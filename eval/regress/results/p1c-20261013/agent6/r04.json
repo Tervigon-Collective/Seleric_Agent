@@ -1,0 +1,52 @@
+{
+ "n": 4,
+ "aspect": "test_agent6",
+ "q": "Why is ROAS increasing while net profit is declining?",
+ "thread": "thread_2abaee94d91149e5bf9d54c51d6568a3",
+ "mission": "MS3-048c737886",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 80,
+ "elapsed_s": 76.193,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 6,
+ "grounding": {
+  "derived": [],
+  "numbers": 14,
+  "measured": 14,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "diagnose_metric_change",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: ROAS attempted or derived from its definition"
+  },
+  {
+   "ok": true,
+   "what": "tool: net profit queried"
+  },
+  {
+   "ok": true,
+   "what": "tool: compares periods"
+  },
+  {
+   "ok": true,
+   "what": "tool: definitions fetched via catalogue"
+  }
+ ],
+ "answer": "Short answer \u2014 because your profit fell mainly from higher absolute ad spend, not from a weaker per-rupee efficiency. In other words: ROAS (a ratio) can improve while total ad investment rises enough to erase the margin gain.\n\nEvidence (periods: 2026-10-06..2026-10-12 vs 2026-09-29..2026-10-05)\n- Net profit: \u20b9-30,856 \u2192 \u20b9-82,963 (Measured)  \n- Ad spend (P&L basis): \u20b9345,581 \u2192 \u20b9395,584 (Measured)  \n  - Ad spend increase effect on Net profit: -\u20b950,004 (96% of the net-profit change) (Measured)  \n- Contribution margin: \u20b9314,725 \u2192 \u20b9312,621; effect -\u20b92,104 (4% of the change) (Measured)  \n- Platform note: the hit is concentrated on Meta (net profit position for meta moved from \u20b9-78,313 \u2192 \u20b9-139,244) (Measured)\n\nWhat this means\n- Measured: Net profit drop \u2248 total ad spend increase (dominant, ~96% of the change).  \n- Derived: If ROAS is rising, that only says each rupee of ad spend is earning more revenue on average \u2014 but if you spend many more rupees, total cost can still rise and crush profit.  \n- Hypotheses to test (plausible, not yet proven): higher-volume but lower-margin campaigns were scaled; campaign mix shifted toward Meta where spend rose; product-level margins or taxes changed; increases in unallocated/inefficient spend (broad Advantage+ / specific adsets flagged by the diagnosis).\n\nCaveat: I could not fetch the canonical net ROAS metric (net_roas is broken in the catalogue), so I couldn\u2019t verify the ROAS increase directly \u2014 the above uses measured P&L lines and the diagnosis of the profit drop.\n\nNext step suggestion: run platform- and campaign-level ROAS and ad_spend (Meta vs Google) and drill into the top campaigns/adsets driving the extra \u20b950k spend. Want me to run that? \n\n2026-10-06..2026-10-12 vs 2026-09-29..2026-10-05 \u00b7 INR \u00b7 data as of 2026-10-13 23:06 IST"
+}

@@ -851,6 +851,17 @@ def _insights_and_charts(
     return insights, chart_ids
 
 
+def _plain(v: float | None) -> str:
+    """A figure the model can copy digit for digit: never exponent notation (``.4g`` printed 558579 as 5.586e+05)."""
+    if v is None:
+        return "n/a"
+    if abs(v) >= 100:
+        return f"{v:.0f}"
+    if abs(v) >= 1:
+        return f"{v:.2f}"
+    return f"{v:.4f}".rstrip("0").rstrip(".") or "0"
+
+
 def _answer_skeleton(
     plan: ForecastPlan,
     forecasts: dict[str, TargetForecast],
@@ -877,15 +888,15 @@ def _answer_skeleton(
             lines.append(f"refused: {', '.join(fc.reason_codes) or 'n/a'}")
             continue
         lines.append(
-            f"horizon total: mean={fc.total_mean:.4g} "
-            f"p10={fc.total_p10:.4g} p90={fc.total_p90:.4g}"
+            f"horizon total: mean={_plain(fc.total_mean)} "
+            f"p10={_plain(fc.total_p10)} p90={_plain(fc.total_p90)}"
             if fc.total_p10 is not None and fc.total_p90 is not None
-            else f"horizon total: mean={fc.total_mean:.4g}"
+            else f"horizon total: mean={_plain(fc.total_mean)}"
         )
         if not charted:  # no chart widget: fall back to a compact day list
             lines.append("date | p10 | p50 | p90")
             for d in fc.days[:14]:
-                lines.append(f"{d.date} | {d.p10:.4g} | {d.p50:.4g} | {d.p90:.4g}")
+                lines.append(f"{d.date} | {_plain(d.p10)} | {_plain(d.p50)} | {_plain(d.p90)}")
         lines.extend((insights or {}).get(key, []))
     if charted:
         lines.append(

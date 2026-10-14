@@ -19,6 +19,7 @@ export const CHART_TYPES = [
   "scatter",
   "radar",
   "heatmap",
+  "causal_graph",
 ] as const;
 
 export type ChartType = (typeof CHART_TYPES)[number];
@@ -42,6 +43,10 @@ export const CHART_REGISTRY: Record<ChartType, { label: string; description: str
   scatter: { label: "Scatter", description: "Relationship between two measures." },
   radar: { label: "Radar", description: "Several measures compared on a common radial scale." },
   heatmap: { label: "Heatmap", description: "Magnitude at the intersection of two dimensions." },
+  causal_graph: {
+    label: "Causal graph",
+    description: "Directed acyclic graph of treatments, confounders and the outcome from diagnosis.",
+  },
 };
 
 /** Accepted spellings -> canonical form. Mirrors the backend alias table. */
@@ -57,6 +62,7 @@ const CHART_ALIASES: Record<string, ChartType> = {
   scatter: "scatter",
   radar: "radar",
   heatmap: "heatmap",
+  causal_graph: "causal_graph",
   // bars
   stacked: "stacked_bar",
   stack: "stacked_bar",
@@ -110,6 +116,13 @@ const CHART_ALIASES: Record<string, ChartType> = {
   heatmap_chart: "heatmap",
   density: "heatmap",
   matrix: "heatmap",
+  // causal DAG
+  dag: "causal_graph",
+  gcm: "causal_graph",
+  gcm_graph: "causal_graph",
+  causal: "causal_graph",
+  causal_dag: "causal_graph",
+  dowhy_graph: "causal_graph",
 };
 
 function aliasKey(value: string): string {

@@ -1,0 +1,40 @@
+{
+ "n": 22,
+ "aspect": "reconciliation",
+ "q": "give me a net profit breakdown, waterfall for September 2026",
+ "thread": "thread_80d792d716a541ffb944fd33076f6436",
+ "mission": "MS3-a96213d0c3",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 13.083,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 16,
+  "measured": 16,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_concept",
+  "break_down_metric"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "number -172226.96 (live)"
+  },
+  {
+   "ok": true,
+   "what": "not 'residual'"
+  }
+ ],
+ "answer": "Net profit in September 2026 was a loss of \u20b91,72,227 (Measured).\n\nEvidence (P&L / event-date basis; lines reconcile exactly)\n- Net profit (pnl / event-date): -\u20b9172,226.96\n- Contribution margin: +\u20b91,021,095.09\n  - Net sales (P&L basis): +\u20b91,697,335.80\n    - Gross sales (P&L basis): +\u20b92,253,539.40\n    - Discounts (P&L basis): -\u20b9110,359.32\n    - Return revenue (P&L basis): -\u20b9371,999.44\n    - Cancel revenue (P&L basis): -\u20b973,844.84\n  - Net COGS: -\u20b9676,240.71\n    - Product cost: -\u20b9553,170.21\n    - Operating cost: -\u20b9123,070.50\n      - Shipping cost: -\u20b976,743.20\n      - Packaging cost: -\u20b918,236.67\n      - Payment gateway fees: -\u20b912,919.34\n      - RTO cost: -\u20b915,171.29\n- Ad spend (P&L basis): -\u20b91,193,322.06\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext step: Do you want this broken down by finance channel (e.g., Meta vs Google vs Organic) for the same period?"
+}

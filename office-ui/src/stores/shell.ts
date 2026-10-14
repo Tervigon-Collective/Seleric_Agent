@@ -1,11 +1,9 @@
 import { create } from "zustand";
 
-export type DetailTab = "Evidence" | "Definitions" | "Activity" | "Memory" | "Artifacts";
+export type DetailTab = "Causal" | "Debug" | "Memory";
 export type Workspace = "conversation" | "office";
 
-const DETAIL_TABS: readonly DetailTab[] = [
-  "Evidence", "Definitions", "Activity", "Memory", "Artifacts",
-];
+const DETAIL_TABS: readonly DetailTab[] = ["Debug", "Causal", "Memory"];
 const DETAILS_OPEN_KEY = "seleric.detailsOpen";
 const DETAIL_TAB_KEY = "seleric.detailTab";
 
@@ -20,9 +18,13 @@ function readStoredDetailsOpen(): boolean {
 function readStoredDetailTab(): DetailTab {
   try {
     const value = localStorage.getItem(DETAIL_TAB_KEY);
-    return DETAIL_TABS.includes(value as DetailTab) ? (value as DetailTab) : "Evidence";
+    // Prefer Debug as the landing tab; Causal stays available when a DAG exists.
+    if (DETAIL_TABS.includes(value as DetailTab) && value !== "Causal") {
+      return value as DetailTab;
+    }
+    return "Debug";
   } catch {
-    return "Evidence";
+    return "Debug";
   }
 }
 
@@ -73,11 +75,13 @@ export const useShellStore = create<ShellState>((set, get) => ({
     persistDetails(true, detailTab);
   },
   showArtifact: (selectedArtifact) => {
+    // Artifacts tab removed — open Debug with the selection retained for any
+    // future inspector surface that still reads selectedArtifact.
     set({
       selectedArtifact,
-      detailTab: "Artifacts",
+      detailTab: "Debug",
       detailsOpen: true,
     });
-    persistDetails(true, "Artifacts");
+    persistDetails(true, "Debug");
   },
 }));

@@ -1,0 +1,50 @@
+{
+ "n": 20,
+ "aspect": "golden",
+ "q": "What was the average order value and COD order count by product in September?",
+ "thread": "thread_49c42ebee1cf44e9aaa7c34d357e53a0",
+ "mission": "MS3-f5b3f752d1",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 42,
+ "elapsed_s": 39.939,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 8,
+ "llm_calls": 9,
+ "grounding": {
+  "derived": [],
+  "numbers": 50,
+  "measured": 50,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "any of ['September', '2026-09']"
+  },
+  {
+   "ok": true,
+   "what": "not 'partial day'"
+  },
+  {
+   "ok": true,
+   "what": "not 'not available'"
+  }
+ ],
+ "answer": "Top 20 products \u2014 average order value (AOV) and COD order count, September 1\u201330, 2026 (order-date / Shopify gross revenue basis).\n\nMeasured:\n- Pawveralls Pro Suspender Boots \u2014 AOV \u20b93,079 \u00b7 COD orders 12 \u00b7 paid orders 120 \u00b7 Gross sales \u20b9369,495\n- Pawveralls Suspender Boots \u2014 AOV \u20b92,930 \u00b7 COD orders 2 \u00b7 paid orders 116 \u00b7 Gross sales \u20b9339,866\n- LaserPlay Collar \u2014 AOV \u20b95,446 \u00b7 COD orders 1 \u00b7 paid orders 39 \u00b7 Gross sales \u20b9212,378\n- WingBird Smart Flapping Toy \u2014 AOV \u20b91,575 \u00b7 COD orders 7 \u00b7 paid orders 126 \u00b7 Gross sales \u20b9198,396\n- PawTech Cleaner with Paw Cleanser 500ml \u2014 AOV \u20b93,077 \u00b7 COD orders 4 \u00b7 paid orders 61 \u00b7 Gross sales \u20b9187,673\n- CrabDash Toy \u2014 AOV \u20b92,608 \u00b7 COD orders 5 \u00b7 paid orders 53 \u00b7 Gross sales \u20b9138,209\n- WildTrail Boots \u2014 AOV \u20b92,606 \u00b7 COD orders 1 \u00b7 paid orders 52 \u00b7 Gross sales \u20b9135,513\n- Paw Balm \u2014 AOV \u20b93,535 \u00b7 COD orders 3 \u00b7 paid orders 30 \u00b7 Gross sales \u20b9106,049\n- TangleGuard Leash \u2013 Dual Leash \u2014 AOV \u20b92,460 \u00b7 COD orders 2 \u00b7 paid orders 39 \u00b7 Gross sales \u20b995,953\n- PocketPup Tote Bag \u2014 AOV \u20b92,509 \u00b7 COD orders 3 \u00b7 paid orders 36 \u00b7 Gross sales \u20b990,318\n- DuckDash Treat Toy \u2014 AOV \u20b91,788 \u00b7 COD orders 3 \u00b7 paid orders 48 \u00b7 Gross sales \u20b985,832\n- FusionGrip Harness \u2014 AOV \u20b92,973 \u00b7 COD orders 1 \u00b7 paid orders 26 \u00b7 Gross sales \u20b977,306\n- Daily Pet Wipes \u2014 AOV \u20b93,553 \u00b7 COD orders 1 \u00b7 paid orders 20 \u00b7 Gross sales \u20b971,055\n- FlexiDine Feeder \u2014 AOV \u20b92,208 \u00b7 COD orders 1 \u00b7 paid orders 30 \u00b7 Gross sales \u20b966,254\n- TrimEase Paw Trimmer \u2014 AOV \u20b92,839 \u00b7 COD orders 0 \u00b7 paid orders 22 \u00b7 Gross sales \u20b962,454\n- SnugSole Boots \u2014 AOV \u20b92,750 \u00b7 COD orders 2 \u00b7 paid orders 21 \u00b7 Gross sales \u20b957,746\n- Hands-Free Dog Belt - Unisex \u2014 AOV \u20b92,673 \u00b7 COD orders 4 \u00b7 paid orders 19 \u00b7 Gross sales \u20b950,787\n- Meow Scratch Lounge \u2014 AOV \u20b92,497 \u00b7 COD orders 1 \u00b7 paid orders 20 \u00b7 Gross sales \u20b949,940\n- Rover Raincoat \u2014 AOV \u20b93,259 \u00b7 COD orders 0 \u00b7 paid orders 14 \u00b7 Gross sales \u20b945,624\n- FlippyFish Toy \u2014 AOV \u20b91,855 \u00b7 COD orders 0 \u00b7 paid orders 23 \u00b7 Gross sales \u20b942,674\n\nTags: Measured (from commerce.Order value incl tax, commerce.Cod orders, commerce.Payment orders). AOV = order value incl tax \u00f7 payment orders (Derived). Results scoped to default brand Tilting Heads (no brand filter provided). Data freshness: cube last refresh 2026-10-13T22:50:39Z; month = Sep 1\u201330, 2026 \u00b7 currency INR.\n\nWould you like the full product-level table (all products) or only products with \u226510 orders?"
+}
