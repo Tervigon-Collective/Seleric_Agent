@@ -15,13 +15,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
-import pytest
-from pydantic_ai import ModelRetry
-from test_semantic_toolset_bug_regressions import FakeRunContext, _deps
-
-from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
-from seleric_swarm.toolsets import semantic
 
 SEP = {"period_start": datetime(2026, 9, 1, tzinfo=UTC), "period_end": datetime(2026, 9, 30, tzinfo=UTC)}
 
@@ -62,117 +56,24 @@ class RecordingMcp:
         return {"query_id": "q1", "rows": [row], "provenance": {"query_id": "q1", "currency": self.currency}}
 
 
-def _ctx(mcp: RecordingMcp) -> FakeRunContext:
-    return FakeRunContext(replace(_deps(mcp), catalogue=SNAP))
-
-
 def _filters(call: dict[str, Any]) -> list[dict[str, Any]]:
     return [f for f in call.get("filters") or [] if f["dimension"] != "brand_id"]
 
 
-@pytest.mark.asyncio
-async def test_a_dimension_the_view_lacks_is_answered_by_its_conformed_sibling():
-    mcp = RecordingMcp()
-    result = await semantic.query_metrics(_ctx(mcp), "net_profit", dimensions={"platform": "meta"}, **SEP)
-    assert result.success, result.summary
-    assert _filters(mcp.calls[-1]) == [{"dimension": "finance_channel", "operator": "equals", "values": ["meta"]}]
-    assert "'platform' is answered by its conformed dimension 'finance_channel'" in result.summary
 
 
-@pytest.mark.asyncio
-async def test_a_sibling_never_takes_a_value_it_does_not_hold():
-    # email is a traffic platform, not a P&L channel: no sibling, and the other metrics carrying `platform`
-    # are named (a different concept: the model chooses)
-    with pytest.raises(ModelRetry) as exc:
-        await semantic.query_metrics(_ctx(RecordingMcp()), "net_profit", dimensions={"platform": "email"}, **SEP)
-    assert "orders" in str(exc.value)
 
 
-@pytest.mark.asyncio
-async def test_customers_take_the_platform_scope_on_their_acquisition_platform():
-    mcp = RecordingMcp()
-    result = await semantic.query_metrics(_ctx(mcp), "repeat_rate", dimensions={"ad_platform": "meta"}, **SEP)
-    assert result.success
-    assert _filters(mcp.calls[-1])[0]["dimension"] == "acquisition_platform"
 
 
-@pytest.mark.asyncio
-async def test_a_slice_only_the_grain_twin_carries_is_answered_by_the_twin():
-    mcp = RecordingMcp()
-    result = await semantic.query_metrics(
-        _ctx(mcp), "cac", dimensions={"ad_platform": "meta", "campaign_name": ""}, **SEP)
-    assert result.success, result.summary
-    assert mcp.calls[-1]["measures"] == ["channel_cac"]
-    assert "grain twin 'channel_cac'" in result.summary
-    # orders by product -> the product-grain twin
-    result = await semantic.query_metrics(_ctx(mcp), "orders", dimensions={"product_title": ""}, **SEP)
-    assert mcp.calls[-1]["measures"] == ["product_orders"] and "grain twin 'product_orders'" in result.summary
 
 
-@pytest.mark.asyncio
-async def test_another_views_date_dimension_is_this_metrics_time_axis():
-    mcp = RecordingMcp()
-    # a breakdown by another view's date is the grain (live: 'net_sales' does not support 'report_date')
-    result = await semantic.query_metrics(_ctx(mcp), "net_profit", dimensions={"report_date": ""}, **SEP)
-    assert result.success and mcp.calls[-1].get("granularity") == "day"
-    assert "report_date" not in (mcp.calls[-1].get("dimensions") or [])
-    # a date filter names the period
-    await semantic.query_metrics(_ctx(mcp), "net_profit", dimensions={"report_date": "2026-09-05"})
-    assert mcp.calls[-1]["time_range"] == {"start": "2026-09-05", "end": "2026-09-05"}
 
 
-@pytest.mark.asyncio
-async def test_structured_filters_reach_the_query_and_equals_folds_into_evidence():
-    mcp = RecordingMcp()
-    ctx = _ctx(mcp)
-    result = await semantic.query_metrics(
-        ctx, "ad_spend", dimensions={"campaign_name": ""},
-        filters=[{"dimension": "campaign_name", "operator": "notContains", "values": ["TEST"]},
-                 {"dimension": "ad_spend", "operator": "gt", "values": ["10000"]},
-                 {"dimension": "finance_channel", "operator": "equals", "values": ["meta"]}],
-        **SEP,
-    )
-    assert result.success, result.summary
-    flt = _filters(mcp.calls[-1])
-    assert {"dimension": "campaign_name", "operator": "notContains", "values": ["TEST"]} in flt
-    assert {"dimension": "ad_spend", "operator": "gt", "values": ["10000"]} in flt
-    # finance_channel is not on ad delivery here: its sibling ad_platform holds meta, and as an equals
-    # filter it is a dimension value — on the evidence, where the scope check reads it
-    assert {"dimension": "ad_platform", "operator": "equals", "values": ["meta"]} in flt
-    evidence = [a for a in ctx.deps.artifact_store.list_for_mission("mission-1") if a.artifact_type == "evidence"] \
-        if hasattr(ctx.deps.artifact_store, "list_for_mission") else []
-    for art in evidence:
-        assert EvidenceArtifact.model_validate(art.payload).dimensions.get("ad_platform") == "meta"
 
 
-@pytest.mark.asyncio
-async def test_summary_values_are_rounded_and_carry_the_currency_only_for_money():
-    mcp = RecordingMcp()
-    result = await semantic.query_metrics(_ctx(mcp), "net_profit", **SEP)
-    assert result.summary.startswith("net_profit=1234.57 INR over")
-    result = await semantic.query_metrics(_ctx(mcp), "sessions", **SEP)
-    assert result.summary.startswith("sessions=1234.57 over")  # a count carries no currency
 
 
-@pytest.mark.asyncio
-async def test_drilldown_takes_filters_and_conforms_its_dimension():
-    class DrillMcp(RecordingMcp):
-        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
-            self.calls.append({"capability": capability, **arguments})
-            if capability == "seleric.metrics_drilldown":
-                return {"rows": [{"net_profit": 5.0, "finance_channel": "meta"}], "provenance": {}}
-            return {"query_id": "q1", "rows": [{"net_profit": 5.0}], "provenance": {"query_id": "q1"}}
-
-    mcp = DrillMcp()
-    result = await semantic.drilldown(
-        _ctx(mcp), "net_profit", "platform", SEP["period_start"], SEP["period_end"],
-        filters=[{"dimension": "campaign_name", "operator": "startsWith", "values": ["TH-"]}],
-    )
-    assert result.success, result.summary
-    parent, drill = mcp.calls[0], mcp.calls[1]
-    assert {"dimension": "campaign_name", "operator": "startsWith", "values": ["TH-"]} in _filters(parent)
-    assert drill["target_dimensions"] == ["finance_channel"]
-    assert "conformed dimension 'finance_channel'" in result.summary
 
 
 def test_carries_follows_siblings_and_twins():
@@ -185,20 +86,6 @@ def test_carries_follows_siblings_and_twins():
 
 
 
-@pytest.mark.asyncio
-async def test_a_value_gap_is_never_answered_by_a_grain_twin():
-    # net_profit's product-line twin carries the traffic `platform`, but that twin is another measure:
-    # "email" not being a P&L channel is a value gap, not a grain gap
-    snap = replace(SNAP, metrics=(
-        *(m for m in SNAP.metrics if m.id != "net_profit"),
-        CatalogueMetricMeta(id="net_profit", supported_dimensions=PNL_DIMS, raw={"grain_twins": ["product_profit"]}),
-        CatalogueMetricMeta(id="product_profit", supported_dimensions=["brand_id", "order_date", "platform"]),
-    ))
-    mcp = RecordingMcp()
-    ctx = FakeRunContext(replace(_deps(mcp), catalogue=snap))
-    with pytest.raises(ModelRetry):
-        await semantic.query_metrics(ctx, "net_profit", dimensions={"platform": "email"}, **SEP)
-    assert not mcp.calls
 
 
 
@@ -236,18 +123,3 @@ def test_ad_spend_sub_channel_alternatives_prefer_pnl_companions():
     assert alts.index("channel_cac") < alts.index("event_count")
 
 
-@pytest.mark.asyncio
-async def test_ad_spend_by_sub_channel_model_retry_names_related_metrics():
-    snap = _spend_sub_channel_snap()
-    with pytest.raises(ModelRetry) as exc:
-        await semantic.query_metrics(
-            FakeRunContext(replace(_deps(RecordingMcp()), catalogue=snap)),
-            "ad_spend",
-            dimensions={"sub_channel": ""},
-            **SEP,
-        )
-    msg = str(exc.value)
-    assert "does not support the 'sub_channel' dimension" in msg
-    assert "related metrics" in msg
-    assert "channel_cac" in msg
-    assert "not the same number" in msg

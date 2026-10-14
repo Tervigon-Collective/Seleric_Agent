@@ -146,7 +146,7 @@ async def fetch_daily_series(
     mcp: Any, metric_id: str, *, start: date, end: date
 ) -> dict[date, float]:
     from seleric_swarm.services.mcp_query import row_date
-    from seleric_swarm.toolsets.semantic import raw_query_metric
+    from seleric_swarm.toolsets._data import raw_query_metric
 
     result = await raw_query_metric(
         mcp,

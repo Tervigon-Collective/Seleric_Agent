@@ -52,7 +52,9 @@ def psql(sql):
 def numbers(text):
     """Every number written in the answer, as floats (thousands separators and unicode minus handled)."""
     out, cur = [], ""
-    t = (text or "").replace("−", "-").replace("–", "-")
+    t = (text or "")
+    for dash in ("−", "–", "‑", "‐", "‒"):  # unicode minus, en dash and the non-breaking / figure hyphens models emit
+        t = t.replace(dash, "-")
     for ch in t + " ":
         if ch.isdigit() or ch in ".,-" and (cur or ch == "-"):
             cur += ch
@@ -165,6 +167,14 @@ def run(i, item, out_dir, tid):
         ref = reference(item["reference"])
         for k, ok in agent6_checks.q1_reference_checks(answer, numbers(answer), ref).items():
             checks.append({"ok": ok, "what": f"reference {k} ({ref})"})
+    if item.get("window_reference") and calls:
+        windows = agent6_checks.comparison_windows(calls)
+        if windows:
+            def total(measure, a, b):
+                r = mcp_direct.call_tool("metrics_query", {"measures": [measure], "time_range": {"start": a, "end": b}})
+                return float(r["rows"][0][measure])
+            for what, ok in agent6_checks.window_reference_checks(numbers(answer), windows, item["window_reference"], total).items():
+                checks.append({"ok": ok, "what": f"reference window total {what}"})
     stats = tr.get("stats") or {}
     out = {
         "n": i + 1, "aspect": item.get("aspect"), "q": q, "thread": tid, "mission": mid, "run_status": st,

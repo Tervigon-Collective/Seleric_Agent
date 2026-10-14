@@ -256,26 +256,6 @@ async def test_a_breakdowns_evidence_records_the_filters_it_was_fetched_with(def
     assert {"dimension": "finance_channel", "operator": "equals", "values": ["meta"]} in ev.provenance.source_metadata["filters_applied"]
 
 
-async def test_a_threshold_on_another_views_metric_is_refused_with_the_views_own_metrics() -> None:
-    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta
-    from seleric_swarm.toolsets import semantic
-
-    cat = CatalogueSnapshot(metrics=(
-        CatalogueMetricMeta(id="net_roas", view="order_pnl"),
-        CatalogueMetricMeta(id="order_pnl_ad_spend", view="order_pnl"),
-        CatalogueMetricMeta(id="ad_spend", view="paid_media"),
-    ))
-    import dataclasses
-
-    deps = dataclasses.replace(_deps(_Mcp({})), catalogue=cat)
-    res = semantic._cross_view_metric_filter(
-        _Ctx(deps), "net_roas", [semantic.MetricFilter(dimension="ad_spend", operator="gt", values=["0"])]
-    )
-    assert res is not None and not res.success and res.retryable and "order_pnl_ad_spend" in res.summary
-    same = semantic._cross_view_metric_filter(
-        _Ctx(deps), "net_roas", [semantic.MetricFilter(dimension="order_pnl_ad_spend", operator="gt", values=["0"])]
-    )
-    assert same is None
 
 
 
@@ -296,24 +276,6 @@ def test_a_diagnosis_filter_moves_to_the_metrics_own_family_member() -> None:
     assert out == [{"dimension": "acquisition_platform", "operator": "equals", "values": ["meta"]}] and not dropped
 
 
-async def test_metric_definitions_are_fetched_in_batches_the_gateway_accepts() -> None:
-    """The gateway refuses more than 10 ids per call with a bare 'error'; 11 ids came back as 0 definitions."""
-    from seleric_swarm.toolsets import semantic
-
-    calls: list[list[str]] = []
-
-    class Gateway:
-        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
-            ids = arguments["metric_ids"]
-            calls.append(ids)
-            if len(ids) > 10:
-                return {"error": "Too many metric ids"}
-            return {"metrics": {m: {"id": m} for m in ids if m != "nope"}, "errors": {"nope": "unknown"} if "nope" in ids else {}}
-
-    ids = [f"m{i}" for i in range(11)] + ["nope"]
-    res = await semantic.get_metric_definitions(_Ctx(_deps(Gateway())), ids)
-    assert res.success and len(res.provenance.source_metadata["definitions"]) == 11
-    assert all(len(c) <= 10 for c in calls) and "unknown metric id 'nope'" in res.warnings
 
 
 

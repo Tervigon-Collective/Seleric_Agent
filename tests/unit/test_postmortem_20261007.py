@@ -34,7 +34,6 @@ from seleric_swarm.conversations.contracts import (
 from seleric_swarm.services import elapsed
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
-from seleric_swarm.toolsets import semantic
 
 IST = ZoneInfo("Asia/Kolkata")
 TODAY = datetime(2026, 10, 7, tzinfo=IST)
@@ -196,42 +195,10 @@ def _hour_rows() -> list[dict]:
     return rows
 
 
-@pytest.mark.asyncio
-async def test_elapsed_only_counts_each_day_up_to_the_current_hour(at_noon) -> None:
-    mcp = _Mcp(_hour_rows())
-    deps = _deps(mcp=mcp)
-    result = await semantic.query_metrics(
-        _Ctx(deps),
-        "ad_spend",
-        period_start=datetime(2026, 10, 4, tzinfo=IST),
-        period_end=datetime(2026, 10, 6, tzinfo=IST),
-        elapsed_only=True,
-    )
-    assert result.success, result.summary
-    assert mcp.calls[0]["granularity"] == "hour"
-    # 3 days x 12 elapsed hours x 10 = 360; per day 120.
-    assert "total=360.0" in result.summary and "per-day average 120.00 over 3 days" in result.summary
-    payload = deps.artifact_store.get(result.artifact_ids[0]).payload
-    assert payload["value"] == 360.0 and payload["dimensions"][elapsed.ELAPSED_KEY] == "12:00"
 
 
-@pytest.mark.asyncio
-async def test_elapsed_only_refuses_a_ratio(at_noon) -> None:
-    result = await semantic.query_metrics(
-        _Ctx(_deps(mcp=_Mcp([]))),
-        "gross_roas",
-        period_start=TODAY,
-        period_end=TODAY,
-        elapsed_only=True,
-    )
-    assert not result.success and "additive" in result.summary
 
 
-@pytest.mark.asyncio
-async def test_a_total_that_includes_today_carries_the_in_progress_note(at_noon) -> None:
-    mcp = _Mcp([{"ad_spend": "26040.83"}])
-    result = await semantic.query_metrics(_Ctx(_deps(mcp=mcp)), "ad_spend", period_start=TODAY, period_end=TODAY)
-    assert result.success and "still in progress" in result.summary
 
 
 # -- model chain ----------------------------------------------------------------------
@@ -276,23 +243,6 @@ class _HourAwareMcp(_Mcp):
 
 
 
-@pytest.mark.asyncio
-async def test_elapsed_only_names_what_a_finer_breakdown_leaves_out(at_noon) -> None:
-    rows = [
-        {"report_hour.hour": "2026-10-07T09:00:00.000", "ad_name": "A", "ad_spend": "10"},
-        {"report_hour.hour": "2026-10-07T09:00:00.000", "ad_name": None, "ad_spend": "25"},
-    ]
-    result = await semantic.query_metrics(
-        _Ctx(_deps(mcp=_Mcp(rows))),
-        "ad_spend",
-        dimensions={"ad_name": ""},
-        period_start=TODAY,
-        period_end=TODAY,
-        elapsed_only=True,
-    )
-    assert result.success
-    assert "ad_name=A=10.0" in result.summary
-    assert "25 of the period's ad_spend has no ad_name value" in result.summary
 
 
 
@@ -308,26 +258,6 @@ async def test_elapsed_only_names_what_a_finer_breakdown_leaves_out(at_noon) -> 
 # ---------------------------------------------------------------- 2026-10-07 night (golden set)
 
 
-def test_a_baseline_window_disjoint_from_the_named_period_is_not_pulled_back():
-    """Live 2026-10-07 MS3-d13b253ea0: "compare to the last 7 days" pinned every call
-    to 09-30..10-06, so the previous week could never be fetched."""
-    from datetime import datetime
-    from types import SimpleNamespace
-
-    from seleric_swarm.contracts.lookup import TimeRangeV1
-    from seleric_swarm.toolsets.semantic import _pin_to_resolved_window
-
-    window = TimeRangeV1(kind="absolute", start="2026-09-30", end="2026-10-06", relative_token="last_7d")
-    ctx = SimpleNamespace(deps=SimpleNamespace(resolved_window=window))
-
-    def asked(a: str, b: str):
-        return _pin_to_resolved_window(ctx, datetime.fromisoformat(a), datetime.fromisoformat(b))
-
-    assert asked("2026-09-23", "2026-09-29") is None  # the previous 7 days: a baseline
-    assert asked("2026-09-30", "2026-10-06") is None  # the named period itself
-    drift = asked("2026-09-30", "2026-10-05")  # a miscomputed version of it
-    assert drift is not None and drift[0].date().isoformat() == "2026-09-30"
-    assert drift[1].date().isoformat() == "2026-10-06"
 
 
 

@@ -5,7 +5,7 @@ explored rather than one number fetched: "anything unusual this week?", "how
 is the business doing?", "what should I look at?", or a drill-down into a
 segment a previous exploration surfaced. It plans the subspace from catalogue
 metadata (``exploration/space.py``), fetches through the same certified Cube
-path ``query_metrics`` uses (rule 1; budgeted, cached), and hands the daily
+path ``metrics_query`` uses (rule 1; budgeted, cached), and hands the daily
 series to the pure engine in ``exploration/engine.py``, which tests every
 pattern, controls the false-discovery rate across all of them and ranks the
 survivors. It does not call any other tool (rule 4).
@@ -33,7 +33,7 @@ from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal import diagnosis as dx
 from seleric_swarm.conversations.contracts import ArtifactProvenance
 from seleric_swarm.exploration import engine, space
-from seleric_swarm.toolsets import diagnosis, semantic
+from seleric_swarm.toolsets import _data, diagnosis
 from seleric_swarm.toolsets import policy_config as P
 
 _CALCULATION_VERSION = "exploration.v1"
@@ -53,19 +53,13 @@ def _window(
     ``EXPLORE_DEFAULT_WINDOW_DAYS`` complete days. Today is in progress and is
     never part of a window it would be compared against."""
     today = ctx.deps.as_of.date()
-    resolved = ctx.deps.resolved_window
-    if period_start is None and period_end is None and resolved is not None and resolved.start and resolved.end:
-        start, end = date.fromisoformat(resolved.start), date.fromisoformat(resolved.end)
-    elif period_start is None and period_end is None:
+    if period_start is None and period_end is None:
         end = today - timedelta(days=1)
         start = end - timedelta(days=P.EXPLORE_DEFAULT_WINDOW_DAYS - 1)
     else:
         start_dt = period_start or period_end
         end_dt = period_end or period_start
         assert start_dt is not None and end_dt is not None
-        if (pinned := semantic._pin_to_resolved_window(ctx, start_dt, end_dt)) is not None:
-            start_dt, end_dt, note = pinned
-            notes.append(note)
         start, end = start_dt.date(), end_dt.date()
         # "D 00:00 .. D+1 00:00" is one day with an exclusive end.
         if end > start and (end_dt.hour, end_dt.minute, end_dt.second, end_dt.microsecond) == (0, 0, 0, 0):
@@ -76,7 +70,7 @@ def _window(
         if start >= today:
             return _refuse(
                 "the requested period is still in progress; exploration compares complete days — "
-                "use query_metrics(elapsed_only=True) for today so far",
+                "query today so far with metrics_query",
                 error_code="UNSUPPORTED_QUERY",
             )
         notes.append(f"{today.isoformat()} is still in progress and was left out")
@@ -157,7 +151,7 @@ async def explore_data(
     """
     filters = {k: v for k, v in (filters or {}).items() if v not in (None, "", [])}
     for m in metric_ids or []:
-        if (unknown := await semantic._reject_unknown_metric(ctx, m)) is not None:
+        if (unknown := await _data.reject_unknown_metric(ctx, m)) is not None:
             return unknown
     n_metrics, n_dims, top_k = P.EXPLORE_DEPTH.get(depth, P.EXPLORE_DEPTH["focus"])
     notes: list[str] = []
@@ -214,7 +208,7 @@ async def explore_data(
     for (m, d), (res, args) in zip(jobs, results, strict=True):
         if args is None:
             if d is None and metric_ids and m in metric_ids and len(metrics) == 1:
-                return semantic._fetch_failure(f"explore_data({m})", res.get("error"))
+                return _data.fetch_failure(f"explore_data({m})", res.get("error"))
             quality.append(f"{dx._label(m, lineage)}{' by ' + d if d else ''}: fetch failed")
             continue
         if d is None:
@@ -252,7 +246,7 @@ async def explore_data(
 
     # ---- evidence + findings ---------------------------------------------------------
     tz = ctx.deps.as_of.tzinfo
-    index = semantic._evidence_index(ctx)
+    index = _data.evidence_index(ctx)
 
     def cite(metric: str, days: tuple[date, ...] | list[date], dimension: str | None = None, segment: str | None = None) -> list[str]:
         args = args_for.get((metric, dimension))

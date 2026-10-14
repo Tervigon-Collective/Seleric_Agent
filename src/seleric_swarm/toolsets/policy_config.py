@@ -7,17 +7,6 @@ callers stop importing them — do not delete YAML as part of the port.
 
 from __future__ import annotations
 
-# From config/diagnostic_policies.yaml — causal budgets / refutation floor.
-BASE_CAUSAL_CANDIDATE_CAP: int = 6
-HISTORY_DAYS_BASE: int = 30
-MIN_REFUTATIONS: int = 2
-DEFAULT_CAUSAL_ESTIMATOR: str = "backdoor.linear_regression"
-DEFAULT_REFUTERS: tuple[str, ...] = (
-    "placebo_treatment_refuter",
-    "random_common_cause",
-    "data_subset_refuter",
-)
-
 # ---- Diagnosis engine (causal/diagnosis.py) ---------------------------------
 # Statistical conventions only. Nothing here names a metric, dimension, channel
 # or business threshold: every candidate cause, identity and DAG edge comes from
@@ -33,7 +22,6 @@ DIAG_IDENTITY_TOLERANCE: float = 0.01  # relative dispersion allowed in a verifi
 # every history day must reproduce within this share of the outcome's typical size.
 DIAG_BRIDGE_TOLERANCE: float = 0.005
 DIAG_BRIDGE_MAX_TERMS: int = 6         # terms in one level of the bridge
-DIAG_BRIDGE_BEAM: int = 16             # partial sums kept per search step
 DIAG_BRIDGE_BUDGET_S: float = 8.0       # wall-clock cap on the whole bridge search
 DIAG_BRIDGE_DEPTH: int = 4             # levels: outcome -> terms -> their terms -> …
 DIAG_APPROX_IDENTITY_TOLERANCE: float = 0.1  # ... in an approximate (cross-system) identity
@@ -60,7 +48,6 @@ DIAG_CALENDAR_GRAIN_TOKENS: tuple[str, ...] = ("hour", "day", "week", "month", "
 # From config/prediction_policies.yaml — history sufficiency (also used by
 # anomaly/causal "enough rows" preconditions).
 MIN_OBSERVATION_ROWS: int = 8
-MIN_HISTORY_DAYS: int = 28
 
 # From config/skeptic_policies.yaml — the EvidenceValidator's two signals
 # (Sprint 3 C). An ADDITION, not a move: SkepticPolicies.load() still reads the
@@ -78,83 +65,10 @@ TRUST_LABEL_THRESHOLDS: dict[str, float] = {
     "VERIFIED": 0.9,
 }
 TRUST_REVISE_BELOW: float = 0.55
-TRUST_BLOCKING_CAP: float = 0.3  # trust_score.py:79-82
 
-TRUST_PROFILES: dict[str, dict[str, float]] = {
-    "numeric": {
-        "source_reliability": 0.25,
-        "metric_validity": 0.25,
-        "freshness": 0.2,
-        "provenance_completeness": 0.2,
-        "cross_source_agreement": 0.1,
-    },
-    "causal": {
-        "evidence_quality": 0.15,
-        "temporal_validity": 0.15,
-        "graph_plausibility": 0.15,
-        "confounder_coverage": 0.15,
-        "estimator_validity": 0.1,
-        "refutation_robustness": 0.15,
-        "alternative_elimination": 0.1,
-        "cross_source_agreement": 0.05,
-    },
-    "forecast": {
-        "model_applicability": 0.25,
-        "backtest_quality": 0.2,
-        "drift_status": 0.25,
-        "calibration": 0.1,
-        "feature_freshness": 0.1,
-        "interval_quality": 0.1,
-    },
-    "default": {
-        "evidence_quality": 0.4,
-        "provenance_completeness": 0.3,
-        "cross_source_agreement": 0.3,
-    },
-}
 
-# Hard-coded literals in verdict_engine.py (:54, :78) with no YAML backing.
-# Naming them here is a small improvement over the original — they are policy,
-# and they were invisible.
-ALT_PRIORITY_REVISE_FLOOR: int = 6
-METHODOLOGY_TRUST_MARGIN: float = 0.15
-
-# verdict_engine.py:58-61, copied exactly. The omissions are deliberate:
-# "evidence", "provenance", "alternative_hypothesis" and "strategy" warnings do
-# NOT force REVISE. Widening this set silently turns PASSes into REVISEs.
-REVISE_CATEGORIES: frozenset[str] = frozenset(
-    {
-        "metric",
-        "source",
-        "contradiction",
-        "anomaly",
-        "statistical",
-        "model",
-        "forecast",
-        "causal",
-        "data_quality",
-        "temporal",
-    }
-)
-
-# From config/skeptic_policies.yaml evidence/contradiction blocks.
-MAX_FRESHNESS_HOURS: int = 72
-CONTRADICTION_TOLERANCE: float = 0.05  # contradiction_validator.py's 5% rule
-
-# Named warnings returned with INSUFFICIENT_EVIDENCE refusals so callers can
-# tell *which* gate declined (bug #8's "specialists correctly skipped" property).
-WARN_NO_EVIDENCE: str = "policy:no_evidence"
-WARN_MISSING_TREATMENT_OUTCOME: str = "policy:missing_treatment_or_outcome_series"
 WARN_THIN_HISTORY: str = "policy:thin_history"
-WARN_THIN_ROWS: str = "policy:thin_observation_rows"
-WARN_MISSING_CAUSAL_ARTIFACT: str = "policy:missing_causal_artifact"
-# agent/limits.py::ExecutionBudgetTracker exhaustion (max_cube_queries/
-# max_causal_queries/max_prediction_calls) surfaced as a normal tool refusal.
-WARN_EXECUTION_LIMIT_EXCEEDED: str = "policy:execution_limit_exceeded"
 
-# Model toolset gates (Sprint 3 C).
-WARN_NO_APPROVED_MODEL: str = "policy:no_approved_model"
-WARN_MODEL_TARGET_MISMATCH: str = "policy:model_target_mismatch"
 WARN_MODEL_UNAVAILABLE: str = "policy:model_unavailable"
 WARN_MODEL_FIT_FAILED: str = "policy:model_fit_failed"
 WARN_INVALID_HORIZON: str = "policy:invalid_horizon"
@@ -168,40 +82,6 @@ WARN_INVALID_HORIZON: str = "policy:invalid_horizon"
 # would pin one funnel's shape into the harness and silently exclude any
 # other funnel the catalogue grows.
 
-MIN_SEGMENT_SHARE: float = 0.01
-MAX_SEGMENTS_REPORTED: int = 20
-
-# Contribution shares are derived by summing drilldown children, because
-# toolsets/semantic.py::drilldown discards the parent total it computes. If the
-# children disagree with a supplied total by more than this, say so rather than
-# presenting the shares as exact.
-CONTRIBUTION_RECONCILIATION_TOLERANCE: float = 0.005
-
-WARN_NO_DIMENSION_EVIDENCE: str = "policy:no_dimension_stamped_evidence"
-WARN_POOLED_SEGMENTS: str = "policy:pooled_segment_evidence"
-WARN_CONTRIBUTION_UNRECONCILED: str = "policy:contribution_unreconciled"
-WARN_UNKNOWN_FUNNEL_STEP: str = "policy:unknown_funnel_step"
-WARN_NO_FUNNEL_STEPS: str = "policy:no_recognized_funnel_steps"
-WARN_SINGLE_COHORT: str = "policy:single_cohort"
-
-# Knowledge toolset (Sprint 4 C). The corpus ships empty; an empty corpus is a
-# miss, not an error — CONTRACTS.md §2 permits Knowledge to return
-# success=True with zero artifacts.
-KNOWLEDGE_CORPUS_DIRNAME: str = "knowledge_corpus"
-KNOWLEDGE_MAX_RESULTS: int = 5
-KNOWLEDGE_SNIPPET_CHARS: int = 400
-WARN_EMPTY_CORPUS: str = "policy:empty_knowledge_corpus"
-
-# Experiment toolset (Sprint 4 C).
-# 0.8 power / 0.05 alpha are the conventional defaults; named here so a
-# refusal can cite them rather than hiding a literal in the call site.
-DEFAULT_POWER: float = 0.8
-DEFAULT_ALPHA: float = 0.05
-MIN_DETECTABLE_EFFECT: float = 0.001  # below this, sample size explodes meaninglessly
-WARN_UNKNOWN_EXPERIMENT: str = "policy:unknown_experiment"
-WARN_NO_EXPERIMENT_RECORDS: str = "policy:no_experiment_records"
-WARN_MISSING_VARIANT_EVIDENCE: str = "policy:missing_variant_evidence"
-WARN_INVALID_RATE: str = "policy:invalid_rate"
 
 # ---- Exploration engine (exploration/engine.py) -----------------------------
 # Statistical conventions for open-ended exploration. As with the diagnosis
@@ -239,18 +119,3 @@ EXPLORE_DEPTH: dict[str, tuple[int, int, int]] = {
 }
 
 
-# M5.3 latency tiers: soft deadline (seconds) for the v2 plan run, per plan template. On the
-# deadline the run stops starting new steps and the answer is written from what is in hand.
-PLAN_DEADLINE_S: dict[str, float] = {
-    "lookup": 10.0, "breakdown": 15.0, "trend": 15.0, "funnel": 20.0,
-    "ranking": 25.0, "report": 90.0,
-    "period_comparison": 30.0, "entity_comparison": 30.0, "composition": 30.0,
-    "why": 90.0, "exploration": 60.0,
-}
-PLAN_DEADLINE_DEFAULT_S: float = 45.0
-
-# AG-08 ranking eligibility: ratio denominator / volume must meet this floor.
-RANK_MIN_VOLUME: float = 1.0
-RANK_DEFAULT_LIMIT: int = 10
-# Cap rows on every sliced report query.
-REPORT_QUERY_LIMIT: int = 200

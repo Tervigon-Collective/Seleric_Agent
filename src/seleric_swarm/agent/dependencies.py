@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
-from seleric_swarm.agent.scope_model import RequiredScope
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
 from seleric_swarm.state.cache import MissionQueryCache
@@ -18,7 +17,6 @@ from seleric_swarm.state.scratchpad import Scratchpad
 
 if TYPE_CHECKING:
     from seleric_swarm.agent.limits import ExecutionBudgetTracker
-    from seleric_swarm.contracts.lookup import TimeRangeV1
     from seleric_swarm.services.metrics import MetricRegistry
     from seleric_swarm.state.artifacts import ArtifactStore
 
@@ -90,18 +88,14 @@ class SelericDeps:
     limits: ExecutionLimits
     # Dedupes identical seleric-mcp fetches within this mission run (state/cache.py).
     # One instance per SelericDeps — never shared across missions. Value type
-    # is `Any`, not `dict[str, Any]`: toolsets/semantic.py caches both raw MCP
-    # response dicts (query_metric_series/drilldown) and whole `ToolResult`
-    # objects (query_metrics' repeat-call dedup) under the same cache, keyed
-    # by distinct prefixes -- narrowing this to one shape would just be wrong
-    # for the other caller, not more correct.
+    # is `Any`, not `dict[str, Any]`: toolsets/_data.py caches raw MCP response
+    # dicts under it, keyed by capability and arguments.
     query_cache: MissionQueryCache[str, Any] = field(default_factory=MissionQueryCache)
-    # Per-mission mutable tool-call tallies (e.g. how many times search_semantics
-    # ran) so a tool can break a paraphrase-search loop the exact-arg query_cache
-    # can't see. One dict per SelericDeps — never shared across missions.
+    # Per-mission mutable tool-call tallies (e.g. tools withdrawn for the rest of
+    # the run) so a tool can break a loop the exact-arg query_cache can't see. One dict per SelericDeps — never shared across missions.
     call_counts: dict[str, Any] = field(default_factory=dict)
     # Per-run working memory — an auto-maintained ledger of established facts
-    # (values a successful query_metrics returned) rendered back into the prompt
+    # (values a data tool returned) rendered back into the prompt
     # each turn so the model stops re-fetching the same thing. Not evidence
     # (rule 6). One instance per SelericDeps — never shared across missions.
     scratchpad: Scratchpad = field(default_factory=Scratchpad)
@@ -113,24 +107,9 @@ class SelericDeps:
     # which ids exist; only the registry knows that two of them ("metric.atc_rate"
     # and "session_atc_rate") are the same metric. Any code comparing an id it
     # declared against an id an EvidenceArtifact was stamped with must collapse
-    # both through `canonical_id` first — see analytics/funnel.py. None leaves
+    # both through `canonical_id` first. None leaves
     # every spelling distinct, so production paths must pass the real registry.
     metrics: MetricRegistry | None = None
-    # The period the question actually names, resolved once by
-    # services/time_range.py. It reached the agent only as a sentence in the
-    # prompt, which the model is free to override — and did, reading "last
-    # month" as a 30-day span and silently dropping Aug 31. Carried here so the
-    # fetch path can hold a caller to the window the question asked for.
-    # ``None`` when the question names no relative period: nothing to enforce.
-    resolved_window: TimeRangeV1 | None = None
-    # Hard constraints the query demanded (requested breakdowns resolved to
-    # catalogue dimension ids), captured once in the runner. Read by
-    # validation/signals.py::check_scope_coverage to prove the executed evidence
-    # covers what was asked. Default-empty ⇒ the check is NOT_APPLICABLE.
-    required_scope: RequiredScope = field(default_factory=RequiredScope)
-    # Typed once-per-turn decision (agent/query_spec.py). None when the feature
-    # is off or understand failed. Prefer this over reparsing the question.
-    query_spec: Any | None = None
     # Real per-mission execution-limit enforcement (agent/limits.py). Not a
     # dataclass default_factory: ExecutionBudgetTracker needs this same
     # instance's own `limits`, so it's built in __post_init__ instead — every
@@ -153,7 +132,7 @@ class SelericDeps:
     def canonical_metric_id(self, metric_id: str) -> str:
         """One spelling of *metric_id*, for code that compares ids with ``==``.
 
-        toolsets/semantic.py stamps an EvidenceArtifact with the id the caller
+        toolsets/_data.py stamps an EvidenceArtifact with the id the caller
         actually fetched, verbatim and deliberately: two spellings of one metric
         must reach Cube unchanged and be independently attributed (bug #2's
         regression guard forbids collapsing them there). The other half of that

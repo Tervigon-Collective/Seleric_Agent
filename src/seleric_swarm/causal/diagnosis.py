@@ -2743,7 +2743,7 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
         # Shares of a change that is within noise are meaningless (they explode as
         # the total nears zero); state the component moves only.
         out.append(
-            "COMPONENTS (for context; the total did not move unusually): "
+            "COMPONENTS, each from its usual level (not the previous period) to the period asked about (for context; the total did not move unusually): "
             + "; ".join(
                 f"{_label(t.metric, lineage)} {_val(t.reference, t.metric, lineage)} → {_val(t.event, t.metric, lineage)} "
                 f"({_chg(t.event, t.reference)})"
@@ -2884,14 +2884,18 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta]) -> list[str]:
         )
     if len(r.previous_values) > 1:
         prev_label = r.event.previous_period.get("days", ["the day before"]) if r.event else ["the day before"]
+        span = prev_label[0] if len(prev_label) == 1 else f"{prev_label[0]}..{prev_label[-1]}"
         out.append(
-            f"PREVIOUS DAY ({', '.join(prev_label)}), if a comparison table needs it: "
+            f"{'PREVIOUS DAY' if len(prev_label) == 1 else 'PREVIOUS PERIOD, the days just before the window'} ({span}), "
+            "if a comparison table needs it (these totals, not the usual level, are the previous period): "
             + "; ".join(f"{_label(m, lineage)} {_val(v, m, lineage)}" for m, v in r.previous_values.items())
             + "."
         )
         if r.event_values:
             out.append(
-                f"EVENT DAY ({', '.join(r.event_window)}), the same metrics: "
+                f"{'EVENT DAY' if len(r.event_window) == 1 else 'EVENT WINDOW'} "
+                f"({r.event_window[0] if len(r.event_window) == 1 else f'{r.event_window[0]}..{r.event_window[-1]}'}), "
+                "the same metrics: "
                 + "; ".join(f"{_label(m, lineage)} {_val(v, m, lineage)}" for m, v in r.event_values.items())
                 + "."
             )

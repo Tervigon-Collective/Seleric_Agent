@@ -26,7 +26,6 @@ def _ctx() -> MagicMock:
     deps.catalogue.metrics = ()
     deps.mission_id = "m1"
     deps.principal = SimpleNamespace(workspace_id="w1")
-    deps.required_scope = None
     deps.as_of = date(2026, 10, 9)
     deps.context = SimpleNamespace(settings=SimpleNamespace(chronos_base_url=""), timezone="Asia/Kolkata")
     deps.canonical_metric_id = None

@@ -165,7 +165,6 @@ def test_refusals():
         ctx, period_start=datetime(2026, 1, 1, tzinfo=UTC), period_end=datetime(2026, 9, 30, tzinfo=UTC)
     ))
     assert not long.success and "at most" in long.summary
-    from pydantic_ai import ModelRetry
-
-    with pytest.raises(ModelRetry):  # a near-miss id is bounced back with the closest real ids
-        asyncio.run(exploration.explore_data(ctx, metric_ids=["yy_taking"]))  # type: ignore[arg-type]
+    near = asyncio.run(exploration.explore_data(ctx, metric_ids=["yy_taking"]))  # type: ignore[arg-type]
+    # a near-miss id is bounced back with the closest real ids, as a result (a raised retry would fail the turn)
+    assert not near.success and near.retryable and "yy_" in near.summary

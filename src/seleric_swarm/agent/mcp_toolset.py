@@ -258,6 +258,22 @@ def write_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericD
     return ids
 
 
+def write_query_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericDeps) -> dict[str, list[str]]:
+    """Evidence ids per query id. A multi-view result holds one full sub-result per part (own query id, columns, rows):
+    each part is written on its own, and the parent id maps to all of them, so any of those ids can be passed on."""
+    parts = [p for p in payload.get("parts") or [] if isinstance(p, dict)]
+    if not parts:
+        return {str(payload["query_id"]): write_evidence(payload, args, deps)} if payload.get("query_id") else {}
+    out: dict[str, list[str]] = {}
+    for part in parts:
+        ids = write_evidence(part, args, deps)
+        if part.get("query_id"):
+            out[str(part["query_id"])] = ids
+    if payload.get("query_id"):
+        out[str(payload["query_id"])] = list(dict.fromkeys(i for ids in out.values() for i in ids))
+    return out
+
+
 # ---- per-turn state and the tools --------------------------------------------------------------
 @dataclass
 class TurnState:
@@ -268,6 +284,7 @@ class TurnState:
     evidence_ids: list[str] = field(default_factory=list)
     by_query: dict[str, list[str]] = field(default_factory=dict)  # query_id -> evidence ids (what charts and tables read)
     steps: list[dict[str, Any]] = field(default_factory=list)
+    parts: list[dict[str, Any]] = field(default_factory=list)  # structured answer parts (TABLE) the helpers attach
     errors: list[str] = field(default_factory=list)
     seen: dict[str, asyncio.Future[Any]] = field(default_factory=dict)
     tool_calls: int = 0
@@ -328,7 +345,6 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
             payload, is_err = await state.seen[key]
             ms = int((time.perf_counter() - started) * 1000)
             state.tool_ms += ms
-            evidence_ids: list[str] = []
             if not dup:
                 if is_err:
                     state.errors.append(f"{name}: {compact(payload)[:300]}")
@@ -337,10 +353,10 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
                     qid = payload.get("query_id") if isinstance(payload, dict) else None
                     state.evidence.append({"tool": name, "args": args, "query_id": qid})
                     if name in QUERY_TOOLS and isinstance(payload, dict):
-                        evidence_ids = write_evidence(payload, args, ctx.deps)
-                        state.evidence_ids.extend(i for i in evidence_ids if i not in state.evidence_ids)
-                        if qid:
-                            state.by_query[str(qid)] = evidence_ids
+                        by_query = write_query_evidence(payload, args, ctx.deps)
+                        for ids in by_query.values():
+                            state.evidence_ids.extend(i for i in ids if i not in state.evidence_ids)
+                        state.by_query.update(by_query)
             body = compact(payload)
             state.steps.append({"kind": "tool_call", "tool": name, "args": args, "duplicate": dup})
             state.steps.append({"kind": "tool_return", "tool": name, "ok": not is_err, "ms": ms, "chars": len(body),

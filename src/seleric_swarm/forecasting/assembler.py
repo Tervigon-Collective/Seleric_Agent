@@ -14,7 +14,7 @@ from seleric_swarm.forecasting.gates import apply_temporal_cutoff, cutoff_for
 from seleric_swarm.forecasting.quality import assess_series, dropped_features, is_blocking
 from seleric_swarm.forecasting.types import FeatureFrame, GateDecision, QualityVerdict
 from seleric_swarm.services.mcp_query import row_date
-from seleric_swarm.toolsets.semantic import raw_query_metric
+from seleric_swarm.toolsets._data import raw_query_metric
 
 _log = logging.getLogger("seleric.forecasting.assembler")
 

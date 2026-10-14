@@ -27,7 +27,7 @@ from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.conversations.contracts import ArtifactProvenance
 from seleric_swarm.exploration.space import default_brand_id, scope_dimensions
 from seleric_swarm.services.mcp_query import dimension_value
-from seleric_swarm.toolsets import diagnosis, semantic
+from seleric_swarm.toolsets import _data, diagnosis
 from seleric_swarm.toolsets.analytics import _refuse
 
 _CALCULATION_VERSION = "composition.v1"
@@ -105,21 +105,15 @@ def _window(
     ctx: RunContext[SelericDeps], start: datetime | None, end: datetime | None
 ) -> tuple[date, date, list[str]]:
     notes: list[str] = []
-    window = ctx.deps.resolved_window
-    if start is None and end is None and window is not None and window.start and window.end:
-        return date.fromisoformat(window.start), date.fromisoformat(window.end), notes
     default = ctx.deps.as_of - timedelta(days=1)
     s, e = start or end or default, end or start or default
-    if (pinned := semantic._pin_to_resolved_window(ctx, s, e)) is not None:
-        s, e, note = pinned
-        notes.append(note)
     a, b = diagnosis._inclusive_days(s, e)
     today = ctx.deps.as_of.date()
-    if window is None and a >= today:
-        # The question named no period and only the running day was asked for: its figures are a fraction of a
-        # day, so the last complete day is broken down instead (live 2026-10-09: "net profit waterfall" → today).
+    if a >= today:
+        # Only the running day was asked for (or no period at all): its figures are a fraction of a day, so the last
+        # complete day is broken down instead (live 2026-10-09: "net profit waterfall" → today).
         a = b = today - timedelta(days=1)
-        notes.append(f"no period was named, so the last complete day {a} is shown ({today} is still in progress)")
+        notes.append(f"only {today}, which is still in progress, was asked for, so the last complete day {a} is shown")
     return a, b, notes
 
 
@@ -160,7 +154,7 @@ async def _totals_by(
         flt.append({"dimension": scope_dim, "operator": "equals", "values": [default_brand_id()]})
     if flt:
         args["filters"] = flt
-    result = await semantic._cached_metrics_query(ctx, args)
+    result = await _data.cached_metrics_query(ctx, args)
     if result.get("error"):
         return {}, None, dropped, str(result.get("error")), None, {}
     values: dict[str, float] = {}
@@ -221,11 +215,14 @@ async def break_down_metric(
     by that dimension — a line the user asks to see apart (returns vs cancellations inside a deductions line, the
     P&L per channel) — each segment reconciling on its own.
 
+    ``metric_id`` is on the basis the user asked for: the order-date id by default (net_profit, net_sales), the
+    pnl_-prefixed id (Finance P&L by event date) only when the user asks for the P&L, the books or finance.
+
     Present the lines in the order returned (top line first, deductions with their sign) and the subtotals as
     given; do not add lines from other metrics — they are on another basis and will not reconcile.
     """
     definitions = await diagnosis._all_definitions(ctx)
-    if (unknown := await semantic._reject_unknown_metric(ctx, metric_id)) is not None:
+    if (unknown := await _data.reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     switched_note = ""
     if not _composition(definitions.get(metric_id, {})):
@@ -286,7 +283,7 @@ async def break_down_metric(
             )
         periods.append(("compare", c_start, c_end))
 
-    index = semantic._evidence_index(ctx)
+    index = _data.evidence_index(ctx)
     values_by: dict[str, dict[str, float]] = {}
     evidence_ids: list[str] = []
     currency: str | None = None
@@ -294,7 +291,7 @@ async def break_down_metric(
     for key, p_start, p_end in periods:
         values, args, dropped, error, cur = await _totals(ctx, metrics, p_start, p_end, filt)
         if args is None:
-            return semantic._fetch_failure(f"break_down_metric({metric_id})", error)
+            return _data.fetch_failure(f"break_down_metric({metric_id})", error)
         currency = currency or cur
         dropped_any += dropped
         values_by[key] = values
@@ -309,7 +306,7 @@ async def break_down_metric(
                 period_end=datetime(p_end.year, p_end.month, p_end.day, tzinfo=tz),
                 value=values[m], unit=unit, source_query=args,
             )
-            evidence_ids.append(semantic._put_evidence(
+            evidence_ids.append(_data.put_evidence(
                 ctx, ev, index=index, raw_id=f"raw:{m}:{p_start}:{p_end}:{sorted(filt.items())}",
                 provenance=ArtifactProvenance(
                     calculation_version=_CALCULATION_VERSION,
@@ -403,7 +400,7 @@ async def break_down_metric(
                 period_end=datetime(end.year, end.month, end.day, tzinfo=tz),
                 value=v, unit=currency, source_query=p_args,
             )
-            evidence_ids.append(semantic._put_evidence(
+            evidence_ids.append(_data.put_evidence(
                 ctx, ev, index=index, raw_id=f"raw:{n.metric}:{start}:{end}:{split}={seg}",
                 provenance=ArtifactProvenance(
                     calculation_version=_CALCULATION_VERSION,
@@ -439,7 +436,7 @@ async def break_down_metric(
                                 period_end=datetime(end.year, end.month, end.day, tzinfo=tz),
                                 value=vals[n.metric], unit=currency, source_query=s_args,
                             )
-                            evidence_ids.append(semantic._put_evidence(
+                            evidence_ids.append(_data.put_evidence(
                                 ctx, ev, index=index, raw_id=f"raw:{n.metric}:{start}:{end}:{by}={seg}",
                                 provenance=ArtifactProvenance(
                                     calculation_version=_CALCULATION_VERSION,

@@ -10,7 +10,6 @@ from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.conversations.contracts import ContextBundle, Principal
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
-from seleric_swarm.toolsets import analytics, semantic
 
 
 class _Mcp:
@@ -50,43 +49,7 @@ def _ctx(mcp: _Mcp) -> SimpleNamespace:
     return SimpleNamespace(deps=deps, run_step=1)
 
 
-async def test_find_metrics_resolves_every_phrase_in_one_call_and_searches_only_misses():
-    mcp = _Mcp()
-    out = await semantic.find_metrics(_ctx(mcp), phrases=["net sales", "site visits", "net sales"])
-    assert out.success
-    assert "net sales -> net_sales" in out.summary
-    assert "'site visits' has no single concept" in out.summary
-    resolves = [a["text"] for c, a in mcp.calls if c == "seleric.catalogue_resolve_concept"]
-    searches = [c for c, _ in mcp.calls if c == "seleric.catalogue_search_metrics"]
-    assert sorted(resolves) == ["net sales", "site visits"]  # duplicates collapsed
-    assert len(searches) == 1  # only the miss falls back to search
 
 
-async def test_find_metrics_without_phrases_lists_the_catalogue():
-    out = await semantic.find_metrics(_ctx(_Mcp()), domain="commerce")
-    assert out.success and "net_sales" in out.summary and "sessions" not in out.summary
 
 
-async def test_analyze_dispatches_and_validates_its_arguments(monkeypatch):
-    seen: list[tuple[str, tuple]] = []
-
-    def _stub(name):
-        async def _fn(ctx, *args):
-            seen.append((name, args))
-            return SimpleNamespace(name=name)
-
-        return _fn
-
-    for name in ("compare_periods", "detect_anomalies", "contribution_analysis", "segment_decomposition",
-                 "funnel_decomposition", "cohort_analysis"):
-        monkeypatch.setattr(analytics, name, _stub(name))
-    ctx = _ctx(_Mcp())
-    assert (await analytics.analyze(ctx, ["e1"], "compare")).name == "compare_periods"
-    assert (await analytics.analyze(ctx, ["e1"], "anomaly")).name == "detect_anomalies"
-    assert (await analytics.analyze(ctx, ["e1"], "contribution", ["channel", "x"])).name == "contribution_analysis"
-    assert seen[-1] == ("contribution_analysis", (["e1"], "channel"))
-    assert (await analytics.analyze(ctx, ["e1"], "segments", ["a", "b"])).name == "segment_decomposition"
-    assert (await analytics.analyze(ctx, ["e1"], "funnel")).name == "funnel_decomposition"
-    assert (await analytics.analyze(ctx, ["e1"], "cohort")).name == "cohort_analysis"
-    refused = await analytics.analyze(ctx, ["e1"], "contribution")
-    assert refused.success is False and "dimensions" in refused.summary

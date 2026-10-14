@@ -202,15 +202,6 @@ class Settings(BaseSettings):
     # swarm_v2. Sprint 5: V3 is now the only mission path, default True.
     v3_agent_enabled: bool = True
 
-    # QuerySpec migration (agent/query_spec.py): decide intent once from the
-    # understand call, then execute/check against that typed spec instead of
-    # re-scanning the raw question with regex. off = legacy only; shadow =
-    # build+log disagreements, still execute legacy; enforce = consumers read
-    # the validated spec (fail-open to legacy when the spec has no windows).
-    query_spec_mode: Literal["off", "shadow", "enforce"] = Field(
-        default="shadow",
-        validation_alias=AliasChoices("query_spec_mode", "QUERY_SPEC_MODE"),
-    )
     # Semantic port (M0.5). off = legacy catalogue warm; shadow = port beside it;
     # enforce = missions read the port's snapshot. Default brand and scope
     # dimension ids: empty uses config/scope.yaml.
@@ -235,7 +226,7 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("api_key", "API_KEY", "SELERIC_API_KEY"),
     )
-    rate_limit_enabled: bool = True
+    rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 60
     # Compatibility identity used until a first-class identity provider is configured.
     default_workspace_id: str = "default"

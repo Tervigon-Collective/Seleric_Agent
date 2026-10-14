@@ -2,7 +2,7 @@
 
 ``diagnose_metric_change`` is the composite the agent calls for a why-question.
 It plans every candidate from catalogue metadata, fetches through the same
-certified Cube path ``query_metrics`` uses (rule 1; budgeted, cached), records
+certified Cube path ``metrics_query`` uses (rule 1; budgeted, cached), records
 the fetched values as ``EvidenceArtifact``s, and hands the series to the pure
 engine in ``causal/diagnosis.py``. It does not call any other tool (rule 4).
 
@@ -51,15 +51,18 @@ from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.exploration import space
 from seleric_swarm.semantic import McpSemanticPort
 from seleric_swarm.services.mcp_query import build_metrics_query_args, dimension_value, row_date
+from seleric_swarm.toolsets import _data
 from seleric_swarm.toolsets import policy_config as P
-from seleric_swarm.toolsets import semantic
 
 _CALCULATION_VERSION = "diagnosis.v1"
 _DEFINITION_BATCH = 10
 _DEFINITIONS_TTL_S = 900.0
-# Longer than this, an event is compared with the equal-length period before it
-# (a period comparison) instead of with "usual" days. Not a limit.
+# The longest event that may be read against its "usual" days when a comparison period is passed (see
+# _USUAL_MAX_DAYS for the no-comparison default). Not a limit.
 _MAX_EVENT_DAYS = 14
+# A window longer than a week is a period, not a day: it is compared with the equal-length period just before it
+# (live 2026-10-14 Q4: 14 days against a blended "usual" level, quoted by the answer as the previous period).
+_USUAL_MAX_DAYS = 7
 _MAX_SEGMENT_ROWS = 6000
 _UNSET_SEGMENT = "(not set)"
 
@@ -151,15 +154,8 @@ def _plan_drivers(
 
 
 def _plan_dimensions(ctx: RunContext[SelericDeps], outcome: str, cap: int) -> list[str]:
-    """The dimensions to segment by: those the question named as where to look first (when the outcome carries
-    them), then the catalogue's own plan."""
-    planned = space.plan_dimensions(ctx.deps.catalogue, outcome, cap)
-    hints: Any = getattr(getattr(ctx.deps, "required_scope", None), "segment_hints", frozenset()) or frozenset()
-    if not hints:
-        return planned
-    carried = set(ctx.deps.catalogue.supported_dimensions_for(outcome))
-    first = sorted(d for d in hints if d in carried and not ctx.deps.catalogue.is_time_dimension(d))
-    return list(dict.fromkeys([*first, *planned]))[: max(cap, len(first))]
+    """The dimensions to segment by: the catalogue's own plan for the outcome."""
+    return space.plan_dimensions(ctx.deps.catalogue, outcome, cap)
 
 
 def _rate_parts(
@@ -197,7 +193,7 @@ def _filters_for(ctx: RunContext[SelericDeps], metric_id: str, filters: dict[str
             continue
         if supported and k not in supported:
             # The same slice under the metric's own member of the conformed family (finance_channel = meta is
-            # ad_platform / acquisition_platform = meta elsewhere), as query_metrics answers it. Dropped, the
+            # ad_platform / acquisition_platform = meta elsewhere), as metrics_query answers it. Dropped, the
             # driver series of a Meta diagnosis came back for every platform and the scope gate sent the answer
             # back twice (regression 2026-10-09 Q28, 288 s).
             sibling = next(
@@ -228,7 +224,7 @@ async def _fetch_daily(
         dimensions=[dimension] if dimension else None, filters=flt or None,
         inject_default_brand=_supports_brand(ctx, metric_id),
     )
-    result = await semantic._cached_metrics_query(ctx, args)
+    result = await _data.cached_metrics_query(ctx, args)
     result = dict(result)
     result["_args"] = args
     result["_dropped_filters"] = dropped
@@ -277,7 +273,7 @@ async def _prefetch_daily(
             dimensions=[dimension] if dimension else None, filters=flt or None,
             inject_default_brand=_supports_brand(ctx, metric_id),
         )
-        key = semantic._cache_key("seleric.metrics_query", args)
+        key = _data.cache_key("seleric.metrics_query", args)
         view = views.get(metric_id)
         if not view or ctx.deps.query_cache.peek(key) is not None:
             continue
@@ -295,7 +291,7 @@ async def _prefetch_daily(
     async def one(gk: str, members: list[tuple[str, str]]) -> None:
         measures = [m for m, _ in members]
         async with sem:
-            payload = await semantic._cached_metrics_query(ctx, {"measures": measures, **group_args[gk]})
+            payload = await _data.cached_metrics_query(ctx, {"measures": measures, **group_args[gk]})
         if payload.get("error"):
             return
         # Measures on different time axes come back composed: one part per axis, each a plain result of its own.
@@ -373,10 +369,10 @@ def _evidence_rows(
             metric_id=metric_id, dimensions=dict(dimensions or {}), grain="day", as_of=ctx.deps.as_of,
             period_start=start, period_end=start, value=values[d], unit=unit, source_query=args,
         )
-        ids.append(semantic._put_evidence(
+        ids.append(_data.put_evidence(
             ctx, ev, index=index, raw_id=f"raw:{metric_id}:{d}:{d}",
             # The filters the series was fetched with (a channel the question named) are part of what the row
-            # means, recorded as query_metrics records them; without them a Meta-filtered diagnosis read as
+            # means, recorded as metrics_query records them; without them a Meta-filtered diagnosis read as
             # unfiltered and the scope gate looped four times (regression 2026-10-09 Q28).
             provenance=ArtifactProvenance(
                 calculation_version=_CALCULATION_VERSION,
@@ -863,7 +859,9 @@ def _outcome_on_its_normal_days(
     return (
         f"THE OUTCOME ON ITS OWN NORMAL DAYS: {engine._label(metric, lineage)} ranged {show(min(usual))}–"
         f"{show(max(usual))} (median {show(statistics.median(usual))}) over {len(usual)} normal days; "
-        f"{', '.join(str(d) for d in event_days)}: {show(sum(ev) / len(ev))}. Say where the day sits in that range; "
+        + (f"{event_days[0]}..{event_days[-1]}: averaged {show(sum(ev) / len(ev))} per day (not the period total). "
+           if len(event_days) > 1 else f"{event_days[0]}: {show(sum(ev) / len(ev))}. ")
+        + "Say where the day sits in that range; "
         "when the whole range is poor for this measure (a loss, a return below what was spent), say the entity "
         "under-performs on ordinary days too — a standing problem, not this day's."
     )
@@ -1207,7 +1205,7 @@ def _change_log_lines(
 
 
 def _inclusive_days(start_dt: datetime, end_dt: datetime) -> tuple[date, date]:
-    """First and last day of a window. The end day is included, as in ``query_metrics``
+    """First and last day of a window. The end day is included, as in ``metrics_query``
     and the resolved-window pin: reading a midnight end as exclusive dropped the last
     day of every pinned multi-day window — "last week" (09-28..10-04) was diagnosed as
     09-28..10-03, and the scope gate then sent the answer back for the missing day
@@ -1263,33 +1261,14 @@ async def _diagnose(
     outcome to particular campaigns or ads, the result also lists the edits logged on them (budget, status, bid
     strategy) on the event days against the usual days.
     """
-    if (unknown := await semantic._reject_unknown_metric(ctx, metric_id)) is not None:
+    if (unknown := await _data.reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown
     tz = ctx.deps.as_of.tzinfo
     today = ctx.deps.as_of.date()
     notes: list[str] = []
-    window = ctx.deps.resolved_window
-    if event_start is None and event_end is None and window is not None and window.start and window.end:
-        ev_start, ev_end = date.fromisoformat(window.start), date.fromisoformat(window.end)
-    else:
-        default = ctx.deps.as_of - timedelta(days=1)
-        start_dt, end_dt = event_start or event_end or default, event_end or event_start or default
-        # The question named a period: hold the call to it (same rule as query_metrics) — unless that would put the
-        # event on top of the days it is compared with. "Last 3 days … why worse yesterday" names a data window and an
-        # event inside it; pinning yesterday to the whole window made it overlap its own baseline and the diagnosis was
-        # refused twice (live 2026-10-10 thread_d1844eb0). A pin that leaves no valid call is not a correction.
-        if (pinned := semantic._pin_to_resolved_window(ctx, start_dt, end_dt)) is not None:
-            p_start, p_end, note = pinned
-            against = compare_start or compare_end
-            if against is not None:
-                c_first, c_last = _inclusive_days(against, compare_end or compare_start)  # type: ignore[arg-type]
-                p_first, p_last = _inclusive_days(p_start, p_end)
-                if p_first <= c_last and c_first <= p_last:
-                    pinned = None
-            if pinned is not None:
-                start_dt, end_dt = p_start, p_end
-                notes.append(note)
-        ev_start, ev_end = _inclusive_days(start_dt, end_dt)
+    default = ctx.deps.as_of - timedelta(days=1)
+    start_dt, end_dt = event_start or event_end or default, event_end or event_start or default
+    ev_start, ev_end = _inclusive_days(start_dt, end_dt)
     if ev_end < ev_start:
         ev_start, ev_end = ev_end, ev_start
     n_event = (ev_end - ev_start).days + 1
@@ -1335,8 +1314,9 @@ async def _diagnose(
             )
             c_days = [c_end - timedelta(days=i) for i in range(len(event_days) - 1, -1, -1)]
         baseline = c_days
-    elif len(event_days) > _MAX_EVENT_DAYS:
+    elif len(event_days) > _USUAL_MAX_DAYS:
         baseline = [d - timedelta(days=len(event_days)) for d in event_days]
+        notes.append(f"compared with the {len(event_days)} days just before it, {baseline[0]}..{baseline[-1]}")
     compared = [*baseline, *full_baseline]
     if compared and max(compared) >= ev_start:
         return _refuse(
@@ -1426,13 +1406,13 @@ async def _diagnose(
     quality: list[str] = []
     series: dict[str, dict[date, float]] = {}
     args_by_metric: dict[str, dict[str, Any]] = {}
-    # The currency the data source reports per metric (as query_metrics records it),
+    # The currency the data source reports per metric (as metrics_query records it),
     # so diagnosis evidence carries its unit like every other figure.
     units: dict[str, str] = {}
     for m, (res, args) in zip(series_ids, series_results, strict=True):
         if args is None:
             if m == metric_id:
-                return semantic._fetch_failure(f"diagnose_metric_change({metric_id})", res.get("error"))
+                return _data.fetch_failure(f"diagnose_metric_change({metric_id})", res.get("error"))
             quality.append(f"{m}: fetch failed ({str(res.get('error'))[:120]})")
             continue
         if res.get("_dropped_filters"):
@@ -1516,7 +1496,7 @@ async def _diagnose(
     report.data_quality = [*notes, *quality, *report.data_quality]
 
     # ---- evidence + derived artifacts ------------------------------------------------
-    index = semantic._evidence_index(ctx)
+    index = _data.evidence_index(ctx)
     cited_days = sorted({*event_days, *(date.fromisoformat(r) for v in (report.event.reference_days.values() if report.event else []) for r in v)})
     if report.event and report.event.previous_period.get("days"):
         cited_days = sorted({*cited_days, *(date.fromisoformat(x) for x in report.event.previous_period["days"])})

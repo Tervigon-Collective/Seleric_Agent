@@ -32,7 +32,6 @@ from seleric_swarm.models.evaluation import (
 )
 from seleric_swarm.models.service import ForecastUnavailable, forecast_series
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
-from seleric_swarm.toolsets import models
 
 _MISSION = "MS3-models"
 _APPROVED_METRIC = "metric.net_sales"
@@ -102,136 +101,25 @@ def _store_series(
 # ---- the registry as a control ----------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_forecast_succeeds_for_a_metric_with_an_approved_model():
-    store = InMemoryArtifactStore()
-    ids = _store_series(store)
-    ctx = FakeRunContext(_deps(store))
-
-    result = await models.forecast(ctx, ids, horizon_days=3)
-
-    assert result.success, result.summary
-    payload = store.get(result.artifact_ids[0]).payload
-    assert payload["model_id"] == "forecast.net_sales.daily"
-    assert payload["model_version"] == "1"  # rule 10
-    assert payload["confidence_interval"] is not None  # never a bare point
-    assert payload["feature_leakage_checked"] is True  # rule 20, explicit
 
 
-@pytest.mark.asyncio
-async def test_forecast_refuses_once_prediction_budget_exhausted():
-    store = InMemoryArtifactStore()
-    ids = _store_series(store)
-    ctx = FakeRunContext(_deps(store, limits=ExecutionLimits(max_prediction_calls=0)))
-
-    result = await models.forecast(ctx, ids, horizon_days=3)
-
-    assert not result.success
-    assert result.error_code == "EXECUTION_LIMIT_EXCEEDED"
-    assert "policy:execution_limit_exceeded" in result.warnings
 
 
-@pytest.mark.asyncio
-async def test_forecast_refuses_a_metric_with_no_approved_model():
-    """The registry gate. metric.cpm is a real catalogue id with no registered
-    model — the answer is a refusal, not a number from a generic fallback."""
-    store = InMemoryArtifactStore()
-    ids = _store_series(store, metric=_UNBACKED_METRIC)
-    ctx = FakeRunContext(_deps(store))
-
-    result = await models.forecast(ctx, ids, horizon_days=3)
-
-    assert result.success is False
-    assert result.error_code == "INSUFFICIENT_EVIDENCE"
-    assert "policy:no_approved_model" in result.warnings
-    assert result.artifact_ids == []
 
 
-@pytest.mark.asyncio
-async def test_predict_ltv_refuses_because_no_model_is_registered():
-    """Not an unimplemented stub — the registry has no LTV entry because this
-    deployment has no per-customer training data. Refusing IS the behavior."""
-    result = await models.predict_ltv(FakeRunContext(_deps(InMemoryArtifactStore())), [])
-    assert result.success is False
-    assert "policy:no_approved_model" in result.warnings
 
 
-@pytest.mark.asyncio
-async def test_predict_propensity_refuses_because_no_model_is_registered():
-    result = await models.predict_propensity(
-        FakeRunContext(_deps(InMemoryArtifactStore())), [], event="purchase"
-    )
-    assert result.success is False
-    assert "policy:no_approved_model" in result.warnings
 
 
 # ---- preconditions ----------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_forecast_refuses_a_mixed_metric_evidence_set():
-    store = InMemoryArtifactStore()
-    ids = _store_series(store, days=10) + _store_series(store, days=10, metric=_UNBACKED_METRIC)
-    result = await models.forecast(FakeRunContext(_deps(store)), ids, horizon_days=3)
-
-    assert result.success is False
-    assert "policy:model_target_mismatch" in result.warnings
 
 
-@pytest.mark.asyncio
-async def test_forecast_refuses_a_window_aggregate_labelled_day_grain():
-    """A1.2 applies here for the same reason it applies to detect_anomalies: a
-    5-day sum wearing a daily label would silently become a history point
-    (docs/BUG_SHEET.md #14)."""
-    store = InMemoryArtifactStore()
-    ids = _store_series(store, days=10)
-    aggregate = EvidenceArtifact(
-        metric_id=_APPROVED_METRIC,
-        grain="day",
-        as_of=datetime(2026, 9, 20, tzinfo=UTC),
-        period_start=datetime(2026, 9, 11, tzinfo=UTC),
-        period_end=datetime(2026, 9, 15, tzinfo=UTC),
-        value=5000.0,
-        source_query={},
-    )
-    ids.append(
-        store.put(
-            Artifact(
-                workspace_id="ws-1",
-                artifact_type="evidence",
-                payload=aggregate.model_dump(mode="json"),
-                classification="factual",
-                evidence_ids=["raw:agg"],
-                provenance=ArtifactProvenance(query_version="q1"),
-                mission_id=_MISSION,
-            )
-        ).id
-    )
-
-    result = await models.forecast(FakeRunContext(_deps(store)), ids, horizon_days=3)
-
-    assert result.success is False
-    assert result.error_code == "EVIDENCE_GRAIN_MISMATCH"
 
 
-@pytest.mark.asyncio
-async def test_forecast_refuses_history_below_the_registered_minimum():
-    store = InMemoryArtifactStore()
-    ids = _store_series(store, days=4)  # registry minimum_history_days is 8
-    result = await models.forecast(FakeRunContext(_deps(store)), ids, horizon_days=3)
-
-    assert result.success is False
-    assert "policy:thin_history" in result.warnings
 
 
-@pytest.mark.asyncio
-async def test_forecast_refuses_a_nonsense_horizon():
-    store = InMemoryArtifactStore()
-    ids = _store_series(store)
-    result = await models.forecast(FakeRunContext(_deps(store)), ids, horizon_days=0)
-
-    assert result.success is False
-    assert "policy:invalid_horizon" in result.warnings
 
 
 # ---- the forecasting service itself -----------------------------------------

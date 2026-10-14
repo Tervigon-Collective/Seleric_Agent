@@ -56,6 +56,7 @@ KEEP_PAYLOADS = 8  # the thread's most recent tool results stay in the grounding
 MAX_MEMORIES = 5
 _TOOL_DEFS_TTL_S = 3600.0
 _tool_defs_cache: dict[int, tuple[float, list[dict[str, Any]]]] = {}
+_guide_cache: dict[int, tuple[float, str]] = {}
 
 
 # --- failure text -------------------------------------------------------------------------------
@@ -187,6 +188,24 @@ async def _tool_definitions(mcp: Any) -> list[dict[str, Any]]:
     if defs:
         _tool_defs_cache[key] = (time.monotonic(), defs)
     return defs
+
+
+async def _server_guide(mcp: Any) -> str:
+    """The MCP server's own instructions (data rules), cached for an hour per gateway."""
+    key = id(mcp)
+    cached = _guide_cache.get(key)
+    if cached is not None and time.monotonic() - cached[0] < _TOOL_DEFS_TTL_S:
+        return cached[1]
+    getter = getattr(mcp, "server_instructions", None)
+    if getter is None:
+        return ""
+    try:
+        text = str(await getter() or "")
+    except Exception:  # the guide is an enrichment: the loop still works without it
+        return ""
+    if text:
+        _guide_cache[key] = (time.monotonic(), text)
+    return text
 
 
 def _part_text(message: dict[str, Any]) -> str:
@@ -343,7 +362,9 @@ async def run_v3_mission(
     ) as m_trace:
         try:
             bundle = _context_bundle(context_bundle)
-            catalogue, defs = await asyncio.gather(_catalogue_snapshot(runtime), _tool_definitions(mcp))
+            catalogue, defs, guide = await asyncio.gather(
+                _catalogue_snapshot(runtime), _tool_definitions(mcp), _server_guide(mcp)
+            )
             prior_queries, prior_payloads = _thread_memory(artifact_store, thread_id)
             stages["context_ms"] = round((time.perf_counter() - started) * 1000)
             from seleric_swarm.agent.prompt import system_prompt
@@ -365,7 +386,7 @@ async def run_v3_mission(
                     model=resolve_loop_model(runtime.settings),
                     gateway=mcp,
                     tool_defs=defs,
-                    system_prompt=system_prompt(catalogue, datetime.now(ZoneInfo(timezone))),
+                    system_prompt=system_prompt(catalogue, datetime.now(ZoneInfo(timezone)), guide),
                     question=query,
                     history=history_messages(_history(bundle, query)),
                     memories=_memories(bundle),
@@ -382,6 +403,7 @@ async def run_v3_mission(
                 mission_id=mission_id, status=loop_result.status,  # type: ignore[arg-type]
                 query=query, as_of=as_of_dt, final_response=loop_result.answer,
                 evidence_ids=loop_result.state.evidence_ids, limitations=loop_result.limitations,
+                parts=loop_result.state.parts,
                 error_code=None if loop_result.status != "failed" else "V3_AGENT_FAILED",
                 trace={
                     **base_trace,

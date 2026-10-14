@@ -13,7 +13,7 @@ from typing import Any
 
 from seleric_swarm.forecasting.policies import EntityPolicy, ForecastPolicies
 from seleric_swarm.services.mcp_query import dimension_value
-from seleric_swarm.toolsets.semantic import raw_query_metric
+from seleric_swarm.toolsets._data import raw_query_metric
 
 _log = logging.getLogger("seleric.forecasting.entities")
 

@@ -4,6 +4,7 @@
   ``explore_data`` (each fetches its own data and records evidence).
 * ``run_python`` and ``show_chart`` take the ``query_id`` of a fetched result instead of evidence ids: the model sees
   query ids in every MCP result, the evidence rows behind them stay server-side.
+* ``show_table`` attaches a full table of a fetched result next to the answer (a TABLE part).
 * ``business_snapshot`` returns the latest hourly business-health snapshot as data, when it is fresh.
 * ``escalate`` raises the reasoning effort for the rest of the turn.
 """
@@ -34,6 +35,23 @@ from seleric_swarm.toolsets import (
 )
 
 _log = logging.getLogger("seleric.agent.local_tools")
+
+
+MAX_TABLE_ROWS = 200
+
+
+def query_id_of(payload: dict[str, Any]) -> str:
+    prov = payload.get("provenance")
+    return str(payload.get("query_id") or (prov.get("query_id") if isinstance(prov, dict) else "") or "")
+
+
+def table_rows(payload: Any) -> list[dict[str, Any]]:
+    """The tabular rows of a query result: its own ``rows``, or those of every part of a multi-view result."""
+    if not isinstance(payload, dict):
+        return []
+    parts = payload.get("parts")
+    sources = [p for p in parts if isinstance(p, dict)] if isinstance(parts, list) and parts else [payload]
+    return [r for src in sources for r in (src.get("rows") or []) if isinstance(r, dict)]
 
 
 def _evidence_for(state: TurnState, query_ids: list[str] | None, evidence_ids: list[str] | None = None) -> list[str] | None:
@@ -139,6 +157,22 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
             ctx, _evidence_for(state, query_ids) or [], intent, title, chart_type
         )
 
+    async def show_table(ctx: RunContext[SelericDeps], query_id: str, caption: str = "") -> ToolResult:
+        """Show the full rows of one fetched result as a sortable table next to the answer. Use it for a long breakdown
+        (many campaigns, products, days) instead of pasting every row into the text; keep the text to the finding and
+        the top rows. ``query_id`` is the result to show; ``caption`` says what the table is."""
+        rows = table_rows(next((p for p in state.payloads if isinstance(p, dict) and query_id_of(p) == query_id), None))
+        if not rows:
+            return ToolResult(success=False, summary=f"No fetched result with rows has query_id {query_id!r}.",
+                              error_code="INSUFFICIENT_EVIDENCE", retryable=False)
+        shown = rows[:MAX_TABLE_ROWS]
+        columns = list(dict.fromkeys(k for r in shown for k in r))
+        state.parts.append({"type": "TABLE", "content": {
+            "caption": caption, "columns": columns, "rows": shown, "query_id": query_id, "state": "ok"}})
+        more = f" (first {len(shown)} of {len(rows)} rows)" if len(rows) > len(shown) else ""
+        return ToolResult(success=True, summary=f"Table of {len(shown)} rows attached to your answer{more}. "
+                          "Do not repeat the full table in the text.")
+
     async def business_snapshot(ctx: RunContext[SelericDeps]) -> dict[str, Any]:
         """The latest hourly business-health snapshot (one day against the day before, plus 7-day averages and
         anomaly flags). Use for broad "how are we doing" questions; query metrics for any other period."""
@@ -166,5 +200,5 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
         forecasting.forecast_metrics,
         exploration.explore_data,
     ]
-    own = [run_python, show_chart, business_snapshot, escalate]
+    own = [run_python, show_chart, show_table, business_snapshot, escalate]
     return [*(_tracked(state, fn, raises_effort=fn is diagnosis.diagnose_metric_change) for fn in [*helpers, *own])]

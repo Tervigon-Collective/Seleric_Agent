@@ -196,7 +196,7 @@ async def run_python(
 
     Use this for computation the fixed analytics tools don't cover (custom
     ratios, rankings, multi-step arithmetic). It never fetches data — pass the
-    ``evidence_ids`` returned by ``query_metrics``/``drilldown`` and read them
+    ``evidence_ids`` returned by ``metrics_query``/``metrics_drilldown`` and read them
     inside the script (omitted: every evidence row this mission fetched). A finding
     id (e.g. a prefetched table's) is read as the evidence rows it cites. Read every
     figure from ``evidence``; a script that types a fetched value in as a literal is
@@ -316,13 +316,15 @@ async def run_python(
     if "error" in holder:
         err = holder["error"]
         sample = ", ".join(sorted(evidence_dicts[0])) if evidence_dicts else ""
+        example = json.dumps(evidence_dicts[0], default=str)[:600] if evidence_dicts else ""
         return _fix_the_script(
             f"sandbox code raised {type(err).__name__}: {err}. "
             f"Fix the script and retry.\n{holder.get('tb', '')[-800:]}\n"
             f"The only data available is `evidence`: a list of {len(evidence_dicts)} row dicts"
             + (f" with keys {sample}" if sample else "")
             + " (there is no variable per query id; filter on row['query_id']). Set `result`; no `return`. "
-            f"Defined names: {', '.join(defined_names)}."
+            + (f"First row, for the exact key names (a previous-period figure is its own row, not a column): {example}\n" if example else "")
+            +             f"Defined names: {', '.join(defined_names)}."
         )
 
     result = holder.get("result")

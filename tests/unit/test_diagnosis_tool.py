@@ -163,10 +163,9 @@ def test_tool_refuses_unknown_metric_and_partial_event():
     res = asyncio.run(diagnosis.diagnose_metric_change(ctx, "zz_revenue", event_start=AS_OF, event_end=AS_OF))  # type: ignore[arg-type]
     assert res.success
     assert res.provenance.source_metadata["diagnosis"]["verdict"] == "insufficient_data"
-    from pydantic_ai import ModelRetry
-
-    with pytest.raises(ModelRetry):  # a near-miss id is bounced back with the closest real ids
-        asyncio.run(diagnosis.diagnose_metric_change(ctx, "zz_revenu"))  # type: ignore[arg-type]
+    near = asyncio.run(diagnosis.diagnose_metric_change(ctx, "zz_revenu"))  # type: ignore[arg-type]
+    # a near-miss id is bounced back with the closest real ids, as a result (a raised retry would fail the turn)
+    assert not near.success and near.retryable and "zz_revenue" in near.summary
 
 
 def test_exclusive_midnight_end_and_partial_today_are_handled():

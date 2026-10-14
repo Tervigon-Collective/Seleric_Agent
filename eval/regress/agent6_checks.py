@@ -83,7 +83,8 @@ CHECKS = {
            ("returns and ad cost covered", lambda t: bool(_measures(t) & {"product_net_profit", "product_pnl_net_profit"}) or
             any(_has(m, ("return", "refund", "ad_spend", "ad_cost")) for m in _measures(t)))],
     "q4": [("ROAS attempted or derived from its definition", lambda t: any(
-        "roas" in json.dumps(c["args"]) for c in t["tools"] if c["name"] in ("metrics_query", "catalogue_get_metrics", "catalogue_get_metric"))),
+        "roas" in json.dumps(c["args"]) for c in t["tools"]
+        if c["name"] in ("metrics_query", "catalogue_get_metrics", "catalogue_get_metric", DIAGNOSIS))),
            ("net profit queried", lambda t: any("profit" in m for m in _measures(t))),
            ("compares periods", _compares),
            ("definitions fetched via catalogue", lambda t: any(c["name"].startswith("catalogue_get_metric") or c["name"] == "catalogue_resolve_concept" for c in _calls(t)))],
@@ -107,3 +108,38 @@ def q1_reference_checks(answer, numbers, ref):
     direction = bool(words & up) or any(p in text for p in ("did not drop", "didn't drop", "not drop", "no drop")) if rose \
         else bool(words & down)
     return {"has_yesterday_value": has(ref["net_sales_yesterday"]), "has_prev_value": has(ref["net_sales_prev_day"]), "direction_ok": direction}
+
+
+def _day(value):
+    return datetime.date.fromisoformat(str(value)[:10])
+
+
+def comparison_windows(calls):
+    """(current, previous) inclusive date pairs the mission analysed, from its own diagnose_metric_change arguments.
+
+    The previous window is the explicit compare window, else the equal-length period just before the event."""
+    for c in calls:
+        a = c["args"]
+        if c["name"] == DIAGNOSIS and c["ok"] and a.get("event_start") and a.get("event_end"):
+            start, end = _day(a["event_start"]), _day(a["event_end"])
+            if a.get("compare_start") and a.get("compare_end"):
+                return (start, end), (_day(a["compare_start"]), _day(a["compare_end"]))
+            n = (end - start).days + 1
+            return (start, end), (start - datetime.timedelta(days=n), start - datetime.timedelta(days=1))
+    return None
+
+
+def window_reference_checks(answer_numbers, windows, measures, query):
+    """Each measure's total over the current and the previous window (queried directly) appears in the answer.
+
+    A figure from the diagnosis's blended "usual" level or a per-day average would not match either total."""
+    def has(v):
+        tol = 0.01 if abs(v) < 10 else max(0.006 * abs(v), 1)
+        return any(abs(n - v) <= tol for n in answer_numbers)
+
+    out = {}
+    for label, (a, b) in zip(("current", "previous"), windows, strict=True):
+        for m in measures:
+            v = query(m, str(a), str(b))
+            out[f"{m} {label} {a}..{b} = {v:.4g}"] = has(v)
+    return out

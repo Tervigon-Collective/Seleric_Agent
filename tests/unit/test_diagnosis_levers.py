@@ -20,7 +20,6 @@ import pytest
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
 from seleric_swarm.agent.output import MissionResult
-from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.conversations.contracts import (
     Artifact,
     ArtifactProvenance,
@@ -151,28 +150,7 @@ def _diagnose(deps: SelericDeps, **kw: Any):
     return asyncio.run(diagnosis.diagnose_metric_change(Ctx(deps), "zz_yield", **kw))  # type: ignore[arg-type]
 
 
-# --------------------------------------------------------------------------------------- the window pin
-def test_event_day_inside_the_named_window_is_not_pinned_onto_its_own_comparison():
-    """"last 3 days … why worse yesterday": the event is a day inside the window; pinning it to the window put it on
-    top of the comparison and the diagnosis was refused (live 2026-10-10)."""
-    window = TimeRangeV1(kind="relative", start=(EVENT - timedelta(days=2)).isoformat(), end=EVENT.isoformat(), relative_token="last_3_days")
-    res = _diagnose(_deps(FakeMcp(), resolved_window=window))
-    assert res.success, res.summary
-    assert "must end before" not in res.summary
-
-
-def test_a_drifted_window_is_still_pinned_when_it_leaves_a_valid_call():
-    window = TimeRangeV1(kind="relative", start=(EVENT - timedelta(days=1)).isoformat(), end=EVENT.isoformat(), relative_token="last_2_days")
-    # an event asked one day early (drift) with a comparison well before it: the pin applies and the call stays valid
-    res = _diagnose(
-        _deps(FakeMcp(), resolved_window=window),
-        event_start=_at(EVENT - timedelta(days=1)), event_end=_at(EVENT - timedelta(days=1)),
-        compare_start=_at(EVENT - timedelta(days=9)), compare_end=_at(EVENT - timedelta(days=8)),
-    )
-    assert res.success, res.summary
-    assert any("corrected" in w for w in res.warnings), res.warnings
-
-
+# --------------------------------------------------------------------------------------- refusals
 def test_an_event_on_its_comparison_is_refused_with_a_message_that_says_what_to_pass():
     res = _diagnose(_deps(FakeMcp()), compare_start=_at(EVENT), compare_end=_at(EVENT))
     assert not res.success

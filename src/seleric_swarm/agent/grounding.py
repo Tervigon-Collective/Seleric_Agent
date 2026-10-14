@@ -396,6 +396,17 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
     return out
 
 
+def measured_in(answer: str, payload: Any) -> int:
+    """How many figures of the answer appear verbatim in this one payload (the same tolerance ``grounding`` uses)."""
+    vals = sorted({abs(p) for p in payload_numbers(payload, [])})
+    hits = 0
+    for n in answer_numbers(answer):
+        v, tol = abs(n["value"]), n["tol"] * 1.01
+        if _hit(v, tol, vals) or (n["pct"] and _hit(v / 100, tol / 100, vals)):
+            hits += 1
+    return hits
+
+
 def problems(g: dict[str, Any]) -> list[str]:
     """Findings from ``grounding`` as one plain sentence each."""
     pcts = [u for u in g["unmatched"] if u.rstrip().endswith("%")]

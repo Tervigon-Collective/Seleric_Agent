@@ -1,9 +1,9 @@
-"""Fast-path business-state endpoint (business_state_ready_store.md Phase 3).
+"""Business-state endpoint.
 
-``POST /v1/business-state`` answers high-level "How's the business?" questions
-from the pre-computed ready-store snapshot in one LLM call, bypassing the agent
-loop entirely. When the snapshot is missing or stale (> freshness SLA) it
-silently falls back to the full agent loop so the caller always gets an answer.
+``POST /v1/business-state`` answers high-level "How's the business?" questions by running the agent loop. The loop
+reads the pre-computed ready-store snapshot through its ``business_snapshot`` tool when the question calls for it
+and queries the metrics itself otherwise, so a missing or stale snapshot never leaves the caller without an answer.
+``domain`` is accepted for compatibility; the loop's snapshot tool serves the headline ("business") domain.
 """
 
 from __future__ import annotations
@@ -17,9 +17,7 @@ from pydantic import BaseModel, Field
 from seleric_swarm.agent.runner import run_v3_mission
 from seleric_swarm.api.mission_access import request_principal
 from seleric_swarm.runtime import SwarmRuntime
-from seleric_swarm.services.business_state.formatter import format_business_state, is_stale
 from seleric_swarm.services.domain_health.scheduler import HEADLINE_DOMAIN
-from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
 
 router = APIRouter()
 
@@ -39,7 +37,7 @@ class BusinessStateRequest(BaseModel):
     timezone: str = "Asia/Kolkata"
 
 
-async def _fallback_to_agent_loop(
+async def _answer_with_agent_loop(
     runtime: Any, *, question: str, timezone: str, request: Request
 ) -> dict[str, Any]:
     principal = request_principal(request)
@@ -68,24 +66,7 @@ async def _fallback_to_agent_loop(
 
 @router.post("/v1/business-state")
 async def business_state(req: BusinessStateRequest, request: Request) -> dict[str, Any]:
-    runtime = _runtime(request)
     question = (req.question or "").strip()
     if not question or question.lower() == "string":
         raise HTTPException(status_code=400, detail="question must be a non-empty string")
-
-    snapshot = await SnapshotStore().aget_latest(req.domain)
-    if snapshot is None or snapshot.status == "UNAVAILABLE" or is_stale(snapshot):
-        return await _fallback_to_agent_loop(
-            runtime, question=question, timezone=req.timezone, request=request
-        )
-
-    request_id = str(getattr(request.state, "request_id", None) or uuid4().hex)
-    answer = await format_business_state(
-        runtime, question=question, snapshot=snapshot, request_id=request_id
-    )
-    return {
-        "answer": answer,
-        "source": "snapshot",
-        "as_of": snapshot.as_of,
-        "freshness": snapshot.status,
-    }
+    return await _answer_with_agent_loop(_runtime(request), question=question, timezone=req.timezone, request=request)

@@ -11,7 +11,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pydantic_ai import ModelRetry
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
@@ -23,7 +22,7 @@ from seleric_swarm.conversations.contracts import (
 )
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
-from seleric_swarm.toolsets import analytics, sandbox, semantic
+from seleric_swarm.toolsets import analytics, sandbox
 
 AS_OF = datetime(2026, 10, 8, tzinfo=UTC)
 
@@ -104,13 +103,6 @@ def _catalogue() -> CatalogueSnapshot:
     ))
 
 
-def test_another_views_metric_is_not_a_dimension() -> None:
-    """Live: dimensions={"ad_spend": ...} on net_profit reached Cube as an invalid filter (x4)."""
-    with pytest.raises(ModelRetry, match="'ad_spend' is a metric"):
-        semantic._reject_metric_as_dimension(_catalogue(), "net_profit", ["finance_channel", "ad_spend"])
-    # same view: a measure filter Cube supports; own id and real dimensions pass too
-    semantic._reject_metric_as_dimension(_catalogue(), "net_profit", ["gross_profit", "net_profit", "finance_channel"])
-    semantic._reject_metric_as_dimension(CatalogueSnapshot(), "net_profit", ["ad_spend"])  # empty snapshot: fail-open
 
 
 def test_failure_detail_keeps_types_and_status_never_bodies() -> None:

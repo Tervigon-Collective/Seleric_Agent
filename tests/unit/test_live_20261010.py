@@ -190,3 +190,19 @@ def test_the_count_of_an_outcomes_own_units_comes_from_its_grain():
     assert engine.unit_count_metric("conversion_rate", lineage) == "sessions"
     assert engine.unit_count_metric("orders", lineage) is None
     assert engine.unit_count_metric("funnel_purchases", lineage) is None
+
+
+def test_a_multi_day_window_is_reported_as_a_per_day_average_not_a_total():
+    from seleric_swarm.causal import diagnosis as engine
+
+    days = [date(2026, 9, 1) + timedelta(days=i) for i in range(14)]
+    event = [date(2026, 9, 15) + timedelta(days=i) for i in range(14)]
+    profit = {d: 5000.0 for d in days} | {d: -6921.0 for d in event}
+    lineage = {"net_profit": engine.MetricMeta("net_profit", aggregation="additive", label="Net profit")}
+    text = diagnosis._outcome_on_its_normal_days("net_profit", {"net_profit": profit}, event, days, days, lineage)
+    assert "2026-09-15..2026-09-28: averaged" in text and "per day (not the period total)" in text
+    assert "2026-09-16, 2026-09-17" not in text
+
+
+def test_a_window_longer_than_a_week_defaults_to_the_period_just_before_it():
+    assert diagnosis._USUAL_MAX_DAYS == 7 < diagnosis._MAX_EVENT_DAYS

@@ -27,7 +27,7 @@ from seleric_swarm.conversations.contracts import (
 )
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 from seleric_swarm.state.artifacts import InMemoryArtifactStore
-from seleric_swarm.toolsets import analytics, semantic
+from seleric_swarm.toolsets import analytics
 
 MISSION = "MS3-test"
 
@@ -170,33 +170,8 @@ def _ctx(store: InMemoryArtifactStore, *aggregations: tuple[str, str]) -> Simple
     )
 
 
-def test_series_stats_follow_the_catalogue_aggregation() -> None:
-    ctx = _ctx(InMemoryArtifactStore(), ("m.sum", "additive"), ("m.rate", "ratio"))
-    additive = semantic._series_stats(ctx, "m.sum", DAILY)
-    assert "total=1086296.24" in additive
-    ratio = semantic._series_stats(ctx, "m.rate", [0.5, 1.5])
-    assert "total" not in ratio and "cannot be summed" in ratio
-    unknown = semantic._series_stats(ctx, "m.unknown", [1.0, 2.0])
-    assert "total" not in unknown and "min=1" in unknown
 
 
-def test_identical_evidence_is_written_once_per_mission() -> None:
-    store = InMemoryArtifactStore()
-    ctx = _ctx(store)
-    day = datetime(2026, 9, 1, tzinfo=UTC)
-
-    def row(fetched: datetime) -> EvidenceArtifact:
-        return EvidenceArtifact(
-            metric_id="m", grain="day", as_of=fetched, period_start=day, period_end=day,
-            value=1.5, source_query={"q": 1}, fetched_at=fetched,
-        )
-
-    prov = ArtifactProvenance(query_version="q1")
-    first = semantic._put_evidence(ctx, row(datetime.now(UTC)), index=semantic._evidence_index(ctx), raw_id="r", provenance=prov)
-    # A retry with fresh deps: new index, later fetch time, same fact.
-    again = semantic._put_evidence(ctx, row(datetime.now(UTC)), index=semantic._evidence_index(ctx), raw_id="r", provenance=prov)
-    assert first == again
-    assert len(store.list_for_mission(MISSION)) == 1
 
 
 def test_unknown_evidence_ids_refusal_lists_what_exists() -> None:

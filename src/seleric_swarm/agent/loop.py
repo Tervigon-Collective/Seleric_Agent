@@ -34,6 +34,7 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from seleric_swarm.agent.answer_text import replace_metric_ids, round_long_decimals
+from seleric_swarm.agent.auto_chart import auto_chart
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.grounding import (
     correction_message,
@@ -44,7 +45,7 @@ from seleric_swarm.agent.grounding import (
 )
 from seleric_swarm.agent.local_tools import build_local_tools
 from seleric_swarm.agent.mcp_toolset import TurnState, build_mcp_tools
-from seleric_swarm.agent.model import begin_loop_effort
+from seleric_swarm.agent.model import begin_loop_effort, loop_effort
 from seleric_swarm.agent.progress import emit_progress, has_progress_sink, progress_handler
 from seleric_swarm.cancellation import MissionCancelledError
 
@@ -136,8 +137,9 @@ class _TimedModel(WrapperModel):
             "prompt_tokens": usage.input_tokens,
             "completion_tokens": usage.output_tokens,
             "cached_tokens": getattr(usage, "cache_read_tokens", None),
+            "reasoning_tokens": (usage.details or {}).get("reasoning_tokens"),
             "tool_calls": sum(1 for p in response.parts if isinstance(p, ToolCallPart)),
-            "effort": (model_settings or {}).get("openai_reasoning_effort"),
+            "effort": loop_effort() or (model_settings or {}).get("openai_reasoning_effort"),
             "finish": response.finish_reason,
         })
 
@@ -275,6 +277,8 @@ async def run_turn(
     # Internal metric ids that slipped into the prose are written as their catalogue names (a known fix, not a model pass).
     answer = round_long_decimals(replace_metric_ids(answer, {m.id: m.label for m in deps.catalogue.metrics if m.label}))
     final = grounding(answer, [*(prior_payloads or []), *state.payloads]) if state.payloads else grounding(answer, [])
+    if state.payloads and not limitations:
+        await auto_chart(deps, state, answer)
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     # First token = first model output of the turn; Answer starts = last model
     # output (the call that produced / revised the final prose). Falls back to
