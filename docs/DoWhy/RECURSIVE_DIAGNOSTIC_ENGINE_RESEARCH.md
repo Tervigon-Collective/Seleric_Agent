@@ -366,7 +366,152 @@ rate**: how often the engine names a visible metric as the cause when the true o
 it says "unexplained, sits in slice S from date D" instead. Track it next to precision and recall on the worlds where
 the cause is visible.
 
-### 4.6 What the LLM does and does not do
+### 4.6 Implementation: starting with zero hypotheses
+
+The investigation does not start from a hypothesis. It starts from **one node in a graph**: the outcome, its scope
+and the day the question is about. Everything else is a search outward from that node. The search needs no
+hypotheses, only three things the system already has:
+
+1. a **graph of metrics** to walk: the catalogue lineage (`depends_on`), views, conformed dimensions;
+2. a **test that needs no hypothesis**, "did this series break near t0, beyond its own normal noise?" (the
+   `Referencer` / robust z in `causal/diagnosis.py`, a ruptures break date);
+3. a **rule that turns a finding into a hypothesis**, by how the finding is related to the outcome (the generator
+   table in 4.2).
+
+Hypotheses are the **output** of the search, not its input. This is the same idea as a fault tree built bottom-up:
+you don't list failure modes in advance, you walk backwards from the failed node and keep every upstream node that
+also failed first.
+
+#### Step 0: the seed
+
+```python
+@dataclass(frozen=True)
+class Seed:
+    outcome: str                    # catalogue metric id, e.g. resolved by the agent from "sales"
+    scope: dict[str, Any]           # filters, brand
+    window: tuple[date, date]       # the days asked about (default: yesterday)
+```
+
+That is all the user's question supplies. No suspects are needed (a user-named suspect is added as one more node
+to visit, nothing else).
+
+#### Step 1: hypothesis-free operators on the outcome itself (ring 0)
+
+These run on the outcome only, and none of them needs a hypothesis. They are layers 1–3 of today's engine,
+called separately:
+
+| Operator | Existing code | Produces |
+| --- | --- | --- |
+| `is_real(Y)` | `Referencer`, `_seasonal_profile`, event z | Is there anything to explain? If not, stop (null) |
+| `onset(Y)` | `insights.change_point` → ruptures | `t0` and spike vs step |
+| `components(Y)` | `discover_identities`, `discover_rate_chains`, `discover_bridge_tree`, `shapley` | Observations of kind `component` with share of ΔY |
+| `slices(Y)` | `_analyse_additive/rate/ratio_dimension`, + RiskLoc | Observations of kind `slice` / `mix` with share of ΔY |
+| `health(Y)` | MCP freshness warnings, co-measure pairs (`_lockstep_correlation`), `(not set)` share | Observations of kind `co_measure` / `data_health` |
+
+After step 1 we already have observations like "orders carry 92% of the drop" and "Meta ∧ Karnataka carries 81%",
+without having guessed anything.
+
+#### Step 2: walk outward in rings (breadth-first over the metric graph)
+
+```text
+ring 1: metrics in Y's lineage (depends_on of Y and of its components), plus metrics in the same views
+ring 2: metrics in other views that share Y's conformed dimensions (channel, campaign, product, region, ...)
+ring 3: every other catalogue metric that supports Y's scope (screened cheaply, BH-corrected)
+```
+
+For every metric visited, run the same hypothesis-free test **in the scope where the outcome moved** (the slice from
+step 1, not only the account total):
+
+```python
+def scan(node: str, scope: Scope, t0: date, data: Fetched) -> Observation | None:
+    """Did this metric break near t0, beyond its own normal noise? No hypothesis needed."""
+    z = event_z(data.series(node, scope), event_days, history)       # Referencer, robust z
+    brk = ruptures_break(data.series(node, scope), near=t0)          # date or None
+    if abs(z) < SCAN_Z and brk is None:
+        return None
+    return Observation(node=node, scope=scope, onset=brk or t0, z=z,
+                       size=delta(node, scope), relation=relation(node, Y, lineage))
+```
+
+`relation()` reads the catalogue only: component, ancestor (path through `depends_on` or a funnel tier),
+descendant (Y feeds it, so it is an *effect*, discard), co-measure (same events, different system), sibling (same
+view, no path), unrelated. The fetch layer that exists today (`_prefetch_daily`: one multi-measure Cube query per
+view, cached) makes one ring cost about one query per view.
+
+All scan tests from all rings go through one Benjamini–Hochberg correction (as `explore_data` already does), so
+looking at more metrics does not produce more false findings.
+
+#### Step 3: abduce, rank, widen (4.1 B–D)
+
+```python
+def generate(obs: list[Observation], Y: Outcome) -> list[Hypothesis]:
+    hyps = [null_hypothesis(Y), residual_hypothesis(Y)]                   # always present
+    for o in obs:
+        if o.relation == "descendant":
+            continue                                                      # an effect of Y, not a cause
+        hyps.append(GENERATORS[o.relation](o, Y))                         # table 4.2: statement, predictions, test
+    for h in hyps:
+        h.prior = precedence(h, Y) * proximity(h, Y) * size_match(h, Y) * scope_overlap(h, Y) * quality(h)
+    return sorted(hyps, key=lambda h: -h.prior)
+
+def investigate(seed: Seed, budget: Budget) -> Ledger:
+    ledger = Ledger(seed)
+    obs = ring0(seed)                                                     # step 1
+    if ledger.is_null(obs):
+        return ledger.conclude("no_unusual_change")
+    ring = 1
+    while True:
+        obs += scan_ring(seed, ring, ledger.where())                      # step 2, in the localised slice
+        ledger.add(generate(obs, seed.outcome))                           # step 3
+        if ledger.credible_non_null() >= 3 or ring == MAX_RING or budget.spent():
+            break
+        ring += 1                                                         # widen
+    while (h := ledger.next_to_test(budget)) is not None:                 # §5: cost-aware scheduler
+        ledger.record(TESTS[h.relation](h, budget))                       # DoWhy / GCM / RiskLoc / event study
+        if ledger.cause_missing():                                        # §4.5 signals
+            obs += scan_residual(ledger, budget)                          # localise residual, widen
+            ledger.add(generate(obs, seed.outcome))
+        for child in ledger.children(h):                                  # §5 recursion: slice or component
+            if budget.allows(child):
+                ledger.attach(child, investigate(child.seed, budget.child()))
+    return ledger.conclude()
+```
+
+#### Worked example (illustrative, invented figures)
+
+"Why did sales drop yesterday?" No hypotheses supplied.
+
+| Step | What runs | What it finds |
+| --- | --- | --- |
+| Ring 0, `is_real` | robust z of sales vs usual | −22%, z = −3.4, so there is something to explain |
+| Ring 0, `onset` | ruptures | Step change from 10-09, not a one-day spike |
+| Ring 0, `components` | identity sales = orders × AOV | Orders carry 94% of the drop: an observation, not yet a cause |
+| Ring 0, `slices` | layer 3 + RiskLoc | `channel = Meta ∧ state = KA` carries 78% |
+| Ring 0, `health` | freshness, ledger vs tracker | Both agree, data fresh: measurement observation not raised |
+| Ring 1 in Meta ∧ KA | scan lineage + same views | Meta spend −55% from 10-08 (ancestor, moved first); clicks −50% from 10-08 (ancestor); sessions −48% (ancestor) |
+| Ring 2 in Meta ∧ KA | scan shared-dimension views | Change log: budget edit on 10-08 (event); returns unchanged |
+| Generate | relation → hypothesis | H_null, H_residual, H_spend→clicks→orders (ancestor), H_budget-edit (event), H_mix (weak), so ≥ 3 credible, stop widening |
+| Test | DoWhy/GCM on the graph, event study | Budget edit → spend → clicks → orders supported; reconstruction leaves 15% [5%, 27%], residual unstructured |
+| Conclude | §7 rules | `explained`: chain plus 15% unexplained |
+
+Had ring 1–2 found nothing that moved first, the generator would produce only the null, residual and
+slice/component hypotheses. The engine would widen to ring 3, then report "located in Meta ∧ KA from 10-09, orders
+fell, no metric in the data moved before it" plus the missing data that would decide it (§4.5).
+
+#### What to build, in order
+
+1. `causal/investigation.py`: `Seed`, `Observation`, `Hypothesis`, `Ledger`, `Budget` (dataclasses, serialisable to
+   `v3_artifacts` so a run can be replayed).
+2. Split `diagnose()` in `causal/diagnosis.py` into the ring-0 operators above; `diagnose()` keeps calling all of
+   them so the current tool and its tests do not change.
+3. `causal/neighbourhood.py`: `rings(outcome, lineage, catalogue)` and `relation(a, b, lineage)`, pure functions
+   of the catalogue. Unit-test them on the live catalogue snapshot (the existing no-hardcoding test applies).
+4. `causal/hypotheses.py`: `scan`, `GENERATORS`, prior factors, `generate`. The scan can call
+   `exploration.engine` tests directly (`_change_point`, `_period_change`) with the window centred on t0.
+5. The `investigate` loop and an `investigate_metric_change` tool next to `diagnose_metric_change`; switch the prompt
+   rule once the eval set (planted causes, hidden causes, pure noise) shows it is at least as accurate.
+
+### 4.7 What the LLM does and does not do
 
 - It does **not** create, choose or judge hypotheses. Generation, ranking and verdicts are deterministic and
   reproducible: the same data gives the same ledger.
