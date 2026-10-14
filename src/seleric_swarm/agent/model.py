@@ -41,6 +41,9 @@ LOOP_MAX_TOKENS = int(os.getenv("AGENT_MAX_TOKENS", "2000"))
 LOOP_REASONING_BUDGET = int(os.getenv("AGENT_REASONING_BUDGET", "6000"))
 LOOP_REASONING_EFFORT: Any = os.getenv("AGENT_REASONING_EFFORT", "low")
 LOOP_ESCALATED_EFFORT = os.getenv("AGENT_ESCALATED_EFFORT", "medium")
+# Effort for the steps after a causal analysis helper has returned: its engine already did the reasoning, what is left is
+# reporting its figures. Measured 2026-10-14: the final step at medium spends ~1.5k reasoning tokens (15s) vs ~0.3k at low.
+LOOP_WRITEUP_EFFORT = os.getenv("AGENT_WRITEUP_EFFORT", LOOP_ESCALATED_EFFORT)
 
 # The mission's effort holder. Tools run in child asyncio tasks, so a ContextVar.set inside a tool would never reach
 # the task that makes the next model request; a mutable holder created before the run is shared by every copy.

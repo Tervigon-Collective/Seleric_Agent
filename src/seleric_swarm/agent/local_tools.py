@@ -23,7 +23,7 @@ from pydantic_ai import RunContext
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.grounding import answer_numbers
 from seleric_swarm.agent.mcp_toolset import TurnState
-from seleric_swarm.agent.model import LOOP_ESCALATED_EFFORT, set_loop_effort
+from seleric_swarm.agent.model import LOOP_ESCALATED_EFFORT, LOOP_WRITEUP_EFFORT, set_loop_effort
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.toolsets import (
     analytics,
@@ -108,8 +108,8 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
         state.steps.append({"kind": "tool_call", "tool": fn.__name__, "args": {k: str(v)[:200] for k, v in kwargs.items()}})
         state.steps.append({"kind": "tool_return", "tool": fn.__name__, "ok": not failed, "ms": ms, "result": str(summary)[:2000]})
         _remember_figures(state, result)
-        if raises_effort:  # the write-up of a causal analysis runs at the escalated effort
-            set_loop_effort(LOOP_ESCALATED_EFFORT)
+        if raises_effort:  # the engine did the causal reasoning; the steps after it report its result
+            set_loop_effort(LOOP_WRITEUP_EFFORT)
         return _view(result)
 
     wrapper.__name__ = wrapper.__qualname__ = fn.__name__
