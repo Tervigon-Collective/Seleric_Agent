@@ -3,13 +3,13 @@
   "by_kind": {
    "shift": {
     "n": 40,
-    "same_verdict": 0.8,
-    "top3_jaccard": 0.838
+    "same_verdict": 0.875,
+    "top3_jaccard": 0.825
    },
-   "subsample": {
-    "n": 54,
-    "same_verdict": 0.574,
-    "top3_jaccard": 0.58
+   "short_history": {
+    "n": 36,
+    "same_verdict": 1.0,
+    "top3_jaccard": 1.0
    },
    "repeat": {
     "n": 36,
@@ -38,30 +38,21 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
-     "top3_jaccard": 0.0,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
-     "top3_jaccard": 0.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
-     "ran": true,
-     "verdict": "located_cause_not_identified",
-     "same_verdict": true,
-     "top3_jaccard": 0.5,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
@@ -97,37 +88,28 @@
      "kind": "shift",
      "label": "-1",
      "ran": true,
-     "verdict": "explained",
-     "same_verdict": false,
+     "verdict": "partially_explained",
+     "same_verdict": true,
      "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
-     "verdict": "insufficient_data",
-     "same_verdict": false,
-     "top3_jaccard": 0.0,
-     "named_jaccard": 0.0
+     "verdict": "partially_explained",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
-     "verdict": "root_cause_not_identified",
-     "same_verdict": false,
-     "top3_jaccard": 0.0,
-     "named_jaccard": 0.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
-     "ran": true,
-     "verdict": "root_cause_not_identified",
-     "same_verdict": false,
-     "top3_jaccard": 0.5,
-     "named_jaccard": 0.0
+     "verdict": "partially_explained",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
     },
     {
      "kind": "repeat",
@@ -168,26 +150,17 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.25,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -233,26 +206,17 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.25,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -298,26 +262,17 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "no_unusual_change",
      "same_verdict": true,
-     "top3_jaccard": 0.0,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": true,
-     "top3_jaccard": 0.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "no_unusual_change",
      "same_verdict": true,
@@ -363,26 +318,17 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.25,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -428,26 +374,17 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.25,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -493,17 +430,8 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
-     "ran": true,
-     "verdict": "explained",
-     "same_verdict": false,
-     "top3_jaccard": 1.0,
-     "named_jaccard": 0.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed2",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -511,8 +439,8 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -543,8 +471,8 @@
      "kind": "shift",
      "label": "-2",
      "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
      "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
@@ -552,35 +480,26 @@
      "kind": "shift",
      "label": "-1",
      "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
      "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
      "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 1.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
      "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
@@ -623,8 +542,8 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "no_unusual_change",
      "same_verdict": true,
@@ -632,20 +551,11 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
-     "verdict": "located_cause_not_identified",
-     "same_verdict": false,
-     "top3_jaccard": 1.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
-     "ran": true,
-     "verdict": "located_cause_not_identified",
-     "same_verdict": false,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
      "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
@@ -688,26 +598,17 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.25,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -753,8 +654,8 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -762,17 +663,8 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "located_cause_not_identified",
-     "same_verdict": true,
-     "top3_jaccard": 1.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -805,7 +697,7 @@
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
-     "top3_jaccard": 1.0,
+     "top3_jaccard": 0.5,
      "named_jaccard": 1.0
     },
     {
@@ -818,30 +710,21 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.5,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed2",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
-     "top3_jaccard": 0.0,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
-     "top3_jaccard": 0.5,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
@@ -883,26 +766,17 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
-     "top3_jaccard": 0.5,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.3333333333333333,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -957,26 +831,17 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "no_unusual_change",
      "same_verdict": true,
-     "top3_jaccard": 0.0,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": true,
-     "top3_jaccard": 0.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "no_unusual_change",
      "same_verdict": true,
@@ -1031,8 +896,8 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -1040,21 +905,12 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
      "top3_jaccard": 1.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
-     "ran": true,
-     "verdict": "located_cause_not_identified",
-     "same_verdict": true,
-     "top3_jaccard": 0.25,
      "named_jaccard": 1.0
     },
     {
@@ -1105,8 +961,8 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -1114,17 +970,8 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "located_cause_not_identified",
-     "same_verdict": true,
-     "top3_jaccard": 1.0,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
@@ -1179,30 +1026,21 @@
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed1",
+     "kind": "short_history",
+     "label": "cut25",
      "ran": true,
      "verdict": "located_cause_not_identified",
      "same_verdict": true,
-     "top3_jaccard": 0.5,
-     "named_jaccard": 1.0
-    },
-    {
-     "kind": "subsample",
-     "label": "seed2",
-     "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
      "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
-     "kind": "subsample",
-     "label": "seed3",
+     "kind": "short_history",
+     "label": "cut50",
      "ran": true,
-     "verdict": "no_unusual_change",
-     "same_verdict": false,
-     "top3_jaccard": 0.5,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
      "named_jaccard": 1.0
     },
     {
@@ -1375,7 +1213,7 @@
   ]
  },
  "engine": {
-  "head": "670e018eb56d61d20fbbd4a6a6e2b27f783c325e",
+  "head": "c9254662b1cabddf866202a3919314bfc1fef2f7",
   "engine_dirty": [],
   "exported": true
  },
@@ -1392,7 +1230,7 @@
    "top3": 0.0,
    "named": 0.0,
    "listed_or_named": 0.375,
-   "localised": 1.0,
+   "localised": 0.3333,
    "false_attribution": 0.0,
    "correct_verdict": 0.0
   },
@@ -1401,10 +1239,14 @@
    "no_unusual_change": 0.3333,
    "false_attribution": 0.0
   },
+  "false_named_causes": {
+   "findable": 0,
+   "not_findable": 4
+  },
   "not_findable": {
    "n": 6,
    "false_attribution": 0.1667,
-   "correct_verdict": 0.8333
+   "correct_verdict": 0.6667
   },
   "stability": [
    {
@@ -1440,7 +1282,7 @@
    "event": {
     "n": 14,
     "false_attribution": 0.0714,
-    "correct_verdict": 0.4286
+    "correct_verdict": 0.3571
    },
    "findable": {
     "n": 11,
@@ -1490,7 +1332,7 @@
    "premise": {
     "n": 1,
     "false_attribution": 0.0,
-    "correct_verdict": 1.0
+    "correct_verdict": 0.0
    },
    "record": {
     "n": 2,
@@ -1549,6 +1391,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 16,
    "error": ""
@@ -1584,12 +1428,16 @@
    "localised": null,
    "false_attributions": [
     "ad_spend",
+    "funnel_purchases",
+    "new_customers",
     "order_pnl_net_sales"
    ],
    "correct_verdict": false,
-   "unexplained_share": 0.7237929630432006,
+   "unexplained_share": 0.7237929630423372,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 14,
    "error": ""
@@ -1621,6 +1469,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": false,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 17,
    "error": ""
@@ -1651,6 +1501,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 20,
    "error": ""
@@ -1677,10 +1529,12 @@
    "top3": null,
    "localised": null,
    "false_attributions": [],
-   "correct_verdict": true,
+   "correct_verdict": false,
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 20,
    "error": ""
@@ -1711,12 +1565,14 @@
    },
    "top1": false,
    "top3": false,
-   "localised": true,
+   "localised": false,
    "false_attributions": [],
    "correct_verdict": false,
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": false,
+   "engine_localised": true,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 17,
    "error": ""
@@ -1747,12 +1603,14 @@
    },
    "top1": false,
    "top3": false,
-   "localised": true,
+   "localised": false,
    "false_attributions": [],
    "correct_verdict": false,
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": false,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 15,
    "error": ""
@@ -1787,6 +1645,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": false,
+   "engine_localised": false,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 21,
    "error": ""
@@ -1819,6 +1679,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": true,
+   "decomposition_mass_only": null,
    "decomposition_ok": true,
    "queries": 17,
    "error": ""
@@ -1851,6 +1713,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": false,
+   "engine_localised": true,
+   "decomposition_mass_only": null,
    "decomposition_ok": true,
    "queries": 17,
    "error": ""
@@ -1886,6 +1750,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 20,
    "error": ""
@@ -1917,6 +1783,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 20,
    "error": ""
@@ -1952,6 +1820,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 20,
    "error": ""
@@ -1982,12 +1852,14 @@
    },
    "top1": false,
    "top3": false,
-   "localised": true,
+   "localised": false,
    "false_attributions": [],
    "correct_verdict": false,
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": false,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 15,
    "error": ""
@@ -2016,6 +1888,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 20,
    "error": ""
@@ -2051,6 +1925,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 17,
    "error": ""
@@ -2084,7 +1960,9 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
-   "decomposition_ok": true,
+   "engine_localised": null,
+   "decomposition_mass_only": false,
+   "decomposition_ok": null,
    "queries": 21,
    "error": ""
   },
@@ -2112,6 +1990,8 @@
    "unexplained_share": null,
    "unexplained_in_range": null,
    "detectable": true,
+   "engine_localised": null,
+   "decomposition_mass_only": null,
    "decomposition_ok": null,
    "queries": 20,
    "error": ""
