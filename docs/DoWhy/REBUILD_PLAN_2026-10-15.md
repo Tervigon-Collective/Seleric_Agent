@@ -1,7 +1,7 @@
 # Diagnosis engine rebuild: master plan (living document)
 
 **File of record after approval:** `/opt/seleric/Seleric_Agent/docs/DoWhy/REBUILD_PLAN_2026-10-15.md` (this plan replaces its content; step S0 below). Companion: `docs/DoWhy/RESEARCH_REPORT_2026-10-15.md` (evidence and sources, frozen).
-Created 2026-10-15; revised same day with library docs (§5.5) and architecture (§5.6-5.10). Status (2026-10-16): **plan approved; Phases S, 0 and 1 done and deployed (see §1, §6 Gate 1 status, D-42); Phase 2 next.** Nothing is committed beyond `4329c39`.
+Created 2026-10-15; revised same day with library docs (§5.5) and architecture (§5.6-5.10). Status (2026-10-16): **plan approved; Phases S, 0 and 1 done and deployed (see §1, §6 Gate 1 status, D-42); Phase 2 next.** Committed on `DoWhy`: `4329c39` and `ce4001b` (owner: 'commit', 2026-10-16); not pushed.
 Contents: §0 how to resume · §1 dashboard · §2 context · §3 decisions · §4 open questions · §5 architecture (5.1 shape, 5.2 trace, 5.3 debuggability, 5.4 graph, 5.5 library docs, 5.6 HLD, 5.7 LLD, 5.8 proposed decisions, 5.9 runtime flow + flowcharts, 5.10 coding practices) · §6 phase checklists · §7 eval · §8 libraries · §9 verification · §10 risks · §11 findings log · §12 session log · §13 paths.
 
 ---
@@ -49,7 +49,7 @@ Contents: §0 how to resume · §1 dashboard · §2 context · §3 decisions · 
 | 7 | Offline discovery audit | [ ] | [ ] | |
 | D | Deploy (hard gate, rollback tag) | [ ] | [ ] | |
 
-Current phase: **2** (operator split) is next; Phase 1 is complete with two carve-outs (§6 Gate 1 status). **Deployed 2026-10-16: api, recovery and business-state-cron run from the staging tree `~/work/agent_dowhy_deploy` (D-42).** Nothing is committed (owner: 'no dont commit'). Open before Phase 2: owner reading of the carve-outs; whether to commit.
+Current phase: **2** (operator split) is next; Phase 1 is complete with two carve-outs (§6 Gate 1 status). **Deployed 2026-10-16: api, recovery and business-state-cron run from the staging tree `~/work/agent_dowhy_deploy` (D-42).** Committed as `ce4001b` on the owner's instruction after the deploy (not pushed). Open before Phase 2: owner reading of the carve-outs.
 
 ---
 
@@ -99,6 +99,7 @@ Current phase: **2** (operator split) is next; Phase 1 is complete with two carv
 | D-39 | Commit policy, refining D-37: **commit the finished Phase 1 work now (one local commit on `DoWhy`), then commit again only when the owner says**; engine-file tasks (P1.4, P1.5b) therefore wait for a go-ahead each time, and a go-ahead lets me export the commit and re-score | owner 2026-10-16 |
 | D-40 | Run records (O-9) are stored in the **existing artifact store** (`state/artifacts.py` + `persistence/v3_artifacts.py`), keyed by mission and investigation id; snapshot inline or compressed per the size measured in P1.7 | owner 2026-10-16 |
 | D-41 | Run-record retention (O-8): **90 days**, raw brand series allowed in the record (needed for offline replay), deleted with the thread | owner 2026-10-16 |
+| D-43 | Owner, 2026-10-16, after the deploy: 'commit'. Phase 1 committed as `ce4001b` (supersedes the 'no commit' instruction of earlier that day for this work; D-39 still applies afterwards: further commits only when told). Not pushed | owner 2026-10-16 |
 | D-42 | **Deployment, 2026-10-16 (owner: 'stop it and run from this code, take a pull from gaurav'):** `gaurav` 430dbd0 applied as a staged patch onto the DoWhy worktree (no merge commit, no history change); the running stack was built from `/opt/seleric/Seleric_Agent`, which carries a peer session's uncommitted work (answer visuals), so a snapshot of those files was overlaid in the build (checked: none also differs in the worktree) rather than dropped. Staging dir `~/work/agent_dowhy_deploy` (worktree tree `d488cd1d` + overlay + the host-local `.env`, `docker-compose.override.yml`, `prompts/`); `api`, `recovery`, `business-state-cron` recreated with `docker compose -p seleric_agent` from there; voice and datastores untouched. **The compose project's working dir is now the staging dir: do not run compose for `seleric_agent` from the live dir, it would replace this build with one without the diagnosis package.** Rollback: `seleric_agent-{api,recovery,business-state-cron}:rollback-20261016b` (the images that ran before). The peer session (seleric-35) agreed and stopped building from the live dir | owner 2026-10-16 |
 | D-21 | Debuggable by design (§5.3): run record, offline deterministic replay, step mode, explain-why-not, no swallowed failures, run diff, fixture export, one correlation id | owner |
 
@@ -514,7 +515,7 @@ Reuse: `causal/diagnosis.py` (`Referencer`, `reference_days`, `_period_shift_z`,
 - Phase 0 scores unchanged: **met** (0 categorical differences; float noise at the level the unchanged baseline shows against itself);
 - live check on the running API: **done 2026-10-16, golden 6, concurrency 2: 6/6 completed, checks 5 of 6 pass (Phase 0 baseline 3 of 5)**, p50 48 s / p90 in `summary.json` (baseline 38 s / 50 s at concurrency 1; the runs differ in concurrency, not compared further). Q1 'why did my sales drop yesterday' passes its reference check against the semantic layer queried directly; Q5 (comparison against last week's windows) now passes; Q4 fails 3 sub-checks: 'definitions fetched via the catalogue' (an agent behaviour, failed at baseline too) and the two signed `net_profit` window totals (the answer states the figures correctly as unsigned magnitudes, 'a loss of 69,606', and the check compares the signed value: a harness artefact; the ROAS figures now match, where the baseline said ROAS was 'flat'). Cross-check was against the semantic layer (`mcp_direct`), **not raw ClickHouse SQL**. Results `eval/regress/results/diag-p1-20261016/`. **Four investigations left 969 `diag.*` events in `run_events`** (about 240 per investigation, 1 KB average, 1.1 KB maximum, 1.4 MB in total);
 - carve-out 1: P1.5b is partial (the in-library failure sites of `dowhy_service.py`), P1.6b partial (log formatter, Langfuse);
-- carve-out 2: nothing is committed (owner ruling this session), so the Phase 1 evidence rests on test runs and on the staged tree hash `d488cd1d` rather than on a commit.
+- carve-out 2 (closed): the work was uncommitted at the time of the checks and is now commit `ce4001b`; the tree that was scored and deployed is `d488cd1d`, and the commit differs from it only by later doc edits (CURRENT_ARCHITECTURE section 8, engine-doc note, plan wording).
 
 **Gate 1:** detector parity; stale-graph rejection; trace replayable; replay byte-identical; import contract + mypy strict pass; registration test passes; Phase 0 scores unchanged (no regression) vs baseline.
 
