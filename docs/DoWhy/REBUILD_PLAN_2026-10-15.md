@@ -14,6 +14,12 @@ Contents: §0 how to resume · §1 dashboard · §2 context · §3 decisions · 
 3. Open the first unchecked task in the lowest-numbered unfinished phase (§6). Do not start a phase whose predecessor gate (§6 "Gate") is unchecked.
 4. Work on branch `gaurav` in `/opt/seleric/Seleric_Agent` only (D-22; no worktree, no other branch). The tree is shared with teammates: stage only your own files by explicit path, never `git add -A`, never touch their uncommitted work, and never build an image from a dirty tree without checking `git status` first.
 
+**Interview rule (owner, 2026-10-15): when execution reaches a decision that cannot be taken from this plan, the code, the data or a standing rule (D-17), do not guess and do not pick silently: interview the owner.**
+- Use AskUserQuestion with 2-4 concrete options, a recommended first option, and the evidence that makes the choice matter. Ask before building on either branch, not after.
+- Typical triggers: a threshold or penalty with no data-backed default, a business meaning (what counts as a "cause", which metric is the outcome), a licence or dependency addition, a change to a label/output contract, a scope change, a deploy or push, anything irreversible or outward-facing, two plan items that conflict, or a plan assumption that the data contradicts.
+- Not triggers (decide, record in §11, continue): naming, file layout inside the agreed package, test structure, anything the plan already rules on.
+- Record the answer as the next `D-n` in §3 (or tick the `O-n` in §4) and log it in §12 the same day. If the owner is unreachable, park the item as blocked in §1/§12 and continue with unblocked work; never apply a default to a question the owner has not answered.
+
 **Tracking rule (owner, 2026-10-15): this file is the tracker and must be updated as work happens.**
 - After **every** finished task (not only at session end): tick its box with evidence, update the §1 dashboard row, add any new fact to §11, and commit the doc in the same commit as the code/data it describes. A task whose doc update is missing is not done.
 - Starting a task: note it in §12 as `in progress` so a crash or handover shows where work stopped.
