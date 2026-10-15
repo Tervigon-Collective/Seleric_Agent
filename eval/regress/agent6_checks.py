@@ -111,7 +111,7 @@ def q1_reference_checks(answer, numbers, ref):
 
 
 def _day(value):
-    return datetime.date.fromisoformat(str(value)[:10])
+    return datetime.date.fromisoformat(str(value)[:10]) if value not in (None, "None", "") else None
 
 
 def comparison_windows(calls):
@@ -120,9 +120,10 @@ def comparison_windows(calls):
     The previous window is the explicit compare window, else the equal-length period just before the event."""
     for c in calls:
         a = c["args"]
-        if c["name"] == DIAGNOSIS and c["ok"] and a.get("event_start") and a.get("event_end"):
+        if c["name"] == DIAGNOSIS and c["ok"] and _day(a.get("event_start")) and _day(a.get("event_end")):
             start, end = _day(a["event_start"]), _day(a["event_end"])
-            if a.get("compare_start") and a.get("compare_end"):
+            end = min(end, datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).date() - datetime.timedelta(days=1))  # IST; today is partial; answers state the last full day
+            if _day(a.get("compare_start")) and _day(a.get("compare_end")):
                 return (start, end), (_day(a["compare_start"]), _day(a["compare_end"]))
             n = (end - start).days + 1
             return (start, end), (start - datetime.timedelta(days=n), start - datetime.timedelta(days=1))

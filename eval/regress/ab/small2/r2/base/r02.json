@@ -1,0 +1,45 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_ee3f1a96bc6942969d3a9abd7fcf1f4b",
+ "mission": "MS3-62af376992",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 46,
+ "elapsed_s": 42.878,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 39,
+  "measured": 39,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "The following Meta campaigns are wasting money, as they have negative net profits and low ROAS for the period 7th\u201313th October 2026:\n\n| Campaign Name                        | Ad Spend (\u20b9) | Net Profit (\u20b9) | Net ROAS | Break-even ROAS |\n|--------------------------------------|--------------|----------------|----------|-----------------|\n| TH-383-SUSPENDER-26SEP-ADV+          | 23,526       | -12,229        | 0.48     | 1.43            |\n| TH-383-SUSPENDER-29SEP               | 24,101       | -10,703        | 0.56     | 1.40            |\n| TH-279-BATHEASEBRUSH-07OCT           | 10,111       | -8,636         | 0.15     | 1.32            |\n| CAT TOY CS-26SEP                     | 9,707        | -8,148         | 0.16     | 1.47            |\n| TH-445-PROSUSPENDERBOOTS-6OCT        | 7,399        | -6,963         | 0.06     | 4.97            |\n| DOG DAD T-SHIRT-CS-06OCT             | 12,323       | -6,776         | 0.45     | 1.68            |\n| DOG SHOES-10OCT-CS                   | 6,714        | -6,714         | 0.00     | \u2014               |\n| TH-222-WINGBIRD-23SEP                | 21,626       | -6,550         | 0.70     | 1.59            |\n| DOG MOM T-SHIRT-CS-06OCT             | 10,268       | -6,519         | 0.37     | 1.57            |\n| DOG SHOES-CR-7OCT                    | 10,704       | -6,201         | 0.42     | 1.76            |\n\nThese campaigns are underperforming, with net ROAS values far below 1, indicating that they are not generating enough revenue to cover their ad spend. The break-even ROAS values show how much they would need to improve to break even.\n\nPeriod: 2026-10-07 to 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Would you like to analyze why these campaigns are underperforming?"
+}

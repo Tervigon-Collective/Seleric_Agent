@@ -1,0 +1,60 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_ac548225405049c49452b2fcee5e7f28",
+ "mission": "MS3-a7f911fa52",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 59,
+ "elapsed_s": 56.212,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "127.3%",
+   "31.4%",
+   "30.5%"
+  ],
+  "numbers": 14,
+  "measured": 11,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Sales did not drop yesterday \u2014 net sales were \u20b991,220 on 2026-10-13 (up 127.3% vs 2026-10-12 when net sales were \u20b940,119) and sit well within the normal daily range for recent weeks. No single causal driver was identified by the data.\n\nWhat changed (key figures)\n- Orders rose from 26 \u2192 45 (+73.1%), which increased units sold and total sales materially.  \n- Net AOV rose from \u20b91,543 \u2192 \u20b92,027 (+31.4%), so average order value also helped revenue.  \n- Ad spend increased from \u20b938,661 \u2192 \u20b950,442 (+30.5%) and moved together with sessions; this is a correlation the data cannot separate into cause vs reaction.  \n- Refunds (refund amount) rose from \u20b911,340 \u2192 \u20b932,464 (+186.1%) \u2014 large in absolute terms but measured on the same order events and not identified as a causal driver by the diagnostic engine.  \n- P&L lines show a big move in P&L return/cancel revenue and contribution margins (reported for context), but these are accounting decompositions of the same-day totals, not a proven external cause.\n\nWorth checking: examine the campaigns/ads that moved (notably ad TH-471 and campaign TH-383 showed large swings) and the spike in refunds/P&L return revenue to confirm whether operational issues (fulfilment, returns processing) or a short-term ad change drove the volatility.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Want a campaign-level breakdown for 2026-10-13 to see which ads/campaigns drove the changes?"
+}

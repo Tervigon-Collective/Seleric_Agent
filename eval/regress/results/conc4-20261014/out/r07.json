@@ -1,0 +1,33 @@
+{
+ "n": 7,
+ "aspect": "replay11",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_3b9526bc83184ac79509a05d8c0e14f9",
+ "mission": "MS3-56417671e8",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 67,
+ "elapsed_s": 65.59,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 19,
+  "measured": 19,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Net sales did not drop yesterday \u2014 they rose to \u20b991,220 on 2026-10-13 from \u20b940,119 on 2026-10-12 (+127%), so the business saw a strong uplift, not a decline.\n\n- Key numbers (2026-10-13 vs 2026-10-12): Net sales \u20b991,220 \u2190 \u20b940,119; Orders 45 \u2190 26 (+73%); Net AOV \u20b92,694 \u2190 \u20b92,116 (+31%); Ad spend \u20b950,440 \u2190 \u20b938,661 (+30%); Discounts \u20b95,173 \u2190 \u20b91,553 (+233%).  \n- What moved this change: the increase is explained mainly by more orders (\u224866% of the uplift) and a higher AOV (\u224834%); by platform, Meta accounted for the largest share of the lift (about 81% of the change).  \n- Certainty & note: these are order-date figures for the default brand (Tilting Heads). Today's data was processed through 09:43 IST refreshes; tax lines failed to fetch but do not change the sales totals.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Do you want me to break the uplift down by Meta campaign/ad to see which ones drove the orders and AOV increase?"
+}

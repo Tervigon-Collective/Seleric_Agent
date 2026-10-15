@@ -1,0 +1,37 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_2a45ad89b7424a2cb938d91366cf6504",
+ "mission": "MS3-c772b0908f",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 16.29,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 9,
+  "measured": 9,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_dimension",
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Top campaigns by net sales in September 2026 (order-date, Tilting Heads): the largest bucket is uncategorised orders, then three Google/brand campaigns \u2014 together they drove most sales.\n\nWhat changed / key lines\n- Unattributed / no campaign: Net sales \u20b9749,161 \u00b7 Orders 396 \u2014 the largest single row (campaign_name is null in the data).  \n- [Google Build] PMax - Seasonal New | 27th May: Net sales \u20b9198,996 \u00b7 Orders 115.  \n- [Google Build] Brand Search | 5th March: Net sales \u20b971,275 \u00b7 Orders 40.  \n- TH-152-TANGLELEASH-1SEP: Net sales \u20b956,263 \u00b7 Orders 29.  \n- TH-284-CRABDASH TOY-1SEP: Net sales \u20b944,389 \u00b7 Orders 25.\n\nNotes: results returned the top 50 campaign rows (query hit the 50-row limit); full campaign list is available if you want it. Data is by order date and scoped to default brand Tilting Heads.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Show the full campaign list for September (no row limit) or top 10 only?"
+}

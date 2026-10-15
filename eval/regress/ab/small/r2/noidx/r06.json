@@ -1,0 +1,33 @@
+{
+ "n": 6,
+ "aspect": "books",
+ "q": "What was the finance P&L net profit for September 2026 as booked by event date, and how does it differ from the order-date net profit?",
+ "thread": "thread_bb8278da7b4b48f6b26c2e849507c81d",
+ "mission": "MS3-c6f5f4b813",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 25,
+ "elapsed_s": 22.32,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 9,
+  "measured": 9,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "The finance P&L net profit (event date) for September 2026 was a loss of \u20b91,527,829, which is worse than the order\u2011date net profit of a loss of \u20b9172,227 \u2014 a gap of \u20b91,355,602 (the P&L/event\u2011date loss is \u20b91,355,602 larger, ~\u2011787.1% vs the order\u2011date loss).\n\n- What changed: P&L net profit (finance P&L, event date) = \u20b9\u20111,527,829 for 2026\u201109\u201101..2026\u201109\u201130; net profit (order date) = \u20b9\u2011172,227 for the same inclusive dates. The P&L view shows a materially larger loss by \u20b91,355,602.\n- Why it matters: the two numbers use different booking dates and cost timing \u2014 the P&L (event date) includes returns/costs and cost events posted in September, so profit on the books is far lower than the order\u2011date view that attributes some costs (ad spend on delivery) differently.\n- Certainty / data freshness: numbers are for brand default (Tilting Heads) by default, currency INR. Data refreshed 2026\u201110\u201114; pnl view notes costs may lag (~1 day) but September is final for this query.\n\nWorth checking: run the break_down_metric on P&L net profit for Sep 2026 to see which P&L lines (returns, COGS timing, ad/cost accruals) drive the \u20b91.36M gap.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14T12:32:04.434Z\nNext: Show the P&L breakdown for P&L net profit in September 2026 (which lines and amounts create the gap?)."
+}

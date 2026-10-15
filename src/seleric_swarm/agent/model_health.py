@@ -12,10 +12,11 @@ recently-failed model than to fail the mission without a single call.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import os
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -53,6 +54,15 @@ COOLDOWN_UNAVAILABLE_S = 300.0
 # A request past the cap is a ModelAPIError, so the chain falls through to the
 # next model instead of the mission dying.
 AGENT_LLM_REQUEST_CAP_S = float(os.getenv("AGENT_LLM_REQUEST_CAP_S", "60"))
+# A live (token-streamed) step: no chunk for this long means the provider stalled mid-answer.
+AGENT_LLM_STALL_CAP_S = float(os.getenv("AGENT_LLM_STALL_CAP_S", "30"))
+# Set by the loop for the steps whose text should reach the user as it is generated. Off: every step is a plain
+# request replayed as a stream (cap, cooldown, fallback and patience all apply to the whole response).
+LIVE_STREAM: contextvars.ContextVar[bool] = contextvars.ContextVar("seleric_live_stream", default=False)
+
+
+class StreamStalled(ModelAPIError):
+    """A live stream broke after it had opened (stall, dropped connection). The loop redoes the turn unstreamed."""
 
 
 class ModelHealth:
@@ -277,17 +287,84 @@ class PatientModel(WrapperModel):
     @asynccontextmanager
     async def request_stream(
         self, messages: Any, model_settings: Any, model_request_parameters: Any, run_context: Any = None
-    ) -> AsyncIterator[StreamedResponse]:
-        """The agent streams only so its event handler sees tool calls; the
-        answer itself is never shown before validation. A live stream cannot
-        fall back or be retried once it is open — pydantic-ai's FallbackModel
-        propagates mid-stream failures — so a provider stall became a raw
-        ReadTimeout that failed the mission and restarted it from scratch
-        (live 2026-10-04: 658s for one CTR chart). Each step is therefore a
-        plain request (cap, cooldown, fallback and patience all apply) replayed
-        as a stream."""
-        response = await self.request(messages, model_settings, model_request_parameters)
-        yield ReplayedStreamedResponse(model_request_parameters=model_request_parameters, response=response)
+    ) -> AsyncIterator[Any]:
+        """A step is a plain request replayed as a stream, unless the loop asked for a live one (``LIVE_STREAM``).
+
+        Why replay is the default: a live stream cannot fall back or be retried once it is open — pydantic-ai's
+        FallbackModel propagates mid-stream failures — so a provider stall became a raw ReadTimeout that failed the
+        mission and restarted it from scratch (live 2026-10-04: 658s for one CTR chart).
+
+        A live step keeps the protections up to the first event (fallback, cooldown, patience, first-event cap) and
+        guards the rest with a per-chunk stall cap. A failure after the stream opened raises ``StreamStalled``; the
+        loop discards what was shown and redoes the turn with streaming off."""
+        if not LIVE_STREAM.get():
+            response = await self.request(messages, model_settings, model_request_parameters)
+            yield ReplayedStreamedResponse(model_request_parameters=model_request_parameters, response=response)
+            return
+        started, attempt = self._clock(), 0
+        while True:
+            stack = AsyncExitStack()
+            try:
+                inner = await stack.enter_async_context(
+                    self.wrapped.request_stream(messages, model_settings, model_request_parameters, run_context)
+                )
+                events = inner.__aiter__()
+                first = await _first_event(events, AGENT_LLM_REQUEST_CAP_S)
+                break
+            except (ModelAPIError, FallbackExceptionGroup, UnexpectedModelBehavior) as exc:
+                await stack.aclose()
+                if isinstance(exc, UnexpectedModelBehavior):  # unparseable first chunk: this model failed, not the mission
+                    exc = ModelAPIError("stream", f"malformed response: {exc}")
+                await self._wait_or_raise(exc, started, attempt)
+                attempt += 1
+        try:
+            yield _LiveStream(inner, events, first, AGENT_LLM_STALL_CAP_S)
+        finally:
+            await stack.aclose()
+
+
+_NO_EVENT = object()
+
+
+async def _first_event(events: AsyncIterator[Any], cap_s: float) -> Any:
+    try:
+        return await asyncio.wait_for(events.__anext__(), timeout=cap_s) if cap_s > 0 else await events.__anext__()
+    except StopAsyncIteration:
+        return _NO_EVENT
+    except TimeoutError as exc:
+        raise ModelAPIError("stream", f"no first token within {cap_s:.0f}s") from exc
+
+
+class _LiveStream:
+    """The opened stream with its first event already read: yields it, then the rest under a per-chunk stall cap.
+
+    Everything else (``get()``, ``usage()``, ``model_name``, ``final_result_event``, ``cancel()``) is the real
+    response's, so the agent graph treats it exactly like the stream it would have opened itself."""
+
+    def __init__(self, inner: Any, events: AsyncIterator[Any], first: Any, stall_cap_s: float) -> None:
+        self._inner, self._events, self._first, self._cap = inner, events, first, stall_cap_s
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def __aiter__(self) -> AsyncIterator[Any]:
+        return self._iterate()
+
+    async def _iterate(self) -> AsyncIterator[Any]:
+        if self._first is _NO_EVENT:
+            return
+        yield self._first
+        while True:
+            try:
+                event = await asyncio.wait_for(self._events.__anext__(), timeout=self._cap) if self._cap > 0 \
+                    else await self._events.__anext__()
+            except StopAsyncIteration:
+                return
+            except TimeoutError as exc:
+                raise StreamStalled("stream", f"no output for {self._cap:.0f}s mid-answer") from exc
+            except Exception as exc:  # dropped connection, malformed chunk: the stream is gone either way
+                raise StreamStalled("stream", f"stream broke: {type(exc).__name__}: {exc}") from exc
+            yield event
 
 
 @dataclass

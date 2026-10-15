@@ -1,0 +1,35 @@
+{
+ "n": 6,
+ "aspect": "books",
+ "q": "What was the finance P&L net profit for September 2026 as booked by event date, and how does it differ from the order-date net profit?",
+ "thread": "thread_f255e4a5e67749a1aa96553d3d5ae19f",
+ "mission": "MS3-d282957f45",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 42,
+ "elapsed_s": 38.07,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "1,355,602",
+   "1,355,602",
+   "1.36M"
+  ],
+  "numbers": 7,
+  "measured": 4,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "You ran a loss on the finance P&L in September: event-date net profit was a loss of \u20b91,527,829 \u2014 \u20b91,355,602 worse than the order-date net profit loss of \u20b9172,227.\n\nEvidence\n- P&L (event date): P&L net profit = -\u20b91,527,829\n- Order-date: Net profit = -\u20b9172,227\n- Difference (P&L net profit \u2212 net profit) = -\u20b91,355,602 (P&L shows a larger loss)\n\nWhat this means (brief)\n- The two numbers use different bases: P&L net profit is the Finance P&L booked by event/report date; net profit is the order-date profit \u2014 they are not directly summable and can differ due to timing of returns, cancellations, and expense recognition.\n- The P&L view\u2019s provenance notes costs/allocations can lag (costs typically finalised after event date), so the larger P&L loss likely reflects event-date postings and finance allocations that are not present on the order-date view.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Would you like a P&L bridge (breakdown) for September showing which lines (net sales, net COGS, ad spend, returns/discounts) drive the \u20b91.36M gap?"
+}

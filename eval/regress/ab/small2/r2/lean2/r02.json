@@ -1,0 +1,50 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_a22bbe7a545c45139d2089ceef24645e",
+ "mission": "MS3-8f284fd99c",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 71,
+ "elapsed_s": 64.043,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 8,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 17,
+  "measured": 17,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "catalogue_search_metrics",
+  "catalogue_list_dimensions",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "diagnose_metric_change",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer: several Meta campaigns are spending meaningful budget while delivering well below break\u2011even (Net ROAS < 1.0 on order-date), so they are losing money. Biggest offenders last 7 complete days (2026-10-07 \u2192 2026-10-13, order-date):\n\n- TH-383-SUSPENDER-29SEP \u2014 Spend \u20b924,101 \u00b7 Net ROAS 0.56x\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Spend \u20b923,525.58 \u00b7 Net ROAS 0.48x\n- TH-222-WINGBIRD-23SEP \u2014 Spend \u20b921,626.14 \u00b7 Net ROAS 0.70x\n- TH-279-BATHEASEBRUSH-07OCT \u2014 Spend \u20b910,111.10 \u00b7 Net ROAS 0.15x\n- TH-445-PROSUSPENDERBOOTS-6OCT \u2014 Spend \u20b97,398.58 \u00b7 Net ROAS 0.06x\n- CAT TOY CS-26SEP \u2014 Spend \u20b99,707.40 \u00b7 Net ROAS 0.16x\n\nWhat this means (by impact)\n- These campaigns drove the largest Meta spend but produced net returns well below 1.0x (i.e., contribution margin \u00f7 ad spend < 1), so ad dollars exceed contribution margin \u2014 a direct loss on the P&L.\n- The highest absolute waste is from the two TH-383 campaigns together: total Meta ad spend for those two campaigns in the period was \u20b947,626.59.\n- Several smaller\u2011spend campaigns (BatheaseBrush, ProSuspenderBoots, Cat Toy) have very low ROAS (0.06\u20130.16x) and should be paused or reviewed immediately because each rupee spent there yields almost no contribution margin.\n- Confidence: numbers are order-date P&L basis (net ROAS) for Meta only; data refreshed hourly and covers 2026-10-07..2026-10-13.\n\nWorth checking: diagnose the top offenders (I can run a quick root-cause drill per campaign \u2014 impressions, CTR, CPC, orders, returns and recent budget/status edits) starting with TH-383-SUSPENDER-29SEP and TH-279-BATHEASEBRUSH.\n\nPeriod: 2026-10-07..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Diagnose the top 2 losing campaigns (impressions \u2192 orders \u2192 returns and recent ad edits)?"
+}

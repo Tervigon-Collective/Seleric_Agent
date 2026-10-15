@@ -1,0 +1,40 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_dbc9351684e947099ab760ffa1c7dc8b",
+ "mission": "MS3-809dcd70e8",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 21,
+ "elapsed_s": 17.066,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 15,
+  "measured": 13,
+  "misbound": [],
+  "problems": [
+   "figures in no tool result and not one arithmetic step from them: 50"
+  ],
+  "unmatched": [
+   "50",
+   "50"
+  ],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Net sales for Sep 2026 were \u20b97,49,161 from 396 orders; the biggest campaign was \"[Google Build] PMax - Seasonal New | 27th May\" with \u20b91,98,996 and 115 orders.\n\nKey numbers\n- Total (all campaigns, order-date): Orders 396 \u00b7 Net sales \u20b97,49,161\n- Top campaign by net sales: \"[Google Build] PMax - Seasonal New | 27th May\" \u2014 Orders 115 \u00b7 Net sales \u20b91,98,996\n- 2nd: \"[Google Build] Brand Search | 5th March\" \u2014 Orders 40 \u00b7 Net sales \u20b971,275\n- 3rd: \"TH-385-DUCKTOY-1SEP\" \u2014 Orders 31 \u00b7 Net sales \u20b940,071\n- 4th: \"TH-222-WINGBIRD-08SEP\" \u2014 Orders 30 \u00b7 Net sales \u20b934,447\n- 5th: \"TH-222-WINGBIRD-07SEP\" \u2014 Orders 29 \u00b7 Net sales \u20b939,644\n\nWorth checking: would you like the full ranked campaign list or a view limited to paid campaigns only?\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: show the full campaign ranking (top 50) or filter to paid campaigns?\n\n\u26a0 Not verified against the data: figures in no tool result and not one arithmetic step from them: 50"
+}

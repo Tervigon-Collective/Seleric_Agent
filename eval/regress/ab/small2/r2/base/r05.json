@@ -1,0 +1,35 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_a48afde18597407e90a18011186c7900",
+ "mission": "MS3-908104f1af",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 38,
+ "elapsed_s": 35.816,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 11,
+  "measured": 11,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Net: campaign-level orders and net sales for 1\u201330 Sep 2026 (scoped to the default brand, Tilting Heads) \u2014 top campaigns shown below; full table available on request.\n\nTop campaign rows (campaign \u00b7 orders \u00b7 net sales)\n- (No campaign name) \u00b7 396 orders \u00b7 \u20b9749,161\n- [Google Build] PMax - Seasonal New | 27th May \u00b7 115 orders \u00b7 \u20b9198,996\n- [Google Build] Brand Search | 5th March \u00b7 40 orders \u00b7 \u20b971,275\n- TH-152-TANGLELEASH-1SEP \u00b7 29 orders \u00b7 \u20b956,263\n- TH-284-CRABDASH TOY-1SEP \u00b7 25 orders \u00b7 \u20b944,389\n- TH-336-PAWTECH-1SEP \u00b7 22 orders \u00b7 \u20b944,274\n\nNote: 88 campaign rows returned in total (this list shows the top contributors by net sales).\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Do you want the full campaign table, the top 20 campaigns, or a CSV export of all 88 rows?"
+}

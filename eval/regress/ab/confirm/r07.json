@@ -1,0 +1,41 @@
+{
+ "n": 7,
+ "aspect": "failed_steps",
+ "q": "Fetch campaign-level ad spend, orders, cost per order (CPA) and net ROAS for the top 5 Meta campaigns by spend over 2026-10-07..2026-10-08 and 2026-10-06..2026-10-07 for comparison.",
+ "thread": "thread_01c9c14bdd754378ba3062d79b2ad76a",
+ "mission": "MS3-df48546dff",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 34,
+ "elapsed_s": 31.159,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 24,
+  "measured": 24,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "any of ['2026-10-06']"
+  },
+  {
+   "ok": true,
+   "what": "revisions <= 1"
+  }
+ ],
+ "answer": "Short answer: I pulled Meta campaign-level ad spend (paid_media) and the matching orders, CPA and net ROAS (order-date / order_pnl) for the campaigns that were the top 5 by Meta spend in each period. Where a campaign ranked in paid_media but had no matching order_pnl row the orders/CPA/ROAS are reported as \"No data\" (not zero). Key numbers below.\n\nWhat I did and the raw results (previous period = 2026-10-06..2026-10-07; current = 2026-10-07..2026-10-08). Campaigns were ranked by Meta ad spend in each period (paid_media); orders/CPA/ROAS are the last-touch order-date P&L slice.\n\n- TH-149-SCRATCHLOUNGE-6OCT\n  - Prev spend \u20b98,145 \u00b7 Orders 9 \u00b7 CPA \u20b9905 \u00b7 Net ROAS 1.5\n  - Curr spend \u20b917,251 \u00b7 Orders 13 \u00b7 CPA \u20b91,327 \u00b7 Net ROAS 1.0\n- TH-222-WINGBIRD-23SEP\n  - Prev spend \u20b916,111 \u00b7 Orders 16 \u00b7 CPA \u20b91,007 \u00b7 Net ROAS 0.6\n  - Curr spend \u20b914,884 \u00b7 Orders 18 \u00b7 CPA \u20b9827 \u00b7 Net ROAS 0.9\n- TH-383-SUSPENDER-29SEP\n  - Prev spend \u20b915,856 \u00b7 Orders 7 \u00b7 CPA \u20b92,265 \u00b7 Net ROAS 0.3\n  - Curr spend \u20b911,659 \u00b7 Orders 6 \u00b7 CPA \u20b91,943 \u00b7 Net ROAS 0.5\n- TH-383-SUSPENDER-26SEP-ADV+\n  - Prev spend \u20b912,633 \u00b7 Orders: No data \u00b7 CPA: No data \u00b7 Net ROAS: No data\n  - Curr spend \u20b911,989 \u00b7 Orders: No data \u00b7 CPA: No data \u00b7 Net ROAS: No data\n- (period-specific 5th campaigns)\n  - Prev 5th: CAT TOY CS-26SEP \u2014 Prev spend \u20b99,049 \u00b7 Orders 7 \u00b7 CPA \u20b91,293 \u00b7 Net ROAS 0.7\n  - Curr 5th: TH-279-BATHEASEBRUSH-07OCT \u2014 Curr spend \u20b97,749 \u00b7 Orders: No data \u00b7 CPA: No data \u00b7 Net ROAS: No data\n\nNotes and data gaps:\n- Ranking used paid_media.Ad spend (Meta) for each period; orders/CPA/net ROAS come from order_pnl (order-date, last-touch attribution). These are different Cube views/time axes and were run separately, so some campaigns that appear in paid_media have no matching order_pnl row in that two-day window (shown as \"No data\"). The queries were scoped to the default brand (Tilting Heads).\n- Data freshness: paid_media is near real-time; order_pnl hourly. Data as of 2026-10-14; no brand filter explicitly supplied (scoped to Tilting Heads).\n\nWorth checking: re-run the order_pnl query for the specific campaigns that show \"No data\" (TH-383-SUSPENDER-26SEP-ADV+, TH-279-BATHEASEBRUSH-07OCT) with campaign_name equals those names so we can compare like-for-like across both views.\n\nPeriod: 2026-10-06..2026-10-08 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Re-query the missing campaigns (equals filter) so every top\u2011spend campaign has its orders/CPA/ROAS shown \u2014 shall I run that?"
+}

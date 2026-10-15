@@ -193,7 +193,13 @@ def run(i, item, out_dir, tid):
 
 def run_group(idx_list, items, out_dir):
     tid = req("POST", "/threads", {"title": f"REGRESSION Q{idx_list[0] + 1}", "metadata": {"golden": True}})["id"]
-    return [run(i, items[i], out_dir, tid) for i in idx_list]
+    outs = []
+    for i in idx_list:
+        try:
+            outs.append(run(i, items[i], out_dir, tid))
+        except Exception as exc:  # one broken check must not abort the block (the answer is lost, the rest still runs)
+            print(f"{i + 1:>2} HARNESS-ERROR {type(exc).__name__}: {exc}", flush=True)
+    return outs
 
 
 def main():

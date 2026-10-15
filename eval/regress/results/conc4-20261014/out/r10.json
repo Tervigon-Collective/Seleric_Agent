@@ -1,0 +1,31 @@
+{
+ "n": 10,
+ "aspect": "replay11",
+ "q": "2026-10-11, why did it had the lowest sale",
+ "thread": "thread_3b9526bc83184ac79509a05d8c0e14f9",
+ "mission": "MS3-acd6842d1a",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 46,
+ "elapsed_s": 42.697,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 20,
+  "measured": 20,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Net sales on 2026-10-11 were \u20b934,377 \u2014 down 51% vs 2026-10-10 (\u20b970,517); the drop is almost entirely an accounting and volume change, not a single mysterious metric.\n\n- Biggest drivers: Gross sales fell from \u20b972,814 \u2192 \u20b936,166 (\u2212\u20b936,648, ~101% of the net-sales drop); the single largest line was P&L return cancel revenue dropping from \u20b929,081 \u2192 \u20b90 (\u2212\u20b929,081, ~80% of the net-sales change).  \n- Volume vs price: Orders fell 36 \u2192 19 (\u221247%) and account for ~89% of the change; Net AOV fell slightly \u20b91,959 \u2192 \u20b91,809 (\u22128%), contributing the remaining ~11%.  \n- Platform / campaigns: the change concentrated in the unspecified platform bucket (went from \u20b930,234 \u2192 \u20b90, ~84% of the segment change); a few ads went from activity to zero (example: ad TH-336-PAWTECH_BN537_CF301 was \u20b911,270 \u2192 \u20b90).  \n- Data note: some tax lines failed to fetch but this does not affect the net-sales reconciliation shown (the bridge reconciles exactly).\n\nPeriod: 2026-10-11 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Do you want a campaign/ad-level drilldown for 2026-10-11 to see which ads stopped delivering?"
+}

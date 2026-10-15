@@ -1,0 +1,179 @@
+[
+ {
+  "q": "Why did my sales drop yesterday?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q1",
+  "reference": "q1",
+  "ab_id": "six1"
+ },
+ {
+  "q": "Which Meta campaigns are wasting money?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q2",
+  "ab_id": "six2"
+ },
+ {
+  "q": "Which products are profitable after returns and advertising costs?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q3",
+  "ab_id": "six3"
+ },
+ {
+  "q": "Why is ROAS increasing while net profit is declining?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q4",
+  "window_reference": [
+   "net_roas",
+   "net_profit"
+  ],
+  "ab_id": "six4"
+ },
+ {
+  "q": "Compare last week's performance against this week and identify the likely causes.",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q5",
+  "session": "q56",
+  "ab_id": "six5"
+ },
+ {
+  "q": "Break that down by product and channel.",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q6",
+  "session": "q56",
+  "ab_id": "six6"
+ },
+ {
+  "q": "Compare this month to the same number of days last month.",
+  "aspect": "golden",
+  "checks": [],
+  "ab_id": "g6"
+ },
+ {
+  "q": "Which Meta campaigns performed best in the last 7 days? Rank them using spend, revenue, ROAS, CAC, CTR, CPC, CPM, clicks, LPVs, and purchases.",
+  "aspect": "golden",
+  "checks": [],
+  "ab_id": "g9"
+ },
+ {
+  "q": "What was the average order value and COD order count by product in September?",
+  "aspect": "golden",
+  "checks": [
+   {
+    "contains_any": [
+     "September",
+     "2026-09"
+    ]
+   },
+   {
+    "not_contains": "partial day"
+   },
+   {
+    "not_contains": "not available"
+   }
+  ],
+  "ab_id": "g20"
+ },
+ {
+  "q": "give me a net profit breakdown, waterfall for September 2026",
+  "aspect": "reconciliation",
+  "checks": [
+   {
+    "contains_sql": "select round(sum(net_profit),2) from serve.order_pnl_daily where brand_id=20 and order_date between '2026-09-01' and '2026-09-30'"
+   },
+   {
+    "not_contains": "residual"
+   }
+  ],
+  "ab_id": "g22"
+ },
+ {
+  "q": "On 2026-10-02 we recorded a loss. Quantify exactly how much of the profit deterioration versus 2026-10-01 came from lower revenue, advertising cost, COGS, discounts, refunds, shipping, payment costs, and other available cost components. Reconcile the components back to the total profit change.",
+  "aspect": "reconciliation",
+  "checks": [
+   {
+    "contains_sql": "select round(sum(net_profit),2) from serve.order_pnl_daily where brand_id=20 and order_date between '2026-10-02' and '2026-10-02'"
+   },
+   {
+    "contains_sql": "select round(sum(net_profit),2) from serve.order_pnl_daily where brand_id=20 and order_date between '2026-10-01' and '2026-10-01'"
+   },
+   {
+    "contains_sql": "select round((select sum(net_profit) from serve.order_pnl_daily where brand_id=20 and order_date='2026-10-02')-(select sum(net_profit) from serve.order_pnl_daily where brand_id=20 and order_date='2026-10-01'),2)"
+   }
+  ],
+  "ab_id": "g23"
+ },
+ {
+  "q": "Why did CAC increase yesterday? Check whether the change came from CPM, CTR, CPC, landing-page conversion, checkout conversion, product mix, or channel mix. Rank the drivers by likely contribution.",
+  "aspect": "diagnosis",
+  "checks": [
+   {
+    "contains_all_words": [
+     "CPM",
+     "CTR",
+     "CPC"
+    ]
+   },
+   {
+    "not_lead": "product CAC"
+   }
+  ],
+  "ab_id": "g24"
+ },
+ {
+  "q": "Fetch campaign-level ad spend, orders, cost per order (CPA) and net ROAS for the top 5 Meta campaigns by spend over 2026-10-07..2026-10-08 and 2026-10-06..2026-10-07 for comparison.",
+  "aspect": "failed_steps",
+  "checks": [
+   {
+    "contains_any": [
+     "2026-10-06"
+    ]
+   },
+   {
+    "max_revisions": 1
+   }
+  ],
+  "ab_id": "g26"
+ },
+ {
+  "q": "What changed this week compared to last week?",
+  "aspect": "diagnosis",
+  "checks": [],
+  "ab_id": "g29"
+ },
+ {
+  "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+  "aspect": "failed_steps",
+  "checks": [
+   {
+    "not_contains": "2026-09-01..2026-09-01"
+   }
+  ],
+  "ab_id": "g30"
+ },
+ {
+  "q": "Forecast orders and order-date net sales for the next 7 days and show the daily values in a chart",
+  "aspect": "forecast",
+  "ab_id": "forecast"
+ },
+ {
+  "q": "What looks unusual in the last 14 days?",
+  "aspect": "explore",
+  "ab_id": "explore"
+ },
+ {
+  "q": "What were net sales yesterday for the brand Sniff Theory compared with the day before?",
+  "aspect": "brand",
+  "ab_id": "brand"
+ },
+ {
+  "q": "What was the finance P&L net profit for September 2026 as booked by event date, and how does it differ from the order-date net profit?",
+  "aspect": "books",
+  "ab_id": "books"
+ }
+]

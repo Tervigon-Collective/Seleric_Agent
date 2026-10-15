@@ -12,7 +12,7 @@ def _snapshot() -> CatalogueSnapshot:
 def test_server_guide_sits_between_working_rules_and_answer_rules() -> None:
     now = datetime(2026, 10, 14, 10, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
     out = system_prompt(_snapshot(), now, "GUIDE-BODY")
-    assert out.index("How to work") < out.index("GUIDE-BODY") < out.index("Answer:")
+    assert out.index("How to work") < out.index("GUIDE-BODY") < out.index("The final answer is read by")
     assert out.rstrip().rsplit("=== Calendar ===", 1)[1].strip().startswith("Today is 2026-10-14")
 
 

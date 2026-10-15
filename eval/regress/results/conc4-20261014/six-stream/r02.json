@@ -1,0 +1,48 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_bd0c1b23e02d4b219d4e72a3045471f5",
+ "mission": "MS3-902d01f66b",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 55,
+ "elapsed_s": 49.34,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 21,
+  "measured": 21,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_get_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Top loser: TH-383-SUSPENDER-26SEP-ADV+ lost \u20b941,921 in the last 30 days (order-date, Tilting Heads); it spent \u20b973,137 on Meta with net ROAS 0.4 (34 orders).  \n\nTop Meta campaigns losing money (last 30 days, order-date, Tilting Heads)\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Loss \u20b941,921 \u00b7 Ad spend \u20b973,137 \u00b7 Net ROAS 0.4 \u00b7 Orders 34  \n- TH-383-SUSPENDER-29SEP \u2014 Loss \u20b930,569 \u00b7 Ad spend \u20b956,657 \u00b7 Net ROAS 0.5 \u00b7 Orders 26  \n- DOG TOY CS-24SEP \u2014 Loss \u20b922,337 \u00b7 Ad spend \u20b934,634 \u00b7 Net ROAS 0.4 \u00b7 Orders 19  \n- TH-222-WINGBIRD-23SEP \u2014 Loss \u20b919,699 \u00b7 Ad spend \u20b973,105 \u00b7 Net ROAS 0.7 \u00b7 Orders 77  \n- CAT TOY CS-26SEP \u2014 Loss \u20b917,581 \u00b7 Ad spend \u20b933,853 \u00b7 Net ROAS 0.5 \u00b7 Orders 18  \n\nWorth checking: pause or cap spend on campaigns showing negative net profit and run a campaign \u2192 adset/creative drilldown to see whether low order volume, poor creatives or unprofitable products are the cause.\n\nPeriod: 2026-09-14..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Do you want a campaign \u2192 adset and creative drilldown for these losing campaigns?"
+}

@@ -201,25 +201,16 @@ async def break_down_metric(
     depth: int = _MAX_DEPTH,
     by: str | None = None,
 ) -> ToolResult:
-    """Break a metric into the lines it is built from — a P&L / waterfall / cost breakdown, or a bridge between two periods.
-
-    Use for "break down", "waterfall", "what makes up", "reconcile", "walk from X to Y" and "how much of the
-    change came from each component" questions about an additive money metric (profit, margin, net sales,
-    costs). The lines come from the catalogue's verified composition of ``metric_id`` (e.g. net profit =
-    contribution margin − ad spend, contribution margin = net sales − net COGS, net sales = gross sales −
-    discounts − returns − cancellations), all on the metric's own view and date basis, so they reconcile to
-    the total exactly; the result says so, or names any gap. ``period_start``/``period_end`` default to the
-    question's period. Pass ``compare_start``/``compare_end`` for a bridge: each line's change and its signed
-    contribution to the total's change. ``filters`` scopes every line alike (e.g. one channel). ``depth``
-    limits how many levels are expanded. ``by`` (a dimension id the total's view carries) also splits every line
-    by that dimension — a line the user asks to see apart (returns vs cancellations inside a deductions line, the
-    P&L per channel) — each segment reconciling on its own.
-
-    ``metric_id`` is on the basis the user asked for: the order-date id by default (net_profit, net_sales), the
-    pnl_-prefixed id (Finance P&L by event date) only when the user asks for the P&L, the books or finance.
-
-    Present the lines in the order returned (top line first, deductions with their sign) and the subtotals as
-    given; do not add lines from other metrics — they are on another basis and will not reconcile.
+    """Break an additive money metric (profit, margin, net sales, costs) into the lines it is built from: a P&L /
+    waterfall / cost breakdown, or a bridge between two periods. Use for "break down", "waterfall", "what makes
+    up", "reconcile", "walk from X to Y". Lines come from the catalogue's verified composition (net profit =
+    contribution margin - ad spend, contribution margin = net sales - net COGS, ...) on the metric's own view
+    and date basis, so they reconcile exactly (the result names any gap). period_start/period_end default to the
+    question's period; compare_start/compare_end make a bridge (each line's change and signed contribution);
+    filters scope every line; depth limits expansion; by (a dimension of the view) splits every line by it.
+    metric_id is the order-date id by default (net_profit, net_sales); the pnl_ id (Finance P&L by event date)
+    only when the user asks for the P&L, the books or finance. Present lines in the order returned with their
+    signs and the given subtotals; add no lines from other metrics (another basis, they will not reconcile).
     """
     definitions = await diagnosis._all_definitions(ctx)
     if (unknown := await _data.reject_unknown_metric(ctx, metric_id)) is not None:

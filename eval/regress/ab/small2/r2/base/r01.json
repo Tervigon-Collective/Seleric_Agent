@@ -1,0 +1,64 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_d063cf8b47fb4b13b0b3c89e896db0c1",
+ "mission": "MS3-03fe523a89",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 90,
+ "elapsed_s": 84.544,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 10,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 17,
+  "measured": 17,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Your sales yesterday (\u20b991,220) were 127% higher than the day before (\u20b940,119), but this is within the normal range for your business. There is no unusual drop to explain.\n\n- Orders increased from 26 to 45 (+73%), and the average order value (AOV) rose from \u20b91,543 to \u20b92,027 (+31%).\n- Ad spend increased from \u20b938,661 to \u20b950,442 (+30%), and clicks rose from 3,433 to 4,236 (+23%).\n- Net sales deductions (returns, cancellations, etc.) increased slightly from \u20b95,110 to \u20b96,569 (+29%).\n\nThe data shows no upstream cause for concern. The rise in orders and AOV drove the sales increase.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14  \nNext: Would you like a breakdown of sales by product or channel?"
+}

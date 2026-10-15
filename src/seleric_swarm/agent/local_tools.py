@@ -195,8 +195,7 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
         return data
 
     async def escalate(ctx: RunContext[SelericDeps], reason: str) -> str:
-        """Ask for deeper reasoning for the rest of this turn. Call once, before the data work, when the question
-        needs real analysis (causes, trade-offs, many moving parts) rather than a lookup. ``reason`` is one sentence."""
+        """Ask for deeper reasoning for the rest of this turn. Call once, together with your first data calls, when the question needs real analysis (causes, trade-offs, many moving parts) rather than a lookup. ``reason`` is one sentence."""
         set_loop_effort(LOOP_ESCALATED_EFFORT)
         return json.dumps({"ok": True, "note": f"Reasoning effort raised to {LOOP_ESCALATED_EFFORT} for the rest of this turn."})
 

@@ -1,0 +1,57 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_c6c8b994e5324a01a7f4495f062d48ee",
+ "mission": "MS3-36f6d4d15a",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 51,
+ "elapsed_s": 46.062,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 21,
+  "measured": 21,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Sales did not drop yesterday \u2014 net sales (order date) rose from \u20b940,119 on 2026-10-12 to \u20b991,220 on 2026-10-13 (+127%), so there is nothing to explain as a \"drop.\" This is within the metric's normal day-to-day variation, and the data shows the business actually sold more.\n\nWhat changed, and why it matters\n- Orders jumped: 26 \u2192 45 orders (+73%), so most of the sales gain came from higher order volume.  \n- Higher unit and basket value: Net AOV rose \u20b91,543 \u2192 \u20b92,027 (+31%) and units per order rose 1.04 \u2192 1.36 (+31%), amplifying the volume effect. Combined, Orders +73% \u00d7 Net AOV +31% = Net sales +127%.  \n- Ad spend and traffic moved up too: ad spend rose \u20b938,661 \u2192 \u20b950,442 (\u219130%); sessions rose slightly (3,254 \u2192 3,434) and conversion rate improved (0.46% \u2192 1.08%). These moved together with sales but the data cannot establish directionality (they may have co-moved).  \n- Returns/refunds and P&L lines: reported product refunded amount spiked in the event data source (note large value flagged), but returned orders were 0 for both days on order-date view; diagnostic engine did not find a supported single cause. Confidence: the system flags this as within normal range and found no causal driver that meets its threshold.\n\nWorth checking: break down 2026-10-13 net sales by campaign and by product to see which campaigns/products drove the extra orders (the diagnosis noted an ad named TH-471-PLAYSCRATCHLOUNGE_IMG_6516 and some campaigns that changed level).\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Do you want me to drill down net sales on 2026-10-13 by campaign (or by product)?"
+}

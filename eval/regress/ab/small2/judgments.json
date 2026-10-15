@@ -1,0 +1,426 @@
+{
+ "absolute": {
+  "r1|base|1": {
+   "depth": 5,
+   "user_facing": 5,
+   "completeness": 5,
+   "honesty": 5,
+   "note": "No weaknesses; clear, thorough, and user-friendly with all aspects addressed and assumptions stated."
+  },
+  "r1|base|2": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks explanation of why campaigns underperformed; overly focused on listing without deeper analysis."
+  },
+  "r1|base|3": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 4,
+   "note": "Lacks explanation of drivers behind profitability; doesn't clarify assumptions or limits of the analysis."
+  },
+  "r1|base|4": {
+   "depth": 3,
+   "user_facing": 3,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks clear explanation of drivers and implications; overly focused on restating data without deeper analysis."
+  },
+  "r1|base|5": {
+   "depth": 3,
+   "user_facing": 3,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks analysis of drivers or implications; overly focused on restating data without deeper insights."
+  },
+  "r1|base|6": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 5,
+   "note": "Lacks explanation of drivers behind the difference; overly brief on analysis."
+  },
+  "r1|lean|1": {
+   "depth": 5,
+   "user_facing": 4,
+   "completeness": 5,
+   "honesty": 5,
+   "note": "Could simplify phrasing for better readability."
+  },
+  "r1|lean|2": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 4,
+   "note": "Lacks depth on why campaigns underperform; assumptions and data limitations not explicitly stated."
+  },
+  "r1|lean|3": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks deeper analysis of drivers behind profitability; could better explain ad allocation and return impact."
+  },
+  "r1|lean|4": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 5,
+   "honesty": 5,
+   "note": "Could better explain the significance of the loss and its implications for the business."
+  },
+  "r1|lean|5": {
+   "depth": 3,
+   "user_facing": 3,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Overly verbose, lacks deeper analysis of trends or drivers behind campaign performance."
+  },
+  "r1|lean|6": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 4,
+   "note": "Lacks explanation of timing differences and their business impact."
+  },
+  "r1|lean2|1": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 5,
+   "honesty": 5,
+   "note": "Depth lacks clarity on ad impact; user-facing could simplify phrasing further."
+  },
+  "r1|lean2|2": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 5,
+   "honesty": 5,
+   "note": "Depth could improve by exploring why campaigns underperformed; user_facing could be more concise."
+  },
+  "r1|lean2|3": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 4,
+   "note": "Lacks explanation of drivers behind profitability; doesn't clarify assumptions or limits of the analysis."
+  },
+  "r1|lean2|4": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks clarity on actionable insights; could better explain ad spend inefficiency."
+  },
+  "r1|lean2|5": {
+   "depth": 3,
+   "user_facing": 3,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks depth on why orders are unattributed and implications; overly detailed for user-facing clarity."
+  },
+  "r1|lean2|6": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 4,
+   "note": "Lacks detailed drivers of the difference; assumptions not clearly stated."
+  },
+  "r2|base|1": {
+   "depth": 1,
+   "user_facing": 4,
+   "completeness": 2,
+   "honesty": 5,
+   "note": "Fails to address the question premise; misinterprets 'drop' and doesn't explain why sales increased instead."
+  },
+  "r2|base|2": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks deeper analysis of why campaigns are underperforming; focuses only on identifying them."
+  },
+  "r2|base|3": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks deeper analysis of drivers behind profitability and implications for strategy."
+  },
+  "r2|base|4": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 5,
+   "note": "Lacks deeper analysis of drivers and implications; overly focused on restating figures."
+  },
+  "r2|base|5": {
+   "depth": 2,
+   "user_facing": 3,
+   "completeness": 3,
+   "honesty": 4,
+   "note": "Lacks analysis of drivers or implications; overly focused on data presentation, not insights."
+  },
+  "r2|base|6": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks clarity on why the gap exists; could simplify explanation further."
+  },
+  "r2|lean|1": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 5,
+   "honesty": 5,
+   "note": "Depth could better explain refund impact; user-facing slightly dense for quick reading."
+  },
+  "r2|lean|2": {
+   "depth": 2,
+   "user_facing": 3,
+   "completeness": 2,
+   "honesty": 4,
+   "note": "Fails to explain why campaigns underperform or what 'wasting money' means; overly reliant on user to interpret data."
+  },
+  "r2|lean|3": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 4,
+   "note": "Lacks explanation of drivers behind profitability; overly focused on listing without deeper insights or implications."
+  },
+  "r2|lean|4": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks deeper analysis of drivers beyond ad spend; could better explain implications for business strategy."
+  },
+  "r2|lean|5": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 4,
+   "note": "Lacks analysis of drivers or trends; mostly restates data without deeper insights."
+  },
+  "r2|lean|6": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 5,
+   "note": "Lacks detail on drivers of the difference; overly brief explanation of event-date adjustments."
+  },
+  "r2|lean2|1": {
+   "depth": 5,
+   "user_facing": 5,
+   "completeness": 5,
+   "honesty": 5,
+   "note": "No weaknesses; clear, thorough, and actionable."
+  },
+  "r2|lean2|2": {
+   "depth": 5,
+   "user_facing": 5,
+   "completeness": 5,
+   "honesty": 5,
+   "note": "No major weaknesses; clear, concise, actionable, and transparent about data scope and confidence."
+  },
+  "r2|lean2|3": {
+   "depth": 3,
+   "user_facing": 3,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Lacks explanation of drivers behind profitability; overly technical and not scannable for a business owner."
+  },
+  "r2|lean2|4": {
+   "depth": 4,
+   "user_facing": 4,
+   "completeness": 4,
+   "honesty": 5,
+   "note": "Assumptions not stated; lacks clarity on waterfall structure."
+  },
+  "r2|lean2|5": {
+   "depth": 2,
+   "user_facing": 3,
+   "completeness": 3,
+   "honesty": 4,
+   "note": "Lacks depth in explaining drivers of performance; overly focused on restating data without actionable insights."
+  },
+  "r2|lean2|6": {
+   "depth": 3,
+   "user_facing": 4,
+   "completeness": 3,
+   "honesty": 4,
+   "note": "Lacks detailed drivers for the profit difference."
+  }
+ },
+ "pairwise": {
+  "r1|lean|1": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides clearer insights, checks assumptions, and offers actionable next steps; B introduces unnecessary complexity and lacks clarity for the business owner."
+  },
+  "r1|lean|2": {
+   "winner": "base",
+   "depth": "base",
+   "user_facing": "base",
+   "completeness": "base",
+   "reason": "B provides net profit, actionable insights, and a clear next step, while A lacks profit data and assumes ROAS below 1 is wasteful without deeper analysis."
+  },
+  "r1|lean|3": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "base",
+   "completeness": "variant",
+   "reason": "B provides deeper insights into profit breakdown and suggests actionable next steps, while A is clearer and more concise for a business owner but less complete."
+  },
+  "r1|lean|4": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides clearer insights, a logical breakdown, and actionable suggestions, while B is more mechanical and lacks depth in analysis or recommendations."
+  },
+  "r1|lean|5": {
+   "winner": "base",
+   "depth": "base",
+   "user_facing": "base",
+   "completeness": "base",
+   "reason": "A provides deeper insights, highlights unattributed sales, and offers actionable next steps. B is less clear and omits key details like unattributed sales."
+  },
+  "r1|lean|6": {
+   "winner": "tie",
+   "depth": "tie",
+   "user_facing": "variant",
+   "completeness": "tie",
+   "reason": "Both answers are accurate and complete, but A is slightly clearer for a business owner due to its concise phrasing and actionable next step."
+  },
+  "r1|lean2|1": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides deeper insights, clearer explanations, and more actionable suggestions, while B is less detailed and omits key factors like return/cancel revenue."
+  },
+  "r1|lean2|2": {
+   "winner": "base",
+   "depth": "base",
+   "user_facing": "base",
+   "completeness": "base",
+   "reason": "A provides clearer actionable insights, checks assumptions, and focuses on net profit, which is more relevant for business owners than gross ROAS alone."
+  },
+  "r1|lean2|3": {
+   "winner": "base",
+   "depth": "base",
+   "user_facing": "base",
+   "completeness": "base",
+   "reason": "B provides more detailed insights, including order counts, and offers specific next steps tailored to user needs, enhancing clarity and completeness."
+  },
+  "r1|lean2|4": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides clearer insights into drivers of loss, actionable next steps, and checks assumptions, making it more useful for a business owner."
+  },
+  "r1|lean2|5": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides deeper insights, clearer context, and addresses all parts of the question, including the unattributed orders and their potential impact."
+  },
+  "r1|lean2|6": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides deeper insight into the reasons for the difference, is clearer for a business owner, and addresses all parts of the question comprehensively."
+  },
+  "r2|lean|1": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides deeper analysis, checks assumptions, and suggests next steps, while B is simpler but lacks depth and diagnostic insights."
+  },
+  "r2|lean|2": {
+   "winner": "base",
+   "depth": "base",
+   "user_facing": "base",
+   "completeness": "base",
+   "reason": "A provides detailed data, checks assumptions, and explains metrics, while B is vague and lacks clarity, depth, and completeness."
+  },
+  "r2|lean|3": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides more actionable insights, offers next steps, and clarifies assumptions, while B lacks detail and omits key context like ad channel breakdown."
+  },
+  "r2|lean|4": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides clearer insights, actionable advice, and checks assumptions, while B is more mechanical and lacks depth in analysis or recommendations."
+  },
+  "r2|lean|5": {
+   "winner": "base",
+   "depth": "base",
+   "user_facing": "base",
+   "completeness": "base",
+   "reason": "A provides clearer scope, assumptions, and options for further data exploration, while B omits key details like total campaigns and lacks clarity on data limits."
+  },
+  "r2|lean|6": {
+   "winner": "base",
+   "depth": "base",
+   "user_facing": "base",
+   "completeness": "base",
+   "reason": "A provides deeper insight into timing differences, assumptions, and offers actionable next steps, while B is less detailed and lacks clarity on the gap's drivers."
+  },
+  "r2|lean2|1": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "base",
+   "completeness": "variant",
+   "reason": "B provides deeper analysis and acknowledges limits, while A is clearer for a business owner but less complete in addressing causality and assumptions."
+  },
+  "r2|lean2|2": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides clearer insights, actionable next steps, and checks assumptions; B lacks clarity and omits campaign diagnostics despite listing more campaigns."
+  },
+  "r2|lean2|3": {
+   "winner": "base",
+   "depth": "base",
+   "user_facing": "base",
+   "completeness": "base",
+   "reason": "A provides clearer insights, deeper analysis (net margins), and better context for decision-making. B lacks clarity, omits margins, and has inconsistent profit figures."
+  },
+  "r2|lean2|4": {
+   "winner": "variant",
+   "depth": "variant",
+   "user_facing": "variant",
+   "completeness": "variant",
+   "reason": "A provides clearer insights into the drivers of the loss, explains key factors, and suggests actionable next steps, making it more user-friendly and complete."
+  },
+  "r2|lean2|5": {
+   "winner": "base",
+   "depth": "base",
+   "user_facing": "base",
+   "completeness": "base",
+   "reason": "A provides clearer structure, full scope of data availability, and options for next steps; B lacks clarity on limits and depth of analysis."
+  },
+  "r2|lean2|6": {
+   "winner": "base",
+   "depth": "base",
+   "user_facing": "base",
+   "completeness": "base",
+   "reason": "B provides a clearer explanation of the difference, includes calculations, and offers actionable next steps, while A is less detailed and lacks actionable insights."
+  }
+ }
+}

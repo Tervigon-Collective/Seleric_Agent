@@ -1,0 +1,35 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_8f154f930e5c4a37845bfd9541e457b2",
+ "mission": "MS3-62d05ba67c",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 13,
+ "elapsed_s": 9.65,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 9,
+  "measured": 9,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "In September 2026, the total orders were 396, generating net sales of \u20b97,49,161. The top campaigns by net sales were:\n\n- **[Google Build] PMax - Seasonal New | 27th May**: \u20b91,98,996 from 115 orders.\n- **[Google Build] Brand Search | 5th March**: \u20b971,275 from 40 orders.\n- **TH-152-TANGLELEASH-1SEP**: \u20b956,263 from 29 orders.\n- **TH-284-CRABDASH TOY-1SEP**: \u20b944,389 from 25 orders.\n- **TH-336-PAWTECH-1SEP**: \u20b944,274 from 22 orders.\n\nThe remaining campaigns contributed smaller amounts. The data is scoped to the default brand, Tilting Heads.\n\nPeriod: 2026-09-01 to 2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14  \nNext: Drill down into the top campaign's performance by product?"
+}

@@ -1,0 +1,47 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_caaef5f76e4d4f298bf56422603b7a89",
+ "mission": "MS3-4fc8147887",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 76,
+ "elapsed_s": 70.246,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 36,
+  "measured": 36,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "metrics_query",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Top losing Meta campaign last week was TH-383-SUSPENDER-26SEP-ADV+ \u2014 it lost \u20b912,229 (order\u2011date P&L), spending \u20b923,526 for a net ROAS of 0.5x (break\u2011even ROAS 1.4x), so ads didn\u2019t cover product margin.\n\nEvidence \u2014 top Meta campaigns losing money (Period: 2026-10-07 \u2192 2026-10-13; order-date P&L; brand: Tilting Heads)\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b923,526 \u00b7 Loss \u20b912,229 \u00b7 Net ROAS 0.5x \u00b7 Break\u2011even ROAS 1.4x  \n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b924,101 \u00b7 Loss \u20b910,703 \u00b7 Net ROAS 0.6x \u00b7 Break\u2011even ROAS 1.4x  \n- CAT TOY CS-26SEP \u2014 Ad spend \u20b99,707 \u00b7 Loss \u20b98,148 \u00b7 Net ROAS 0.2x \u00b7 Break\u2011even ROAS 1.5x  \n- TH-445-PROSUSPENDERBOOTS-6OCT \u2014 Ad spend \u20b97,399 \u00b7 Loss \u20b96,963 \u00b7 Net ROAS 0.1x \u00b7 Break\u2011even ROAS 5.0x  \n- DOG DAD T-SHIRT-CS-06OCT \u2014 Ad spend \u20b912,323 \u00b7 Loss \u20b96,776 \u00b7 Net ROAS 0.5x \u00b7 Break\u2011even ROAS 1.7x  \n- DOG SHOES-10OCT-CS \u2014 Ad spend \u20b96,714 \u00b7 Loss \u20b96,714 \u00b7 Net ROAS 0.0x \u00b7 Break\u2011even ROAS \u2014  \n- TH-222-WINGBIRD-23SEP \u2014 Ad spend \u20b921,626 \u00b7 Loss \u20b96,550 \u00b7 Net ROAS 0.7x \u00b7 Break\u2011even ROAS 1.6x  \n- DOG MOM T-SHIRT-CS-06OCT \u2014 Ad spend \u20b910,268 \u00b7 Loss \u20b96,519 \u00b7 Net ROAS 0.4x \u00b7 Break\u2011even ROAS 1.6x\n\nWorth noting: numbers are order\u2011date P&L for Tilting Heads; the query returned the top 50 campaigns and hit a row limit, so there may be additional losing campaigns not shown here.\n\nPeriod: 2026-10-07..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Do you want a diagnostic for the top 5 losing campaigns to see whether losses come from low ROAS, high COGS/returns, or unusually high ad spend?"
+}

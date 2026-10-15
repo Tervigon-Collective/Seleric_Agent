@@ -1,0 +1,31 @@
+{
+ "n": 16,
+ "aspect": "replay11",
+ "q": "run a focused campaign funnel drill for the top 10 campaigns (LPV \u2192 sessions \u2192 add_to_carts \u2192 orders \u2192 contribution_margin / ROAS) to confirm per-campaign conversion rates and isolate whether audience, creative or landing UX is driving low efficiency.",
+ "thread": "thread_3b9526bc83184ac79509a05d8c0e14f9",
+ "mission": "MS3-7b20feb4bd",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 51,
+ "elapsed_s": 48.21,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 19,
+  "measured": 19,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Short answer: Two Meta campaigns \u2014 TH-383-SUSPENDER-29SEP and TH-383-SUSPENDER-26SEP-ADV+ \u2014 look like the main sources of low-intent traffic (many LPVs/sessions but few orders and very low ROAS); among the top\u201110 spenders only [Google Build] PMax - Seasonal New shows a clearly positive net ROAS (1.2x) and the largest contribution margin.\n\nKey evidence (Campaigns = top 10 by ad spend, 1\u201313 Oct)\n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b949,163 \u00b7 LPVs 3,356 \u00b7 Sessions 4,192 \u00b7 Add-to-carts 200 \u00b7 Orders 20 \u00b7 Contribution margin \u20b921,739 \u00b7 Net ROAS 0.4 \u2192 Many landing views/sessions but poor conversion and ROAS (low-intent/low-efficiency).\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b955,793 \u00b7 LPVs 2,546 \u00b7 Sessions 2,400 \u00b7 Add-to-carts 189 \u00b7 Orders 22 \u00b7 Contribution margin \u20b922,116 \u00b7 Net ROAS 0.4 \u2192 same pattern as above.\n- [Google Build] PMax - Seasonal New \u2014 Ad spend \u20b950,646 \u00b7 Sessions 3,325 \u00b7 Add-to-carts 704 \u00b7 Orders 65 \u00b7 Contribution margin \u20b962,747 \u00b7 Net ROAS 1.2 \u2192 high add-to-cart funnel and the only top\u201110 campaign with ROAS >1.\n- Others (Brand Search, Wingbird, PawTech, Scratchlounge) show moderate sessions and add\u2011to\u2011carts but net ROAS <1 (contribution margins positive but not enough vs spend). Several campaigns (notably Google demand gen) have no LPV rows here \u2014 No data available for LPV (platform mismatch).\n\nWhat this says about your hypotheses\n- Broader / lower\u2011intent audiences: supported for the two TH-383 campaigns (high LPVs/sessions but low orders and ROAS \u2014 classic low\u2011intent signal).\n- Creative / landing mismatch or UX friction: plausible for the same two campaigns (high LPVs but low add-to-cart \u2192 landing or creative relevance issue). The data does not yet single out creative vs landing; we have evidence pointing to an LPV \u2192 sessions \u2192 add-to-cart drop.\n- Higher volume UX friction under load: not supported by these numbers alone \u2014 sessions are higher, but conversion drops are concentrated in specific campaigns rather than site-wide.\n\nPeriod: 2026-10-01..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Want me to drill those two low-intent campaigns by creative and landing page (LPV \u2192 add_to_cart \u2192 orders) so we can tell whether the problem is the creative targeting or the landing UX?"
+}

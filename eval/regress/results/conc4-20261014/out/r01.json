@@ -1,0 +1,61 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_1993f6e8761f4b689e98a9043c3db82a",
+ "mission": "MS3-56d0152d7e",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 82,
+ "elapsed_s": 71.054,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 7,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 13,
+  "measured": 13,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": false,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Your net sales yesterday (\u20b991,220) were 12% below their usual level of \u20b91,03,241, but 127% higher than the day before. This is within the normal day-to-day range, so no unusual change occurred.\n\n- **Orders fell**: From a usual 57 to 45 (-21%), contributing significantly to the drop in net sales.\n- **Average Order Value (AOV) rose**: From a usual \u20b91,809 to \u20b92,027 (+12%), partially offsetting the decline in orders.\n- **Ad spend increased**: From \u20b938,661 to \u20b950,440 (+30%), within its normal range, but correlated with the sales change.\n- **Return revenue remained zero**: No returns were recorded, so this did not contribute to the change.\n\nThe data does not point to a single cause for the drop. While orders decreased, the rise in AOV and ad spend suggests a shift in customer behavior or product mix. \n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Would you like to explore the product or channel breakdown for more insights?"
+}

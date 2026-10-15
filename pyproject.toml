@@ -78,6 +78,8 @@ ignore = ["BLE001"]
 "src/seleric_swarm/forecasting/{score,backtest}.py" = ["DTZ011", "DTZ003"]
 # `v != v` is the NaN test in the standalone Chronos service.
 "chronos/*.py" = ["PLR0124"]
+# Offline A/B harness scripts (run by hand): blocking file reads, no check= on subprocess.
+"eval/regress/ab/*.py" = ["SIM115", "PLW1510", "ASYNC230"]
 "src/seleric_swarm/llm/adapters/fake.py" = ["TRY203", "DTZ005"]
 "src/seleric_swarm/services/time_range.py" = ["DTZ005"]
 

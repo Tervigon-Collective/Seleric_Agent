@@ -1,0 +1,56 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_2dc1466e88c842d8b32b01764354c038",
+ "mission": "MS3-6e65057f1b",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 60,
+ "elapsed_s": 54.464,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 17,
+  "measured": 17,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Your sales did not drop yesterday \u2014 net sales were \u20b991,220 on 2026-10-13, up from \u20b940,119 on 2026-10-12 (+127%); compared with a blended \"usual\" day it was modestly lower (\u2248\u221212%), but this sits inside the metric's normal range so there is no single unusual one-day failure to explain. \n\n- Key numbers (order-date): 2026-10-12 \u2192 2026-10-13\n  - Net sales: \u20b940,119 \u2192 \u20b991,220 (+127%)\n  - Orders: 26 \u2192 45 (+73%)\n  - Net AOV: \u20b91,543 \u2192 \u20b92,027 (+31%)\n  - Discounts: \u20b91,553 \u2192 \u20b95,173 (higher; \u2212\u20b91,824 effect vs usual)\n- What changed and why it matters:\n  - Higher order volume (+73%) and higher AOV (+31%) drove the jump in net sales \u2014 both moved together and explain the increase arithmetically.\n  - Discounts rose, which reduced net sales versus the blended usual day, but the order + AOV gains more than offset that for yesterday.\n  - The diagnosis engine found no single upstream cause (campaign edits, site outage, or an anomalous return spike) that statistically explains a drop \u2014 the day is within expected variation.\nWorth checking: drill net sales by campaign/ad and by top products for 2026-10-13 to see which campaigns or products contributed the extra orders and higher AOV.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Would you like a campaign-level or product-level breakdown for 2026-10-13?"
+}

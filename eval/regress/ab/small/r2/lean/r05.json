@@ -1,0 +1,35 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_a40ed0bb65ee4ba9a5f22bb79f2cb648",
+ "mission": "MS3-2126a3e339",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 16.176,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 12,
+  "measured": 12,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Top line: Here are orders and net sales by campaign for 1\u201330 Sep 2026 (order-date, default brand Tilting Heads). The largest line is an uncategorised campaign_name (null) \u2014 check tagging. \n\nWhat stands out:\n- Largest campaign rows by net sales: (1) uncategorised \u2014 Orders 396 \u00b7 Net sales \u20b9749,161; (2) [Google Build] PMax - Seasonal New | 27th May \u2014 Orders 115 \u00b7 Net sales \u20b9198,996; (3) [Google Build] Brand Search | 5th March \u2014 Orders 40 \u00b7 Net sales \u20b971,275; (4) TH-152-TANGLELEASH-1SEP \u2014 Orders 29 \u00b7 Net sales \u20b956,263; (5) TH-284-CRABDASH TOY-1SEP \u2014 Orders 25 \u00b7 Net sales \u20b944,389. These five are the top-selling campaign_name rows in September and together account for a material share of campaign-tagged sales. \n- There are 88 rows (campaign_name values) returned for the month; many smaller campaign rows follow the top list. \n- Caveat: one large row has campaign_name = null (Orders 396, Net sales \u20b9749,161) \u2014 this often means missing campaign tagging or offline attribution and materially affects campaign-level totals.\n\nWorth checking: investigate the null campaign_name row (why 396 orders are untagged) and re-run sorted top-10 by net sales or a totals query if you want the month\u2019s complete sum.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Show the top 10 campaigns by net sales (Sep 2026)?"
+}

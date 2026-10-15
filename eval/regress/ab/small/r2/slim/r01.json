@@ -1,0 +1,60 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_f70df1556414459a8e475949f6b39010",
+ "mission": "MS3-35ce39f7de",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 61,
+ "elapsed_s": 48.991,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "31.3%",
+   "30.5%"
+  ],
+  "numbers": 18,
+  "measured": 16,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Your premise is reversed: sales did not drop on 2026-10-13 \u2014 net sales rose from \u20b940,119 on 2026-10-12 to \u20b991,220 on 2026-10-13 (+127%). That means yesterday was better, not worse, versus the day before.\n\nWhat changed (2026-10-12 \u2192 2026-10-13)\n- Orders rose 26.00 \u2192 45.00 (+73.1%), driving most of the increase in net sales (orders \u00d7 AOV). This is the largest volume change.\n- Net AOV rose \u20b91,543 \u2192 \u20b92,027 (+31.3%), so each order brought more revenue as well.\n- Ad spend increased \u20b938,661 \u2192 \u20b950,442 (+30.5%); sessions and ad spend moved together the same day (association found, not proven cause).\n- Discounts widened \u20b91,553 \u2192 \u20b95,173 (added cost to net sales), and net sales deductions rose \u20b95,110 \u2192 \u20b96,569 \u2014 these trimmed part of the upside but did not reverse the gain.\n- Return / cancel revenue fell (\u20b94,913 \u2192 \u20b91,601) which also reduced gross-sales friction and supported net sales.\n\nConfidence and interpretation\n- The statistical check found no single causal driver meeting the threshold; several levers moved together (orders, AOV, ad spend). The overall change is within the normal historical range for net sales.\nWorth checking: drill into which campaigns and products contributed the higher orders and AOV (the diagnosis flagged one ad and a few campaigns as unusual).\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Drill into which campaigns or products drove the orders and AOV increase on 2026-10-13?"
+}

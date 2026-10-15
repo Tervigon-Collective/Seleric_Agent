@@ -1227,39 +1227,20 @@ async def _diagnose(
     compare_end: datetime | None = None,
     drivers: list[str] | None = None,
 ) -> ToolResult:
-    """Explain why a metric changed: event size, what/where it changed, and evidence-ranked causes.
-
-    Use for any "why did X rise/fall/change" question after resolving X to a
-    catalogue metric id. ``event_start``/``event_end`` default to the
-    question's period (else yesterday). ``claimed_direction`` is the direction
-    the user asserts ("down" for fell/dropped, "up" for rose/increased) — the
-    tool checks it against the data. ``filters`` scopes the outcome (e.g. one
-    channel). Returns the event magnitude vs a same-weekday reference, an exact
-    decomposition, segment localisation (incl. Simpson's paradox), and upstream
-    drivers estimated with DoWhy + refuters, each classified supported_cause /
-    likely_contributor / correlation / insufficient_evidence. Report those
-    labels faithfully; do not upgrade them.
-
-    Period comparisons ("this month vs last month", "vs the previous period"):
-    pass ``compare_start``/``compare_end`` for the period compared with (same
-    length as the event window). Any length works; a window longer than two weeks is always
-    compared with the equal-length period just before it. The result then
-    splits the difference between the two periods exactly by component and by
-    segment; upstream drivers are not estimated for period comparisons.
-
-    ``search_breadth``: 0 (default) is right for almost every question. 1 and 2 widen the search to more segmenting
-    dimensions and more candidate drivers and add ~7-15 s each; use them only after a run at 0 localised nothing.
-
-    ``drivers``: catalogue metric ids the user names as possible explanations ("check whether it came from CPM,
-    CTR, checkout conversion …" — resolve each to its id first). Each one is fetched and reported with how it
-    moved over the same days, and tested as a cause where it can be; report every one of them.
-
-    For a ratio outcome (ROAS, CAC, a cost or a rate) the result adds an exact LEVER LADDER: the outcome as a product
-    of the funnel stages between its parts, each stage's effect on it. Name the stages you want in the ladder as
-    ``drivers`` — the rates of the funnel (cost per mille, click-through, conversion, the cost per click) from the
-    catalogue; without any it shows what an order cost and what an order was worth. When ``filters`` scope the
-    outcome to particular campaigns or ads, the result also lists the edits logged on them (budget, status, bid
-    strategy) on the event days against the usual days.
+    """Explain why a metric changed: event size, where it sat, evidence-ranked causes. Use for any "why did X
+    rise/fall/change" question (metric_id = catalogue id). event_start/event_end default to the question's
+    period (else yesterday); claimed_direction is what the user asserts ("down"/"up"), checked against the data;
+    filters scope the outcome. Returns the event size vs a same-weekday reference, an exact decomposition,
+    segment localisation (incl. Simpson's paradox) and DoWhy-estimated drivers labelled supported_cause /
+    likely_contributor / correlation / insufficient_evidence (report faithfully, never upgrade). Period
+    comparisons: pass compare_start/compare_end (same length as the event window); a window over two weeks is
+    compared with the equal-length period before it, the difference is split exactly by component and segment,
+    and drivers are not estimated. search_breadth 0 (default) fits nearly every question; 1-2 widen the search
+    at +7-15 s each, use only after 0 localised nothing. drivers: catalogue ids the user names as possible
+    explanations (resolve each first); each is fetched, reported and tested where it can be; report every one.
+    For a ratio outcome (ROAS, CAC, a rate) the result adds an exact LEVER LADDER of funnel stages: name the
+    stages you want as drivers. With campaign/ad filters it also lists logged edits (budget, status, bid) on
+    event vs usual days.
     """
     if (unknown := await _data.reject_unknown_metric(ctx, metric_id)) is not None:
         return unknown

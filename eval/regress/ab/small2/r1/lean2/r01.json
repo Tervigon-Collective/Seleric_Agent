@@ -1,0 +1,59 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_453213e541604e6db2fb9a6fdfd52037",
+ "mission": "MS3-18f1455f2c",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 51,
+ "elapsed_s": 45.615,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "127.4%",
+   "31.3%"
+  ],
+  "numbers": 22,
+  "measured": 20,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Sales did not fall yesterday versus the day before \u2014 net sales were \u20b991,220 on 2026-10-13, up 127.4% from \u20b940,119 on 2026-10-12. Versus the system\u2019s \u201cusual\u201d day the level was 12.0% lower (usual = \u20b9103,283), but that difference is within normal day-to-day variation and the diagnosis found no supported causal driver.\n\nWhat changed (ordered by impact)\n- Volume and price both rose: Orders 26 \u2192 45 (+73.1%) and Net AOV \u20b91,543 \u2192 \u20b92,027 (+31.3%) \u2014 together they explain the jump from \u20b940,119 to \u20b991,220.  \n- Component shifts: Gross sales fell vs the usual (\u20b9111,567 \u2192 \u20b9102,961, -\u20b98,605 effect) and discounts were higher (\u20b93,349 \u2192 \u20b95,173, -\u20b91,824 effect) \u2014 these moved net sales versus the usual baseline but did not create an unusual one-day event.  \n- Return / cancel revenue was much lower than usual (\u20b917,414 \u2192 \u20b91,601, a \u2212\u20b915,813 effect on gross sales), which is the largest arithmetic contributor to the difference from the usual level.  \n- Campaign/ad signals to review: one ad (TH-471-PLAYSCRATCHLOUNGE_IMG_6516) appeared with \u20b924,962 and several TH-383 campaign ads dropped to zero; these are notable shifts but the data cannot prove they caused the net-sales movement.\n\nWorth checking: review the two campaigns/ads named above and the unusually low return/cancel revenue on 2026-10-13 to see if operational timing or reporting explain the \u201cusual\u201d gap.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Do you want a campaign-level breakdown for 2026-10-12 vs 2026-10-13?"
+}

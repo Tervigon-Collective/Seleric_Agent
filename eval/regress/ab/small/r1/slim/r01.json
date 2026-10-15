@@ -1,0 +1,60 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_57d3f910a73640218d794f33c219366b",
+ "mission": "MS3-e1180fd44d",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 51,
+ "elapsed_s": 44.489,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [
+   "127.4%",
+   "31.4%"
+  ],
+  "numbers": 21,
+  "measured": 19,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Sales did not drop \u2014 they rose. Net sales (order date) were \u20b991,220 on 2026-10-13 compared to \u20b940,119 on 2026-10-12, an increase of 127.4%. Yesterday was a stronger day, not a decline.\n\nWhat changed (order-date figures)\n- Biggest drivers: Orders rose 26 \u2192 45 (+73.1%) and Net AOV rose \u20b91,543 \u2192 \u20b92,027 (+31.4%); orders explain ~66% of the sales move and AOV ~34% of it.  \n- Channel concentration: Meta ad-driven sales jumped from \u20b96,290 \u2192 \u20b947,854 and accounted for about 81% of the increase versus the comparison day. Google also rose but at smaller scale.  \n- Other movements: Discounts increased (\u20b91,553 \u2192 \u20b95,173), which slightly reduced net sales; net sales deductions rose modestly (\u20b95,110 \u2192 \u20b96,569). Conversion rate improved (0.46% \u2192 1.08%) and sessions were roughly flat (3,254 \u2192 3,434).\n\nConfidence and caveats\n- The period totals and the component split are exact; however a few tax lines failed to fetch (non-critical for this headline). Today\u2019s and intraday data are partial; these numbers are full-day for the dates shown.\n\nWorth checking: did you mean a different comparison date or the finance (P&L) basis? I can drill into product-level or campaign/ad-level contributors on 2026-10-13 if you want.\n\nPeriod: 2026-10-12..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Drill into which products or ads on 2026-10-13 contributed most to the net sales increase?"
+}

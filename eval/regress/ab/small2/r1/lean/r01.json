@@ -1,0 +1,56 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_b03a302ddbd34e6aacdda0b2c556d12c",
+ "mission": "MS3-11ce58f9bd",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 43,
+ "elapsed_s": 39.638,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 23,
+  "measured": 23,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Net sales did not drop \u2014 they rose sharply on 2026-10-13 to \u20b991,220 from \u20b940,119 on 2026-10-12 (+127%). In short: sales increased, driven by more orders and a higher average order value, especially on Meta.\n\n- What moved (size): Net sales \u20b940,119 \u2192 \u20b991,220 (+127%). Orders 26 \u2192 45 (+73%) and Net AOV \u20b91,543 \u2192 \u20b92,027 (+31%). Together, orders explain \u224866% of the sales lift and higher AOV \u224834%.\n- Biggest contributor by channel: Meta rose from \u20b96,290 \u2192 \u20b947,854 and accounts for the single largest platform share of the change; Google rose modestly (\u20b911,847 \u2192 \u20b916,862).\n- What changed inside the order mix: units sold increased 27 \u2192 61 (+126%); units per order and AOV both rose (units/order 1.04 \u2192 1.36, AOV \u20b92,116 \u2192 \u20b92,694), so more items and higher-priced baskets.\n- Data notes & confidence: period totals and the component split are exact; daily values overlap a lot (normal day-to-day variation). A few tax-series failed to fetch but that does not change the net sales result.\n\nWorth checking: drill to Meta campaigns/ads that spiked (the diagnosis flagged specific ads and a few shipping-state sales increases).\n\nPeriod: 2026-10-12..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Show the top Meta campaigns and ads that drove the increase on 2026-10-13."
+}

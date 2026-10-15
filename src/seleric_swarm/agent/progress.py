@@ -9,7 +9,8 @@ it. With no sink registered, nothing is emitted and the run is unchanged.
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterable
+import time
+from collections.abc import AsyncIterable, Callable
 from typing import Any
 
 from pydantic_ai import RunContext
@@ -20,6 +21,8 @@ from pydantic_ai.messages import (
     FunctionToolResultEvent,
     PartDeltaEvent,
     PartStartEvent,
+    TextPart,
+    TextPartDelta,
     ThinkingPart,
     ThinkingPartDelta,
 )
@@ -96,11 +99,90 @@ def _tool_problem(part: Any) -> tuple[str | None, bool]:
         return (text if len(text) <= _PROBLEM_MAX_CHARS else text[: _PROBLEM_MAX_CHARS - 1] + "…", False)
 
 
-def progress_handler(mission_id: str):
-    """An ``event_stream_handler`` that reports each tool call and its outcome."""
+class AnswerStream:
+    """Forwards the model's answer text to ``on_stream`` while it is generated, in small coalesced chunks.
+
+    What reached the user is remembered, so the end of the turn can skip a repeat when the final text is what was
+    streamed and send ``reset`` + the final text when it is not (ids replaced, a correction pass, a note added)."""
+
+    FLUSH_CHARS = 48
+    FLUSH_S = 0.12
+
+    def __init__(self, on_stream: Callable[[str, str], None], clock: Callable[[], float] = time.monotonic) -> None:
+        self._on_stream = on_stream
+        self._clock = clock
+        self._sent: list[str] = []
+        self._buffer: list[str] = []
+        self._last_flush = clock()
+        self.first_text_at: float | None = None
+
+    def text(self, delta: str) -> None:
+        if not delta:
+            return
+        if self.first_text_at is None:
+            self.first_text_at = self._clock()
+        self._buffer.append(delta)
+        if sum(len(b) for b in self._buffer) >= self.FLUSH_CHARS or self._clock() - self._last_flush >= self.FLUSH_S:
+            self.flush()
+
+    def flush(self) -> None:
+        if self._buffer:
+            chunk = "".join(self._buffer)
+            self._buffer.clear()
+            self._sent.append(chunk)
+            self._on_stream("delta", chunk)
+        self._last_flush = self._clock()
+
+    def discard(self) -> None:
+        """What was shown is not the answer (tool calls followed it, or it is being redone)."""
+        self._buffer.clear()
+        if self._sent:
+            self._sent.clear()
+            self._on_stream("reset", "")
+
+    def finish(self, answer: str) -> None:
+        """The turn's final text: nothing if the user already has exactly it, else replace it."""
+        self.flush()
+        shown = "".join(self._sent)
+        if shown.strip() == answer.strip():
+            return
+        self.discard()
+        if answer.strip():
+            self._sent.append(answer)
+            self._on_stream("delta", answer)
+
+
+def _feed_answer(event: Any, answer: AnswerStream, state: dict[str, Any]) -> None:
+    """One stream event of a model response -> the answer stream. State is per response."""
+    if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
+        state["held"].append(event.part.content or "")
+    elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+        state["held"].append(event.delta.content_delta or "")
+    elif isinstance(event, FinalResultEvent):
+        state["answering"] = True
+    elif isinstance(event, FunctionToolCallEvent):
+        # tool calls follow the text of this response: it was narration, not the answer
+        state["held"].clear()
+        state["answering"] = False
+        answer.discard()
+        return
+    if state["answering"] and state["held"]:
+        for chunk in state["held"]:
+            answer.text(chunk)
+        state["held"].clear()
+
+
+def progress_handler(mission_id: str, answer: AnswerStream | None = None):
+    """An ``event_stream_handler`` that reports each tool call and its outcome.
+
+    ``answer`` also receives the model's text as it is generated. Text is held back until the response is known to
+    be an answer (``FinalResultEvent``) and withdrawn if tool calls follow it."""
 
     async def handler(_ctx: RunContext[Any], events: AsyncIterable[AgentStreamEvent]) -> None:
+        state: dict[str, Any] = {"held": [], "answering": False}
         async for event in events:
+            if answer is not None:
+                _feed_answer(event, answer, state)
             if isinstance(event, FinalResultEvent):
                 emit_progress(mission_id, "agent.answering", "Writing the answer", {})
             elif isinstance(event, FunctionToolCallEvent):
@@ -144,5 +226,7 @@ def progress_handler(mission_id: str):
                         "Thinking…",
                         {"delta": delta},
                     )
+        if answer is not None:
+            answer.flush()
 
     return handler

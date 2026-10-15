@@ -46,7 +46,14 @@ from seleric_swarm.agent.grounding import (
 from seleric_swarm.agent.local_tools import build_local_tools
 from seleric_swarm.agent.mcp_toolset import TurnState, build_mcp_tools
 from seleric_swarm.agent.model import begin_loop_effort, loop_effort
-from seleric_swarm.agent.progress import emit_progress, has_progress_sink, progress_handler
+from seleric_swarm.agent.model_health import LIVE_STREAM, StreamStalled
+from seleric_swarm.agent.progress import (
+    AnswerStream,
+    emit_progress,
+    has_progress_sink,
+    progress_handler,
+)
+from seleric_swarm.agent.prompt_slim import slim_defs
 from seleric_swarm.cancellation import MissionCancelledError
 
 _log = logging.getLogger("seleric.agent.loop")
@@ -55,6 +62,7 @@ MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "10"))  # LLM calls per turn, corre
 MAX_TOOL_CALLS = int(os.getenv("AGENT_MAX_TOOL_CALLS", "20"))
 TURN_BUDGET_S = float(os.getenv("AGENT_TURN_BUDGET_S", "150"))  # soft: tools are withdrawn past this
 VERIFY_NUMBERS = os.getenv("AGENT_VERIFY_NUMBERS", "1") == "1"
+STREAM_ANSWER = os.getenv("AGENT_STREAM_ANSWER", "1") == "1"  # tokens reach the user while the answer is written
 BUDGET_NOTICE = ("Tool budget reached. Write the final answer now from the evidence gathered (no tool calls); "
                  "state what remains unverified.")
 RETRY_NOTICE = ("Your previous reply was unusable. Write the final answer now from the evidence already gathered; "
@@ -93,6 +101,13 @@ def degenerate(text: str, finish_reason: str | None = None) -> bool:
     words = "".join(ch if ch.isalnum() else " " for ch in text.lower()).split()
     return finish_reason == "content_filter" or (len(words) > 80 and len(set(words)) / len(words) < 0.3) or \
         finish_reason == "length"
+
+
+def _stalled(exc: BaseException) -> bool:
+    """A live stream broke after it opened (possibly wrapped in an exception group by the tool task group)."""
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_stalled(e) for e in exc.exceptions)
+    return isinstance(exc, StreamStalled)
 
 
 def _finish_reason(messages: list[ModelMessage]) -> str | None:
@@ -215,7 +230,7 @@ async def run_turn(
         if budget.spent(ctx.usage):
             budget.forced = True
             return []
-        return defs
+        return slim_defs(defs)
 
     tools = [*build_mcp_tools(gateway, tool_defs, state), *build_local_tools(state, snapshot_loader=snapshot_loader)]
     llm_calls: list[dict[str, Any]] = []
@@ -229,14 +244,33 @@ async def run_turn(
         capabilities=[PrepareTools(prepare)],
         retries=2,
     )
-    handler = progress_handler(mission_id) if has_progress_sink(mission_id) else None
+    live = on_stream is not None and STREAM_ANSWER
+    answer_stream = AnswerStream(on_stream, clock=time.perf_counter) if on_stream is not None else None
+    handler = progress_handler(mission_id, answer_stream) if (answer_stream or has_progress_sink(mission_id)) else None
     limits = UsageLimits(request_limit=MAX_STEPS + 6, tool_calls_limit=MAX_TOOL_CALLS + 8)
 
     async def run(prompt: str, messages: list[ModelMessage]) -> tuple[str, list[ModelMessage]]:
-        result = await agent.run(
-            prompt, deps=deps, message_history=messages, usage=usage, usage_limits=limits, event_stream_handler=handler
-        )
-        return (result.output or "").strip(), result.all_messages()
+        streaming = live
+        while True:
+            token = LIVE_STREAM.set(streaming)
+            try:
+                result = await agent.run(
+                    prompt, deps=deps, message_history=messages, usage=usage, usage_limits=limits,
+                    event_stream_handler=handler,
+                )
+                return (result.output or "").strip(), result.all_messages()
+            except Exception as exc:
+                if not (streaming and _stalled(exc)):
+                    raise
+                # The provider broke the stream after it opened: show nothing of it, redo the turn unstreamed
+                # (identical tool calls are served from the turn's cache).
+                _log.warning("v3_loop_stream_stalled mission=%s detail=%s", mission_id, exc)
+                stats["stream_fallbacks"] = stats.get("stream_fallbacks", 0) + 1
+                if answer_stream is not None:
+                    answer_stream.discard()
+                streaming = False
+            finally:
+                LIVE_STREAM.reset(token)
 
     limitations: list[str] = []
     emit_progress(mission_id, "agent.stage", "Working on it", {"stage": "agent"})
@@ -245,6 +279,8 @@ async def run_turn(
         if degenerate(answer, _finish_reason(messages)):
             stats["degenerate_retries"] += 1
             emit_progress(mission_id, "agent.revising", "The model returned unusable output — retrying once", {"reason": "degenerate"})
+            if answer_stream is not None:
+                answer_stream.discard()
             if state.tool_calls and isinstance(messages[-1], ModelResponse):
                 # evidence is already gathered: redo only the filtered / runaway step instead of the whole turn
                 answer, messages = await run(RETRY_NOTICE, messages[:-1])
@@ -266,6 +302,8 @@ async def run_turn(
         stats["revisions"] += 1
         emit_progress(mission_id, "agent.revising", "Checking the figures against the data", {"reason": "grounding", "issues": issues})
         budget.forced = False
+        if answer_stream is not None:
+            answer_stream.discard()  # the draft is being corrected: what was shown is withdrawn
         try:
             revised, _ = await run(correction_message(issues), messages)
         except UsageLimitExceeded:
@@ -291,6 +329,8 @@ async def run_turn(
     # elapsed when the answer is dumped without an LLM step (limit / empty).
     ttft_ms = timing.get("ttft_ms")
     answer_ttft_ms = timing.get("last_response_ms")
+    if answer_stream is not None and answer_stream.first_text_at is not None:
+        answer_ttft_ms = int((answer_stream.first_text_at - started) * 1000)  # first token the user could read
     if answer.strip() and answer_ttft_ms is None:
         answer_ttft_ms = elapsed_ms
     stats.update(
@@ -302,7 +342,7 @@ async def run_turn(
         errors=state.errors[:10],
     )
     status = "failed" if not answer.strip() else ("partial" if limitations else "completed")
-    if on_stream is not None and answer.strip():
-        on_stream("delta", answer)
+    if answer_stream is not None:
+        answer_stream.finish(answer)
     return LoopResult(answer=answer, status=status, state=state, grounding=final, issues=issues, stats=stats,
                       limitations=limitations, forced_final=budget.forced)

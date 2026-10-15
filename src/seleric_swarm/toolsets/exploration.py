@@ -132,22 +132,13 @@ async def explore_data(
     filters: dict[str, str | list[str]] | None = None,
     depth: Depth = "focus",
 ) -> ToolResult:
-    """Explore the data for what is unusual or worth knowing; returns ranked, tested findings.
-
-    Use when the user wants the data explored rather than one value fetched —
-    "anything unusual?", "how are we doing?", "what should I look at?", "dig
-    into <segment>". With no ``metric_ids`` it starts from the catalogue's base
-    metrics; pass ids to explore specific ones. ``period_start``/``period_end``
-    default to the question's period, else the last 7 complete days; each
-    window is compared with the one before it and with the variation of the
-    windows before that. ``filters`` restricts the exploration to a segment
-    (e.g. a follow-up probe's ``{dimension: value}``). ``depth``: "scan"
-    (fastest, 3 metrics x 2 breakdowns), "focus" (default), "deep" (widest).
-
-    Findings: window changes, trends, step changes, which segments a change
-    sits in (and which moved against it), a segment far larger than the rest,
-    and metrics that move together. Each passed a multiple-testing control; each
-    comes with follow-up probes to run next.
+    """Explore the data for what is unusual or worth knowing; returns ranked, tested findings. Use when the user
+    wants exploration rather than one value ("anything unusual?", "what should I look at?", "dig into
+    <segment>"). No metric_ids = the catalogue's base metrics. period_start/period_end default to the question's
+    period, else the last 7 complete days; each window is compared with the one before and with the variation of
+    earlier windows. filters restrict to a segment. depth: scan (fastest) / focus (default) / deep. Findings
+    (window changes, trends, step changes, where a change sits, outsized segments, co-moving metrics) passed a
+    multiple-testing control and come with follow-up probes.
     """
     filters = {k: v for k, v in (filters or {}).items() if v not in (None, "", [])}
     for m in metric_ids or []:
