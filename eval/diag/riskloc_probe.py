@@ -107,7 +107,7 @@ def main(fixture_id: str) -> None:
            "event_median_coherent_share": {k: round(statistics.median(r["coherent_share"][k][0] for r in rows), 3) for k in range(1, MAX_ORDER + 1)} if rows else {},
            "ordinary_concentration": {k: {"median": q(null[k], 0.5), "p90": q(null[k], 0.9)} for k in null},
            "rows": rows}
-    path = HERE / "results" / "p0_9_riskloc_probe.json"
+    path = HERE / "results" / f"p0_9_riskloc_probe_{fixture_id}.json"
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(out, indent=1))
     print(json.dumps({k: v for k, v in out.items() if k != "rows"}, indent=1))

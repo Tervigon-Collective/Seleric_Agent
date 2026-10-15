@@ -1,0 +1,2958 @@
+{
+ "fixture": "brand20_leaf_net_sales_1y",
+ "sha256": "589ff147c177889bc22a9db64e659b0897c13d15a1a47d57300e4b405a3ee1fb",
+ "dimensions": [
+  "channel",
+  "ad_platform",
+  "payment_bucket",
+  "is_new_customer",
+  "campaign_name"
+ ],
+ "leaves": 2435,
+ "days_scored": 337,
+ "events": 52,
+ "ordinary_days": 228,
+ "event_median": {
+  "1": 0.697,
+  "2": 0.482,
+  "3": 0.349
+ },
+ "event_median_share_of_change": {
+  "1": 0.823,
+  "2": 0.585,
+  "3": 0.424
+ },
+ "event_median_coherent_share": {
+  "1": 0.823,
+  "2": 0.585,
+  "3": 0.424
+ },
+ "ordinary_concentration": {
+  "1": {
+   "median": 0.453,
+   "p90": 0.694
+  },
+  "2": {
+   "median": 0.387,
+   "p90": 0.566
+  },
+  "3": {
+   "median": 0.292,
+   "p90": 0.429
+  }
+ },
+ "rows": [
+  {
+   "day": "2026-04-26",
+   "z": 6.09,
+   "change": 256574,
+   "share_of_change": {
+    "1": [
+     0.841,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.55,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.438,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.841,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.55,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.438,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.753,
+    "2": 0.493,
+    "3": 0.392
+   }
+  },
+  {
+   "day": "2026-06-24",
+   "z": 5.8,
+   "change": 246087,
+   "share_of_change": {
+    "1": [
+     0.764,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.52,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.365,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.764,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.52,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.365,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.702,
+    "2": 0.478,
+    "3": 0.336
+   }
+  },
+  {
+   "day": "2026-07-02",
+   "z": 5.34,
+   "change": 229361,
+   "share_of_change": {
+    "1": [
+     0.693,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.471,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.312,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.693,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.471,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.312,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.602,
+    "2": 0.409,
+    "3": 0.271
+   }
+  },
+  {
+   "day": "2026-06-30",
+   "z": 5.28,
+   "change": 227060,
+   "share_of_change": {
+    "1": [
+     0.89,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.67,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.515,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.89,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.67,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.515,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.792,
+    "2": 0.595,
+    "3": 0.458
+   }
+  },
+  {
+   "day": "2026-07-04",
+   "z": 5.06,
+   "change": 219108,
+   "share_of_change": {
+    "1": [
+     0.874,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.625,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.465,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.874,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.625,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.465,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.743,
+    "2": 0.531,
+    "3": 0.395
+   }
+  },
+  {
+   "day": "2026-06-21",
+   "z": 5.05,
+   "change": 218772,
+   "share_of_change": {
+    "1": [
+     0.837,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.551,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.406,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.837,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.551,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.406,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.69,
+    "2": 0.454,
+    "3": 0.335
+   }
+  },
+  {
+   "day": "2026-07-03",
+   "z": 4.92,
+   "change": 214142,
+   "share_of_change": {
+    "1": [
+     0.832,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.64,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.4,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.832,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.64,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.4,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.729,
+    "2": 0.561,
+    "3": 0.35
+   }
+  },
+  {
+   "day": "2026-07-01",
+   "z": 4.86,
+   "change": 211956,
+   "share_of_change": {
+    "1": [
+     0.802,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.536,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.392,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.802,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.536,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.392,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.697,
+    "2": 0.466,
+    "3": 0.341
+   }
+  },
+  {
+   "day": "2026-07-06",
+   "z": 4.83,
+   "change": 210621,
+   "share_of_change": {
+    "1": [
+     0.808,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.54,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.34,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.808,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.54,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.34,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.727,
+    "2": 0.486,
+    "3": 0.306
+   }
+  },
+  {
+   "day": "2026-06-22",
+   "z": 4.47,
+   "change": 197728,
+   "share_of_change": {
+    "1": [
+     0.826,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.68,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.423,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.826,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.68,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.423,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.776,
+    "2": 0.638,
+    "3": 0.397
+   }
+  },
+  {
+   "day": "2026-07-07",
+   "z": 4.4,
+   "change": 195177,
+   "share_of_change": {
+    "1": [
+     0.718,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.51,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.422,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.718,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.51,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.422,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.579,
+    "2": 0.411,
+    "3": 0.341
+   }
+  },
+  {
+   "day": "2026-06-25",
+   "z": 4.17,
+   "change": 186930,
+   "share_of_change": {
+    "1": [
+     0.819,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.612,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.503,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.819,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.612,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.503,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.755,
+    "2": 0.565,
+    "3": 0.464
+   }
+  },
+  {
+   "day": "2026-04-27",
+   "z": 3.89,
+   "change": 176544,
+   "share_of_change": {
+    "1": [
+     0.893,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.589,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.536,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.893,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.589,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.536,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.796,
+    "2": 0.525,
+    "3": 0.477
+   }
+  },
+  {
+   "day": "2026-07-08",
+   "z": 3.84,
+   "change": 174973,
+   "share_of_change": {
+    "1": [
+     0.79,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.615,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.451,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.79,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.615,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.451,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.597,
+    "2": 0.465,
+    "3": 0.341
+   }
+  },
+  {
+   "day": "2026-03-08",
+   "z": 3.82,
+   "change": 173929,
+   "share_of_change": {
+    "1": [
+     0.883,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.767,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.593,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.883,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.767,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.593,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.848,
+    "2": 0.736,
+    "3": 0.57
+   }
+  },
+  {
+   "day": "2026-04-28",
+   "z": 3.38,
+   "change": 157988,
+   "share_of_change": {
+    "1": [
+     0.842,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.482,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.442,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.842,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.482,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.442,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.751,
+    "2": 0.43,
+    "3": 0.394
+   }
+  },
+  {
+   "day": "2026-04-15",
+   "z": 3.28,
+   "change": 154544,
+   "share_of_change": {
+    "1": [
+     0.757,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.547,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.521,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.757,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.547,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.521,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.732,
+    "2": 0.528,
+    "3": 0.503
+   }
+  },
+  {
+   "day": "2026-04-19",
+   "z": 3.26,
+   "change": 153953,
+   "share_of_change": {
+    "1": [
+     0.717,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.466,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.452,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.717,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.466,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.452,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.627,
+    "2": 0.407,
+    "3": 0.395
+   }
+  },
+  {
+   "day": "2026-04-16",
+   "z": 3.21,
+   "change": 151874,
+   "share_of_change": {
+    "1": [
+     0.858,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.598,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.407,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.858,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.598,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.407,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.8,
+    "2": 0.558,
+    "3": 0.38
+   }
+  },
+  {
+   "day": "2026-07-05",
+   "z": 3.12,
+   "change": 148868,
+   "share_of_change": {
+    "1": [
+     0.801,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.535,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.342,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.801,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.535,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.342,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.59,
+    "2": 0.395,
+    "3": 0.252
+   }
+  },
+  {
+   "day": "2026-04-20",
+   "z": 3.06,
+   "change": 146390,
+   "share_of_change": {
+    "1": [
+     0.786,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.502,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.403,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.786,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.502,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.403,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.727,
+    "2": 0.464,
+    "3": 0.372
+   }
+  },
+  {
+   "day": "2026-04-12",
+   "z": 3.0,
+   "change": 144509,
+   "share_of_change": {
+    "1": [
+     0.819,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.732,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.425,
+     [
+      "ad_platform=meta",
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.819,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.732,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.425,
+     [
+      "ad_platform=meta",
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.797,
+    "2": 0.712,
+    "3": 0.414
+   }
+  },
+  {
+   "day": "2026-04-10",
+   "z": 2.91,
+   "change": 141231,
+   "share_of_change": {
+    "1": [
+     0.638,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.518,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)"
+     ]
+    ],
+    "3": [
+     0.518,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.638,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.518,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)"
+     ]
+    ],
+    "3": [
+     0.518,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.592,
+    "2": 0.48,
+    "3": 0.48
+   }
+  },
+  {
+   "day": "2026-06-23",
+   "z": 2.86,
+   "change": 139457,
+   "share_of_change": {
+    "1": [
+     0.761,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.555,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.378,
+     [
+      "ad_platform=meta",
+      "payment_bucket=cod",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.761,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.555,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.378,
+     [
+      "ad_platform=meta",
+      "payment_bucket=cod",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.572,
+    "2": 0.418,
+    "3": 0.284
+   }
+  },
+  {
+   "day": "2026-09-12",
+   "z": 2.85,
+   "change": 138784,
+   "share_of_change": {
+    "1": [
+     0.818,
+     [
+      "payment_bucket=manual"
+     ]
+    ],
+    "2": [
+     0.575,
+     [
+      "payment_bucket=manual",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.453,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "payment_bucket=manual"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.818,
+     [
+      "payment_bucket=manual"
+     ]
+    ],
+    "2": [
+     0.575,
+     [
+      "payment_bucket=manual",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.453,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "payment_bucket=manual"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.697,
+    "2": 0.49,
+    "3": 0.386
+   }
+  },
+  {
+   "day": "2026-04-17",
+   "z": 2.8,
+   "change": 137128,
+   "share_of_change": {
+    "1": [
+     0.832,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.582,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.342,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.832,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.582,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.342,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.747,
+    "2": 0.522,
+    "3": 0.307
+   }
+  },
+  {
+   "day": "2025-12-14",
+   "z": 2.78,
+   "change": 136346,
+   "share_of_change": {
+    "1": [
+     0.953,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.907,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)"
+     ]
+    ],
+    "3": [
+     0.907,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.953,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.907,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)"
+     ]
+    ],
+    "3": [
+     0.907,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.755,
+    "2": 0.718,
+    "3": 0.718
+   }
+  },
+  {
+   "day": "2026-06-26",
+   "z": 2.75,
+   "change": 135406,
+   "share_of_change": {
+    "1": [
+     0.87,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.713,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.383,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.87,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.713,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.383,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.761,
+    "2": 0.624,
+    "3": 0.335
+   }
+  },
+  {
+   "day": "2026-07-09",
+   "z": 2.72,
+   "change": 134251,
+   "share_of_change": {
+    "1": [
+     0.756,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.547,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.396,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.756,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.547,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.396,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.491,
+    "2": 0.356,
+    "3": 0.257
+   }
+  },
+  {
+   "day": "2026-04-14",
+   "z": 2.69,
+   "change": 133016,
+   "share_of_change": {
+    "1": [
+     0.712,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.528,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)"
+     ]
+    ],
+    "3": [
+     0.528,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.712,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.528,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)"
+     ]
+    ],
+    "3": [
+     0.528,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.652,
+    "2": 0.484,
+    "3": 0.484
+   }
+  },
+  {
+   "day": "2025-11-15",
+   "z": 2.64,
+   "change": 131182,
+   "share_of_change": {
+    "1": [
+     0.77,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.64,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.345,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.77,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.64,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.345,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.681,
+    "2": 0.566,
+    "3": 0.305
+   }
+  },
+  {
+   "day": "2026-08-25",
+   "z": 2.64,
+   "change": 131165,
+   "share_of_change": {
+    "1": [
+     0.779,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.675,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.401,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.779,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.675,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.401,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.545,
+    "2": 0.471,
+    "3": 0.28
+   }
+  },
+  {
+   "day": "2026-04-25",
+   "z": 2.63,
+   "change": 130874,
+   "share_of_change": {
+    "1": [
+     0.771,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.573,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.361,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.771,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.573,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.361,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.73,
+    "2": 0.543,
+    "3": 0.342
+   }
+  },
+  {
+   "day": "2026-07-13",
+   "z": -2.61,
+   "change": -59164,
+   "share_of_change": {
+    "1": [
+     1.013,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.677,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.47,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "campaign_name=TH-383-SUSPENDER-20JUNE"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     1.013,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.677,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.47,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "campaign_name=TH-383-SUSPENDER-20JUNE"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.474,
+    "2": 0.317,
+    "3": 0.22
+   }
+  },
+  {
+   "day": "2026-08-26",
+   "z": 2.59,
+   "change": 129413,
+   "share_of_change": {
+    "1": [
+     0.846,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.631,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.396,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=0"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.846,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.631,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.396,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=0"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.495,
+    "2": 0.37,
+    "3": 0.232
+   }
+  },
+  {
+   "day": "2026-04-21",
+   "z": 2.58,
+   "change": 129002,
+   "share_of_change": {
+    "1": [
+     0.782,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.471,
+     [
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ],
+    "3": [
+     0.458,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.782,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.471,
+     [
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ],
+    "3": [
+     0.458,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.722,
+    "2": 0.435,
+    "3": 0.423
+   }
+  },
+  {
+   "day": "2026-05-13",
+   "z": 2.48,
+   "change": 125551,
+   "share_of_change": {
+    "1": [
+     0.739,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.543,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.399,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.739,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.543,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.399,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.511,
+    "2": 0.376,
+    "3": 0.276
+   }
+  },
+  {
+   "day": "2026-03-07",
+   "z": 2.41,
+   "change": 123085,
+   "share_of_change": {
+    "1": [
+     0.909,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.711,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.577,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.909,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.711,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.577,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.851,
+    "2": 0.666,
+    "3": 0.54
+   }
+  },
+  {
+   "day": "2025-11-16",
+   "z": 2.4,
+   "change": 122595,
+   "share_of_change": {
+    "1": [
+     0.877,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.726,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.473,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.877,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.726,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.473,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.756,
+    "2": 0.626,
+    "3": 0.408
+   }
+  },
+  {
+   "day": "2026-04-05",
+   "z": 2.35,
+   "change": 120640,
+   "share_of_change": {
+    "1": [
+     0.76,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.524,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.399,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.76,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.524,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.399,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.619,
+    "2": 0.426,
+    "3": 0.325
+   }
+  },
+  {
+   "day": "2026-08-08",
+   "z": 2.28,
+   "change": 118416,
+   "share_of_change": {
+    "1": [
+     0.601,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.505,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.32,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "payment_bucket=online"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.601,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.505,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.32,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "payment_bucket=online"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.469,
+    "2": 0.394,
+    "3": 0.25
+   }
+  },
+  {
+   "day": "2026-06-27",
+   "z": 2.27,
+   "change": 117812,
+   "share_of_change": {
+    "1": [
+     0.853,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.575,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.368,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.853,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.575,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.368,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.707,
+    "2": 0.477,
+    "3": 0.305
+   }
+  },
+  {
+   "day": "2026-05-17",
+   "z": -2.27,
+   "change": -46690,
+   "share_of_change": {
+    "1": [
+     1.039,
+     [
+      "campaign_name=(none)"
+     ]
+    ],
+    "2": [
+     0.945,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)"
+     ]
+    ],
+    "3": [
+     0.945,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     1.039,
+     [
+      "campaign_name=(none)"
+     ]
+    ],
+    "2": [
+     0.945,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)"
+     ]
+    ],
+    "3": [
+     0.945,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.51,
+    "2": 0.464,
+    "3": 0.464
+   }
+  },
+  {
+   "day": "2026-04-29",
+   "z": 2.26,
+   "change": 117576,
+   "share_of_change": {
+    "1": [
+     1.001,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.631,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.509,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     1.001,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.631,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.509,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.684,
+    "2": 0.432,
+    "3": 0.348
+   }
+  },
+  {
+   "day": "2026-06-20",
+   "z": 2.23,
+   "change": 116392,
+   "share_of_change": {
+    "1": [
+     0.887,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.593,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.401,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.887,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.593,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.401,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.581,
+    "2": 0.388,
+    "3": 0.262
+   }
+  },
+  {
+   "day": "2026-06-28",
+   "z": 2.22,
+   "change": 116111,
+   "share_of_change": {
+    "1": [
+     0.917,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.69,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.442,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.917,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.69,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.442,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.661,
+    "2": 0.498,
+    "3": 0.319
+   }
+  },
+  {
+   "day": "2026-07-14",
+   "z": -2.19,
+   "change": -43817,
+   "share_of_change": {
+    "1": [
+     1.259,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.77,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.58,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     1.259,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.77,
+     [
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.44,
+     [
+      "channel=ig_feed",
+      "payment_bucket=online",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.417,
+    "2": 0.255,
+    "3": 0.192
+   }
+  },
+  {
+   "day": "2026-04-24",
+   "z": 2.15,
+   "change": 113543,
+   "share_of_change": {
+    "1": [
+     0.785,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.549,
+     [
+      "payment_bucket=cod",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.367,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.785,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.549,
+     [
+      "payment_bucket=cod",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.367,
+     [
+      "channel=unattributed",
+      "ad_platform=(none)",
+      "campaign_name=(none)"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.64,
+    "2": 0.447,
+    "3": 0.299
+   }
+  },
+  {
+   "day": "2026-10-05",
+   "z": 2.11,
+   "change": 112233,
+   "share_of_change": {
+    "1": [
+     1.064,
+     [
+      "payment_bucket=manual"
+     ]
+    ],
+    "2": [
+     0.641,
+     [
+      "payment_bucket=manual",
+      "is_new_customer=0"
+     ]
+    ],
+    "3": [
+     0.505,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "payment_bucket=manual"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     1.064,
+     [
+      "payment_bucket=manual"
+     ]
+    ],
+    "2": [
+     0.641,
+     [
+      "payment_bucket=manual",
+      "is_new_customer=0"
+     ]
+    ],
+    "3": [
+     0.505,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "payment_bucket=manual"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.809,
+    "2": 0.488,
+    "3": 0.384
+   }
+  },
+  {
+   "day": "2026-06-29",
+   "z": 2.1,
+   "change": 111800,
+   "share_of_change": {
+    "1": [
+     0.896,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.76,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.577,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.896,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.76,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.577,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.664,
+    "2": 0.563,
+    "3": 0.427
+   }
+  },
+  {
+   "day": "2026-03-06",
+   "z": 2.04,
+   "change": 109485,
+   "share_of_change": {
+    "1": [
+     0.732,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.558,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.393,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.732,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.558,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.393,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.69,
+    "2": 0.525,
+    "3": 0.37
+   }
+  },
+  {
+   "day": "2025-11-19",
+   "z": 2.01,
+   "change": 108449,
+   "share_of_change": {
+    "1": [
+     0.907,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.789,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.5,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.907,
+     [
+      "is_new_customer=1"
+     ]
+    ],
+    "2": [
+     0.789,
+     [
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.5,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.787,
+    "2": 0.685,
+    "3": 0.434
+   }
+  }
+ ]
+}
