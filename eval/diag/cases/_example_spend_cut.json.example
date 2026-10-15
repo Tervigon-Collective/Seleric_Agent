@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "spend_cut_one_campaign",
+  "kind": "injection",
+  "brand": 20,
+  "tags": ["event", "findable", "ads"],
+  "question": "Why did revenue drop on the event days?",
+  "request": {"outcome": "<outcome metric id>", "event_days": ["2026-09-30", "2026-10-01"], "claimed_direction": "down"},
+  "world": {"fixture": "brand20_daily_2026-10", "sha256": ""},
+  "injections": [{"type": "scale_series", "onset": "2026-09-30", "params": {"metric": "<spend metric id>", "factor": 0.5, "scope": {"<dimension>": "<value>"}}}],
+  "truth": {"cause_class": "findable", "expected": "cause_found",
+            "causes": [{"metric": "<spend metric id>", "sign": "down", "onset": "2026-09-30", "share_of_change": 0.7}],
+            "unexplained_share": [0.0, 0.4], "note": "spend halved in one campaign from 09-30; planted"}
+}
