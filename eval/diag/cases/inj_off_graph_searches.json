@@ -1,0 +1,70 @@
+{
+ "schema_version": 1,
+ "id": "inj_off_graph_searches",
+ "kind": "injection",
+ "brand": 20,
+ "tags": [
+  "event",
+  "findable",
+  "off_graph"
+ ],
+ "question": "Why did net sales drop?",
+ "request": {
+  "outcome": "net_sales",
+  "event_days": [
+   "2026-10-12",
+   "2026-10-13",
+   "2026-10-14"
+  ],
+  "claimed_direction": "down"
+ },
+ "world": {
+  "fixture": "brand20_daily_2026-10",
+  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+ },
+ "truth": {
+  "cause_class": "findable",
+  "expected": "cause_found",
+  "causes": [
+   {
+    "metric": "site_searches",
+    "sign": "down",
+    "onset": "2026-10-12",
+    "share_of_change": 1.0
+   }
+  ],
+  "unexplained_share": [
+   0.0,
+   0.6
+  ],
+  "note": "site searches fall 60%; the effect on orders is planted on a path the reviewed graph does not contain"
+ },
+ "injections": [
+  {
+   "type": "scale",
+   "onset": "2026-10-12",
+   "params": {
+    "metric": "site_searches",
+    "factor": 0.4,
+    "effects": [
+     {
+      "from": "site_searches",
+      "to": "orders",
+      "elasticity": 0.5,
+      "off_graph": true
+     },
+     {
+      "from": "orders",
+      "to": "units_ordered",
+      "elasticity": 1.0
+     },
+     {
+      "from": "units_ordered",
+      "to": "gross_sales",
+      "elasticity": 1.0
+     }
+    ]
+   }
+  }
+ ]
+}

@@ -1,0 +1,27 @@
+{
+ "schema_version": 1,
+ "id": "stab_net_sales_2026_10_02",
+ "kind": "stability",
+ "brand": 20,
+ "tags": [
+  "event",
+  "stability"
+ ],
+ "question": "Why did net sales drop?",
+ "request": {
+  "outcome": "net_sales",
+  "event_days": [
+   "2026-10-02"
+  ],
+  "claimed_direction": "down"
+ },
+ "world": {
+  "fixture": "brand20_daily_2026-10",
+  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+ },
+ "truth": {
+  "cause_class": "hidden",
+  "expected": "located_not_identified",
+  "note": "net sales fell 56% against neighbouring days; the cause is unknown. Scored for stability only, never for accuracy"
+ }
+}

@@ -1,0 +1,60 @@
+{
+ "schema_version": 1,
+ "id": "adv_hidden_payment_outage",
+ "kind": "adversarial",
+ "brand": 20,
+ "tags": [
+  "event",
+  "hidden",
+  "scope_segment"
+ ],
+ "question": "Why did net sales drop?",
+ "request": {
+  "outcome": "net_sales",
+  "event_days": [
+   "2026-10-12",
+   "2026-10-13",
+   "2026-10-14"
+  ],
+  "claimed_direction": "down"
+ },
+ "world": {
+  "fixture": "brand20_daily_2026-10",
+  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+ },
+ "truth": {
+  "cause_class": "hidden",
+  "expected": "located_not_identified",
+  "must_not_attribute": [
+   "ad_spend",
+   "sessions",
+   "impressions"
+  ],
+  "note": "orders paid by one payment bucket (manual) fall 50%: a gateway-type cause that no metric shows"
+ },
+ "injections": [
+  {
+   "type": "scale",
+   "onset": "2026-10-12",
+   "params": {
+    "metric": "orders",
+    "factor": 0.5,
+    "scope": {
+     "payment_bucket": "manual"
+    },
+    "effects": [
+     {
+      "from": "orders",
+      "to": "units_ordered",
+      "elasticity": 1.0
+     },
+     {
+      "from": "units_ordered",
+      "to": "gross_sales",
+      "elasticity": 1.0
+     }
+    ]
+   }
+  }
+ ]
+}

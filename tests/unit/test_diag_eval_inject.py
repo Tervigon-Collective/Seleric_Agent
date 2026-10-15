@@ -87,6 +87,14 @@ def test_edge_and_lag_are_validated_against_the_graph():
         I.apply_injections(fixture(), (inj(effects=[{"from": "imps", "to": "clicks", "elasticity": 1.0}]),), GRAPH)
 
 
+def test_off_graph_hop_is_allowed_only_when_declared_and_is_recorded():
+    off = {"from": "spend", "to": "clicks", "elasticity": 1.0, "off_graph": True}
+    w = I.apply_injections(fixture(), (inj(effects=[off]),), GRAPH)
+    assert w.planted[0].off_graph == (("spend", "clicks"),) and w.series["clicks"][DAYS[-1]] < 50.0
+    with pytest.raises(I.InjectionError, match="in the graph"):
+        I.apply_injections(fixture(), (inj(effects=[{"from": "spend", "to": "imps", "elasticity": 1.0, "off_graph": True}]),), GRAPH)
+
+
 def test_measurement_break_changes_only_the_measured_metric_and_takes_no_effects():
     brk = C.Injection("measurement_break", {"metric": "clicks", "factor": 0.0}, ONSET)
     w = I.apply_injections(fixture(), (brk,), GRAPH)

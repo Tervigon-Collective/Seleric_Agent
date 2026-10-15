@@ -50,6 +50,7 @@ class Planted:
     factor: float
     path: tuple[tuple[str, str], ...]  # graph hops the effect travelled
     real: bool  # False: a measurement break, nothing real changed
+    off_graph: tuple[tuple[str, str], ...] = ()  # hops the reviewed graph does not contain (the graph-first engine must not find them by edges)
 
 
 @dataclass
@@ -284,13 +285,20 @@ def apply_injections(fx: W.Fixture, injections: tuple[C.Injection, ...], graph: 
         # Relative change of each metric on the chain, by day, so the next hop reads it.
         rel = {metric: {d: f - 1.0 for d, f in factors.items()}}
         hops: list[tuple[str, str]] = []
+        off_hops: list[tuple[str, str]] = []
         for eff in p.get("effects") or []:
             src, dst, lag = str(eff["from"]), str(eff["to"]), int(eff.get("lag_days", 0))
-            if (src, dst) not in mech:
-                raise InjectionError(f"{src} -> {dst} is not a mechanism edge of the graph")
-            lo, hi = mech[(src, dst)]
-            if not lo <= lag <= hi:
-                raise InjectionError(f"{src} -> {dst}: lag {lag} outside the edge's range [{lo}, {hi}]")
+            off = bool(eff.get("off_graph"))
+            if (src, dst) in mech and off:
+                raise InjectionError(f"{src} -> {dst} is in the graph: drop off_graph")
+            if (src, dst) not in mech and not off:
+                raise InjectionError(f"{src} -> {dst} is not a mechanism edge of the graph (set off_graph to plant a cause the graph lacks)")
+            if not off:
+                lo, hi = mech[(src, dst)]
+                if not lo <= lag <= hi:
+                    raise InjectionError(f"{src} -> {dst}: lag {lag} outside the edge's range [{lo}, {hi}]")
+            if off:
+                off_hops.append((src, dst))
             if src not in rel:
                 raise InjectionError(f"{src} -> {dst}: {src} was not changed by this injection or an earlier hop")
             if dst not in world.series:
@@ -314,7 +322,7 @@ def apply_injections(fx: W.Fixture, injections: tuple[C.Injection, ...], graph: 
                 _follow(world, graph, fx.definitions, dst, scope_pair if has_seg else None, dst_factors, dst_before, touched)
         changed |= touched
         injected |= touched
-        world.planted.append(Planted(inj.type, metric, inj.onset, dict(p.get("scope") or {}), factor, tuple(hops), inj.type != "measurement_break"))
+        world.planted.append(Planted(inj.type, metric, inj.onset, dict(p.get("scope") or {}), factor, tuple(hops), inj.type != "measurement_break", tuple(off_hops)))
     if first_day is not None:
         _keep_compositions(world, pristine, fx.definitions, injected, changed)
         _recompute_ratios(world, fx.definitions, changed, first_day)

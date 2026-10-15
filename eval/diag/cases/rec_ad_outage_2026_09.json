@@ -1,0 +1,43 @@
+{
+ "schema_version": 1,
+ "id": "rec_ad_outage_2026_09",
+ "kind": "record",
+ "brand": 20,
+ "tags": [
+  "event",
+  "findable",
+  "record",
+  "ads"
+ ],
+ "question": "Why did net sales drop?",
+ "request": {
+  "outcome": "net_sales",
+  "event_days": [
+   "2026-09-15",
+   "2026-09-16",
+   "2026-09-17"
+  ],
+  "claimed_direction": "down"
+ },
+ "world": {
+  "fixture": "brand20_daily_2026-10",
+  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+ },
+ "truth": {
+  "cause_class": "findable",
+  "expected": "cause_found",
+  "causes": [
+   {
+    "metric": "ad_spend",
+    "sign": "down",
+    "onset": "2026-09-15"
+   }
+  ],
+  "unexplained_share": [
+   0.0,
+   0.6
+  ],
+  "note": "paid spend is zero from 2026-09-15 to 2026-09-19 (ClickHouse serve.fct_paid_media_daily, brand 20: no spend rows, impressions 0)"
+ },
+ "record": "ClickHouse serve.fct_paid_media_daily brand_id=20: spend 0 and impressions 0 on 2026-09-15..19, no rows 2026-09-20..22; memory 2026-09-14..22 ad outage"
+}
