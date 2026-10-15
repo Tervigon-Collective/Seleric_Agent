@@ -133,15 +133,22 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
         Pass the ``query_id`` of each result to read (omitted: everything fetched this turn). It never fetches data.
         Sum or roll up rows here, never in the answer's prose: a total computed here is recorded and can be cited.
 
-        The script is plain top-level code: no ``return``, no function wrapper, no other variables than these:
-          - ``evidence``: a LIST of dicts, one per fetched value (it is not keyed by query id). Each row has
-            metric_id, value, unit, dimensions (a dict), grain, period_start, period_end and query_id. Filter it,
-            e.g. ``[e for e in evidence if e["metric_id"] == "net_sales" and e["dimensions"].get("channel") == "x"]``.
+        The script is plain top-level code with exactly two data names, ``evidence`` and ``WORKDIR``. No variable is
+        named after a query id and there is no ``query_results``; no ``return``, no function wrapper.
+          - ``evidence``: a LIST of dicts, one per fetched value. Each row has metric_id, value, unit, grain,
+            period_start, period_end, query_id and ``dimensions`` (a dict); every dimension is also a key of the row.
           - ``WORKDIR``: a directory for intermediate files; stdlib math/statistics/json/collections (+ numpy/pandas).
-        Read every figure from ``evidence``: a script that types a fetched value in as a literal is refused.
-        Set a ``result`` variable to what you computed (a number, dict or list); it is returned in full and every
-        number in it is recorded so it can be cited. Nothing is printed unless ``result`` is set. No network, no
-        eval/exec, no imports beyond the stdlib set above. A code error returns the traceback: fix it and retry.
+        A complete script (rank campaigns by spend, share of the total)::
+
+            rows = [e for e in evidence if e["metric_id"] == "ad_spend" and e["query_id"] == "q_ab12"]
+            total = sum(r["value"] for r in rows)
+            result = [{"campaign": r["campaign_name"], "share_pct": 100 * r["value"] / total}
+                      for r in sorted(rows, key=lambda r: -r["value"])[:5]]
+
+        Read every figure from ``evidence``: a script that types a fetched value in as a literal is refused. Assign
+        what you computed to ``result`` (a number, dict or list): printing is not enough. It is returned in full and
+        every number in it is recorded so it can be cited. No network, no eval/exec, no imports beyond the stdlib set
+        above. A code error returns the traceback and the first row: fix it and retry.
         """
         return await sandbox.run_python(ctx, code, _evidence_for(state, query_ids), purpose)
 

@@ -1,0 +1,40 @@
+{
+ "n": 1,
+ "aspect": "diagnosis",
+ "q": "Why did CAC increase yesterday? Check whether the change came from CPM, CTR, CPC, landing-page conversion, checkout conversion, product mix, or channel mix. Rank the drivers by likely contribution.",
+ "thread": "thread_7458e28b8e2647adb8de881b4412d662",
+ "mission": "MS3-46c215f3b9",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 38,
+ "elapsed_s": 33.783,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 13,
+  "measured": 13,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "all of ['CPM', 'CTR', 'CPC']"
+  },
+  {
+   "ok": true,
+   "what": "does not lead with 'product CAC'"
+  }
+ ],
+ "answer": "CAC rose a little yesterday: CAC was \u20b92,154 on 2026-10-14 vs the weekday \u201cusual\u201d of \u20b91,960 (+9.9%) and vs 2026-10-13 it was +2.5% (\u20b92,102 \u2192 \u20b92,154). The change is small and within ordinary day-to-day variation; the diagnosis found no single supported cause in the data.\n\nWhat\u2019s behind it (ranked by likely contribution)\n1. Channel / campaign mix (largest measured share): channel-level CAC moved up slightly and the mix shifted; this mechanically raised overall CAC by ~+2.5% versus the prior day. (Label from the diagnosis: moved but not a statistically supported single cause.)\n2. Fewer new customers (volume drop): new customers fell (24 \u2192 22, about \u22128.3%), which raised CAC by reducing the denominator. Diagnosis: contributed but within normal variation, not a supported cause.\n3. Checkout conversion (small negative effect): checkout rate fell ~1.54% \u2192 1.41% (\u22128.7%), which would raise CAC if sustained. Diagnosis: directionally consistent but inside the normal range (insufficient evidence to call it the cause).\n4. CPM / CPC / CTR / landing-page cost (minor or offsetting): CPM and CPC were slightly lower (CPM \u22128.7%, CPC \u22128.4%), CTR almost unchanged; cost per landing-page-view ~flat. Diagnosis: these moved but their net effect was small and did not explain the increase.\n5. Product mix / product net sales: ruled out \u2014 product-order net sales fell but stayed within its usual range and the diagnosis tests show it did not explain the CAC move.\n\nWorth checking: channel- and campaign-level CAC and the handful of campaigns that shifted share yesterday (to confirm whether a small mix shift or one campaign caused the move).\n\nPeriod: 2026-10-14 \u00b7 Currency: INR \u00b7 Data as of 2026-10-15\nNext: Do you want a channel-by-channel breakdown of CAC and new customers for 2026-10-13 vs 2026-10-14?"
+}

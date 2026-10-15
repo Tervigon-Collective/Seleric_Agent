@@ -410,3 +410,11 @@ def test_a_month_named_without_a_year_is_its_latest_occurrence() -> None:
 
 
 
+
+
+def test_change_keeps_one_decimal_below_a_hundred_percent() -> None:
+    from seleric_swarm.causal.diagnosis import _chg
+
+    assert _chg(2101.76, 1940.0) == "+8.3%"
+    assert _chg(2101.76, 4295.7) == "-51.1%"
+    assert _chg(500.0, 100.0) == "+400%"

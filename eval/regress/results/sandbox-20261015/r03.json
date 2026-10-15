@@ -1,0 +1,32 @@
+{
+ "n": 3,
+ "aspect": "diagnosis",
+ "q": "What was the finance P&L net profit for September 2026 as booked by event date, and how does it differ from the order-date net profit?",
+ "thread": "thread_d2352b97571541289a68deafdad10f56",
+ "mission": "MS3-4e860b6e44",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 17.317,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 7,
+  "measured": 7,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "The finance (P&L, event-date) net profit for Sep 2026 was a loss of \u20b91,508,358; on the order-date basis net profit was a loss of \u20b9207,191 \u2014 the P&L (event-date) loss is \u20b91,301,167 larger (more negative) than the order-date loss.\n\n- What changed: P&L net profit (finance P&L, event date) = \u20b9-1,508,358 vs net profit (order date) = \u20b9-207,191 for 2026-09-01..2026-09-30. The event-date P&L shows a substantially bigger loss (\u20b91,301,167 worse).\n- Why it matters: order-date nets keep revenue and some costs on the order date; the P&L (event date) books returns, cancellations and some cost timings when they post, so the books show a deeper loss for September. Use the P&L view when you need finance/booked results; use order-date when analysing orders or marketing efficiency by purchase date.\n\nWorth checking: break down P&L net profit by its P&L lines (net sales, net COGS, ad spend, returns/cancels) to see which line(s) drive the \u20b91.3M gap \u2014 I can run that breakdown for Sep 2026 next.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-15\nNext: Break down P&L net profit vs net profit for Sep 2026 by P&L line (net sales, net COGS, ad spend, returns)."
+}

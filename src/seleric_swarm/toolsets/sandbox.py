@@ -277,6 +277,8 @@ async def run_python(
         artifact = ctx.deps.artifact_store.get(evidence_id)
         if (query_id := getattr(getattr(artifact, "provenance", None), "query_version", None)):
             row["query_id"] = query_id
+        for key, value in (row.get("dimensions") or {}).items():  # row["campaign_name"] works as well as row["dimensions"][...]
+            row.setdefault(key, value)
 
     os_facade = _WorkdirOs(str(workdir))
     safe_builtins = dict(_SAFE_BUILTINS)
@@ -324,7 +326,7 @@ async def run_python(
             + (f" with keys {sample}" if sample else "")
             + " (there is no variable per query id; filter on row['query_id']). Set `result`; no `return`. "
             + (f"First row, for the exact key names (a previous-period figure is its own row, not a column): {example}\n" if example else "")
-            +             f"Defined names: {', '.join(defined_names)}."
+            + f"Defined names: {', '.join(defined_names)}."
         )
 
     result = holder.get("result")
@@ -333,9 +335,10 @@ async def run_python(
     ) if workdir.exists() else []
 
     if result is None and not new_files:
+        printed_only = " Printed text is not recorded: assign the value to `result`." if stdout.getvalue().strip() else ""
         return _fix_the_script(
             "sandbox script produced no output — set a `result` variable or write "
-            "a file under WORKDIR, then retry."
+            f"a file under WORKDIR, then retry.{printed_only}"
         )
 
     metrics = _flatten_numbers(result, limit=_max_metrics())

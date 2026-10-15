@@ -47,7 +47,9 @@ def _deps(store: InMemoryArtifactStore, mission_id: str = "mission-sbx") -> Sele
     )
 
 
-def _put_evidence(store: InMemoryArtifactStore, *, metric: str = "net_sales", value: float = 100.0) -> str:
+def _put_evidence(
+    store: InMemoryArtifactStore, *, metric: str = "net_sales", value: float = 100.0, dimensions: dict[str, str] | None = None
+) -> str:
     evidence = EvidenceArtifact(
         metric_id=metric,
         grain="day",
@@ -56,6 +58,7 @@ def _put_evidence(store: InMemoryArtifactStore, *, metric: str = "net_sales", va
         period_end=datetime(2026, 9, 18, tzinfo=UTC),
         value=value,
         unit="INR",
+        dimensions=dimensions or {},
         source_query={"measure": metric},
     )
     return store.put(
@@ -267,3 +270,23 @@ async def test_writes_files_to_workdir(tmp_path, monkeypatch) -> None:
     assert (tmp_path / ".data" / "sandbox" / "mission-files" / "out.txt").read_text() == "hi"
     assert "out.txt" in result.summary  # filenames are listed in the finding statement
     assert any("1 file" in w for w in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_dimensions_are_keys_of_the_row() -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store, value=100.0, dimensions={"campaign_name": "alpha"})
+    ctx = FakeRunContext(_deps(store))
+    res = await sandbox.run_python(ctx, "result = {e['campaign_name']: e['dimensions']['campaign_name'] for e in evidence}", [eid])
+    assert res.success is True
+    assert '"alpha": "alpha"' in res.summary
+
+
+@pytest.mark.asyncio
+async def test_printing_without_a_result_says_what_to_do() -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    ctx = FakeRunContext(_deps(store))
+    res = await sandbox.run_python(ctx, "print(sum(e['value'] for e in evidence))", [eid])
+    assert not res.success and res.retryable
+    assert "assign the value to `result`" in res.summary

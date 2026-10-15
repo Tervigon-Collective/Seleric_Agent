@@ -2638,7 +2638,8 @@ def _val(v: float | None, metric: str, lineage: dict[str, MetricMeta]) -> str:
 def _chg(new: float | None, old: float | None) -> str:
     if new is None or old is None or not math.isfinite(new) or not math.isfinite(old) or abs(old) < 1e-12:
         return "n/a"
-    return f"{(new / old - 1) * 100:+.0f}%"
+    change = (new / old - 1) * 100
+    return f"{change:+.1f}%" if abs(change) < 100 else f"{change:+.0f}%"  # a whole percent invites the model to recompute
 
 
 def _share(v: float | None) -> str:
