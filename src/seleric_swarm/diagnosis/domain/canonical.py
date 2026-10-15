@@ -13,8 +13,14 @@ from collections.abc import Mapping
 from datetime import date
 from typing import Any
 
+import numpy
+
 
 def _plain(value: Any) -> Any:
+    if isinstance(value, numpy.generic):  # numpy scalars (int64, bool_, float32 ...) are not JSON types
+        value = value.item()
+    if isinstance(value, numpy.ndarray):
+        value = value.tolist()
     if isinstance(value, float):
         if not math.isfinite(value):
             raise ValueError(f"non-finite number cannot be fingerprinted: {value!r}")

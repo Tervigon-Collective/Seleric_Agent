@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+from seleric_swarm.diagnosis.domain.canonical import segments_fingerprint, series_fingerprint
 from seleric_swarm.diagnosis.domain.errors import InvalidRequest
 
 
@@ -79,3 +80,13 @@ class SeriesResult:
     source_query: str
     fingerprint: str
     error: str | None = None
+
+
+def result_fingerprint(
+    request: SeriesRequest, values: Mapping[date, float], segments: Mapping[str, Mapping[date, float]]
+) -> str:
+    """The one rule for the digest of an answer: a split request is digested as segments (even when it came back
+    empty), an unsplit one as a plain series. Adapters, the recorder and the replay check all use this."""
+    if request.dimension is not None or segments:
+        return segments_fingerprint(segments)
+    return series_fingerprint(values)

@@ -15,6 +15,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
@@ -41,6 +42,7 @@ from seleric_swarm.agent.grounding import (
     grounding,
     lost_substance,
     problems,
+    quoted_figures,
     unverified_note,
 )
 from seleric_swarm.agent.local_tools import build_local_tools
@@ -67,6 +69,9 @@ BUDGET_NOTICE = ("Tool budget reached. Write the final answer now from the evide
                  "state what remains unverified.")
 RETRY_NOTICE = ("Your previous reply was unusable. Write the final answer now from the evidence already gathered; "
                 "call a tool only if something essential is still missing.")
+LENGTH_NOTICE = ("Your previous reply was cut off by the length limit. Write the final answer again, shorter: the finding "
+                 "first, only the top rows in the text (show_table carries a long breakdown), no repetition.")
+CUT_OFF_NOTE = "\n\n⚠ This answer was cut off at the length limit."
 DEGENERATE_ANSWER = ("I couldn't produce a reliable answer: the model returned unusable output twice. "
                      "Please retry.")
 
@@ -94,6 +99,16 @@ def history_messages(turns: list[tuple[str, str]]) -> list[ModelMessage]:
         else:
             out.append(ModelResponse(parts=[TextPart(content=text)]))
     return out
+
+
+def _conversation_texts(question: str, history: list[ModelMessage]) -> list[str]:
+    texts = [question]
+    for message in history:
+        for part in message.parts:
+            content = getattr(part, "content", None)
+            if isinstance(content, str):
+                texts.append(content)
+    return texts
 
 
 def degenerate(text: str, finish_reason: str | None = None) -> bool:
@@ -217,7 +232,7 @@ async def run_turn(
 ) -> LoopResult:
     begin_loop_effort()
     started = time.perf_counter()
-    state = TurnState()
+    state = TurnState(today=datetime.now(deps.as_of.tzinfo or UTC).date())
     budget = _Budget(state, is_cancelled=is_cancelled, started=started)
     usage = RunUsage()
     mission_id = deps.mission_id
@@ -242,7 +257,7 @@ async def run_turn(
         name="seleric_agent",
         tools=tools,
         capabilities=[PrepareTools(prepare)],
-        retries=2,
+        retries=deps.limits.agent_retries,
     )
     live = on_stream is not None and STREAM_ANSWER
     answer_stream = AnswerStream(on_stream, clock=time.perf_counter) if on_stream is not None else None
@@ -281,21 +296,33 @@ async def run_turn(
             emit_progress(mission_id, "agent.revising", "The model returned unusable output — retrying once", {"reason": "degenerate"})
             if answer_stream is not None:
                 answer_stream.discard()
+            cut_off = _finish_reason(messages) == "length"
             if state.tool_calls and isinstance(messages[-1], ModelResponse):
                 # evidence is already gathered: redo only the filtered / runaway step instead of the whole turn
-                answer, messages = await run(RETRY_NOTICE, messages[:-1])
+                answer, messages = await run(LENGTH_NOTICE if cut_off else RETRY_NOTICE, messages[:-1])
             else:
                 answer, messages = await run(question, history)
             if degenerate(answer, _finish_reason(messages)):
-                answer, limitations = DEGENERATE_ANSWER, ["DEGENERATE_OUTPUT"]
+                if _finish_reason(messages) == "length" and len(answer) >= 200:
+                    # Cut off but substantive: ship what was written, marked, rather than discard a mostly-complete answer.
+                    answer, limitations = answer + CUT_OFF_NOTE, ["ANSWER_TRUNCATED"]
+                else:
+                    answer, limitations = DEGENERATE_ANSWER, ["DEGENERATE_OUTPUT"]
     except UsageLimitExceeded as exc:
         _log.info("v3_loop_usage_limit mission=%s detail=%s", mission_id, exc)
-        answer = ("I ran out of working budget before finishing. Here is what the data showed so far: "
-                  + ("; ".join(e["tool"] for e in state.evidence[:5]) or "nothing yet") + ". Please narrow the question.")
+        fetched = len(state.evidence)
+        answer = ("I ran out of working budget before finishing the analysis"
+                  + (f" ({fetched} result{'s' if fetched != 1 else ''} fetched, none of them reported here)" if fetched else "")
+                  + ". Please narrow the question (a shorter period, one metric or one channel) and ask again.")
         messages, limitations = history, ["EXECUTION_LIMIT_EXCEEDED"]
 
-    pool = [*(prior_payloads or []), *state.payloads]
-    first = grounding(answer, pool) if pool and not limitations else None
+    quoted = quoted_figures(_conversation_texts(question, history))
+
+    def figure_pool() -> list[Any]:
+        return [*(prior_payloads or []), *state.payloads, *([quoted] if quoted else [])]
+
+    # An answer with no tool call is checked too: its figures must come from the question or earlier turns.
+    first = grounding(answer, figure_pool()) if not limitations else None
     issues = problems(first) if first is not None else []
     if VERIFY_NUMBERS and issues:
         # Deterministic check, not a critic model: one corrective pass only when the figures fail to check out.
@@ -309,8 +336,7 @@ async def run_turn(
         except UsageLimitExceeded:
             revised = ""
         if revised and not degenerate(revised):
-            pool = [*(prior_payloads or []), *state.payloads]
-            second = grounding(revised, pool)
+            second = grounding(revised, figure_pool())
             if first is not None and lost_substance(first, second):
                 stats["correction_discarded"] = True  # the rewrite dropped most of the verified content: keep the draft
             else:
@@ -320,7 +346,7 @@ async def run_turn(
         limitations.append("UNVERIFIED_FIGURES")
     # Internal metric ids that slipped into the prose are written as their catalogue names (a known fix, not a model pass).
     answer = round_long_decimals(replace_metric_ids(answer, {m.id: m.label for m in deps.catalogue.metrics if m.label}))
-    final = grounding(answer, [*(prior_payloads or []), *state.payloads]) if state.payloads else grounding(answer, [])
+    final = grounding(answer, figure_pool())
     if state.payloads and not limitations:
         await auto_chart(deps, state, answer)
     elapsed_ms = int((time.perf_counter() - started) * 1000)

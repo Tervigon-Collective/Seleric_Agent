@@ -46,7 +46,7 @@ def round_long_decimals(text: str, *, min_decimals: int = 5) -> str:
     """Round a raw float copied from a tool result (₹-41,920.83203758388) to a display value.
 
     Only numbers with ``min_decimals`` or more decimal digits are touched, so a ratio such as 0.838 or a price such as
-    ₹73,136.85 stays as written. 100 and above round to whole numbers with thousands separators, the rest to 2 decimals.
+    ₹73,136.85 stays as written. 100 and above round to whole numbers with thousands separators, 1 to 100 to 2 decimals, below 1 to 4 significant digits.
     """
     out: list[str] = []
     i, n = 0, len(text)
@@ -74,7 +74,12 @@ def round_long_decimals(text: str, *, min_decimals: int = 5) -> str:
         token = text[i:k]
         if decimals >= min_decimals and not (k < n and (text[k].isalpha() or text[k] == "_")):
             value = float(token.replace(",", ""))
-            token = f"{round(value):,}" if abs(value) >= 100 else f"{value:.2f}"
+            if abs(value) >= 100:
+                token = f"{round(value):,}"
+            elif abs(value) >= 1:
+                token = f"{value:.2f}"
+            else:
+                token = f"{value:.4g}" if value == 0 or abs(value) >= 1e-4 else f"{value:.6f}"  # a rate must not become 0.00
         out.append(token)
         i = k
     return "".join(out)

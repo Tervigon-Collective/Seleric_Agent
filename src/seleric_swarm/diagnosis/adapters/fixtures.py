@@ -15,12 +15,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from seleric_swarm.diagnosis.domain.canonical import (
-    segments_fingerprint,
-    series_fingerprint,
-)
 from seleric_swarm.diagnosis.domain.errors import InvalidRequest
-from seleric_swarm.diagnosis.domain.types import SeriesRequest, SeriesResult
+from seleric_swarm.diagnosis.domain.types import SeriesRequest, SeriesResult, result_fingerprint
 
 DaySeries = Mapping[date, float]
 
@@ -82,7 +78,7 @@ class FixtureSeriesAdapter:
                 seg: {d: v for d, v in series.items() if window.contains(d)} for seg, series in segments.items()
             }
             cut = {seg: s for seg, s in cut.items() if s}
-            return SeriesResult(request, {}, cut, source, segments_fingerprint(cut))
+            return SeriesResult(request, {}, cut, source, result_fingerprint(request, {}, cut))
         if filters:
             (dimension, accepted), = filters.items()
             segments = by_dim.get(dimension)
@@ -93,10 +89,10 @@ class FixtureSeriesAdapter:
                 for day, number in segments.get(value, {}).items():
                     if window.contains(day):
                         pooled[day] = pooled.get(day, 0.0) + number
-            return SeriesResult(request, pooled, {}, source, series_fingerprint(pooled))
+            return SeriesResult(request, pooled, {}, source, result_fingerprint(request, pooled, {}))
         values = {d: v for d, v in self._data.series[request.metric_id].items() if window.contains(d)}
-        return SeriesResult(request, values, {}, source, series_fingerprint(values))
+        return SeriesResult(request, values, {}, source, result_fingerprint(request, values, {}))
 
     @staticmethod
     def _error(request: SeriesRequest, source: str, message: str) -> SeriesResult:
-        return SeriesResult(request, {}, {}, source, series_fingerprint({}), error=message)
+        return SeriesResult(request, {}, {}, source, result_fingerprint(request, {}, {}), error=message)

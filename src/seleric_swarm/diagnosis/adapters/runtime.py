@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable
 from datetime import UTC, datetime
 
 import numpy
 
-
-def _stream_key(stream: str) -> int:
-    # Not ``hash()``: Python salts string hashes per process, which would break replay.
-    return int.from_bytes(hashlib.sha256(stream.encode("utf-8")).digest()[:8], "big")
+from seleric_swarm.diagnosis.trace.streams import stream_rng
 
 
 class SeededRuntime:
@@ -30,7 +26,7 @@ class SeededRuntime:
         return self._clock()
 
     def rng(self, stream: str) -> numpy.random.Generator:
-        return numpy.random.default_rng([self.seed, _stream_key(stream)])
+        return stream_rng(self.seed, stream)
 
     def cancelled(self) -> bool:
         return self._is_cancelled()

@@ -31,7 +31,7 @@ import inject
 import world_fixture as W
 
 GRAPH_PATH = ROOT / "src" / "seleric_swarm" / "causal" / "data" / "dependency_graph.json"
-ENGINE_PATHS = ("src/seleric_swarm/causal", "src/seleric_swarm/toolsets/diagnosis.py", "src/seleric_swarm/toolsets/policy_config.py")
+ENGINE_PATHS = ("src/seleric_swarm/causal", "src/seleric_swarm/toolsets/diagnosis.py", "src/seleric_swarm/toolsets/policy_config.py", "src/seleric_swarm/diagnosis")
 SCOPE_DIMENSION = "brand_id"
 HISTORY_KEEP_DAYS = 56  # history the engine reads before the window (DIAG_HISTORY_DAYS); never cut from it
 

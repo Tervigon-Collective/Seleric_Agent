@@ -17,6 +17,7 @@ from concurrent.futures import ProcessPoolExecutor
 from typing import Any
 
 from seleric_swarm.causal.dowhy_service import TimeSeriesEffect, estimate_time_series_effect
+from seleric_swarm.diagnosis.trace.active import report_failure
 
 _log = logging.getLogger(__name__)
 
@@ -79,8 +80,9 @@ def estimate_many(jobs: list[dict[str, Any]]) -> list[TimeSeriesEffect]:
             out = list(pool.map(_estimate, jobs))
             _log.info("diagnosis estimates: %d jobs in %d worker processes, %.1fs", len(jobs), workers(), time.perf_counter() - t0)
             return out
-        except Exception:
+        except Exception as exc:
             _log.warning("diagnosis worker pool failed; estimating in-process", exc_info=True)
+            report_failure("estimate_pool", exc, {"jobs": len(jobs)})
             _reset()
     out = [estimate_time_series_effect(**job) for job in jobs]
     _log.info("diagnosis estimates: %d jobs in-process, %.1fs", len(jobs), time.perf_counter() - t0)

@@ -37,6 +37,8 @@ from datetime import date
 
 import numpy as np
 
+from seleric_swarm.diagnosis.detect.detector import prediction_t as _shared_prediction_t
+
 Series = dict[date, float]
 
 _EPS = 1e-12
@@ -51,23 +53,7 @@ def two_sided_p(z: float) -> float:
     return min(1.0, 2.0 * normal_sf(abs(z)))
 
 
-def prediction_t(observed: float, history: list[float]) -> tuple[float, int] | None:
-    """(t, df) of a new observation against a small sample of earlier ones.
-
-    The exact normal prediction interval: ``t = (x - mean) / (s * sqrt(1 + 1/n))``
-    with ``n - 1`` degrees of freedom. With the five or six windows an
-    exploration has, a median/MAD scale is too unstable (it ran anti-conservative
-    under pure noise); an outlier in the history only widens ``s``, which errs
-    toward reporting less."""
-    xs = [x for x in history if math.isfinite(x)]
-    if len(xs) < 3 or not math.isfinite(observed):
-        return None
-    n = len(xs)
-    mean = float(np.mean(xs))
-    sd = float(np.std(xs, ddof=1))
-    if sd <= _EPS:
-        sd = max(abs(mean) * 0.01, _EPS)
-    return (observed - mean) / (sd * math.sqrt(1 + 1 / n)), n - 1
+prediction_t = _shared_prediction_t  # the rule lives in the shared detector (plan P1.4); the name stays
 
 
 def t_tail(t: float, df: int, *, two_sided: bool) -> float:

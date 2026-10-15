@@ -13,21 +13,21 @@ Intermediate files the script writes under ``WORKDIR`` persist on disk
 (``.data/sandbox/<mission_id>/``) and are listed back so a later tool/LLM call
 can reference them — the "short memory" the user asked for.
 
-# ponytail: in-process exec, no hard kill / no true isolation — a runaway
-# script is abandoned (daemon thread) but not killed, and file I/O is confined
-# only by convention (WORKDIR). Move to subprocess+rlimits or a container if
-# untrusted-code risk rises.
+The script runs in a child process (``sandbox_child.py``): empty environment, WORKDIR as its working
+directory, resource limits, an audit hook that refuses process creation, network, native libraries and any
+file access outside WORKDIR, and a hard kill at the timeout. The event loop is never blocked while it runs.
 """
 
 from __future__ import annotations
 
-import builtins as _builtins
+import asyncio
 import contextlib
-import io
 import json
 import os
-import threading
-import traceback
+import secrets
+import shutil
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -60,47 +60,6 @@ for _opt in ("numpy", "pandas"):
         __import__(_opt)
         _ALLOWED_IMPORTS.add(_opt)
 
-# Everything from builtins except the process-escape hatches. exec/eval/compile
-# and open-by-default stay out of the base set; open is re-added scoped to
-# WORKDIR usage by convention (see ceiling note above).
-# ``globals``/``locals``/``vars`` are NOT stripped: they are rebound per run to
-# the sandbox namespace (live 2026-10-10 MS3-66cc3bb5f2 — the model wrote
-# ``globals().get('evidence')`` and NameError burned a turn). Returning the real
-# process globals would be an escape hatch; returning the script dict is not.
-_UNSAFE_BUILTINS = frozenset({
-    "eval", "exec", "compile", "__import__",
-    "globals", "locals", "vars",  # rebound to the sandbox namespace below
-    "input", "exit", "quit", "help", "breakpoint", "memoryview",
-})
-_SAFE_BUILTINS: dict[str, Any] = {
-    name: getattr(_builtins, name)
-    for name in dir(_builtins)
-    if not name.startswith("_") and name not in _UNSAFE_BUILTINS
-}
-_VARS_MISSING = object()
-
-
-def _bind_namespace_builtins(namespace: dict[str, Any], builtins_map: dict[str, Any]) -> None:
-    """Expose ``globals``/``locals``/``vars`` as views of *namespace*, not the process."""
-
-    def _globals() -> dict[str, Any]:
-        return namespace
-
-    def _locals() -> dict[str, Any]:
-        # Top-level ``exec`` has no separate locals dict; nested ``def``/``class``
-        # still get real function locals from the interpreter.
-        return namespace
-
-    def _vars(obj: Any = _VARS_MISSING) -> Any:
-        if obj is _VARS_MISSING:
-            return namespace
-        return _builtins.vars(obj)
-
-    builtins_map["globals"] = _globals
-    builtins_map["locals"] = _locals
-    builtins_map["vars"] = _vars
-
-
 def _timeout_s() -> float:
     try:
         return float(os.environ.get("SELERIC_SANDBOX_TIMEOUT_S", _DEFAULT_TIMEOUT_S))
@@ -127,27 +86,24 @@ def _enabled() -> bool:
     return os.environ.get("SELERIC_SANDBOX_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 
 
-def _make_guarded_import(os_facade: _WorkdirOs) -> Any:
-    """Per-call importer: ``import os`` yields the WORKDIR facade, not real os."""
+WORKDIR_KEEP_S = 3 * 24 * 3600  # a mission's scratch files outlive its turn so follow-ups can use them, not forever
 
-    def _guarded_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        root = name.split(".")[0]
-        if root == "os":
-            return os_facade
-        if root not in _ALLOWED_IMPORTS:
-            raise ImportError(
-                f"import of '{name}' is blocked in the sandbox; allowed: "
-                f"{sorted(_ALLOWED_IMPORTS)} (os is pre-provided)"
-            )
-        return _builtins.__import__(name, *args, **kwargs)
 
-    return _guarded_import
+def _prune_workdirs(root: Path, keep: Path) -> None:
+    """Remove scratch directories untouched for ``WORKDIR_KEEP_S`` (best effort; never the one in use)."""
+    cutoff = time.time() - WORKDIR_KEEP_S
+    for child in root.iterdir():
+        with contextlib.suppress(OSError):
+            if child != keep and child.is_dir() and child.stat().st_mtime < cutoff:
+                shutil.rmtree(child)
 
 
 def _workdir(mission_id: str) -> Path:
     safe = "".join(c for c in mission_id if c.isalnum() or c in "-_") or "mission"
-    path = repo_root() / ".data" / "sandbox" / safe
+    root = repo_root() / ".data" / "sandbox"
+    path = root / safe
     path.mkdir(parents=True, exist_ok=True)
+    _prune_workdirs(root, path)
     return path
 
 
@@ -184,6 +140,52 @@ def _typed_in_values(code: str, ctx: RunContext[SelericDeps]) -> list[float]:
             if isinstance(v, (int, float)):
                 fetched.append(float(v))
     return sorted(x for x in literals if any(abs(x - f) <= 0.005 * max(1.0, abs(f) / 1000) for f in fetched))
+
+
+_CHILD = Path(__file__).with_name("sandbox_child.py")
+# Variables a numeric library needs to stay small inside the child (its environment is otherwise empty).
+_CHILD_ENV = {
+    "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1", "NUMEXPR_NUM_THREADS": "1", "PYTHONDONTWRITEBYTECODE": "1",
+}
+
+
+async def _run_in_child(code: str, evidence: list[dict[str, Any]], workdir: Path) -> dict[str, Any]:
+    """Run the script in the sandbox child; returns its outcome dict (``result`` / ``error`` / ``stdout`` / ``defined``),
+    or ``{"timeout": True}`` / ``{"crashed": reason}``. The child is killed at the timeout."""
+    timeout = _timeout_s()
+    nonce = secrets.token_hex(16)
+    request = json.dumps({
+        "code": code, "evidence": evidence, "workdir": str(workdir), "allowed_imports": sorted(_ALLOWED_IMPORTS),
+        "nonce": nonce, "cpu_seconds": int(timeout) + 3,
+    }, default=str)
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-I", str(_CHILD), cwd=str(workdir), env=_CHILD_ENV,
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(request.encode()), timeout)
+    except TimeoutError:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        await proc.wait()
+        return {"timeout": True}
+    except BaseException:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        raise
+    text = out.decode("utf-8", "replace")
+    marker = text.rfind(nonce)
+    if marker < 0:
+        code_ = proc.returncode
+        tail = err.decode("utf-8", "replace").strip().splitlines()[-1:] or [""]
+        reason = f"signal {-code_}" if code_ is not None and code_ < 0 else f"exit {code_}"
+        return {"crashed": f"{reason} {tail[0][:200]}".strip()}
+    try:
+        decoded: dict[str, Any] = json.loads(text[marker + len(nonce):])
+    except ValueError:
+        return {"crashed": "unreadable result"}
+    return decoded
 
 
 async def run_python(
@@ -259,7 +261,7 @@ async def run_python(
         return refusal
 
     try:
-        compiled = compile(code, "<sandbox>", "exec")
+        compile(code, "<sandbox>", "exec")  # syntax check only; the child compiles and runs it
     except SyntaxError as exc:
         return _fix_the_script(f"sandbox code has a syntax error: {exc}. Fix it and retry.")
     if typed := _typed_in_values(code, ctx):
@@ -280,62 +282,37 @@ async def run_python(
         for key, value in (row.get("dimensions") or {}).items():  # row["campaign_name"] works as well as row["dimensions"][...]
             row.setdefault(key, value)
 
-    os_facade = _WorkdirOs(str(workdir))
-    safe_builtins = dict(_SAFE_BUILTINS)
-    safe_builtins["__import__"] = _make_guarded_import(os_facade)
-    sandbox_globals: dict[str, Any] = {
-        "__builtins__": safe_builtins,
-        "evidence": evidence_dicts,
-        "WORKDIR": str(workdir),
-        "os": os_facade,
-    }
-    _bind_namespace_builtins(sandbox_globals, safe_builtins)
-    defined_names = sorted(k for k in sandbox_globals if not k.startswith("__"))
-
-    holder: dict[str, Any] = {}
-    stdout = io.StringIO()
-
-    def _run() -> None:
-        try:
-            with contextlib.redirect_stdout(stdout):
-                exec(compiled, sandbox_globals)  # noqa: S102 — see ceiling note
-            holder["result"] = sandbox_globals.get("result")
-        except Exception as exc:  # captured, returned as a failed result below
-            holder["error"] = exc
-            holder["tb"] = traceback.format_exc()
-
-    thread = threading.Thread(target=_run, daemon=True)
-    thread.start()
-    thread.join(_timeout_s())
-    if thread.is_alive():
+    outcome = await _run_in_child(code, evidence_dicts, workdir)
+    if outcome.get("timeout"):
         return ToolResult(
             success=False,
-            summary=f"sandbox script exceeded {_timeout_s():.0f}s and was abandoned",
+            summary=f"sandbox script exceeded {_timeout_s():.0f}s and was stopped",
             error_code="SANDBOX_TIMEOUT",
             retryable=True,
         )
+    if outcome.get("crashed"):
+        return _fix_the_script(f"the sandbox process ended without a result ({outcome['crashed']}); use less memory or time and retry.")
 
-    if "error" in holder:
-        err = holder["error"]
+    if "error" in outcome:
         sample = ", ".join(sorted(evidence_dicts[0])) if evidence_dicts else ""
         example = json.dumps(evidence_dicts[0], default=str)[:600] if evidence_dicts else ""
         return _fix_the_script(
-            f"sandbox code raised {type(err).__name__}: {err}. "
-            f"Fix the script and retry.\n{holder.get('tb', '')[-800:]}\n"
+            f"sandbox code raised {outcome['error']}. "
+            f"Fix the script and retry.\n{outcome.get('tb', '')[-800:]}\n"
             f"The only data available is `evidence`: a list of {len(evidence_dicts)} row dicts"
             + (f" with keys {sample}" if sample else "")
             + " (there is no variable per query id; filter on row['query_id']). Set `result`; no `return`. "
             + (f"First row, for the exact key names (a previous-period figure is its own row, not a column): {example}\n" if example else "")
-            + f"Defined names: {', '.join(defined_names)}."
+            + f"Defined names: {', '.join(outcome.get('defined') or [])}."
         )
 
-    result = holder.get("result")
+    result = outcome.get("result")
     new_files = sorted(
         {p.name for p in workdir.iterdir()} - before
     ) if workdir.exists() else []
 
     if result is None and not new_files:
-        printed_only = " Printed text is not recorded: assign the value to `result`." if stdout.getvalue().strip() else ""
+        printed_only = " Printed text is not recorded: assign the value to `result`." if str(outcome.get("stdout") or "").strip() else ""
         return _fix_the_script(
             "sandbox script produced no output — set a `result` variable or write "
             f"a file under WORKDIR, then retry.{printed_only}"
@@ -343,7 +320,7 @@ async def run_python(
 
     metrics = _flatten_numbers(result, limit=_max_metrics())
 
-    printed = stdout.getvalue().strip()
+    printed = str(outcome.get("stdout") or "").strip()
     statement_bits = [purpose.strip() or "sandbox computation"]
     spilled: list[str] = []
     if result is not None:
@@ -417,18 +394,3 @@ def _flatten_numbers(value: Any, *, limit: int, prefix: str = "") -> dict[str, f
 
     walk(value, prefix)
     return out
-
-
-class _WorkdirOs:
-    """Minimal ``os``-like facade exposing only path joins + the workdir.
-
-    The real ``os`` module is not injected (it exposes ``system``/``environ``);
-    scripts only need ``os.path.join`` and ``os.listdir`` against WORKDIR.
-    """
-
-    def __init__(self, workdir: str) -> None:
-        self.path = os.path
-        self._workdir = workdir
-
-    def listdir(self, path: str | None = None) -> list[str]:
-        return os.listdir(path or self._workdir)

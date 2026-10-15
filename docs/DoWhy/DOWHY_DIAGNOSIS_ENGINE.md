@@ -1,5 +1,12 @@
 # Seleric Diagnosis (DoWhy) Engine – HLD, LLD, Data Flow & Causal Method
 
+> **Update 2026-10-16.** This document describes the engine as it was before the rebuild. The rebuild (plan: `REBUILD_PLAN_2026-10-15.md`) has begun and changes three things you will meet when reading the code:
+> - `seleric_swarm/diagnosis/` is a new, strictly typed package (ports, graph loader, trace, run record and replay, registries, shared anomaly detector). The anomaly primitives and `Referencer` that this document places in `causal/diagnosis.py` now live in `diagnosis/detect/`, and `causal/diagnosis.py` imports them back under the old names. Their behaviour is unchanged (bit-exact parity tests).
+> - `diagnose_metric_change` now runs under an investigation: it emits ordered `diag.*` events on the mission stream (carried under the single payload key `investigation`) and returns the `investigation_id`. The analysis itself is unchanged.
+> - Layers 1-4 below are still the legacy implementation; Phase 2 of the plan turns them into operators.
+> Operations: the running stack is built from `~/work/agent_dowhy_deploy` (see plan D-42), not from the shared `gaurav` checkout.
+
+
 As of 2026-10-14 · generated from the code at `e9a2ca6`. A copy lives in a Claude Doc; this file is the repo copy.
 
 ## 1. Summary

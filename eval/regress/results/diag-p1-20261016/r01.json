@@ -1,0 +1,58 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_ae7f85c456d041fb92abe53589f7d0dc",
+ "mission": "MS3-64a3b304a5",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 47,
+ "elapsed_s": 41.378,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 22,
+  "measured": 22,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 68609.59412790312, 'net_sales_prev_day': 78789.19141493266})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 68609.59412790312, 'net_sales_prev_day': 78789.19141493266})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 68609.59412790312, 'net_sales_prev_day': 78789.19141493266})"
+  }
+ ],
+ "answer": "Your net sales dropped by 12.9% yesterday, from \u20b978,789 on October 14 to \u20b968,610 on October 15. This is within the normal day-to-day variation, so there is no unusual change to explain.\n\n- The drop in net sales was primarily due to a 13.9% decrease in total sales, which fell from \u20b999,272 to \u20b985,443. This was driven by a 5.1% decrease in orders (from 39 to 37) and a 9.3% decrease in average order value (AOV), which went from \u20b92,545 to \u20b92,309.\n- The number of units sold also dropped significantly, from 59 to 44 (-25.4%), with the average units per order decreasing by 21.4% (from 1.51 to 1.19).\n- Gross sales, a key component of net sales, fell by 13.9%, from \u20b984,407 to \u20b972,577. This was influenced by a 79.2% drop in average order value in Karnataka, where orders fell from 5 to 1.\n\nNo specific upstream cause, such as ad spend or web traffic, was identified as driving this change. The data suggests that the drop is part of normal fluctuations.\n\nPeriod: 2026-10-15 \u00b7 Currency: INR \u00b7 Data as of 2026-10-15  \nNext: Would you like to explore the performance of specific channels or products?"
+}

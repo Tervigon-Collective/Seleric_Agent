@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import statistics
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
+from seleric_swarm.diagnosis.detect.detector import RobustScore, rescore, robust_score
 from seleric_swarm.domain.models import StateRequest
 from seleric_swarm.swarm.providers.base import AnomalyFinding, MetricReading
 
@@ -14,19 +13,8 @@ if TYPE_CHECKING:
 STRATEGY_ID = "robust_zscore"
 STRATEGY_VERSION = "v1"
 
-# Standard MAD -> sigma scale factor for a normal distribution.
-_MAD_TO_SIGMA = 1.4826
-
-
-@dataclass
-class RobustZScoreResult:
-    observed: float
-    expected: float
-    expected_range: list[float]
-    deviation_pct: float | None
-    score: float
-    direction: str
-    is_anomaly: bool
+# One implementation of the median + MAD band lives in the shared detector (plan P1.4); the names below are kept.
+RobustZScoreResult = RobustScore
 
 
 def robust_zscore(history: list[float], observed: float, *, z_threshold: float = 3.0) -> RobustZScoreResult:
@@ -38,54 +26,15 @@ def robust_zscore(history: list[float], observed: float, *, z_threshold: float =
     """
     if not history:
         raise ValueError("robust_zscore needs at least one history point")
-    median = statistics.median(history)
-    mad = statistics.median([abs(v - median) for v in history])
-    # ponytail: flat history (mad == 0) falls back to a tiny epsilon sigma so
-    # a genuinely flat metric doesn't divide by zero -- any nonzero move on a
-    # flat metric will then score as a large anomaly, which is the correct
-    # direction of error (never silently "not anomalous"). Revisit with a
-    # distribution-aware minimum if flat metrics prove noisy in practice.
-    sigma = _MAD_TO_SIGMA * mad if mad else 1e-9
-    z = (observed - median) / sigma
-    deviation_pct = ((observed - median) / abs(median) * 100) if median else None  # abs keeps the sign of the move on a negative base
-    direction = "up" if observed > median else ("down" if observed < median else "flat")
-    return RobustZScoreResult(
-        observed=observed,
-        expected=median,
-        expected_range=[median - z_threshold * sigma, median + z_threshold * sigma],
-        deviation_pct=deviation_pct,
-        score=abs(z),
-        direction=direction,
-        is_anomaly=abs(z) >= z_threshold,
-    )
+    return robust_score(history, observed, z_threshold=z_threshold)
 
 
 def _rescore_against_expected(
     observed: float, *, expected: float, expected_range: list[float], z_threshold: float
 ) -> RobustZScoreResult:
     """Score an arbitrary ``observed`` against an already-computed median +
-    MAD band, instead of the band's own last-history-point observation.
-
-    ``expected_range`` is symmetric around ``expected`` by construction
-    (``[median - z*sigma, median + z*sigma]``, see ``robust_zscore``), so
-    sigma is recoverable without needing the raw history back from the
-    caller.
-    """
-    sigma = (expected_range[1] - expected) / z_threshold if z_threshold else 0.0
-    if sigma <= 0:
-        sigma = 1e-9  # same flat-history guard as robust_zscore
-    z = (observed - expected) / sigma
-    deviation_pct = ((observed - expected) / abs(expected) * 100) if expected else None
-    direction = "up" if observed > expected else ("down" if observed < expected else "flat")
-    return RobustZScoreResult(
-        observed=observed,
-        expected=expected,
-        expected_range=expected_range,
-        deviation_pct=deviation_pct,
-        score=abs(z),
-        direction=direction,
-        is_anomaly=abs(z) >= z_threshold,
-    )
+    MAD band, instead of the band's own last-history-point observation."""
+    return rescore(observed, expected=expected, expected_range=expected_range, z_threshold=z_threshold)
 
 
 class RobustZScoreDetector:

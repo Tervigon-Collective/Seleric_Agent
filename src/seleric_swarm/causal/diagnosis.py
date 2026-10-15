@@ -52,6 +52,14 @@ from typing import Any, Literal, TypeGuard
 
 from seleric_swarm.causal.dowhy_service import TimeSeriesEffect
 from seleric_swarm.causal.estimate_pool import estimate_many
+from seleric_swarm.diagnosis.detect.detector import robust_center_scale
+from seleric_swarm.diagnosis.detect.reference import (
+    Referencer,
+)
+from seleric_swarm.diagnosis.detect.reference import (
+    prior_days as _prior_days,
+)
+from seleric_swarm.diagnosis.trace.active import report_failure
 from seleric_swarm.toolsets import policy_config as P
 
 _log = logging.getLogger(__name__)
@@ -216,7 +224,8 @@ def fit_calendar(series: Series, days: list[date]) -> CalendarFit | None:
 
             res = sm.RLM(ys, Xs, M=sm.robust.norms.HuberT()).fit()
             params, scale = [float(p) for p in res.params], float(res.scale)
-        except Exception:
+        except Exception as exc:
+            report_failure("robust_calendar_fit", exc, {"rows": len(ys)})
             params, scale = [float(p) for p in np.linalg.lstsq(Xs, ys, rcond=None)[0]], 0.0
         r = ys - Xs @ np.array(params)
         if not scale or not math.isfinite(scale):
@@ -594,95 +603,8 @@ def shapley(f: Any, x0: list[float], x1: list[float]) -> list[float]:
 
 
 # --------------------------------------------------------------------------- seasonal-naive profile
-def _prior_days(d: date, pool: set[date], k: int, exclude: set[date], same_weekday: bool) -> list[date]:
-    if same_weekday:
-        cands = [d - timedelta(days=7 * j) for j in range(1, 3 * k + 1)]
-    else:
-        cands = [d - timedelta(days=j) for j in range(1, 3 * k + 8)]
-    return [c for c in cands if c in pool and c not in exclude][: (k if same_weekday else max(k, 7))]
-
-
 def _robust_center_scale(xs: list[float]) -> tuple[float, float]:
-    c = _median(xs)
-    mad = _median([abs(x - c) for x in xs]) * 1.4826
-    if mad <= 0:
-        sd = math.sqrt(_mean([(x - c) ** 2 for x in xs])) if xs else 0.0
-        mad = sd if sd > 0 else 1e-9
-    return c, mad
-
-
-_LEVEL_DAYS = 7
-_LEVEL_FACTOR_BOUNDS = (0.2, 5.0)
-
-
-class Referencer:
-    """Level-adjusted same-weekday references for one series.
-
-    ``reference(d) = mean over recent same-weekday normal days r of
-    y(r) x level(before d) / level(before r)``, where a level is the mean of the
-    last seven normal days. The weekday pattern comes from the same-weekday
-    days; the level ratio carries a recent regime change (a budget cut, a
-    post-outage recovery) instead of averaging two regimes together. Seven-day
-    levels span whole weeks, so the ratio itself is free of weekday effects.
-    """
-
-    def __init__(self, series: Series, history: list[date], outliers: set[date], same_weekday: bool, weeks: int) -> None:
-        self.series = series
-        self.pool = {d for d in history if _finite(series.get(d))}
-        self.outliers = outliers
-        self.same_weekday = same_weekday
-        self.weeks = weeks
-        self._levels: dict[date, float | None] = {}
-
-    def level_before(self, d: date) -> float | None:
-        if d in self._levels:
-            return self._levels[d]
-        # Only the seven calendar days just before d: reaching further back past
-        # an abnormal stretch would date the level to a different regime.
-        vals = [
-            float(self.series[x])
-            for x in (d - timedelta(days=j) for j in range(1, _LEVEL_DAYS + 1))
-            if x in self.pool and x not in self.outliers
-        ]
-        lvl = _mean(vals) if len(vals) >= 4 else None
-        self._levels[d] = lvl
-        return lvl
-
-    def refs(self, d: date) -> list[date]:
-        return _prior_days(d, self.pool, self.weeks, self.outliers, self.same_weekday)
-
-    def trimmed(self, anchor: date, refs: list[date]) -> tuple[list[date], dict[date, float]]:
-        """References with the highest and lowest level-adjusted value dropped
-        (when four or more remain), plus their factors. Used for the outcome AND
-        its segments/components, so references stay exactly additive. A
-        reference day with no valid recent level is dropped when at least two
-        others have one (its scaling would be guesswork)."""
-        if self.level_before(anchor) is not None:
-            known = [r for r in refs if self.level_before(r) is not None]
-            if len(known) >= 2:
-                refs = known
-        f = self.factors(anchor, refs)
-        if len(refs) >= 4:
-            ranked = sorted(refs, key=lambda r: float(self.series[r]) * f[r])
-            refs = [r for r in refs if r not in (ranked[0], ranked[-1])]
-        return refs, {r: f[r] for r in refs}
-
-    def factors(self, anchor: date, refs: list[date]) -> dict[date, float]:
-        """Level ratio per reference day; 1.0 for all when any level is unknown."""
-        now = self.level_before(anchor)
-        out: dict[date, float] = {}
-        for r in refs:
-            if not self.same_weekday and (anchor - r).days <= _LEVEL_DAYS:
-                # A reference inside the anchor's own level window already IS the
-                # current level; scaling it again extrapolates the recent trend.
-                out[r] = 1.0
-                continue
-            then = self.level_before(r)
-            if now is None or then is None or then <= 0 or now < 0:
-                return {r: 1.0 for r in refs}
-            lo, hi = _LEVEL_FACTOR_BOUNDS
-            out[r] = min(hi, max(lo, now / then))
-        return out
+    return robust_center_scale(xs)
 
 
 def _transform(series: Series, pool: set[date]) -> tuple[bool, float]:

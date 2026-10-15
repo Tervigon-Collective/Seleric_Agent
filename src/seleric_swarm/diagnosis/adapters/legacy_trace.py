@@ -1,0 +1,166 @@
+"""Trace events for one call of the legacy diagnosis tool (plan P1.5b, P1.6b).
+
+The tool still runs through the semantic layer's ``RunContext``, not the ports, so what it produces is a *live trace*
+(events and a correlation id), not a replayable record. The trace is a view: a failure to emit never changes or blocks
+the analysis, and is counted in the closing event."""
+
+from __future__ import annotations
+
+import logging
+import time
+import uuid
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
+from typing import Any
+
+from seleric_swarm.diagnosis.adapters.catalogue_graph import (
+    VendoredGraphAdapter,
+    facts_from_definitions,
+)
+from seleric_swarm.diagnosis.adapters.mission_events import MissionEventSink
+from seleric_swarm.diagnosis.domain.canonical import fingerprint
+from seleric_swarm.diagnosis.domain.errors import DiagnosisError, GraphRejected
+from seleric_swarm.diagnosis.ports.events import EventSink
+from seleric_swarm.diagnosis.trace import events as kinds
+from seleric_swarm.diagnosis.trace.active import activate_emitter
+from seleric_swarm.diagnosis.trace.correlation import investigation_scope, tag_current_span
+from seleric_swarm.diagnosis.trace.emitter import DEFAULT_PAYLOAD_CAP_BYTES, Emitter, MemorySink
+from seleric_swarm.diagnosis.trace.graph_events import emit_graph_loaded
+
+_log = logging.getLogger("seleric.diagnosis.trace")
+_current: ContextVar[LegacyTrace | None] = ContextVar("diagnosis_legacy_trace", default=None)
+# The operator the running task is inside. Context-local, because the tool runs fetches concurrently.
+_parent: ContextVar[int | None] = ContextVar("diagnosis_parent_event", default=None)
+
+
+def current_trace() -> LegacyTrace | None:
+    return _current.get()
+
+
+@dataclass
+class OperatorScope:
+    """Filled in by the code inside ``LegacyTrace.operator`` so the closing event can say what it produced."""
+
+    result: Mapping[str, Any] = field(default_factory=dict)
+
+
+class LegacyTrace:
+    def __init__(
+        self,
+        mission_id: str,
+        outcome: str,
+        scope: Mapping[str, Any],
+        *,
+        clock: Callable[[], datetime] | None = None,
+        sinks: tuple[EventSink, ...] | None = None,
+    ) -> None:
+        self.investigation_id = f"inv_{uuid.uuid4().hex[:12]}"
+        self._outcome, self._scope = outcome, dict(scope)
+        self.memory = MemorySink()
+        live = (MissionEventSink(mission_id),) if sinks is None and mission_id else (sinks or ())
+        self.emitter = Emitter(
+            self.investigation_id, clock or (lambda: datetime.now(UTC)), [self.memory, *live],
+            cap_bytes=DEFAULT_PAYLOAD_CAP_BYTES,
+        )
+        self._queries = 0
+        self.instrumentation_errors = 0
+
+    # ------------------------------------------------------------------ plumbing
+    def _emit(self, kind: str, payload: Mapping[str, Any], *, parent: int | None = None) -> int | None:
+        try:
+            return self.emitter.emit(kind, payload, parent=parent if parent is not None else _parent.get()).seq
+        except DiagnosisError:
+            self.instrumentation_errors += 1
+            _log.error("trace_event_refused kind=%s", kind, exc_info=True)
+            return None
+
+    @contextmanager
+    def activate(self) -> Iterator[LegacyTrace]:
+        token = _current.set(self)
+        try:
+            with investigation_scope(self.investigation_id), activate_emitter(self.emitter):
+                tag_current_span(self.investigation_id)
+                yield self
+        finally:
+            _current.reset(token)
+
+    # ------------------------------------------------------------------ events
+    def started(self) -> None:
+        self._emit(kinds.INVESTIGATION_STARTED, {"outcome": self._outcome, "scope": self._scope})
+
+    def window(self, start: date, end: date, *, baseline: int = 0) -> None:
+        self._emit(kinds.WINDOW_RESOLVED, {"start": start.isoformat(), "end": end.isoformat(), "baseline_days": baseline})
+
+    def graph(self, definitions: Mapping[str, Mapping[str, Any]]) -> None:
+        """Load the reviewed graph against the live catalogue and show what was set aside."""
+        facts = facts_from_definitions(definitions)
+        try:
+            loaded = VendoredGraphAdapter(live=facts or None, catalogue_version=fingerprint({k: vars(v) for k, v in sorted(facts.items())})).load()
+        except GraphRejected as exc:
+            self._emit(kinds.GRAPH_ISSUE, {"code": exc.reason_code, "subject": "graph", "detail": exc.detail})
+            return
+        try:
+            emit_graph_loaded(self.emitter, loaded)
+        except DiagnosisError:
+            self.instrumentation_errors += 1
+            _log.error("trace_graph_events_refused", exc_info=True)
+
+    def query(self, metric: str, *, cache_hit: bool) -> None:
+        self._queries += 1
+        self._emit(kinds.QUERY_ISSUED, {"metric": metric, "cache_hit": cache_hit})
+
+    @contextmanager
+    def operator(self, name: str, inputs: Mapping[str, Any] | None = None) -> Iterator[OperatorScope]:
+        scope = OperatorScope()
+        queries_before, began = self._queries, time.monotonic()
+        seq = self._emit(kinds.OPERATOR_STARTED, {"operator": name, "inputs": dict(inputs or {})})
+        token = _parent.set(seq if seq is not None else _parent.get())
+        try:
+            yield scope
+        except Exception as exc:
+            self._emit(kinds.OPERATOR_FAILED, {
+                "operator": name, "error_type": type(exc).__name__, "message": str(exc)[:300],
+                "inputs_digest": fingerprint(dict(inputs or {})) if _plain(inputs) else "",
+            })
+            raise
+        else:
+            self._emit(kinds.OPERATOR_FINISHED, {
+                "operator": name, "query_count": self._queries - queries_before,
+                "duration_ms": round((time.monotonic() - began) * 1000),
+                "result_digest": fingerprint(dict(scope.result)) if _plain(scope.result) else "",
+            })
+        finally:
+            _parent.reset(token)
+
+    def report(self, report: Any) -> None:
+        """One resolved hypothesis per driver the engine tested, with its refuters, and the unexplained share."""
+        for driver in getattr(report, "drivers", []):
+            head = self._emit(kinds.HYPOTHESIS_RESOLVED, {
+                "hypothesis": driver.driver, "status": driver.status,
+                "label": getattr(driver.classification, "value", None) or str(driver.classification or ""),
+                "p_raw": driver.p_value, "share_of_change": driver.share_of_change, "n_rows": driver.n_rows,
+            })
+            for refutation in driver.refutations:
+                self._emit(kinds.REFUTER_RESULT, {
+                    "hypothesis": driver.driver, "refuter": str(refutation.get("name", "")),
+                    "passed": bool(refutation.get("passed")), "error": str(refutation.get("error", ""))[:200],
+                }, parent=head)
+        if getattr(report, "unexplained_share", None) is not None:
+            self._emit(kinds.UNEXPLAINED_SHARE_UPDATED, {"share": report.unexplained_share})
+
+    def finished(self, reason: str) -> None:
+        self._emit(kinds.INVESTIGATION_FINISHED, {
+            "termination_reason": reason, "events": self.emitter.last_seq, "sink_failures": len(self.emitter.sink_failures),
+            "instrumentation_errors": self.instrumentation_errors,
+        })
+
+
+def _plain(value: Mapping[str, Any] | None) -> bool:
+    try:
+        fingerprint(dict(value or {}))
+    except (TypeError, ValueError):
+        return False
+    return True

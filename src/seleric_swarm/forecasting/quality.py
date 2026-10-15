@@ -13,6 +13,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from seleric_swarm.diagnosis.detect.detector import modified_z
 from seleric_swarm.forecasting.types import QualityVerdict
 from seleric_swarm.paths import repo_root
 
@@ -308,12 +309,12 @@ def assess_series(
     obs_now = _observed(out)
     if len(obs_now) >= 30:
         med = statistics.median(obs_now)
-        mad = statistics.median([abs(x - med) for x in obs_now]) or 1.0
+        mad = statistics.median([abs(x - med) for x in obs_now])
         outlier_dates: list[str] = []
         for i, v in enumerate(out):
             if v is None:
                 continue
-            z = 0.6745 * (v - med) / mad
+            z = modified_z(v, med, mad)
             if abs(z) > 6:
                 outlier_dates.append(index[i].isoformat())
         if outlier_dates:

@@ -1,0 +1,47 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_a33bf257142c454ba8f5d5cb6710b6e0",
+ "mission": "MS3-b30180fc74",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 30,
+ "elapsed_s": 27.208,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 19,
+  "measured": 19,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query",
+  "catalogue_get_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer: Over the last 7 complete days (2026-10-09 to 2026-10-15, P&L / order-date), several Meta campaigns spent material ad budget while returning well under break-even \u2014 they look like money-losers now. Biggest offenders by spend and low net ROAS: TH-012-SNUGBOO \u2014 \u20b918,002, ROAS 0.7x; TH-336-PAWTECH \u2014 \u20b916,351, ROAS 1.0x (borderline); TH-383-SUSPENDER-29SEP \u2014 \u20b912,442, ROAS 0.6x; TH-383-SUSPENDER-26SEP-ADV+ \u2014 \u20b911,537, ROAS 0.6x; DOG DAD T-SHIRT-CS-06OCT \u2014 \u20b99,769, ROAS 0.2x; DOG SHOES-10OCT-CS \u2014 \u20b99,506, ROAS 0.2x.\n\nWhat\u2019s behind it (top movers):\n- High spend, low return: TH-012-SNUGBOO spent \u20b918,002 (2026-10-09..15) but net ROAS \u22480.7x \u2014 it\u2019s spending at a clear loss.  \n- Several product-focused campaigns (DOG DAD T-SHIRT, DOG SHOES) show very low ROAS (~0.2x) on ~\u20b99\u201310k spends each \u2014 these are high-impact waste.  \n- A cluster of \u201cSUSPENDER\u201d campaigns together spent ~\u20b935\u201340k across variants but ROAS mostly ~0.55\u20130.65x \u2014 the family is underperforming.  \n- Many small campaigns show ROAS = 0 or null (no attributed contribution) \u2014 these may be misattributed, untracked, or truly non-performing.\n\nWorth checking: pause or cut budget for campaigns with ROAS <0.5 and >\u20b95k spend (the DOG and SUSPENDER lines), and run a quick drilldown by adset/creative for TH-012-SNUGBOO to see if one creative or audience is causing most of the loss.\n\nPeriod: 2026-10-09..2026-10-15 \u00b7 Currency: INR \u00b7 Data as of 2026-10-15  \nNext: Do you want the top wasted campaigns broken down to adset and creative so we can pick exact adsets to pause?"
+}

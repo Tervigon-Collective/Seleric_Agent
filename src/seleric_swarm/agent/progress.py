@@ -8,6 +8,7 @@ it. With no sink registered, nothing is emitted and the run is unchanged.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import AsyncIterable, Callable
@@ -92,6 +93,15 @@ def _tool_problem(part: Any) -> tuple[str | None, bool]:
         return (text if len(text) <= _PROBLEM_MAX_CHARS else text[: _PROBLEM_MAX_CHARS - 1] + "…", True)
     else:
         content = getattr(part, "content", None)
+        if isinstance(content, str):  # an MCP tool returns its result as JSON text; {"error": ...} is a failed call
+            try:
+                body = json.loads(content)
+            except ValueError:
+                return None, False
+            if isinstance(body, dict) and body.get("error"):
+                text = " ".join(str(body["error"]).split())
+                return (text if len(text) <= _PROBLEM_MAX_CHARS else text[: _PROBLEM_MAX_CHARS - 1] + "…", False)
+            return None, False
         if getattr(content, "success", True) is not False:
             return None, False
         text = str(getattr(content, "summary", "") or getattr(content, "error_code", "") or "no result")

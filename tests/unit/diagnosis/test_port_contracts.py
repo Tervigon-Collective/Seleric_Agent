@@ -10,9 +10,8 @@ from datetime import date
 import pytest
 
 from seleric_swarm.diagnosis.adapters.catalogue_graph import VendoredGraphAdapter
-from seleric_swarm.diagnosis.domain.canonical import segments_fingerprint, series_fingerprint
 from seleric_swarm.diagnosis.domain.graph import LoadedGraph
-from seleric_swarm.diagnosis.domain.types import Scope, SeriesRequest, Window
+from seleric_swarm.diagnosis.domain.types import Scope, SeriesRequest, Window, result_fingerprint
 from seleric_swarm.diagnosis.ports.evidence import DatedEvidence
 
 WINDOW = Window(date(2026, 9, 10), date(2026, 9, 20))
@@ -39,10 +38,10 @@ async def test_series_port_returns_only_days_inside_the_window_and_fingerprints_
         [SeriesRequest("orders", WINDOW), SeriesRequest("ad_spend", WINDOW, dimension="ad_platform")]
     )
     assert plain.error is None and plain.values and all(WINDOW.contains(d) for d in plain.values)
-    assert plain.fingerprint == series_fingerprint(plain.values) and plain.segments == {}
+    assert plain.fingerprint == result_fingerprint(plain.request, plain.values, plain.segments) and plain.segments == {}
     assert split.error is None and split.values == {} and split.segments
     assert all(WINDOW.contains(d) for s in split.segments.values() for d in s)
-    assert split.fingerprint == segments_fingerprint(split.segments)
+    assert split.fingerprint == result_fingerprint(split.request, split.values, split.segments)
     assert plain.source_query != ""
 
 
@@ -53,6 +52,18 @@ async def test_series_port_never_returns_numbers_with_an_error(series_adapter):
     ])
     assert all(r.error for r in results)
     assert all(r.values == {} and r.segments == {} for r in results)
+
+
+async def test_series_port_fingerprints_every_answer_by_the_one_rule_even_when_it_is_empty_or_an_error(series_adapter):
+    long_before = Window(date(2020, 1, 1), date(2020, 1, 10))  # no data in this window
+    results = await series_adapter.fetch([
+        SeriesRequest("ad_spend", long_before, dimension="ad_platform"),
+        SeriesRequest("ad_spend", long_before),
+        SeriesRequest("no_such_metric", WINDOW),
+        SeriesRequest("no_such_metric", WINDOW, dimension="ad_platform"),
+    ])
+    for r in results:
+        assert r.fingerprint == result_fingerprint(r.request, r.values, r.segments), r.request
 
 
 async def test_series_port_is_repeatable(series_adapter):

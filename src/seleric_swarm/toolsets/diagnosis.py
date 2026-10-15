@@ -37,17 +37,20 @@ import math
 import statistics
 import time
 from collections.abc import Sequence
+from contextlib import AbstractContextManager, nullcontext
 from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
 from pydantic_ai import RunContext
 
 from seleric_swarm.agent.artifacts import CausalArtifact, EvidenceArtifact, Finding
-from seleric_swarm.agent.dependencies import DIAGNOSIS_FAILED, DIAGNOSIS_OK, SelericDeps
+from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal import diagnosis as engine
 from seleric_swarm.causal.graph_chart import build_causal_graph_spec
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+from seleric_swarm.diagnosis.adapters.legacy_trace import LegacyTrace, OperatorScope, current_trace
+from seleric_swarm.diagnosis.trace.active import report_failure
 from seleric_swarm.exploration import space
 from seleric_swarm.semantic import McpSemanticPort
 from seleric_swarm.services.mcp_query import build_metrics_query_args, dimension_value, row_date
@@ -90,7 +93,8 @@ async def _all_definitions(ctx: RunContext[SelericDeps]) -> dict[str, dict[str, 
     async def one(batch: list[str]) -> None:
         try:
             res = await McpSemanticPort(ctx.deps.mcp_client).fetch_metrics(batch)
-        except Exception:
+        except Exception as exc:
+            report_failure("definitions_fetch", exc, {"metrics": len(batch)})
             return
         for mid, d in ((res or {}).get("metrics") or {}).items():
             if isinstance(d, dict):
@@ -224,7 +228,10 @@ async def _fetch_daily(
         dimensions=[dimension] if dimension else None, filters=flt or None,
         inject_default_brand=_supports_brand(ctx, metric_id),
     )
+    hit = ctx.deps.query_cache.peek(_data.cache_key("seleric.metrics_query", args)) is not None
     result = await _data.cached_metrics_query(ctx, args)
+    if (trace := current_trace()) is not None:
+        trace.query(metric_id, cache_hit=hit)
     result = dict(result)
     result["_args"] = args
     result["_dropped_filters"] = dropped
@@ -1215,6 +1222,12 @@ def _inclusive_days(start_dt: datetime, end_dt: datetime) -> tuple[date, date]:
 
 
 # --------------------------------------------------------------------------- the tool
+def _op(name: str, inputs: dict[str, Any]) -> AbstractContextManager[OperatorScope]:
+    """An operator scope on the running investigation's trace, or a do-nothing scope when there is none."""
+    trace = current_trace()
+    return trace.operator(name, inputs) if trace is not None else nullcontext(OperatorScope())
+
+
 async def _diagnose(
     ctx: RunContext[SelericDeps],
     metric_id: str,
@@ -1307,6 +1320,8 @@ async def _diagnose(
             error_code="UNSUPPORTED_QUERY",
         )
     hist_start = ev_start - timedelta(days=P.DIAG_HISTORY_DAYS)
+    if (trace := current_trace()) is not None:
+        trace.window(ev_start, ev_end, baseline=len(compared))
     if baseline or full_baseline:
         hist_start = min(hist_start, min([*baseline[:1], *full_baseline[:1]]) - timedelta(days=_MAX_EVENT_DAYS))
     filters = dict(filters or {})
@@ -1319,6 +1334,8 @@ async def _diagnose(
 
     marks: list[tuple[str, float]] = [("start", time.perf_counter())]
     definitions = await _all_definitions(ctx)
+    if (trace := current_trace()) is not None:
+        trace.graph(definitions)
     if metric_id not in definitions:
         return _refuse(f"no catalogue definition for {metric_id}; cannot read its lineage")
     lineage = engine.lineage_from_definitions(definitions)
@@ -1386,11 +1403,13 @@ async def _diagnose(
     marks.append(("plan", time.perf_counter()))
     # An additive outcome's segment queries need only the dimensions, so they run beside the series fetch (the two
     # share the semaphore, so the server sees no more concurrent queries than before).
-    seg_early: asyncio.Future[Any] | None = (
-        asyncio.ensure_future(_fetch_all(ctx, [(metric_id, d) for d in dims], hist_start, ev_end, filters, guarded))
-        if out_meta.additive else None
-    )
-    series_results = await _fetch_all(ctx, [(m, None) for m in series_ids], hist_start, ev_end, filters, guarded)
+    async def _segments_beside_series() -> Any:
+        with _op("fetch_segments", {"jobs": len(dims), "beside": "fetch_series"}):
+            return await _fetch_all(ctx, [(metric_id, d) for d in dims], hist_start, ev_end, filters, guarded)
+
+    seg_early: asyncio.Future[Any] | None = asyncio.ensure_future(_segments_beside_series()) if out_meta.additive else None
+    with _op("fetch_series", {"metrics": len(series_ids)}):
+        series_results = await _fetch_all(ctx, [(m, None) for m in series_ids], hist_start, ev_end, filters, guarded)
     marks.append(("fetch_series", time.perf_counter()))
 
     quality: list[str] = []
@@ -1437,7 +1456,11 @@ async def _diagnose(
     history_days = sorted(d for d in series[metric_id] if d < ev_start and d not in partial)
     numerator, weight = (None, None) if out_meta.additive else _rate_parts(metric_id, lineage, series, history_days)
     seg_jobs = [(metric_id, d) for d in dims] + [(m, d) for m in (weight, numerator) if m for d in dims]
-    seg_results = await (seg_early if seg_early is not None else _fetch_all(ctx, seg_jobs, hist_start, ev_end, filters, guarded))
+    if seg_early is not None:
+        seg_results = await seg_early
+    else:
+        with _op("fetch_segments", {"jobs": len(seg_jobs)}):
+            seg_results = await _fetch_all(ctx, seg_jobs, hist_start, ev_end, filters, guarded)
     marks.append(("fetch_segments", time.perf_counter()))
     segments: dict[str, dict[str, dict[str, dict[date, float]]]] = {}
     seg_args: dict[tuple[str, str], dict[str, Any]] = {}
@@ -1466,7 +1489,8 @@ async def _diagnose(
             if d in base_dims:
                 jobs_b += [(rate_m, d), (base_m, d)]
     jobs_b = [j for j in dict.fromkeys(jobs_b) if j not in seg_args]
-    res_b = await _fetch_all(ctx, jobs_b, hist_start, ev_end, filters, guarded)
+    with _op("fetch_chain_segments", {"jobs": len(jobs_b)}):
+        res_b = await _fetch_all(ctx, jobs_b, hist_start, ev_end, filters, guarded)
     marks.append(("fetch_chain_segments", time.perf_counter()))
     for (m, d), (res, args) in zip(jobs_b, res_b, strict=True):
         if args is None or len(res.get("rows") or []) > _MAX_SEGMENT_ROWS:
@@ -1488,7 +1512,11 @@ async def _diagnose(
     for _ in inp.candidate_drivers:
         if not ctx.deps.budget.consume("causal_queries").ok:
             inp.candidate_drivers = inp.candidate_drivers[: max(0, len(inp.candidate_drivers) - 1)]
-    report = await asyncio.to_thread(engine.diagnose, inp)
+    with _op("analyse", {"candidate_drivers": len(inp.candidate_drivers), "history_days": len(history_days)}) as scope:
+        report = await asyncio.to_thread(engine.diagnose, inp)
+        scope.result = {"verdict": report.verdict, "drivers": len(report.drivers), "dimensions": len(report.dimensions)}
+    if trace is not None:
+        trace.report(report)
     marks.append(("engine", time.perf_counter()))
     report.data_quality = [*notes, *quality, *report.data_quality]
 
@@ -1625,10 +1653,11 @@ async def _diagnose(
         for x in ((report.event.previous_period.get("days") or []) if report.event else [])
     ]
     marks.append(("evidence", time.perf_counter()))
-    lever_lines, lever_ids, lever_numbers = await _levers(
-        ctx, report, metric_id, lineage, filters, event_days, sorted(lever_ref), hist_start, history_days, index, tz,
-        units,
-    )
+    with _op("levers", {"drivers": len(report.drivers)}):
+        lever_lines, lever_ids, lever_numbers = await _levers(
+            ctx, report, metric_id, lineage, filters, event_days, sorted(lever_ref), hist_start, history_days, index, tz,
+            units,
+        )
     evidence_ids += lever_ids
     marks.append(("levers", time.perf_counter()))
     finding = Finding(
@@ -1663,17 +1692,22 @@ async def _diagnose(
 
 @functools.wraps(_diagnose)
 async def diagnose_metric_change(*args: Any, **kwargs: Any) -> ToolResult:
-    """The tool the agent and the executor call; it records how the diagnosis went on the mission, so the answer's
-    why-part can be held to it: a diagnosis that never succeeded leaves nothing behind a stated cause."""
-    result = await _diagnose(*args, **kwargs)
+    """The tool the agent and the executor call. It runs the diagnosis under an investigation trace: an id on every log
+    line and span, ordered events on the mission stream, and the id on the result so the answer can be traced back."""
     ctx = args[0] if args else kwargs.get("ctx")
-    counts = getattr(getattr(ctx, "deps", None), "call_counts", None)
-    if isinstance(counts, dict):
-        if result.success:
-            counts[DIAGNOSIS_OK] = 1
-            counts.pop(DIAGNOSIS_FAILED, None)
-        else:
-            counts[DIAGNOSIS_FAILED] = result.summary
+    metric = args[1] if len(args) > 1 else kwargs.get("metric_id", "")
+    mission_id = str(getattr(getattr(ctx, "deps", None), "mission_id", "") or "")
+    trace = LegacyTrace(mission_id, str(metric), kwargs.get("filters") or {})
+    reason = "error"
+    with trace.activate():
+        trace.started()
+        try:
+            result = await _diagnose(*args, **kwargs)
+            diagnosis = result.provenance.source_metadata.get("diagnosis") or {}
+            reason = str(diagnosis.get("verdict") or ("complete" if result.success else (result.error_code or "failed")))
+        finally:
+            trace.finished(reason)
+    result.provenance.source_metadata["investigation_id"] = trace.investigation_id
     return result
 
 

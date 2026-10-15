@@ -11,12 +11,14 @@ import json
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
-from seleric_swarm.diagnosis.domain.canonical import (
-    canonical_json,
-    segments_fingerprint,
-    series_fingerprint,
+from seleric_swarm.diagnosis.domain.canonical import canonical_json
+from seleric_swarm.diagnosis.domain.types import (
+    Scope,
+    SeriesRequest,
+    SeriesResult,
+    Window,
+    result_fingerprint,
 )
-from seleric_swarm.diagnosis.domain.types import Scope, SeriesRequest, SeriesResult, Window
 from seleric_swarm.toolsets import diagnosis as _fetch
 
 if TYPE_CHECKING:
@@ -25,7 +27,6 @@ if TYPE_CHECKING:
     from seleric_swarm.agent.dependencies import SelericDeps
 
 Guard = Callable[[Awaitable[Any]], Awaitable[Any]]
-_EMPTY = series_fingerprint({})
 
 
 class CubeSeriesAdapter:
@@ -54,14 +55,15 @@ class CubeSeriesAdapter:
         source = canonical_json(json.loads(json.dumps(payload.get("_args") or {}, default=str)))
         dropped = [str(d) for d in payload.get("_dropped_filters") or []]
         if payload.get("error"):
-            return SeriesResult(request, {}, {}, source, _EMPTY, error=str(payload["error"]))
+            return SeriesResult(request, {}, {}, source, result_fingerprint(request, {}, {}), error=str(payload["error"]))
         if dropped:
             # A filter the metric cannot take would return the unscoped series as if it were the scoped one.
             return SeriesResult(
-                request, {}, {}, source, _EMPTY, error=f"scope not supported by the metric: {sorted(dropped)}"
+                request, {}, {}, source, result_fingerprint(request, {}, {}),
+                error=f"scope not supported by the metric: {sorted(dropped)}",
             )
         if request.dimension:
             segments = _fetch._parse_segments(payload, request.metric_id, request.dimension)
-            return SeriesResult(request, {}, segments, source, segments_fingerprint(segments))
+            return SeriesResult(request, {}, segments, source, result_fingerprint(request, {}, segments))
         values = _fetch._parse_series(payload, request.metric_id)
-        return SeriesResult(request, values, {}, source, series_fingerprint(values))
+        return SeriesResult(request, values, {}, source, result_fingerprint(request, values, {}))

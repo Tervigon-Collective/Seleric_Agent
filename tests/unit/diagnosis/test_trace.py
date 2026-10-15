@@ -6,6 +6,7 @@ import json
 import threading
 from datetime import UTC, datetime, timedelta
 
+import numpy as np
 import pytest
 
 from seleric_swarm.agent.progress import clear_progress_sink, set_progress_sink
@@ -145,3 +146,35 @@ def test_events_reach_the_mission_stream_under_one_key_and_survive_the_privacy_f
     assert delivered is not None
     assert delivered.payload["investigation"]["seq"] == 1
     assert "scratchpad" not in delivered.payload and delivered.payload["mission_id"] == "m-1"
+
+
+def test_numpy_values_and_non_finite_numbers_do_not_crash_the_emitter():
+    emitter, memory = _emitter()
+    event = emitter.emit(
+        kinds.HYPOTHESIS_RESOLVED,
+        {
+            "hypothesis": "h", "status": "rejected", "p_raw": np.float64("nan"), "n": np.int64(12), "ok": np.bool_(True),
+            "stats": {"r": float("inf"), "series": np.array([1.0, 2.0]), "pair": (np.int32(1), float("-inf"))},
+        },
+    )
+    assert event.payload["n"] == 12 and event.payload["ok"] is True and event.payload["p_raw"] is None
+    assert event.payload["stats"] == {"r": None, "series": [1.0, 2.0], "pair": [1, None]}
+    assert event.payload["_non_finite"] == ["p_raw", "stats.pair[1]", "stats.r"]
+    assert Event.from_json(event.to_json()) == event and json.loads(event.to_json())  # plain, valid JSON
+    assert memory.events == [event]
+
+
+def test_a_payload_value_that_is_not_json_is_a_typed_error_that_takes_no_number():
+    emitter, memory = _emitter()
+    with pytest.raises(kinds.InvalidEvent, match="stats.members"):
+        emitter.emit(kinds.NODE_VISITED, {"node": "n", "stats": {"members": {1, 2}}})
+    assert memory.events == [] and emitter.last_seq == 0
+    emitter.emit(kinds.NODE_VISITED, {"node": "n"})
+    assert [e.seq for e in memory.events] == [1]
+
+
+def test_series_data_with_a_non_finite_value_is_still_refused_loudly():
+    from seleric_swarm.diagnosis.domain.canonical import series_fingerprint
+
+    with pytest.raises(ValueError):
+        series_fingerprint({datetime(2026, 1, 1, tzinfo=UTC).date(): float("nan")})

@@ -85,3 +85,30 @@ carry checks). Run the 6 plus the golden items relevant to a change; do not run 
 
 See the progress log in `plans/SLIM_LOOP_PLAN.md`: latency above the p50 25s / p90 45s bar, real token streaming of the
 last step, tuning of budgets, a decision on Prometheus, office-ui leftovers for the removed approvals endpoints.
+
+## 8. Diagnosis investigations (`diagnosis/`, since 2026-10-16)
+
+`diagnose_metric_change` is a wrapper: it opens an *investigation* (`inv_<12 hex>`), runs the unchanged analysis
+(`toolsets/diagnosis.py::_diagnose`) and closes it. While it runs:
+
+- **Trace.** Ordered events (`investigation_started`, `window_resolved`, `graph_loaded`, `exclusion`/`graph_issue`,
+  `operator_started/finished/failed`, `query_issued`, `hypothesis_resolved`, `refuter_result`, `unexplained_share_updated`,
+  `investigation_finished`) go through `agent/progress.py::emit_progress` as `diag.<kind>`, so they are stored in
+  `run_events` and streamed over SSE like any other mission event. The whole envelope travels under the one payload key
+  `investigation` (`conversations/privacy.py` allows only that key); each payload is capped at 4 KB. About 240 events per
+  investigation.
+- **Graph.** The reviewed metric dependency graph (`causal/data/dependency_graph.json`, generated in Agent Core) is loaded
+  and checked against the live catalogue definitions (aggregation, unit, grain, view); metrics that are missing or have
+  drifted are reported as `exclusion` events. It does not yet choose the candidate causes (Phase 3 of the rebuild).
+- **Correlation.** The id is bound on log records (`LogRecord.investigation_id`) and structlog context, set on the active
+  tracing span, and returned on the tool result (`provenance.source_metadata.investigation_id`).
+- **Code layout.** `seleric_swarm/diagnosis/` is strictly typed and layered (`domain` < `ports`, `libs` < core < `adapters`,
+  `cli`); the layering, determinism (no clock or global randomness in the core) and no-catalogue-names rules are enforced by
+  `tests/unit/diagnosis/test_import_contract.py`. The anomaly primitives shared by diagnosis, business state, forecasting
+  quality and exploration live in `diagnosis/detect/`.
+- **Record and replay.** `diagnosis/trace/run.py` can record a run (events, config, seed, fetched series, clock readings) and
+  replay it offline byte for byte (`python -m seleric_swarm.diagnosis.cli replay <record.json>`). This is proven on a
+  test runner; the legacy engine does not run through the ports yet, so it leaves a trace but no replayable record.
+
+Plan, decisions and status: `docs/DoWhy/REBUILD_PLAN_2026-10-15.md`. Operations: the stack is built from
+`~/work/agent_dowhy_deploy` (plan D-42).
