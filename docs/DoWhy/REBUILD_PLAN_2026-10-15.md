@@ -12,7 +12,7 @@ Contents: §0 how to resume · §1 dashboard · §2 context · §3 decisions · 
 1. Read §1 (status dashboard) and the last 3 entries of §12 (session log). 
 2. Read §11 (findings log) entries newer than the last session.
 3. Open the first unchecked task in the lowest-numbered unfinished phase (§6). Do not start a phase whose predecessor gate (§6 "Gate") is unchecked.
-4. Work in the worktree (§4), never in `/opt/seleric/Seleric_Agent`.
+4. Work on branch `gaurav` in `/opt/seleric/Seleric_Agent` only (D-22; no worktree, no other branch). The tree is shared with teammates: stage only your own files by explicit path, never `git add -A`, never touch their uncommitted work, and never build an image from a dirty tree without checking `git status` first.
 
 **Update rules (every session, before ending):**
 - Tick `[x]` only for work that is done **and verified** per §9. Put the evidence (command, run id, commit) after the box: `[x] P1.3 ... (abc1234, tests 12/12)`.
@@ -27,7 +27,7 @@ Contents: §0 how to resume · §1 dashboard · §2 context · §3 decisions · 
 
 | Phase | Name | Status | Gate passed | Commit / evidence |
 | --- | --- | --- | --- | --- |
-| S | Setup (worktree, plan file, baselines) | [ ] not started | [ ] | |
+| S | Setup (branch gaurav, plan file, baselines) | [~] S1-S4 done, S5 partly | [ ] | see §12 |
 | 0 | Eval harness + baseline | [ ] | [ ] | |
 | 1 | Ports, graph adapter, shared detector, trace + run record + replay | [ ] | [ ] | |
 | 2 | Operator split | [ ] | [ ] | |
@@ -38,7 +38,7 @@ Contents: §0 how to resume · §1 dashboard · §2 context · §3 decisions · 
 | 7 | Offline discovery audit | [ ] | [ ] | |
 | D | Deploy (hard gate, rollback tag) | [ ] | [ ] | |
 
-Current phase: **S**. Next action: S1.
+Current phase: **S**. Next action: finish S5 (confirm `make eval` runs), then Phase 0 (P0.1).
 
 ---
 
@@ -75,11 +75,12 @@ Current phase: **S**. Next action: S1.
 | D-17 | Standing rules: no hardcoded metric names/keywords, no regex in new code; verify with live runs cross-checked in ClickHouse; run only the golden 6 + relevant items (never golden 30) | memory |
 | D-18 | Live investigation panel in chat from the moment a question routes to diagnosis: full-detail stream (graph generated/traversed, depth/branch, hypotheses, operators, queries, weights, bounds, unexplained share), WHEN to WHY | owner |
 | D-20 | Panel is expandable (collapsed row that expands) with a Cancel/Stop button; stop is cooperative (checked between operators), emits `investigation_cancelled`, returns partial ledger, narration says stopped early | owner |
+| D-22 | Work on branch `gaurav` only, in `/opt/seleric/Seleric_Agent`; no worktree, no `diag-v4` branch. Supersedes O-2 and the "worktree deploy" wording in D-13 (the eval gate and rollback tag remain) | owner 2026-10-15 |
 | D-21 | Debuggable by design (§5.3): run record, offline deterministic replay, step mode, explain-why-not, no swallowed failures, run diff, fixture export, one correlation id | owner |
 
 ## 4. Open questions (owner rulings needed; each names the phase it blocks)
 
-- [ ] **O-2** Worktree `~/work/agent_diag_v4` off `gaurav` `bd8dfde`? (blocks S1; default: yes, as proposed)
+- [x] ~~O-2~~ superseded by D-22: gaurav only, no worktree.
 - [ ] **O-3** Long-term graph delivery: vendored `dependency_graph.json` now; image artifact or MCP resource later (blocks D)
 - [ ] **O-4** Review cadence/owner for `causal_priors.yaml` changes (blocks Phase 3 sign-off)
 - [ ] **O-6** tigramite licence is **GPL-3.0 (confirmed from its repo, 2026-10-15)**. Ruling needed: allowed only as an isolated offline job (separate process/image, never imported by the service image), or not at all (blocks Phase 7). causal-learn is MIT.
@@ -440,12 +441,12 @@ Conventions: IDs `Pn.m`. "Reuse" lists existing code to build on (paths relative
 
 ### Phase S: Setup
 - [x] S0 Plan saved to `docs/DoWhy/REBUILD_PLAN_2026-10-15.md` (2026-10-15, replaces the first version; uncommitted in the live dir at the owner's request). Commit it on the new branch once S1 exists.
-- [ ] S1 Resolve O-2; `git worktree add ~/work/agent_diag_v4 -b diag-v4 bd8dfde`. Confirm `git status` clean there.
-- [ ] S2 Check baseline tooling works in the worktree: `uv sync --extra dev`; `uv run pytest -q tests/unit -k "diagnosis or time_series or estimate_pool or exploration"` (record pass count; engine doc says suite 819 at last count).
-- [ ] S3 Vendor graph: copy `Seleric_Agent_Core/doc/dependency_graph/dependency_graph.json` + `catalogue_v2_src/causal_priors.yaml` hash into `src/seleric_swarm/causal/data/` (location to confirm) with `graph_version`/`catalogue_version` recorded. No push to Agent Core `main` (push deploys).
-- [ ] S4 Record rollback target: current `seleric_agent-api` image tag in §12 (so D can tag a rollback before deploy).
+- [x] S1 Per D-22 work on `gaurav` in the live dir (HEAD d56cc2f). A `diag-v4` worktree was created and removed the same day at the owner's request; nothing from it was kept.
+- [x] S2 `uv run --no-sync pytest -q tests/unit -k "diagnosis or time_series or estimate_pool or exploration"` → 70 passed, 637 deselected, 33.7 s (2026-10-15, gaurav d56cc2f). Unit suite is 707 tests in total (engine doc's 819 is stale). Used `--no-sync` so the shared `.venv` is not changed.
+- [x] S3 Vendored to `src/seleric_swarm/causal/data/dependency_graph.json` (Core e37eecc, sha256 d973ad1a…) + `PROVENANCE.md` with the `causal_priors.yaml` hash. The graph file has no catalogue version field (see §11). No push to Agent Core.
+- [x] S4 Running container `seleric_agent-api-1` uses image id `45fb775f3ba2` (`seleric_agent-api:latest`, created 2026-10-15 14:54 IST, container started 09:26 UTC). Latest rollback tag on host: `rollback-20261015a` (`da2e6e6f8b79`), i.e. the build before the current one. Phase D must tag a new rollback from the then-running image.
 - [ ] S5 Confirm how to run live eval: `make eval` (6 questions, `eval/regress/run_regression.py`, results in `eval/regress/results/`) and how the harness in `/tmp/dev/src` approach from memory (`diagnosis-engine.md`) works against the worktree build.
-**Gate S:** worktree builds; baseline unit-test count recorded in §11.
+**Gate S:** gaurav test baseline runs; baseline unit-test count recorded in §11.
 
 ### Phase 0: Eval harness + baseline (no engine code touched)
 Goal: a repeatable suite that scores any engine version; today's engine scored first.
@@ -603,6 +604,12 @@ Truth sources: (1) injection into real brand-20 series; (2) independent-record i
 - DoWhy lists a **sensitivity analysis** refuter family (partial-R², Riesz) we do not use.
 - Doc-page gaps (not verified): exact DoWhy docs URLs for anomaly attribution moved (404); PyRCA licence/maintenance; time-series use of GCM.
 
+**2026-10-15 (setup):**
+- `dependency_graph.json` carries `version: 1` and `generated_by` only; no catalogue version or hash. Consequence for P1.3: the "catalogue_version mismatch" check cannot be a field comparison; derive the catalogue version (hash of the loaded v2 metric ids/formulas) at load time and store it beside the graph in `PROVENANCE.md`, or ask Core to add it to the builder.
+- Graph `validation` has `errors` and `warnings` lists; P1.3 should surface them as events, not ignore them.
+- `gaurav` moved since the plan was written: bd8dfde → e9b8ed9 (earlier plan, sandbox prompt text, `_chg` rounding in `causal/diagnosis.py`) → 4375c65 → d56cc2f (plan). Only `_chg` touches the engine (percent formatting: 1 decimal under 100%). Baseline P0.8 must therefore be taken at the commit current at the time and its hash recorded, not at bd8dfde.
+- The live tree has teammates' uncommitted work (`toolsets/sandbox.py`, new `toolsets/sandbox_child.py`) at 2026-10-15. Not ours; do not stage or build over it.
+
 *(Add new entries below. Format: date, source, fact, consequence.)*
 
 ---
@@ -610,6 +617,7 @@ Truth sources: (1) injection into real brand-20 series; (2) independent-record i
 ## 12. Session log (append-only)
 
 - **2026-10-15 (session 1):** Read engine doc, external report, `rebuild.md` tail, graph commit and files; web research; wrote RESEARCH_REPORT and the first plan; owner interview (4 rounds) → D-1..D-21; owner accepted bounds, requested live causal panel (expandable, Stop button) and debuggability; this master plan written in plan mode. Next: owner approval → S0-S5.
+- **2026-10-15 (session 2):** Owner said start. Read plan + memory. Created then removed a `diag-v4` worktree/branch after owner ruled "work in the gaurav branch only" (D-22). Done: S1-S4 (see §6). Not done: S5 (`make eval` exists, writes to `eval/regress/results/latest`; not run yet, it is a live LLM run). Open: O-10 (P-1..P-8 approval) still blocks Phase 1; Phase 0 does not depend on it. Next: P0.1 case format.
 - **2026-10-15 (session 1, later):** owner rejected the first exit-plan and asked for (a) official library docs read, (b) architecture: HLD, LLD, runtime flow, flowcharts, modular/extensible coding practices, in the same file. Done: docs read (§5.5), HLD/LLD/flows/practices added (§5.6-5.10), checklist tasks updated (P1.9-P1.14, P2.2, P4.2-P4.8, P5.1, P6.1b, P7.2), proposed decisions P-1..P-8 added for approval (O-10).
 
 ---
