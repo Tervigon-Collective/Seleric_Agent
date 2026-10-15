@@ -1,0 +1,2120 @@
+{
+ "stability_runs": {
+  "by_kind": {
+   "shift": {
+    "n": 40,
+    "same_verdict": 0.8,
+    "top3_jaccard": 0.838
+   },
+   "subsample": {
+    "n": 54,
+    "same_verdict": 0.574,
+    "top3_jaccard": 0.58
+   },
+   "repeat": {
+    "n": 36,
+    "same_verdict": 1.0,
+    "top3_jaccard": 1.0
+   }
+  },
+  "cases": {
+   "adv_break_funnel_purchases": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.5,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.5,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.5,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "adv_break_sessions": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "explained",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 0.75
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "explained",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "insufficient_data",
+     "same_verdict": false,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 0.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "root_cause_not_identified",
+     "same_verdict": false,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 0.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "root_cause_not_identified",
+     "same_verdict": false,
+     "top3_jaccard": 0.5,
+     "named_jaccard": 0.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "partially_explained",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "partially_explained",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "adv_hidden_channel_checkout": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.25,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "adv_hidden_orders_cut": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.25,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "adv_premise_false_increase": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "inj_conversion_drop_channel": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.25,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "inj_ctr_collapse_platform": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.25,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "inj_filtered_scope_orders": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "explained",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 0.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "inj_launch_low_click_campaign": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "inj_mix_shift_platform_ctr": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "inj_off_graph_searches": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.25,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "inj_period_spend_cut": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "inj_slow_drift_sessions": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.5,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.5,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "inj_spend_cut_platform": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.5,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.3333333333333333,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "null_ordinary_day": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 0.3333333333333333,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "+1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 0.5,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "rec_ad_outage_2026_09": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "+1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.6666666666666666,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.25,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "rec_roas_30d_vs_30d": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "+1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ],
+   "stab_net_sales_2026_10_02": [
+    {
+     "kind": "shift",
+     "label": "-2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "-1",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "shift",
+     "label": "+1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 0.5,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed2",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "subsample",
+     "label": "seed3",
+     "ran": true,
+     "verdict": "no_unusual_change",
+     "same_verdict": false,
+     "top3_jaccard": 0.5,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "1",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    },
+    {
+     "kind": "repeat",
+     "label": "2",
+     "ran": true,
+     "verdict": "located_cause_not_identified",
+     "same_verdict": true,
+     "top3_jaccard": 1.0,
+     "named_jaccard": 1.0
+    }
+   ]
+  }
+ },
+ "null_sweep": {
+  "days": 28,
+  "unusual": 11,
+  "unusual_rate": 0.393,
+  "named_a_cause": 0,
+  "rows": [
+   {
+    "day": "2026-10-14",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-10-13",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-10-12",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   },
+   {
+    "day": "2026-10-11",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   },
+   {
+    "day": "2026-10-10",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-10-09",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-10-08",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-10-07",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-10-06",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-10-05",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   },
+   {
+    "day": "2026-10-04",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-10-03",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   },
+   {
+    "day": "2026-10-02",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   },
+   {
+    "day": "2026-10-01",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-09-30",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-09-29",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-09-28",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-09-27",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-09-26",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   },
+   {
+    "day": "2026-09-25",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   },
+   {
+    "day": "2026-09-24",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-09-23",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-09-22",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-09-21",
+    "verdict": "no_unusual_change",
+    "named": []
+   },
+   {
+    "day": "2026-09-20",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   },
+   {
+    "day": "2026-09-19",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   },
+   {
+    "day": "2026-09-18",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   },
+   {
+    "day": "2026-09-17",
+    "verdict": "located_cause_not_identified",
+    "named": []
+   }
+  ]
+ },
+ "engine": {
+  "head": "670e018eb56d61d20fbbd4a6a6e2b27f783c325e",
+  "engine_dirty": [],
+  "exported": true
+ },
+ "dirty_allowed": false,
+ "fixtures": [
+  "brand20_daily_2026-10"
+ ],
+ "aggregate": {
+  "cases": 18,
+  "crashed": 0,
+  "findable": {
+   "n": 8,
+   "top1": 0.0,
+   "top3": 0.0,
+   "named": 0.0,
+   "listed_or_named": 0.375,
+   "localised": 1.0,
+   "false_attribution": 0.0,
+   "correct_verdict": 0.0
+  },
+  "below_noise": {
+   "n": 3,
+   "no_unusual_change": 0.3333,
+   "false_attribution": 0.0
+  },
+  "not_findable": {
+   "n": 6,
+   "false_attribution": 0.1667,
+   "correct_verdict": 0.8333
+  },
+  "stability": [
+   {
+    "case": "stab_net_sales_2026_10_02",
+    "verdict": "located_cause_not_identified",
+    "named": [],
+    "unexplained_share": null
+   }
+  ],
+  "decomposition_ok": 1.0,
+  "unexplained_in_range": null,
+  "by_tag": {
+   "ads": {
+    "n": 4,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   },
+   "conversion": {
+    "n": 1,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   },
+   "decomposition": {
+    "n": 1,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   },
+   "drift": {
+    "n": 1,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   },
+   "event": {
+    "n": 14,
+    "false_attribution": 0.0714,
+    "correct_verdict": 0.4286
+   },
+   "findable": {
+    "n": 11,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0909
+   },
+   "funnel": {
+    "n": 1,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   },
+   "hidden": {
+    "n": 2,
+    "false_attribution": 0.0,
+    "correct_verdict": 1.0
+   },
+   "launch": {
+    "n": 1,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   },
+   "measurement": {
+    "n": 2,
+    "false_attribution": 0.5,
+    "correct_verdict": 0.5
+   },
+   "mix": {
+    "n": 2,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.5
+   },
+   "null": {
+    "n": 1,
+    "false_attribution": 0.0,
+    "correct_verdict": 1.0
+   },
+   "off_graph": {
+    "n": 1,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   },
+   "period": {
+    "n": 2,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   },
+   "premise": {
+    "n": 1,
+    "false_attribution": 0.0,
+    "correct_verdict": 1.0
+   },
+   "record": {
+    "n": 2,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   },
+   "scope_filter": {
+    "n": 1,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   },
+   "scope_segment": {
+    "n": 5,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.4
+   },
+   "tracking": {
+    "n": 2,
+    "false_attribution": 0.5,
+    "correct_verdict": 0.5
+   },
+   "traffic": {
+    "n": 1,
+    "false_attribution": 0.0,
+    "correct_verdict": 0.0
+   }
+  }
+ },
+ "cases": [
+  {
+   "case_id": "adv_break_funnel_purchases",
+   "kind": "adversarial",
+   "cause_class": "measurement",
+   "tags": [
+    "event",
+    "measurement",
+    "tracking"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "sessions",
+    "new_customers",
+    "ad_spend",
+    "customers",
+    "order_pnl_net_sales"
+   ],
+   "found": {},
+   "rank": {},
+   "top1": null,
+   "top3": null,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": true,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 16,
+   "error": ""
+  },
+  {
+   "case_id": "adv_break_sessions",
+   "kind": "adversarial",
+   "cause_class": "measurement",
+   "tags": [
+    "event",
+    "measurement",
+    "tracking"
+   ],
+   "ran": true,
+   "verdict": "partially_explained",
+   "named": [
+    "ad_spend",
+    "funnel_purchases",
+    "new_customers",
+    "order_pnl_net_sales"
+   ],
+   "listed": [
+    "ad_spend",
+    "funnel_purchases",
+    "new_customers",
+    "order_pnl_net_sales",
+    "customers"
+   ],
+   "found": {},
+   "rank": {},
+   "top1": null,
+   "top3": null,
+   "localised": null,
+   "false_attributions": [
+    "ad_spend",
+    "order_pnl_net_sales"
+   ],
+   "correct_verdict": false,
+   "unexplained_share": 0.7237929630432006,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 14,
+   "error": ""
+  },
+  {
+   "case_id": "adv_hidden_channel_checkout",
+   "kind": "adversarial",
+   "cause_class": "hidden",
+   "tags": [
+    "event",
+    "hidden",
+    "scope_segment"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "sessions",
+    "add_to_carts",
+    "ad_spend"
+   ],
+   "found": {},
+   "rank": {},
+   "top1": null,
+   "top3": null,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": true,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": false,
+   "decomposition_ok": null,
+   "queries": 17,
+   "error": ""
+  },
+  {
+   "case_id": "adv_hidden_orders_cut",
+   "kind": "adversarial",
+   "cause_class": "hidden",
+   "tags": [
+    "event",
+    "hidden"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "sessions",
+    "add_to_carts",
+    "ad_spend"
+   ],
+   "found": {},
+   "rank": {},
+   "top1": null,
+   "top3": null,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": true,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 20,
+   "error": ""
+  },
+  {
+   "case_id": "adv_premise_false_increase",
+   "kind": "adversarial",
+   "cause_class": "none",
+   "tags": [
+    "event",
+    "premise"
+   ],
+   "ran": true,
+   "verdict": "no_unusual_change",
+   "named": [],
+   "listed": [
+    "sessions",
+    "add_to_carts",
+    "ad_spend"
+   ],
+   "found": {},
+   "rank": {},
+   "top1": null,
+   "top3": null,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": true,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 20,
+   "error": ""
+  },
+  {
+   "case_id": "inj_conversion_drop_channel",
+   "kind": "injection",
+   "cause_class": "findable",
+   "tags": [
+    "event",
+    "findable",
+    "conversion",
+    "scope_segment"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "sessions",
+    "add_to_carts",
+    "ad_spend"
+   ],
+   "found": {
+    "orders": "missed"
+   },
+   "rank": {
+    "orders": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": true,
+   "false_attributions": [],
+   "correct_verdict": false,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": false,
+   "decomposition_ok": null,
+   "queries": 17,
+   "error": ""
+  },
+  {
+   "case_id": "inj_ctr_collapse_platform",
+   "kind": "injection",
+   "cause_class": "findable",
+   "tags": [
+    "event",
+    "findable",
+    "funnel",
+    "scope_segment"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "sessions",
+    "add_to_carts",
+    "ad_spend"
+   ],
+   "found": {
+    "link_clicks": "missed"
+   },
+   "rank": {
+    "link_clicks": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": true,
+   "false_attributions": [],
+   "correct_verdict": false,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 15,
+   "error": ""
+  },
+  {
+   "case_id": "inj_filtered_scope_orders",
+   "kind": "injection",
+   "cause_class": "findable",
+   "tags": [
+    "event",
+    "findable",
+    "scope_filter"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "sessions",
+    "add_to_carts"
+   ],
+   "found": {
+    "orders": "missed"
+   },
+   "rank": {
+    "orders": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": false,
+   "false_attributions": [],
+   "correct_verdict": false,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": false,
+   "decomposition_ok": null,
+   "queries": 21,
+   "error": ""
+  },
+  {
+   "case_id": "inj_launch_low_click_campaign",
+   "kind": "injection",
+   "cause_class": "findable",
+   "tags": [
+    "event",
+    "findable",
+    "mix",
+    "launch"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [],
+   "found": {
+    "impressions": "missed"
+   },
+   "rank": {
+    "impressions": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": true,
+   "false_attributions": [],
+   "correct_verdict": false,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": true,
+   "queries": 17,
+   "error": ""
+  },
+  {
+   "case_id": "inj_mix_shift_platform_ctr",
+   "kind": "injection",
+   "cause_class": "findable",
+   "tags": [
+    "event",
+    "findable",
+    "mix",
+    "scope_segment"
+   ],
+   "ran": true,
+   "verdict": "no_unusual_change",
+   "named": [],
+   "listed": [],
+   "found": {
+    "impressions": "missed"
+   },
+   "rank": {
+    "impressions": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": true,
+   "false_attributions": [],
+   "correct_verdict": true,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": false,
+   "decomposition_ok": true,
+   "queries": 17,
+   "error": ""
+  },
+  {
+   "case_id": "inj_off_graph_searches",
+   "kind": "injection",
+   "cause_class": "findable",
+   "tags": [
+    "event",
+    "findable",
+    "off_graph"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "sessions",
+    "add_to_carts",
+    "ad_spend"
+   ],
+   "found": {
+    "site_searches": "missed"
+   },
+   "rank": {
+    "site_searches": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": false,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 20,
+   "error": ""
+  },
+  {
+   "case_id": "inj_period_spend_cut",
+   "kind": "injection",
+   "cause_class": "findable",
+   "tags": [
+    "period",
+    "findable",
+    "ads"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [],
+   "found": {
+    "ad_spend": "missed"
+   },
+   "rank": {
+    "ad_spend": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": false,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 20,
+   "error": ""
+  },
+  {
+   "case_id": "inj_slow_drift_sessions",
+   "kind": "injection",
+   "cause_class": "findable",
+   "tags": [
+    "drift",
+    "findable",
+    "traffic"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "add_to_carts",
+    "ad_spend",
+    "sessions"
+   ],
+   "found": {
+    "sessions": "listed"
+   },
+   "rank": {
+    "sessions": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": false,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 20,
+   "error": ""
+  },
+  {
+   "case_id": "inj_spend_cut_platform",
+   "kind": "injection",
+   "cause_class": "findable",
+   "tags": [
+    "event",
+    "findable",
+    "ads",
+    "scope_segment"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "ad_spend",
+    "sessions",
+    "add_to_carts"
+   ],
+   "found": {
+    "ad_spend": "listed"
+   },
+   "rank": {
+    "ad_spend": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": true,
+   "false_attributions": [],
+   "correct_verdict": false,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 15,
+   "error": ""
+  },
+  {
+   "case_id": "null_ordinary_day",
+   "kind": "null",
+   "cause_class": "none",
+   "tags": [
+    "event",
+    "null"
+   ],
+   "ran": true,
+   "verdict": "no_unusual_change",
+   "named": [],
+   "listed": [
+    "impressions"
+   ],
+   "found": {},
+   "rank": {},
+   "top1": null,
+   "top3": null,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": true,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 20,
+   "error": ""
+  },
+  {
+   "case_id": "rec_ad_outage_2026_09",
+   "kind": "record",
+   "cause_class": "findable",
+   "tags": [
+    "event",
+    "findable",
+    "record",
+    "ads"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "ad_spend",
+    "impressions"
+   ],
+   "found": {
+    "ad_spend": "listed"
+   },
+   "rank": {
+    "ad_spend": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": false,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 17,
+   "error": ""
+  },
+  {
+   "case_id": "rec_roas_30d_vs_30d",
+   "kind": "record",
+   "cause_class": "findable",
+   "tags": [
+    "period",
+    "findable",
+    "record",
+    "ads",
+    "decomposition"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [],
+   "found": {
+    "ad_spend": "missed"
+   },
+   "rank": {
+    "ad_spend": null
+   },
+   "top1": false,
+   "top3": false,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": false,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": true,
+   "queries": 21,
+   "error": ""
+  },
+  {
+   "case_id": "stab_net_sales_2026_10_02",
+   "kind": "stability",
+   "cause_class": "hidden",
+   "tags": [
+    "event",
+    "stability"
+   ],
+   "ran": true,
+   "verdict": "located_cause_not_identified",
+   "named": [],
+   "listed": [
+    "add_to_carts"
+   ],
+   "found": {},
+   "rank": {},
+   "top1": null,
+   "top3": null,
+   "localised": null,
+   "false_attributions": [],
+   "correct_verdict": true,
+   "unexplained_share": null,
+   "unexplained_in_range": null,
+   "detectable": true,
+   "decomposition_ok": null,
+   "queries": 20,
+   "error": ""
+  }
+ ]
+}
