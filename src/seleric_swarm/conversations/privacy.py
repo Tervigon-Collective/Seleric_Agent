@@ -35,6 +35,7 @@ _PUBLIC_EVENT_FIELDS = frozenset(
         "family",
         "from_agent",
         "intent",
+        "investigation",  # diagnosis trace envelope: engine-built, size-capped, no model text (D-35)
         "mapping_version",
         "message",
         "message_id",
