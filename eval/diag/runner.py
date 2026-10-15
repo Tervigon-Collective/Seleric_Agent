@@ -103,6 +103,13 @@ class RunResult:
 
 
 def tree_state() -> dict[str, Any]:
+    """HEAD and dirty engine paths. A tree exported with ``git archive <commit>`` has no .git: it carries ``.eval_commit``
+    (the commit it was exported from) and is clean by construction, which is how a score is made independent of a shared
+    working tree that teammates edit."""
+    marker = ROOT / ".eval_commit"
+    if not (ROOT / ".git").exists() and marker.exists():
+        return {"head": marker.read_text().strip(), "engine_dirty": [], "exported": True}
+
     def git(*a: str) -> str:
         return subprocess.run(["git", "-C", str(ROOT), *a], capture_output=True, text=True, check=True).stdout.strip()
 

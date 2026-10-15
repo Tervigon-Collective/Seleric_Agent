@@ -59,7 +59,9 @@ def build(fx: W.Fixture) -> list[dict]:
     end = fx.end
     three = [str(end - timedelta(days=i)) for i in (2, 1, 0)]
     onset3 = str(end - timedelta(days=2))
-    camp, chan = top(fx, "ad_spend", "campaign_name"), top(fx, "orders", "channel")
+    # Each segment is the largest one of the metric that is cut, so the metric really has it.
+    camp, camp_clicks = top(fx, "ad_spend", "campaign_name"), top(fx, "link_clicks", "campaign_name")
+    chan = top(fx, "orders", "channel")
     pay = top(fx, "orders", "payment_bucket")
     q_drop = "Why did net sales drop?"
     ev = {"outcome": OUTCOME, "event_days": three, "claimed_direction": "down"}
@@ -73,7 +75,7 @@ def build(fx: W.Fixture) -> list[dict]:
         case("inj_ctr_collapse_campaign", "injection", ["event", "findable", "funnel", "scope_segment"], q_drop, ev,
              found({"metric": "link_clicks", "sign": "down", "onset": onset3, "share_of_change": 1.0}, unexplained_share=[0.0, 0.5],
                    note="clicks of one campaign halve with impressions unchanged (a creative problem); carried to net sales"),
-             fx, [{"type": "scale", "onset": onset3, "params": {"metric": "link_clicks", "factor": 0.5, "scope": {"campaign_name": camp},
+             fx, [{"type": "scale", "onset": onset3, "params": {"metric": "link_clicks", "factor": 0.5, "scope": {"campaign_name": camp_clicks},
                                                                 "effects": chain([("link_clicks", "sessions"), ("sessions", "orders"), *SALES_CHAIN])}}]),
         case("inj_conversion_drop_channel", "injection", ["event", "findable", "conversion", "scope_segment"], q_drop, ev,
              found({"metric": "orders", "sign": "down", "onset": onset3, "share_of_change": 1.0}, unexplained_share=[0.0, 0.5],
@@ -146,10 +148,15 @@ def build(fx: W.Fixture) -> list[dict]:
 
 
 def main(fixture_id: str) -> None:
+    import case_format as C
+    import runner as R
+
     fx = W.load_fixture(fixture_id)
     out = HERE / "cases"
     out.mkdir(exist_ok=True)
     for c in build(fx):
+        parsed = C.parse_case(c)
+        R.check_reaches_outcome(parsed, R.build_world(parsed)[1])  # an unbuildable or unconnected case fails here, not mid-suite
         (out / f"{c['id']}.json").write_text(json.dumps(c, indent=1) + "\n")
         print(c["id"])
 
