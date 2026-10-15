@@ -105,13 +105,11 @@ def test_ramp_and_until():
     assert w.series["spend"][ONSET + timedelta(days=7)] == pytest.approx(100.0)
 
 
-def test_deterministic_with_seed_and_fixture_not_mutated():
+def test_deterministic_and_fixture_not_mutated():
     fx = fixture()
-    p = {"noise_cv": 0.05}
-    a = I.apply_injections(fx, (inj(**p),), GRAPH, seed=3)
-    b = I.apply_injections(fx, (inj(**p),), GRAPH, seed=3)
-    c = I.apply_injections(fx, (inj(**p),), GRAPH, seed=4)
-    assert a.series == b.series and a.series != c.series
+    a = I.apply_injections(fx, (inj(),), GRAPH)
+    b = I.apply_injections(fx, (inj(),), GRAPH)
+    assert a.series == b.series and a.segments == b.segments
     assert fx.series["spend"][DAYS[-1]] == 100.0 and fx.segments["spend"]["camp"]["a"][DAYS[-1]] == 60.0
 
 
@@ -127,7 +125,126 @@ def test_real_fixture_and_graph_accept_a_planted_spend_cut():
     onset = fx.end - timedelta(days=3)
     w = I.apply_injections(fx, (C.Injection("scale", {"metric": "ad_spend", "factor": 0.4, "scope": {"campaign_name": camp},
                                                       "effects": [{"from": "ad_spend", "to": "impressions", "elasticity": 1.0}]}, onset),),
-                           graph, seed=1)
+                           graph)
     assert w.series["ad_spend"][fx.end] < fx.series["ad_spend"][fx.end]
     assert w.series["impressions"][fx.end] < fx.series["impressions"][fx.end]
     assert w.series["ad_spend"][onset - timedelta(days=1)] == fx.series["ad_spend"][onset - timedelta(days=1)]
+
+
+# ---- partners, compositions, ratio segments (review of P0.3) -------------------------------------------------
+
+GRAPH2 = {"edges": GRAPH["edges"] + [
+    {"from": "a", "to": "a_twin", "kind": "co_measure"},
+    {"from": "sub", "to": "a", "kind": "subset"},
+]}
+
+
+def fixture2() -> W.Fixture:
+    series = {"a": S(100.0), "a_twin": S(100.0), "sub": S(30.0), "p1": S(10.0), "p2": S(5.0), "parent": S(5.0), "rate": S(0.3)}
+    segments = {"a": {"d": {"x": S(70.0), "y": S(30.0)}}, "a_twin": {"d": {"x": S(70.0), "y": S(30.0)}},
+                "p1": {"d": {"x": S(10.0)}}, "parent": {"d": {"x": S(5.0)}}, "rate": {"d": {"x": S(0.3)}, "other": {"x": S(0.3)}}}
+    defs = {"parent": {"formula": {"composition": [{"metric": "p1", "sign": 1}, {"metric": "p2", "sign": -1}]}},
+            "rate": {"ratio_components": {"numerator": "sub", "denominator": "a", "multiplier": 1.0}}}
+    return W.Fixture("t2", 20, DAYS[0], DAYS[-1], "x", "v", "g", series, segments, defs, {})
+
+
+def test_real_change_moves_co_measure_partner_and_subset_but_a_break_does_not():
+    real = I.apply_injections(fixture2(), (C.Injection("scale", {"metric": "a", "factor": 0.5, "scope": {"d": "x"}}, ONSET),), GRAPH2)
+    day = DAYS[-1]
+    assert real.series["a_twin"][day] == pytest.approx(real.series["a"][day]) == pytest.approx(65.0)
+    assert real.series["sub"][day] == pytest.approx(19.5)  # sub has no segment d=x: it follows a's realised total factor 0.65
+    brk = I.apply_injections(fixture2(), (C.Injection("measurement_break", {"metric": "a", "factor": 0.5}, ONSET),), GRAPH2)
+    assert brk.series["a"][day] == pytest.approx(50.0) and brk.series["a_twin"][day] == 100.0 and brk.series["sub"][day] == 30.0
+
+
+def test_superset_follows_a_subset_by_its_delta():
+    w = I.apply_injections(fixture2(), (C.Injection("scale", {"metric": "sub", "factor": 0.5}, ONSET),), GRAPH2)
+    assert w.series["a"][DAYS[-1]] == pytest.approx(85.0) and w.series["a_twin"][DAYS[-1]] == pytest.approx(85.0)
+
+
+def test_composition_parent_keeps_its_identity_and_double_injection_is_refused():
+    g = {"edges": []}
+    w = I.apply_injections(fixture2(), (C.Injection("scale", {"metric": "p1", "factor": 2.0}, ONSET),), g)
+    day = DAYS[-1]
+    assert w.series["parent"][day] == pytest.approx(w.series["p1"][day] - w.series["p2"][day]) == pytest.approx(15.0)
+    assert w.segments["parent"]["d"]["x"][day] == pytest.approx(15.0)
+    assert w.series["parent"][ONSET - timedelta(days=1)] == 5.0
+    both = (C.Injection("scale", {"metric": "p1", "factor": 2.0}, ONSET), C.Injection("scale", {"metric": "parent", "factor": 2.0}, ONSET))
+    with pytest.raises(I.InjectionError, match="both injected"):
+        I.apply_injections(fixture2(), both, g)
+
+
+def test_ratio_segments_that_cannot_be_rebuilt_are_dropped_and_ratios_cannot_be_injected():
+    w = I.apply_injections(fixture2(), (C.Injection("scale", {"metric": "a", "factor": 0.5}, ONSET),), GRAPH2)
+    assert "other" not in w.segments["rate"] and ("rate", "other") in w.dropped
+    with pytest.raises(I.InjectionError, match="is a ratio"):
+        I.apply_injections(fixture2(), (C.Injection("scale", {"metric": "rate", "factor": 0.5}, ONSET),), GRAPH2)
+
+
+# ---- invariants on the real fixture, for each injection type -------------------------------------------------
+
+def _real():
+    fx = W.load_fixture("brand20_daily_2026-10")
+    graph = json.loads((DIAG.parents[1] / "src/seleric_swarm/causal/data/dependency_graph.json").read_text())
+    return fx, graph
+
+
+def _scenarios(fx, graph):
+    top = lambda m, dim: max(fx.segments[m][dim].items(), key=lambda kv: sum(kv[1].values()))[0]
+    onset = fx.end - timedelta(days=6)
+    return {
+        "spend_cut": C.Injection("scale", {"metric": "ad_spend", "factor": 0.4, "scope": {"campaign_name": top("ad_spend", "campaign_name")},
+                                           "effects": [{"from": "ad_spend", "to": "impressions", "elasticity": 1.0},
+                                                       {"from": "impressions", "to": "clicks", "elasticity": 1.0}]}, onset),
+        "orders_drop": C.Injection("scale", {"metric": "orders", "factor": 0.7, "scope": {"channel": top("orders", "channel")},
+                                             "effects": [{"from": "orders", "to": "units_ordered", "elasticity": 1.0},
+                                                         {"from": "units_ordered", "to": "gross_sales", "elasticity": 1.0}]}, onset),
+        "drift": C.Injection("scale", {"metric": "sessions", "factor": 0.6, "ramp_days": 5}, onset),
+        "break": C.Injection("measurement_break", {"metric": "orders", "factor": 0.0}, onset),
+    }
+
+
+@pytest.mark.parametrize("name", ["spend_cut", "orders_drop", "drift", "break"])
+def test_injected_worlds_keep_identities(name):
+    fx, graph = _real()
+    inj_ = _scenarios(fx, graph)[name]
+    w = I.apply_injections(fx, (inj_,), graph)
+    onset = inj_.onset
+    after = [d for d in sorted(fx.series["orders"]) if d >= onset]
+    # 1. a retained segment set adds up to the total exactly as it did before (additive metrics)
+    for m, dims in w.segments.items():
+        if m in w.recomputed or m not in fx.series or fx.definitions[m].get("aggregation") != "additive":
+            continue
+        for dim, segs in dims.items():
+            for d in after:
+                if d in w.series[m] and all(d in r for r in segs.values()):
+                    new = sum(r[d] for r in segs.values()) - w.series[m][d]
+                    old = sum(r[d] for r in fx.segments[m][dim].values() if d in r) - fx.series[m][d]
+                    # scoped change: the gap is unchanged; change everywhere: the gap scales with the total
+                    scaled = old * w.series[m][d] / fx.series[m][d] if fx.series[m][d] else old
+                    tol = 1e-6 * max(1.0, abs(fx.series[m][d]))
+                    assert new == pytest.approx(old, abs=tol) or new == pytest.approx(scaled, abs=tol), (m, dim, d)
+    # 2. every rebuilt ratio equals numerator / denominator
+    for m in w.recomputed:
+        rc = fx.definitions[m]["ratio_components"]
+        for d in after:
+            if w.series[rc["denominator"]].get(d) and d in w.series[rc["numerator"]]:
+                assert w.series[m][d] == pytest.approx(float(rc.get("multiplier") or 1.0) * w.series[rc["numerator"]][d] / w.series[rc["denominator"]][d])
+    # 3. composition residuals are unchanged
+    for parent, d in fx.definitions.items():
+        comps = [(c["metric"], int(c["sign"])) for c in (d.get("formula") or {}).get("composition") or []]
+        if not comps or parent not in fx.series or any(c not in fx.series for c, _ in comps):
+            continue
+        for day in after:
+            if all(day in fx.series[c] for c, _ in comps) and day in fx.series[parent]:
+                old = fx.series[parent][day] - sum(sg * fx.series[c][day] for c, sg in comps)
+                new = w.series[parent][day] - sum(sg * w.series[c][day] for c, sg in comps)
+                assert new == pytest.approx(old, abs=1e-6 * max(1.0, abs(fx.series[parent][day]))), (parent, day)
+    # 4. the co-measure partners keep their relationship in a real world and lose it in a measurement break
+    day = fx.end
+    old_ratio = fx.series["orders"][day] / fx.series["funnel_purchases"][day]
+    new_ratio = w.series["orders"][day] / w.series["funnel_purchases"][day] if w.series["funnel_purchases"][day] else float("nan")
+    if name == "orders_drop":
+        assert new_ratio == pytest.approx(old_ratio, rel=0.05)  # same segment factor; segment shares differ a little
+    if name == "break":
+        assert w.series["orders"][day] == 0.0 and w.series["funnel_purchases"][day] == fx.series["funnel_purchases"][day]
