@@ -33,7 +33,7 @@
  },
  "world": {
   "fixture": "brand20_daily_2026-10",
-  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+  "sha256": "8923c5d023f2956c8862d786712695406787f89deffaf343fa3c6c877b54a521"
  },
  "truth": {
   "cause_class": "findable",
@@ -50,7 +50,8 @@
    0.0,
    0.5
   ],
-  "note": "account ad spend cut to 77% for the whole second week; planted change of the outcome -25% over the event days"
+  "signal_z": 2.19,
+  "note": "account ad spend cut to 67% for the whole second week; planted change of the outcome -35% over the event days (2.2 sigma of its own variability)"
  },
  "injections": [
   {
@@ -58,7 +59,7 @@
    "onset": "2026-10-08",
    "params": {
     "metric": "ad_spend",
-    "factor": 0.767,
+    "factor": 0.674,
     "effects": [
      {
       "from": "ad_spend",

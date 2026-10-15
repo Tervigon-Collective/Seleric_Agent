@@ -19,7 +19,7 @@
  },
  "world": {
   "fixture": "brand20_daily_2026-10",
-  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+  "sha256": "8923c5d023f2956c8862d786712695406787f89deffaf343fa3c6c877b54a521"
  },
  "truth": {
   "cause_class": "hidden",
@@ -30,7 +30,8 @@
    "impressions",
    "discounts"
   ],
-  "note": "orders cut to 73% with traffic and spend unchanged: a real cause with no visible driver (stock-out, price); outcome -30%"
+  "note": "orders cut to 64% with traffic and spend unchanged: a real cause with no visible driver (stock-out, price); outcome -40%",
+  "signal_z": 2.27
  },
  "injections": [
   {
@@ -38,7 +39,7 @@
    "onset": "2026-10-12",
    "params": {
     "metric": "orders",
-    "factor": 0.731,
+    "factor": 0.641,
     "effects": [
      {
       "from": "orders",

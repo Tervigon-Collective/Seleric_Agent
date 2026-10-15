@@ -69,6 +69,32 @@ def planted_change(fx: W.Fixture, injection: dict, outcome: str, days: list[str]
     return after / before - 1.0
 
 
+
+
+FLOOR_LOOKBACK_DAYS = 18  # a clean stretch: the 2026-09-14..22 ad outage ends before the window this reaches back to
+
+
+def noise_floor(fx: W.Fixture, outcome: str, days: list[str], scope: dict[str, str] | None) -> float:
+    """Relative sd of the mean of ``days`` for the outcome, from its own recent history (robust).
+
+    A planted change smaller than a few of these cannot be told from ordinary variation, so an engine that says "no
+    unusual change" would be right and the case would be mislabelled. Each of the ``FLOOR_LOOKBACK_DAYS`` days before the
+    window is compared with the median of that block (weekday effects stay in, which makes the floor conservative); the
+    robust sd of those relative deviations, divided by sqrt(days), is the sd of the window mean.
+    """
+    if scope:
+        (dim, val), = scope.items()
+        series = fx.segments[outcome][dim][val]
+    else:
+        series = fx.series[outcome]
+    first = date.fromisoformat(min(days))
+    block = [series[first - timedelta(days=i)] for i in range(1, FLOOR_LOOKBACK_DAYS + 1) if first - timedelta(days=i) in series]
+    centre = statistics.median(block)
+    rel = [x / centre - 1.0 for x in block]
+    med = statistics.median(rel)
+    return 1.4826 * statistics.median(abs(x - med) for x in rel) / math.sqrt(len(days))
+
+
 def calibrate(fx: W.Fixture, make, outcome: str, days: list[str], target: float, scope: dict[str, str] | None = None,
               lo: float = 0.0, hi: float = 1.0, increasing: bool = True) -> float:
     """The factor whose planted outcome change equals ``target`` (bisection; the change is monotone in the factor)."""
@@ -115,11 +141,14 @@ def build(fx: W.Fixture) -> list[dict]:
     def planted(make, target: float, days: list[str], outcome: str = OUTCOME, scope: dict | None = None, lo: float = 0.0, hi: float = 1.0,
                 increasing: bool = True):
         f = calibrate(fx, make, outcome, days, target, scope, lo, hi, increasing)
-        return make(f), f, planted_change(fx, make(f), outcome, days, scope)
+        got = planted_change(fx, make(f), outcome, days, scope)
+        z = abs(got) / noise_floor(fx, outcome, days, scope)
+        print(f"  {outcome} {scope or ''}: planted {got:+.0%} = {z:.1f} sigma of its own variability")
+        return make(f), f, got, round(z, 2)
 
-    def found(cause: dict, note: str, ratio: float) -> dict:
-        return {"cause_class": "findable", "expected": "cause_found", "causes": [cause], "unexplained_share": [0.0, 0.5],
-                "note": f"{note}; planted change of the outcome {ratio:+.0%} over the event days"}
+    def found(cause: dict, note: str, ratio: float, sigma: float) -> dict:
+        return {"cause_class": "findable", "expected": "cause_found", "causes": [cause], "unexplained_share": [0.0, 0.5], "signal_z": sigma,
+                "note": f"{note}; planted change of the outcome {ratio:+.0%} over the event days ({sigma:.1f} sigma of its own variability)"}
 
     cases: list[dict] = []
 
@@ -127,29 +156,29 @@ def build(fx: W.Fixture) -> list[dict]:
         cases.append(case(cid, kind, tags, question, request, truth, fx, injections, record))
 
     # -- findable worlds: every planted effect is sized to move the outcome materially (target in each line) --------
-    m, f, r = planted(lambda x: inj(onset3, "ad_spend", x, chain([("ad_spend", "impressions"), *FUNNEL_CHAIN, *SALES_CHAIN]), {"ad_platform": "meta"}), -0.30, three)
+    m, f, r, z = planted(lambda x: inj(onset3, "ad_spend", x, chain([("ad_spend", "impressions"), *FUNNEL_CHAIN, *SALES_CHAIN]), {"ad_platform": "meta"}), -0.45, three)
     add("inj_spend_cut_platform", "injection", ["event", "findable", "ads", "scope_segment"], q_drop, ev,
-        found({"metric": "ad_spend", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"ad spend on one platform cut to {f:.0%}, carried through the funnel to net sales", r), [m])
-    m, f, r = planted(lambda x: inj(onset3, "link_clicks", x, chain([("link_clicks", "sessions"), ("sessions", "orders"), *SALES_CHAIN]), {"ad_platform": "meta"}), -0.25, three)
+        found({"metric": "ad_spend", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"ad spend on one platform cut to {f:.0%}, carried through the funnel to net sales", r, z), [m])
+    m, f, r, z = planted(lambda x: inj(onset3, "link_clicks", x, chain([("link_clicks", "sessions"), ("sessions", "orders"), *SALES_CHAIN]), {"ad_platform": "meta"}), -0.40, three)
     add("inj_ctr_collapse_platform", "injection", ["event", "findable", "funnel", "scope_segment"], q_drop, ev,
-        found({"metric": "link_clicks", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"clicks on one platform cut to {f:.0%} with impressions unchanged (a creative problem)", r), [m])
-    m, f, r = planted(lambda x: inj(onset3, "orders", x, chain(SALES_CHAIN), {"channel": chan}), -0.20, three)
+        found({"metric": "link_clicks", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"clicks on one platform cut to {f:.0%} with impressions unchanged (a creative problem)", r, z), [m])
+    m, f, r, z = planted(lambda x: inj(onset3, "orders", x, chain(SALES_CHAIN), {"channel": chan}), -0.25, three)
     add("inj_conversion_drop_channel", "injection", ["event", "findable", "conversion", "scope_segment"], q_drop, ev,
-        found({"metric": "orders", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"orders of one channel cut to {f:.0%} with traffic unchanged", r), [m])
+        found({"metric": "orders", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"orders of one channel cut to {f:.0%} with traffic unchanged", r, z), [m])
     drift_on = str(end - timedelta(days=16))
-    m, f, r = planted(lambda x: inj(drift_on, "sessions", x, chain([("sessions", "orders"), *SALES_CHAIN]), None, ramp_days=14), -0.30, three)
+    m, f, r, z = planted(lambda x: inj(drift_on, "sessions", x, chain([("sessions", "orders"), *SALES_CHAIN]), None, ramp_days=14), -0.45, three)
     add("inj_slow_drift_sessions", "injection", ["drift", "findable", "traffic"], q_drop, {**ev, "mode": "drift"},
-        found({"metric": "sessions", "sign": "down", "onset": drift_on, "share_of_change": 1.0}, f"sessions slide to {f:.0%} over 14 days starting 16 days before the end", r), [m])
-    m, f, r = planted(lambda x: inj(week[0], "ad_spend", x, chain([("ad_spend", "impressions"), *FUNNEL_CHAIN, *SALES_CHAIN])), -0.25, week)
+        found({"metric": "sessions", "sign": "down", "onset": drift_on, "share_of_change": 1.0}, f"sessions slide to {f:.0%} over 14 days starting 16 days before the end", r, z), [m])
+    m, f, r, z = planted(lambda x: inj(week[0], "ad_spend", x, chain([("ad_spend", "impressions"), *FUNNEL_CHAIN, *SALES_CHAIN])), -0.35, week)
     add("inj_period_spend_cut", "injection", ["period", "findable", "ads"], "Why were net sales lower this week than last week?",
         {"outcome": OUTCOME, "event_days": week, "baseline_days": [str(end - timedelta(days=i)) for i in range(13, 6, -1)], "claimed_direction": "down"},
-        found({"metric": "ad_spend", "sign": "down", "onset": week[0], "share_of_change": 1.0}, f"account ad spend cut to {f:.0%} for the whole second week", r), [m])
-    m, f, r = planted(lambda x: inj(onset3, "orders", x, chain(SALES_CHAIN), {"channel": chan}), -0.50, three, OUTCOME, {"channel": chan})
+        found({"metric": "ad_spend", "sign": "down", "onset": week[0], "share_of_change": 1.0}, f"account ad spend cut to {f:.0%} for the whole second week", r, z), [m])
+    m, f, r, z = planted(lambda x: inj(onset3, "orders", x, chain(SALES_CHAIN), {"channel": chan}), -0.65, three, OUTCOME, {"channel": chan})
     add("inj_filtered_scope_orders", "injection", ["event", "findable", "scope_filter"], "Why did net sales drop for one channel?", {**ev, "scope": {"channel": chan}},
-        found({"metric": "orders", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"the question is filtered to the channel whose orders were cut to {f:.0%}", r), [m])
-    m, f, r = planted(lambda x: inj(onset3, "site_searches", x, [{"from": "site_searches", "to": "orders", "elasticity": 0.5, "off_graph": True}, *chain(SALES_CHAIN)]), -0.25, three, lo=0.0, hi=1.0)
+        found({"metric": "orders", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"the question is filtered to the channel whose orders were cut to {f:.0%}", r, z), [m])
+    m, f, r, z = planted(lambda x: inj(onset3, "site_searches", x, [{"from": "site_searches", "to": "orders", "elasticity": 0.5, "off_graph": True}, *chain(SALES_CHAIN)]), -0.40, three, lo=0.0, hi=1.0)
     add("inj_off_graph_searches", "injection", ["event", "findable", "off_graph"], q_drop, ev,
-        found({"metric": "site_searches", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"site searches cut to {f:.0%}; the effect on orders is planted on a path the reviewed graph does not contain", r), [m])
+        found({"metric": "site_searches", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"site searches cut to {f:.0%}; the effect on orders is planted on a path the reviewed graph does not contain", r, z), [m])
 
     # -- where-the-change-sits worlds: mix shift and a launch that dilutes a rate --------------------------------------
     # A mix shift needs segments whose rates differ a lot: click-through rate differs ~1.7x between ad platforms, while the
@@ -164,19 +193,19 @@ def build(fx: W.Fixture) -> list[dict]:
     hi_ch, lo_ch = max(ctr_by, key=ctr_by.get), min(ctr_by, key=ctr_by.get)
     assert hi_ch != lo_ch, "need two ad platforms with different click-through rates"
     make_mix = lambda x: {"type": "shift_mix", "onset": onset3, "params": {"volume": "impressions", "dimension": "ad_platform", "from": hi_ch, "to": lo_ch, "share": x, "carry": ["clicks"]}}
-    m, f, r = planted(make_mix, -0.12, three, "ctr", None, 0.0, 0.95, increasing=False)
+    m, f, r, z = planted(make_mix, -0.18, three, "ctr", None, 0.0, 0.95, increasing=False)
     add("inj_mix_shift_platform_ctr", "injection", ["event", "findable", "mix", "scope_segment"], "Why did click-through rate drop?",
         {"outcome": "ctr", "event_days": three, "claimed_direction": "down"},
-        {"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "impressions", "sign": None, "onset": onset3}], "unexplained_share": [0.0, 0.5],
+        {"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "impressions", "sign": None, "onset": onset3}], "unexplained_share": [0.0, 0.5], "signal_z": z,
          "decomposition": {"dimension": "ad_platform", "top_segment": [hi_ch, lo_ch], "dominant": "mix"},
          "note": f"{f:.0%} of the impressions of the higher-rate platform ({hi_ch}) move to the lower-rate one ({lo_ch}); volume total unchanged; click-through rate {r:+.0%}"}, [m])
     ctr_ev = {"outcome": "ctr", "event_days": three, "claimed_direction": "down"}
     new_name = "LAUNCH-LOW-CLICK-EVAL"
     make_launch = lambda x: {"type": "launch", "onset": onset3, "params": {"volume": "impressions", "dimension": "campaign_name", "segment": new_name,
                                                                          "daily_share": x, "carry": [{"metric": "clicks", "rate": 0.002}]}}
-    m, f, r = planted(make_launch, -0.25, three, "ctr", None, 0.0, 3.0, increasing=False)
+    m, f, r, z = planted(make_launch, -0.30, three, "ctr", None, 0.0, 3.0, increasing=False)
     add("inj_launch_low_click_campaign", "injection", ["event", "findable", "mix", "launch"], "Why did click-through rate drop?", ctr_ev,
-        {"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "impressions", "sign": "up", "onset": onset3}], "unexplained_share": [0.0, 0.5],
+        {"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "impressions", "sign": "up", "onset": onset3}], "unexplained_share": [0.0, 0.5], "signal_z": z,
          "decomposition": {"dimension": "campaign_name", "top_segment": new_name},
          "note": f"a new campaign adds {f:.0%} of daily impressions with a click rate of 0.2%; click-through rate {r:+.0%}"}, [m])
 
@@ -191,18 +220,18 @@ def build(fx: W.Fixture) -> list[dict]:
         {"cause_class": "measurement", "expected": "measurement_artifact", "must_not_attribute": ["ad_spend", "impressions", "link_clicks"],
          "note": "session recording loses 60%; clicks and impressions do not move"},
         [{"type": "measurement_break", "onset": onset3, "params": {"metric": "sessions", "factor": 0.4}}])
-    m, f, r = planted(lambda x: inj(onset3, "orders", x, chain(SALES_CHAIN)), -0.30, three)
+    m, f, r, z = planted(lambda x: inj(onset3, "orders", x, chain(SALES_CHAIN)), -0.40, three)
     add("adv_hidden_orders_cut", "adversarial", ["event", "hidden"], q_drop, ev,
         {"cause_class": "hidden", "expected": "located_not_identified", "must_not_attribute": ["ad_spend", "sessions", "impressions", "discounts"],
-         "note": f"orders cut to {f:.0%} with traffic and spend unchanged: a real cause with no visible driver (stock-out, price); outcome {r:+.0%}"}, [m])
-    m, f, r = planted(lambda x: inj(onset3, "orders", x, chain(SALES_CHAIN), {"channel": chan}), -0.20, three)
+         "note": f"orders cut to {f:.0%} with traffic and spend unchanged: a real cause with no visible driver (stock-out, price); outcome {r:+.0%}", "signal_z": z}, [m])
+    m, f, r, z = planted(lambda x: inj(onset3, "orders", x, chain(SALES_CHAIN), {"channel": chan}), -0.20, three)
     add("adv_hidden_channel_checkout", "adversarial", ["event", "hidden", "scope_segment"], q_drop, ev,
         {"cause_class": "hidden", "expected": "located_not_identified", "must_not_attribute": ["ad_spend", "sessions", "impressions"],
-         "note": f"orders of one channel cut to {f:.0%}: a checkout-type cause that no metric shows; outcome {r:+.0%}"}, [m])
-    m, f, r = planted(lambda x: inj(onset3, "orders", x, chain(SALES_CHAIN)), +0.30, three, lo=1.0, hi=3.0)
+         "note": f"orders of one channel cut to {f:.0%}: a checkout-type cause that no metric shows; outcome {r:+.0%}", "signal_z": z}, [m])
+    m, f, r, z = planted(lambda x: inj(onset3, "orders", x, chain(SALES_CHAIN)), +0.45, three, lo=1.0, hi=3.0)
     add("adv_premise_false_increase", "adversarial", ["event", "premise"], q_drop, ev,
         {"cause_class": "none", "expected": "premise_false", "must_not_attribute": ["ad_spend", "sessions"],
-         "note": f"net sales rose {r:+.0%} (orders x{f}) while the question says they dropped"}, [m])
+         "note": f"net sales rose {r:+.0%} (orders x{f}) while the question says they dropped", "signal_z": z}, [m])
     add("null_ordinary_day", "null", ["event", "null"], q_drop, {"outcome": OUTCOME, "event_days": [str(null_day(fx))], "claimed_direction": "down"},
         {"cause_class": "none", "expected": "no_change", "must_not_attribute": ["ad_spend", "sessions", "orders"],
          "note": "the recent day whose net sales is closest to its same-weekday median of the previous four weeks; nothing is planted"})

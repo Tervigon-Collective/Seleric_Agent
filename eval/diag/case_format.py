@@ -93,6 +93,7 @@ class Truth:
     unexplained_share: tuple[float, float] | None = None  # allowed range of the reported unexplained share
     note: str = ""  # why this is the truth (source of the record, what was planted)
     decomposition: Decomposition | None = None
+    signal_z: float | None = None  # planted change of the outcome in robust sigmas of its own variability; None = not planted
 
 
 @dataclass(frozen=True)
@@ -197,8 +198,12 @@ def parse_case(raw: dict[str, Any]) -> Case:
         raw_top = _need(cid, dc, "top_segment", "truth.decomposition.")
         decomposition = Decomposition(str(_need(cid, dc, "dimension", "truth.decomposition.")),
                                       tuple(str(x) for x in (raw_top if isinstance(raw_top, list) else [raw_top])), dominant)
+    signal_z = t.get("signal_z")
+    if signal_z is not None and float(signal_z) < 0:
+        raise CaseError(f"{cid}: truth.signal_z must be >= 0")
     truth = Truth(cls, expected, causes, tuple(str(x) for x in t.get("must_not_attribute") or ()),
-                  (float(ur[0]), float(ur[1])) if ur else None, str(t.get("note") or ""), decomposition)
+                  (float(ur[0]), float(ur[1])) if ur else None, str(t.get("note") or ""), decomposition,
+                  float(signal_z) if signal_z is not None else None)
 
     injections = tuple(
         Injection(str(_need(cid, i, "type", "injections[].")), dict(i.get("params") or {}), _opt_date(cid, "injections[].onset", i.get("onset")))

@@ -1,0 +1,326 @@
+{
+ "fixture": "brand20_leaf_net_sales_2026-10",
+ "sha256": "7ce6aedb88b0f0d9aa269113b6993d36de3ef622cdaa932c58b3194f830691ab",
+ "dimensions": [
+  "channel",
+  "ad_platform",
+  "payment_bucket",
+  "is_new_customer",
+  "campaign_name"
+ ],
+ "leaves": 726,
+ "days_scored": 62,
+ "events": 5,
+ "ordinary_days": 43,
+ "event_median": {
+  "1": 0.697,
+  "2": 0.471,
+  "3": 0.361
+ },
+ "event_median_share_of_change": {
+  "1": 0.846,
+  "2": 0.641,
+  "3": 0.453
+ },
+ "event_median_coherent_share": {
+  "1": 0.846,
+  "2": 0.641,
+  "3": 0.453
+ },
+ "ordinary_concentration": {
+  "1": {
+   "median": 0.448,
+   "p90": 0.681
+  },
+  "2": {
+   "median": 0.388,
+   "p90": 0.525
+  },
+  "3": {
+   "median": 0.299,
+   "p90": 0.398
+  }
+ },
+ "rows": [
+  {
+   "day": "2026-09-12",
+   "z": 3.04,
+   "change": 138784,
+   "share_of_change": {
+    "1": [
+     0.818,
+     [
+      "payment_bucket=manual"
+     ]
+    ],
+    "2": [
+     0.575,
+     [
+      "payment_bucket=manual",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.453,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "payment_bucket=manual"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.818,
+     [
+      "payment_bucket=manual"
+     ]
+    ],
+    "2": [
+     0.575,
+     [
+      "payment_bucket=manual",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.453,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "payment_bucket=manual"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.697,
+    "2": 0.49,
+    "3": 0.386
+   }
+  },
+  {
+   "day": "2026-08-25",
+   "z": 2.81,
+   "change": 131165,
+   "share_of_change": {
+    "1": [
+     0.779,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.675,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.401,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.779,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.675,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.401,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=1"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.545,
+    "2": 0.471,
+    "3": 0.28
+   }
+  },
+  {
+   "day": "2026-08-26",
+   "z": 2.76,
+   "change": 129413,
+   "share_of_change": {
+    "1": [
+     0.846,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.631,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.396,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=0"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     0.846,
+     [
+      "ad_platform=meta"
+     ]
+    ],
+    "2": [
+     0.631,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta"
+     ]
+    ],
+    "3": [
+     0.396,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "is_new_customer=0"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.495,
+    "2": 0.37,
+    "3": 0.232
+   }
+  },
+  {
+   "day": "2026-10-05",
+   "z": 2.25,
+   "change": 112233,
+   "share_of_change": {
+    "1": [
+     1.064,
+     [
+      "payment_bucket=manual"
+     ]
+    ],
+    "2": [
+     0.641,
+     [
+      "payment_bucket=manual",
+      "is_new_customer=0"
+     ]
+    ],
+    "3": [
+     0.505,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "payment_bucket=manual"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     1.064,
+     [
+      "payment_bucket=manual"
+     ]
+    ],
+    "2": [
+     0.641,
+     [
+      "payment_bucket=manual",
+      "is_new_customer=0"
+     ]
+    ],
+    "3": [
+     0.505,
+     [
+      "channel=ig_feed",
+      "ad_platform=meta",
+      "payment_bucket=manual"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.809,
+    "2": 0.488,
+    "3": 0.384
+   }
+  },
+  {
+   "day": "2026-09-17",
+   "z": -2.04,
+   "change": -30130,
+   "share_of_change": {
+    "1": [
+     1.193,
+     [
+      "payment_bucket=manual"
+     ]
+    ],
+    "2": [
+     0.642,
+     [
+      "payment_bucket=manual",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.538,
+     [
+      "channel=exchange_replacement",
+      "ad_platform=(none)",
+      "payment_bucket=manual"
+     ]
+    ]
+   },
+   "coherent_share": {
+    "1": [
+     1.193,
+     [
+      "payment_bucket=manual"
+     ]
+    ],
+    "2": [
+     0.642,
+     [
+      "payment_bucket=manual",
+      "is_new_customer=1"
+     ]
+    ],
+    "3": [
+     0.538,
+     [
+      "channel=exchange_replacement",
+      "ad_platform=(none)",
+      "payment_bucket=manual"
+     ]
+    ]
+   },
+   "concentration": {
+    "1": 0.801,
+    "2": 0.431,
+    "3": 0.361
+   }
+  }
+ ]
+}

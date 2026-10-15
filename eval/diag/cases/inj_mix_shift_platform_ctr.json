@@ -21,7 +21,7 @@
  },
  "world": {
   "fixture": "brand20_daily_2026-10",
-  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+  "sha256": "8923c5d023f2956c8862d786712695406787f89deffaf343fa3c6c877b54a521"
  },
  "truth": {
   "cause_class": "findable",
@@ -37,6 +37,7 @@
    0.0,
    0.5
   ],
+  "signal_z": 1.81,
   "decomposition": {
    "dimension": "ad_platform",
    "top_segment": [
@@ -45,7 +46,7 @@
    ],
    "dominant": "mix"
   },
-  "note": "60% of the impressions of the higher-rate platform (google) move to the lower-rate one (meta); volume total unchanged; click-through rate -12%"
+  "note": "90% of the impressions of the higher-rate platform (google) move to the lower-rate one (meta); volume total unchanged; click-through rate -18%"
  },
  "injections": [
   {
@@ -56,7 +57,7 @@
     "dimension": "ad_platform",
     "from": "google",
     "to": "meta",
-    "share": 0.597,
+    "share": 0.895,
     "carry": [
      "clicks"
     ]

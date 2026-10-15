@@ -140,5 +140,82 @@ def main(fixture_id: str, start: str, end: str, dims: list[str]) -> None:
           f"{len(log)} queries, {os.path.getsize(out) / 1e6:.1f} MB, sha256 {fixture['sha256']}")
 
 
+def extend(fixture_id: str, dims: list[str]) -> None:
+    """Add the ratio components the fixture's ratio metrics need but lack, keeping every existing value as it is.
+
+    The first snapshot chose metrics from the graph's causal edges only, so a ratio such as net ROAS (contribution margin /
+    ad spend) had a numerator the engine could not fetch. Existing series and segments are not re-fetched, so earlier
+    scores stay comparable; only the fingerprint changes (cases are rewritten with the new one).
+    """
+    path = os.path.join(HERE, "fixtures", f"{fixture_id}.json")
+    with open(path) as fh:
+        fx = json.load(fh)
+    need: set[str] = set()
+    for d in fx["definitions"].values():
+        rc = d.get("ratio_components") or {}
+        need |= {rc[k] for k in ("numerator", "denominator") if rc.get(k) and rc[k] not in fx["series"]}
+    need -= set(fx["unavailable"])
+    new_defs: dict[str, Any] = {}
+    ids = sorted(need)
+    for i in range(0, len(ids), DEFINITION_BATCH):
+        got = mcp_direct.call_tool("catalogue_get_metrics", {"metric_ids": ids[i:i + DEFINITION_BATCH]})
+        if got.get("error"):
+            raise RuntimeError(f"catalogue_get_metrics: {got['error']}")
+        new_defs.update(got.get("metrics") or {})
+    if set(ids) - set(new_defs):
+        raise RuntimeError(f"no catalogue definition for {sorted(set(ids) - set(new_defs))}")
+    by_view: dict[str, list[str]] = {}
+    for m, d in new_defs.items():
+        by_view.setdefault(str((d.get("cube_mapping") or {}).get("view") or ""), []).append(m)
+    series: dict[str, dict[str, float]] = {}
+    segments: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    log: list[dict[str, Any]] = []
+    unavailable: dict[str, str] = {}
+
+    def run(group: list[str], dimension: str | None) -> None:
+        for chunk in (group[i:i + BATCH] for i in range(0, len(group), BATCH)):
+            try:
+                parts = query(chunk, fx["start"], fx["end"], fx["brand"], dimension, log)
+            except RuntimeError as e:
+                if len(chunk) == 1:
+                    unavailable[f"{chunk[0]}|{dimension or ''}"] = str(e)[:300]
+                    continue
+                for m in chunk:
+                    run([m], dimension)
+                continue
+            for part in parts:
+                for row in part.get("rows") or []:
+                    day = _day(row)
+                    for m in chunk:
+                        if day is None or row.get(m) is None:
+                            continue
+                        if dimension is None:
+                            series.setdefault(m, {})[day] = float(row[m])
+                        else:
+                            seg = str(row.get(dimension) if row.get(dimension) not in (None, "") else "(none)")
+                            segments.setdefault(m, {}).setdefault(dimension, {}).setdefault(seg, {})[day] = float(row[m])
+
+    for _view, group in sorted(by_view.items()):
+        run(group, None)
+        for dim in dims:
+            ok = [m for m in group if dim in (new_defs[m].get("supported_dimensions") or [])]
+            if ok:
+                run(ok, dim)
+    fx["series"].update(series)
+    fx["segments"].update(segments)
+    fx["definitions"].update({m: new_defs[m] for m in sorted(new_defs)})
+    fx["metrics"] = sorted(set(fx["metrics"]) | set(new_defs))
+    fx["queries"] += log
+    fx["unavailable"].update(unavailable)
+    fx["extended_with"] = sorted(new_defs)
+    fx["sha256"] = fingerprint({k: fx[k] for k in ("series", "segments", "definitions")})
+    with open(path, "w") as fh:
+        json.dump(fx, fh, separators=(",", ":"), sort_keys=True)
+    print(f"added {sorted(new_defs)}; unavailable {sorted(unavailable)}; sha256 {fx['sha256']}")
+
+
 if __name__ == "__main__":
+    if sys.argv[1] == "extend":
+        extend(sys.argv[2], [d for d in (sys.argv[3] if len(sys.argv) > 3 else "").split(",") if d])
+        sys.exit(0)
     main(sys.argv[1], sys.argv[2], sys.argv[3], [d for d in (sys.argv[4] if len(sys.argv) > 4 else "").split(",") if d])

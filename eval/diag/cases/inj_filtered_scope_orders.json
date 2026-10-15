@@ -23,7 +23,7 @@
  },
  "world": {
   "fixture": "brand20_daily_2026-10",
-  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+  "sha256": "8923c5d023f2956c8862d786712695406787f89deffaf343fa3c6c877b54a521"
  },
  "truth": {
   "cause_class": "findable",
@@ -40,7 +40,8 @@
    0.0,
    0.5
   ],
-  "note": "the question is filtered to the channel whose orders were cut to 56%; planted change of the outcome -50% over the event days"
+  "signal_z": 1.98,
+  "note": "the question is filtered to the channel whose orders were cut to 43%; planted change of the outcome -65% over the event days (2.0 sigma of its own variability)"
  },
  "injections": [
   {
@@ -48,7 +49,7 @@
    "onset": "2026-10-12",
    "params": {
     "metric": "orders",
-    "factor": 0.563,
+    "factor": 0.432,
     "effects": [
      {
       "from": "orders",

@@ -21,7 +21,7 @@
  },
  "world": {
   "fixture": "brand20_daily_2026-10",
-  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+  "sha256": "8923c5d023f2956c8862d786712695406787f89deffaf343fa3c6c877b54a521"
  },
  "truth": {
   "cause_class": "findable",
@@ -38,7 +38,8 @@
    0.0,
    0.5
   ],
-  "note": "clicks on one platform cut to 50% with impressions unchanged (a creative problem); planted change of the outcome -25% over the event days"
+  "signal_z": 2.27,
+  "note": "clicks on one platform cut to 19% with impressions unchanged (a creative problem); planted change of the outcome -40% over the event days (2.3 sigma of its own variability)"
  },
  "injections": [
   {
@@ -46,7 +47,7 @@
    "onset": "2026-10-12",
    "params": {
     "metric": "link_clicks",
-    "factor": 0.496,
+    "factor": 0.194,
     "effects": [
      {
       "from": "link_clicks",

@@ -25,6 +25,7 @@ import case_format as C
 NAMED = ("supported_cause", "likely_contributor")
 NOT_IDENTIFIED = ("located_cause_not_identified", "root_cause_not_identified", "insufficient_data")
 FOUND = ("explained", "partially_explained")
+DETECTABLE_Z = 2.0  # below this a planted change cannot be told from ordinary variation: "no unusual change" is then a fair answer
 
 
 @dataclass
@@ -46,6 +47,7 @@ class CaseScore:
     correct_verdict: bool | None = None
     unexplained_share: float | None = None
     unexplained_in_range: bool | None = None
+    detectable: bool = True  # the planted change is at least DETECTABLE_Z sigmas of the outcome's own variability
     decomposition_ok: bool | None = None  # the engine's split puts the change where the truth says (and the right effect dominates)
     queries: int = 0
     error: str = ""
@@ -86,6 +88,7 @@ def _path_nodes(planted: list[Any]) -> set[str]:
 def score_case(case: C.Case, report: dict[str, Any], ran: bool, error: str, queries: int, planted: list[Any],
                graph: dict[str, Any]) -> CaseScore:
     s = CaseScore(case.id, case.kind, case.truth.cause_class, case.tags, ran, queries=queries, error=error)
+    s.detectable = case.truth.signal_z is None or case.truth.signal_z >= DETECTABLE_Z
     if not ran:
         s.false_attributions = []
         return s
@@ -129,6 +132,8 @@ def score_case(case: C.Case, report: dict[str, Any], ran: bool, error: str, quer
     expected = truth.expected
     if expected == "cause_found":
         s.correct_verdict = s.verdict in FOUND or (s.verdict in NOT_IDENTIFIED and bool(s.named))
+        if not s.detectable and s.verdict == "no_unusual_change":
+            s.correct_verdict = True  # below the noise floor, saying nothing unusual happened is right
     elif expected == "located_not_identified" or expected == "measurement_artifact":
         s.correct_verdict = s.verdict in NOT_IDENTIFIED and not s.named
     elif expected == "no_change":
@@ -158,7 +163,8 @@ def aggregate(scores: list[CaseScore]) -> dict[str, Any]:
     """Rates with their denominators. Findable and non-findable worlds are never pooled into one number."""
     ran = [s for s in scores if s.ran and s.kind != "stability"]
     stability = [s for s in scores if s.ran and s.kind == "stability"]
-    findable = [s for s in ran if s.cause_class == "findable"]
+    findable = [s for s in ran if s.cause_class == "findable" and s.detectable]
+    below_noise = [s for s in ran if s.cause_class == "findable" and not s.detectable]
     other = [s for s in ran if s.cause_class != "findable"]
     return {
         "cases": len(scores), "crashed": sum(1 for s in scores if not s.ran),
@@ -171,6 +177,8 @@ def aggregate(scores: list[CaseScore]) -> dict[str, Any]:
             "false_attribution": _rate([bool(s.false_attributions) for s in findable]),
             "correct_verdict": _rate([bool(s.correct_verdict) for s in findable]),
         },
+        "below_noise": {"n": len(below_noise), "no_unusual_change": _rate([s.verdict == "no_unusual_change" for s in below_noise]),
+                        "false_attribution": _rate([bool(s.false_attributions) for s in below_noise])},
         "not_findable": {
             "n": len(other),
             "false_attribution": _rate([bool(s.false_attributions) for s in other]),

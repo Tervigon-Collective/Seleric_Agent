@@ -99,3 +99,12 @@ def test_decomposition_truth_checks_top_segment_and_dominant_effect():
     assert run(c, wrong_effect, []).decomposition_ok is False
     assert run(c, rep([], "no_unusual_change"), []).decomposition_ok is False
     assert S.aggregate([run(c, good, [])])["decomposition_ok"] == 1.0
+
+
+def test_change_below_the_noise_floor_is_reported_apart_and_no_unusual_change_is_right():
+    weak = run(case(signal_z=1.2), rep([], "no_unusual_change"))
+    assert weak.detectable is False and weak.correct_verdict is True
+    strong = run(case(signal_z=3.0), rep([], "no_unusual_change"))
+    assert strong.detectable is True and strong.correct_verdict is False
+    agg = S.aggregate([weak, strong])
+    assert agg["findable"]["n"] == 1 and agg["below_noise"]["n"] == 1 and agg["below_noise"]["no_unusual_change"] == 1.0

@@ -65,6 +65,36 @@ def run_stability(cases, scores, R, S) -> dict:
     return {"by_kind": by_kind, "cases": out}
 
 
+def run_null_sweep(cases, R) -> dict:
+    """How often the engine calls an ordinary day unusual, over the last 28 days (informational, not scored).
+
+    Real days carry real changes, so there is no truth per day; the rate says how readily the engine raises an event. It is
+    the engine's false-alarm rate only to the extent that most days are ordinary.
+    """
+    from dataclasses import replace
+    from datetime import timedelta
+
+    base = next((c for c in cases if c.kind == "null"), None)
+    if base is None:
+        return {}
+    last = max(base.request.event_days)
+    import world_fixture as W
+    end = W.load_fixture(base.world.fixture).end
+    rows = []
+    for i in range(28):
+        day = end - timedelta(days=i)
+        c = replace(base, request=replace(base.request, event_days=(day,)))
+        res = R.run_case(c)
+        rep = res.report or {}
+        named = [d["driver"] for d in rep.get("drivers") or [] if d.get("status") == "implicated" and d.get("classification") in ("supported_cause", "likely_contributor")]
+        rows.append({"day": str(day), "verdict": rep.get("verdict"), "named": named})
+    flagged = [r for r in rows if r["verdict"] not in ("no_unusual_change", None)]
+    print(f"  null sweep: {len(flagged)}/{len(rows)} days raised as unusual; named a cause on {sum(1 for r in rows if r['named'])}", flush=True)
+    del last
+    return {"days": len(rows), "unusual": len(flagged), "unusual_rate": round(len(flagged) / len(rows), 3),
+            "named_a_cause": sum(1 for r in rows if r["named"]), "rows": rows}
+
+
 def main(argv: list[str]) -> int:
     import case_format as C
     import runner as R
@@ -74,6 +104,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--out", default="")
     ap.add_argument("--only", default="")
     ap.add_argument("--allow-dirty", action="store_true")
+    ap.add_argument("--null-sweep", action="store_true", help="also ask the null case's question for each of the last 28 days")
     ap.add_argument("--stability", action="store_true", help="also run window shifts, history subsamples and repeats per case")
     args = ap.parse_args(argv)
     state = R.tree_state()
@@ -96,7 +127,8 @@ def main(argv: list[str]) -> int:
         raw[case.id] = {"summary": res.summary, "report": res.report, "seconds": round(time.time() - t0, 1)}
         print(f"{case.id:40s} {sc.verdict or 'CRASH':32s} named={sc.named[:3]} false={sc.false_attributions} {raw[case.id]['seconds']}s", flush=True)
     stab = run_stability(cases, scores, R, S) if args.stability else None
-    summary = {"stability_runs": stab, "engine": state, "dirty_allowed": args.allow_dirty, "fixtures": sorted({c.world.fixture for c in cases}),
+    sweep = run_null_sweep(cases, R) if args.null_sweep else None
+    summary = {"stability_runs": stab, "null_sweep": sweep, "engine": state, "dirty_allowed": args.allow_dirty, "fixtures": sorted({c.world.fixture for c in cases}),
                "aggregate": S.aggregate(scores), "cases": [asdict(s) for s in scores]}
     (out / "scores.json").write_text(json.dumps(summary, indent=1, default=str))
     (out / "reports.json").write_text(json.dumps(raw, default=str))

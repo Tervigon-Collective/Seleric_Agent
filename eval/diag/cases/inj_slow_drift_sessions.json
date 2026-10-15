@@ -21,7 +21,7 @@
  },
  "world": {
   "fixture": "brand20_daily_2026-10",
-  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+  "sha256": "8923c5d023f2956c8862d786712695406787f89deffaf343fa3c6c877b54a521"
  },
  "truth": {
   "cause_class": "findable",
@@ -38,7 +38,8 @@
    0.0,
    0.5
   ],
-  "note": "sessions slide to 73% over 14 days starting 16 days before the end; planted change of the outcome -30% over the event days"
+  "signal_z": 2.55,
+  "note": "sessions slide to 60% over 14 days starting 16 days before the end; planted change of the outcome -45% over the event days (2.5 sigma of its own variability)"
  },
  "injections": [
   {
@@ -46,7 +47,7 @@
    "onset": "2026-09-28",
    "params": {
     "metric": "sessions",
-    "factor": 0.731,
+    "factor": 0.596,
     "effects": [
      {
       "from": "sessions",
