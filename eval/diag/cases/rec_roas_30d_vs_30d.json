@@ -99,7 +99,8 @@
   ],
   "decomposition": {
    "dimension": "ad_platform",
-   "top_segment": "meta"
+   "top_segment": "meta",
+   "discriminating": false
   },
   "note": "ClickHouse serve.order_pnl_daily brand 20, 2026-09-08..10-07 vs 2026-08-09..09-07: spend 2.20M -> 1.11M (-50%), net ROAS 0.68 -> 0.92; Meta carries the largest share of the improvement (exact ratio-of-sums split recomputed 2026-10-15; margin figures were restated since the 2026-10-08 audit)"
  },

@@ -33,6 +33,7 @@ import world_fixture as W
 GRAPH_PATH = ROOT / "src" / "seleric_swarm" / "causal" / "data" / "dependency_graph.json"
 ENGINE_PATHS = ("src/seleric_swarm/causal", "src/seleric_swarm/toolsets/diagnosis.py", "src/seleric_swarm/toolsets/policy_config.py")
 SCOPE_DIMENSION = "brand_id"
+HISTORY_KEEP_DAYS = 56  # history the engine reads before the window (DIAG_HISTORY_DAYS); never cut from it
 
 
 class WorldMcp:
@@ -129,22 +130,24 @@ def check_reaches_outcome(case: C.Case, world: inject.InjectedWorld) -> None:
 
 
 def perturb(case: C.Case, shift_days: int) -> C.Case:
-    """The same case asked about a window shifted by ``shift_days`` (truth and injections unchanged)."""
+    """The same question about a window shifted by ``shift_days``, with every injection onset moved by the same amount
+    (so the plant stays in the same place relative to the window; truth is unchanged)."""
     if not shift_days:
         return case
     delta = timedelta(days=shift_days)
     rq = replace(case.request, event_days=tuple(d + delta for d in case.request.event_days),
                  baseline_days=tuple(d + delta for d in case.request.baseline_days))
-    return replace(case, request=rq)
+    return replace(case, request=rq, injections=tuple(replace(i, onset=i.onset + delta if i.onset else None) for i in case.injections))
 
 
-def subsample(world: inject.InjectedWorld, keep_out: set[date], drop_frac: float, seed: int) -> int:
-    """Remove a random share of the history days (never an event or baseline day) from every series and segment."""
-    import numpy as np
+def shorten_history(world: inject.InjectedWorld, keep_from: date, cut_frac: float) -> int:
+    """Remove the oldest ``cut_frac`` of the history days (never from ``keep_from`` on) from every series and segment.
 
-    days = sorted({d for s in world.series.values() for d in s} - keep_out)
-    rng = np.random.default_rng(seed)
-    gone = {days[i] for i in rng.choice(len(days), size=int(len(days) * drop_frac), replace=False)}
+    A shorter history has a clean meaning for the engine (less to build references and estimates from); deleting random
+    days does not, because an absent additive day is read as zero.
+    """
+    days = sorted({d for s in world.series.values() for d in s if d < keep_from})
+    gone = set(days[: int(len(days) * cut_frac)])
     for s in world.series.values():
         for d in gone & set(s):
             del s[d]
@@ -156,20 +159,23 @@ def subsample(world: inject.InjectedWorld, keep_out: set[date], drop_frac: float
     return len(gone)
 
 
-def run_case(case: C.Case, *, shift_days: int = 0, drop_frac: float = 0.0, seed: int = 0) -> RunResult:
+def run_case(case: C.Case, *, shift_days: int = 0, cut_frac: float = 0.0, control: bool = False) -> RunResult:
     from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
     from seleric_swarm.conversations.contracts import ContextBundle, Principal
     from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
     from seleric_swarm.state.artifacts import InMemoryArtifactStore
     from seleric_swarm.toolsets import diagnosis
 
-    fx, world = build_world(case)
-    check_reaches_outcome(case, world)
     case = perturb(case, shift_days)
+    if control:
+        case = replace(case, injections=())  # the same question about the world as it really was
+    fx, world = build_world(case)
+    if not control:
+        check_reaches_outcome(case, world)
     if max(case.request.event_days) > fx.end or min(case.request.baseline_days or case.request.event_days) < fx.start:
         raise ValueError(f"{case.id}: the shifted window leaves the fixture")
-    if drop_frac:
-        subsample(world, {*case.request.event_days, *case.request.baseline_days}, drop_frac, seed)
+    if cut_frac:
+        shorten_history(world, min(case.request.baseline_days or case.request.event_days) - timedelta(days=HISTORY_KEEP_DAYS), cut_frac)
     dims_of = {m: [SCOPE_DIMENSION, *sorted(world.segments.get(m, {}))] for m in fx.definitions}
     metrics = tuple(
         CatalogueMetricMeta(id=m, label=str(d.get("display_name") or m), view=str((d.get("cube_mapping") or {}).get("view") or ""),

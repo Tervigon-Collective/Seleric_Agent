@@ -82,6 +82,7 @@ class Decomposition:
     dimension: str
     top_segments: tuple[str, ...]  # the segment carrying the largest share of the change is one of these
     dominant: str | None = None  # "mix" | "rate": which effect dominates inside the dimension, when stated
+    discriminating: bool = True  # False: the expected top segment is simply the largest one, so a hit proves nothing (reported, not counted)
 
 
 @dataclass(frozen=True)
@@ -197,7 +198,8 @@ def parse_case(raw: dict[str, Any]) -> Case:
             raise CaseError(f"{cid}: truth.decomposition.dominant must be mix or rate")
         raw_top = _need(cid, dc, "top_segment", "truth.decomposition.")
         decomposition = Decomposition(str(_need(cid, dc, "dimension", "truth.decomposition.")),
-                                      tuple(str(x) for x in (raw_top if isinstance(raw_top, list) else [raw_top])), dominant)
+                                      tuple(str(x) for x in (raw_top if isinstance(raw_top, list) else [raw_top])), dominant,
+                                      bool(dc.get("discriminating", True)))
     signal_z = t.get("signal_z")
     if signal_z is not None and float(signal_z) < 0:
         raise CaseError(f"{cid}: truth.signal_z must be >= 0")

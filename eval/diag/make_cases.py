@@ -246,7 +246,7 @@ def build(fx: W.Fixture) -> list[dict]:
         {"outcome": "net_roas", "event_days": [str(date(2026, 9, 8) + timedelta(days=i)) for i in range(30)],
          "baseline_days": [str(date(2026, 8, 9) + timedelta(days=i)) for i in range(30)], "claimed_direction": "up", "mode": "period"},
         {"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "ad_spend", "sign": "down"}], "unexplained_share": [0.0, 0.6],
-         "decomposition": {"dimension": "ad_platform", "top_segment": "meta"},
+         "decomposition": {"dimension": "ad_platform", "top_segment": "meta", "discriminating": False},
          "note": "ClickHouse serve.order_pnl_daily brand 20, 2026-09-08..10-07 vs 2026-08-09..09-07: spend 2.20M -> 1.11M (-50%), net ROAS 0.68 -> 0.92; Meta carries the largest share of the improvement (exact ratio-of-sums split recomputed 2026-10-15; margin figures were restated since the 2026-10-08 audit)"},
         record="ClickHouse serve.order_pnl_daily brand_id=20 (query in plan section 11, 2026-10-15); docs/audits/2026-10-08_diagnosis_live_replay.md (period comparison thread)")
     add("stab_net_sales_2026_10_02", "stability", ["event", "stability"], q_drop, {"outcome": OUTCOME, "event_days": ["2026-10-02"], "claimed_direction": "down"},

@@ -48,6 +48,8 @@ class CaseScore:
     unexplained_share: float | None = None
     unexplained_in_range: bool | None = None
     detectable: bool = True  # the planted change is at least DETECTABLE_Z sigmas of the outcome's own variability
+    engine_localised: bool | None = None  # the engine's own `localised` flag on the planted dimension
+    decomposition_mass_only: bool | None = None  # a hit that proves nothing (the expected segment is the largest): shown, not counted
     decomposition_ok: bool | None = None  # the engine's split puts the change where the truth says (and the right effect dominates)
     queries: int = 0
     error: str = ""
@@ -76,6 +78,22 @@ def _downstream(graph: dict[str, Any], metric: str) -> set[str]:
     return seen
 
 
+def _ancestors(graph: dict[str, Any], metric: str) -> set[str]:
+    """Everything that feeds the metric (the reverse of ``_downstream``): the only metrics that can be causes of it."""
+    backward: dict[str, set[str]] = {}
+    for e in graph["edges"]:
+        if e["kind"] in ("mechanism", "composition", "ratio_component", "declared_input"):
+            backward.setdefault(e["to"], set()).add(e["from"])
+    seen: set[str] = set()
+    todo = [metric]
+    while todo:
+        for prev in backward.get(todo.pop(), ()):
+            if prev not in seen:
+                seen.add(prev)
+                todo.append(prev)
+    return seen
+
+
 def _path_nodes(planted: list[Any]) -> set[str]:
     nodes: set[str] = set()
     for p in planted:
@@ -86,7 +104,7 @@ def _path_nodes(planted: list[Any]) -> set[str]:
 
 
 def score_case(case: C.Case, report: dict[str, Any], ran: bool, error: str, queries: int, planted: list[Any],
-               graph: dict[str, Any]) -> CaseScore:
+               graph: dict[str, Any], control: dict[str, Any] | None = None) -> CaseScore:
     s = CaseScore(case.id, case.kind, case.truth.cause_class, case.tags, ran, queries=queries, error=error)
     s.detectable = case.truth.signal_z is None or case.truth.signal_z >= DETECTABLE_Z
     if not ran:
@@ -109,23 +127,28 @@ def score_case(case: C.Case, report: dict[str, Any], ran: bool, error: str, quer
         ranks = [r for r in s.rank.values() if r is not None]
         s.top1 = all(r == 1 for r in s.rank.values()) if len(truth.causes) == 1 else bool(ranks) and min(ranks) == 1
         s.top3 = all(r is not None and r <= 3 for r in s.rank.values()) if len(truth.causes) == 1 else bool(ranks) and min(ranks) <= 3
-        scope_values = {v for p in planted for v in p.scope.values()}
-        s.localised = any(
-            (t := (dim.get("top") or [])) and t[0].get("segment") in scope_values
-            for dim in report.get("dimensions") or []
-        ) if scope_values else None
+        scope_dims = {k: v for p in planted for k, v in p.scope.items()}
 
+        def top_of(rep: dict[str, Any] | None, dim: str) -> str | None:
+            d = next((x for x in (rep or {}).get("dimensions") or [] if x.get("dimension") == dim), None)
+            t = (d.get("top") or []) if d else []
+            return t[0].get("segment") if t else None
+
+        # A hit needs the planted segment on top of the planted dimension, and not on top in the world without the plant
+        # (otherwise it is just the biggest segment: a platform with 78% of the spend tops almost any change).
+        s.localised = all(top_of(report, dim) == val and (control is None or top_of(control, dim) != val) for dim, val in scope_dims.items()) if scope_dims else None
+        s.engine_localised = all(bool(next((x for x in report.get("dimensions") or [] if x.get("dimension") == dim), {}).get("localised")) for dim in scope_dims) if scope_dims else None
+
+    reach = _ancestors(graph, case.request.outcome) | {case.request.outcome}
+    real = not any(not p.real for p in planted)
     allowed: set[str] = set()
-    for cause in truth.causes:
-        allowed |= groups.get(cause.metric, {cause.metric})
-    allowed |= _path_nodes(planted)
-    for cause in truth.causes:
-        allowed |= _downstream(graph, cause.metric)
-    for p in planted:
-        allowed |= _downstream(graph, p.metric)
-    # A named cause is false unless it is the planted cause, a member of its group, or something it feeds; a metric the
-    # case forbids is false whatever else is true of it. Non-findable worlds have no cause to name, only the planted
-    # metric's own path (the hidden cause's visible footprint) is tolerated.
+    if real:
+        for cause in truth.causes:
+            allowed |= groups.get(cause.metric, {cause.metric}) | (_downstream(graph, cause.metric) & reach)
+        for p in planted:
+            allowed |= ({p.metric} | _path_nodes([p]) | _downstream(graph, p.metric)) & reach
+    # A named cause is false unless it is the planted cause, in its group, or both fed by it and feeding the outcome (a
+    # side branch of the graph is not proximate). A measurement break changed nothing real: no cause is tolerated.
     s.false_attributions = [m for m in s.named if m not in allowed or m in truth.must_not_attribute]
 
     event = report.get("event") or {}
@@ -139,16 +162,22 @@ def score_case(case: C.Case, report: dict[str, Any], ran: bool, error: str, quer
     elif expected == "no_change":
         s.correct_verdict = s.verdict == "no_unusual_change"
     elif expected == "premise_false":
-        s.correct_verdict = event.get("premise") in ("contradicted", "not_unusual") or s.verdict == "no_unusual_change"
+        # A real, detectable change in the other direction must be called out as such; 'no unusual change' is a wrong answer.
+        s.correct_verdict = event.get("premise") == "contradicted" or (not s.detectable and s.verdict == "no_unusual_change")
     if truth.decomposition is not None:
         dec = truth.decomposition
         dim = next((d for d in report.get("dimensions") or [] if d.get("dimension") == dec.dimension), None)
         top = (dim.get("top") or []) if dim else []
-        ok = bool(top) and top[0].get("segment") in dec.top_segments
-        if ok and dec.dominant:
-            mix, rate = abs(dim.get("mix_effect") or 0.0), abs(dim.get("rate_effect") or 0.0)
-            ok = mix > rate if dec.dominant == "mix" else rate > mix
-        s.decomposition_ok = ok
+        if dec.dominant:  # which of two segments is on top is vacuous with two segments: score the mix/rate split
+            mix, rate = abs((dim or {}).get("mix_effect") or 0.0), abs((dim or {}).get("rate_effect") or 0.0)
+            ok = bool(dim) and (mix > rate if dec.dominant == "mix" else rate > mix)
+        else:
+            ctl = next((d for d in (control or {}).get("dimensions") or [] if d.get("dimension") == dec.dimension), None)
+            ctl_top = (ctl.get("top") or [{}])[0].get("segment") if ctl and ctl.get("top") else None
+            ok = bool(top) and top[0].get("segment") in dec.top_segments and (control is None or ctl_top not in dec.top_segments)
+        s.decomposition_ok = ok if dec.discriminating else None
+        s.decomposition_mass_only = None if dec.discriminating else ok
+
     if truth.unexplained_share is not None and s.unexplained_share is not None:
         lo, hi = truth.unexplained_share
         s.unexplained_in_range = lo <= float(s.unexplained_share) <= hi
@@ -179,6 +208,7 @@ def aggregate(scores: list[CaseScore]) -> dict[str, Any]:
         },
         "below_noise": {"n": len(below_noise), "no_unusual_change": _rate([s.verdict == "no_unusual_change" for s in below_noise]),
                         "false_attribution": _rate([bool(s.false_attributions) for s in below_noise])},
+        "false_named_causes": {"findable": sum(len(s.false_attributions) for s in findable), "not_findable": sum(len(s.false_attributions) for s in other)},
         "not_findable": {
             "n": len(other),
             "false_attribution": _rate([bool(s.false_attributions) for s in other]),

@@ -21,7 +21,7 @@ sys.path.insert(0, str(HERE))
 
 
 SHIFTS = (-2, -1, 1)  # days; a shift that leaves the fixture is skipped
-SUBSAMPLE = {"drop_frac": 0.2, "seeds": (1, 2, 3)}
+SHORT_HISTORY = (0.25, 0.5)  # share of the oldest history days removed
 REPEATS = 2
 
 
@@ -32,7 +32,7 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 def run_stability(cases, scores, R, S) -> dict:
     """How much the answer moves when the question or the data is perturbed slightly (plan P0.6).
 
-    Variants: the window shifted by a day or two, 20% of the history days removed (seeded), and the unchanged run again
+    Variants: the window (and every injection onset) shifted by a day or two, the oldest 25% / 50% of the history removed, and the unchanged run again
     (the engine is stochastic if repeats differ). Agreement is measured against the unperturbed run: same verdict, and the
     overlap (Jaccard) of the top-3 listed drivers and of the named causes.
     """
@@ -43,7 +43,7 @@ def run_stability(cases, scores, R, S) -> dict:
         if not b.ran:
             continue
         variants = [("shift", f"{k:+d}", {"shift_days": k}) for k in SHIFTS] + \
-                   [("subsample", f"seed{sd}", {"drop_frac": SUBSAMPLE["drop_frac"], "seed": sd}) for sd in SUBSAMPLE["seeds"]] + \
+                   [("short_history", f"cut{int(c * 100)}", {"cut_frac": c}) for c in SHORT_HISTORY] + \
                    [("repeat", str(i + 1), {}) for i in range(REPEATS)]
         rows = []
         for kind, label, kw in variants:
@@ -61,7 +61,7 @@ def run_stability(cases, scores, R, S) -> dict:
     by_kind = {k: {"n": len([r for r in flat if r["kind"] == k]),
                    "same_verdict": round(sum(r["same_verdict"] for r in flat if r["kind"] == k) / max(1, len([r for r in flat if r["kind"] == k])), 3),
                    "top3_jaccard": round(sum(r["top3_jaccard"] for r in flat if r["kind"] == k) / max(1, len([r for r in flat if r["kind"] == k])), 3)}
-               for k in ("shift", "subsample", "repeat")}
+               for k in ("shift", "short_history", "repeat")}
     return {"by_kind": by_kind, "cases": out}
 
 
@@ -122,7 +122,12 @@ def main(argv: list[str]) -> int:
     for case in cases:
         t0 = time.time()
         res = R.run_case(case)
-        sc = S.score_case(case, res.report, res.success, res.error, res.queries, res.planted, graph)
+        control = None
+        if res.success and (any(p.scope for p in res.planted) or case.truth.decomposition):
+            ctl = R.run_case(case, control=True)  # the same question on the world without the plant
+            control = ctl.report if ctl.success else None
+            raw[case.id + "__control"] = {"summary": ctl.summary, "report": ctl.report}
+        sc = S.score_case(case, res.report, res.success, res.error, res.queries, res.planted, graph, control=control)
         scores.append(sc)
         raw[case.id] = {"summary": res.summary, "report": res.report, "seconds": round(time.time() - t0, 1)}
         print(f"{case.id:40s} {sc.verdict or 'CRASH':32s} named={sc.named[:3]} false={sc.false_attributions} {raw[case.id]['seconds']}s", flush=True)

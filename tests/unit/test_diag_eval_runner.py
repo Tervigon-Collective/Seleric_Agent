@@ -64,17 +64,25 @@ def test_tree_state_reports_the_engine_git_state():
     assert len(st["head"]) == 40 and isinstance(st["engine_dirty"], list)
 
 
-def test_perturbations_shift_the_window_and_subsample_history_without_touching_event_days():
-    case, _ = _case()
+def test_shift_moves_window_and_onset_together_and_shorter_history_keeps_recent_days():
+    fx = W.load_fixture(FIXTURE)
+    on = fx.end - timedelta(days=1)
+    case, _ = _case(kind="injection", injections=[{"type": "scale", "onset": str(on), "params": {"metric": "orders", "factor": 0.5}}],
+                    truth={"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "orders"}]})
     shifted = R.perturb(case, -2)
     assert shifted.request.event_days == tuple(d - timedelta(days=2) for d in case.request.event_days)
+    assert shifted.injections[0].onset == on - timedelta(days=2)
     assert R.perturb(case, 0) is case
-    fx = W.load_fixture(FIXTURE)
     world = I.InjectedWorld({m: dict(s) for m, s in fx.series.items()}, {})
-    keep = set(case.request.event_days)
-    n = R.subsample(world, keep, 0.2, seed=1)
-    assert n > 10 and all(d in world.series["orders"] for d in keep)
-    assert len(world.series["orders"]) == len(fx.series["orders"]) - sum(1 for d in fx.series["orders"] if d not in world.series["orders"])
-    world2 = I.InjectedWorld({m: dict(s) for m, s in fx.series.items()}, {})
-    R.subsample(world2, keep, 0.2, seed=1)
-    assert world.series["orders"].keys() == world2.series["orders"].keys()  # seeded: same days dropped
+    keep_from = fx.end - timedelta(days=30)
+    n = R.shorten_history(world, keep_from, 0.5)
+    assert n > 10 and min(world.series["orders"]) > fx.start and all(d in world.series["orders"] for d in fx.series["orders"] if d >= keep_from)
+
+
+def test_control_run_asks_the_same_question_without_the_plant():
+    fx = W.load_fixture(FIXTURE)
+    on = fx.end - timedelta(days=1)
+    case, _ = _case(kind="injection", injections=[{"type": "scale", "onset": str(on), "params": {"metric": "orders", "factor": 0.5}}],
+                    truth={"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "orders"}]})
+    ctl = R.run_case(case, control=True)  # no refusal: an unconnected plant is fine when there is none
+    assert ctl.success and ctl.planted == []
