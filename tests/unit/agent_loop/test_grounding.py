@@ -203,3 +203,26 @@ def test_iso_timestamp_is_a_date_not_numbers():
     # test_agent/test_grounding.py case 17 (sha e1d2087e): the freshness footer must not read as figures
     assert not answer_numbers("data as of 2026-10-13T16:35:25Z and refresh 2026-10-13T16:35:25.274Z")
     assert [n["value"] for n in answer_numbers("₹5,472 as of 2026-10-13T16:35:25Z")] == [5472]
+
+
+def test_month_prefixed_words_are_not_dates():
+    """'margin', 'market', 'decreased' start like a month: the figures beside them are still figures."""
+    text = "Gross margin 4,500.50 and ad spend 52,000 decreased; 1,234 market share and 52,000 marketing"
+    assert [n["value"] for n in answer_numbers(text)] == [4500.5, 52000, 1234, 52000]
+    assert answer_numbers("12 Oct and Oct 12th and 5 sept and May 2026") == []
+
+
+def test_ranges_are_figures_but_dates_are_not():
+    assert [n["value"] for n in answer_numbers("between 1,200-1,500 units")] == [1200, 1500]
+    assert answer_numbers("2026-10-12 and 10-12 and 12-10-2026") == []
+
+
+def test_explicit_sign_must_match_the_data():
+    p = [{"query_id": "q1", "columns": ["net_profit"], "provenance": {"query_id": "q1", "metric_ids": ["net_profit"]},
+          "rows": [{"campaign": "Alpha", "net_profit": -96900.0}]}]
+    assert grounding("Alpha net profit was -96,900", p)["measured"] == 1
+    assert grounding("Alpha net profit fell by 96,900", p)["measured"] == 1  # plain words carry no sign claim
+    wrong = grounding("Alpha net profit was +96,900", p)
+    assert wrong["sign_mismatch"] == ["96,900"] and wrong["measured"] == 0
+    assert any("sign" in line for line in problems(wrong))
+    assert grounding("- ₹96,900 net profit", p)["sign_mismatch"] == []  # a list bullet is not a sign

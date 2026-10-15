@@ -187,7 +187,6 @@ class Settings(BaseSettings):
     # Ceiling for the V3 loop. Per-intent budgets in agent/runner.py sit under
     # this; unknown intent uses the ceiling itself.
     max_tool_calls: int = 300
-    max_validation_revisions: int = 3
     mcp_call_timeout_s: float = 15.0
     max_semantic_searches: int = 5
     max_definition_lookups: int = 8

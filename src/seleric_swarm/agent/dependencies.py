@@ -40,12 +40,6 @@ class NullMcpClient:
         raise NotImplementedError("this path does not call MCP")
 
 
-# deps.call_counts keys: how the mission's diagnosis went (toolsets/diagnosis.py records, the validator reads).
-# DIAGNOSIS_FAILED holds the last refusal while no diagnosis has succeeded; a success removes it.
-DIAGNOSIS_FAILED = "diagnosis_failed"
-DIAGNOSIS_OK = "diagnosis_ok"
-
-
 @dataclass(frozen=True)
 class ExecutionLimits:
     """Supersedes ``coordinator/governance/budget.py::MissionLimits``.
@@ -59,19 +53,18 @@ class ExecutionLimits:
     """
 
     max_tool_calls: int = 300
-    max_cube_queries: int = 200
+    # One diagnosis fetches ~140-160 series; a turn may run two (before/after, or two entities).
+    max_cube_queries: int = 600
     max_causal_queries: int = 80
     max_prediction_calls: int = 80
     max_python_calls: int = 10
-    # Increased to 3 to allow revisions for scope/evidence gaps on complex queries.
-    max_validation_revisions: int = 3
     max_runtime_seconds: float = 900.0
     # Per-MCP-call timeout to prevent stuck queries from blocking the mission.
     mcp_call_timeout_s: float = 15.0
     # PydanticAI per-run retries — how many times the model may recover from a
     # tool ModelRetry (e.g. an unknown metric id) or an output-validation
     # error within one mission before the run fails.
-    agent_retries: int = 3
+    agent_retries: int = 2
 
 
 @dataclass(frozen=True)
@@ -91,9 +84,6 @@ class SelericDeps:
     # is `Any`, not `dict[str, Any]`: toolsets/_data.py caches raw MCP response
     # dicts under it, keyed by capability and arguments.
     query_cache: MissionQueryCache[str, Any] = field(default_factory=MissionQueryCache)
-    # Per-mission mutable tool-call tallies (e.g. tools withdrawn for the rest of
-    # the run) so a tool can break a loop the exact-arg query_cache can't see. One dict per SelericDeps — never shared across missions.
-    call_counts: dict[str, Any] = field(default_factory=dict)
     # Per-run working memory — an auto-maintained ledger of established facts
     # (values a data tool returned) rendered back into the prompt
     # each turn so the model stops re-fetching the same thing. Not evidence

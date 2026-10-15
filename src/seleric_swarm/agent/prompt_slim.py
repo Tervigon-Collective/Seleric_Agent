@@ -8,9 +8,12 @@ trimmed prompt kept every check, scored the same on depth / clarity / completene
 from __future__ import annotations
 
 import dataclasses
+import logging
 from typing import Any
 
 from pydantic_ai.tools import ToolDefinition
+
+_log = logging.getLogger("seleric.agent.prompt_slim")
 
 # Core guide sections that duplicate the Answer rules or the working rules (start marker, end marker, replacement).
 _GUIDE_CUTS = (
@@ -37,11 +40,12 @@ def slim_guide(text: str) -> str:
     """The Core guide without the sections that repeat the Answer rules or the working rules."""
     for start, end, replacement in _GUIDE_CUTS:
         head, found, rest = text.partition(start)
-        if not found:
-            continue
         _, found_end, tail = rest.partition(end)
-        if found_end:
+        if found and found_end:
             text = head + replacement + end + tail
+        elif text.strip():
+            # The Core guide changed wording: the section is sent in full again (more tokens, same behaviour).
+            _log.warning("guide_cut_not_applied start=%r", start[:40])
     return text
 
 

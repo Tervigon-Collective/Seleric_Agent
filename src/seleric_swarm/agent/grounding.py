@@ -24,7 +24,10 @@ _UNIT_SCALE = {
 }
 _PERCENT = "%"
 _UNIT_WORDS = {*_UNIT_SCALE, "x"}
-_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+_MONTHS = frozenset({
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+    "january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december",
+})
 _ORDINALS = ("st", "nd", "rd", "th")
 _LEADING_MARKS = "()[]*_`.,;:"
 _HYPHENS = "-‐‑‒–—−"  # hyphen, non-breaking hyphen, dashes, minus: models write names with any of them
@@ -54,7 +57,36 @@ def _word_before(text: str, i: int) -> str:
 
 
 def _is_month(word: str) -> bool:
-    return len(word) >= 3 and word[:3] in _MONTHS and all(c.isalpha() for c in word)
+    """A month name or its usual abbreviation, whole word ('margin', 'market' and 'decreased' are not months)."""
+    return word in _MONTHS
+
+
+def _day_or_year(digits: str) -> bool:
+    """Digits that can be a day of the month (1-31) or a year; a grouped amount like 1,200 or 52,000 cannot."""
+    return digits.isdigit() and (len(digits) <= 2 or (len(digits) == 4 and 1900 <= int(digits) <= 2100))
+
+
+def _group_before(text: str, i: int) -> str:
+    j = i
+    while j > 0 and (text[j - 1].isdigit() or text[j - 1] in ",."):
+        j -= 1
+    return text[j:i]
+
+
+def _group_after(text: str, i: int) -> str:
+    j = i
+    while j < len(text) and (text[j].isdigit() or text[j] in ",."):
+        j += 1
+    return text[i:j]
+
+
+def _is_date_pair(first: str, second: str, tail: str) -> bool:
+    """first-second around a hyphen is a date (2026-10, 10-12, 12-10-2026), not a range of amounts (1,200-1,500, 20-30%)."""
+    if not (first.isdigit() and second.isdigit()):
+        return False
+    if tail[:1] == "%":
+        return False
+    return (len(first) == 4 and len(second) <= 2) or (len(first) <= 2 and len(second) in (1, 2, 4))
 
 
 def _date_or_time_part(text: str, start: int, end: int) -> bool:
@@ -63,10 +95,18 @@ def _date_or_time_part(text: str, start: int, end: int) -> bool:
     after = text[end] if end < len(text) else ""
     prev2 = text[start - 2] if start > 1 else ""
     next2 = text[end + 1] if end + 1 < len(text) else ""
-    if after in "-:/" and next2.isdigit():
+    if after in ":/" and next2.isdigit():
         return True
-    if before in "-:/" and prev2.isdigit():
+    if before in ":/" and prev2.isdigit():
         return True
+    if after in _HYPHENS and next2.isdigit():
+        second = _group_after(text, end + 1)
+        if _is_date_pair(text[start:end], second, text[end + 1 + len(second):]):
+            return True
+    if before in _HYPHENS and prev2.isdigit():
+        first = _group_before(text, start - 1)
+        if _is_date_pair(first, text[start:end], text[end:]):
+            return True
     # A code inside a hyphenated name (TH-383-SUSPENDER, SKU-12, 383-ADV) is an identifier, not a quantity.
     if before in _HYPHENS and prev2.isalpha():
         return True
@@ -77,7 +117,9 @@ def _date_or_time_part(text: str, start: int, end: int) -> bool:
     if tail[skip:skip + 2].lower() in _ORDINALS and not _word_at(tail, skip + 2):
         tail = tail[skip + 2:]
         skip = 1 if tail[:1] == " " else 0
-        return _is_month(_word_at(tail, skip))
+        return _day_or_year(text[start:end]) and _is_month(_word_at(tail, skip))
+    if not _day_or_year(text[start:end]):
+        return False
     return _is_month(_word_at(tail, skip)) or _is_month(_word_before(text, start))
 
 
@@ -151,8 +193,19 @@ def answer_numbers(text: str) -> list[dict[str, Any]]:
         elif unit == _PERCENT:
             shown = text[start:i + (2 if text[i:i + 1] == " " else 1)]
         out.append({"text": shown.strip(), "value": (-value if negative else value) * mult,
-                    "pct": unit == _PERCENT, "tol": tol})
+                    "pct": unit == _PERCENT, "tol": tol, "sign": _written_sign(text, start)})
     return out
+
+
+def _written_sign(text: str, start: int) -> str:
+    """'-' or '+' when the sign is written directly against the figure (-22.7%, +₹4,200, (−3.1%)), else ''.
+    A hyphen followed by a space is a list bullet or a dash, not a sign."""
+    k = start
+    while k > 0 and text[k - 1] in "₹$":
+        k -= 1
+    if k > 0 and text[k - 1] in _HYPHENS + "+" and (k < 2 or not text[k - 2].isalnum()):
+        return "+" if text[k - 1] == "+" else "-"
+    return ""
 
 
 # ---- payload numbers and rows ---------------------------------------------------------------
@@ -188,6 +241,20 @@ def _near(vals: list[float], lo: float, hi: float) -> bool:
 
 def _hit(v: float, tol: float, vals: list[float]) -> bool:
     return _near(vals, v - tol, v + tol)
+
+
+def _sign_conflict(n: dict[str, Any], signed: dict[str, list[float]]) -> bool:
+    """The answer writes the figure with an explicit sign, and the data holds that magnitude only with the other one."""
+    sign = n.get("sign")
+    if not sign:
+        return False
+    v, tol = abs(n["value"]), n["tol"] * 1.01
+
+    def present(values: list[float]) -> bool:
+        return _hit(v, tol, values) or (n["pct"] and _hit(v / 100, tol / 100, values))
+
+    other = "-" if sign == "+" else "+"
+    return not present(signed[sign]) and present(signed[other])
 
 
 def _derived(v: float, tol: float, pct: bool, vals: list[float]) -> bool:
@@ -292,7 +359,9 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
     """Classify each answer number (see module docstring). Arithmetic is limited to a row's own entity plus totals
     (and tiny payloads): across hundreds of numbers any figure is a sum or ratio of some pair, so an unrestricted pair
     scan accepts almost anything."""
-    vals = sorted({abs(p) for p in payload_numbers(payloads, [])})
+    raw_vals = payload_numbers(payloads, [])
+    vals = sorted({abs(p) for p in raw_vals})
+    signed = {"+": sorted({p for p in raw_vals if p > 0}), "-": sorted({-p for p in raw_vals if p < 0})}
     by_label: dict[str, set[float]] = {}
     shown: dict[str, str] = {}
     loose: set[float] = set()
@@ -318,11 +387,11 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
             small.append(sorted(pn))
     ans_nums = answer_numbers(answer)
     out: dict[str, Any] = {"numbers": len(ans_nums), "measured": 0, "derived": [], "unmatched": [], "misbound": [],
-                           "placeholders": placeholders(answer)}
+                           "sign_mismatch": [], "placeholders": placeholders(answer)}
 
-    def classify(n: dict[str, Any], pool: list[float], extra: Any = ()) -> str | None:
+    def classify(n: dict[str, Any], pool: list[float], extra: Any = (), measured: bool = True) -> str | None:
         v, tol = abs(n["value"]), n["tol"] * 1.01  # 1% slack so x.x5 rounding half-up still matches
-        if _hit(v, tol, pool) or (n["pct"] and _hit(v / 100, tol / 100, pool)):
+        if measured and (_hit(v, tol, pool) or (n["pct"] and _hit(v / 100, tol / 100, pool))):
             return "measured"
         return "derived" if any(_derived(v, tol, n["pct"], sorted(set(pool_))) for pool_ in extra) else None
 
@@ -368,7 +437,11 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
             # A percentage written beside two or more figures is a claim about THEM (34,377 -> 42,177 (+22.7%)): it must
             # follow from those, not from any pair among the hundreds of numbers in the data (a wrong +23.0% did).
             on_line = [sorted(set(operands))] if an["pct"] and len(operands) >= 2 else None
-            kind = classify(an, vals, on_line if on_line is not None else [pool, *small])
+            extra = on_line if on_line is not None else [pool, *small]
+            kind = classify(an, vals, extra)
+            if kind == "measured" and _sign_conflict(an, signed):
+                # The magnitude is in the data but only with the opposite sign: it must follow from arithmetic instead.
+                kind = classify(an, vals, extra, measured=False) or "sign"
             if kind:
                 status[i] = kind
                 accepted.add(abs(an["value"]))
@@ -379,6 +452,9 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         pending = left
     for i, an in enumerate(ans_nums):
         kind = status.get(i)
+        if kind == "sign":
+            out["sign_mismatch"].append(an["text"])
+            continue
         if kind == "measured":
             out["measured"] += 1
         elif kind == "derived":
@@ -394,6 +470,12 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
                     f"{an['text']} on the line about {', '.join(sorted(shown[s] for s in scope))} is not in that row; "
                     f"it is in the row for {', '.join(shown[o] for o in owners[:3])}")
     return out
+
+
+def quoted_figures(texts: list[str]) -> dict[str, list[float]] | None:
+    """The figures the conversation itself already contains (the question, earlier turns): quote-only, never arithmetic."""
+    figures = [n["value"] for text in texts for n in answer_numbers(text)]
+    return {"quoted_figures": figures} if figures else None
 
 
 def measured_in(answer: str, payload: Any) -> int:
@@ -413,6 +495,8 @@ def problems(g: dict[str, Any]) -> list[str]:
     other = [u for u in g["unmatched"] if u not in pcts]
     return ([f"figures in no tool result and not one arithmetic step from them: {', '.join(other)}"] if other else []) + \
         ([f"percentages that do not follow from the figures written beside them (recompute from those figures): {', '.join(pcts)}"] if pcts else []) + \
+        ([f"sign differs from the data (the same figure appears there with the opposite sign): {', '.join(g['sign_mismatch'])}"]
+         if g.get("sign_mismatch") else []) + \
         [f"wrong row: {m}" for m in g["misbound"]] + \
         ([f"placeholder instead of a value: {', '.join(g['placeholders'])}"] if g["placeholders"] else [])
 
@@ -443,6 +527,6 @@ def grounded_count(g: dict[str, Any]) -> int:
 def lost_substance(before: dict[str, Any], after: dict[str, Any]) -> bool:
     """A correction that cut the answer's verified figures to under 60% of what the draft had verified (while the draft
     had at most a quarter of its figures flagged) traded the answer for a clean-looking one: keep the draft."""
-    flagged = len(before.get("unmatched") or []) + len(before.get("misbound") or [])
+    flagged = len(before.get("unmatched") or []) + len(before.get("misbound") or []) + len(before.get("sign_mismatch") or [])
     mostly_fine = before.get("numbers", 0) > 0 and flagged * 4 <= before["numbers"]
     return mostly_fine and grounded_count(after) < 0.6 * grounded_count(before)

@@ -144,8 +144,8 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
             external_authenticated
             or (not api_key and not configured_authenticator)
             or bool(
-                (provided and compare_digest(provided, api_key))
-                or (bearer and compare_digest(bearer, api_key))
+                (provided and compare_digest(provided.encode(), api_key.encode()))
+                or (bearer and compare_digest(bearer.encode(), api_key.encode()))
             )
         )
 

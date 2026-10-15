@@ -114,7 +114,7 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
         if failed:  # MCP failures are recorded by the toolset; a helper that returns ok:false must show up the same way
             state.errors.append(f"{fn.__name__}: {str(summary)[:300]}")
         _remember_figures(state, result)
-        if raises_effort:  # the engine did the causal reasoning; the steps after it report its result
+        if raises_effort and not failed:  # the engine did the causal reasoning; a refusal leaves real reasoning to do
             set_loop_effort(LOOP_WRITEUP_EFFORT)
         return _view(result)
 
@@ -150,7 +150,13 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
         every number in it is recorded so it can be cited. No network, no eval/exec, no imports beyond the stdlib set
         above. A code error returns the traceback and the first row: fix it and retry.
         """
-        return await sandbox.run_python(ctx, code, _evidence_for(state, query_ids), purpose)
+        ids = _evidence_for(state, query_ids)
+        if query_ids and ids is None:
+            known = sorted(state.by_query)
+            return ToolResult(
+                success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE",
+                summary=f"No fetched result has query_id {query_ids}. Fetched this turn: {known or 'nothing yet'}.")
+        return await sandbox.run_python(ctx, code, ids, purpose)
 
     async def show_chart(
         ctx: RunContext[SelericDeps],

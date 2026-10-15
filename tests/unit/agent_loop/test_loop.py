@@ -57,11 +57,11 @@ def _scripted(*steps: Any) -> FunctionModel:
     return FunctionModel(fn)
 
 
-async def _turn(model: FunctionModel, gw: FakeGateway | None = None, store: InMemoryArtifactStore | None = None, **kw: Any):
+async def _turn(model: FunctionModel, gw: FakeGateway | None = None, store: InMemoryArtifactStore | None = None, question: str = "net sales?", **kw: Any):
     gw = gw or FakeGateway()
     store = store or InMemoryArtifactStore()
     result = await run_turn(deps=_deps(store), model=model, gateway=gw, tool_defs=DEFS, system_prompt="sys",
-                            question="net sales?", history=[], **kw)
+                            question=question, history=[], **kw)
     return result, gw, store
 
 
@@ -315,3 +315,47 @@ async def test_a_filtered_final_step_is_retried_from_the_gathered_evidence():
     result, gw, _ = await _turn(_scripted(call, [TextPart(junk)], retry))
     assert result.stats["degenerate_retries"] == 1 and "42,177" in result.answer
     assert len(gw.calls) == 1 and queries == [1]  # no second fetch; the retry saw the first tool result
+
+
+@pytest.mark.asyncio
+async def test_a_failed_call_is_not_replayed_from_the_cache():
+    class Flaky(FakeGateway):
+        async def call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> Any:
+            self.calls.append({"capability": capability, "arguments": arguments})
+            if len(self.calls) == 1:
+                raise TimeoutError("upstream slow")
+            return dict(PAYLOAD)
+
+    call = lambda cid: [ToolCallPart("metrics_query", {"measures": ["net_sales"]}, tool_call_id=cid)]
+    result, gw, _ = await _turn(_scripted(call("c1"), call("c2"), [TextPart("Net sales were ₹42,177.")]), Flaky())
+    assert len(gw.calls) == 2 and result.status == "completed"
+    assert [s["ok"] for s in result.state.steps if s["kind"] == "tool_return"] == [False, True]
+
+
+def test_compact_value_stays_data_when_too_large():
+    from seleric_swarm.agent.mcp_toolset import compact_value
+
+    big = {"rows": [{"k": "x" * 30000}], "total": 7}
+    kept = compact_value(big)
+    assert kept["total"] == 7 and isinstance(kept["rows"], list)
+
+
+@pytest.mark.asyncio
+async def test_a_long_answer_cut_by_the_length_limit_is_shipped_marked_not_discarded():
+    cut = "Net sales by campaign: " + "Alpha 1 beta gamma delta, " * 20  # substantive, then cut at the cap
+    steps = [ModelResponse(parts=[TextPart(cut)], finish_reason="length")] * 3
+
+    def fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return steps[0]
+
+    result, _, _ = await _turn(FunctionModel(fn))
+    assert result.answer.startswith("Net sales by campaign") and "cut off at the length limit" in result.answer
+    assert "ANSWER_TRUNCATED" in result.limitations
+
+
+@pytest.mark.asyncio
+async def test_figures_with_no_tool_call_are_checked_against_the_conversation_only():
+    result, _, _ = await _turn(_scripted([TextPart("Net sales were ₹99,999.")]))
+    assert result.issues  # nothing fetched, nothing in the question: the figure is unverified
+    quoted, _, _ = await _turn(_scripted([TextPart("Net sales were ₹99,999.")]), question="net sales were 99,999, right?")
+    assert not quoted.issues  # the user's own figure may be repeated

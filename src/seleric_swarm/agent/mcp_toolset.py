@@ -50,27 +50,38 @@ IST = ZoneInfo("Asia/Kolkata")
 
 DROP_KEYS = {"cube_query", "semantic", "catalogue_version", "generated_at", "cube_sql", "clickhouse_trace",
              "lookup_sql", "catalogue_sha", "serve_objects", "openmetadata"}
+# An empty result set is information ("no rows"), unlike an empty plumbing field: it stays in what the model sees.
+KEEP_WHEN_EMPTY = frozenset({"rows", "compare_rows"})
 VALUELESS_OPS = ("set", "notSet")  # "is not null" / "is null": the server ignores any values and returns the unfiltered result
 
 
 # ---- results: compact without losing numbers -------------------------------------------------
 def _shrink(o: Any, cap: int) -> Any:
     if isinstance(o, dict):  # explicit nulls stay: a NULL cell (e.g. no LPV for Google) is not the same as "not fetched"
-        return {k: _shrink(v, cap) for k, v in o.items() if k not in DROP_KEYS and v not in ([], {}, "")}
+        return {k: _shrink(v, cap) for k, v in o.items()
+                if k not in DROP_KEYS and (v not in ([], {}, "") or (k in KEEP_WHEN_EMPTY and v == []))}
     if isinstance(o, list):
         out = [_shrink(v, cap) for v in o[:cap]]
         return out + [f"... {len(o) - cap} more items truncated (narrow the query or sort+limit)"] if len(o) > cap else out
     return o
 
 
-def compact(payload: Any, *, max_rows: int = MAX_ROWS, max_chars: int = MAX_RESULT_CHARS) -> str:
-    """Drop plumbing, cap long lists (explicit marker), never cut through a number."""
+def compact_value(payload: Any, *, max_rows: int = MAX_ROWS, max_chars: int = MAX_RESULT_CHARS) -> Any:
+    """``payload`` without plumbing and with long lists capped (explicit marker), as a value that is still valid data:
+    the cap halves until the result fits ``max_chars`` or the lists are down to 5 items."""
     cap = max_rows
     while True:
-        s = json.dumps(_shrink(payload, cap), separators=(",", ":"), ensure_ascii=False, default=str)
-        if len(s) <= max_chars or cap <= 5:
-            break
+        shrunk = _shrink(payload, cap)
+        size = len(json.dumps(shrunk, separators=(",", ":"), ensure_ascii=False, default=str))
+        if size <= max_chars or cap <= 5:
+            return shrunk
         cap //= 2
+
+
+def compact(payload: Any, *, max_rows: int = MAX_ROWS, max_chars: int = MAX_RESULT_CHARS) -> str:
+    """Drop plumbing, cap long lists (explicit marker), never cut through a number."""
+    s = json.dumps(compact_value(payload, max_rows=max_rows, max_chars=max_chars), separators=(",", ":"),
+                   ensure_ascii=False, default=str)
     return s if len(s) <= max_chars else s[:max_chars] + f'..."[TRUNCATED {len(s) - max_chars} chars]"'
 
 
@@ -101,18 +112,30 @@ def ist_today() -> date:
     return datetime.now(IST).date()
 
 
+def _iso_day(value: Any) -> date | None:
+    text = str(value or "")
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            return None
+    return None
+
+
 def flag_partial(payload: Any, today: date) -> None:
     """Generic completeness warning from the window the server resolved (no preset names): a window that reaches
-    today is still being written, so a like-for-like comparison needs the same cut-off on both sides."""
-    tr = ((payload.get("provenance") or {}).get("time_range") or {}) if isinstance(payload, dict) else {}
-    try:
-        end = date.fromisoformat(str(tr.get("end")))
-    except ValueError:
+    today is still being written, so a like-for-like comparison needs the same cut-off on both sides. A multi-view
+    result is checked part by part."""
+    if not isinstance(payload, dict):
         return
-    if end >= today:
-        payload.setdefault("warnings", []).append(
-            f"Window ends {end}, which is not a complete day (today is {today}, data keeps arriving): treat it as partial; "
-            "do not compare it with a full period or call it a drop without the same cut-off on both sides.")
+    parts = [p for p in payload.get("parts") or [] if isinstance(p, dict)]
+    for source in [payload, *parts]:
+        end = _iso_day(((source.get("provenance") or {}).get("time_range") or {}).get("end"))
+        if end is not None and end >= today:
+            payload.setdefault("warnings", []).append(
+                f"Window ends {end}, which is not a complete day (today is {today}, data keeps arriving): treat it as partial; "
+                "do not compare it with a full period or call it a drop without the same cut-off on both sides.")
+            return
 
 
 def _as_num(s: str) -> float | None:
@@ -122,22 +145,37 @@ def _as_num(s: str) -> float | None:
         return None
 
 
+def _entity(row: dict[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """(the names of the label columns, their values) of one result row."""
+    labels = {k: v for k, v in row.items() if isinstance(v, str) and _as_num(v) is None}
+    return tuple(sorted(labels)), tuple(labels[k] for k in sorted(labels))
+
+
 def flag_composed(payload: Any) -> None:
     """A multi-view result is several parts, each sorted and limited on its own, so each part holds a different set of
-    entities. An entity absent from a part fell outside that part's top-N: its value there is unknown, not zero."""
+    entities. An entity absent from a part fell outside that part's top-N: its value there is unknown, not zero.
+    Only parts that break down by the same dimensions are comparable; the others share no entities by design."""
     parts = payload.get("parts") if isinstance(payload, dict) else None
     if not isinstance(parts, list) or len(parts) < 2:
         return
-    keysets = []
+    groups: dict[tuple[str, ...], list[set[tuple[str, ...]]]] = {}
     for part in parts:
-        rows = part.get("rows") if isinstance(part, dict) else None
-        keysets.append({tuple(str(v) for v in r.values() if isinstance(v, str) and _as_num(v) is None)
-                        for r in rows or [] if isinstance(r, dict)})
-    union = set().union(*keysets)
-    partial = sorted({" / ".join(k) for k in union if any(k not in ks for ks in keysets)})
+        rows = [r for r in (part.get("rows") if isinstance(part, dict) else None) or [] if isinstance(r, dict)]
+        entities = [_entity(r) for r in rows]
+        if entities:
+            groups.setdefault(entities[0][0], []).append({values for _, values in entities})
+    partial: set[str] = set()
+    total = 0
+    for keysets in groups.values():
+        if len(keysets) < 2:
+            continue
+        union = set().union(*keysets)
+        total += len(union)
+        partial |= {" / ".join(k) for k in union if any(k not in ks for ks in keysets)}
     if partial:
+        ordered = sorted(partial)
         payload.setdefault("warnings", []).append(
-            f"{len(partial)} of {len(union)} entities are missing from at least one part (e.g. {'; '.join(partial[:4])}): "
+            f"{len(partial)} of {total} entities are missing from at least one part (e.g. {'; '.join(ordered[:4])}): "
             "parts are ranked and limited separately, so their values in the other parts are unknown, NOT zero or absent. "
             "Re-query those entities with an equals filter before comparing or ranking them.")
 
@@ -150,22 +188,13 @@ def _identity(payload: dict[str, Any]) -> str:
     return json.dumps({k: payload.get(k) for k in _EVIDENCE_IDENTITY}, sort_keys=True, default=str)
 
 
-def _iso_day(value: Any) -> date | None:
-    text = str(value or "")
-    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
-        try:
-            return date.fromisoformat(text[:10])
-        except ValueError:
-            return None
-    return None
-
-
 def _bucket_end(start: date, grain: str, range_end: date | None) -> date:
     if grain == "week":
         end = start + timedelta(days=6)
-    elif grain == "month":
-        nxt = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
-        end = nxt - timedelta(days=1)
+    elif grain in ("month", "quarter", "year"):
+        months = {"month": 1, "quarter": 3, "year": 12}[grain]
+        index = start.year * 12 + start.month - 1 + months
+        end = date(index // 12, index % 12 + 1, 1) - timedelta(days=1)
     else:
         end = start
     return min(end, range_end) if range_end else end
@@ -198,7 +227,8 @@ def _rows_evidence(
             value = _as_num(raw) if isinstance(raw, str) else (float(raw) if isinstance(raw, (int, float)) else None)
             unit = deps.catalogue.unit_for(m)
             out.append(EvidenceArtifact(
-                metric_id=m, dimensions=dims, grain=grain if grain in ("day", "week", "month") else ("day" if day else "none"),  # type: ignore[arg-type]
+                # a quarter / year bucket is a period total over its real span, not a day
+                metric_id=m, dimensions=dims, grain=grain if grain in ("day", "week", "month") else ("day" if day and grain not in ("quarter", "year") else "none"),  # type: ignore[arg-type]
                 as_of=deps.as_of,
                 period_start=datetime.combine(start, datetime.min.time(), tzinfo=tzinfo),
                 period_end=datetime.combine(end, datetime.min.time(), tzinfo=tzinfo),
@@ -290,6 +320,7 @@ class TurnState:
     tool_calls: int = 0
     duplicates: int = 0
     tool_ms: int = 0
+    today: date | None = None  # the mission calendar's today (its timezone); None falls back to IST
 
 
 def tool_defs(raw_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -307,7 +338,7 @@ def validate(defs: dict[str, dict[str, Any]], name: str, args: dict[str, Any]) -
     return "; ".join(f"{'/'.join(map(str, e.path)) or '<root>'}: {e.message}" for e in errs[:5]) or filter_misuse(args)
 
 
-async def _execute(gateway: Any, name: str, args: dict[str, Any]) -> tuple[Any, bool]:
+async def _execute(gateway: Any, name: str, args: dict[str, Any], today: date | None = None) -> tuple[Any, bool]:
     try:
         payload = await asyncio.wait_for(
             gateway.call(agent_id="v3_agent", capability=f"seleric.{name}", arguments=args), TOOL_TIMEOUT_S)
@@ -317,7 +348,7 @@ async def _execute(gateway: Any, name: str, args: dict[str, Any]) -> tuple[Any, 
         return {"error": f"{type(exc).__name__}: {exc}"}, True
     is_err = isinstance(payload, dict) and "error" in payload
     if not is_err and isinstance(payload, dict):
-        flag_partial(payload, ist_today())
+        flag_partial(payload, today or ist_today())
         flag_composed(payload)
     return payload, is_err
 
@@ -337,9 +368,9 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
                 return json.dumps({"error": f"Invalid arguments: {err}", "schema": defs[name]["schema"]}, default=str)
             key = name + json.dumps(args, sort_keys=True, default=str)
             dup = key in state.seen
-            state.tool_calls += 1
             if not dup:
-                state.seen[key] = asyncio.ensure_future(_execute(gateway, name, args))
+                state.tool_calls += 1  # a repeat of a call already made costs nothing: it is served from the turn's cache
+                state.seen[key] = asyncio.ensure_future(_execute(gateway, name, args, state.today))
             else:
                 state.duplicates += 1
             payload, is_err = await state.seen[key]
@@ -347,6 +378,7 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
             state.tool_ms += ms
             if not dup:
                 if is_err:
+                    state.seen.pop(key, None)  # a failure is not cached: the model's retry must run again
                     state.errors.append(f"{name}: {compact(payload)[:300]}")
                 else:
                     state.payloads.append(payload)

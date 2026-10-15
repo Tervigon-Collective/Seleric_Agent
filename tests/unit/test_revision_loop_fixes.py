@@ -62,7 +62,7 @@ def _deps(store: InMemoryArtifactStore | None = None, *, revisions: int = 1) -> 
         context=ContextBundle(),
         mcp_client=NullMcpClient(),
         artifact_store=store or InMemoryArtifactStore(),
-        limits=ExecutionLimits(max_validation_revisions=revisions),
+        limits=ExecutionLimits(),
     )
 
 

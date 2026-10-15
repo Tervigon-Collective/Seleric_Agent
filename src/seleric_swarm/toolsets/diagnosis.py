@@ -30,7 +30,6 @@ Candidate planning — nothing is named here:
 from __future__ import annotations
 
 import asyncio
-import functools
 import itertools
 import json
 import math
@@ -43,7 +42,7 @@ from typing import Any, Literal
 from pydantic_ai import RunContext
 
 from seleric_swarm.agent.artifacts import CausalArtifact, EvidenceArtifact, Finding
-from seleric_swarm.agent.dependencies import DIAGNOSIS_FAILED, DIAGNOSIS_OK, SelericDeps
+from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal import diagnosis as engine
 from seleric_swarm.causal.graph_chart import build_causal_graph_spec
@@ -1215,7 +1214,7 @@ def _inclusive_days(start_dt: datetime, end_dt: datetime) -> tuple[date, date]:
 
 
 # --------------------------------------------------------------------------- the tool
-async def _diagnose(
+async def diagnose_metric_change(
     ctx: RunContext[SelericDeps],
     metric_id: str,
     event_start: datetime | None = None,
@@ -1659,23 +1658,3 @@ async def _diagnose(
         ),
         warnings=list(report.data_quality),
     )
-
-
-@functools.wraps(_diagnose)
-async def diagnose_metric_change(*args: Any, **kwargs: Any) -> ToolResult:
-    """The tool the agent and the executor call; it records how the diagnosis went on the mission, so the answer's
-    why-part can be held to it: a diagnosis that never succeeded leaves nothing behind a stated cause."""
-    result = await _diagnose(*args, **kwargs)
-    ctx = args[0] if args else kwargs.get("ctx")
-    counts = getattr(getattr(ctx, "deps", None), "call_counts", None)
-    if isinstance(counts, dict):
-        if result.success:
-            counts[DIAGNOSIS_OK] = 1
-            counts.pop(DIAGNOSIS_FAILED, None)
-        else:
-            counts[DIAGNOSIS_FAILED] = result.summary
-    return result
-
-
-# functools.wraps names the wrapper after the wrapped function; the agent registers this one under its public name.
-diagnose_metric_change.__name__ = diagnose_metric_change.__qualname__ = "diagnose_metric_change"

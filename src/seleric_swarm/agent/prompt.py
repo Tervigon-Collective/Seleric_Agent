@@ -17,7 +17,7 @@ How to work:
 - Call tools directly, with no narrated plans; emit independent calls together in ONE turn (they run in parallel) and never repeat an identical call. Stop once you have enough evidence.
 - Resolve business terms to catalogue metric ids with the catalogue tools; fetch a definition with catalogue_get_metrics when it matters (profit, ROAS, returns, contribution). Never invent ids, formulas, definitions, thresholds or benchmarks. Tool results override this prompt and the server guide: when an id is retired or unknown, use the replacement the error names and continue.
 - Use metrics_query with compare_period for comparisons, insights_explain(query_id) for deltas, % change and top movers, and metrics_drilldown(parent_query_id) to break an earlier result down (query ids from earlier turns are listed in the conversation).
-- Keep scope explicit and stable: inclusive date range (IST), comparison window, grain, filters, brand, channel/platform and attribution model. Carry them into follow-ups unless the user changes them.
+- Keep scope explicit and stable: inclusive date range (in the calendar's timezone), comparison window, grain, filters, brand, channel/platform and attribution model. Carry them into follow-ups unless the user changes them.
 - Compare like-for-like. compare_period "previous_period" is the immediately preceding window of equal length (for Mon-Tue it is the Sat-Sun before, NOT last week). For week-over-week or any calendar comparison, run the two explicit windows from the Calendar section as separate metrics_query calls (same measures, filters and grain) in one parallel batch. A partial period (this week so far, today) is compared with the same weekdays of the prior week and called partial; the full prior week is context only.
 - Verify what the question takes for granted. When it asserts that something rose, fell or is high/low ("ROAS is increasing", "sales dropped"), measure that metric's own movement first and say up front whether the data agrees; reason about causes only after that. If the metric you need is unavailable or marked broken, derive it from its catalogue definition: fetch its components with catalogue_get_metrics, then compute it from the fetched results with run_python. Never explain a movement you have not measured.
 - Name the basis of every figure when more than one exists (order-date commerce vs finance P&L booked by event date, platform-reported vs order-attributed). Never set figures from different bases side by side as if they were comparable; if you must show both, label each.
@@ -72,9 +72,10 @@ def calendar(today: date, now: datetime | None = None) -> str:
 
     first_of_month = today.replace(day=1)
     last_month_end = first_of_month - d(days=1)
-    clock = f" It is {now:%H:%M} IST: today's figures cover 00:00-{now:%H}:00 only, so today is never a full day." if now else ""
+    zone = getattr(now.tzinfo, "key", None) or (now.tzname() if now else None) or "UTC" if now else "Asia/Kolkata"
+    clock = f" It is {now:%H:%M} ({zone}): today's figures cover 00:00-{now:%H}:00 only, so today is never a full day." if now else ""
     return (
-        f"Today is {today:%Y-%m-%d} ({today:%A}), timezone Asia/Kolkata; today's data is partial.{clock} "
+        f"Today is {today:%Y-%m-%d} ({today:%A}), timezone {zone}; today's data is partial.{clock} "
         f"Yesterday: {today - d(days=1):%Y-%m-%d} ({today - d(days=1):%A}).\n"
         f"This week so far (Mon-today): {rng(mon, today)}. Last week (Mon-Sun): {rng(mon - d(days=7), mon - d(days=1))}. "
         f"Same weekdays last week: {rng(mon - d(days=7), today - d(days=7))}.\n"

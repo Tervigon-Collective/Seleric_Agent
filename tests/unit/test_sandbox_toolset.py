@@ -11,6 +11,7 @@ Fake-context pattern mirrors tests/unit/test_analytics_toolset.py.
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 
 import pytest
@@ -290,3 +291,58 @@ async def test_printing_without_a_result_says_what_to_do() -> None:
     res = await sandbox.run_python(ctx, "print(sum(e['value'] for e in evidence))", [eid])
     assert not res.success and res.retryable
     assert "assign the value to `result`" in res.summary
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "code",
+    [
+        "result = os.path.os.popen('id').read()",
+        "result = os.path.os.system('id')",
+        "result = open('/etc/hostname').read()",
+        "open('/tmp/sandbox_escape_probe', 'w').write('x')\nresult = 1",
+        (
+            "b = [c for c in ().__class__.__base__.__subclasses__() if c.__name__ == '_wrap_close'][0]\n"
+            "result = b.__init__.__globals__['sys'].modules['builtins'].__import__('_posixsubprocess')"
+        ),
+        (
+            "b = [c for c in ().__class__.__base__.__subclasses__() if c.__name__ == '_wrap_close'][0]\n"
+            "result = b.__init__.__globals__['sys'].modules['builtins'].__import__('socket')"
+        ),
+    ],
+)
+async def test_escape_attempts_are_refused(code: str) -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), code, [eid])
+    assert not res.success and res.retryable
+    assert not os.path.exists("/tmp/sandbox_escape_probe")
+
+
+@pytest.mark.asyncio
+async def test_script_sees_no_environment_secrets(monkeypatch) -> None:
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "super-secret")
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), "import os\nresult = sorted(os.path.os.environ)", [eid])
+    assert res.success is True
+    assert "AZURE_OPENAI_API_KEY" not in res.summary
+
+
+@pytest.mark.asyncio
+async def test_runaway_script_is_killed_not_abandoned(monkeypatch) -> None:
+    monkeypatch.setenv("SELERIC_SANDBOX_TIMEOUT_S", "1")
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), "while True:\n    pass", [eid])
+    assert res.error_code == "SANDBOX_TIMEOUT"
+
+
+@pytest.mark.asyncio
+async def test_numpy_and_pandas_results_are_plain_numbers() -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    code = "import numpy as np\nimport pandas as pd\nresult = {'n': np.int64(5), 'rows': pd.DataFrame({'a': [1, 2]}).to_dict(orient='records')}"
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), code, [eid])
+    assert res.success is True
+    assert store.get(res.artifact_ids[0]).payload["metrics"]["n"] == 5.0

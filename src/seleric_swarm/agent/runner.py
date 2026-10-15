@@ -24,7 +24,7 @@ from pydantic_ai.exceptions import ModelHTTPError
 
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
 from seleric_swarm.agent.loop import LoopResult, history_messages, run_turn
-from seleric_swarm.agent.mcp_toolset import compact, tool_defs
+from seleric_swarm.agent.mcp_toolset import compact_value, tool_defs
 from seleric_swarm.agent.model import resolve_loop_model
 from seleric_swarm.agent.output import MissionResult as V3MissionResult
 from seleric_swarm.agent.progress import emit_progress
@@ -43,7 +43,6 @@ from seleric_swarm.conversations.contracts import (
 )
 from seleric_swarm.runtime import SwarmRuntime
 from seleric_swarm.services.catalogue_bootstrap import CatalogueSnapshot
-from seleric_swarm.services.elapsed import state_cutoff_hour
 from seleric_swarm.services.time_range import as_of_date
 from seleric_swarm.state.missions import Mission
 
@@ -75,11 +74,12 @@ def _user_facing_agent_failure(exc: BaseException) -> tuple[str, str]:
     """Chat-safe failure text — never dump provider HTTP bodies to the UI. Classifies by exception type/attributes."""
     causes = _flatten_exceptions(exc)
     if any(
-        (isinstance(c, ModelHTTPError) and c.status_code == 429) or "429" in str(c) or "ratelimit" in str(c).lower()
+        (isinstance(c, ModelHTTPError) and c.status_code == 429) or getattr(c, "status_code", None) == 429
+        or "ratelimit" in type(c).__name__.lower()
         for c in causes
     ):
         return ("The language model is rate-limited right now. Please retry in a moment.", "LLM_RATE_LIMITED")
-    if any(isinstance(c, OpenAIAPITimeoutError) or "timeout" in str(c).lower() for c in causes):
+    if any(isinstance(c, (OpenAIAPITimeoutError, TimeoutError)) or "timeout" in type(c).__name__.lower() for c in causes):
         return ("The agent timed out. Please retry.", "V3_AGENT_TIMEOUT")
     return ("The agent could not complete this question. Please retry.", "V3_AGENT_FAILED")
 
@@ -240,7 +240,7 @@ def _memories(bundle: ContextBundle) -> list[str]:
     return out
 
 
-def _thread_memory(store: Any, thread_id: str) -> tuple[list[str], list[Any]]:
+def _thread_memory(store: Any, workspace_id: str, thread_id: str) -> tuple[list[str], list[Any]]:
     """(queries run earlier in the thread as 'query_id: tool args', the thread's recent tool payloads)."""
     queries: list[str] = []
     payloads: list[Any] = []
@@ -248,7 +248,7 @@ def _thread_memory(store: Any, thread_id: str) -> tuple[list[str], list[Any]]:
     if not callable(list_fn):
         return queries, payloads
     try:
-        for artifact in list_fn("", thread_id):
+        for artifact in list_fn(workspace_id, thread_id):
             body = getattr(artifact, "payload", None)
             if not isinstance(body, dict):
                 continue
@@ -277,7 +277,7 @@ def _persist_turn(
             thread_id=thread_id,
             payload={"query": query, "mission_id": mission_id, "as_of": as_of_dt.date().isoformat(),
                      "evidence_ids": loop_result.state.evidence_ids[:8], "queries": digest}))
-        keep = [json.loads(compact(p)) for p in loop_result.state.payloads if isinstance(p, dict)][-KEEP_PAYLOADS:]
+        keep = [compact_value(p) for p in loop_result.state.payloads if isinstance(p, dict)][-KEEP_PAYLOADS:]
         if keep:
             store.put(Artifact(
                 workspace_id=workspace_id, artifact_type="turn_payloads", classification="ui", mission_id=mission_id,
@@ -326,7 +326,6 @@ async def run_v3_mission(
     Extra kwargs are accepted and ignored so ``run_mission_job`` / ``create_mission`` can call this with their full
     historical argument set.
     """
-    state_cutoff_hour(None)  # a previous mission's stated hour never carries over
     mission_id = mission_id or f"MS3-{uuid4().hex[:10]}"
     request_id = request_id or uuid4().hex
     thread_id = thread_id or session_id or uuid4().hex
@@ -365,7 +364,7 @@ async def run_v3_mission(
             catalogue, defs, guide = await asyncio.gather(
                 _catalogue_snapshot(runtime), _tool_definitions(mcp), _server_guide(mcp)
             )
-            prior_queries, prior_payloads = _thread_memory(artifact_store, thread_id)
+            prior_queries, prior_payloads = _thread_memory(artifact_store, workspace_id, thread_id)
             stages["context_ms"] = round((time.perf_counter() - started) * 1000)
             from seleric_swarm.agent.prompt import system_prompt
 
@@ -377,6 +376,7 @@ async def run_v3_mission(
                 limits=ExecutionLimits(
                     max_runtime_seconds=float(getattr(runtime.settings, "mission_timeout_s", 600.0)),
                     mcp_call_timeout_s=float(getattr(runtime.settings, "mcp_call_timeout_s", 15.0)),
+                    agent_retries=int(getattr(runtime.settings, "agent_retries", 2)),
                 ),
                 catalogue=catalogue, metrics=getattr(runtime, "metrics", None),
             )
@@ -386,7 +386,7 @@ async def run_v3_mission(
                     model=resolve_loop_model(runtime.settings),
                     gateway=mcp,
                     tool_defs=defs,
-                    system_prompt=system_prompt(catalogue, datetime.now(ZoneInfo(timezone)), guide),
+                    system_prompt=system_prompt(catalogue, datetime.now(as_of_dt.tzinfo or UTC), guide),
                     question=query,
                     history=history_messages(_history(bundle, query)),
                     memories=_memories(bundle),
