@@ -35,9 +35,9 @@
   ],
   "unexplained_share": [
    0.0,
-   0.6
+   0.5
   ],
-  "note": "site searches fall 60%; the effect on orders is planted on a path the reviewed graph does not contain"
+  "note": "site searches cut to 55%; the effect on orders is planted on a path the reviewed graph does not contain; planted change of the outcome -25% over the event days"
  },
  "injections": [
   {
@@ -45,7 +45,7 @@
    "onset": "2026-10-12",
    "params": {
     "metric": "site_searches",
-    "factor": 0.4,
+    "factor": 0.551,
     "effects": [
      {
       "from": "site_searches",

@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "id": "inj_spend_cut_campaign",
+ "id": "inj_spend_cut_platform",
  "kind": "injection",
  "brand": 20,
  "tags": [
@@ -38,7 +38,7 @@
    0.0,
    0.5
   ],
-  "note": "ad spend of one campaign cut to 30% from the onset; effect carried through the funnel to net sales"
+  "note": "ad spend on one platform cut to 40%, carried through the funnel to net sales; planted change of the outcome -30% over the event days"
  },
  "injections": [
   {
@@ -46,10 +46,7 @@
    "onset": "2026-10-12",
    "params": {
     "metric": "ad_spend",
-    "factor": 0.3,
-    "scope": {
-     "campaign_name": "[Google Build] PMax - Seasonal New | 27th May"
-    },
+    "factor": 0.396,
     "effects": [
      {
       "from": "ad_spend",
@@ -81,7 +78,10 @@
       "to": "gross_sales",
       "elasticity": 1.0
      }
-    ]
+    ],
+    "scope": {
+     "ad_platform": "meta"
+    }
    }
   }
  ]

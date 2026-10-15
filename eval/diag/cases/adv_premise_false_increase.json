@@ -28,7 +28,7 @@
    "ad_spend",
    "sessions"
   ],
-  "note": "net sales rose 50% (orders x1.5) while the question says they dropped"
+  "note": "net sales rose +30% (orders x1.269) while the question says they dropped"
  },
  "injections": [
   {
@@ -36,7 +36,7 @@
    "onset": "2026-10-12",
    "params": {
     "metric": "orders",
-    "factor": 1.5,
+    "factor": 1.269,
     "effects": [
      {
       "from": "orders",

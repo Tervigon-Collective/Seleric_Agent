@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "id": "adv_hidden_payment_outage",
+ "id": "adv_hidden_channel_checkout",
  "kind": "adversarial",
  "brand": 20,
  "tags": [
@@ -30,7 +30,7 @@
    "sessions",
    "impressions"
   ],
-  "note": "orders paid by one payment bucket (manual) fall 50%: a gateway-type cause that no metric shows"
+  "note": "orders of one channel cut to 50%: a checkout-type cause that no metric shows; outcome -20%"
  },
  "injections": [
   {
@@ -38,10 +38,7 @@
    "onset": "2026-10-12",
    "params": {
     "metric": "orders",
-    "factor": 0.5,
-    "scope": {
-     "payment_bucket": "manual"
-    },
+    "factor": 0.505,
     "effects": [
      {
       "from": "orders",
@@ -53,7 +50,10 @@
       "to": "gross_sales",
       "elasticity": 1.0
      }
-    ]
+    ],
+    "scope": {
+     "channel": "ig_feed"
+    }
    }
   }
  ]

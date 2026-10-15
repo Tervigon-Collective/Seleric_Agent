@@ -48,9 +48,9 @@
   ],
   "unexplained_share": [
    0.0,
-   0.6
+   0.5
   ],
-  "note": "account ad spend cut to 70% for the whole second week"
+  "note": "account ad spend cut to 77% for the whole second week; planted change of the outcome -25% over the event days"
  },
  "injections": [
   {
@@ -58,7 +58,7 @@
    "onset": "2026-10-08",
    "params": {
     "metric": "ad_spend",
-    "factor": 0.7,
+    "factor": 0.767,
     "effects": [
      {
       "from": "ad_spend",

@@ -40,7 +40,7 @@
    0.0,
    0.5
   ],
-  "note": "the question is filtered to the channel where orders were cut 40%"
+  "note": "the question is filtered to the channel whose orders were cut to 56%; planted change of the outcome -50% over the event days"
  },
  "injections": [
   {
@@ -48,10 +48,7 @@
    "onset": "2026-10-12",
    "params": {
     "metric": "orders",
-    "factor": 0.6,
-    "scope": {
-     "channel": "ig_feed"
-    },
+    "factor": 0.563,
     "effects": [
      {
       "from": "orders",
@@ -63,7 +60,10 @@
       "to": "gross_sales",
       "elasticity": 1.0
      }
-    ]
+    ],
+    "scope": {
+     "channel": "ig_feed"
+    }
    }
   }
  ]

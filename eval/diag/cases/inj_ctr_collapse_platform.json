@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "id": "inj_ctr_collapse_campaign",
+ "id": "inj_ctr_collapse_platform",
  "kind": "injection",
  "brand": 20,
  "tags": [
@@ -38,7 +38,7 @@
    0.0,
    0.5
   ],
-  "note": "clicks of one campaign halve with impressions unchanged (a creative problem); carried to net sales"
+  "note": "clicks on one platform cut to 50% with impressions unchanged (a creative problem); planted change of the outcome -25% over the event days"
  },
  "injections": [
   {
@@ -46,10 +46,7 @@
    "onset": "2026-10-12",
    "params": {
     "metric": "link_clicks",
-    "factor": 0.5,
-    "scope": {
-     "campaign_name": "TH-383-SUSPENDER-17JULY-ADV+"
-    },
+    "factor": 0.496,
     "effects": [
      {
       "from": "link_clicks",
@@ -71,7 +68,10 @@
       "to": "gross_sales",
       "elasticity": 1.0
      }
-    ]
+    ],
+    "scope": {
+     "ad_platform": "meta"
+    }
    }
   }
  ]

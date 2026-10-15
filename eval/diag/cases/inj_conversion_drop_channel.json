@@ -38,7 +38,7 @@
    0.0,
    0.5
   ],
-  "note": "orders of one channel fall 40% with traffic unchanged; carried to net sales"
+  "note": "orders of one channel cut to 50% with traffic unchanged; planted change of the outcome -20% over the event days"
  },
  "injections": [
   {
@@ -46,10 +46,7 @@
    "onset": "2026-10-12",
    "params": {
     "metric": "orders",
-    "factor": 0.6,
-    "scope": {
-     "channel": "ig_feed"
-    },
+    "factor": 0.505,
     "effects": [
      {
       "from": "orders",
@@ -61,7 +58,10 @@
       "to": "gross_sales",
       "elasticity": 1.0
      }
-    ]
+    ],
+    "scope": {
+     "channel": "ig_feed"
+    }
    }
   }
  ]

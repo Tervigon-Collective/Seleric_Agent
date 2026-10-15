@@ -36,9 +36,9 @@
   ],
   "unexplained_share": [
    0.0,
-   0.6
+   0.5
   ],
-  "note": "sessions slide to 60% over 14 days from 16 days before the end"
+  "note": "sessions slide to 73% over 14 days starting 16 days before the end; planted change of the outcome -30% over the event days"
  },
  "injections": [
   {
@@ -46,8 +46,7 @@
    "onset": "2026-09-28",
    "params": {
     "metric": "sessions",
-    "factor": 0.6,
-    "ramp_days": 14,
+    "factor": 0.731,
     "effects": [
      {
       "from": "sessions",
@@ -64,7 +63,8 @@
       "to": "gross_sales",
       "elasticity": 1.0
      }
-    ]
+    ],
+    "ramp_days": 14
    }
   }
  ]
