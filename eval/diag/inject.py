@@ -59,6 +59,7 @@ class InjectedWorld:
     planted: list[Planted] = field(default_factory=list)
     dropped: list[tuple[str, str]] = field(default_factory=list)  # (metric, dimension) segment sets made stale
     recomputed: list[str] = field(default_factory=list)  # ratio metrics rebuilt from components
+    changed: frozenset[str] = frozenset()  # every metric whose series differs from the fixture
 
 
 def _edges(graph: dict[str, Any]) -> dict[tuple[str, str], list[int]]:
@@ -317,4 +318,5 @@ def apply_injections(fx: W.Fixture, injections: tuple[C.Injection, ...], graph: 
     if first_day is not None:
         _keep_compositions(world, pristine, fx.definitions, injected, changed)
         _recompute_ratios(world, fx.definitions, changed, first_day)
+    world.changed = frozenset(changed)
     return world

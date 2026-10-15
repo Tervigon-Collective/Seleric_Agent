@@ -39,7 +39,7 @@ Contents: §0 how to resume · §1 dashboard · §2 context · §3 decisions · 
 | Phase | Name | Status | Gate passed | Commit / evidence |
 | --- | --- | --- | --- | --- |
 | S | Setup (branch gaurav, plan file, baselines) | [~] S1-S4 done, S5 partly | [ ] | see §12 |
-| 0 | Eval harness + baseline | [~] P0.1, P0.2 done, P0.3 partly | [ ] | `eval/diag/` |
+| 0 | Eval harness + baseline | [~] P0.1, P0.2 done, P0.3 + P0.7 partly | [ ] | `eval/diag/` |
 | 1 | Ports, graph adapter, shared detector, trace + run record + replay | [ ] | [ ] | |
 | 2 | Operator split | [ ] | [ ] | |
 | 3 | Graph-driven candidate planning, explain, diff | [ ] | [ ] | |
@@ -49,7 +49,7 @@ Contents: §0 how to resume · §1 dashboard · §2 context · §3 decisions · 
 | 7 | Offline discovery audit | [ ] | [ ] | |
 | D | Deploy (hard gate, rollback tag) | [ ] | [ ] | |
 
-Current phase: **0** (S5 `make eval` run still pending). P0.1, P0.2 done; P0.3 partly (mix-shift + new-campaign ops missing). Next: finish P0.3, then P0.4 adversarial cases.
+Current phase: **0** (S5 `make eval` run still pending). P0.1, P0.2 done; P0.3 and P0.7 partly. Next: P0.6 scorer, then P0.4/P0.5 cases, then P0.8 baseline.
 
 ---
 
@@ -469,7 +469,7 @@ Reuse: `eval/regress/*` (run_regression.py, regression.json, agent6_checks.py), 
 - [ ] P0.4 Adversarial cases per §7: cause not in graph/catalogue; mechanism absent or reversed; measurement break (co-measures diverge: tracking loss, ingest 0-row); null injection; false-premise question.
 - [ ] P0.5 Independent-record cases from brand 20: 2026-09-14..22 ad outage (spend=0); Amazon SP 0-row ingest 09-14..22 reporting COMPLETED (measurement cause; see memory `amazon-sp-lwa-secret`); AWARENESS-03OCT launch (change log); 2026-10-02 -56% day (unknown cause: stability-only); 30d-vs-30d ROAS case (known split: Meta +89% / Google +43% / unattributed -32%).
 - [ ] P0.6 Scorer: top-1/top-3 hit rate (findable worlds), **false-attribution rate** (null/hidden/measurement worlds), correct-"not identified" rate, unexplained-share error vs planted, stability (window shifts ±1-2 days, 80% row subsample, 5 seeds). Reports per tag and overall; written to `eval/diag/results/<engine_version>/`.
-- [ ] P0.7 Runner that invokes the engine **offline** on fixtures (no LLM, no network) for fast CI, and an optional live mode through the API for the golden-6-plus-relevant check. **Reproducibility guard:** the runner refuses to score when `git status --porcelain` shows changes under `src/seleric_swarm/causal/` or `toolsets/diagnosis.py` (teammates edit this tree), and writes the porcelain output, HEAD hash and fixture sha256 into the results file.
+- [~] P0.7 Offline runner `eval/diag/runner.py` (L2, tool path): `WorldMcp` serves `catalogue_get_metrics` and `metrics_query` (series, one dimension or one equals filter, day grain, Cube-shaped rows, absent day = no row) from the injected world, and the **real** `toolsets/diagnosis.py::diagnose_metric_change` plans, fetches and analyses against it. 4 tests (`tests/unit/test_diag_eval_runner.py`). A first planted run took 9.8 s and 16 queries; no LLM, no network. Refuses findable injection cases whose injection never reaches the outcome. `tree_state()` returns HEAD and `git status --porcelain` for the engine paths. **Still to do:** scorer wiring and results file writing (P0.6), the refusal to score on a dirty engine tree, L1 `diagnose()` direct level (only if L2 proves too coarse), live mode through the API. **Reproducibility guard (required):** the runner refuses to score when `git status --porcelain` shows changes under `src/seleric_swarm/causal/` or `toolsets/diagnosis.py`, and writes the porcelain output, HEAD hash and fixture sha256 into the results file. Scripts that call the runner need an `if __name__ == "__main__"` guard: the estimate pool is a forkserver and re-imports the main module.
 - [ ] P0.8 Score today's engine (`diagnose_metric_change` at `bd8dfde`); commit the baseline numbers and the per-case outputs. Note failures in §11.
 - [ ] P0.9 Run the **RiskLoc decision test** (feeds Phase 6): on all cases, how much of the planted change does layer 3 (single-dimension splits) leave unexplained, and does any cross-dimension combination explain it? Record numbers.
 **Gate 0:** suite runs end to end offline in CI time budget (target < 10 min, adjust in §11); baseline committed; no case is scored by an unverifiable label.
@@ -631,6 +631,9 @@ Truth sources: (1) injection into real brand-20 series; (2) independent-record i
 - **Advisor review of P0.3 (2026-10-15), all fixed before P0.4:** (1) the first injector moved only the chosen metric and its effect hops, so a "real" change diverged from its co-measure partner (`orders` vs `funnel_purchases`) exactly like a measurement break would; every findable case would also have looked like a measurement world. Fix: real changes move twin/co_measure/subset partners (7 subset, 5 twin, 1 co_measure pairs have both ends in the fixture). (2) additive compositions (`net_sales = gross_sales - discounts - net_sales_deductions`, `net_cogs`, `operating_cost`, `units_sold`: 4 in the catalogue) were left stale after a component moved, which would show up as unexplained share caused by the injector; fixed with component deltas. (3) stale ratio segments and `noise_cv` (post-onset-only noise is a planted variance signal, and left segments not summing) removed. Lesson: test injected worlds with invariants on the real fixture, not only on toy data.
 - Scoped changes keep `sum(segments) - total` constant; changes everywhere scale that gap with the total. Both are checked in the property test.
 - Co-measure partners that have the injected segment get the same factor in it, so their totals differ by a few percent from a strict ratio (segment shares differ). Accepted; the relationship is kept within 5% in the test.
+
+- First end-to-end offline run (2026-10-15): the real tool ran against a planted world in the 74-metric fixture catalogue. With a spend cut of 90% in one campaign pushed to sessions/orders, the engine answered `located_cause_not_identified`, listed `sessions`, `ad_spend`, `add_to_carts` as implicated with class `correlation`, and localised by campaign and channel. This is the expected shape of the baseline weakness (correlation, not `supported_cause`); P0.8 will quantify it. Estimation warnings (`SingularMatrixWarning`, rank-deficient design on ~55 rows) appear on many drivers: note for Phase 4/5, not a failure of the harness.
+- An injection must connect the cause to the outcome by explicit effects (spend → impressions → link_clicks → sessions → orders → units → gross_sales → net_sales); the runner now refuses findable cases where it does not.
 
 *(Add new entries below. Format: date, source, fact, consequence.)*
 
