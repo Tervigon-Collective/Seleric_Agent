@@ -62,3 +62,19 @@ def test_injection_that_never_reaches_the_outcome_is_refused():
 def test_tree_state_reports_the_engine_git_state():
     st = R.tree_state()
     assert len(st["head"]) == 40 and isinstance(st["engine_dirty"], list)
+
+
+def test_perturbations_shift_the_window_and_subsample_history_without_touching_event_days():
+    case, _ = _case()
+    shifted = R.perturb(case, -2)
+    assert shifted.request.event_days == tuple(d - timedelta(days=2) for d in case.request.event_days)
+    assert R.perturb(case, 0) is case
+    fx = W.load_fixture(FIXTURE)
+    world = I.InjectedWorld({m: dict(s) for m, s in fx.series.items()}, {})
+    keep = set(case.request.event_days)
+    n = R.subsample(world, keep, 0.2, seed=1)
+    assert n > 10 and all(d in world.series["orders"] for d in keep)
+    assert len(world.series["orders"]) == len(fx.series["orders"]) - sum(1 for d in fx.series["orders"] if d not in world.series["orders"])
+    world2 = I.InjectedWorld({m: dict(s) for m, s in fx.series.items()}, {})
+    R.subsample(world2, keep, 0.2, seed=1)
+    assert world.series["orders"].keys() == world2.series["orders"].keys()  # seeded: same days dropped

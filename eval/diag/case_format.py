@@ -76,6 +76,15 @@ class Cause:
 
 
 @dataclass(frozen=True)
+class Decomposition:
+    """Where the change sits, when that is the truth (an exact split, or a mix shift), as opposed to why it happened."""
+
+    dimension: str
+    top_segments: tuple[str, ...]  # the segment carrying the largest share of the change is one of these
+    dominant: str | None = None  # "mix" | "rate": which effect dominates inside the dimension, when stated
+
+
+@dataclass(frozen=True)
 class Truth:
     cause_class: str
     expected: str
@@ -83,6 +92,7 @@ class Truth:
     must_not_attribute: tuple[str, ...] = ()  # metrics the engine must not name as a supported cause
     unexplained_share: tuple[float, float] | None = None  # allowed range of the reported unexplained share
     note: str = ""  # why this is the truth (source of the record, what was planted)
+    decomposition: Decomposition | None = None
 
 
 @dataclass(frozen=True)
@@ -178,8 +188,17 @@ def parse_case(raw: dict[str, Any]) -> Case:
     ur = t.get("unexplained_share")
     if ur is not None and not (len(ur) == 2 and 0.0 <= ur[0] <= ur[1] <= 1.0):
         raise CaseError(f"{cid}: truth.unexplained_share must be [lo, hi] within 0..1")
+    dc = t.get("decomposition")
+    decomposition = None
+    if dc:
+        dominant = dc.get("dominant")
+        if dominant not in (None, "mix", "rate"):
+            raise CaseError(f"{cid}: truth.decomposition.dominant must be mix or rate")
+        raw_top = _need(cid, dc, "top_segment", "truth.decomposition.")
+        decomposition = Decomposition(str(_need(cid, dc, "dimension", "truth.decomposition.")),
+                                      tuple(str(x) for x in (raw_top if isinstance(raw_top, list) else [raw_top])), dominant)
     truth = Truth(cls, expected, causes, tuple(str(x) for x in t.get("must_not_attribute") or ()),
-                  (float(ur[0]), float(ur[1])) if ur else None, str(t.get("note") or ""))
+                  (float(ur[0]), float(ur[1])) if ur else None, str(t.get("note") or ""), decomposition)
 
     injections = tuple(
         Injection(str(_need(cid, i, "type", "injections[].")), dict(i.get("params") or {}), _opt_date(cid, "injections[].onset", i.get("onset")))

@@ -46,6 +46,7 @@ class CaseScore:
     correct_verdict: bool | None = None
     unexplained_share: float | None = None
     unexplained_in_range: bool | None = None
+    decomposition_ok: bool | None = None  # the engine's split puts the change where the truth says (and the right effect dominates)
     queries: int = 0
     error: str = ""
 
@@ -134,6 +135,15 @@ def score_case(case: C.Case, report: dict[str, Any], ran: bool, error: str, quer
         s.correct_verdict = s.verdict == "no_unusual_change"
     elif expected == "premise_false":
         s.correct_verdict = event.get("premise") in ("contradicted", "not_unusual") or s.verdict == "no_unusual_change"
+    if truth.decomposition is not None:
+        dec = truth.decomposition
+        dim = next((d for d in report.get("dimensions") or [] if d.get("dimension") == dec.dimension), None)
+        top = (dim.get("top") or []) if dim else []
+        ok = bool(top) and top[0].get("segment") in dec.top_segments
+        if ok and dec.dominant:
+            mix, rate = abs(dim.get("mix_effect") or 0.0), abs(dim.get("rate_effect") or 0.0)
+            ok = mix > rate if dec.dominant == "mix" else rate > mix
+        s.decomposition_ok = ok
     if truth.unexplained_share is not None and s.unexplained_share is not None:
         lo, hi = truth.unexplained_share
         s.unexplained_in_range = lo <= float(s.unexplained_share) <= hi
@@ -168,6 +178,7 @@ def aggregate(scores: list[CaseScore]) -> dict[str, Any]:
         },
         # Real incidents with an unknown cause: no accuracy claim, only what the engine said (checked for stability later).
         "stability": [{"case": s.case_id, "verdict": s.verdict, "named": s.named, "unexplained_share": s.unexplained_share} for s in stability],
+        "decomposition_ok": _rate([s.decomposition_ok for s in ran if s.decomposition_ok is not None]),
         "unexplained_in_range": _rate([s.unexplained_in_range for s in ran if s.unexplained_in_range is not None]),
         "by_tag": {
             tag: {"n": len(g), "false_attribution": _rate([bool(s.false_attributions) for s in g]),

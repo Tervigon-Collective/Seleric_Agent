@@ -1,0 +1,107 @@
+{
+ "schema_version": 1,
+ "id": "rec_roas_30d_vs_30d",
+ "kind": "record",
+ "brand": 20,
+ "tags": [
+  "period",
+  "findable",
+  "record",
+  "ads",
+  "decomposition"
+ ],
+ "question": "Why did ROAS change versus the previous period?",
+ "request": {
+  "outcome": "net_roas",
+  "event_days": [
+   "2026-09-08",
+   "2026-09-09",
+   "2026-09-10",
+   "2026-09-11",
+   "2026-09-12",
+   "2026-09-13",
+   "2026-09-14",
+   "2026-09-15",
+   "2026-09-16",
+   "2026-09-17",
+   "2026-09-18",
+   "2026-09-19",
+   "2026-09-20",
+   "2026-09-21",
+   "2026-09-22",
+   "2026-09-23",
+   "2026-09-24",
+   "2026-09-25",
+   "2026-09-26",
+   "2026-09-27",
+   "2026-09-28",
+   "2026-09-29",
+   "2026-09-30",
+   "2026-10-01",
+   "2026-10-02",
+   "2026-10-03",
+   "2026-10-04",
+   "2026-10-05",
+   "2026-10-06",
+   "2026-10-07"
+  ],
+  "baseline_days": [
+   "2026-08-09",
+   "2026-08-10",
+   "2026-08-11",
+   "2026-08-12",
+   "2026-08-13",
+   "2026-08-14",
+   "2026-08-15",
+   "2026-08-16",
+   "2026-08-17",
+   "2026-08-18",
+   "2026-08-19",
+   "2026-08-20",
+   "2026-08-21",
+   "2026-08-22",
+   "2026-08-23",
+   "2026-08-24",
+   "2026-08-25",
+   "2026-08-26",
+   "2026-08-27",
+   "2026-08-28",
+   "2026-08-29",
+   "2026-08-30",
+   "2026-08-31",
+   "2026-09-01",
+   "2026-09-02",
+   "2026-09-03",
+   "2026-09-04",
+   "2026-09-05",
+   "2026-09-06",
+   "2026-09-07"
+  ],
+  "claimed_direction": "up",
+  "mode": "period"
+ },
+ "world": {
+  "fixture": "brand20_daily_2026-10",
+  "sha256": "8610e718b5ccc31fb41df29c7bae04f3c189590a5da90cd6e9dfa3b8dba5bafc"
+ },
+ "truth": {
+  "cause_class": "findable",
+  "expected": "cause_found",
+  "causes": [
+   {
+    "metric": "ad_spend",
+    "sign": "down"
+   }
+  ],
+  "unexplained_share": [
+   0.0,
+   0.6
+  ],
+  "decomposition": {
+   "dimension": "ad_platform",
+   "top_segment": "meta"
+  },
+  "note": "ClickHouse serve.order_pnl_daily brand 20, 2026-09-08..10-07 vs 2026-08-09..09-07: spend 2.20M -> 1.11M (-50%), net ROAS 0.68 -> 0.92; Meta carries the largest share of the improvement (exact ratio-of-sums split recomputed 2026-10-15; margin figures were restated since the 2026-10-08 audit)"
+ },
+ "record": "ClickHouse serve.order_pnl_daily brand_id=20 (query in plan section 11, 2026-10-15); docs/audits/2026-10-08_diagnosis_live_replay.md (period comparison thread)"
+}

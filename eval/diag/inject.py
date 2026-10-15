@@ -12,6 +12,12 @@ components (``ratio_components`` in the catalogue definition), so accounting ide
 Segments of any other dimension of a changed metric are dropped (they would no longer add up) and listed in
 ``dropped``.
 
+Two further types do not travel along edges. ``shift_mix`` moves a share of a volume metric from one segment of a dimension
+to another and carries each listed metric by the segment's own pre-onset rate per unit, so the volume total is unchanged
+while the carried totals and every ratio of them move (a mix shift). ``launch`` adds a new segment (a new campaign) with
+a stated volume and carried metrics at stated rates per unit, so ratios of the carried metric to the volume fall or rise
+(a launch that dilutes a rate). Both drop the other dimensions of the metrics they change.
+
 A real change moves everything the graph says is the same quantity: ``co_measure`` and ``twin`` partners present in
 the fixture get the same change, a ``subset`` follows its superset proportionally and a superset follows its subset
 by the subset's delta. A ``measurement_break`` moves only the measured metric: that divergence from its partners is
@@ -131,6 +137,85 @@ def _scale(world: InjectedWorld, metric: str, scope: tuple[str, str] | None, fac
     for other in [x for x in world.segments[metric] if x != dim]:
         world.dropped.append((metric, other))
         del world.segments[metric][other]
+
+
+
+def _pre_mean(world: InjectedWorld, metric: str, onset: date) -> float:
+    lo = onset - timedelta(days=SHARE_WINDOW_DAYS)
+    vals = [v for d, v in world.series[metric].items() if lo <= d < onset]
+    if not vals:
+        raise InjectionError(f"{metric} has no days before {onset}")
+    return sum(vals) / len(vals)
+
+
+def _rate_in_segment(pristine: InjectedWorld, carried: str, volume: str, dim: str, seg: str, onset: date) -> float:
+    lo = onset - timedelta(days=SHARE_WINDOW_DAYS)
+    num = sum(v for d, v in pristine.segments.get(carried, {}).get(dim, {}).get(seg, {}).items() if lo <= d < onset)
+    den = sum(v for d, v in pristine.segments.get(volume, {}).get(dim, {}).get(seg, {}).items() if lo <= d < onset)
+    if den <= 0:
+        raise InjectionError(f"{volume} has no volume in {dim}={seg!r} before {onset}")
+    return num / den
+
+
+def _drop_other_dims(world: InjectedWorld, metric: str, keep: str) -> None:
+    for dim in [x for x in world.segments.get(metric, {}) if x != keep]:
+        world.dropped.append((metric, dim))
+        del world.segments[metric][dim]
+
+
+def _shift_mix(world: InjectedWorld, pristine: InjectedWorld, inj: C.Injection, until: date | None) -> set[str]:
+    p = inj.params
+    vol, dim, src, dst, share = str(p["volume"]), str(p["dimension"]), str(p["from"]), str(p["to"]), float(p["share"])
+    carry = [str(c) for c in p.get("carry") or []]
+    if not 0.0 < share < 1.0:
+        raise InjectionError("shift_mix share must be between 0 and 1")
+    for m in (vol, *carry):
+        segs = world.segments.get(m, {}).get(dim)
+        if segs is None or src not in segs or dst not in segs:
+            raise InjectionError(f"{m} has no segments {src!r} and {dst!r} in {dim}")
+    rates = {c: (_rate_in_segment(pristine, c, vol, dim, src, inj.onset), _rate_in_segment(pristine, c, vol, dim, dst, inj.onset)) for c in carry}  # type: ignore[arg-type]
+    for d in _days_from(world.series[vol], inj.onset, until):  # type: ignore[arg-type]
+        v_src = world.segments[vol][dim][src].get(d)
+        if v_src is None:
+            continue
+        moved = share * v_src
+        world.segments[vol][dim][src][d] -= moved
+        world.segments[vol][dim][dst][d] = world.segments[vol][dim][dst].get(d, 0.0) + moved
+        for c, (r_src, r_dst) in rates.items():
+            if d in world.segments[c][dim][src]:
+                world.segments[c][dim][src][d] -= moved * r_src
+                world.segments[c][dim][dst][d] = world.segments[c][dim][dst].get(d, 0.0) + moved * r_dst
+                world.series[c][d] += moved * (r_dst - r_src)
+    for m in (vol, *carry):
+        _drop_other_dims(world, m, dim)
+    return {vol, *carry}
+
+
+def _launch(world: InjectedWorld, inj: C.Injection, until: date | None) -> set[str]:
+    p = inj.params
+    vol, dim, name, daily_share = str(p["volume"]), str(p["dimension"]), str(p["segment"]), float(p["daily_share"])
+    carry = {str(c["metric"]): float(c["rate"]) for c in p.get("carry") or []}
+    if vol not in world.series:
+        raise InjectionError(f"{vol} is not in the fixture")
+    base = _pre_mean(world, vol, inj.onset)  # type: ignore[arg-type]
+    for m in (vol, *carry):
+        if m not in world.series:
+            raise InjectionError(f"{m} is not in the fixture")
+        if dim not in world.segments.get(m, {}):
+            raise InjectionError(f"{m} has no segments in {dim}; a launch needs them to place the new segment")
+        if name in world.segments[m][dim]:
+            raise InjectionError(f"segment {name!r} already exists in {m}")
+    for d in _days_from(world.series[vol], inj.onset, until):  # type: ignore[arg-type]
+        volume = daily_share * base
+        world.series[vol][d] += volume
+        world.segments[vol][dim].setdefault(name, {})[d] = volume
+        for m, rate in carry.items():
+            if d in world.series[m]:
+                world.series[m][d] += volume * rate
+                world.segments[m][dim].setdefault(name, {})[d] = volume * rate
+    for m in (vol, *carry):
+        _drop_other_dims(world, m, dim)
+    return {vol, *carry}
 
 
 def _is_ratio(definitions: dict[str, Any], metric: str) -> bool:
@@ -259,7 +344,7 @@ def apply_injections(fx: W.Fixture, injections: tuple[C.Injection, ...], graph: 
     first_day: date | None = None
     for i, inj in enumerate(injections):
         p = inj.params
-        if inj.type not in ("scale", "measurement_break"):
+        if inj.type not in ("scale", "measurement_break", "shift_mix", "launch"):
             raise InjectionError(f"unknown injection type {inj.type!r}")
         if inj.onset is None:
             raise InjectionError(f"injection {i} ({inj.type}) needs an onset")
@@ -268,6 +353,17 @@ def apply_injections(fx: W.Fixture, injections: tuple[C.Injection, ...], graph: 
         if inj.type == "measurement_break" and p.get("effects"):
             raise InjectionError("a measurement break changes only what is measured: it takes no effects")
         first_day = min(first_day or inj.onset, inj.onset)
+        if inj.type in ("shift_mix", "launch"):
+            until_ = date.fromisoformat(p["until"]) if p.get("until") else None
+            moved = _shift_mix(world, pristine, inj, until_) if inj.type == "shift_mix" else _launch(world, inj, until_)
+            if moved & injected:
+                raise InjectionError(f"{inj.type} changes a metric another injection changed")
+            changed |= moved
+            injected |= moved
+            volume = str(p["volume"])
+            seg = str(p["to"] if inj.type == "shift_mix" else p["segment"])
+            world.planted.append(Planted(inj.type, volume, inj.onset, {str(p["dimension"]): seg}, float(p.get("share") or p.get("daily_share")), (), True))
+            continue
         scope_pair = _scope(dict(p.get("scope") or {}))
         until = date.fromisoformat(p["until"]) if p.get("until") else None
         factor, ramp, metric = float(p["factor"]), int(p.get("ramp_days") or 0), str(p["metric"])

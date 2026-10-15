@@ -1,0 +1,56 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_a4662d81e42e4b558d50227de92026c6",
+ "mission": "MS3-6821882d93",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 52,
+ "elapsed_s": 49.894,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 22,
+  "measured": 22,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 78789.19141493266, 'net_sales_prev_day': 91432.24073072251})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 78789.19141493266, 'net_sales_prev_day': 91432.24073072251})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 78789.19141493266, 'net_sales_prev_day': 91432.24073072251})"
+  }
+ ],
+ "answer": "Net sales fell yesterday (2026-10-14) to \u20b978,789, down 13.8% vs 2026-10-13 (\u20b991,432) and 21.5% vs its \u201cusual\u201d recent day (\u2248\u20b9100,429). The data shows a real drop but it sits inside the metric\u2019s normal day-to-day range and the diagnostic engine found no single supported cause.\n\nWhat changed (by impact)\n- Biggest arithmetic hit: Gross sales fell from a usual \u20b9108,672 \u2192 \u20b984,407 (effect \u2212\u20b924,266 on Net sales, ~112% of the net change). This is the primary accounting source of the lower Net sales.  \n- Components inside gross sales: product ad-spend allocation fell (usual \u20b962,065 \u2192 \u20b947,391; effect \u2212\u20b914,675) and gross profit was lower (\u20b97,066 \u2192 \u20b93,711; effect \u2212\u20b93,355). These numbers explain where the revenue moved, not why.  \n- Orders were lower: 45.00 \u2192 39.00 (\u221213.3%), while Net AOV was roughly stable (\u20b92,032 \u2192 \u20b92,020). The sales decline is therefore driven mainly by fewer orders, not price.  \n- Ruled out as a cause: overall ad spend did not move unusually (\u20b950,443 \u2192 \u20b947,391, within normal range) and returns/refunds did not explain the drop per tests.\n\nWorth checking: drill orders by campaign and by product for 2026-10-14 vs 2026-10-13 (the diagnosis flagged campaign-level mix shifts and a few ad names with outsized swings).\n\nPeriod: 2026-10-14 \u00b7 Currency: INR \u00b7 Data as of 2026-10-15\nNext: Do you want the campaign-level or product-level drilldown for 2026-10-14 vs 2026-10-13?"
+}

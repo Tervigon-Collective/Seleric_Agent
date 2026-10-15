@@ -16,7 +16,7 @@ import asyncio
 import json
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -128,7 +128,35 @@ def check_reaches_outcome(case: C.Case, world: inject.InjectedWorld) -> None:
         raise inject.InjectionError(f"{case.id}: the injection never reaches the outcome {case.request.outcome!r}; add the effects that connect them")
 
 
-def run_case(case: C.Case) -> RunResult:
+def perturb(case: C.Case, shift_days: int) -> C.Case:
+    """The same case asked about a window shifted by ``shift_days`` (truth and injections unchanged)."""
+    if not shift_days:
+        return case
+    delta = timedelta(days=shift_days)
+    rq = replace(case.request, event_days=tuple(d + delta for d in case.request.event_days),
+                 baseline_days=tuple(d + delta for d in case.request.baseline_days))
+    return replace(case, request=rq)
+
+
+def subsample(world: inject.InjectedWorld, keep_out: set[date], drop_frac: float, seed: int) -> int:
+    """Remove a random share of the history days (never an event or baseline day) from every series and segment."""
+    import numpy as np
+
+    days = sorted({d for s in world.series.values() for d in s} - keep_out)
+    rng = np.random.default_rng(seed)
+    gone = {days[i] for i in rng.choice(len(days), size=int(len(days) * drop_frac), replace=False)}
+    for s in world.series.values():
+        for d in gone & set(s):
+            del s[d]
+    for dims in world.segments.values():
+        for segs in dims.values():
+            for row in segs.values():
+                for d in gone & set(row):
+                    del row[d]
+    return len(gone)
+
+
+def run_case(case: C.Case, *, shift_days: int = 0, drop_frac: float = 0.0, seed: int = 0) -> RunResult:
     from seleric_swarm.agent.dependencies import ExecutionLimits, SelericDeps
     from seleric_swarm.conversations.contracts import ContextBundle, Principal
     from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
@@ -137,6 +165,11 @@ def run_case(case: C.Case) -> RunResult:
 
     fx, world = build_world(case)
     check_reaches_outcome(case, world)
+    case = perturb(case, shift_days)
+    if max(case.request.event_days) > fx.end or min(case.request.baseline_days or case.request.event_days) < fx.start:
+        raise ValueError(f"{case.id}: the shifted window leaves the fixture")
+    if drop_frac:
+        subsample(world, {*case.request.event_days, *case.request.baseline_days}, drop_frac, seed)
     dims_of = {m: [SCOPE_DIMENSION, *sorted(world.segments.get(m, {}))] for m in fx.definitions}
     metrics = tuple(
         CatalogueMetricMeta(id=m, label=str(d.get("display_name") or m), view=str((d.get("cube_mapping") or {}).get("view") or ""),

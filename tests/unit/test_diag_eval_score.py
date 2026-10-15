@@ -89,3 +89,13 @@ def test_aggregate_never_pools_findable_with_other_worlds_and_counts_crashes():
     assert agg["crashed"] == 1 and agg["findable"]["n"] == 1 and agg["not_findable"]["n"] == 1
     assert [x["case"] for x in agg["stability"]] == ["c"]  # unknown-cause incidents are reported, never scored
     assert agg["findable"]["false_attribution"] == 0.0 and agg["not_findable"]["false_attribution"] == 1.0
+
+
+def test_decomposition_truth_checks_top_segment_and_dominant_effect():
+    c = case("none", "no_change", causes=False, kind="null", decomposition={"dimension": "camp", "top_segment": "a", "dominant": "mix"})
+    good = rep([], "no_unusual_change", dims=[{"dimension": "camp", "top": [{"segment": "a"}], "mix_effect": -5.0, "rate_effect": 1.0}])
+    assert run(c, good, []).decomposition_ok is True
+    wrong_effect = rep([], "no_unusual_change", dims=[{"dimension": "camp", "top": [{"segment": "a"}], "mix_effect": 1.0, "rate_effect": 5.0}])
+    assert run(c, wrong_effect, []).decomposition_ok is False
+    assert run(c, rep([], "no_unusual_change"), []).decomposition_ok is False
+    assert S.aggregate([run(c, good, [])])["decomposition_ok"] == 1.0

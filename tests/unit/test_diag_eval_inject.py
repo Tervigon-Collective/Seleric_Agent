@@ -256,3 +256,42 @@ def test_injected_worlds_keep_identities(name):
         assert new_ratio == pytest.approx(old_ratio, rel=0.05)  # same segment factor; segment shares differ a little
     if name == "break":
         assert w.series["orders"][day] == 0.0 and w.series["funnel_purchases"][day] == fx.series["funnel_purchases"][day]
+
+
+# ---- mix shift and launch -----------------------------------------------------------------------------------
+
+def mix_fixture() -> W.Fixture:
+    series = {"vol": S(100.0), "car": S(13.0), "r": S(0.13)}
+    segments = {"vol": {"d": {"x": S(70.0), "y": S(30.0)}, "e": {"k": S(100.0)}}, "car": {"d": {"x": S(7.0), "y": S(6.0)}}}
+    defs = {"r": {"ratio_components": {"numerator": "car", "denominator": "vol", "multiplier": 1.0}}}
+    return W.Fixture("t3", 20, DAYS[0], DAYS[-1], "x", "v", "g", series, segments, defs, {})
+
+
+def test_shift_mix_keeps_the_volume_total_and_moves_the_carried_total_and_the_ratio():
+    mix = C.Injection("shift_mix", {"volume": "vol", "dimension": "d", "from": "x", "to": "y", "share": 0.5, "carry": ["car"]}, ONSET)
+    w = I.apply_injections(mix_fixture(), (mix,), {"edges": []})
+    day = DAYS[-1]
+    assert w.series["vol"][day] == pytest.approx(100.0)
+    assert w.segments["vol"]["d"]["x"][day] == pytest.approx(35.0) and w.segments["vol"]["d"]["y"][day] == pytest.approx(65.0)
+    assert w.series["car"][day] == pytest.approx(16.5)  # x gives up 35 * 0.1, y gains 35 * 0.2
+    assert w.series["r"][day] == pytest.approx(0.165) and w.series["r"][ONSET - timedelta(days=1)] == pytest.approx(0.13)
+    assert "e" not in w.segments["vol"] and ("vol", "e") in w.dropped
+    assert w.planted[0].type == "shift_mix" and w.planted[0].scope == {"d": "y"}
+
+
+def test_launch_adds_a_segment_that_dilutes_the_ratio():
+    launch = C.Injection("launch", {"volume": "vol", "dimension": "d", "segment": "new", "daily_share": 0.5, "carry": [{"metric": "car", "rate": 0.01}]}, ONSET)
+    w = I.apply_injections(mix_fixture(), (launch,), {"edges": []})
+    day = DAYS[-1]
+    assert w.series["vol"][day] == pytest.approx(150.0) and w.segments["vol"]["d"]["new"][day] == pytest.approx(50.0)
+    assert w.series["car"][day] == pytest.approx(13.5) and w.series["r"][day] == pytest.approx(0.09)
+    assert ONSET - timedelta(days=1) not in w.segments["vol"]["d"]["new"]
+
+
+def test_shift_mix_and_launch_refuse_bad_input():
+    bad = C.Injection("shift_mix", {"volume": "vol", "dimension": "d", "from": "x", "to": "zz", "share": 0.5}, ONSET)
+    with pytest.raises(I.InjectionError, match="no segments"):
+        I.apply_injections(mix_fixture(), (bad,), {"edges": []})
+    dup = C.Injection("launch", {"volume": "vol", "dimension": "d", "segment": "x", "daily_share": 0.1}, ONSET)
+    with pytest.raises(I.InjectionError, match="already exists"):
+        I.apply_injections(mix_fixture(), (dup,), {"edges": []})

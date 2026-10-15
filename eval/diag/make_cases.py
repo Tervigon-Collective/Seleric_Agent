@@ -70,13 +70,13 @@ def planted_change(fx: W.Fixture, injection: dict, outcome: str, days: list[str]
 
 
 def calibrate(fx: W.Fixture, make, outcome: str, days: list[str], target: float, scope: dict[str, str] | None = None,
-              lo: float = 0.0, hi: float = 1.0) -> float:
+              lo: float = 0.0, hi: float = 1.0, increasing: bool = True) -> float:
     """The factor whose planted outcome change equals ``target`` (bisection; the change is monotone in the factor)."""
     f_lo, f_hi = lo, hi
-    for _ in range(40):
+    for _ in range(16):  # factor precision 3e-5 over the widest range
         mid = (f_lo + f_hi) / 2
         change = planted_change(fx, make(mid), outcome, days, scope)
-        if change < target:  # the change grows with the factor (toward 0 below 1, upward above 1)
+        if (change < target) == increasing:  # `increasing`: the change grows with the parameter (a factor below 1 cut harder at 0)
             f_lo = mid
         else:
             f_hi = mid
@@ -112,8 +112,9 @@ def build(fx: W.Fixture) -> list[dict]:
             params["scope"] = scope
         return {"type": "scale", "onset": onset, "params": params}
 
-    def planted(make, target: float, days: list[str], outcome: str = OUTCOME, scope: dict | None = None, lo: float = 0.0, hi: float = 1.0):
-        f = calibrate(fx, make, outcome, days, target, scope, lo, hi)
+    def planted(make, target: float, days: list[str], outcome: str = OUTCOME, scope: dict | None = None, lo: float = 0.0, hi: float = 1.0,
+                increasing: bool = True):
+        f = calibrate(fx, make, outcome, days, target, scope, lo, hi, increasing)
         return make(f), f, planted_change(fx, make(f), outcome, days, scope)
 
     def found(cause: dict, note: str, ratio: float) -> dict:
@@ -150,6 +151,35 @@ def build(fx: W.Fixture) -> list[dict]:
     add("inj_off_graph_searches", "injection", ["event", "findable", "off_graph"], q_drop, ev,
         found({"metric": "site_searches", "sign": "down", "onset": onset3, "share_of_change": 1.0}, f"site searches cut to {f:.0%}; the effect on orders is planted on a path the reviewed graph does not contain", r), [m])
 
+    # -- where-the-change-sits worlds: mix shift and a launch that dilutes a rate --------------------------------------
+    # A mix shift needs segments whose rates differ a lot: click-through rate differs ~1.7x between ad platforms, while the
+    # value per order differs only ~5% between channels (a shift there cannot be sized to be material).
+    pre = [end - timedelta(days=i) for i in range(30, 2, -1)]
+    ctr_by = {}
+    for seg, imps in fx.segments["impressions"]["ad_platform"].items():
+        i = sum(imps.get(d, 0.0) for d in pre)
+        c = sum(fx.segments["clicks"]["ad_platform"].get(seg, {}).get(d, 0.0) for d in pre)
+        if i > 0:
+            ctr_by[seg] = c / i
+    hi_ch, lo_ch = max(ctr_by, key=ctr_by.get), min(ctr_by, key=ctr_by.get)
+    assert hi_ch != lo_ch, "need two ad platforms with different click-through rates"
+    make_mix = lambda x: {"type": "shift_mix", "onset": onset3, "params": {"volume": "impressions", "dimension": "ad_platform", "from": hi_ch, "to": lo_ch, "share": x, "carry": ["clicks"]}}
+    m, f, r = planted(make_mix, -0.12, three, "ctr", None, 0.0, 0.95, increasing=False)
+    add("inj_mix_shift_platform_ctr", "injection", ["event", "findable", "mix", "scope_segment"], "Why did click-through rate drop?",
+        {"outcome": "ctr", "event_days": three, "claimed_direction": "down"},
+        {"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "impressions", "sign": None, "onset": onset3}], "unexplained_share": [0.0, 0.5],
+         "decomposition": {"dimension": "ad_platform", "top_segment": [hi_ch, lo_ch], "dominant": "mix"},
+         "note": f"{f:.0%} of the impressions of the higher-rate platform ({hi_ch}) move to the lower-rate one ({lo_ch}); volume total unchanged; click-through rate {r:+.0%}"}, [m])
+    ctr_ev = {"outcome": "ctr", "event_days": three, "claimed_direction": "down"}
+    new_name = "LAUNCH-LOW-CLICK-EVAL"
+    make_launch = lambda x: {"type": "launch", "onset": onset3, "params": {"volume": "impressions", "dimension": "campaign_name", "segment": new_name,
+                                                                         "daily_share": x, "carry": [{"metric": "clicks", "rate": 0.002}]}}
+    m, f, r = planted(make_launch, -0.25, three, "ctr", None, 0.0, 3.0, increasing=False)
+    add("inj_launch_low_click_campaign", "injection", ["event", "findable", "mix", "launch"], "Why did click-through rate drop?", ctr_ev,
+        {"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "impressions", "sign": "up", "onset": onset3}], "unexplained_share": [0.0, 0.5],
+         "decomposition": {"dimension": "campaign_name", "top_segment": new_name},
+         "note": f"a new campaign adds {f:.0%} of daily impressions with a click rate of 0.2%; click-through rate {r:+.0%}"}, [m])
+
     # -- adversarial worlds: the engine must not name a cause that is not there --------------------------------------
     add("adv_break_funnel_purchases", "adversarial", ["event", "measurement", "tracking"], "Why did funnel purchases drop?",
         {"outcome": "funnel_purchases", "event_days": three, "claimed_direction": "down"},
@@ -183,6 +213,13 @@ def build(fx: W.Fixture) -> list[dict]:
         {"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "ad_spend", "sign": "down", "onset": "2026-09-15"}], "unexplained_share": [0.0, 0.6],
          "note": "paid spend is zero from 2026-09-15 to 2026-09-19 (ClickHouse serve.fct_paid_media_daily, brand 20: no spend rows, impressions 0)"},
         record="ClickHouse serve.fct_paid_media_daily brand_id=20: spend 0 and impressions 0 on 2026-09-15..19, no rows 2026-09-20..22; memory 2026-09-14..22 ad outage")
+    add("rec_roas_30d_vs_30d", "record", ["period", "findable", "record", "ads", "decomposition"], "Why did ROAS change versus the previous period?",
+        {"outcome": "net_roas", "event_days": [str(date(2026, 9, 8) + timedelta(days=i)) for i in range(30)],
+         "baseline_days": [str(date(2026, 8, 9) + timedelta(days=i)) for i in range(30)], "claimed_direction": "up", "mode": "period"},
+        {"cause_class": "findable", "expected": "cause_found", "causes": [{"metric": "ad_spend", "sign": "down"}], "unexplained_share": [0.0, 0.6],
+         "decomposition": {"dimension": "ad_platform", "top_segment": "meta"},
+         "note": "ClickHouse serve.order_pnl_daily brand 20, 2026-09-08..10-07 vs 2026-08-09..09-07: spend 2.20M -> 1.11M (-50%), net ROAS 0.68 -> 0.92; Meta carries the largest share of the improvement (exact ratio-of-sums split recomputed 2026-10-15; margin figures were restated since the 2026-10-08 audit)"},
+        record="ClickHouse serve.order_pnl_daily brand_id=20 (query in plan section 11, 2026-10-15); docs/audits/2026-10-08_diagnosis_live_replay.md (period comparison thread)")
     add("stab_net_sales_2026_10_02", "stability", ["event", "stability"], q_drop, {"outcome": OUTCOME, "event_days": ["2026-10-02"], "claimed_direction": "down"},
         {"cause_class": "hidden", "expected": "located_not_identified",
          "note": "net sales fell 56% against neighbouring days; the cause is unknown. Scored for stability only, never for accuracy"})
