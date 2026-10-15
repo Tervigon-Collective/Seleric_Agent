@@ -33,7 +33,7 @@ Contents: §0 how to resume · §1 dashboard · §2 context · §3 decisions · 
 | Phase | Name | Status | Gate passed | Commit / evidence |
 | --- | --- | --- | --- | --- |
 | S | Setup (branch gaurav, plan file, baselines) | [~] S1-S4 done, S5 partly | [ ] | see §12 |
-| 0 | Eval harness + baseline | [~] P0.1 done | [ ] | `eval/diag/case_format.py` |
+| 0 | Eval harness + baseline | [~] P0.1, P0.2 done | [ ] | `eval/diag/` |
 | 1 | Ports, graph adapter, shared detector, trace + run record + replay | [ ] | [ ] | |
 | 2 | Operator split | [ ] | [ ] | |
 | 3 | Graph-driven candidate planning, explain, diff | [ ] | [ ] | |
@@ -43,7 +43,7 @@ Contents: §0 how to resume · §1 dashboard · §2 context · §3 decisions · 
 | 7 | Offline discovery audit | [ ] | [ ] | |
 | D | Deploy (hard gate, rollback tag) | [ ] | [ ] | |
 
-Current phase: **0** (S5 `make eval` run still pending). P0.1 done. Next: P0.2 fixture snapshots from ClickHouse/Cube.
+Current phase: **0** (S5 `make eval` run still pending). P0.1, P0.2 done. Next: P0.3 injection library.
 
 ---
 
@@ -457,7 +457,7 @@ Conventions: IDs `Pn.m`. "Reuse" lists existing code to build on (paths relative
 Goal: a repeatable suite that scores any engine version; today's engine scored first.
 Reuse: `eval/regress/*` (run_regression.py, regression.json, agent6_checks.py), `tests/unit/test_time_series_effect.py` (synthetic-series pattern), `tests/unit/test_diagnosis_live_20261008.py` (recorded live fixtures), `scripts/record_catalogue_fixture.py`.
 - [x] P0.1 Case format: `eval/diag/case_format.py` (loader + validator, schema_version 1), cases in `eval/diag/cases/<id>.json` (id = file name), template `eval/diag/cases/_example_spend_cut.json.example`, tests `tests/unit/test_diag_eval_cases.py` (9 passed, ruff clean). Cases carry `kind` (injection|record|null|adversarial|stability), `cause_class` (findable|hidden|measurement|none) with an allowed `expected` outcome, request (event/period/drift), world fixture id + sha256, injections, truth causes with planted shares, `must_not_attribute`, allowed unexplained-share range. Same format `export-fixture` will write (D-21 item 7). Committed 2f81927.
-- [ ] P0.2 Snapshot real brand-20 series needed by the suite from ClickHouse/Cube into versioned fixture files (daily, plus segments by campaign/channel/payment), with source queries and fingerprints. Cross-check totals against ClickHouse (`serve.commerce_orders`, `serve.session_funnel`, `brand_id=20`).
+- [x] P0.2 Fixture `eval/diag/fixtures/brand20_daily_2026-10.json` (5.3 MB, sha256 recorded inside): 2026-07-17..2026-10-14 (90 days), 72 of 74 graph-chosen metrics daily (metric set derived from the vendored graph: mechanism/feedback edge endpoints + 1-hop accounting neighbours; the other two, `avg_seconds_to_checkout` and `avg_seconds_to_purchase`, are declared not populated by the semantic layer and are recorded under `unavailable`), segmented by campaign_name / channel / payment_bucket / ad_platform where supported (204 metric×dimension series), 98 source queries logged, catalogue_version `1635beb77932` and graph sha256 stored. Tools: `snapshot.py` (build), `world_fixture.py` (load + sha verify + case pin), `crosscheck.py`. **ClickHouse cross-check: ad_spend, impressions (`serve.fct_paid_media_daily`) and orders (`serve.commerce_orders`, placement cohort, non-test) match on all 90 days, 0 differences.** Tests `tests/unit/test_diag_eval_fixture.py` (3). Still to cross-check when cases need them: net_sales and the funnel/session metrics.
 - [ ] P0.3 Injection library (pure, seeded): spend cut in one campaign; CTR collapse (creative); conversion drop in one channel; COD/prepaid mix shift; launch of low-click campaign; slow drift (multi-week slide); period shift (30d vs 30d). Each knows its true cause, size, date, and which graph edges it propagates through.
 - [ ] P0.4 Adversarial cases per §7: cause not in graph/catalogue; mechanism absent or reversed; measurement break (co-measures diverge: tracking loss, ingest 0-row); null injection; false-premise question.
 - [ ] P0.5 Independent-record cases from brand 20: 2026-09-14..22 ad outage (spend=0); Amazon SP 0-row ingest 09-14..22 reporting COMPLETED (measurement cause; see memory `amazon-sp-lwa-secret`); AWARENESS-03OCT launch (change log); 2026-10-02 -56% day (unknown cause: stability-only); 30d-vs-30d ROAS case (known split: Meta +89% / Google +43% / unattributed -32%).
@@ -616,6 +616,10 @@ Truth sources: (1) injection into real brand-20 series; (2) independent-record i
 - The live tree has teammates' uncommitted work (`toolsets/sandbox.py`, new `toolsets/sandbox_child.py`) at 2026-10-15. Not ours; do not stage or build over it.
 
 - Offline eval seam: `causal/diagnosis.py::diagnose(DiagnosisInput)` is pure (series, lineage, segments, drivers, denominators, numerators, bridge candidates, optional baseline_days). Existing tests call it directly with generic ids. Candidate selection (`toolsets/diagnosis.py::_plan_drivers`, `_plan_dimensions`) needs a catalogue context, so the Phase 0 runner has two levels: L1 = `diagnose()` with the planned inputs stored in the fixture (scores layers 1-4), L2 = the tool path with a catalogue snapshot (needed to score Phase 3 planning changes). P0.7 must build both.
+
+- `catalogue_get_metrics` returns `catalogue_version` (now `1635beb77932`) and accepts at most 10 ids per call. This resolves the P1.3 concern: the graph has no catalogue version, but the live catalogue does, so the loader compares the graph's recorded catalogue version (to be added to `PROVENANCE.md`/builder) with the live one. The fixture stores it.
+- The semantic layer refuses some metrics outright ("Not populated: ... KNOWN GAP") and a combined query fails entirely if one measure is refused. The snapshot retries one by one. Any production batched fetch (`_prefetch_daily`) should be checked for the same all-or-nothing failure (it falls back to per-metric today, so safe).
+- Cube returns no row for a day with zero spend/impressions: `ad_spend` has 87 daily rows against 90 days in ClickHouse (the 3 absent days are zero in ClickHouse). Convention for the eval: an absent day is treated as 0 for additive metrics, exactly as the engine's `missing_as_zero` window logic does.
 
 *(Add new entries below. Format: date, source, fact, consequence.)*
 
