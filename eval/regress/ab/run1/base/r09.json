@@ -1,0 +1,45 @@
+{
+ "n": 9,
+ "aspect": "golden",
+ "q": "What was the average order value and COD order count by product in September?",
+ "thread": "thread_ef9c57eeeb284fc18decca7261190713",
+ "mission": "MS3-fa10fb91da",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 46,
+ "elapsed_s": 42.757,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 11,
+  "measured": 11,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "any of ['September', '2026-09']"
+  },
+  {
+   "ok": true,
+   "what": "not 'partial day'"
+  },
+  {
+   "ok": true,
+   "what": "not 'not available'"
+  }
+ ],
+ "answer": "Top products by COD orders in September: Pawveralls Pro Suspender Boots had the most COD volume (12 COD orders) and an AOV of \u20b93,166; the next highest COD volumes and their AOVs are listed below.\n\n- Pawveralls Pro Suspender Boots \u2014 AOV \u20b93,166 \u00b7 COD orders 12  \n- WingBird Smart Flapping Toy \u2014 AOV \u20b91,649 \u00b7 COD orders 7  \n- CrabDash Toy \u2014 AOV \u20b92,738 \u00b7 COD orders 5  \n- PawTech Cleaner with Paw Cleanser 500ml \u2014 AOV \u20b93,287 \u00b7 COD orders 4  \n- Hands-Free Dog Belt - Unisex \u2014 AOV \u20b92,840 \u00b7 COD orders 4  \n- Paw Balm \u2014 AOV \u20b93,824 \u00b7 COD orders 3  \n- PocketPup Tote Bag (For Small Dogs & Cats) \u2014 AOV \u20b92,754 \u00b7 COD orders 3  \n- DuckDash Treat Toy \u2014 AOV \u20b92,044 \u00b7 COD orders 3  \n- SipNova Bottle \u2014 AOV \u20b91,512 \u00b7 COD orders 3  \n- NapDen Donut Bed \u2014 AOV \u20b92,698 \u00b7 COD orders 3\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Do you want the complete product list, or should I show only products with \u22653 COD orders?"
+}

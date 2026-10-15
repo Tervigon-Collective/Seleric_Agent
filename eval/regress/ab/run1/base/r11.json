@@ -1,0 +1,63 @@
+{
+ "n": 11,
+ "aspect": "reconciliation",
+ "q": "On 2026-10-02 we recorded a loss. Quantify exactly how much of the profit deterioration versus 2026-10-01 came from lower revenue, advertising cost, COGS, discounts, refunds, shipping, payment costs, and other available cost components. Reconcile the components back to the total profit change.",
+ "thread": "thread_4099cfeff2164096931ce5dabf90f03f",
+ "mission": "MS3-91e7dca02c",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 98,
+ "elapsed_s": 92.459,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [
+   "4,658",
+   "4,658",
+   "951",
+   "951",
+   "1,508",
+   "1,508",
+   "2,329",
+   "2,329",
+   "560",
+   "560",
+   "137",
+   "137",
+   "124",
+   "124"
+  ],
+  "numbers": 47,
+  "measured": 33,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_concept",
+  "escalate",
+  "catalogue_get_metrics",
+  "diagnose_metric_change",
+  "break_down_metric",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": false,
+   "what": "number -17708.04 (live)"
+  },
+  {
+   "ok": false,
+   "what": "number -1137.29 (live)"
+  },
+  {
+   "ok": true,
+   "what": "number -16570.76 (live)"
+  }
+ ],
+ "answer": "Net profit fell by \u20b916,570 on 2026-10-02 vs 2026-10-01; the drop reconciles exactly to a \u20b943,254 fall in P&L net sales, partially offset by lower COGS and lower ad spend (see bridge below).\n\nWhat changed (signed changes, effect on net profit)\n- Net sales (P&L basis): 2026-10-02 \u20b931,341 vs 2026-10-01 \u20b974,595 \u2192 change \u2212\u20b943,254 (effect on net profit: \u2212\u20b943,254)\n- Net COGS: 2026-10-02 \u20b913,544 vs 2026-10-01 \u20b929,764 \u2192 change \u2212\u20b916,220 (effect on net profit: +\u20b916,220)\n- Ad spend (P&L basis): 2026-10-02 \u20b935,505 vs 2026-10-01 \u20b945,968 \u2192 change \u2212\u20b910,463 (effect on net profit: +\u20b910,463)\n\nThese three lines reconcile the net profit change: \u2212\u20b943,254 + \u20b916,220 + \u20b910,463 = \u2212\u20b916,571 (rounding yields the reported \u2212\u20b916,570).\n\nAdditional available cost / deduction lines (how their day\u2011to\u2011day moves contributed)\n- Return revenue (P&L basis): \u20b99,360 \u2192 \u20b914,018 \u2192 change \u2212\u20b94,658 \u2192 effect on profit: +\u20b94,658\n- Discounts (P&L basis): \u20b91,842 \u2192 \u20b92,793 \u2192 change \u2212\u20b9951 \u2192 effect on profit: +\u20b9951\n- Shipping cost: \u20b91,981 \u2192 \u20b93,489 \u2192 change \u2212\u20b91,508 \u2192 effect on profit: +\u20b91,508\n- Operating cost: \u20b93,015 \u2192 \u20b95,345 \u2192 change \u2212\u20b92,329 \u2192 effect on profit: +\u20b92,329\n- Packaging cost: \u20b9360 \u2192 \u20b9920 \u2192 change \u2212\u20b9560 \u2192 effect on profit: +\u20b9560\n- Payment gateway fees: \u20b9305 \u2192 \u20b9442 \u2192 change \u2212\u20b9137 \u2192 effect on profit: +\u20b9137\n- RTO cost: \u20b9370 \u2192 \u20b9494 \u2192 change \u2212\u20b9124 \u2192 effect on profit: +\u20b9124\n\nNote: the canonical reconciliation in the P&L (net sales \u2212 net COGS \u2212 ad spend = net profit) already includes where these lines sit (for example returns and discounts reduce net sales; packaging, shipping, payment fees, RTO and some operating costs sit in COGS/operating lines). The three-line bridge above is the exact accounting identity that reconciles to the total net profit change; the additional lines show the day-to-day movements of measurable components and their signed effects when viewed individually.\n\nPeriod: 2026-10-02 vs 2026-10-01 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Do you want this bridge broken down by channel (Meta vs Google) or by product to see where the net sales drop came from?"
+}

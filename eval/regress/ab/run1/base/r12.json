@@ -1,0 +1,43 @@
+{
+ "n": 12,
+ "aspect": "diagnosis",
+ "q": "Why did CAC increase yesterday? Check whether the change came from CPM, CTR, CPC, landing-page conversion, checkout conversion, product mix, or channel mix. Rank the drivers by likely contribution.",
+ "thread": "thread_ddefbbf0d57b41f4a20992735282b465",
+ "mission": "MS3-1a848bfa03",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 71,
+ "elapsed_s": 69.555,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [
+   "8.3%"
+  ],
+  "numbers": 13,
+  "measured": 12,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "all of ['CPM', 'CTR', 'CPC']"
+  },
+  {
+   "ok": true,
+   "what": "does not lead with 'product CAC'"
+  }
+ ],
+ "answer": "Yesterday CAC was \u20b92,102 (about +8.3% vs its recent same-weekday \u201cusual\u201d), but the diagnosis found no single statistically supported cause \u2014 the movement looks like ordinary variation with a mix shift toward Meta that explains most of the arithmetic change. \n\n- Top-ranked contributors (arithmetic decomposition, not proven causal claims):  \n  1) Channel mix (shift toward Meta): Meta CAC rose (\u2248\u20b92,390 \u2192 \u20b92,900) and Meta ad spend +49% with much larger sales lift inside Meta; this mix shift explains the largest share of the day-to-day CAC movement.  \n  2) Ad spend vs new customers (volume effect): Brand ad spend rose while new customers also rose; ad spend and new-customer changes together produced the observed CAC change (Ad spend \u20b950,442 yesterday; New customers 24).  \n  3) Funnel rates and marketplace-level media rates (CPM/CTR/CPC/Landing-page cost/checkout conversion): CPM \u2191 ~18%, CTR \u2191 ~11%, CPC \u2191 ~6%, cost-per-LPV \u2193 ~12%, checkout rate \u2191 ~63% \u2014 each moved but stayed within their normal ranges and none was flagged as a statistically supported cause.  \n  4) Product mix: orders containing the product rose (26 \u2192 45, +73%) but this was within its usual range and the engine ruled it out as a supported cause.\n\nWorth checking: run a campaign-level drilldown for Meta yesterday to confirm which campaigns/ads increased spend or drove the higher new-customer count.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Drill into Meta campaigns for 2026-10-13?"
+}
