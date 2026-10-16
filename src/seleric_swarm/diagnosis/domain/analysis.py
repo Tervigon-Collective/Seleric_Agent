@@ -20,6 +20,7 @@ from seleric_swarm.diagnosis.domain.report import (
     DiagnosisReport,
     DimensionFinding,
     DriverFinding,
+    EdgeCheck,
     EventSummary,
     MeasurementFinding,
 )
@@ -85,3 +86,5 @@ class WhyResult:
     implicated: list[DriverFinding] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     measurement: list[MeasurementFinding] = field(default_factory=list)
+    edge_checks: list[EdgeCheck] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)  # data-quality lines the stage adds to the report

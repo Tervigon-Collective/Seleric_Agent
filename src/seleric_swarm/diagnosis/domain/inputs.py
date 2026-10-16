@@ -40,6 +40,10 @@ class DiagnosisInput:
     # True when the reviewed graph chose ``candidate_drivers``: the metrics that count the same events as the outcome are
     # already set aside by its edges, so WHY_EVENT does not screen for them again with data heuristics.
     candidates_from_graph: bool = False
+    # Graph-chosen driver -> the reviewed edges from it to the outcome's part, as [source, target, sign, lag_lo, lag_hi, confidence].
+    # WHY_EVENT confirms them on the history (plan D-56) and estimates only the confirmed ones, at most ``estimate_cap``.
+    driver_chains: dict[str, list[list[Any]]] = field(default_factory=dict)
+    estimate_cap: int = 0  # 0: no cap
     # (metric, peer, expected): pairs the reviewed graph says count the same events in two systems, both with a series.
     measurement_pairs: list[tuple[str, str, str]] = field(default_factory=list)
 
@@ -85,6 +89,8 @@ def input_to_dict(inp: DiagnosisInput) -> dict[str, Any]:
         "bridge_candidates": list(inp.bridge_candidates),
         "driver_paths": {c: list(p) for c, p in sorted(inp.driver_paths.items())},
         "candidates_from_graph": inp.candidates_from_graph,
+        "driver_chains": {c: [list(e) for e in chain] for c, chain in sorted(inp.driver_chains.items())},
+        "estimate_cap": inp.estimate_cap,
         "measurement_pairs": [list(p) for p in inp.measurement_pairs],
     }
 
@@ -109,5 +115,7 @@ def input_from_dict(raw: Mapping[str, Any]) -> DiagnosisInput:
         bridge_candidates=list(raw["bridge_candidates"]),
         driver_paths={c: list(p) for c, p in (raw.get("driver_paths") or {}).items()},
         candidates_from_graph=bool(raw.get("candidates_from_graph", False)),
+        driver_chains={c: [list(e) for e in chain] for c, chain in (raw.get("driver_chains") or {}).items()},
+        estimate_cap=int(raw.get("estimate_cap", 0)),
         measurement_pairs=[(str(m), str(p), str(e)) for m, p, e in raw.get("measurement_pairs") or []],
     )

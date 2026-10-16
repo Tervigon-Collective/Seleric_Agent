@@ -7,6 +7,7 @@ driver is reported as insufficient evidence, the failure is in the trace)."""
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from itertools import combinations
 from typing import Literal
@@ -17,7 +18,9 @@ from seleric_swarm.diagnosis.domain.estimates import TimeSeriesEffect
 from seleric_swarm.diagnosis.domain.inputs import DiagnosisInput
 from seleric_swarm.diagnosis.domain.lineage import MetricMeta, descendants
 from seleric_swarm.diagnosis.domain.numeric import _finite, _sign
-from seleric_swarm.diagnosis.domain.report import DriverFinding
+from seleric_swarm.diagnosis.domain.report import DriverFinding, EdgeCheck
+from seleric_swarm.diagnosis.domain.subgraph import EdgeSpec
+from seleric_swarm.diagnosis.operators.edge_check import verify_edges
 from seleric_swarm.diagnosis.operators.measurement import check_measurements
 from seleric_swarm.diagnosis.operators.why_movement import (
     NO_HISTORY,
@@ -47,6 +50,79 @@ def _quiet_on_path(
         if isinstance(found, Movement) and not found.moved:
             return metric, found.x_z
     return None
+
+
+def _confirm_candidates(
+    drivers: list[str], excluded: dict[str, str], inp: DiagnosisInput, ana: EventAnalysis, cfg: DiagnosisConfig
+) -> tuple[list[EdgeCheck], list[str]]:
+    """Confirm the reviewed edges under the graph-chosen candidates on the pre-event history (plan D-56). A candidate with an
+    edge that is not confirmed is excluded with the reason; the edges that could not be checked are reported once."""
+    chains = {c: [EdgeSpec(e[0], e[1], e[2], (int(e[3]), int(e[4])), e[5]) for e in inp.driver_chains[c]] for c in drivers if c in inp.driver_chains}
+    if not chains:
+        return [], []
+    days = [d for d in ana.history if d not in ana.outliers]
+    verdicts = verify_edges([e for chain in chains.values() for e in chain], inp.series, days, cfg)
+    for c, chain in chains.items():
+        failed = next((verdicts[(e.source, e.target)] for e in chain if not verdicts[(e.source, e.target)].usable), None)
+        if failed is not None:
+            excluded[c] = f"its path to {ana.y} rests on a reviewed edge that could not be confirmed on this brand's history ({failed.describe()})"
+    used = {(e.source, e.target) for c, chain in chains.items() for e in chain}
+    checks = [
+        EdgeCheck(v.source, v.target, v.status, v.describe(), v.lag, v.beta, v.p_adj, v.n_rows)
+        for k, v in sorted(verdicts.items()) if k in used and v.status != "definitional"
+    ]
+    notes = [f"could not be checked on your data: {v.describe()}" for k, v in sorted(verdicts.items()) if k in used and not v.usable]
+    return checks, notes
+
+
+def _within_cap(drivers: list[str], inp: DiagnosisInput, notes: list[str]) -> list[str]:
+    """Estimate at most ``estimate_cap`` of the graph-chosen candidates that survived, in the order the graph offered them
+    (named drivers and fallback lists are not capped here)."""
+    if not inp.estimate_cap or not inp.driver_chains:
+        return drivers
+    graph_chosen = [c for c in drivers if c in inp.driver_chains]
+    keep = set(graph_chosen[: inp.estimate_cap])
+    left_out = [c for c in graph_chosen if c not in keep]
+    if left_out:
+        notes.append(f"{len(left_out)} further candidate cause(s) passed the checks but were not estimated (limit {inp.estimate_cap}): {', '.join(left_out)}")
+    return [c for c in drivers if c not in inp.driver_chains or c in keep]
+
+
+def _name_root_anomaly(
+    found: DriverFinding, inp: DiagnosisInput, confirmed: set[str], movement_of: Callable[[str], Movement | str], cfg: DiagnosisConfig
+) -> None:
+    """Let the reviewed graph supply the direction the history cannot (plan D-60).
+
+    A daily history rarely holds enough abrupt shifts of one driver to show which way an association runs, so an estimated,
+    placebo-clean driver stays "correlation: same-day association only". When the driver is a graph-chosen candidate whose
+    every reviewed edge to the outcome was confirmed on this brand's history (the direction is the reviewed prior, the
+    association and its sign are the data's), it moved abnormally (beyond ``outlier_z``), and nothing upstream of it on a
+    confirmed path did, it is the root of the anomaly: a likely contributor, never a supported cause (that label stays
+    for direction shown by the data). Anything downstream of an abnormal metric stays an association: the upstream one
+    explains it. An upstream metric counts only if its own path was confirmed."""
+    chain = inp.driver_chains.get(found.driver)
+    refs = {r.get("name"): bool(r.get("passed")) for r in found.refutations}
+    lo, hi = (found.effect_ci + [math.nan, math.nan])[:2]
+    clean = (
+        found.status == "implicated" and found.classification == "correlation" and chain
+        and found.direction_evidence.get("direction") == "assumed" and (lo > 0 or hi < 0)
+        and refs.get("time_shift_placebo") and refs.get("future_treatment_placebo")
+        and found.driver_z is not None and abs(found.driver_z) >= cfg.outlier_z
+    )
+    if not clean:
+        return
+    for other, other_chain in inp.driver_chains.items():
+        if other in confirmed and other != found.driver and any(found.driver == edge[1] for edge in other_chain) and other in inp.series:
+            moved = movement_of(other)
+            if isinstance(moved, Movement) and moved.x_z is not None and abs(moved.x_z) >= cfg.outlier_z:
+                return
+    path = " -> ".join([found.driver, *(edge[1] for edge in chain or [])])
+    found.classification = "likely_contributor"
+    found.reason = (
+        f"the effect is identified and clears the placebo checks; the history alone cannot show which way the association runs, "
+        f"the reviewed mechanism ({path}, every step confirmed on this brand's history) gives the direction, "
+        f"{found.driver} moved abnormally (z={found.driver_z:.1f}) and nothing upstream of it did"
+    )
 
 
 def run_why_event(ana: EventAnalysis, what: WhatResult, *, cfg: DiagnosisConfig, estimator: EffectEstimator) -> WhyResult:
@@ -92,6 +168,10 @@ def run_why_event(ana: EventAnalysis, what: WhatResult, *, cfg: DiagnosisConfig,
     if not inp.candidates_from_graph:
         screen_by_units(candidates, excluded, ana, cfg)
     drivers = [c for c in candidates if c not in excluded]
+    edge_checks, notes = _confirm_candidates(drivers, excluded, inp, ana, cfg)
+    drivers = [c for c in drivers if c not in excluded]
+    confirmed = {c for c in drivers if c in inp.driver_chains}  # candidates whose whole path the history confirmed
+    drivers = _within_cap(drivers, inp, notes)
     if not inp.candidates_from_graph:
         # Candidates the reviewed graph chose are already clear of the metrics that count the same events; for a list
         # chosen from the catalogue's lineage the data have to say so.
@@ -251,6 +331,8 @@ def run_why_event(ana: EventAnalysis, what: WhatResult, *, cfg: DiagnosisConfig,
                 {"treatment": est.treatment, "outcome": est.outcome},
             )
         found = finish(pend, est)
+        if no_cause_because == "":
+            _name_root_anomaly(found, inp, confirmed, movement_of, cfg)
         out[slot] = found
         if found.status == "implicated" and found.classification in ("supported_cause", "likely_contributor"):
             implicated.append(found)
@@ -258,4 +340,4 @@ def run_why_event(ana: EventAnalysis, what: WhatResult, *, cfg: DiagnosisConfig,
     rank = {"supported_cause": 0, "likely_contributor": 1, "correlation": 2, "insufficient_evidence": 3, None: 4}
     status_rank = {"implicated": 0, "ruled_out": 1, "insufficient_evidence": 2, "excluded": 3}
     out.sort(key=lambda f: (status_rank[f.status], rank[f.classification], -abs(f.share_of_change or 0.0)))
-    return WhyResult(drivers=out, implicated=implicated, assumptions=assumptions, measurement=measurement)
+    return WhyResult(drivers=out, implicated=implicated, assumptions=assumptions, measurement=measurement, edge_checks=edge_checks, notes=notes)

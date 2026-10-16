@@ -27,6 +27,7 @@ from seleric_swarm.diagnosis.domain.graph import SAME_QUANTITY_KINDS, Direction,
 from seleric_swarm.diagnosis.domain.subgraph import (
     NEAR_IDENTITY,
     Candidate,
+    EdgeSpec,
     Exclusion,
     Peer,
     Subgraph,
@@ -196,8 +197,16 @@ def build_subgraph(
             if other not in protected:
                 peers.append(Peer(node, other, edge.kind.value, edge.expected or ""))
     exclusions += walk.refused
+    specs: dict[tuple[str, str], EdgeSpec] = {}
+    for cand in candidates:
+        for source, target in cand.chain:
+            if (source, target) not in specs:
+                edge = next(e for e in graph.edges_into(target) if e.source == source and walk.decide(e).action == CAUSE)
+                lag = edge.lag_days or (0, 0)
+                specs[(source, target)] = EdgeSpec(source, target, (edge.direction or Direction.EITHER).value, lag, edge.confidence)
     return Subgraph(
         outcome=outcome, graph_version=graph.version, accounting=tuple(accounting), candidates=tuple(candidates),
+        edges=tuple(specs[k] for k in sorted(specs)),
         exclusions=tuple(sorted(set(exclusions), key=lambda e: (e.metric, e.reason_code))),
         peers=tuple(sorted(set(peers), key=lambda p: (p.metric, p.peer, p.kind))),
         edges_walked=walk.edges_walked, depth_limit=max_depth,

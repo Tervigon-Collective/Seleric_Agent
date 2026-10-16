@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Any
 
 from seleric_swarm.diagnosis.domain.canonical import fingerprint
@@ -51,6 +52,12 @@ class Candidate:
     path: tuple[str, ...] = ()  # the metrics between this one and the anchor, nearest first, the anchor last
 
     @property
+    def chain(self) -> tuple[tuple[str, str], ...]:
+        """The edges from this metric to its anchor, in order: (metric, via), (via, next), ... (last, anchor)."""
+        nodes = (self.metric, *self.path)
+        return tuple(pairwise(nodes))
+
+    @property
     def intermediates(self) -> tuple[str, ...]:
         """The metrics the effect must pass through to reach the anchor (the anchor itself is part of the outcome)."""
         return self.path[:-1]
@@ -71,6 +78,28 @@ class Candidate:
             path_confidence=str(raw["path_confidence"]), direction=str(raw["direction"]),
             lag_days=(int(lag[0]), int(lag[1])), tier=int(raw["tier"]), path=tuple(str(m) for m in raw.get("path", ())),
         )
+
+
+@dataclass(frozen=True)
+class EdgeSpec:
+    """A reviewed causal edge on some candidate's path, as the verification needs it."""
+
+    source: str
+    target: str
+    sign: str  # +, - or +/-
+    lag_days: tuple[int, int]
+    confidence: str
+
+    @property
+    def structural(self) -> bool:
+        return self.confidence == NEAR_IDENTITY
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"source": self.source, "target": self.target, "sign": self.sign, "lag_days": list(self.lag_days), "confidence": self.confidence}
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> EdgeSpec:
+        return cls(str(raw["source"]), str(raw["target"]), str(raw["sign"]), (int(raw["lag_days"][0]), int(raw["lag_days"][1])), str(raw["confidence"]))
 
 
 @dataclass(frozen=True)
@@ -122,6 +151,7 @@ class Subgraph:
     peers: tuple[Peer, ...]
     edges_walked: int
     depth_limit: int
+    edges: tuple[EdgeSpec, ...] = ()  # the causal edges on the candidates' paths
 
     @property
     def digest(self) -> str:
@@ -132,6 +162,7 @@ class Subgraph:
             "outcome": self.outcome, "graph_version": self.graph_version, "accounting": list(self.accounting),
             "candidates": [c.to_dict() for c in self.candidates], "exclusions": [e.to_dict() for e in self.exclusions],
             "peers": [p.to_dict() for p in self.peers], "edges_walked": self.edges_walked, "depth_limit": self.depth_limit,
+            **({"edges": [e.to_dict() for e in self.edges]} if self.edges else {}),
         }
 
     @classmethod
@@ -143,4 +174,5 @@ class Subgraph:
             exclusions=tuple(Exclusion.from_dict(e) for e in raw["exclusions"]),
             peers=tuple(Peer.from_dict(p) for p in raw["peers"]),
             edges_walked=int(raw["edges_walked"]), depth_limit=int(raw["depth_limit"]),
+            edges=tuple(EdgeSpec.from_dict(e) for e in raw.get("edges") or ()),
         )

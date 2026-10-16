@@ -26,6 +26,7 @@ from seleric_swarm.diagnosis.adapters.runtime import SeededRuntime
 from seleric_swarm.diagnosis.domain.config import DiagnosisConfig
 from seleric_swarm.diagnosis.domain.errors import InvalidRequest
 from seleric_swarm.diagnosis.domain.gather import GatherPlan
+from seleric_swarm.diagnosis.domain.graph import Graph
 from seleric_swarm.diagnosis.domain.inputs import DiagnosisInput
 from seleric_swarm.diagnosis.domain.record import RunRecord
 from seleric_swarm.diagnosis.domain.types import SeriesRequest, SeriesResult
@@ -53,6 +54,7 @@ async def run_recorded(
     config: DiagnosisConfig,
     estimator: EffectEstimator,
     trace: LegacyTrace | None,
+    graph: Graph | None = None,
 ) -> tuple[Any, RunRecord]:
     """The report (as an object) and the record of a diagnosis run on an already-gathered input."""
     runner = LegacyEngineRunner(prepared=inp)
@@ -60,7 +62,7 @@ async def run_recorded(
         runner,
         investigation_id=trace.investigation_id if trace is not None else "inv_untraced",
         request=request_for_plan(plan), config=config, seed=LIVE_SEED, series=NoFetch(),
-        runtime=SeededRuntime(LIVE_SEED), graph=VendoredGraphAdapter().load().graph,
+        runtime=SeededRuntime(LIVE_SEED), graph=graph if graph is not None else VendoredGraphAdapter().load().graph,
         extra_sinks=[TraceForward(trace)] if trace is not None else [], estimator=estimator,
     )
     # The series the gather read, in the order it read them: what the replay's own gather will ask for again.

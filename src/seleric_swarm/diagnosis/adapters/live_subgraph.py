@@ -9,12 +9,12 @@ import logging
 from collections.abc import Callable, Collection, Mapping
 from typing import Any
 
-from seleric_swarm.diagnosis.adapters.catalogue_graph import load_against_catalogue
 from seleric_swarm.diagnosis.adapters.legacy_trace import LegacyTrace
 from seleric_swarm.diagnosis.domain.errors import GraphRejected
 from seleric_swarm.diagnosis.domain.graph import LoadedGraph
 from seleric_swarm.diagnosis.domain.lineage import MetricMeta
 from seleric_swarm.diagnosis.domain.subgraph import COMEASURE_KIND, Subgraph
+from seleric_swarm.diagnosis.graph.live import build_live_graph
 from seleric_swarm.diagnosis.graph.subgraph import build_subgraph
 from seleric_swarm.diagnosis.trace.active import report_failure
 
@@ -46,7 +46,7 @@ def graph_for(definitions: Mapping[str, Mapping[str, Any]], trace: LegacyTrace |
     if trace is not None:
         return trace.graph(definitions)
     try:
-        return load_against_catalogue(definitions)
+        return build_live_graph(definitions)
     except GraphRejected:
         _log.error("graph_rejected", exc_info=True)
         return None
@@ -91,3 +91,15 @@ def subgraph_peer_metrics(subgraph: Subgraph | None, has_metric: Callable[[str],
     order = {m: i for i, m in enumerate((subgraph.outcome, *subgraph.accounting))}
     peers = sorted((p for p in subgraph.peers if p.kind == COMEASURE_KIND and has_metric(p.peer)), key=lambda p: (order.get(p.metric, 99), p.peer))
     return list(dict.fromkeys(m for p in peers for m in (p.metric, p.peer)))[:MAX_PEERS]
+
+
+POOL_EXTRA = 8  # graph candidates fetched beyond the estimation cap, so unconfirmed ones can be replaced by the next in line
+
+
+def same_quantity_of_outcome(subgraph: Subgraph | None, metrics: list[str]) -> list[str]:
+    """``metrics`` without any that is another measurement of the outcome or of a part of it (twin, co-measure, subset,
+    allocation): the rule the graph's candidates obey, applied to a list the catalogue's lineage proposed."""
+    if subgraph is None:
+        return metrics
+    same = {p.peer for p in subgraph.peers}
+    return [m for m in metrics if m not in same]

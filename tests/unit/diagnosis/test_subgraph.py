@@ -326,7 +326,7 @@ async def test_a_live_diagnosis_freezes_the_subgraph_offers_its_candidates_and_s
     assert plan.subgraph is not None and plan.subgraph.outcome == "net_sales" and plan.drivers_from_graph
     built = [e for e in record.events if e["kind"] == kinds.SUBGRAPH_BUILT]
     assert [e["payload"]["digest"] for e in built] == [plan.subgraph.digest]
-    assert built[0]["payload"]["graph_version"] == "3116740b8d70"
+    assert built[0]["payload"]["graph_version"] == plan.subgraph.graph_version != "3116740b8d70"  # the live graph, not the vendored one
     assert [e["payload"] for e in live if e["kind"] == kinds.SUBGRAPH_BUILT] == [e["payload"] for e in built]
     # what the catalogue lacks and the engine cannot estimate is set aside with a reason, never silently dropped
     assert {e.reason_code.removeprefix("near_identity_of_") for e in plan.subgraph.exclusions} <= {

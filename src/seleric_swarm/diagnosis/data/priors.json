@@ -1,0 +1,1135 @@
+{
+ "causal": [
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "ad_spend",
+   "target": "impressions"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    1
+   ],
+   "sign": "+",
+   "source": "add_to_carts",
+   "target": "funnel_purchases"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    1
+   ],
+   "sign": "+",
+   "source": "add_to_carts",
+   "target": "orders"
+  },
+  {
+   "confidence": "moderate",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    3
+   ],
+   "sign": "+/-",
+   "source": "bid_strategy_changes",
+   "target": "impressions"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    1
+   ],
+   "sign": "+/-",
+   "source": "budget_changes",
+   "target": "ad_spend"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "cancelled_orders",
+   "target": "cancel_revenue"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    3
+   ],
+   "sign": "+",
+   "source": "cod_orders",
+   "target": "cancelled_orders"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    3,
+    15
+   ],
+   "sign": "+",
+   "source": "cod_orders",
+   "target": "rto_cost"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "-",
+   "source": "discounts",
+   "target": "net_aov"
+  },
+  {
+   "confidence": "moderate",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "discounts",
+   "target": "orders"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "impressions",
+   "target": "clicks"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "impressions",
+   "target": "link_clicks"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "impressions",
+   "target": "thruplays"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "landing_page_views",
+   "target": "sessions"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "link_clicks",
+   "target": "landing_page_views"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "link_clicks",
+   "target": "sessions"
+  },
+  {
+   "confidence": "strong",
+   "kind": "feedback",
+   "lag_days": [
+    1,
+    14
+   ],
+   "sign": "+",
+   "source": "net_sales",
+   "target": "ad_spend"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "new_customers",
+   "target": "customers"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    14,
+    180
+   ],
+   "sign": "+",
+   "source": "new_customers",
+   "target": "repeat_customers"
+  },
+  {
+   "confidence": "moderate",
+   "kind": "feedback",
+   "lag_days": [
+    1,
+    7
+   ],
+   "sign": "+",
+   "source": "orders",
+   "target": "ad_spend"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    3
+   ],
+   "sign": "+",
+   "source": "orders",
+   "target": "cancelled_orders"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "orders",
+   "target": "cod_orders"
+  },
+  {
+   "confidence": "moderate",
+   "kind": "feedback",
+   "lag_days": [
+    1,
+    7
+   ],
+   "sign": "-",
+   "source": "orders",
+   "target": "cpm"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "orders",
+   "target": "new_customers"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "orders",
+   "target": "packaging_cost"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "orders",
+   "target": "prepaid_orders"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    3,
+    30
+   ],
+   "sign": "+",
+   "source": "orders",
+   "target": "returned_orders"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "orders",
+   "target": "shipping_cost"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "orders",
+   "target": "units_ordered"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "prepaid_orders",
+   "target": "payment_gateway_fees"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "returned_orders",
+   "target": "return_revenue"
+  },
+  {
+   "confidence": "moderate",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "session_collection_views",
+   "target": "session_product_views"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "session_product_views",
+   "target": "add_to_carts"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    1
+   ],
+   "sign": "+",
+   "source": "sessions",
+   "target": "orders"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "sessions",
+   "target": "session_product_views"
+  },
+  {
+   "confidence": "moderate",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "site_searches",
+   "target": "session_product_views"
+  },
+  {
+   "confidence": "strong",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    1
+   ],
+   "sign": "+/-",
+   "source": "status_changes",
+   "target": "ad_spend"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "units_ordered",
+   "target": "gross_sales"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    3,
+    30
+   ],
+   "sign": "+",
+   "source": "units_ordered",
+   "target": "returned_units"
+  },
+  {
+   "confidence": "structural",
+   "kind": "mechanism",
+   "lag_days": [
+    0,
+    0
+   ],
+   "sign": "+",
+   "source": "units_sold",
+   "target": "product_cost"
+  }
+ ],
+ "metric_tiers": {
+  "ad_spend": 1,
+  "add_to_carts": 5,
+  "bid_strategy_changes": 0,
+  "budget_changes": 0,
+  "cancel_revenue": 8,
+  "cancelled_orders": 8,
+  "clicks": 3,
+  "cod_orders": 6,
+  "cpm": 2,
+  "customers": 6,
+  "discounts": 1,
+  "funnel_purchases": 6,
+  "gross_sales": 7,
+  "impressions": 2,
+  "landing_page_views": 3,
+  "link_clicks": 3,
+  "net_aov": 7,
+  "net_sales": 8,
+  "new_customers": 6,
+  "orders": 6,
+  "packaging_cost": 9,
+  "payment_gateway_fees": 9,
+  "prepaid_orders": 6,
+  "product_cost": 9,
+  "repeat_customers": 6,
+  "return_revenue": 8,
+  "returned_orders": 8,
+  "returned_units": 8,
+  "rto_cost": 9,
+  "session_collection_views": 5,
+  "session_product_views": 5,
+  "sessions": 4,
+  "shipping_cost": 9,
+  "site_searches": 5,
+  "status_changes": 0,
+  "thruplays": 3,
+  "units_ordered": 6,
+  "units_sold": 8
+ },
+ "pairs": [
+  {
+   "a": "ad_spend",
+   "b": "product_ad_spend",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "ad_spend",
+   "b": "product_order_ad_spend",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "ad_spend",
+   "b": "product_pnl_ad_spend",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "clicks",
+   "b": "product_clicks",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "impressions",
+   "b": "product_impressions",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "landing_page_views",
+   "b": "product_landing_page_views",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "link_clicks",
+   "b": "product_link_clicks",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "packaging_cost",
+   "b": "product_packaging_cost",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "payment_gateway_fees",
+   "b": "product_payment_gateway_fees",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "rto_cost",
+   "b": "product_rto_cost",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "shipping_cost",
+   "b": "product_shipping_cost",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "thruplays",
+   "b": "product_thruplays",
+   "expected": "",
+   "kind": "allocation"
+  },
+  {
+   "a": "ad_spend",
+   "b": "order_pnl_ad_spend",
+   "expected": "equal",
+   "kind": "co_measure"
+  },
+  {
+   "a": "ad_spend",
+   "b": "pnl_ad_spend",
+   "expected": "equal",
+   "kind": "co_measure"
+  },
+  {
+   "a": "cancel_revenue",
+   "b": "order_pnl_cancel_revenue",
+   "expected": "near-equal, both order date",
+   "kind": "co_measure"
+  },
+  {
+   "a": "discounts",
+   "b": "order_pnl_discounts",
+   "expected": "near-equal, both order date",
+   "kind": "co_measure"
+  },
+  {
+   "a": "gross_cogs",
+   "b": "product_gross_cogs",
+   "expected": "equal in total",
+   "kind": "co_measure"
+  },
+  {
+   "a": "gross_sales",
+   "b": "order_pnl_gross_sales",
+   "expected": "near-equal, both order date",
+   "kind": "co_measure"
+  },
+  {
+   "a": "gross_sales",
+   "b": "product_gross_sale",
+   "expected": "equal in total (catalogue: product-grain twin)",
+   "kind": "co_measure"
+  },
+  {
+   "a": "net_sales",
+   "b": "funnel_order_revenue",
+   "expected": "",
+   "kind": "co_measure"
+  },
+  {
+   "a": "net_sales",
+   "b": "funnel_revenue",
+   "expected": "Snowplow revenue is ex-tax at purchase; net sales also nets later returns / cancels",
+   "kind": "co_measure"
+  },
+  {
+   "a": "net_sales",
+   "b": "order_pnl_net_sales",
+   "expected": "near-equal, both order date",
+   "kind": "co_measure"
+  },
+  {
+   "a": "orders",
+   "b": "funnel_order_purchases",
+   "expected": "",
+   "kind": "co_measure"
+  },
+  {
+   "a": "orders",
+   "b": "funnel_purchases",
+   "expected": "funnel \u2264 orders (ad blockers, app orders, server-side gaps)",
+   "kind": "co_measure"
+  },
+  {
+   "a": "page_views",
+   "b": "session_page_views",
+   "expected": "session_page_views \u22481.3% below page_views",
+   "kind": "co_measure"
+  },
+  {
+   "a": "payment_amount",
+   "b": "paid_sales",
+   "expected": "different dates (transaction vs order) and refunds negative",
+   "kind": "co_measure"
+  },
+  {
+   "a": "product_ad_spend",
+   "b": "product_order_ad_spend",
+   "expected": "equal",
+   "kind": "co_measure"
+  },
+  {
+   "a": "product_cancel_revenue",
+   "b": "product_order_cancel_revenue",
+   "expected": "",
+   "kind": "co_measure"
+  },
+  {
+   "a": "product_cost",
+   "b": "product_line_cost",
+   "expected": "equal in total (catalogue: product-grain twin)",
+   "kind": "co_measure"
+  },
+  {
+   "a": "product_discounts",
+   "b": "product_order_discounts",
+   "expected": "",
+   "kind": "co_measure"
+  },
+  {
+   "a": "product_gross_sale",
+   "b": "product_order_gross_sales",
+   "expected": "near-equal, both order date",
+   "kind": "co_measure"
+  },
+  {
+   "a": "product_line_cost",
+   "b": "product_order_product_cost",
+   "expected": "",
+   "kind": "co_measure"
+  },
+  {
+   "a": "product_net_cogs",
+   "b": "product_order_net_cogs",
+   "expected": "",
+   "kind": "co_measure"
+  },
+  {
+   "a": "product_net_revenue",
+   "b": "product_order_net_sales",
+   "expected": "near-equal, both order date",
+   "kind": "co_measure"
+  },
+  {
+   "a": "product_orders",
+   "b": "product_order_orders",
+   "expected": "",
+   "kind": "co_measure"
+  },
+  {
+   "a": "product_return_revenue",
+   "b": "product_order_return_revenue",
+   "expected": "",
+   "kind": "co_measure"
+  },
+  {
+   "a": "refund_count",
+   "b": "pnl_returned_orders",
+   "expected": "",
+   "kind": "co_measure"
+  },
+  {
+   "a": "return_revenue",
+   "b": "order_pnl_return_revenue",
+   "expected": "near-equal, both order date",
+   "kind": "co_measure"
+  },
+  {
+   "a": "returns_excl_tax",
+   "b": "pnl_return_revenue",
+   "expected": "both on the return / refund date; near-equal",
+   "kind": "co_measure"
+  },
+  {
+   "a": "cancelled_orders",
+   "b": "orders",
+   "expected": "",
+   "kind": "subset"
+  },
+  {
+   "a": "cod_orders",
+   "b": "orders",
+   "expected": "",
+   "kind": "subset"
+  },
+  {
+   "a": "link_clicks",
+   "b": "clicks",
+   "expected": "",
+   "kind": "subset"
+  },
+  {
+   "a": "new_customers",
+   "b": "orders",
+   "expected": "",
+   "kind": "subset"
+  },
+  {
+   "a": "orders_with_touchpoints",
+   "b": "orders",
+   "expected": "",
+   "kind": "subset"
+  },
+  {
+   "a": "payment_orders",
+   "b": "orders",
+   "expected": "",
+   "kind": "subset"
+  },
+  {
+   "a": "prepaid_orders",
+   "b": "orders",
+   "expected": "",
+   "kind": "subset"
+  },
+  {
+   "a": "repeat_customers",
+   "b": "customers",
+   "expected": "",
+   "kind": "subset"
+  },
+  {
+   "a": "returned_orders",
+   "b": "orders",
+   "expected": "",
+   "kind": "subset"
+  },
+  {
+   "a": "ad_spend",
+   "b": "pnl_ad_spend",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "add_to_carts",
+   "b": "add_to_cart_events",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "add_to_carts",
+   "b": "event_add_to_carts",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "be_roas",
+   "b": "pnl_be_roas",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "cac",
+   "b": "channel_cac",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "cancel_revenue",
+   "b": "pnl_cancel_revenue",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "cancelled_orders",
+   "b": "pnl_cancelled_orders",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "channel_new_customers",
+   "b": "new_customers",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "contribution_margin",
+   "b": "pnl_contribution_margin",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "contribution_margin_pct",
+   "b": "pnl_contribution_margin_pct",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "discounts",
+   "b": "pnl_discounts",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "event_add_to_carts",
+   "b": "add_to_cart_events",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "event_collection_views",
+   "b": "collection_view_events",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "event_count",
+   "b": "web_events",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "event_page_views",
+   "b": "page_views",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "event_product_views",
+   "b": "product_view_events",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "event_site_searches",
+   "b": "site_search_events",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "funnel_purchases",
+   "b": "funnel_order_purchases",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "funnel_revenue",
+   "b": "funnel_order_revenue",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "gross_sales",
+   "b": "pnl_gross_sales",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "ltv",
+   "b": "new_customer_ltv",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "mer",
+   "b": "pnl_mer",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "net_cogs",
+   "b": "pnl_net_cogs",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "net_margin_pct",
+   "b": "pnl_net_margin_pct",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "net_profit",
+   "b": "pnl_net_profit",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "net_roas",
+   "b": "pnl_net_roas",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "net_sales",
+   "b": "pnl_net_sales",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "operating_cost",
+   "b": "pnl_operating_cost",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "orders",
+   "b": "channel_orders",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "packaging_cost",
+   "b": "pnl_packaging_cost",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "payment_gateway_fees",
+   "b": "pnl_payment_gateway_fees",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "pnl_cancel_revenue",
+   "b": "cancel_revenue",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "pnl_cancelled_orders",
+   "b": "cancelled_orders",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "pnl_net_sales",
+   "b": "net_sales",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "pnl_return_cancel_revenue",
+   "b": "return_cancel_revenue",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "pnl_return_revenue",
+   "b": "return_revenue",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "pnl_returned_or_cancelled_orders",
+   "b": "returned_or_cancelled_orders",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "pnl_returned_orders",
+   "b": "returned_orders",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "product_cost",
+   "b": "pnl_product_cost",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "product_returns_excl_tax",
+   "b": "returns_excl_tax",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "refunded_amount_excl_tax",
+   "b": "product_refunded_amount_excl_tax",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "return_cancel_revenue",
+   "b": "pnl_return_cancel_revenue",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "return_revenue",
+   "b": "pnl_return_revenue",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "returned_or_cancelled_orders",
+   "b": "pnl_returned_or_cancelled_orders",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "returned_orders",
+   "b": "pnl_returned_orders",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "rto_cost",
+   "b": "pnl_rto_cost",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "session_bounce_rate",
+   "b": "bounce_rate",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "session_collection_views",
+   "b": "collection_view_events",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "session_collection_views",
+   "b": "event_collection_views",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "session_page_views",
+   "b": "event_page_views",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "session_page_views",
+   "b": "page_views",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "session_product_views",
+   "b": "event_product_views",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "session_product_views",
+   "b": "product_view_events",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "shipping_cost",
+   "b": "pnl_shipping_cost",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "site_searches",
+   "b": "event_site_searches",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "site_searches",
+   "b": "site_search_events",
+   "expected": "",
+   "kind": "twin"
+  },
+  {
+   "a": "taxes_on_net_sales",
+   "b": "pnl_taxes_on_net_sales",
+   "expected": "",
+   "kind": "twin"
+  }
+ ],
+ "source": {
+  "file": "doc/dependency_graph/dependency_graph.json",
+  "graph_digest": "scripts/build_dependency_graph.py",
+  "sha256": "d973ad1a252a1d362dd4a70fa8735fb64ef8f7fb93a464577ad0e71aa7f29c96"
+ },
+ "tiers": {
+  "0": "intervention",
+  "1": "spend",
+  "10": "profit",
+  "2": "delivery",
+  "3": "ad_engagement",
+  "4": "site_traffic",
+  "5": "on_site_intent",
+  "6": "purchase",
+  "7": "order_value",
+  "8": "post_purchase",
+  "9": "cost"
+ },
+ "version": 1
+}

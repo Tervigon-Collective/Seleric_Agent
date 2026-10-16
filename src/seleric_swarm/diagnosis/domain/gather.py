@@ -43,6 +43,7 @@ class GatherPlan:
     max_segment_rows: int = 6000  # a segment answer bigger than this is a cardinality blow-up, not a split
     subgraph: Subgraph | None = None  # what the reviewed graph says about this outcome (P3.1); None when it was not built
     drivers_from_graph: bool = False  # the driver list is the subgraph's candidates (P3.2), not the catalogue's lineage
+    estimate_cap: int = 0  # graph-chosen drivers estimated at most this many, after their edges are confirmed (0: no cap)
 
     @property
     def outcome_additive(self) -> bool:
@@ -54,6 +55,7 @@ class GatherPlan:
             out["subgraph"] = self.subgraph.to_dict()
         if self.drivers_from_graph:
             out["drivers_from_graph"] = True
+            out["estimate_cap"] = self.estimate_cap
         return out
 
     def _core_dict(self) -> dict[str, Any]:
@@ -88,7 +90,7 @@ class GatherPlan:
             chain_dims=tuple((str(r), str(b), tuple(d)) for r, b, d in raw["chain_dims"]),
             scope_tokens=frozenset(raw["scope_tokens"]), max_segment_rows=int(raw["max_segment_rows"]),
             subgraph=Subgraph.from_dict(raw["subgraph"]) if raw.get("subgraph") else None,
-            drivers_from_graph=bool(raw.get("drivers_from_graph", False)),
+            drivers_from_graph=bool(raw.get("drivers_from_graph", False)), estimate_cap=int(raw.get("estimate_cap", 0)),
         )
 
 

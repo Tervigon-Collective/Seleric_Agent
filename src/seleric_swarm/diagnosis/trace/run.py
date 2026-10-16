@@ -48,8 +48,10 @@ from seleric_swarm.diagnosis.trace.streams import stream_rng
 # What the engine decides, changed whenever the same input can give a different answer or report (not for a refactor).
 # 0: the legacy engine split into operators (Phase 2). 1: the reviewed graph chooses the candidate causes, a driver whose
 # path stayed quiet is ruled out, no cause is accepted on an ordinary day, the report gains `measurement` (P3.2).
+# 2: a reviewed mechanism edge is used only if the brand's history confirms it; at most `estimate_cap` confirmed candidates are
+# estimated; the report gains `edge_checks` (D-56).
 # A record replays only on the engine that made it; another engine's record is refused, not reported as a divergence.
-ENGINE_VERSION = "diagnosis-core/1"
+ENGINE_VERSION = "diagnosis-core/2"
 
 
 class ReplayDivergence(DiagnosisError):

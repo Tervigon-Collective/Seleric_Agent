@@ -16,13 +16,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 
-from seleric_swarm.diagnosis.adapters.catalogue_graph import load_against_catalogue
 from seleric_swarm.diagnosis.adapters.mission_events import MissionEventSink
 from seleric_swarm.diagnosis.domain.canonical import fingerprint
 from seleric_swarm.diagnosis.domain.errors import DiagnosisError, GraphRejected
 from seleric_swarm.diagnosis.domain.events import Event
 from seleric_swarm.diagnosis.domain.graph import LoadedGraph
 from seleric_swarm.diagnosis.domain.report import DiagnosisReport
+from seleric_swarm.diagnosis.graph.live import build_live_graph
 from seleric_swarm.diagnosis.ports.events import EventSink
 from seleric_swarm.diagnosis.trace import events as kinds
 from seleric_swarm.diagnosis.trace.active import activate_emitter
@@ -99,7 +99,7 @@ class LegacyTrace:
         """Load the reviewed graph against the live catalogue and show what was set aside. Returns what it loaded, or
         None when the graph was rejected (the rejection is on the trace)."""
         try:
-            loaded = load_against_catalogue(definitions)
+            loaded = build_live_graph(definitions)
         except GraphRejected as exc:
             self._emit(kinds.GRAPH_ISSUE, {"code": exc.reason_code, "subject": "graph", "detail": exc.detail})
             return None

@@ -29,6 +29,8 @@ def assemble_report(
     report.bridge_residual, report.bridge_residual_vs_previous = what.bridge_residual, what.bridge_residual_vs_previous
     report.chain_identity, report.chain, report.chain_dimensions = what.chain_identity, what.chain, what.chain_dimensions
     report.dimensions, report.drivers, report.measurement = dims, why.drivers, why.measurement
+    report.edge_checks = why.edge_checks
+    report.data_quality = [*report.data_quality, *why.notes]
     # ---- competing hypotheses & verdict ---------------------------------------------
     for drv in report.drivers:
         if drv.status != "implicated" or drv.classification not in ("supported_cause", "likely_contributor"):

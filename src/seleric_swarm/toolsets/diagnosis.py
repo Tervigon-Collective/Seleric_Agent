@@ -65,8 +65,10 @@ from seleric_swarm.diagnosis.adapters.cube_series import CubeSeriesAdapter
 from seleric_swarm.diagnosis.adapters.legacy_trace import LegacyTrace, OperatorScope, current_trace
 from seleric_swarm.diagnosis.adapters.live_record import run_recorded, save_record
 from seleric_swarm.diagnosis.adapters.live_subgraph import (
+    POOL_EXTRA,
     graph_for,
     plan_subgraph,
+    same_quantity_of_outcome,
     subgraph_drivers,
     subgraph_path_metrics,
     subgraph_peer_metrics,
@@ -1212,12 +1214,12 @@ async def _diagnose(
     # Candidate causes come from the reviewed graph (P3.2, D-51): the most upstream metrics that can move the outcome.
     # A metric the graph does not know falls back to the catalogue's lineage, and the answer says so.
     subgraph = plan_subgraph(loaded_graph, metric_id, lineage, identity_metrics, ctx.deps.catalogue.has_metric)
-    planned = subgraph_drivers(subgraph, cap) if subgraph is not None else []
+    planned = subgraph_drivers(subgraph, cap + POOL_EXTRA) if subgraph is not None else []
     from_graph = bool(planned)
     if not from_graph:
         # The graph has no entry for this metric, or reviews no upstream cause of it that the data can test: silence is
         # not "no cause", so the catalogue's lineage proposes candidates and the data screens them (and the answer says so).
-        planned = _plan_drivers(ctx, metric_id, lineage, set(identity_metrics), cap)
+        planned = same_quantity_of_outcome(subgraph, _plan_drivers(ctx, metric_id, lineage, set(identity_metrics), cap))
         notes.append("candidate causes were chosen from the catalogue's lineage, not the reviewed graph")
     # A named driver is always tested when it is a quantity the engine can estimate (additive); a named rate is
     # still fetched and its move reported over the same days.
@@ -1269,7 +1271,7 @@ async def _diagnose(
         change_log=frozenset(change_log), ladder_ends=frozenset(ladder_ends), bridge_pool=tuple(bridge_pool),
         drivers=tuple(drivers), dims=tuple(dims), chain_dims=chain_dims,
         scope_tokens=frozenset(t for d in _scope_dimensions(ctx) for t in d.lower().split("_") if t),
-        max_segment_rows=_MAX_SEGMENT_ROWS, subgraph=subgraph, drivers_from_graph=from_graph,
+        max_segment_rows=_MAX_SEGMENT_ROWS, subgraph=subgraph, drivers_from_graph=from_graph, estimate_cap=cap if from_graph else 0,
     )
     recording = RecordingSeriesPort(CubeSeriesAdapter(ctx, guarded=guarded, report_dropped_filters=True))
     gathered = await gather(
@@ -1284,16 +1286,22 @@ async def _diagnose(
     args_by_metric, seg_args, units = gathered.series_args, gathered.segment_args, gathered.units
     history_days, weight, numerator = gathered.history_days, gathered.weight, gathered.numerator
     quality = gathered.notes
-    for _ in inp.candidate_drivers:
+    # One causal query per driver that may be estimated: every named or fallback driver, and at most the cap of the graph's.
+    estimated = sum(1 for d in inp.candidate_drivers if d not in inp.driver_chains) + min(len(inp.driver_chains), inp.estimate_cap or len(inp.driver_chains))
+    for _ in range(estimated):
         if not ctx.deps.budget.consume("causal_queries").ok:
-            inp.candidate_drivers = inp.candidate_drivers[: max(0, len(inp.candidate_drivers) - 1)]
+            if inp.driver_chains:
+                inp.estimate_cap = max(0, (inp.estimate_cap or len(inp.driver_chains)) - 1)
+            else:
+                inp.candidate_drivers = inp.candidate_drivers[: max(0, len(inp.candidate_drivers) - 1)]
     # The plan the record keeps is the one that was run: a replay gathers from it, so the budget's cut is part of it.
-    plan = replace(plan, drivers=tuple(inp.candidate_drivers))
+    plan = replace(plan, drivers=tuple(inp.candidate_drivers), estimate_cap=inp.estimate_cap)
     with _op("analyse", {"candidate_drivers": len(inp.candidate_drivers), "history_days": len(history_days)}) as scope:
         # The engine runs as the replayable runner: its stages, hypotheses and failures appear on the live trace as they
         # happen, and the record of the run (series, estimates, clock, events, report) is kept for replay.
         report, record = await run_recorded(
-            inp, plan, recording, config=env.config, estimator=env.estimator, trace=trace
+            inp, plan, recording, config=env.config, estimator=env.estimator, trace=trace,
+            graph=loaded_graph.graph if loaded_graph is not None else None,
         )
         scope.result = {"verdict": report.verdict, "drivers": len(report.drivers), "dimensions": len(report.dimensions)}
     save_record(

@@ -157,6 +157,20 @@ class MeasurementFinding:
 
 
 @dataclass
+class EdgeCheck:
+    """One reviewed mechanism edge a candidate cause depends on, checked on the brand's pre-event history (plan D-56)."""
+
+    source: str
+    target: str
+    status: str  # operators.edge_check.Status
+    reason: str
+    lag: int | None = None
+    beta: float | None = None
+    p_adj: float | None = None
+    n_rows: int = 0
+
+
+@dataclass
 class DiagnosisReport:
     outcome: str
     event_window: list[str]
@@ -194,6 +208,8 @@ class DiagnosisReport:
     event_values: dict[str, float] = field(default_factory=dict)
     # Co-measure pairs of the outcome and its parts, compared on the event days (P3.2); empty when the graph names none.
     measurement: list[MeasurementFinding] = field(default_factory=list)
+    # The reviewed edges that candidate causes rest on, with what the history said of each (D-56); empty with no graph candidates.
+    edge_checks: list[EdgeCheck] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         from dataclasses import asdict

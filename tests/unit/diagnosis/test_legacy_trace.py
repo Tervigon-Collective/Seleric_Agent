@@ -62,13 +62,15 @@ async def test_a_diagnosis_leaves_an_ordered_trace_with_one_id(cube_world, caplo
     assert finished["instrumentation_errors"] == 0 and finished["sink_failures"] == 0
 
 
-async def test_the_graph_is_checked_against_the_live_catalogue_and_exclusions_are_events(cube_world):
+async def test_the_graph_is_built_live_from_the_catalogue_and_what_it_cannot_use_is_reported(cube_world):
     _, events = await _run(cube_world)
     [loaded] = [e for e in events if e["kind"] == kinds.GRAPH_LOADED]
-    assert loaded["payload"]["graph_version"] == "3116740b8d70" and loaded["payload"]["catalogue_version"]
-    excluded = [e for e in events if e["kind"] == kinds.EXCLUSION and e["parent_id"] == loaded["seq"]]
-    # the eval world's catalogue is a subset of the graph's metrics, so the other graph metrics are reported as not in it
-    assert len(excluded) == 233 - len(cube_world[0].deps.catalogue.metrics) and {e["payload"]["reason_code"] for e in excluded} == {"node_not_in_catalogue"}
+    metrics = len(cube_world[0].deps.catalogue.metrics)
+    assert loaded["payload"]["nodes"] == metrics and loaded["payload"]["catalogue_version"] and loaded["payload"]["graph_version"] != "3116740b8d70"
+    # prior edges that name a metric the catalogue lacks are left out and said so, never silently (the eval world has 79 metrics)
+    issues = [e["payload"] for e in events if e["kind"] == kinds.GRAPH_ISSUE]
+    assert {i["code"] for i in issues} <= {"prior_edge_not_in_catalogue", "node_status_broken"}
+    assert loaded["payload"]["issues"] == len(issues)
 
 
 async def test_log_lines_inside_the_call_carry_the_id_and_nothing_leaks_outside(cube_world, caplog):

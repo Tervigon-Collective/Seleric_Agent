@@ -83,6 +83,10 @@ class DiagnosisConfig:
     measurement_z: float = 5.0
     measurement_min_gap: float = 0.25
     measurement_min_scale: float = 0.02  # floor for the spread of a ratio that is constant on the history (log units)
+    # reviewed mechanism edges are confirmed on the brand's own pre-event history before they are used (plan D-56)
+    edge_alpha: float = 0.05  # false-discovery rate across the edges tested for one question (Benjamini-Hochberg: see plan §11)
+    edge_min_rows: int = 20  # shared history days an edge needs before it can be confirmed
+    edge_min_distinct: int = 4  # distinct values the source needs; fewer means there is no variation to learn from
     # False: a divergence is recorded on the report and the trace but changes no label and says nothing to the user.
     # Off until it is calibrated on live traffic: a co-measure pair fed by a lagging pipeline (the P&L feed) differs on the
     # latest days for a reason that is not a tracking loss (P3.2, plan §11).

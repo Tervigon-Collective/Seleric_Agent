@@ -174,6 +174,7 @@ async def gather(
         scope_tokens=plan.scope_tokens, baseline_days=list(plan.baseline_days),
         bridge_candidates=[m for m in bridge_pool if m in series],
         driver_paths=_driver_paths(plan, offered, series), candidates_from_graph=plan.drivers_from_graph,
+        driver_chains=_driver_chains(plan, offered), estimate_cap=plan.estimate_cap,
         measurement_pairs=_measurement_pairs(plan, series),
     )
     return gathered
@@ -212,3 +213,15 @@ def _measurement_pairs(plan: GatherPlan, series: dict[str, Series]) -> list[tupl
         (p.metric, p.peer, p.expected) for p in plan.subgraph.peers
         if p.kind == COMEASURE_KIND and p.metric in series and p.peer in series
     ]
+
+
+def _driver_chains(plan: GatherPlan, offered: Sequence[str]) -> dict[str, list[list[Any]]]:
+    """For each graph-chosen driver offered, the reviewed edges from it to the outcome's part (to be confirmed on the data)."""
+    if plan.subgraph is None or not plan.drivers_from_graph:
+        return {}
+    specs = {(e.source, e.target): e for e in plan.subgraph.edges}
+    by_metric = {c.metric: c for c in plan.subgraph.candidates}
+    return {
+        d: [[e.source, e.target, e.sign, e.lag_days[0], e.lag_days[1], e.confidence] for e in (specs[k] for k in by_metric[d].chain)]
+        for d in offered if d in by_metric
+    }

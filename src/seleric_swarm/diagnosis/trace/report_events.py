@@ -34,6 +34,16 @@ def emit_report_events(emit: Emit, report: DiagnosisReport) -> None:
                 },
                 head,
             )
+    for check in report.edge_checks:
+        emit(
+            kinds.HYPOTHESIS_RESOLVED,
+            {
+                "hypothesis": f"edge:{check.source}->{check.target}",
+                "status": {"verified": "supported", "definitional": "supported"}.get(check.status, "rejected" if check.status in ("wrong_sign", "not_confirmed") else "inconclusive"),
+                "label": "edge", "p_adj": check.p_adj, "lag": check.lag, "n_rows": check.n_rows,
+            },
+            None,
+        )
     for found in report.measurement:
         emit(
             kinds.HYPOTHESIS_RESOLVED,

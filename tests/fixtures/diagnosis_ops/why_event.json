@@ -607,7 +607,9 @@
     "status": "implicated"
    }
   ],
-  "measurement": []
+  "measurement": [],
+  "edge_checks": [],
+  "notes": []
  },
  "fixture_version": 1,
  "input": {

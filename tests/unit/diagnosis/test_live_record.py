@@ -100,10 +100,11 @@ async def test_a_budget_that_cuts_the_drivers_is_part_of_the_record(cube_world, 
     _, result, _ = await _run(cube_world)
     assert result.success and len(calls) > 2
     record = _record(ctx)
-    assert len(record.request["plan"]["drivers"]) == 2
+    assert record.request["plan"]["estimate_cap"] == 2  # the budget cut how many confirmed candidates are estimated
     replayed = await replay(RunRecord.from_json(record.to_json()))
     assert replayed.identical, replayed.divergence
-    assert len(result.provenance.source_metadata["diagnosis"]["drivers"]) <= 2
+    estimated = [d for d in result.provenance.source_metadata["diagnosis"]["drivers"] if d["status"] != "excluded"]
+    assert len(estimated) <= 2
 
 
 async def test_the_run_is_on_the_live_trace_once_and_in_the_order_the_engine_ran_it(cube_world):
