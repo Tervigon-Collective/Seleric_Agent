@@ -1,0 +1,47 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_7d05b1204b824a27b54d26285c545075",
+ "mission": "MS3-315a39d0af",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 46,
+ "elapsed_s": 42.902,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 13,
+  "measured": 13,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "metrics_query",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer: several Meta campaigns are spending material budget with few or no attributable orders \u2014 that is money likely wasted. Top offenders (last 30 days, scoped to Tilting Heads): campaigns with spend but zero attributed orders, and campaigns with extremely high spend-per-order.\n\nWhat changed / why it matters\n- No orders but spend: DOG TOY CS-10TH-OCT-CS \u2014 \u20b97,636; TH-073-SMARTSIP-3SEP \u2014 \u20b94,470; TH-222-WINGBIRD-12OCT \u2014 \u20b94,207; DOG HARNESS-CTL-12OCT \u2014 \u20b94,004; TH-270-SIPMATEPRO-19AUG \u2014 \u20b93,974. These spent without producing attributable orders in the period \u2014 immediate candidates to pause or audit.\n- Very high cost per order: DOG SHOES-10OCT-CS \u2014 spent \u20b99,507 for 1 order (spend/order \u20b99,507); DOG BEDS-12OCT-CS \u2014 \u20b98,790 per order; TH-073-SMARTSIP-11OCT \u2014 \u20b97,947 per order; TH-448-HANDSFREEDOGBELT-PMF-9SEP \u2014 \u20b96,959 per order; TH-429-TRIMGLOWNAILCUTTER-3SEP \u2014 \u20b95,547 per order. These are extremely inefficient compared with typical campaign economics.\n- Tracking gap: 110 orders have no campaign_name (unattributed) in the same window \u2014 this can hide where spend is actually converting and inflate apparent waste.\n\nWorth checking: pause or cap spend on the zero-conversion campaigns, and immediately check campaign \u2192 tracking / tagging and the unattributed orders (110) before broader cuts.\n\nBasis & scope: ad spend = paid_media (report_date); orders = orders with touchpoints (order_date); brand default = Tilting Heads. \n\nPeriod: 2026-09-16..2026-10-15 \u00b7 Currency: INR \u00b7 Data as of 2026-10-16\nNext: Drill into these campaigns by ad set and landing page?"
+}

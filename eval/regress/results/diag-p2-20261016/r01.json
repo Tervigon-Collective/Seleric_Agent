@@ -1,0 +1,58 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_b1ba349c90674695b9680ee2a4c15c49",
+ "mission": "MS3-c78dd84026",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 47,
+ "elapsed_s": 40.902,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 14,
+  "measured": 14,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "metrics_query",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 68609.59412790312, 'net_sales_prev_day': 78789.19141493266})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 68609.59412790312, 'net_sales_prev_day': 78789.19141493266})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 68609.59412790312, 'net_sales_prev_day': 78789.19141493266})"
+  }
+ ],
+ "answer": "Net sales fell from \u20b978,789 on 2026-10-14 to \u20b968,610 on 2026-10-15 (\u221212.9% day\u2011over\u2011day). This sits inside the metric\u2019s ordinary day\u2011to\u2011day range, and the diagnosis found no single upstream cause it can call causal; the data shows where the drop happened instead. (Figures are by order date.)\n\nWhat changed, in order of impact\n- Large increase in returns recorded on the books: P&L return revenue jumped from \u20b97,285 \u2192 \u20b91,27,612, which drove a big negative swing in P&L net sales and is the largest single accounting contributor to the net\u2011sales drop. This is an event on the P&L lines and materially reduced reported sales.\n- Lower volumes and price per order: Orders fell 39 \u2192 37 (\u22125.1%) and AOV fell \u20b92,545 \u2192 \u20b92,309 (\u22129.3%); together these reduced net sales by the remainder of the movement.\n- Ad spend was lower (\u20b947,393 \u2192 \u20b938,025, \u221219.8%) but stayed within its normal range and was tested/ruled out as an unusual cause; sessions and web events also moved together with sales but do not establish causation.\n\nWorth checking: investigate the large same\u2011day jump in return/cancel revenue (by product and by order) and the handful of campaigns/ad names that showed outsized swings (e.g. TH\u2011068\u2026 entries called out in the data).\n\nPeriod: 2026-10-15 \u00b7 Currency: INR \u00b7 Data as of 2026-10-16\nNext: Do you want me to drill into returns by product and order (or by campaign) for 2026-10-15?"
+}

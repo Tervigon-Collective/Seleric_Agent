@@ -1,0 +1,71 @@
+{
+ "n": 6,
+ "aspect": "test_agent6",
+ "q": "Break that down by product and channel.",
+ "thread": "thread_84e283d8d54842809fa8f8dd3d1accd8",
+ "mission": "MS3-cf69ac10f2",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 34,
+ "elapsed_s": 29.004,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 20,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [
+   "63%",
+   "63.6%",
+   "63.0%",
+   "91.8%",
+   "32.1%",
+   "30.5%",
+   "0.7%"
+  ],
+  "numbers": 22,
+  "measured": 15,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: product breakdown"
+  },
+  {
+   "ok": true,
+   "what": "tool: channel breakdown"
+  },
+  {
+   "ok": true,
+   "what": "tool: reuses prior scope (drilldown or same window)"
+  }
+ ],
+ "answer": "High-level: the week-on-week decline is concentrated in paid social and shopping channels \u2014 Instagram and Facebook together fell ~63% each and Google Shopping collapsed \u2014 while unattributed sales stayed flat. This shows the volume loss came from ad-driven channels rather than organic/attributed holdouts.\n\nWhat changed (by channel, order-date basis)\n- Instagram feed: \u20b92,95,842 \u2192 \u20b91,07,704 (2026-10-05..10-11 \u2192 2026-10-12..10-16), \u221263.6% \u2014 largest single drop in sales and orders (161 \u2192 53).  \n- Facebook feed: \u20b961,714 \u2192 \u20b922,833, \u221263.0% \u2014 similar proportional decline to Instagram, indicating paid\u2011social pullback.  \n- Google Shopping: \u20b920,341 \u2192 \u20b91,673, \u221291.8% \u2014 near disappearance of Shopping revenue; a strong contributor to the total fall.  \n- Google Performance Max & Search: PMax \u20b964,373 \u2192 \u20b943,704 (\u221232.1%); Search \u20b957,679 \u2192 \u20b940,062 (\u221230.5%) \u2014 smaller but material drops in search channels.  \n- Unattributed: \u20b932,615 \u2192 \u20b932,854, +0.7% \u2014 effectively flat, so non\u2011attributed/organic demand held up.  \n- WhatsApp and a few minor channels: present in prior week (\u20b98,787 for WhatsApp) but not attributed in the current partial week \u2014 effectively 0 in the reported window.\n\nWhy it matters\n- Paid channels that drove most volume (IG, FB, Shopping) reduced delivery or budget, which explains most of the aggregate sales and order loss; steady unattributed sales imply product demand still exists off\u2011ads.  \n- Because today\u2019s window (2026-10-12..10-16) is partial through 16 Oct, totals may rise slightly as data finalises, but the channel pattern is clear.\n\nUnverified / missing: product-level breakdown was not run (need product net sales (P&L basis) or product net revenue); I haven\u2019t yet confirmed campaign-level pauses or ad spend by channel for the same windows.\n\nPeriod: 2026-10-05..2026-10-11 vs 2026-10-12..2026-10-16 \u00b7 Currency: INR \u00b7 Data as of 2026-10-16\nNext: Break down net sales by product (product net sales (P&L basis)) for the two weeks to show which SKUs lost the most revenue."
+}
