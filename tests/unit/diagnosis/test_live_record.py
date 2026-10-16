@@ -304,3 +304,60 @@ def test_forwarded_events_land_under_the_live_trace_with_their_parents_mapped():
     assert [e["kind"] for e in mine] == [kinds.INVESTIGATION_STARTED, kinds.OPERATOR_STARTED, kinds.OPERATOR_STARTED, kinds.OPERATOR_FINISHED, kinds.OPERATOR_FINISHED]
     analyse, is_real, closed = mine[1], mine[2], mine[3]
     assert is_real["parent_id"] == analyse["seq"] and closed["parent_id"] == is_real["seq"]
+
+
+# ----------------------------------------------------------------------------- retention (D-49)
+def _record_artifact(store, record_id: str, *, thread: str, age_days: int, kind: str = ARTIFACT_TYPE):
+    from datetime import timedelta
+
+    from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+
+    store.put(Artifact(
+        id=record_id, workspace_id="w", artifact_type=kind, payload={}, classification="derived", evidence_ids=["e"],
+        provenance=ArtifactProvenance(evidence_ids=["e"], calculation_version="t"), mission_id="m", thread_id=thread,
+        created_at=datetime.now(UTC) - timedelta(days=age_days),
+    ))
+
+
+def test_records_leave_with_their_thread_and_only_records():
+    from seleric_swarm.diagnosis.adapters.runstore_artifacts import purge_thread
+    from seleric_swarm.state.artifacts import InMemoryArtifactStore
+
+    store = InMemoryArtifactStore()
+    _record_artifact(store, "a", thread="t1", age_days=1)
+    _record_artifact(store, "b", thread="t2", age_days=1)
+    _record_artifact(store, "c", thread="t1", age_days=1, kind="evidence")
+    assert purge_thread(store, "t1") == 1
+    assert store.get("a") is None and store.get("b") is not None and store.get("c") is not None
+
+
+def test_records_expire_after_ninety_days_and_a_save_sweeps_them():
+    from seleric_swarm.diagnosis.adapters.runstore_artifacts import (
+        RETENTION_DAYS,
+        purge_expired,
+    )
+    from seleric_swarm.state.artifacts import InMemoryArtifactStore
+
+    assert RETENTION_DAYS == 90
+    store = InMemoryArtifactStore()
+    _record_artifact(store, "old", thread="t", age_days=91)
+    _record_artifact(store, "fresh", thread="t", age_days=89)
+    _record_artifact(store, "old_evidence", thread="t", age_days=400, kind="evidence")
+    assert purge_expired(store) == 1
+    assert store.get("old") is None and store.get("fresh") is not None and store.get("old_evidence") is not None
+
+
+async def test_a_diagnosis_sweeps_expired_records_and_keeps_its_own(cube_world):
+    ctx, _ = cube_world
+    _record_artifact(ctx.deps.artifact_store, "expired", thread="t", age_days=100)
+    _, result, _ = await _run(cube_world)
+    assert result.success
+    assert ctx.deps.artifact_store.get("expired") is None
+    assert len([a for a in ctx.deps.artifact_store.list_for_mission(ctx.deps.mission_id) if a.artifact_type == ARTIFACT_TYPE]) == 1
+
+
+def test_a_delete_needs_a_filter():
+    from seleric_swarm.state.artifacts import InMemoryArtifactStore
+
+    with pytest.raises(ValueError, match="thread or a cut-off"):
+        InMemoryArtifactStore().delete_where(ARTIFACT_TYPE)

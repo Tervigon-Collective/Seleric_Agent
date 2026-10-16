@@ -22,6 +22,7 @@ import logging
 import queue
 import threading
 from collections import OrderedDict
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -88,6 +89,27 @@ class PostgresV3ArtifactStore(InMemoryArtifactStore):
         self._missions.move_to_end(stored.mission_id)
         self._evict()
         return stored
+
+    def delete_where(
+        self, artifact_type: str, *, thread_id: str | None = None, created_before: datetime | None = None
+    ) -> int:
+        """Remove the rows too, not only the cached copies. Queued writes are flushed first so a row still in the writer's
+        queue cannot appear after the delete."""
+        if thread_id is None and created_before is None:
+            raise ValueError("delete_where needs a thread or a cut-off date")
+        if not self.flush():
+            raise RuntimeError("artifact writes are still queued; not deleting around them")
+        clauses, params = ["artifact_type=:t"], {"t": artifact_type}
+        if thread_id is not None:
+            clauses.append("thread_id=:thread")
+            params["thread"] = thread_id
+        if created_before is not None:
+            clauses.append("created_at < :before")
+            params["before"] = created_before  # type: ignore[assignment]
+        with self._engine.begin() as conn:
+            deleted = conn.execute(text(f"DELETE FROM v3_artifacts WHERE {' AND '.join(clauses)}"), params).rowcount
+        super().delete_where(artifact_type, thread_id=thread_id, created_before=created_before)
+        return int(deleted or 0)
 
     def _write_loop(self) -> None:
         while True:

@@ -1,0 +1,47 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_017809a1b4b84263a3f0ad8bcac4f478",
+ "mission": "MS3-4e1f9a23f5",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 26,
+ "elapsed_s": 19.939,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "30,000"
+  ],
+  "numbers": 15,
+  "measured": 14,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Yes \u2014 several Meta campaigns spent material budgets but earned net ROAS below 1 (losing money on ads). Top offenders by spend (last 30 days, order-date P&L basis):\n\n- TH-222-WINGBIRD-23SEP \u2014 Ad spend \u20b973,105; Net ROAS 0.7. Large spend with <1 ROAS means ads cost more than the gross contribution they drove.  \n- TH-336-PAWTECH-26SEP \u2014 Ad spend \u20b966,632; Net ROAS 0.8. High spend, negative return on ad dollars.  \n- TH-149-SCRATCHLOUNGE-25SEP \u2014 Ad spend \u20b957,333; Net ROAS 0.9. Near-break-even but still below 1.0.  \n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b956,657; Net ROAS 0.5. Big spend, very poor efficiency.  \n- CAT TOY CS-26SEP \u2014 Ad spend \u20b933,853; Net ROAS 0.5. Moderate spend, low return.\n\nNote: the query hit a row limit and some high-spend campaign rows do not have a matching net ROAS in the result (they\u2019re missing, not zero). Example: TH-383-SUSPENDER-26SEP-ADV+ (ad spend \u20b973,137) appears in spend results but its ROAS row is not present in the net ROAS part. Re-checking those unmatched campaigns is needed before pausing them.\n\nWorth checking: immediately pause or cut budget on campaigns with ROAS <0.7 and >\u20b930k spend, and re-run a matched query for the missing campaign ROAS rows to avoid false positives.\n\nPeriod: 2026-09-16..2026-10-15 \u00b7 Currency: INR \u00b7 Data as of 2026-10-16\nNext: Run a matched report for all Meta campaigns with ad spend > \u20b930,000 showing their net ROAS (to confirm and catch the missing rows)?"
+}

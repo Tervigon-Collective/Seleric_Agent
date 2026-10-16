@@ -208,6 +208,14 @@ class FileV3ArtifactStore(InMemoryArtifactStore):
         self._persist()
         return stored
 
+    def delete_where(
+        self, artifact_type: str, *, thread_id: str | None = None, created_before: datetime | None = None
+    ) -> int:
+        count = super().delete_where(artifact_type, thread_id=thread_id, created_before=created_before)
+        if count:
+            self._persist()
+        return count
+
 
 @dataclass(frozen=True)
 class FilePaths:

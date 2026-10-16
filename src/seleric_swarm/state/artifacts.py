@@ -14,6 +14,7 @@ restarts. Evidence artifacts are immutable once put (non-negotiable rule 8):
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from seleric_swarm.conversations.contracts import Artifact
@@ -27,6 +28,13 @@ class ArtifactStore(Protocol):
     def get_many(self, artifact_ids: list[str]) -> list[Artifact]: ...
 
     def list_for_mission(self, mission_id: str) -> list[Artifact]: ...
+
+    def delete_where(
+        self, artifact_type: str, *, thread_id: str | None = None, created_before: datetime | None = None
+    ) -> int:
+        """Remove the artifacts of one type, those of a thread and/or older than a moment; returns how many. Needs at
+        least one of the two filters. Artifacts are immutable, so this is the only way one leaves the store."""
+        ...
 
 
 class InMemoryArtifactStore:
@@ -61,3 +69,17 @@ class InMemoryArtifactStore:
             if a.thread_id == thread_id and (not workspace_id or a.workspace_id == workspace_id)
         ]
         return sorted(found, key=lambda a: a.created_at, reverse=True)
+
+    def delete_where(
+        self, artifact_type: str, *, thread_id: str | None = None, created_before: datetime | None = None
+    ) -> int:
+        if thread_id is None and created_before is None:
+            raise ValueError("delete_where needs a thread or a cut-off date")
+        gone = [
+            a.id for a in self._by_id.values()
+            if a.artifact_type == artifact_type and (thread_id is None or a.thread_id == thread_id)
+            and (created_before is None or a.created_at < created_before)
+        ]
+        for artifact_id in gone:
+            del self._by_id[artifact_id]
+        return len(gone)

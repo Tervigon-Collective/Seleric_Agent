@@ -25,6 +25,7 @@ from seleric_swarm.api.async_missions import (
     run_mission_job,
     seed_running_mission,
 )
+from seleric_swarm.api.v3_state import get_v3_artifact_store
 from seleric_swarm.causal import estimate_pool
 from seleric_swarm.conversations.blobs import (
     BlobStore,
@@ -72,6 +73,7 @@ from seleric_swarm.conversations.contracts import (
 from seleric_swarm.conversations.events import ActivityEventSink, InMemoryEventNotifier
 from seleric_swarm.conversations.privacy import event_for_principal
 from seleric_swarm.conversations.repositories import ConversationRepositories
+from seleric_swarm.diagnosis.adapters.runstore_artifacts import purge_thread
 from seleric_swarm.recovery import (
     InProcessRunQueue,
     RunExecutionResult,
@@ -363,11 +365,18 @@ def delete_thread(thread_id: str, request: Request) -> Thread:
     repositories = _repositories(_runtime(request))
     thread = _owned_thread(repositories, _principal(request), thread_id)
     now = datetime.now(UTC)
-    return repositories.threads.update(
+    deleted = repositories.threads.update(
         thread.model_copy(
             update={"status": ThreadStatus.DELETED, "deleted_at": now, "updated_at": now}
         )
     )
+    # A diagnosis run record holds the brand's raw series: it goes with the thread (D-49). A failure is logged loudly and
+    # does not undo the deletion; the record still expires with the retention window.
+    try:
+        purge_thread(get_v3_artifact_store(), thread_id)
+    except Exception:
+        logging.getLogger(__name__).exception("run_records_not_purged thread_id=%s", thread_id)
+    return deleted
 
 
 @router.post("/threads/{thread_id}/restore")

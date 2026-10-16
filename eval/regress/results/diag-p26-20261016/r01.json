@@ -1,0 +1,58 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_51c98f6a2b904192817eb579caa622ad",
+ "mission": "MS3-c0bcdc7d6d",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 60,
+ "elapsed_s": 54.325,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 17,
+  "measured": 17,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 68609.59412790312, 'net_sales_prev_day': 78789.19141493266})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 68609.59412790312, 'net_sales_prev_day': 78789.19141493266})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 68609.59412790312, 'net_sales_prev_day': 78789.19141493266})"
+  }
+ ],
+ "answer": "Net sales fell yesterday (2026-10-15) to \u20b968,610 from \u20b978,789 on 2026-10-14, a drop of 12.9% \u2014 it\u2019s a measurable decline but the diagnosis found no single data-backed cause; the day sits inside the usual day-to-day range for net sales so this looks like ordinary variation rather than a clear anomaly.\n\nWhat changed (largest impacts first)\n- Orders fell 39 \u2192 37 (\u22125.1%), and Net AOV fell \u20b92,020 \u2192 \u20b91,854 (\u22128.2%): together these explain the net sales drop (orders \u00d7 net AOV \u2192 net sales).\n- Units per order fell sharply 1.51 \u2192 1.19 (\u221221.4%), reducing volume and contributing strongly to lower total sales.\n- Sessions dropped 4,041 \u2192 3,357 and web events also fell; traffic and engagement moved with sales but the data cannot prove direction (they may be reacting, not causing).\n- P&L ad spend (allocated) was lower \u20b947,393 \u2192 \u20b938,025 (\u221219.8%) but the diagnostic tests did not label ad spend as a supported cause for the sales drop once weekday/trend controls were applied.\n\nBottom line: the drop is driven by fewer orders and lower AOV/units-per-order; the statistical diagnosis found no single supported cause and treated the change as within normal variation.\n\nWorth checking: campaign- and product-level orders and units-per-order (which product bundles or SKUs drove the units-per-order fall).\n\nPeriod: 2026-10-15 \u00b7 Currency: INR \u00b7 Data as of 2026-10-16\nNext: Drill into campaign and product contributors to the orders and units-per-order drop?"
+}

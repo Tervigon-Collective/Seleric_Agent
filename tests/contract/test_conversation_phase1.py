@@ -192,8 +192,22 @@ def test_soft_delete_restore_and_cursor_pages(monkeypatch):
     )
     assert len(second.json()["items"]) == 1
 
+    # A diagnosis run record of the thread goes with it (D-49); another thread's stays.
+    from datetime import UTC, datetime
+
+    from seleric_swarm.api.v3_state import get_v3_artifact_store
+    from seleric_swarm.conversations.contracts import ArtifactProvenance
+
+    store = get_v3_artifact_store()
+    for artifact_id, thread in (("diagrun_a", ids[0]), ("diagrun_b", ids[1])):
+        store.put(Artifact(
+            id=artifact_id, workspace_id="workspace_1", artifact_type="diagnosis_run_record", payload={},
+            classification="derived", evidence_ids=["e"], mission_id="m", thread_id=thread,
+            provenance=ArtifactProvenance(evidence_ids=["e"], calculation_version="t"), created_at=datetime.now(UTC),
+        ))
     deleted = client.delete(f"/v1/threads/{ids[0]}")
     assert deleted.json()["status"] == "DELETED"
+    assert store.get("diagrun_a") is None and store.get("diagrun_b") is not None
     assert client.get(f"/v1/threads/{ids[0]}").status_code == 404
     restored = client.post(f"/v1/threads/{ids[0]}/restore")
     assert restored.json()["status"] == "ACTIVE"
