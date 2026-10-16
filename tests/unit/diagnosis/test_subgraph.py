@@ -13,7 +13,14 @@ import pytest
 
 from seleric_swarm.diagnosis.adapters.catalogue_graph import VendoredGraphAdapter
 from seleric_swarm.diagnosis.domain.gather import GatherPlan
-from seleric_swarm.diagnosis.domain.graph import Direction, Edge, EdgeKind, Graph, Node
+from seleric_swarm.diagnosis.domain.graph import (
+    SAME_QUANTITY_KINDS,
+    Direction,
+    Edge,
+    EdgeKind,
+    Graph,
+    Node,
+)
 from seleric_swarm.diagnosis.domain.subgraph import Subgraph, confidence_rank
 from seleric_swarm.diagnosis.graph.edge_policy import (
     ACCOUNT,
@@ -115,6 +122,33 @@ def test_a_path_is_as_strong_as_its_weakest_edge_and_its_lag_and_sign_accumulate
     r = {c.metric: c for c in build_subgraph(graph, "y").candidates}["r"]
     assert (r.path_confidence, r.lag_days, r.direction, r.distance) == ("moderate", (2, 4), "+", 2)
     assert confidence_rank("structural") > confidence_rank("strong") > confidence_rank("moderate") > confidence_rank("other")
+
+
+def test_candidates_are_offered_root_first_and_a_near_identity_is_walked_through_not_offered():
+    graph = _graph(
+        ["y", "a", "mid", "lever", "late", "part", "identity"],
+        [_edge("a", "y", EdgeKind.MECHANISM), _edge("mid", "a", EdgeKind.MECHANISM), _edge("lever", "mid", EdgeKind.MECHANISM),
+         _edge("late", "y", EdgeKind.MECHANISM), _edge("part", "late", EdgeKind.MECHANISM, "structural"),
+         _edge("identity", "a", EdgeKind.MECHANISM, "structural"), _edge("lever", "identity", EdgeKind.MECHANISM)],
+        tiers={"lever": 1, "mid": 3, "a": 4, "late": 4, "part": 6, "identity": 6},
+    )
+    sub = build_subgraph(graph, "y")
+    assert _ids(sub) == ["lever", "mid", "a", "late"]  # tier first (most upstream), then nearest, then id
+    assert [(e.metric, e.reason_code, e.check_value) for e in sub.exclusions] == [
+        ("identity", "near_identity_of_mechanism", "a"), ("part", "near_identity_of_mechanism", "late"),
+    ]
+    assert {c.metric: c.distance for c in sub.candidates}["lever"] == 3  # reached through `mid` and through `identity`
+
+
+def test_an_outcome_the_graph_does_not_cover_gets_no_subgraph_and_the_tool_falls_back():
+    from seleric_swarm.diagnosis.adapters.live_subgraph import plan_subgraph, subgraph_drivers
+    from seleric_swarm.diagnosis.domain.graph import LoadedGraph
+
+    loaded = VendoredGraphAdapter().load()
+    assert plan_subgraph(loaded, "no_such_metric", {}, (), lambda m: True) is None
+    assert plan_subgraph(None, "net_sales", {}, (), lambda m: True) is None
+    sub = build_subgraph(loaded.graph, "net_sales")
+    assert subgraph_drivers(sub, 3) == [c.metric for c in sub.candidates[:3]] and isinstance(loaded, LoadedGraph)
 
 
 def test_a_feedback_edge_counts_only_when_the_reaction_takes_a_day():
@@ -257,7 +291,7 @@ def test_the_events_are_small_and_the_exclusions_hang_under_the_summary():
 
 
 # ---- the live tool: the subgraph is frozen in the plan, shown on the trace, and changes nothing else (shadow mode)
-async def _diagnose(cube_world):
+async def _diagnose(cube_world, metric="net_sales"):
     from datetime import timedelta
 
     from seleric_swarm.agent.progress import clear_progress_sink, set_progress_sink
@@ -271,7 +305,7 @@ async def _diagnose(cube_world):
     set_progress_sink("t", lambda kind, summary, payload: seen.append((kind, payload)))
     start = datetime(2026, 9, 27, tzinfo=UTC)
     try:
-        result = await diagnosis.diagnose_metric_change(ctx, "net_sales", event_start=start, event_end=start + timedelta(days=2))
+        result = await diagnosis.diagnose_metric_change(ctx, metric, event_start=start, event_end=start + timedelta(days=2))
     finally:
         clear_progress_sink("t")
     mine = result.provenance.source_metadata["investigation_id"]
@@ -282,30 +316,35 @@ async def _diagnose(cube_world):
     return result, RunRecord.from_dict(artifact.payload), [p["investigation"] for k, p in seen if k.startswith("diag.")]
 
 
-async def test_a_live_diagnosis_freezes_the_subgraph_in_its_plan_and_shows_it_on_the_trace(cube_world, monkeypatch):
+async def test_a_live_diagnosis_freezes_the_subgraph_offers_its_candidates_and_shows_it_on_the_trace(cube_world, monkeypatch):
     from seleric_swarm.diagnosis.trace.run import replay
     from seleric_swarm.toolsets import diagnosis
 
     result, record, live = await _diagnose(cube_world)
     assert result.success
     plan = GatherPlan.from_dict(record.request["plan"])
-    assert plan.subgraph is not None and plan.subgraph.outcome == "net_sales"
+    assert plan.subgraph is not None and plan.subgraph.outcome == "net_sales" and plan.drivers_from_graph
     built = [e for e in record.events if e["kind"] == kinds.SUBGRAPH_BUILT]
     assert [e["payload"]["digest"] for e in built] == [plan.subgraph.digest]
     assert built[0]["payload"]["graph_version"] == "3116740b8d70"
     assert [e["payload"] for e in live if e["kind"] == kinds.SUBGRAPH_BUILT] == [e["payload"] for e in built]
     # what the catalogue lacks and the engine cannot estimate is set aside with a reason, never silently dropped
-    assert {e.reason_code for e in plan.subgraph.exclusions} <= {
-        "not_in_catalogue", "not_additive", "arithmetic_part_of_outcome", "feedback_without_lag",
+    assert {e.reason_code.removeprefix("near_identity_of_") for e in plan.subgraph.exclusions} <= {
+        "not_in_catalogue", "not_additive", "arithmetic_part_of_outcome", "feedback_without_lag", "mechanism",
     }
     assert all(c.metric in {m.id for m in cube_world[0].deps.catalogue.metrics} for c in plan.subgraph.candidates)
     assert (await replay(record)).identical
 
-    # shadow mode: without the subgraph the plan's drivers, and the answer's numbers, are the same
+    # the drivers the engine is given are the subgraph's candidates in its order (D-51), none of them a near-identity
+    # of what it feeds; without a subgraph the tool falls back to the catalogue's lineage and says so
+    cap = diagnosis.P.DIAG_MAX_DRIVERS
+    assert plan.drivers[:cap] == tuple(c.metric for c in plan.subgraph.candidates[:cap])
+    assert [c.tier for c in plan.subgraph.candidates] == sorted(c.tier for c in plan.subgraph.candidates)
+    assert all(c.edge_confidence != "structural" for c in plan.subgraph.candidates)
     monkeypatch.setattr(diagnosis, "plan_subgraph", lambda *args, **kwargs: None)
     bare_result, bare_record, _ = await _diagnose(cube_world)
-    assert bare_record.request["plan"]["drivers"] == record.request["plan"]["drivers"]
-    assert bare_result.provenance.source_metadata["diagnosis"]["verdict"] == result.provenance.source_metadata["diagnosis"]["verdict"]
+    assert bare_result.success and "subgraph" not in bare_record.request["plan"]
+    assert "candidate causes were chosen from the catalogue's lineage, not the reviewed graph" in bare_result.provenance.source_metadata["diagnosis"]["data_quality"]
     assert not [e for e in bare_record.events if e["kind"] == kinds.SUBGRAPH_BUILT]
     assert (await replay(bare_record)).identical  # a plan without a subgraph replays as before
 
@@ -358,7 +397,7 @@ async def test_diff_finds_the_first_section_that_differs(cube_world, monkeypatch
     _, b, _ = await _diagnose(cube_world)
     sections = diff.diff_records(a, b)
     assert "subgraph: only in A" in sections["plan and subgraph"] and "subgraph_built: 1 != 0" in sections["events"]
-    assert "report" not in sections  # same numbers: only the new subgraph differs
+    assert any(line.startswith("plan drivers") for line in sections["plan and subgraph"])  # the fallback offers other metrics
     c = replace(a, report={**(a.report or {}), "verdict": "changed"})
     assert any("verdict" in line for line in diff.diff_records(a, c)["report"])
     pa, pb = tmp_path / "a.json", tmp_path / "b.json"
@@ -380,3 +419,28 @@ async def test_a_subgraph_that_cannot_be_built_is_reported_and_does_not_fail_the
     assert result.success and "subgraph" not in record.request["plan"] and record.subgraph == {}
     failed = [e["payload"] for e in live if e["kind"] == kinds.OPERATOR_FAILED and e["payload"]["operator"] == "build_subgraph"]
     assert failed and failed[0]["error_type"] == "RuntimeError"
+
+
+async def test_a_metric_the_graph_gives_no_candidates_for_falls_back_to_the_lineage_and_says_so(cube_world):
+    from seleric_swarm.diagnosis.trace.run import replay
+
+    result, record, _ = await _diagnose(cube_world, "discounts")
+    plan = GatherPlan.from_dict(record.request["plan"])
+    assert result.success and plan.subgraph is not None and not plan.subgraph.candidates
+    assert not plan.drivers_from_graph and plan.drivers  # the lineage proposed them
+    assert "candidate causes were chosen from the catalogue's lineage, not the reviewed graph" in result.provenance.source_metadata["diagnosis"]["data_quality"]
+    assert (await replay(record)).identical
+
+
+def test_for_every_outcome_in_the_graph_no_candidate_is_the_same_quantity_as_it_or_a_part_of_it():
+    """P3.3 on the whole vendored graph: an allocated (product) metric, a twin, a co-measure or a subset of the outcome or
+    of anything that builds it is never offered as its cause, and every metric set aside carries a reason."""
+    graph = VendoredGraphAdapter().load().graph
+    for outcome in graph.nodes:
+        sub = build_subgraph(graph, outcome)
+        protected = {outcome, *sub.accounting}
+        for c in sub.candidates:
+            assert not graph.nodes[c.metric].allocated, (outcome, c.metric)
+            same = [e for e in (*graph.edges_into(c.metric), *graph.edges_from(c.metric)) if e.kind in SAME_QUANTITY_KINDS]
+            assert not [e for e in same if {e.source, e.target} & protected - {c.metric}], (outcome, c.metric)
+        assert all(e.reason_code for e in sub.exclusions)

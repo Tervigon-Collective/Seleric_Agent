@@ -265,6 +265,12 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta], *, cfg: Diagn
             )
     causes = [f for f in r.drivers if f.status == "implicated" and f.classification in ("supported_cause", "likely_contributor")]
     assoc = [f for f in r.drivers if f.status == "implicated" and f.classification == "correlation"]
+    for m in (f for f in r.measurement if f.status == "diverged" and cfg.measurement_acts):
+        out.append(
+            f"MEASUREMENT: {_label(m.metric, lineage)} and {_label(m.peer, lineage)} count the same events in two systems and "
+            f"they disagree on the event days ({m.reason}). Check how {_label(m.metric, lineage)} is recorded before looking for "
+            "a business cause."
+        )
     if causes:
         for f in causes:
             kind = "a cause" if f.classification == "supported_cause" else "a likely contributor"
@@ -299,6 +305,8 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta], *, cfg: Diagn
                             "moved the other way, so they would have pushed it the opposite direction"),
         "no_effect": ("shows no effect on it once weekday, trend and the previous day are accounted for",
                       "show no effect on it once weekday, trend and the previous day are accounted for"),
+        "path_did_not_move": ("would act on it through a metric that did not change unusually, so it does not explain it",
+                              "would act on it through a metric that did not change unusually, so they do not explain it"),
     }
     parts = []
     for code, (one, many) in groups.items():

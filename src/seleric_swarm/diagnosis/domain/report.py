@@ -130,10 +130,30 @@ class DriverFinding:
     refutations: list[dict[str, Any]] = field(default_factory=list)
     naive_association: dict[str, Any] = field(default_factory=dict)
     inseparable_from: list[str] = field(default_factory=list)
-    ruled_out_because: Literal["", "no_effect", "did_not_move", "wrong_direction"] = ""
+    ruled_out_because: Literal["", "no_effect", "did_not_move", "wrong_direction", "path_did_not_move"] = ""
     n_rows: int = 0
     estimator: str = ""
     assumptions: list[str] = field(default_factory=list)
+
+
+@dataclass
+class MeasurementFinding:
+    """Two measurements of one quantity that the reviewed graph says count the same events (a co-measure pair), compared
+    on the event days against how they usually relate. ``diverged`` means the data of one of them is the suspect, ahead of
+    any behavioural cause."""
+
+    metric: str
+    peer: str
+    status: Literal["diverged", "agrees", "insufficient_data"]
+    reason: str
+    expected: str = ""
+    usual_ratio: float | None = None  # metric / peer on normal days (median)
+    event_ratio: float | None = None  # the same on the event days
+    gap: float | None = None  # event ratio against the usual one, relative
+    z: float | None = None  # that gap in units of the ratio's own day-to-day spread
+    metric_move: float | None = None  # metric on the event days against its own usual level, relative
+    peer_move: float | None = None
+    n_history: int = 0
 
 
 @dataclass
@@ -172,6 +192,8 @@ class DiagnosisReport:
     # "yesterday vs the day before" had the day before for every driver and
     # printed "No data available" for yesterday (live 2026-10-05 MS3-5775d28dfd).
     event_values: dict[str, float] = field(default_factory=dict)
+    # Co-measure pairs of the outcome and its parts, compared on the event days (P3.2); empty when the graph names none.
+    measurement: list[MeasurementFinding] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         from dataclasses import asdict

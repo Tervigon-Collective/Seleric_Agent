@@ -245,3 +245,19 @@ def test_the_eval_scoring_guard_watches_the_new_package_too():
     import runner
 
     assert "src/seleric_swarm/diagnosis" in runner.ENGINE_PATHS
+
+
+
+def test_a_record_from_another_engine_version_is_refused_not_reported_as_a_divergence(file_adapter, tmp_path, capsys):
+    from dataclasses import replace
+
+    from seleric_swarm.diagnosis.trace.run import ENGINE_VERSION, RecordFromAnotherEngine
+
+    record = asyncio.run(_record(file_adapter))
+    older = replace(record, versions={**record.versions, "engine": "diagnosis-core/0"})
+    with pytest.raises(RecordFromAnotherEngine) as refused:
+        asyncio.run(replay(older))
+    assert "diagnosis-core/0" in str(refused.value) and ENGINE_VERSION in str(refused.value)
+    path = tmp_path / "older.json"
+    path.write_text(older.to_json(), encoding="utf-8")
+    assert replay_cli([str(path)]) == 2 and "RecordFromAnotherEngine" in capsys.readouterr().err

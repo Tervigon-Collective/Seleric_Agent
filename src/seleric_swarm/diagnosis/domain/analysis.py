@@ -21,6 +21,7 @@ from seleric_swarm.diagnosis.domain.report import (
     DimensionFinding,
     DriverFinding,
     EventSummary,
+    MeasurementFinding,
 )
 from seleric_swarm.diagnosis.domain.window import EventWindow
 
@@ -83,3 +84,4 @@ class WhyResult:
     drivers: list[DriverFinding] = field(default_factory=list)
     implicated: list[DriverFinding] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
+    measurement: list[MeasurementFinding] = field(default_factory=list)

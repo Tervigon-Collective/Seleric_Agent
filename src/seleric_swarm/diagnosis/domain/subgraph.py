@@ -13,9 +13,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from seleric_swarm.diagnosis.domain.canonical import fingerprint
+from seleric_swarm.diagnosis.domain.graph import EdgeKind
 
 # Strength of a reviewed edge, weakest to strongest. A confidence the graph uses that is not listed ranks below all.
 CONFIDENCE_ORDER = ("moderate", "strong", "structural")
+# The peer kind whose divergence is a finding in itself (the same events counted by another system). A twin is the same
+# quantity on another date basis or grain and legitimately differs day to day.
+COMEASURE_KIND = EdgeKind.CO_MEASURE.value
+# An edge the reviewers marked as a near-identity (the source is built into the target): the source is a part of what
+# the target is, so it is walked through and not offered as a cause of it (D-51).
+NEAR_IDENTITY = "structural"
 
 
 def confidence_rank(confidence: str) -> int:
@@ -27,7 +34,7 @@ class Candidate:
     """A metric that can move the outcome, reached from the accounting tree by ``distance`` reviewed edges.
 
     ``via`` is the node its first edge points into (one step nearer the outcome) and ``anchor`` the outcome or
-    accounting-tree node the path ends in; ``kind`` is the first edge's kind; ``path_confidence`` is the weakest edge on
+    accounting-tree node the path ends in (``path`` lists the nodes from ``via`` to ``anchor``); ``kind`` and ``edge_confidence`` are the first edge's; ``path_confidence`` is the weakest edge on
     the path; ``lag_days`` is the path's total lag range and ``direction`` the sign a rise in the metric gives the
     anchor (``+``, ``-`` or ``+/-`` when it varies or is not stated)."""
 
@@ -36,16 +43,23 @@ class Candidate:
     via: str
     anchor: str
     kind: str
+    edge_confidence: str
     path_confidence: str
     direction: str
     lag_days: tuple[int, int]
     tier: int
+    path: tuple[str, ...] = ()  # the metrics between this one and the anchor, nearest first, the anchor last
+
+    @property
+    def intermediates(self) -> tuple[str, ...]:
+        """The metrics the effect must pass through to reach the anchor (the anchor itself is part of the outcome)."""
+        return self.path[:-1]
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "metric": self.metric, "distance": self.distance, "via": self.via, "anchor": self.anchor,
-            "kind": self.kind, "path_confidence": self.path_confidence, "direction": self.direction,
-            "lag_days": list(self.lag_days), "tier": self.tier,
+            "kind": self.kind, "edge_confidence": self.edge_confidence, "path_confidence": self.path_confidence, "direction": self.direction,
+            "lag_days": list(self.lag_days), "tier": self.tier, "path": list(self.path),
         }
 
     @classmethod
@@ -53,8 +67,9 @@ class Candidate:
         lag = raw["lag_days"]
         return cls(
             metric=str(raw["metric"]), distance=int(raw["distance"]), via=str(raw["via"]), anchor=str(raw["anchor"]),
-            kind=str(raw["kind"]), path_confidence=str(raw["path_confidence"]), direction=str(raw["direction"]),
-            lag_days=(int(lag[0]), int(lag[1])), tier=int(raw["tier"]),
+            kind=str(raw["kind"]), edge_confidence=str(raw.get("edge_confidence", raw["path_confidence"])),
+            path_confidence=str(raw["path_confidence"]), direction=str(raw["direction"]),
+            lag_days=(int(lag[0]), int(lag[1])), tier=int(raw["tier"]), path=tuple(str(m) for m in raw.get("path", ())),
         )
 
 

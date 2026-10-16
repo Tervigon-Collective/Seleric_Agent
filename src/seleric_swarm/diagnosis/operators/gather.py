@@ -19,6 +19,7 @@ from seleric_swarm.diagnosis.domain.gather import Gathered, GatherPlan
 from seleric_swarm.diagnosis.domain.inputs import DiagnosisInput
 from seleric_swarm.diagnosis.domain.lineage import MetricMeta
 from seleric_swarm.diagnosis.domain.numeric import Series
+from seleric_swarm.diagnosis.domain.subgraph import COMEASURE_KIND
 from seleric_swarm.diagnosis.domain.types import Scope, SeriesRequest, SeriesResult, Window
 from seleric_swarm.diagnosis.operators.identities import discover_identities, discover_rate_chains
 from seleric_swarm.diagnosis.ports.series import SeriesPort
@@ -164,15 +165,27 @@ async def gather(
         collect.add(m, d, result)
 
     gathered.history_days, gathered.weight, gathered.numerator = history_days, weight, numerator
+    offered = [d for d in plan.drivers if d in series]
     gathered.input = DiagnosisInput(
         outcome=outcome, event_days=list(plan.event_days), series=series, lineage=lineage, segments=segments,
-        candidate_drivers=[d for d in plan.drivers if d in series], partial_days=set(plan.partial_days),
+        candidate_drivers=offered, partial_days=set(plan.partial_days),
         claimed_direction=plan.claimed_direction, denominators=({outcome: weight} if weight else {}),
         numerators=({outcome: numerator} if numerator and weight else {}),
         scope_tokens=plan.scope_tokens, baseline_days=list(plan.baseline_days),
         bridge_candidates=[m for m in bridge_pool if m in series],
+        driver_paths=_driver_paths(plan, offered, series), candidates_from_graph=plan.drivers_from_graph,
+        measurement_pairs=_measurement_pairs(plan, series),
     )
     return gathered
+
+
+def _driver_paths(plan: GatherPlan, offered: Sequence[str], series: dict[str, Series]) -> dict[str, list[str]]:
+    """What each offered driver's effect must pass through (the plan's subgraph), keeping the metrics that have data."""
+    if plan.subgraph is None:
+        return {}
+    by_metric = {c.metric: c for c in plan.subgraph.candidates}
+    paths = {d: [m for m in by_metric[d].intermediates if m in series] for d in offered if d in by_metric}
+    return {d: p for d, p in paths.items() if p}
 
 
 class _Segments:
@@ -189,3 +202,13 @@ class _Segments:
         if len(parsed) >= 2:
             self._into.setdefault(metric, {})[dimension] = parsed
             self._gathered.segment_args[(metric, dimension)] = result.query_args
+
+
+def _measurement_pairs(plan: GatherPlan, series: dict[str, Series]) -> list[tuple[str, str, str]]:
+    """The co-measure pairs of the outcome and its parts (the plan's subgraph) with data on both sides."""
+    if plan.subgraph is None:
+        return []
+    return [
+        (p.metric, p.peer, p.expected) for p in plan.subgraph.peers
+        if p.kind == COMEASURE_KIND and p.metric in series and p.peer in series
+    ]

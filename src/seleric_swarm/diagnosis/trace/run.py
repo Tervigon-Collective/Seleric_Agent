@@ -45,11 +45,19 @@ from seleric_swarm.diagnosis.trace.correlation import investigation_scope
 from seleric_swarm.diagnosis.trace.emitter import Emitter, MemorySink
 from seleric_swarm.diagnosis.trace.streams import stream_rng
 
-ENGINE_VERSION = "diagnosis-core/0"
+# What the engine decides, changed whenever the same input can give a different answer or report (not for a refactor).
+# 0: the legacy engine split into operators (Phase 2). 1: the reviewed graph chooses the candidate causes, a driver whose
+# path stayed quiet is ruled out, no cause is accepted on an ordinary day, the report gains `measurement` (P3.2).
+# A record replays only on the engine that made it; another engine's record is refused, not reported as a divergence.
+ENGINE_VERSION = "diagnosis-core/1"
 
 
 class ReplayDivergence(DiagnosisError):
     code = "replay_divergence"
+
+
+class RecordFromAnotherEngine(DiagnosisError):
+    code = "record_from_another_engine"
 
 
 @dataclass(frozen=True)
@@ -320,6 +328,12 @@ async def replay(
 ) -> ReplayResult:
     """Run the record's investigation again from the record alone and compare events and report byte for byte."""
     _check_blobs(record)
+    made_by = record.versions.get("engine")
+    if made_by != ENGINE_VERSION:
+        raise RecordFromAnotherEngine(
+            f"the record was made by engine {made_by!r} and this is {ENGINE_VERSION!r}: replay it on the commit that made it "
+            "(see docs/DoWhy/REBUILD_PLAN_2026-10-15.md for which commit ran which engine version)"
+        )
     if graph is not None and record.versions.get("graph") and graph.version != record.versions["graph"]:
         raise ReplayDivergence(f"the record used graph {record.versions['graph']}, this one is {graph.version}")
     runner = runner_factory(record.runner) if runner_factory else RUNNERS.get(record.runner)()

@@ -34,5 +34,15 @@ def emit_report_events(emit: Emit, report: DiagnosisReport) -> None:
                 },
                 head,
             )
+    for found in report.measurement:
+        emit(
+            kinds.HYPOTHESIS_RESOLVED,
+            {
+                "hypothesis": f"measurement:{found.metric}~{found.peer}",
+                "status": {"diverged": "supported", "agrees": "rejected"}.get(found.status, "inconclusive"),
+                "label": "measurement", "z": found.z, "gap": found.gap, "n_rows": found.n_history,
+            },
+            None,
+        )
     if report.unexplained_share is not None:
         emit(kinds.UNEXPLAINED_SHARE_UPDATED, {"share": report.unexplained_share}, None)

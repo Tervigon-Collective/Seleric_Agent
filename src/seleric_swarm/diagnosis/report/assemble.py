@@ -28,13 +28,19 @@ def assemble_report(
     report.decomposition, report.bridge, report.bridge_identity = what.decomposition, what.bridge, what.bridge_identity
     report.bridge_residual, report.bridge_residual_vs_previous = what.bridge_residual, what.bridge_residual_vs_previous
     report.chain_identity, report.chain, report.chain_dimensions = what.chain_identity, what.chain, what.chain_dimensions
-    report.dimensions, report.drivers = dims, why.drivers
+    report.dimensions, report.drivers, report.measurement = dims, why.drivers, why.measurement
     # ---- competing hypotheses & verdict ---------------------------------------------
     for drv in report.drivers:
         if drv.status != "implicated" or drv.classification not in ("supported_cause", "likely_contributor"):
             report.competing_hypotheses.append({
                 "hypothesis": f"{drv.driver} drove the change", "status": drv.status,
                 "classification": drv.classification, "reason": drv.reason,
+            })
+    for found in report.measurement:
+        if found.status == "diverged" and cfg.measurement_acts:
+            report.competing_hypotheses.append({
+                "hypothesis": f"{found.metric} is mis-measured (it disagrees with {found.peer}, which counts the same events)",
+                "status": "supported", "reason": found.reason,
             })
     for dim_finding in dims:
         if dim_finding.broad_based:
@@ -69,7 +75,8 @@ def assemble_report(
     else:
         report.verdict = "root_cause_not_identified"
     cited = [y, *(t.metric for t in report.decomposition), *(t.metric for t in report.bridge), *(t.metric for t in report.chain),
-             *(drv.driver for drv in report.drivers if drv.status in ("implicated", "ruled_out"))]
+             *(drv.driver for drv in report.drivers if drv.status in ("implicated", "ruled_out")),
+             *(m for f in report.measurement if f.status == "diverged" and cfg.measurement_acts for m in (f.metric, f.peer))]
     for cm in dict.fromkeys(cited):
         add = inp.lineage.get(cm, MetricMeta(cm)).additive
         for days, into in ((prev_days, report.previous_values), (event_days, report.event_values)):

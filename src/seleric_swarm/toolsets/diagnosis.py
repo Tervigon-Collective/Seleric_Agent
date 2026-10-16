@@ -18,10 +18,11 @@ Candidate planning — nothing is named here:
 - **Identities**: the outcome's ``formula.depends_on`` and every ratio whose
   ``depends_on`` includes the outcome (reverse lineage), plus that ratio's
   other components. The engine keeps only those the data verify.
-- **Drivers**: additive catalogue metrics that are not computed from the
-  outcome, that share a non-scope, non-time dimension with it (a modelled join
-  path) or live in its view, ranked by lineage hub score (how many metrics are
-  built on them) and by shared dimensions, spread across views.
+- **Drivers**: the metrics the reviewed dependency graph says can move the outcome (mechanism edges walked back from the
+  outcome and its arithmetic parts), most upstream first, at most eight, none that is the same quantity as the outcome
+  or a part of it (``diagnosis/graph/subgraph.py``). When the graph has no entry for the outcome, or no upstream cause
+  of it that the data can test, the catalogue's lineage proposes additive metrics (ranked by how many metrics are
+  built on them, spread across views) and the data screen them; the answer says so.
 - **Dimensions**: the outcome's supported dimensions minus time axes and scope
   keys (a dimension carried by nearly every view, e.g. the tenant key), led by
   hierarchy roots and enumerated (low-cardinality) dimensions.
@@ -63,7 +64,13 @@ from seleric_swarm.diagnosis.adapters.cube_fetch import (  # noqa: F401  (also i
 from seleric_swarm.diagnosis.adapters.cube_series import CubeSeriesAdapter
 from seleric_swarm.diagnosis.adapters.legacy_trace import LegacyTrace, OperatorScope, current_trace
 from seleric_swarm.diagnosis.adapters.live_record import run_recorded, save_record
-from seleric_swarm.diagnosis.adapters.live_subgraph import graph_for, plan_subgraph
+from seleric_swarm.diagnosis.adapters.live_subgraph import (
+    graph_for,
+    plan_subgraph,
+    subgraph_drivers,
+    subgraph_path_metrics,
+    subgraph_peer_metrics,
+)
 from seleric_swarm.diagnosis.adapters.runstore_artifacts import ArtifactRunStore
 from seleric_swarm.diagnosis.domain.gather import GatherPlan
 from seleric_swarm.diagnosis.domain.types import Scope, SeriesRequest, Window
@@ -1202,13 +1209,25 @@ async def _diagnose(
         if unknown_named := [d for d in named if not ctx.deps.catalogue.has_metric(d)]:
             notes.append(f"not catalogue metric ids, so not checked: {', '.join(unknown_named)}")
         named = [d for d in named if d not in unknown_named]
+    # Candidate causes come from the reviewed graph (P3.2, D-51): the most upstream metrics that can move the outcome.
+    # A metric the graph does not know falls back to the catalogue's lineage, and the answer says so.
+    subgraph = plan_subgraph(loaded_graph, metric_id, lineage, identity_metrics, ctx.deps.catalogue.has_metric)
+    planned = subgraph_drivers(subgraph, cap) if subgraph is not None else []
+    from_graph = bool(planned)
+    if not from_graph:
+        # The graph has no entry for this metric, or reviews no upstream cause of it that the data can test: silence is
+        # not "no cause", so the catalogue's lineage proposes candidates and the data screens them (and the answer says so).
+        planned = _plan_drivers(ctx, metric_id, lineage, set(identity_metrics), cap)
+        notes.append("candidate causes were chosen from the catalogue's lineage, not the reviewed graph")
     # A named driver is always tested when it is a quantity the engine can estimate (additive); a named rate is
     # still fetched and its move reported over the same days.
     drivers = list(dict.fromkeys([
         *(d for d in named if lineage.get(d, engine.MetricMeta(d)).additive and d not in identity_metrics),
-        *_plan_drivers(ctx, metric_id, lineage, set(identity_metrics), cap),
+        *planned,
     ]))
     dims = _plan_dimensions(ctx, metric_id, P.DIAG_MAX_DIMENSIONS + 4 * int(search_breadth))
+    path_metrics = subgraph_path_metrics(subgraph, drivers)  # what the offered drivers' effects pass through
+    peer_metrics = subgraph_peer_metrics(subgraph, ctx.deps.catalogue.has_metric)  # the outcome's other measurements
 
     # ---- fetch ---------------------------------------------------------------------------
     sem = asyncio.Semaphore(6)
@@ -1236,13 +1255,12 @@ async def _diagnose(
     unit_count = engine.unit_count_metric(metric_id, lineage)
     unit_counts = [unit_count] if unit_count and ctx.deps.catalogue.has_metric(unit_count) else []
     series_ids = list(dict.fromkeys(
-        [metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts, *bridge_pool,
+        [metric_id, *identity_metrics, *chain_metrics, *drivers, *path_metrics, *peer_metrics, *named, *named_parts, *bridge_pool,
          *ladder_ends, *change_log, *unit_counts]
     ))
     marks.append(("plan", time.perf_counter()))
     env = engine.default_env()
     chain_dims = _chain_dims(ctx, series_ids, lineage, P.DIAG_MAX_DIMENSIONS // 2)
-    subgraph = plan_subgraph(loaded_graph, metric_id, lineage, identity_metrics, ctx.deps.catalogue.has_metric)
     plan = GatherPlan(
         outcome=metric_id, start=hist_start, end=ev_end, scope=filters, event_days=tuple(event_days),
         partial_days=frozenset(partial), baseline_days=tuple(baseline), claimed_direction=claimed_direction,
@@ -1251,7 +1269,7 @@ async def _diagnose(
         change_log=frozenset(change_log), ladder_ends=frozenset(ladder_ends), bridge_pool=tuple(bridge_pool),
         drivers=tuple(drivers), dims=tuple(dims), chain_dims=chain_dims,
         scope_tokens=frozenset(t for d in _scope_dimensions(ctx) for t in d.lower().split("_") if t),
-        max_segment_rows=_MAX_SEGMENT_ROWS, subgraph=subgraph,
+        max_segment_rows=_MAX_SEGMENT_ROWS, subgraph=subgraph, drivers_from_graph=from_graph,
     )
     recording = RecordingSeriesPort(CubeSeriesAdapter(ctx, guarded=guarded, report_dropped_filters=True))
     gathered = await gather(

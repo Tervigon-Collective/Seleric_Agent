@@ -7,9 +7,11 @@ metrics the data source can serve.
 2. The **candidate causes**: from the outcome and its accounting tree, walk backwards over the edges whose policy says
    ``cause`` (mechanism, and feedback at a lag of a day or more) as far as ``max_depth`` edges. A metric reached by more
    than one path keeps the nearest, and among equals the strongest. The walk goes through a metric the data cannot serve
-   or a policy sets aside, so what lies beyond it is still reached; such a metric is just not offered.
+   or a policy sets aside, so what lies beyond it is still reached; such a metric is just not offered. The candidates
+   come out in the order they are offered (``root_first``).
 3. The **exclusions**: a reached metric that is the same quantity as the outcome or a part of it (twin, co-measure,
-   subset, allocation), is computed from the outcome, or that ``usable`` rejects. Each carries a reason code.
+   subset, allocation), is computed from the outcome, is a near-identity of what it feeds (a structural edge), or that
+   ``usable`` rejects. Each carries a reason code.
 4. The **peers**: the other measurements of the same quantity as the outcome and its parts, for the data checks that
    compare two measurements of one thing.
 
@@ -19,9 +21,11 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable, Mapping
+from typing import NamedTuple
 
 from seleric_swarm.diagnosis.domain.graph import SAME_QUANTITY_KINDS, Direction, Edge, Graph
 from seleric_swarm.diagnosis.domain.subgraph import (
+    NEAR_IDENTITY,
     Candidate,
     Exclusion,
     Peer,
@@ -39,6 +43,7 @@ from seleric_swarm.diagnosis.graph.edge_policy import (
 )
 from seleric_swarm.diagnosis.graph.policies import register_edge_policies
 
+UNKNOWN_TIER = 99  # a metric the graph does not place sorts last
 DEFAULT_MAX_DEPTH = 8  # the reviewed mechanism edges are few; the walk is cheap, the ordering and the cap pick what is offered
 
 Usable = Callable[[str], str | None]  # metric -> None when it can be offered, else the reason code it cannot
@@ -46,6 +51,13 @@ Usable = Callable[[str], str | None]  # metric -> None when it can be offered, e
 
 def _always_usable(metric: str) -> None:
     return None
+
+
+def root_first(candidate: Candidate) -> tuple[int, int, str]:
+    """The order candidates are offered in (D-51): the most upstream first (graph tier: interventions, then spend,
+    delivery, ...), then the nearest to the outcome, then by id. A 'why' names the origin, not a mediator that moved
+    because of it."""
+    return (candidate.tier, candidate.distance, candidate.metric)
 
 
 def _combine(a: str, b: Direction | None) -> str:
@@ -56,6 +68,17 @@ def _combine(a: str, b: Direction | None) -> str:
 
 def _lag(edge: Edge) -> tuple[int, int]:
     return edge.lag_days if edge.lag_days is not None else (0, 0)
+
+
+class _Step(NamedTuple):
+    """Where the walk stands: a node, the accounting node its path ends in, and what the path so far amounts to."""
+
+    node: str
+    anchor: str
+    lag: tuple[int, int]
+    direction: str
+    confidence: str
+    path: tuple[str, ...]  # this node first, the anchor last
 
 
 class _Walk:
@@ -98,13 +121,11 @@ class _Walk:
     def reach(self, protected: set[str]) -> dict[str, Candidate]:
         """Every metric the causal edges reach, with the best path to it (nearest, then strongest, then by id)."""
         reached: dict[str, Candidate] = {}
-        level: list[tuple[str, str, tuple[int, int], str, str]] = [  # node, anchor, lag, direction, path confidence
-            (p, p, (0, 0), Direction.POSITIVE.value, "structural") for p in sorted(protected)
-        ]
+        level = [_Step(p, p, (0, 0), Direction.POSITIVE.value, NEAR_IDENTITY, (p,)) for p in sorted(protected)]
         for distance in range(1, self.max_depth + 1):
-            best: dict[str, tuple[tuple[int, str], Candidate, tuple[str, str, tuple[int, int], str, str]]] = {}
-            for node, anchor, lag, direction, path_conf in level:
-                for edge in self.graph.edges_into(node):
+            best: dict[str, tuple[tuple[int, str], Candidate, _Step]] = {}
+            for step in level:
+                for edge in self.graph.edges_into(step.node):
                     self.edges_walked += 1
                     source = edge.source
                     if source in protected or source in reached:
@@ -114,17 +135,17 @@ class _Walk:
                         if decision.action == EXCLUDE and edge.kind not in SAME_QUANTITY_KINDS:
                             self.refused.append(Exclusion(source, decision.reason_code, decision.check_value))
                         continue
-                    conf = edge.confidence if confidence_rank(edge.confidence) <= confidence_rank(path_conf) else path_conf
+                    conf = edge.confidence if confidence_rank(edge.confidence) <= confidence_rank(step.confidence) else step.confidence
                     node_meta = self.graph.node(source)
+                    lag = (step.lag[0] + _lag(edge)[0], step.lag[1] + _lag(edge)[1])
                     cand = Candidate(
-                        metric=source, distance=distance, via=node, anchor=anchor, kind=edge.kind.value,
-                        path_confidence=conf, direction=_combine(direction, edge.direction),
-                        lag_days=(lag[0] + _lag(edge)[0], lag[1] + _lag(edge)[1]),
-                        tier=node_meta.tier if node_meta is not None else -1,
+                        metric=source, distance=distance, via=step.node, anchor=step.anchor, kind=edge.kind.value,
+                        edge_confidence=edge.confidence, path_confidence=conf, direction=_combine(step.direction, edge.direction),
+                        lag_days=lag, tier=node_meta.tier if node_meta is not None else UNKNOWN_TIER, path=step.path,
                     )
-                    key = (-confidence_rank(conf), node)
+                    key = (-confidence_rank(conf), step.node)
                     if source not in best or key < best[source][0]:
-                        best[source] = (key, cand, (source, anchor, cand.lag_days, cand.direction, conf))
+                        best[source] = (key, cand, _Step(source, step.anchor, lag, cand.direction, conf, (source, *step.path)))
             if not best:
                 break
             for source in sorted(best):
@@ -163,7 +184,11 @@ def build_subgraph(
         if (reason := usable(metric)) is not None:
             exclusions.append(Exclusion(metric, reason, ""))
             continue
+        if cand.edge_confidence == NEAR_IDENTITY:
+            exclusions.append(Exclusion(metric, "near_identity_of_" + cand.kind, cand.via))
+            continue
         candidates.append(cand)
+    candidates.sort(key=root_first)
 
     peers: list[Peer] = []
     for node in sorted(protected):

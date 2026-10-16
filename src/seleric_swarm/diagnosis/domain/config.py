@@ -77,6 +77,16 @@ class DiagnosisConfig:
     min_dimension_coverage: float = 0.9
     calendar_grain_tokens: tuple[str, ...] = DEFAULT_CALENDAR_GRAIN_TOKENS
     min_observation_rows: int = 8  # history rows needed before any fit, identity or estimate is attempted
+    # two measurements of one quantity (graph co-measure pairs) have diverged when their ratio left its usual level by
+    # more than ``measurement_z`` of its own day-to-day spread AND by more than ``measurement_min_gap`` in relative terms
+    # (calibrated on 90 days of a real brand: the noisiest pair's spread is 17%, its largest daily deviation 3.5 spreads)
+    measurement_z: float = 5.0
+    measurement_min_gap: float = 0.25
+    measurement_min_scale: float = 0.02  # floor for the spread of a ratio that is constant on the history (log units)
+    # False: a divergence is recorded on the report and the trace but changes no label and says nothing to the user.
+    # Off until it is calibrated on live traffic: a co-measure pair fed by a lagging pipeline (the P&L feed) differs on the
+    # latest days for a reason that is not a tracking loss (P3.2, plan §11).
+    measurement_acts: bool = False
     # investigation
     bounds: Bounds = field(default_factory=Bounds)
     stop: StopRule = field(default_factory=StopRule)

@@ -14,7 +14,7 @@ from seleric_swarm.diagnosis.adapters.legacy_trace import LegacyTrace
 from seleric_swarm.diagnosis.domain.errors import GraphRejected
 from seleric_swarm.diagnosis.domain.graph import LoadedGraph
 from seleric_swarm.diagnosis.domain.lineage import MetricMeta
-from seleric_swarm.diagnosis.domain.subgraph import Subgraph
+from seleric_swarm.diagnosis.domain.subgraph import COMEASURE_KIND, Subgraph
 from seleric_swarm.diagnosis.graph.subgraph import build_subgraph
 from seleric_swarm.diagnosis.trace.active import report_failure
 
@@ -58,9 +58,36 @@ def plan_subgraph(
 ) -> Subgraph | None:
     if loaded is None:
         return None  # the graph was rejected; that is already on the trace
+    if loaded.graph.node(outcome) is None:
+        return None  # a metric the reviewed graph does not cover: the caller falls back and says so
     try:
         return build_subgraph(loaded.graph, outcome, usable=usable_from_lineage(lineage, arithmetic_parts, has_metric))
     except Exception as exc:
         _log.error("subgraph_not_built outcome=%s", outcome, exc_info=True)
         report_failure("build_subgraph", exc, {"outcome": outcome})
         return None
+
+
+def subgraph_drivers(subgraph: Subgraph, cap: int) -> list[str]:
+    """The candidates the engine is given, in the order the subgraph offers them, at most ``cap`` of them."""
+    return [c.metric for c in subgraph.candidates[:cap]]
+
+
+def subgraph_path_metrics(subgraph: Subgraph | None, drivers: Collection[str]) -> list[str]:
+    """The metrics the offered drivers' effects must pass through, so their series are fetched too."""
+    if subgraph is None:
+        return []
+    return list(dict.fromkeys(m for c in subgraph.candidates if c.metric in drivers for m in c.intermediates))
+
+
+MAX_PEERS = 12  # co-measure peers fetched beside the series: the outcome's own first, then its parts'
+
+
+def subgraph_peer_metrics(subgraph: Subgraph | None, has_metric: Callable[[str], bool]) -> list[str]:
+    """The other measurements of the outcome and its parts (co-measure pairs) whose series are fetched for the check
+    that compares them. Twins differ legitimately day to day (another date basis) and are not compared."""
+    if subgraph is None:
+        return []
+    order = {m: i for i, m in enumerate((subgraph.outcome, *subgraph.accounting))}
+    peers = sorted((p for p in subgraph.peers if p.kind == COMEASURE_KIND and has_metric(p.peer)), key=lambda p: (order.get(p.metric, 99), p.peer))
+    return list(dict.fromkeys(m for p in peers for m in (p.metric, p.peer)))[:MAX_PEERS]

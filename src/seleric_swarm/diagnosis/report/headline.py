@@ -95,6 +95,11 @@ def _headline(r: DiagnosisReport, *, cfg: DiagnosisConfig) -> str:
         parts.append(f"It is concentrated in {top_dim.dimension}={s.segment}.")
     elif r.dimensions and all(d.broad_based for d in r.dimensions):
         parts.append("It is broad-based across every segment checked.")
+    for m in (f for f in r.measurement if f.status == "diverged" and cfg.measurement_acts):
+        parts.append(
+            f"{m.metric} disagrees with {m.peer}, which counts the same events: check how {m.metric} is recorded before "
+            "looking for a business cause."
+        )
     causes = [f for f in r.drivers if f.status == "implicated" and f.classification in ("supported_cause", "likely_contributor")]
     if causes:
         parts.append("; ".join(

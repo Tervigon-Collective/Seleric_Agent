@@ -34,6 +34,14 @@ class DiagnosisInput:
     scope_tokens: frozenset[str] = frozenset()  # grain tokens naming the tenant scope, not a unit
     # Same-unit additive metrics that may sum to the outcome (verified on the data).
     bridge_candidates: list[str] = field(default_factory=list)
+    # Candidate driver -> the metrics its effect must pass through to reach the outcome, nearest the driver first (from the
+    # reviewed graph; only those with a series). A driver whose path stayed quiet at the event cannot have caused it.
+    driver_paths: dict[str, list[str]] = field(default_factory=dict)
+    # True when the reviewed graph chose ``candidate_drivers``: the metrics that count the same events as the outcome are
+    # already set aside by its edges, so WHY_EVENT does not screen for them again with data heuristics.
+    candidates_from_graph: bool = False
+    # (metric, peer, expected): pairs the reviewed graph says count the same events in two systems, both with a series.
+    measurement_pairs: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 _NON_FINITE = {"nan": float("nan"), "inf": float("inf"), "-inf": float("-inf")}
@@ -75,6 +83,9 @@ def input_to_dict(inp: DiagnosisInput) -> dict[str, Any]:
         "baseline_days": [d.isoformat() for d in inp.baseline_days],
         "scope_tokens": sorted(inp.scope_tokens),
         "bridge_candidates": list(inp.bridge_candidates),
+        "driver_paths": {c: list(p) for c, p in sorted(inp.driver_paths.items())},
+        "candidates_from_graph": inp.candidates_from_graph,
+        "measurement_pairs": [list(p) for p in inp.measurement_pairs],
     }
 
 
@@ -96,4 +107,7 @@ def input_from_dict(raw: Mapping[str, Any]) -> DiagnosisInput:
         baseline_days=[date.fromisoformat(d) for d in raw["baseline_days"]],
         scope_tokens=frozenset(raw["scope_tokens"]),
         bridge_candidates=list(raw["bridge_candidates"]),
+        driver_paths={c: list(p) for c, p in (raw.get("driver_paths") or {}).items()},
+        candidates_from_graph=bool(raw.get("candidates_from_graph", False)),
+        measurement_pairs=[(str(m), str(p), str(e)) for m, p, e in raw.get("measurement_pairs") or []],
     )
