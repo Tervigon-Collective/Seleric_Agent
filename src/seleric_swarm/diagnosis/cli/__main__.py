@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import sys
 
-from seleric_swarm.diagnosis.cli import replay
+from seleric_swarm.diagnosis.cli import export_fixture, replay
 
-COMMANDS = {"replay": replay.main}
+COMMANDS = {"replay": replay.main, "export-fixture": export_fixture.main_export, "check-fixture": export_fixture.main_check}
 
 
 def main(argv: list[str] | None = None) -> int:

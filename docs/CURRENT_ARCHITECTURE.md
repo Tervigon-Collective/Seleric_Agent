@@ -105,10 +105,18 @@ last step, tuning of budgets, a decision on Prometheus, office-ui leftovers for 
 - **Code layout.** `seleric_swarm/diagnosis/` is strictly typed and layered (`domain` < `ports`, `libs` < core < `adapters`,
   `cli`); the layering, determinism (no clock or global randomness in the core) and no-catalogue-names rules are enforced by
   `tests/unit/diagnosis/test_import_contract.py`. The anomaly primitives shared by diagnosis, business state, forecasting
-  quality and exploration live in `diagnosis/detect/`.
-- **Record and replay.** `diagnosis/trace/run.py` can record a run (events, config, seed, fetched series, clock readings) and
-  replay it offline byte for byte (`python -m seleric_swarm.diagnosis.cli replay <record.json>`). This is proven on a
-  test runner; the legacy engine does not run through the ports yet, so it leaves a trace but no replayable record.
+  quality and exploration live in `diagnosis/detect/`. The engine itself (formerly the 2,917-line `causal/diagnosis.py`, now
+  a re-export shim) is in `domain/` (lineage, report, input), `detect/` (calendar fit, seasonal profile, window values),
+  `operators/` (the four stages `is_real`, `what`, `where`, `why_event`, run in that order by `operators/pipeline.py`, also
+  registered operators in `operators/engine_ops.py`) and `report/` (headline, narrative, assembly). Thresholds come from
+  `DiagnosisConfig`; the driver estimator and value formatting are ports. The analysis tool's output is unchanged.
+- **Record and replay.** `diagnosis/trace/run.py` can record a run (events, config, seed, fetched series, causal estimates,
+  clock readings) and replay it offline byte for byte (`python -m seleric_swarm.diagnosis.cli replay <record.json>`). The
+  engine replays this way (`adapters/legacy_engine_runner.py`, runner `legacy_engine`, whose request carries the engine
+  input). The live tool does not yet write such a record: its fetch phase is outside the ports, so a live call leaves a
+  trace but no replayable record (plan O-12).
+- **Fixtures.** `python -m seleric_swarm.diagnosis.cli export-fixture <record|input.json> --operator <stage>` writes one
+  operator's input and expected answer; `check-fixture` runs it again. Shipped fixtures: `tests/fixtures/diagnosis_ops/`.
 
 Plan, decisions and status: `docs/DoWhy/REBUILD_PLAN_2026-10-15.md`. Operations: the stack is built from
 `~/work/agent_dowhy_deploy` (plan D-42).

@@ -8,6 +8,9 @@ import asyncio
 import sys
 from pathlib import Path
 
+from seleric_swarm.diagnosis.adapters import (
+    legacy_engine_runner,  # noqa: F401  (registers the runner it replays)
+)
 from seleric_swarm.diagnosis.domain.errors import DiagnosisError
 from seleric_swarm.diagnosis.domain.record import RunRecord
 from seleric_swarm.diagnosis.trace.run import replay

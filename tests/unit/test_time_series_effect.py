@@ -99,3 +99,34 @@ def test_constant_treatment_is_insufficient():
     rng = np.random.default_rng(7)
     r = run(np.full(N, 5.0), rng.normal(100, 5, N))
     assert r.status == "insufficient" and "barely varies" in r.reason
+
+
+# ------------------------------------------------------------------ failures inside the estimate are handed back
+def test_a_step_that_fails_inside_the_estimate_is_returned_not_lost(monkeypatch):
+    from seleric_swarm.causal import dowhy_service as service
+
+    real = service._ols
+
+    def flaky(y, X, *, hac=True):
+        if hac and list(X.columns) == ["x"]:  # the naive association, the first fit
+            raise ValueError("singular naive design")
+        return real(y, X, hac=hac)
+
+    monkeypatch.setattr(service, "_ols", flaky)
+    rng = np.random.default_rng(3)
+    x = rng.normal(100, 10, N)
+    r = run(x, 3 * x + rng.normal(0, 5, N))
+    assert r.status == "estimated" and r.naive_association == {}  # the estimate carried on without it
+    [failure] = [f for f in r.failures if f["site"] == "naive_association"]
+    assert failure["error_type"] == "ValueError" and "singular naive design" in failure["message"]
+    assert "Traceback" in failure["traceback"]
+
+
+def test_a_clean_estimate_has_no_failures_and_the_collector_does_not_leak_between_estimates():
+    from seleric_swarm.causal import dowhy_service as service
+
+    rng = np.random.default_rng(4)
+    x = rng.normal(100, 10, N)
+    assert run(x, 3 * x + rng.normal(0, 5, N)).failures == []
+    service._note_failure("outside", ValueError("x"))  # no estimate running: nothing to attach it to, nothing raised
+    assert run(x, 3 * x + rng.normal(0, 5, N)).failures == []

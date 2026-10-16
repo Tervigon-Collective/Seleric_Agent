@@ -1246,7 +1246,7 @@ async def _diagnose(
     filters scope the outcome. Returns the event size vs a same-weekday reference, an exact decomposition,
     segment localisation (incl. Simpson's paradox) and DoWhy-estimated drivers labelled supported_cause /
     likely_contributor / correlation / insufficient_evidence (report faithfully, never upgrade). Period
-    comparisons: pass compare_start/compare_end (same length as the event window); a window over two weeks is
+    comparisons: pass compare_start/compare_end (same length as the event window); a window over a week is
     compared with the equal-length period before it, the difference is split exactly by component and segment,
     and drivers are not estimated. search_breadth 0 (default) fits nearly every question; 1-2 widen the search
     at +7-15 s each, use only after 0 localised nothing. drivers: catalogue ids the user names as possible
@@ -1513,7 +1513,7 @@ async def _diagnose(
         if not ctx.deps.budget.consume("causal_queries").ok:
             inp.candidate_drivers = inp.candidate_drivers[: max(0, len(inp.candidate_drivers) - 1)]
     with _op("analyse", {"candidate_drivers": len(inp.candidate_drivers), "history_days": len(history_days)}) as scope:
-        report = await asyncio.to_thread(engine.diagnose, inp)
+        report = await asyncio.to_thread(engine.diagnose, inp, engine.default_env(scope=_op))
         scope.result = {"verdict": report.verdict, "drivers": len(report.drivers), "dimensions": len(report.dimensions)}
     if trace is not None:
         trace.report(report)

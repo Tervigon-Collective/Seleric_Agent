@@ -1,261 +1,55 @@
-"""DoWhy boundary.
+"""DoWhy boundary of the diagnosis engine: the same-day total effect of one candidate driver on the outcome.
 
-Do not let agents call arbitrary causal estimators without a registered causal
-question / graph. ``DoWhyService.estimate`` builds a ``CausalModel``, identifies
-the estimand, estimates the effect and runs the configured refuters. It is
-import-lazy and defensive: any failure raises ``DoWhyUnavailable`` so callers
-can fall back to a metadata-only audit rather than fake a causal result.
+``estimate_time_series_effect`` builds an explicit time-series DAG (calendar and lagged pre-treatment variables only),
+identifies the back-door estimand with DoWhy, estimates it by OLS with a conservative interval, and runs refuters and
+temporal-precedence tests. It runs in a worker process; whatever fails inside it is returned in the result's
+``failures`` rather than lost. (The earlier ``DoWhyService``, which adjusted for every co-measured metric, had no
+caller and was removed in Phase 2.)
 """
 
 from __future__ import annotations
 
+import functools
 import logging
 import math
-from dataclasses import dataclass, field
+import traceback
+from collections.abc import Callable
+from contextvars import ContextVar
 from datetime import timedelta
-from typing import Any, Literal
+from typing import Any
+
+from seleric_swarm.diagnosis.domain.estimates import TimeSeriesEffect
 
 _log = logging.getLogger(__name__)
 
-_DEFAULT_REFUTERS = ("placebo_treatment_refuter", "random_common_cause", "data_subset_refuter")
+# Failures noted while one estimate runs; the public entry point installs a fresh list and hands it back in the result.
+_failures: ContextVar[list[dict[str, str]] | None] = ContextVar("time_series_effect_failures", default=None)
+_TRACEBACK_CHARS = 1500
 
 
-class DoWhyUnavailable(RuntimeError):
-    """DoWhy is not installed or the estimation pipeline failed."""
+def _note_failure(site: str, exc: BaseException) -> None:
+    sink = _failures.get()
+    if sink is not None:
+        sink.append({
+            "site": site, "error_type": type(exc).__name__, "message": str(exc)[:300],
+            "traceback": "".join(traceback.format_exception(exc))[-_TRACEBACK_CHARS:],
+        })
 
 
-@dataclass
-class CausalRequest:
-    treatment: str
-    outcome: str
-    common_causes: list[str]
-    graph_id: str = ""
-    estimator: str = "backdoor.linear_regression"
-    refuters: list[str] = field(default_factory=lambda: list(_DEFAULT_REFUTERS))
+def _collecting_failures[**P](fn: Callable[P, TimeSeriesEffect]) -> Callable[P, TimeSeriesEffect]:
+    """Run ``fn`` with a fresh failure list and hand what was noted back in the result's ``failures``."""
 
-
-@dataclass
-class RefuterOutcome:
-    name: str
-    estimated_effect: float
-    new_effect: float
-    passed: bool
-    detail: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class DoWhyEstimate:
-    treatment: str
-    outcome: str
-    effect: float
-    estimator: str
-    common_causes: list[str]
-    refutations: list[RefuterOutcome]
-    n_rows: int
-    confidence_interval: list[float] = field(default_factory=list)
-    dropped_collinear_common_causes: list[str] = field(default_factory=list)
-
-    @property
-    def refutations_passed(self) -> int:
-        return sum(1 for r in self.refutations if r.passed)
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "treatment": self.treatment,
-            "outcome": self.outcome,
-            "effect": self.effect,
-            "estimator": self.estimator,
-            "common_causes": list(self.common_causes),
-            "n_rows": self.n_rows,
-            "confidence_interval": list(self.confidence_interval),
-            "dropped_collinear_common_causes": list(self.dropped_collinear_common_causes),
-            "refutations": [
-                {"name": r.name, "passed": r.passed, "estimated_effect": r.estimated_effect,
-                 "new_effect": r.new_effect, **r.detail}
-                for r in self.refutations
-            ],
-        }
-
-
-def _normalize_confidence_interval(raw: Any) -> list[float]:
-    """Normalize DoWhy CI output to ``[lo, hi]`` or ``[]`` if unavailable."""
-    if raw is None:
-        return []
-    try:
-        if hasattr(raw, "tolist"):
-            raw = raw.tolist()
-        if isinstance(raw, dict):
-            for key in ("default", "bootstrap", "ci", "interval"):
-                if key in raw:
-                    return _normalize_confidence_interval(raw[key])
-            vals = list(raw.values())
-            return _normalize_confidence_interval(vals[0] if len(vals) == 1 else vals)
-        if isinstance(raw, (list, tuple)):
-            if len(raw) == 2 and all(isinstance(x, (int, float)) for x in raw):
-                lo, hi = float(raw[0]), float(raw[1])
-                return [lo, hi] if lo <= hi else [hi, lo]
-            # Nested [[lo, hi], ...] from some DoWhy versions
-            if len(raw) == 1:
-                return _normalize_confidence_interval(raw[0])
-            if len(raw) >= 2 and isinstance(raw[0], (list, tuple)):
-                return _normalize_confidence_interval(raw[0])
-    except (TypeError, ValueError):
-        return []
-    return []
-
-
-_COLLINEARITY_THRESHOLD = 0.98
-
-
-def _drop_collinear_common_causes(
-    data: Any, treatment: str, common_causes: list[str]
-) -> tuple[list[str], list[str]]:
-    """Drop common causes that are near-perfectly correlated with the treatment.
-
-    Ad-platform metrics routinely move together (clicks/impressions/spend all
-    spike from the same tracking or scale change), which makes the design
-    matrix for ``backdoor.linear_regression`` singular or numerically unstable
-    and used to blow the whole estimate up into a ``DoWhyUnavailable`` ->
-    template-fallback (a real, sufficiently-sized observation frame producing
-    no real causal estimate at all). Dropping the offending covariate keeps
-    the estimate real; the caller is told what was dropped so it isn't silent.
-    """
-    if not common_causes:
-        return [], []
-    kept: list[str] = []
-    dropped: list[str] = []
-    treatment_col = data[treatment]
-    for cause in common_causes:
+    @functools.wraps(fn)
+    def run(*args: P.args, **kwargs: P.kwargs) -> TimeSeriesEffect:
+        token = _failures.set([])
         try:
-            corr = float(treatment_col.corr(data[cause]))
-        except Exception:
-            _log.warning("collinearity_check_failed", exc_info=True, extra={"cause": cause})
-            kept.append(cause)
-            continue
-        if not math.isnan(corr) and abs(corr) >= _COLLINEARITY_THRESHOLD:
-            dropped.append(cause)
-        else:
-            kept.append(cause)
-    return kept, dropped
+            result = fn(*args, **kwargs)
+            result.failures = list(_failures.get() or [])
+            return result
+        finally:
+            _failures.reset(token)
 
-
-class DoWhyService:
-    """Thin wrapper over ``dowhy.CausalModel``. Sync internals; call from a thread
-    if you need to keep an event loop free (estimation is CPU-bound)."""
-
-    def __init__(self, *, relative_tolerance: float = 0.25) -> None:
-        self._tol = relative_tolerance
-
-    def estimate(self, request: CausalRequest, data: Any) -> DoWhyEstimate:
-        try:
-            import pandas as pd
-            from dowhy import CausalModel
-        except Exception as exc:  # pragma: no cover - env without dowhy
-            raise DoWhyUnavailable(f"dowhy/pandas import failed: {exc}") from exc
-
-        if not isinstance(data, pd.DataFrame):
-            raise DoWhyUnavailable("estimate() requires a pandas DataFrame of observations")
-
-        needed = [request.treatment, request.outcome, *request.common_causes]
-        missing = [c for c in needed if c not in data.columns]
-        if missing:
-            raise DoWhyUnavailable(f"dataset missing columns: {missing}")
-
-        common_causes, dropped = _drop_collinear_common_causes(data, request.treatment, request.common_causes)
-        if dropped:
-            _log.warning(
-                "dowhy: dropped near-collinear common causes %s (|corr| with treatment %s > %.2f) "
-                "to avoid a singular/unstable regression",
-                dropped,
-                request.treatment,
-                _COLLINEARITY_THRESHOLD,
-            )
-
-        try:
-            model = CausalModel(
-                data=data,
-                treatment=request.treatment,
-                outcome=request.outcome,
-                common_causes=common_causes,
-            )
-            identified = model.identify_effect(proceed_when_unidentifiable=True)
-            estimate = model.estimate_effect(identified, method_name=request.estimator)
-            base_effect = float(estimate.value)
-            ci = _extract_confidence_interval(estimate)
-
-            refutations: list[RefuterOutcome] = []
-            for name in request.refuters:
-                refutations.append(self._refute(model, identified, estimate, base_effect, name))
-        except DoWhyUnavailable:
-            raise
-        except Exception as exc:
-            # Surface *why* with full context and a traceback -- a bare
-            # DoWhyUnavailable(str(exc)) upstream loses both, which made every
-            # real DoWhy failure (singular design matrix from collinear common
-            # causes, near-zero-variance treatment column, etc.) indistinguishable
-            # from "dowhy not installed" in the logs.
-            _log.warning(
-                "dowhy estimation failed: treatment=%s outcome=%s common_causes=%s n_rows=%s estimator=%s",
-                request.treatment,
-                request.outcome,
-                request.common_causes,
-                len(data),
-                request.estimator,
-                exc_info=True,
-            )
-            raise DoWhyUnavailable(f"dowhy estimation failed: {exc}") from exc
-
-        return DoWhyEstimate(
-            treatment=request.treatment,
-            outcome=request.outcome,
-            effect=base_effect,
-            estimator=request.estimator,
-            common_causes=common_causes,
-            refutations=refutations,
-            n_rows=len(data),
-            confidence_interval=ci,
-            dropped_collinear_common_causes=dropped,
-        )
-
-    # -- refuter interpretation ------------------------------------------
-    def _refute(self, model, identified, estimate, base_effect: float, name: str) -> RefuterOutcome:
-        kwargs: dict[str, Any] = {}
-        if name == "placebo_treatment_refuter":
-            kwargs = {"placebo_type": "permute"}
-        elif name == "data_subset_refuter":
-            kwargs = {"subset_fraction": 0.8}
-        try:
-            result = model.refute_estimate(identified, estimate, method_name=name, **kwargs)
-            new_effect = float(getattr(result, "new_effect", 0.0))
-        except Exception as exc:  # a refuter that errors counts as not-passed, not fatal
-            return RefuterOutcome(name, base_effect, float("nan"), passed=False, detail={"error": str(exc)})
-
-        denom = abs(base_effect) if abs(base_effect) > 1e-9 else 1.0
-        if name == "placebo_treatment_refuter":
-            # a valid effect should collapse toward zero under a placebo treatment
-            passed = abs(new_effect) <= 0.5 * denom
-        else:
-            # effect should be stable under a random common cause / data subset
-            passed = abs(new_effect - base_effect) / denom <= self._tol
-        return RefuterOutcome(name, base_effect, new_effect, passed=passed)
-
-
-def _extract_confidence_interval(estimate: Any) -> list[float]:
-    """Best-effort CI from a DoWhy ``CausalEstimate``; never raises."""
-    try:
-        getter = getattr(estimate, "get_confidence_intervals", None)
-        if callable(getter):
-            return _normalize_confidence_interval(getter())
-    except Exception:  # noqa: S110 - DoWhy versions expose CI through different optional APIs
-        pass
-    for attr in ("confidence_intervals", "confidence_interval"):
-        try:
-            raw = getattr(estimate, attr, None)
-            if raw is not None:
-                return _normalize_confidence_interval(raw)
-        except Exception:  # noqa: S112 - malformed optional CI attributes are tried in fallback order
-            continue
-    return []
+    return run
 
 
 # ---------------------------------------------------------------------------
@@ -283,36 +77,6 @@ def _extract_confidence_interval(estimate: Any) -> list[float]:
 # circular-shift placebo (keeps autocorrelation + seasonality, breaks timing)
 # and a future-treatment (lead) placebo — X[t+1] must not "explain" Y[t].
 # ---------------------------------------------------------------------------
-
-
-@dataclass
-class TimeSeriesEffect:
-    treatment: str
-    outcome: str
-    status: Literal["estimated", "insufficient"]
-    reason: str = ""
-    effect: float | None = None
-    std_error: float | None = None
-    p_value: float | None = None
-    confidence_interval: list[float] = field(default_factory=list)
-    n_rows: int = 0
-    adjustment_set: list[str] = field(default_factory=list)
-    graph_edges: list[tuple[str, str]] = field(default_factory=list)
-    identified_estimand: str = ""
-    estimator: str = "backdoor.linear_regression"
-    uncertainty_method: str = "max(HC3, small-sample HAC) standard error, t interval"
-    refutations: list[dict[str, Any]] = field(default_factory=list)
-    temporal: dict[str, Any] = field(default_factory=dict)
-    naive_association: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def refutations_passed(self) -> bool:
-        return bool(self.refutations) and all(r.get("passed") for r in self.refutations)
-
-    def as_dict(self) -> dict[str, Any]:
-        out = {k: v for k, v in self.__dict__.items()}
-        out["graph_edges"] = [list(e) for e in self.graph_edges]
-        return out
 
 
 def _lag_name(column: str) -> str:
@@ -402,7 +166,8 @@ def _granger_p(frame: Any, cause: str, effect: str, calendar_cols: list[str]) ->
     try:
         fit = _ols(sub[effect], sub[cols], hac=False)
         return float(fit.pvalues[_lag_name(cause)])
-    except Exception:
+    except Exception as exc:
+        _note_failure("temporal_precedence_test", exc)
         return None
 
 
@@ -462,6 +227,7 @@ def _intervention_shifts(frame: Any, T: str, Y: str, calendar_cols: list[str], b
     }
 
 
+@_collecting_failures
 def estimate_time_series_effect(
     *,
     outcome: dict[Any, float],
@@ -539,7 +305,8 @@ def estimate_time_series_effect(
             "p_value": float(naive.pvalues[T]),
             "correlation": float(np.corrcoef(data[T], data[Y])[0, 1]),
         }
-    except Exception:
+    except Exception as exc:
+        _note_failure("naive_association", exc)
         result.naive_association = {}
 
     # Explicit DAG: every adjustment variable is a pre-treatment parent of both.
@@ -557,6 +324,7 @@ def estimate_time_series_effect(
         estimate = model.estimate_effect(estimand, method_name="backdoor.linear_regression")
         dowhy_effect = float(estimate.value)
     except Exception as exc:
+        _note_failure("dowhy_estimation", exc)
         _log.warning("time-series dowhy estimation failed for %s -> %s", T, Y, exc_info=True)
         result.reason = f"DoWhy estimation failed: {type(exc).__name__}: {exc}"
         return result
@@ -616,6 +384,7 @@ def estimate_time_series_effect(
                     "passed": drift <= refuter_tolerance and (new * dowhy_effect > 0 or abs(dowhy_effect) < 1e-12),
                 })
             except Exception as exc:
+                _note_failure(f"refuter:{name}", exc)
                 refs.append({"name": name, "passed": False, "error": str(exc)})
 
     # Circular-shift placebo: same series, broken timing.
@@ -668,6 +437,7 @@ def estimate_time_series_effect(
                 "passed": p_lead >= alpha or abs(coef_lead) < 0.5 * denom,
             })
         except Exception as exc:
+            _note_failure("refuter:future_treatment_placebo", exc)
             refs.append({"name": "future_treatment_placebo", "passed": False, "error": str(exc)})
     else:
         refs.append({"name": "future_treatment_placebo", "passed": False, "error": "not enough rows with a next-day treatment"})
@@ -692,6 +462,7 @@ def estimate_time_series_effect(
         else:
             refs.append({"name": "influential_days_removed", "dropped_days": dropped, "passed": True})
     except Exception as exc:
+        _note_failure("refuter:influential_days_removed", exc)
         refs.append({"name": "influential_days_removed", "passed": False, "error": str(exc)})
 
     result.refutations = refs

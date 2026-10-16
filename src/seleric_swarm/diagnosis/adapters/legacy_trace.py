@@ -23,12 +23,14 @@ from seleric_swarm.diagnosis.adapters.catalogue_graph import (
 from seleric_swarm.diagnosis.adapters.mission_events import MissionEventSink
 from seleric_swarm.diagnosis.domain.canonical import fingerprint
 from seleric_swarm.diagnosis.domain.errors import DiagnosisError, GraphRejected
+from seleric_swarm.diagnosis.domain.report import DiagnosisReport
 from seleric_swarm.diagnosis.ports.events import EventSink
 from seleric_swarm.diagnosis.trace import events as kinds
 from seleric_swarm.diagnosis.trace.active import activate_emitter
 from seleric_swarm.diagnosis.trace.correlation import investigation_scope, tag_current_span
 from seleric_swarm.diagnosis.trace.emitter import DEFAULT_PAYLOAD_CAP_BYTES, Emitter, MemorySink
 from seleric_swarm.diagnosis.trace.graph_events import emit_graph_loaded
+from seleric_swarm.diagnosis.trace.report_events import emit_report_events
 
 _log = logging.getLogger("seleric.diagnosis.trace")
 _current: ContextVar[LegacyTrace | None] = ContextVar("diagnosis_legacy_trace", default=None)
@@ -135,21 +137,9 @@ class LegacyTrace:
         finally:
             _parent.reset(token)
 
-    def report(self, report: Any) -> None:
+    def report(self, report: DiagnosisReport) -> None:
         """One resolved hypothesis per driver the engine tested, with its refuters, and the unexplained share."""
-        for driver in getattr(report, "drivers", []):
-            head = self._emit(kinds.HYPOTHESIS_RESOLVED, {
-                "hypothesis": driver.driver, "status": driver.status,
-                "label": getattr(driver.classification, "value", None) or str(driver.classification or ""),
-                "p_raw": driver.p_value, "share_of_change": driver.share_of_change, "n_rows": driver.n_rows,
-            })
-            for refutation in driver.refutations:
-                self._emit(kinds.REFUTER_RESULT, {
-                    "hypothesis": driver.driver, "refuter": str(refutation.get("name", "")),
-                    "passed": bool(refutation.get("passed")), "error": str(refutation.get("error", ""))[:200],
-                }, parent=head)
-        if getattr(report, "unexplained_share", None) is not None:
-            self._emit(kinds.UNEXPLAINED_SHARE_UPDATED, {"share": report.unexplained_share})
+        emit_report_events(lambda kind, payload, parent: self._emit(kind, payload, parent=parent), report)
 
     def finished(self, reason: str) -> None:
         self._emit(kinds.INVESTIGATION_FINISHED, {

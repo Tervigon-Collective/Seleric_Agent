@@ -49,7 +49,10 @@ async def test_a_diagnosis_leaves_an_ordered_trace_with_one_id(cube_world, caplo
             stack.append(e["payload"]["operator"])
         elif e["kind"] in (kinds.OPERATOR_FINISHED, kinds.OPERATOR_FAILED):
             assert stack.pop() == e["payload"]["operator"]
-    assert stack == [] and {"fetch_series", "analyse"} <= {e["payload"]["operator"] for e in events if e["kind"] == kinds.OPERATOR_STARTED}
+    names = [e["payload"]["operator"] for e in events if e["kind"] == kinds.OPERATOR_STARTED]
+    assert stack == [] and {"fetch_series", "analyse"} <= set(names)
+    # the analysis is four stages inside "analyse", in the order the engine runs them
+    assert [o for o in names if o in {"is_real", "what", "where", "why_event"}] == ["is_real", "what", "where", "why_event"]
     queries = [e for e in events if e["kind"] == kinds.QUERY_ISSUED]
     started = {e["seq"]: e["payload"]["operator"] for e in events if e["kind"] == kinds.OPERATOR_STARTED}
     owners = {started.get(q["parent_id"], "<none>") for q in queries}

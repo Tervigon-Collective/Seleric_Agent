@@ -101,6 +101,8 @@ class RunResult:
     queries: int
     planted: list[inject.Planted] = field(default_factory=list)
     error: str = ""
+    tool_result: Any = None  # the tool's whole ToolResult and the artifacts it stored, for the Phase 2 oracle (oracle.py)
+    artifacts: list[Any] = field(default_factory=list)
 
 
 def tree_state() -> dict[str, Any]:
@@ -209,4 +211,5 @@ def run_case(case: C.Case, *, shift_days: int = 0, cut_frac: float = 0.0, contro
     except Exception as e:  # a crash is a result: the scorer counts it, never hides it
         return RunResult(case.id, False, "", {}, len(mcp.queries), world.planted, f"{type(e).__name__}: {e}")
     report = dict((res.provenance.source_metadata or {}).get("diagnosis") or {}) if res.success else {}
-    return RunResult(case.id, bool(res.success), str(res.summary), report, len(mcp.queries), world.planted)
+    return RunResult(case.id, bool(res.success), str(res.summary), report, len(mcp.queries), world.planted,
+                     tool_result=res, artifacts=deps.artifact_store.list_for_mission(deps.mission_id))

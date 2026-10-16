@@ -16,8 +16,15 @@ import numpy
 from seleric_swarm.diagnosis.domain.canonical import canonical_json
 from seleric_swarm.diagnosis.domain.config import DiagnosisConfig
 from seleric_swarm.diagnosis.domain.errors import DiagnosisError
+from seleric_swarm.diagnosis.domain.estimates import (
+    TimeSeriesEffect,
+    effect_from_json,
+    effect_to_json,
+    job_key,
+)
 from seleric_swarm.diagnosis.domain.graph import Graph
 from seleric_swarm.diagnosis.domain.record import (
+    EstimateSnapshot,
     RunRecord,
     SeriesSnapshot,
     decode_series,
@@ -29,6 +36,7 @@ from seleric_swarm.diagnosis.domain.record import (
 from seleric_swarm.diagnosis.domain.registry import Registry
 from seleric_swarm.diagnosis.domain.types import SeriesRequest, SeriesResult, result_fingerprint
 from seleric_swarm.diagnosis.libs.versions import library_versions
+from seleric_swarm.diagnosis.ports.estimator import EffectEstimator
 from seleric_swarm.diagnosis.ports.events import EventSink
 from seleric_swarm.diagnosis.ports.runtime import Runtime
 from seleric_swarm.diagnosis.ports.series import SeriesPort
@@ -55,6 +63,7 @@ class RunInputs:
     runtime: Runtime
     emitter: Emitter
     graph: Graph | None = None
+    estimator: EffectEstimator | None = None
 
 
 class Runner(Protocol):
@@ -87,6 +96,48 @@ class RecordingSeriesPort:
                 SeriesSnapshot(request_key(request), request_to_dict(request), result.source_query, result.fingerprint, ref, result.error)
             )
         return results
+
+
+class RecordingEstimator:
+    """Passes jobs to the real estimator and keeps every answer, in order. The estimates are inputs of a replay like
+    the series are: their last digits depend on the numerical stack and the process they ran in, and a replay must
+    test the engine's logic, not the machine's arithmetic."""
+
+    def __init__(self, inner: EffectEstimator) -> None:
+        self._inner = inner
+        self.snapshots: list[EstimateSnapshot] = []
+
+    def estimate_many(self, jobs: Sequence[Mapping[str, Any]]) -> list[TimeSeriesEffect]:
+        results = self._inner.estimate_many(jobs)
+        for job, result in zip(jobs, results, strict=True):
+            self.snapshots.append(EstimateSnapshot(job_key(job), effect_to_json(result)))
+        return results
+
+
+class ReplayEstimator:
+    """Serves the recorded estimates in the order they were given; a job the recorded run never submitted (or submitted
+    fewer times) is a divergence: the engine asked a different question than it did."""
+
+    def __init__(self, record: RunRecord) -> None:
+        self._queues: dict[str, list[Mapping[str, Any]]] = {}
+        for snap in record.estimates:
+            self._queues.setdefault(snap.key, []).append(snap.result)
+        self._served: dict[str, int] = {}
+
+    def estimate_many(self, jobs: Sequence[Mapping[str, Any]]) -> list[TimeSeriesEffect]:
+        out: list[TimeSeriesEffect] = []
+        for job in jobs:
+            key = job_key(job)
+            queue = self._queues.get(key)
+            index = self._served.get(key, 0)
+            if not queue or index >= len(queue):
+                raise ReplayDivergence(
+                    f"the replay asked for an estimate ({job.get('treatment_name')} -> {job.get('outcome_name')}) "
+                    "the recorded run did not ask for"
+                )
+            self._served[key] = index + 1
+            out.append(effect_from_json(queue[index]))
+        return out
 
 
 class RecordingRuntime:
@@ -184,11 +235,14 @@ async def execute(
     runtime: Runtime,
     graph: Graph | None = None,
     extra_sinks: Sequence[EventSink] = (),
+    estimator: EffectEstimator | None = None,
 ) -> Outcome:
     memory = MemorySink()
     emitter = Emitter(investigation_id, runtime.now, [memory, *extra_sinks], cap_bytes=config.payload_cap_bytes)
     with investigation_scope(investigation_id):
-        report = await runner.run(RunInputs(investigation_id, request, config, seed, series, runtime, emitter, graph))
+        report = await runner.run(
+            RunInputs(investigation_id, request, config, seed, series, runtime, emitter, graph, estimator)
+        )
     return Outcome(
         tuple(e.to_dict() for e in memory.events), {k: dict(v) for k, v in emitter.overflow.items()}, report,
         tuple(emitter.sink_failures),
@@ -207,13 +261,16 @@ async def record_run(
     graph: Graph | None = None,
     catalogue_version: str = "",
     extra_sinks: Sequence[EventSink] = (),
+    estimator: EffectEstimator | None = None,
 ) -> RunRecord:
     """Run for real and return the record that lets anyone repeat it offline."""
     recording_series, recording_runtime = RecordingSeriesPort(series), RecordingRuntime(runtime)
+    recording_estimator = RecordingEstimator(estimator) if estimator is not None else None
     created = recording_runtime.now()
     outcome = await execute(
         runner, investigation_id=investigation_id, request=request, config=config, seed=seed,
         series=recording_series, runtime=recording_runtime, graph=graph, extra_sinks=extra_sinks,
+        estimator=recording_estimator,
     )
     return RunRecord(
         investigation_id=investigation_id, created_at=created, runner=runner.kind, request=dict(request),
@@ -224,6 +281,7 @@ async def record_run(
         config=config.to_dict(), seed=seed, snapshots=tuple(recording_series.snapshots), blobs=dict(recording_series.blobs),
         events=outcome.events, overflow=outcome.overflow,
         runtime_trace={"clock": recording_runtime.clock, "cancel": recording_runtime.cancel}, report=outcome.report,
+        estimates=tuple(recording_estimator.snapshots) if recording_estimator is not None else (),
     )
 
 
@@ -268,6 +326,7 @@ async def replay(
         outcome = await execute(
             runner, investigation_id=record.investigation_id, request=record.request, config=config, seed=record.seed,
             series=ReplaySeriesPort(record), runtime=runtime, graph=graph,
+            estimator=ReplayEstimator(record),
         )
     except ReplayDivergence as exc:
         return ReplayResult(False, str(exc), None)

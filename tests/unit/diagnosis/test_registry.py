@@ -23,7 +23,7 @@ from seleric_swarm.diagnosis.domain.registry import Registry, RegistryError
 from seleric_swarm.diagnosis.domain.types import Scope, Window
 from seleric_swarm.diagnosis.graph.edge_policy import EDGE_POLICIES, EdgePolicy, PolicyDecision
 from seleric_swarm.diagnosis.operators.base import LedgerView, Operator, Ports
-from seleric_swarm.diagnosis.operators.registry import OPERATORS, all_verdicts, applicable_operators
+from seleric_swarm.diagnosis.operators.registry import all_verdicts, applicable_operators
 from seleric_swarm.diagnosis.ports.evidence import DatedEvidence, EvidencePort
 
 WINDOW = Window(date(2026, 9, 1), date(2026, 9, 3))
@@ -34,6 +34,9 @@ class Ledger:
         return 1.0
 
     def open_hypotheses(self) -> tuple[str, ...]:
+        return ()
+
+    def findings(self, kind: str) -> tuple[Finding, ...]:
         return ()
 
 
@@ -55,7 +58,7 @@ def _dummy(kind: str, applies_to: str):
             ok = focus.node == applies_to
             return Applicability(ok, "matches" if ok else "other_node", Cost(queries=1))
 
-        async def run(self, ctx: InvestigationContext, focus: Focus, ports: Ports) -> OperatorResult:
+        async def run(self, ctx: InvestigationContext, focus: Focus, ports: Ports, ledger: LedgerView) -> OperatorResult:
             return OperatorResult(findings=(Finding("seen", EvidenceBasis.IDENTITY, focus.node, {}),))
 
     Dummy.kind = kind
@@ -78,7 +81,7 @@ async def test_a_selected_operator_runs_through_the_contract(ctx):
     registry: Registry[Operator] = Registry("operator")
     registry.register(_dummy("alpha", "orders"))
     [(op, _)] = applicable_operators(ctx, _focus("orders"), Ledger(), registry)
-    result = await op.run(ctx, _focus("orders"), None)  # type: ignore[arg-type]
+    result = await op.run(ctx, _focus("orders"), None, Ledger())  # type: ignore[arg-type]
     assert result.findings[0].subject == "orders" and result.cost == Cost()
 
 
@@ -100,7 +103,13 @@ def test_duplicate_or_missing_kinds_are_refused():
 def test_the_shipped_registries_start_empty_and_other_extension_points_use_the_same_type(ctx):
     from seleric_swarm.diagnosis.ports.evidence_registry import EVIDENCE
 
-    assert OPERATORS.kinds() == () and EDGE_POLICIES.kinds() == () and EVIDENCE.kinds() == ()  # nothing registers on import
+    assert EDGE_POLICIES.kinds() == () and EVIDENCE.kinds() == ()  # nothing registers on import
+    # (the operator registry is checked in a fresh interpreter: another test may have called the explicit loader)
+    import subprocess
+    import sys
+
+    code = "import seleric_swarm.diagnosis.operators.registry as r; print(r.OPERATORS.kinds())"
+    assert subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout.strip() == "()"
 
     class TwinPolicy:
         kind: ClassVar[str] = EdgeKind.TWIN.value

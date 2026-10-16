@@ -25,6 +25,7 @@ def test_defaults_equal_the_policy_constants_and_cover_all_of_them():
     assert missing == [], f"policy_config has DIAG_ constants the config does not carry: {missing}"
     different = {k: (config[k], v) for k, v in legacy.items() if config[k] != (list(v) if isinstance(v, tuple) else v)}
     assert different == {}
+    assert config["min_observation_rows"] == policy_config.MIN_OBSERVATION_ROWS
 
 
 def test_the_agreed_bounds_and_defaults():

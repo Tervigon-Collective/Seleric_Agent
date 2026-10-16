@@ -52,13 +52,22 @@ def emit_active(kind: str, payload: Mapping[str, Any], *, parent: int | None = N
 
 def report_failure(operator: str, exc: BaseException, inputs: Mapping[str, Any] | None = None) -> None:
     """A step failed and the engine is about to carry on with a weaker fallback: say so in the trace."""
+    report_recorded_failure(
+        operator, type(exc).__name__, str(exc), "".join(traceback.format_exception(exc)), inputs
+    )
+
+
+def report_recorded_failure(
+    operator: str, error_type: str, message: str, trace_text: str, inputs: Mapping[str, Any] | None = None
+) -> None:
+    """The same event for a failure that happened where no emitter reaches (a worker process) and came back as data."""
     detail = dict(inputs or {})
     emit_active(
         kinds.OPERATOR_FAILED,
         {
-            "operator": operator, "error_type": type(exc).__name__, "message": str(exc)[:300],
+            "operator": operator, "error_type": error_type, "message": message[:300],
             "inputs_digest": fingerprint(detail) if _jsonable(detail) else "",
-            "traceback": "".join(traceback.format_exception(exc))[-_TRACEBACK_CHARS:],
+            "traceback": trace_text[-_TRACEBACK_CHARS:],
         },
     )
 

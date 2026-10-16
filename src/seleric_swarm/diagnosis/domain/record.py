@@ -70,6 +70,14 @@ class SeriesSnapshot:
 
 
 @dataclass(frozen=True)
+class EstimateSnapshot:
+    """One causal estimate the run asked for, in the order it was asked: the digest of the request and the answer."""
+
+    key: str
+    result: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
 class RunRecord:
     investigation_id: str
     created_at: datetime
@@ -85,6 +93,7 @@ class RunRecord:
     runtime_trace: Mapping[str, Any]
     report: Mapping[str, Any] | None
     subgraph: Mapping[str, Any] = field(default_factory=dict)
+    estimates: tuple[EstimateSnapshot, ...] = ()  # additive since the first version; absent in older records
     schema_version: int = RECORD_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -93,6 +102,7 @@ class RunRecord:
             "created_at": self.created_at.isoformat(), "runner": self.runner, "request": dict(self.request),
             "versions": dict(self.versions), "config": dict(self.config), "seed": self.seed,
             "subgraph": dict(self.subgraph),
+            "estimates": [{"key": e.key, "result": dict(e.result)} for e in self.estimates],
             "snapshots": [
                 {"key": s.key, "request": dict(s.request), "source_query": s.source_query,
                  "fingerprint": s.fingerprint, "data_ref": s.data_ref, "error": s.error}
@@ -114,6 +124,7 @@ class RunRecord:
             investigation_id=str(raw["investigation_id"]), created_at=datetime.fromisoformat(raw["created_at"]),
             runner=str(raw["runner"]), request=dict(raw["request"]), versions=dict(raw["versions"]),
             config=dict(raw["config"]), seed=int(raw["seed"]), subgraph=dict(raw.get("subgraph") or {}),
+            estimates=tuple(EstimateSnapshot(e["key"], dict(e["result"])) for e in raw.get("estimates") or []),
             snapshots=tuple(
                 SeriesSnapshot(s["key"], dict(s["request"]), s["source_query"], s["fingerprint"], s["data_ref"], s.get("error"))
                 for s in raw["snapshots"]

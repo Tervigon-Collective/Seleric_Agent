@@ -15,6 +15,8 @@ from seleric_swarm.diagnosis.domain.canonical import fingerprint
 from seleric_swarm.diagnosis.domain.errors import DiagnosisError
 
 CONFIG_SCHEMA_VERSION = 1
+# Calendar words in a catalogue grain (``brand_order_day``): time buckets, not units.
+DEFAULT_CALENDAR_GRAIN_TOKENS: tuple[str, ...] = ("hour", "day", "week", "month", "quarter", "year")
 MULTIPLE_TESTING_METHODS = frozenset({"fdr_by", "fdr_bh"})
 
 
@@ -44,7 +46,7 @@ class StopRule:
 @dataclass(frozen=True)
 class DiagnosisConfig:
     schema_version: int = CONFIG_SCHEMA_VERSION
-    # statistical conventions (copies of toolsets/policy_config.DIAG_*)
+    # statistical conventions (copies of toolsets/policy_config.DIAG_* and MIN_OBSERVATION_ROWS)
     history_days: int = 56
     reference_weeks: int = 4
     event_z: float = 2.0
@@ -73,7 +75,8 @@ class DiagnosisConfig:
     comeasure_r: float = 0.95
     unit_count_r: float = 0.9
     min_dimension_coverage: float = 0.9
-    calendar_grain_tokens: tuple[str, ...] = ("hour", "day", "week", "month", "quarter", "year")
+    calendar_grain_tokens: tuple[str, ...] = DEFAULT_CALENDAR_GRAIN_TOKENS
+    min_observation_rows: int = 8  # history rows needed before any fit, identity or estimate is attempted
     # investigation
     bounds: Bounds = field(default_factory=Bounds)
     stop: StopRule = field(default_factory=StopRule)
@@ -89,6 +92,7 @@ class DiagnosisConfig:
             raise InvalidConfig(f"multiple_testing must be one of {sorted(MULTIPLE_TESTING_METHODS)}")
         positive = {
             "history_days": self.history_days, "reference_weeks": self.reference_weeks,
+            "min_observation_rows": self.min_observation_rows,
             "payload_cap_bytes": self.payload_cap_bytes, "max_depth": self.bounds.max_depth,
             "max_branching": self.bounds.max_branching, "max_operator_runs": self.bounds.max_operator_runs,
             "max_causal_queries": self.bounds.max_causal_queries, "max_wall_clock_s": self.bounds.max_wall_clock_s,

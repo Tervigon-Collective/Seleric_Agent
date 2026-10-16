@@ -3,7 +3,9 @@
 > **Update 2026-10-16.** This document describes the engine as it was before the rebuild. The rebuild (plan: `REBUILD_PLAN_2026-10-15.md`) has begun and changes three things you will meet when reading the code:
 > - `seleric_swarm/diagnosis/` is a new, strictly typed package (ports, graph loader, trace, run record and replay, registries, shared anomaly detector). The anomaly primitives and `Referencer` that this document places in `causal/diagnosis.py` now live in `diagnosis/detect/`, and `causal/diagnosis.py` imports them back under the old names. Their behaviour is unchanged (bit-exact parity tests).
 > - `diagnose_metric_change` now runs under an investigation: it emits ordered `diag.*` events on the mission stream (carried under the single payload key `investigation`) and returns the `investigation_id`. The analysis itself is unchanged.
-> - Layers 1-4 below are still the legacy implementation; Phase 2 of the plan turns them into operators.
+> - **Phase 2 (2026-10-16): the engine is split.** `causal/diagnosis.py` is now a re-export shim (every old name still imports from it; functions that gained a `cfg`/`fmt`/`clock` argument are wrapped to supply the production defaults). The code lives in `seleric_swarm/diagnosis/`: `domain/` (lineage, report, input, identity, window, estimate types; `numeric`), `detect/` (calendar fit, seasonal profile, window values, the shared detector), `operators/` (`identities`, `bridge_search`, `what_terms`, `where_dimensions`, `where_rate`, `why_terms`, and the four stage functions `is_real`, `what`, `where`, `why_event`; `pipeline.run_stages` runs them in today's order), `report/` (format, headline, narrative, assemble). Function names are unchanged, so the tables below still find them by name. Each stage is also a registered operator (`operators/engine_ops.py`, loaded by `operators/load.py`). The tool's output is identical to before the split (see the plan, Gate 2).
+> - Thresholds come from `DiagnosisConfig` (`domain/config.py`), not `toolsets/policy_config.py`; a parity test keeps the two equal while both exist. The bridge search's time budget reads an injected clock. Value formatting (`ValueFormatting`) and the driver estimates (`EffectEstimator`) are ports.
+> - `python -m seleric_swarm.diagnosis.cli export-fixture <record|input.json> --operator <is_real|what|where|why_event>` writes a fixture for one operator and `check-fixture` runs it again; the shipped ones are in `tests/fixtures/diagnosis_ops/`.
 > Operations: the running stack is built from `~/work/agent_dowhy_deploy` (see plan D-42), not from the shared `gaurav` checkout.
 
 
@@ -24,12 +26,12 @@ The "DoWhy engine" is `diagnose_metric_change`, one agent tool that answers "why
 
 Two design rules shape everything below. First, nothing in the engine names a metric, dimension, value or business threshold: candidates come from the semantic catalogue (lineage, grain, dimensions) and the data accept or reject them. Second, the verdict vocabulary is conservative: a same-day association with no lead/lag or on/off-shift evidence is labelled `correlation`, never a cause.
 
-**Scope limits worth knowing up front:** drivers are estimated only for short events of up to 7 days, read against the metric's usual days. Any window longer than 7 days, or one with an equal-length comparison period, is a period comparison: it stops at layers 2–3 and estimates no drivers (the tool docstring still says two weeks; the code constant `_USUAL_MAX_DAYS` is 7). The estimator is linear OLS with one-day lags, and the DAG is assumed, not learned.
+**Scope limits worth knowing up front:** drivers are estimated only for short events of up to 7 days, read against the metric's usual days. Any window longer than 7 days, or one with an equal-length comparison period, is a period comparison: it stops at layers 2–3 and estimates no drivers (the tool docstring said two weeks until Phase 2; the code constant `_USUAL_MAX_DAYS` is 7 and the docstring now says a week). The estimator is linear OLS with one-day lags, and the DAG is assumed, not learned.
 
 **Files:**
 
-- `src/seleric_swarm/causal/diagnosis.py` (2,994 lines): the pure engine, layers 1–4 and the narrative.
-- `src/seleric_swarm/causal/dowhy_service.py` (698 lines): the DoWhy boundary, `estimate_time_series_effect`.
+- `src/seleric_swarm/causal/diagnosis.py`: since Phase 2 a re-export shim over `seleric_swarm/diagnosis/` (the pure engine, layers 1–4 and the narrative, formerly 2,994 lines in this file).
+- `src/seleric_swarm/causal/dowhy_service.py`: the DoWhy boundary, `estimate_time_series_effect` (the unused `DoWhyService` was removed in Phase 2; the result type `TimeSeriesEffect` moved to `diagnosis/domain/estimates.py`).
 - `src/seleric_swarm/causal/estimate_pool.py` (87 lines): parallel worker processes for driver estimates.
 - `src/seleric_swarm/causal/graph_chart.py` (172 lines): turns the DAGs into a UI chart spec.
 - `src/seleric_swarm/toolsets/diagnosis.py` (1,700 lines): the agent tool; plans, fetches, calls the engine, writes artifacts and the answer skeleton.
@@ -63,7 +65,7 @@ The agent calls one tool. The tool reads lineage from the catalogue, fetches abo
 | --- | --- | --- |
 | Agent loop | `agent/` | Decides to call the tool, writes the answer, grounding check |
 | Tool | `toolsets/diagnosis.py` | Plans candidates from the catalogue, fetches, calls the engine, builds artifacts and the answer skeleton |
-| Engine | `causal/diagnosis.py` | No I/O. Reference, identities, bridge, Shapley, segment splits, driver screening, classification, narrative |
+| Engine | `diagnosis/` (via the `causal/diagnosis.py` shim) | No I/O. Reference, identities, bridge, Shapley, segment splits, driver screening, classification, narrative |
 | DoWhy boundary | `causal/dowhy_service.py` | `estimate_time_series_effect`: frame, DAG, identification, estimate, interval, direction tests, refuters |
 | Worker pool | `causal/estimate_pool.py` | Runs the estimates of one diagnosis in parallel processes |
 | Dimension planning | `exploration/space.py` | Which dimensions to segment by (hierarchy first) |
@@ -155,7 +157,7 @@ flowchart TD
 8. **Artifacts.** Evidence rows for every cited metric and day, one `CausalArtifact` per estimated driver, a `chart_spec` of the DAGs, then the named-driver text, ratio split, funnel ladder, change-log lines and lever lines.
 9. **Result.** A `Finding` whose `metrics` dict lists every number the answer may cite (so the grounding check can trace it), and a `ToolResult` whose `summary` is the plain-language answer skeleton. The full report is in `provenance.source_metadata["diagnosis"]`; `phase_ms` records plan, fetch_series, fetch_segments, fetch_chain_segments, engine, evidence and levers.
 
-### 4.3 Engine data model (`causal/diagnosis.py`)
+### 4.3 Engine data model (`diagnosis/domain/`: `lineage`, `inputs`, `window`, `identity`, `report`)
 
 | Type | Role |
 | --- | --- |
@@ -208,8 +210,8 @@ Each driver estimate costs 1–2 s of CPU (the module docstring measures seven e
 
 ### 4.7 Legacy code that is not on the live path
 
-- `DoWhyService.estimate` (the first half of `dowhy_service.py`) adjusts for every co-measured metric with `proceed_when_unidentifiable=True`. A repository search finds no caller outside that file; the 2026-10-04 audit replaced it because mediators and colliders became "confounders".
-- `config/diagnostic_policies.yaml` describes a `CAUSALLY_SUPPORTED` retention policy for an `agents.diagnostic` package that no longer exists in `src/`. Its thresholds (for example `max_causal_candidates: 6`) do not drive the current engine.
+- `DoWhyService.estimate` (the first half of `dowhy_service.py`) adjusted for every co-measured metric with `proceed_when_unidentifiable=True`. It had no caller; the 2026-10-04 audit replaced it because mediators and colliders became "confounders". **Removed in Phase 2** (with `CausalRequest`, `RefuterOutcome`, `DoWhyEstimate`, `DoWhyUnavailable`).
+- `config/diagnostic_policies.yaml` (a `CAUSALLY_SUPPORTED` retention policy for an `agents.diagnostic` package that no longer existed) was loaded by nothing in `src/`, `scripts/`, `tests/` or `eval/`; the owner had it deleted on 2026-10-16 (D-47).
 
 ## 5. How the causal analysis works
 
@@ -393,7 +395,7 @@ The items in 7.1 and 7.2 follow from reading the code. The items in 7.3 come fro
 - **Snapshot attributes used as history splits.** Current-state dimensions such as campaign status make "PAUSED 1.97% → 0.32%" lines artefacts; the catalogue has no flag to exclude them.
 - **Period mode** does not separate an outage from a deliberate cut, and the 6,000-row segment cap can drop the finest dimensions for 60–90-day pairs.
 - **Rate segments** merge null and empty values into `(not set)` by summing: exact for additive metrics, approximate for rates (guarded by the reconstruction check).
-- **Docstring drift.** The tool docstring says windows over two weeks are compared with the previous period; the code threshold is 7 days.
+- ~~Docstring drift.~~ Fixed in Phase 2: the tool docstring now says a window over a week is compared with the previous period (code threshold 7 days).
 
 ### 7.4 Test coverage
 
