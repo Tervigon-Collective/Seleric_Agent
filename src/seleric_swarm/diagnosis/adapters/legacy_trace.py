@@ -16,14 +16,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 
-from seleric_swarm.diagnosis.adapters.catalogue_graph import (
-    VendoredGraphAdapter,
-    facts_from_definitions,
-)
+from seleric_swarm.diagnosis.adapters.catalogue_graph import load_against_catalogue
 from seleric_swarm.diagnosis.adapters.mission_events import MissionEventSink
 from seleric_swarm.diagnosis.domain.canonical import fingerprint
 from seleric_swarm.diagnosis.domain.errors import DiagnosisError, GraphRejected
 from seleric_swarm.diagnosis.domain.events import Event
+from seleric_swarm.diagnosis.domain.graph import LoadedGraph
 from seleric_swarm.diagnosis.domain.report import DiagnosisReport
 from seleric_swarm.diagnosis.ports.events import EventSink
 from seleric_swarm.diagnosis.trace import events as kinds
@@ -97,19 +95,20 @@ class LegacyTrace:
     def window(self, start: date, end: date, *, baseline: int = 0) -> None:
         self._emit(kinds.WINDOW_RESOLVED, {"start": start.isoformat(), "end": end.isoformat(), "baseline_days": baseline})
 
-    def graph(self, definitions: Mapping[str, Mapping[str, Any]]) -> None:
-        """Load the reviewed graph against the live catalogue and show what was set aside."""
-        facts = facts_from_definitions(definitions)
+    def graph(self, definitions: Mapping[str, Mapping[str, Any]]) -> LoadedGraph | None:
+        """Load the reviewed graph against the live catalogue and show what was set aside. Returns what it loaded, or
+        None when the graph was rejected (the rejection is on the trace)."""
         try:
-            loaded = VendoredGraphAdapter(live=facts or None, catalogue_version=fingerprint({k: vars(v) for k, v in sorted(facts.items())})).load()
+            loaded = load_against_catalogue(definitions)
         except GraphRejected as exc:
             self._emit(kinds.GRAPH_ISSUE, {"code": exc.reason_code, "subject": "graph", "detail": exc.detail})
-            return
+            return None
         try:
             emit_graph_loaded(self.emitter, loaded)
         except DiagnosisError:
             self.instrumentation_errors += 1
             _log.error("trace_graph_events_refused", exc_info=True)
+        return loaded
 
     def query(self, metric: str, *, cache_hit: bool) -> None:
         self._queries += 1

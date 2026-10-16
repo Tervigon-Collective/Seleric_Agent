@@ -21,7 +21,7 @@ from seleric_swarm.diagnosis.domain.investigation import (
 )
 from seleric_swarm.diagnosis.domain.registry import Registry, RegistryError
 from seleric_swarm.diagnosis.domain.types import Scope, Window
-from seleric_swarm.diagnosis.graph.edge_policy import EDGE_POLICIES, EdgePolicy, PolicyDecision
+from seleric_swarm.diagnosis.graph.edge_policy import EdgePolicy, PolicyDecision
 from seleric_swarm.diagnosis.operators.base import LedgerView, Operator, Ports
 from seleric_swarm.diagnosis.operators.registry import all_verdicts, applicable_operators
 from seleric_swarm.diagnosis.ports.evidence import DatedEvidence, EvidencePort
@@ -103,13 +103,18 @@ def test_duplicate_or_missing_kinds_are_refused():
 def test_the_shipped_registries_start_empty_and_other_extension_points_use_the_same_type(ctx):
     from seleric_swarm.diagnosis.ports.evidence_registry import EVIDENCE
 
-    assert EDGE_POLICIES.kinds() == () and EVIDENCE.kinds() == ()  # nothing registers on import
-    # (the operator registry is checked in a fresh interpreter: another test may have called the explicit loader)
+    assert EVIDENCE.kinds() == ()  # nothing registers on import
+    # (the operator and edge-policy registries are checked in a fresh interpreter: another test may have called the
+    # explicit loader)
     import subprocess
     import sys
 
-    code = "import seleric_swarm.diagnosis.operators.registry as r; print(r.OPERATORS.kinds())"
-    assert subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout.strip() == "()"
+    code = (
+        "import seleric_swarm.diagnosis.operators.registry as r, seleric_swarm.diagnosis.graph.subgraph as g, "
+        "seleric_swarm.diagnosis.graph.policies as p; "
+        "print(r.OPERATORS.kinds(), p.EDGE_POLICIES.kinds())"
+    )
+    assert subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout.strip() == "() ()"
 
     class TwinPolicy:
         kind: ClassVar[str] = EdgeKind.TWIN.value

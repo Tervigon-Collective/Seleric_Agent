@@ -64,7 +64,10 @@ async def run_recorded(
         extra_sinks=[TraceForward(trace)] if trace is not None else [], estimator=estimator,
     )
     # The series the gather read, in the order it read them: what the replay's own gather will ask for again.
-    record = replace(record, snapshots=tuple(gathered_through.snapshots), blobs=dict(gathered_through.blobs))
+    record = replace(
+        record, snapshots=tuple(gathered_through.snapshots), blobs=dict(gathered_through.blobs),
+        subgraph=plan.subgraph.to_dict() if plan.subgraph is not None else {},  # also in the request's plan; a reader need not know
+    )
     return runner.report_object, record
 
 

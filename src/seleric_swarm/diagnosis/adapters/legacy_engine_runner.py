@@ -29,6 +29,7 @@ from seleric_swarm.diagnosis.domain.investigation import (
     Focus,
     InvestigationContext,
 )
+from seleric_swarm.diagnosis.domain.subgraph import Subgraph
 from seleric_swarm.diagnosis.domain.types import Scope, Window
 from seleric_swarm.diagnosis.operators.base import Ports
 from seleric_swarm.diagnosis.operators.engine_ops import ENGINE_INPUT
@@ -41,6 +42,7 @@ from seleric_swarm.diagnosis.report.assemble import assemble_report
 from seleric_swarm.diagnosis.trace import events as kinds
 from seleric_swarm.diagnosis.trace.active import activate_emitter
 from seleric_swarm.diagnosis.trace.emitter import clean_payload
+from seleric_swarm.diagnosis.trace.graph_events import emit_subgraph
 from seleric_swarm.diagnosis.trace.report_events import emit_report_events
 from seleric_swarm.diagnosis.trace.run import RunInputs, register_runner
 
@@ -89,6 +91,8 @@ class LegacyEngineRunner:
         emitter = inputs.emitter
         emitter.emit(kinds.INVESTIGATION_STARTED, {"outcome": inp.outcome, "scope": dict(inputs.request.get("scope") or {})})
         emitter.emit(kinds.WINDOW_RESOLVED, {"start": window.start.isoformat(), "end": window.end.isoformat(), "baseline_days": len(inp.baseline_days)})
+        if subgraph := (inputs.request.get("plan") or {}).get("subgraph"):
+            emit_subgraph(emitter, Subgraph.from_dict(subgraph))  # the one the run's plan froze, not today's graph file's
 
         ledger = FindingsLedger([Finding(ENGINE_INPUT, EvidenceBasis.PRIOR, inp.outcome, {"input": inp})])
         results = StageResults()

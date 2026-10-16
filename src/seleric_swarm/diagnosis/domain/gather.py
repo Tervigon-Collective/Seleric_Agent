@@ -17,6 +17,7 @@ from typing import Any, cast
 from seleric_swarm.diagnosis.domain.inputs import DiagnosisInput
 from seleric_swarm.diagnosis.domain.lineage import MetricMeta
 from seleric_swarm.diagnosis.domain.report import Direction
+from seleric_swarm.diagnosis.domain.subgraph import Subgraph
 
 
 @dataclass(frozen=True)
@@ -40,12 +41,19 @@ class GatherPlan:
     chain_dims: tuple[tuple[str, str, tuple[str, ...]], ...]  # (rate, base, dimensions) for each proposed rate chain
     scope_tokens: frozenset[str]
     max_segment_rows: int = 6000  # a segment answer bigger than this is a cardinality blow-up, not a split
+    subgraph: Subgraph | None = None  # what the reviewed graph says about this outcome (P3.1); None when it was not built
 
     @property
     def outcome_additive(self) -> bool:
         return self.lineage[self.outcome].additive
 
     def to_dict(self) -> dict[str, Any]:
+        out = self._core_dict()
+        if self.subgraph is not None:  # absent for a plan made before the subgraph existed, so old records read unchanged
+            out["subgraph"] = self.subgraph.to_dict()
+        return out
+
+    def _core_dict(self) -> dict[str, Any]:
         return {
             "outcome": self.outcome, "start": self.start.isoformat(), "end": self.end.isoformat(),
             "scope": {k: (list(v) if isinstance(v, (list, tuple)) else v) for k, v in sorted(self.scope.items())},
@@ -76,6 +84,7 @@ class GatherPlan:
             drivers=tuple(raw["drivers"]), dims=tuple(raw["dims"]),
             chain_dims=tuple((str(r), str(b), tuple(d)) for r, b, d in raw["chain_dims"]),
             scope_tokens=frozenset(raw["scope_tokens"]), max_segment_rows=int(raw["max_segment_rows"]),
+            subgraph=Subgraph.from_dict(raw["subgraph"]) if raw.get("subgraph") else None,
         )
 
 

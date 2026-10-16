@@ -8,10 +8,15 @@ from typing import ClassVar, Protocol
 from seleric_swarm.diagnosis.domain.graph import Edge, Graph
 from seleric_swarm.diagnosis.domain.registry import Registry
 
+ACCOUNT = "account"  # the source builds the target by arithmetic: part of the outcome, never a cause
+CAUSE = "cause"  # the source may move the target: walk through it and offer it as a candidate
+EXCLUDE = "exclude"  # the source describes the same quantity: not a cause
+MEASUREMENT = "measurement_hypothesis"  # as exclude, and the two measurements are to be compared
+
 
 @dataclass(frozen=True)
 class PolicyDecision:
-    action: str  # include | exclude | measurement_hypothesis
+    action: str  # ACCOUNT | CAUSE | EXCLUDE | MEASUREMENT
     reason_code: str
     check_value: str = ""
 

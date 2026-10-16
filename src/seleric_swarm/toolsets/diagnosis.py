@@ -63,6 +63,7 @@ from seleric_swarm.diagnosis.adapters.cube_fetch import (  # noqa: F401  (also i
 from seleric_swarm.diagnosis.adapters.cube_series import CubeSeriesAdapter
 from seleric_swarm.diagnosis.adapters.legacy_trace import LegacyTrace, OperatorScope, current_trace
 from seleric_swarm.diagnosis.adapters.live_record import run_recorded, save_record
+from seleric_swarm.diagnosis.adapters.live_subgraph import graph_for, plan_subgraph
 from seleric_swarm.diagnosis.adapters.runstore_artifacts import ArtifactRunStore
 from seleric_swarm.diagnosis.domain.gather import GatherPlan
 from seleric_swarm.diagnosis.domain.types import Scope, SeriesRequest, Window
@@ -1173,8 +1174,7 @@ async def _diagnose(
 
     marks: list[tuple[str, float]] = [("start", time.perf_counter())]
     definitions = await _all_definitions(ctx)
-    if (trace := current_trace()) is not None:
-        trace.graph(definitions)
+    loaded_graph = graph_for(definitions, current_trace())  # shown on the live trace when there is one
     if metric_id not in definitions:
         return _refuse(f"no catalogue definition for {metric_id}; cannot read its lineage")
     lineage = engine.lineage_from_definitions(definitions)
@@ -1242,6 +1242,7 @@ async def _diagnose(
     marks.append(("plan", time.perf_counter()))
     env = engine.default_env()
     chain_dims = _chain_dims(ctx, series_ids, lineage, P.DIAG_MAX_DIMENSIONS // 2)
+    subgraph = plan_subgraph(loaded_graph, metric_id, lineage, identity_metrics, ctx.deps.catalogue.has_metric)
     plan = GatherPlan(
         outcome=metric_id, start=hist_start, end=ev_end, scope=filters, event_days=tuple(event_days),
         partial_days=frozenset(partial), baseline_days=tuple(baseline), claimed_direction=claimed_direction,
@@ -1250,7 +1251,7 @@ async def _diagnose(
         change_log=frozenset(change_log), ladder_ends=frozenset(ladder_ends), bridge_pool=tuple(bridge_pool),
         drivers=tuple(drivers), dims=tuple(dims), chain_dims=chain_dims,
         scope_tokens=frozenset(t for d in _scope_dimensions(ctx) for t in d.lower().split("_") if t),
-        max_segment_rows=_MAX_SEGMENT_ROWS,
+        max_segment_rows=_MAX_SEGMENT_ROWS, subgraph=subgraph,
     )
     recording = RecordingSeriesPort(CubeSeriesAdapter(ctx, guarded=guarded, report_dropped_filters=True))
     gathered = await gather(

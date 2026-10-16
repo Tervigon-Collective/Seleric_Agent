@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from seleric_swarm.diagnosis.domain.canonical import fingerprint
 from seleric_swarm.diagnosis.domain.graph import CatalogueFacts, LoadedGraph
 from seleric_swarm.diagnosis.graph.loader import load_graph
 
@@ -47,3 +48,11 @@ class VendoredGraphAdapter:
     def load(self) -> LoadedGraph:
         document = json.loads(self._path.read_text(encoding="utf-8"))
         return load_graph(document, live=self._live, catalogue_version=self._catalogue_version)
+
+
+def load_against_catalogue(definitions: Mapping[str, Mapping[str, Any]]) -> LoadedGraph:
+    """The vendored graph checked against the live catalogue definitions (raises ``GraphRejected`` when no part of it
+    can be trusted). The catalogue version is the digest of the facts the graph was checked against."""
+    facts = facts_from_definitions(definitions)
+    version = fingerprint({k: vars(v) for k, v in sorted(facts.items())})
+    return VendoredGraphAdapter(live=facts or None, catalogue_version=version).load()

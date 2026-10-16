@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from seleric_swarm.diagnosis.domain.graph import LoadedGraph
+from seleric_swarm.diagnosis.domain.subgraph import Subgraph
 from seleric_swarm.diagnosis.trace import events as kinds
 from seleric_swarm.diagnosis.trace.emitter import Emitter
 
@@ -33,3 +34,29 @@ def emit_graph_loaded(emitter: Emitter, loaded: LoadedGraph, *, parent: int | No
                 {"code": issue.code, "subject": issue.subject, "detail": issue.detail},
                 parent=summary.seq,
             )
+
+
+# One event may hold at most this many metric ids in a list; the whole subgraph is in the run record's plan.
+_LISTED = 40
+
+
+def emit_subgraph(emitter: Emitter, subgraph: Subgraph, *, parent: int | None = None) -> None:
+    """``subgraph_built`` (counts, digest, the candidates in order) and one ``exclusion`` per metric set aside."""
+    summary = emitter.emit(
+        kinds.SUBGRAPH_BUILT,
+        {
+            "nodes": 1 + len(subgraph.accounting) + len(subgraph.candidates), "edges": subgraph.edges_walked,
+            "excluded": len(subgraph.exclusions), "graph_version": subgraph.graph_version, "digest": subgraph.digest,
+            "outcome": subgraph.outcome, "depth_limit": subgraph.depth_limit,
+            "accounting": list(subgraph.accounting[:_LISTED]),
+            "candidates": [c.metric for c in subgraph.candidates[:_LISTED]],
+            "peers": len(subgraph.peers),
+        },
+        parent=parent,
+    )
+    for exclusion in subgraph.exclusions:
+        emitter.emit(
+            kinds.EXCLUSION,
+            {"metric": exclusion.metric, "reason_code": exclusion.reason_code, "check_value": exclusion.check_value, "action": exclusion.action},
+            parent=summary.seq,
+        )

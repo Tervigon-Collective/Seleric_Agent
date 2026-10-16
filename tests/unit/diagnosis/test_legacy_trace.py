@@ -66,7 +66,7 @@ async def test_the_graph_is_checked_against_the_live_catalogue_and_exclusions_ar
     _, events = await _run(cube_world)
     [loaded] = [e for e in events if e["kind"] == kinds.GRAPH_LOADED]
     assert loaded["payload"]["graph_version"] == "3116740b8d70" and loaded["payload"]["catalogue_version"]
-    excluded = [e for e in events if e["kind"] == kinds.EXCLUSION]
+    excluded = [e for e in events if e["kind"] == kinds.EXCLUSION and e["parent_id"] == loaded["seq"]]
     # the eval world's catalogue is a subset of the graph's metrics, so the other graph metrics are reported as not in it
     assert len(excluded) == 233 - len(cube_world[0].deps.catalogue.metrics) and {e["payload"]["reason_code"] for e in excluded} == {"node_not_in_catalogue"}
 
