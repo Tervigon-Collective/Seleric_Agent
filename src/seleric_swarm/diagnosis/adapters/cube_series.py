@@ -11,6 +11,7 @@ import json
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
+from seleric_swarm.diagnosis.adapters import cube_fetch as _fetch
 from seleric_swarm.diagnosis.domain.canonical import canonical_json
 from seleric_swarm.diagnosis.domain.types import (
     Scope,
@@ -19,7 +20,6 @@ from seleric_swarm.diagnosis.domain.types import (
     Window,
     result_fingerprint,
 )
-from seleric_swarm.toolsets import diagnosis as _fetch
 
 if TYPE_CHECKING:
     from pydantic_ai import RunContext
@@ -30,9 +30,16 @@ Guard = Callable[[Awaitable[Any]], Awaitable[Any]]
 
 
 class CubeSeriesAdapter:
-    def __init__(self, ctx: RunContext[SelericDeps], *, guarded: Guard | None = None) -> None:
+    """``report_dropped_filters=False`` (the default) refuses a metric that cannot take the scope; ``True`` returns its
+    series with ``dropped_filters`` set and leaves the decision to the consumer (the diagnosis gather step uses the
+    outcome unfiltered with a note and leaves other metrics out)."""
+
+    def __init__(
+        self, ctx: RunContext[SelericDeps], *, guarded: Guard | None = None, report_dropped_filters: bool = False
+    ) -> None:
         self._ctx = ctx
         self._guarded = guarded
+        self._report_dropped = report_dropped_filters
 
     async def fetch(self, requests: Sequence[SeriesRequest]) -> list[SeriesResult]:
         # One batched fetch per (window, scope): requests sharing both are answered by combined queries.
@@ -47,23 +54,31 @@ class CubeSeriesAdapter:
                 self._ctx, jobs, window.start, window.end, filters, guarded=self._guarded
             )
             for index, (payload, _args) in zip(indexes, fetched, strict=True):
-                results[index] = self._result(requests[index], payload)
+                results[index] = self._result(requests[index], payload, report_dropped=self._report_dropped)
         return [r for r in results if r is not None]
 
     @staticmethod
-    def _result(request: SeriesRequest, payload: dict[str, Any]) -> SeriesResult:
+    def _result(request: SeriesRequest, payload: dict[str, Any], *, report_dropped: bool = False) -> SeriesResult:
         source = canonical_json(json.loads(json.dumps(payload.get("_args") or {}, default=str)))
-        dropped = [str(d) for d in payload.get("_dropped_filters") or []]
+        dropped = tuple(str(d) for d in payload.get("_dropped_filters") or [])
         if payload.get("error"):
             return SeriesResult(request, {}, {}, source, result_fingerprint(request, {}, {}), error=str(payload["error"]))
-        if dropped:
+        if dropped and not report_dropped:
             # A filter the metric cannot take would return the unscoped series as if it were the scoped one.
             return SeriesResult(
                 request, {}, {}, source, result_fingerprint(request, {}, {}),
                 error=f"scope not supported by the metric: {sorted(dropped)}",
             )
+        currency = str((payload.get("provenance") or {}).get("currency") or "").strip()
+        rows = len(payload.get("rows") or [])
         if request.dimension:
             segments = _fetch._parse_segments(payload, request.metric_id, request.dimension)
-            return SeriesResult(request, {}, segments, source, result_fingerprint(request, {}, segments))
+            return SeriesResult(
+                request, {}, segments, source, result_fingerprint(request, {}, segments),
+                currency=currency, dropped_filters=dropped, rows=rows,
+            )
         values = _fetch._parse_series(payload, request.metric_id)
-        return SeriesResult(request, values, {}, source, result_fingerprint(request, values, {}))
+        return SeriesResult(
+            request, values, {}, source, result_fingerprint(request, values, {}),
+            currency=currency, dropped_filters=dropped, rows=rows,
+        )

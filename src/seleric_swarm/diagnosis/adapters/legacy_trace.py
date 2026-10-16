@@ -23,6 +23,7 @@ from seleric_swarm.diagnosis.adapters.catalogue_graph import (
 from seleric_swarm.diagnosis.adapters.mission_events import MissionEventSink
 from seleric_swarm.diagnosis.domain.canonical import fingerprint
 from seleric_swarm.diagnosis.domain.errors import DiagnosisError, GraphRejected
+from seleric_swarm.diagnosis.domain.events import Event
 from seleric_swarm.diagnosis.domain.report import DiagnosisReport
 from seleric_swarm.diagnosis.ports.events import EventSink
 from seleric_swarm.diagnosis.trace import events as kinds
@@ -154,3 +155,21 @@ def _plain(value: Mapping[str, Any] | None) -> bool:
     except (TypeError, ValueError):
         return False
     return True
+
+
+class TraceForward:
+    """An event sink that shows a run's events on a live trace: the stages, hypotheses, refuters and failures of the
+    run being recorded appear in the investigation panel under whatever the tool is inside. The run's own start, window
+    and finish are the trace's already, so they are not repeated; a parent is mapped to where its event landed."""
+
+    _SKIP = frozenset({kinds.INVESTIGATION_STARTED, kinds.WINDOW_RESOLVED, kinds.INVESTIGATION_FINISHED})
+
+    def __init__(self, trace: LegacyTrace) -> None:
+        self._trace = trace
+        self._landed: dict[int, int | None] = {}
+
+    def emit(self, event: Event) -> None:
+        if event.kind in self._SKIP:
+            return
+        parent = self._landed.get(event.parent_id) if event.parent_id is not None else None
+        self._landed[event.seq] = self._trace._emit(event.kind, event.payload, parent=parent)

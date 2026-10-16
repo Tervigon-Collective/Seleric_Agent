@@ -32,12 +32,11 @@ from __future__ import annotations
 import asyncio
 import functools
 import itertools
-import json
 import math
 import statistics
 import time
-from collections.abc import Sequence
 from contextlib import AbstractContextManager, nullcontext
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
@@ -49,11 +48,29 @@ from seleric_swarm.agent.output import ToolResult
 from seleric_swarm.causal import diagnosis as engine
 from seleric_swarm.causal.graph_chart import build_causal_graph_spec
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+from seleric_swarm.diagnosis.adapters.cube_fetch import (  # noqa: F401  (also imported from here by exploration, composition and tests)
+    UNSET_SEGMENT,
+    _fetch_all,
+    _fetch_daily,
+    _filters_for,
+    _parse_segments,
+    _parse_series,
+    _prefetch_daily,
+    _slice_for,
+    _supports_brand,
+    _view_of,
+)
+from seleric_swarm.diagnosis.adapters.cube_series import CubeSeriesAdapter
 from seleric_swarm.diagnosis.adapters.legacy_trace import LegacyTrace, OperatorScope, current_trace
+from seleric_swarm.diagnosis.adapters.live_record import run_recorded, save_record
+from seleric_swarm.diagnosis.adapters.runstore_artifacts import ArtifactRunStore
+from seleric_swarm.diagnosis.domain.gather import GatherPlan
+from seleric_swarm.diagnosis.domain.types import Scope, SeriesRequest, Window
+from seleric_swarm.diagnosis.operators.gather import gather
 from seleric_swarm.diagnosis.trace.active import report_failure
+from seleric_swarm.diagnosis.trace.run import RecordingSeriesPort
 from seleric_swarm.exploration import space
 from seleric_swarm.semantic import McpSemanticPort
-from seleric_swarm.services.mcp_query import build_metrics_query_args, dimension_value, row_date
 from seleric_swarm.toolsets import _data
 from seleric_swarm.toolsets import policy_config as P
 
@@ -67,7 +84,7 @@ _MAX_EVENT_DAYS = 14
 # (live 2026-10-14 Q4: 14 days against a blended "usual" level, quoted by the answer as the previous period).
 _USUAL_MAX_DAYS = 7
 _MAX_SEGMENT_ROWS = 6000
-_UNSET_SEGMENT = "(not set)"
+_UNSET_SEGMENT = UNSET_SEGMENT
 
 # Process-wide cache of full catalogue definitions (lineage lives only there).
 _definitions_cache: dict[str, Any] = {"at": 0.0, "ids": frozenset(), "defs": {}}
@@ -162,203 +179,22 @@ def _plan_dimensions(ctx: RunContext[SelericDeps], outcome: str, cap: int) -> li
     return space.plan_dimensions(ctx.deps.catalogue, outcome, cap)
 
 
-def _rate_parts(
-    metric_id: str, lineage: dict[str, engine.MetricMeta], series: dict[str, dict[date, float]], days: list[date],
-) -> tuple[str | None, str | None]:
-    """The volume a rate is averaged over: its denominator, as the data verify it.
-
-    Lineage lists a ratio's components but not which one divides; weighting the
-    segments by the numerator (clicks for a click-through rate) mixes the
-    segments on the wrong volume and breaks the mix/rate split. A verified
-    ``outcome = a / b`` identity names ``b``; a one-component rate is "per" that
-    component. The numerator comes back only from a verified ``a / b``.
-    """
-    meta = lineage.get(metric_id, engine.MetricMeta(metric_id))
-    # Components may live in other views (spend and sales of a return on spend);
-    # the engine only trusts a split whose segments rebuild the total on the data.
-    additive = {d for d in meta.depends_on if lineage.get(d, engine.MetricMeta(d)).additive}
-    for ident in engine.discover_identities(metric_id, lineage, series, days):
-        den = [m for m, e in ident.factors if e < 0]
-        num = [m for m, e in ident.factors if e > 0]
-        if len(ident.factors) == 2 and len(den) == 1 and den[0] in additive:
-            return (num[0] if num and num[0] in additive else None), den[0]
-    if len(meta.depends_on) == 1 and meta.depends_on[0] in additive:
-        return None, meta.depends_on[0]
-    return None, None
-
-
-# --------------------------------------------------------------------------- fetching
-def _filters_for(ctx: RunContext[SelericDeps], metric_id: str, filters: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
-    supported = set(ctx.deps.catalogue.supported_dimensions_for(metric_id))
-    family_members = getattr(ctx.deps.catalogue, "family_members", None)
-    out, dropped = [], []
-    for k, v in (filters or {}).items():
-        if v in (None, "", []):
-            continue
-        if supported and k not in supported:
-            # The same slice under the metric's own member of the conformed family (finance_channel = meta is
-            # ad_platform / acquisition_platform = meta elsewhere), as metrics_query answers it. Dropped, the
-            # driver series of a Meta diagnosis came back for every platform and the scope gate sent the answer
-            # back twice (regression 2026-10-09 Q28, 288 s).
-            sibling = next(
-                (m for m in sorted(family_members(k)) if m in supported), None
-            ) if family_members is not None else None
-            if sibling is None:
-                dropped.append(k)
-                continue
-            k = sibling
-        out.append({"dimension": k, "operator": "equals", "values": list(v) if isinstance(v, list) else [str(v)]})
-    return out, dropped
-
-
-def _supports_brand(ctx: RunContext[SelericDeps], metric_id: str) -> bool:
-    from seleric_swarm.exploration.space import scope_keys
-
-    cat = ctx.deps.catalogue
-    return (not cat.metrics) or bool({d.lower() for d in cat.supported_dimensions_for(metric_id)} & scope_keys(cat))
-
-
-async def _fetch_daily(
-    ctx: RunContext[SelericDeps], metric_id: str, start: date, end: date, filters: dict[str, Any],
-    dimension: str | None = None,
-) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    flt, dropped = _filters_for(ctx, metric_id, filters)
-    args = build_metrics_query_args(
-        measure=metric_id, start=start.isoformat(), end=end.isoformat(), grain="day",
-        dimensions=[dimension] if dimension else None, filters=flt or None,
-        inject_default_brand=_supports_brand(ctx, metric_id),
+def _chain_dims(
+    ctx: RunContext[SelericDeps], series_ids: list[str], lineage: dict[str, engine.MetricMeta], cap: int
+) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+    """For each (rate, base) pair that could rebuild an additive series as rate x base, the dimensions both are split
+    by. Which pairs the data verify is the gather's to say, so every proposed pair whose two series are fetched is
+    planned here, from the catalogue, before any data is read."""
+    fetched = set(series_ids)
+    pairs = dict.fromkeys(
+        pair for t in series_ids if lineage.get(t, engine.MetricMeta(t)).additive
+        for pair in engine.rate_chain_proposals(t, lineage) if pair[0] in fetched and pair[1] in fetched
     )
-    hit = ctx.deps.query_cache.peek(_data.cache_key("seleric.metrics_query", args)) is not None
-    result = await _data.cached_metrics_query(ctx, args)
-    if (trace := current_trace()) is not None:
-        trace.query(metric_id, cache_hit=hit)
-    result = dict(result)
-    result["_args"] = args
-    result["_dropped_filters"] = dropped
-    return result, (None if result.get("error") else args)
-
-
-# One multi-measure query serves every metric of a catalogue view that is asked for with the same window, scope and
-# dimension: a diagnosis reads ~100 candidate series, and one query per metric (182 calls, 74 s of server time in the
-# live profile of 2026-10-13) dominated its wall time and used the mission's whole query budget. Each metric's slice is
-# stored under the key its own single-measure query would have used, so the fetch below finds it and nothing else
-# changes. Any failure leaves the metrics to the individual path.
-_BATCH_MAX_MEASURES = 24
-_BATCH_CONCURRENCY = 6
-
-
-def _view_of(ctx: RunContext[SelericDeps]) -> dict[str, str]:
-    return {m.id: m.view for m in ctx.deps.catalogue.metrics if m.view}
-
-
-def _slice_for(payload: dict[str, Any], measures: list[str], metric_id: str) -> dict[str, Any] | None:
-    """The single-measure result a combined query implies for ``metric_id`` (None when the server did not return it)."""
-    columns = [c for c in payload.get("columns") or [] if isinstance(c, str)]
-    if metric_id not in columns:
-        return None
-    others = set(measures) - {metric_id}
-    provenance = dict(payload.get("provenance") or {})
-    provenance["metric_ids"] = [metric_id]
-    return {
-        **payload,
-        "columns": [c for c in columns if c not in others],
-        "rows": [{k: v for k, v in row.items() if k not in others} for row in payload.get("rows") or [] if isinstance(row, dict)],
-        "provenance": provenance,
-    }
-
-
-async def _prefetch_daily(
-    ctx: RunContext[SelericDeps], jobs: Sequence[tuple[str, str | None]], start: date, end: date, filters: dict[str, Any],
-) -> None:
-    views = _view_of(ctx)
-    groups: dict[str, list[tuple[str, str]]] = {}  # group key -> [(metric_id, its single-measure cache key)]
-    group_args: dict[str, dict[str, Any]] = {}
-    for metric_id, dimension in dict.fromkeys(jobs):
-        flt, _ = _filters_for(ctx, metric_id, filters)
-        args = build_metrics_query_args(
-            measure=metric_id, start=start.isoformat(), end=end.isoformat(), grain="day",
-            dimensions=[dimension] if dimension else None, filters=flt or None,
-            inject_default_brand=_supports_brand(ctx, metric_id),
-        )
-        key = _data.cache_key("seleric.metrics_query", args)
-        view = views.get(metric_id)
-        if not view or ctx.deps.query_cache.peek(key) is not None:
-            continue
-        rest = {k: v for k, v in args.items() if k != "measures"}
-        gk = json.dumps([view, rest], sort_keys=True, default=str)
-        groups.setdefault(gk, []).append((metric_id, key))
-        group_args.setdefault(gk, rest)
-    chunks = [
-        (gk, members[i : i + _BATCH_MAX_MEASURES])
-        for gk, members in groups.items() if len(members) > 1
-        for i in range(0, len(members), _BATCH_MAX_MEASURES)
-    ]
-    sem = asyncio.Semaphore(_BATCH_CONCURRENCY)
-
-    async def one(gk: str, members: list[tuple[str, str]]) -> None:
-        measures = [m for m, _ in members]
-        async with sem:
-            payload = await _data.cached_metrics_query(ctx, {"measures": measures, **group_args[gk]})
-        if payload.get("error"):
-            return
-        # Measures on different time axes come back composed: one part per axis, each a plain result of its own.
-        parts = payload["parts"] if isinstance(payload.get("parts"), list) else [payload]
-        for part in parts:
-            if not isinstance(part, dict) or part.get("error") or not isinstance(part.get("rows"), list):
-                continue
-            in_part = [m for m in measures if m in (part.get("columns") or [])]
-            for metric_id, key in members:
-                if metric_id in in_part:
-                    piece = _slice_for(part, in_part, metric_id)
-                    if piece is not None:
-                        ctx.deps.query_cache.set(key, piece)
-
-    if len(chunks) > 0:
-        await asyncio.gather(*(one(gk, members) for gk, members in chunks))
-
-
-async def _fetch_all(
-    ctx: RunContext[SelericDeps], jobs: Sequence[tuple[str, str | None]], start: date, end: date, filters: dict[str, Any],
-    guarded: Any = None,
-) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
-    """``_fetch_daily`` for every (metric, dimension) job, after one batched prefetch per view."""
-    await _prefetch_daily(ctx, jobs, start, end, filters)
-    run = guarded or (lambda coro: coro)
-    return list(await asyncio.gather(*(run(_fetch_daily(ctx, m, start, end, filters, dimension=d)) for m, d in jobs)))
-
-
-def _parse_series(result: dict[str, Any], metric_id: str) -> dict[date, float]:
-    out: dict[date, float] = {}
-    for row in result.get("rows") or []:
-        ts, raw = row_date(row), row.get(metric_id)
-        if ts is None or raw is None:
-            continue
-        try:
-            out[date.fromisoformat(ts)] = float(raw)
-        except (TypeError, ValueError):
-            continue
-    return out
-
-
-def _parse_segments(result: dict[str, Any], metric_id: str, dimension: str) -> dict[str, dict[date, float]]:
-    """metric per segment per day. Rows with no value for the dimension are kept as
-    one explicit segment: dropping them made a split stop adding up to the total
-    (unattributed sales vanished from a sales-per-spend split by campaign)."""
-    out: dict[str, dict[date, float]] = {}
-    for row in result.get("rows") or []:
-        ts, raw = row_date(row), row.get(metric_id)
-        seg = dimension_value(row, dimension)
-        if ts is None or raw is None:
-            continue
-        if seg in (None, "", "None", "null"):
-            seg = _UNSET_SEGMENT
-        try:
-            day = date.fromisoformat(ts)
-            bucket = out.setdefault(str(seg), {})
-            bucket[day] = bucket.get(day, 0.0) + float(raw)
-        except (TypeError, ValueError):
-            continue
-    return out
+    out: list[tuple[str, str, tuple[str, ...]]] = []
+    for rate, base in pairs:
+        base_dims = set(ctx.deps.catalogue.supported_dimensions_for(base))
+        out.append((rate, base, tuple(d for d in _plan_dimensions(ctx, rate, cap) if d in base_dims)))
+    return tuple(out)
 
 
 # --------------------------------------------------------------------------- artifacts
@@ -724,19 +560,22 @@ async def _levers(
             return await coro
 
     jobs: list[tuple[str, str | None]] = [(m, None) for m in metrics] + ([(m, seg_dim) for m in metrics] if seg_dim else [])
-    results = await _fetch_all(ctx, jobs, span_start, span_end, filters, guard)
+    window, scope = Window(span_start, span_end), Scope.from_filters(filters)
+    results = await CubeSeriesAdapter(ctx, guarded=guard, report_dropped_filters=True).fetch(
+        [SeriesRequest(m, window, scope, d) for m, d in jobs]
+    )
     scopes: dict[str, dict[str, dict[date, float]]] = {"": {}}
     args_for: dict[tuple[str, str | None], dict[str, Any]] = {}
-    for (m, d), (res, args) in zip(jobs, results, strict=True):
-        if args is None or res.get("_dropped_filters"):
+    for (m, d), result in zip(jobs, results, strict=True):
+        if result.error is not None or result.dropped_filters:
             continue
-        args_for[(m, d)] = args
+        args_for[(m, d)] = result.query_args
         if d is None:
-            scopes[""][m] = _parse_series(res, m)
+            scopes[""][m] = dict(result.values)
         else:
-            for seg, seg_vals in _parse_segments(res, m, d).items():
+            for seg, seg_vals in result.segments.items():
                 if seg in segs:
-                    scopes.setdefault(seg, {})[m] = seg_vals
+                    scopes.setdefault(seg, {})[m] = dict(seg_vals)
     lines: list[str] = []
     evidence: list[str] = []
     numbers: dict[str, float] = {}
@@ -1401,122 +1240,50 @@ async def _diagnose(
          *ladder_ends, *change_log, *unit_counts]
     ))
     marks.append(("plan", time.perf_counter()))
-    # An additive outcome's segment queries need only the dimensions, so they run beside the series fetch (the two
-    # share the semaphore, so the server sees no more concurrent queries than before).
-    async def _segments_beside_series() -> Any:
-        with _op("fetch_segments", {"jobs": len(dims), "beside": "fetch_series"}):
-            return await _fetch_all(ctx, [(metric_id, d) for d in dims], hist_start, ev_end, filters, guarded)
-
-    seg_early: asyncio.Future[Any] | None = asyncio.ensure_future(_segments_beside_series()) if out_meta.additive else None
-    with _op("fetch_series", {"metrics": len(series_ids)}):
-        series_results = await _fetch_all(ctx, [(m, None) for m in series_ids], hist_start, ev_end, filters, guarded)
-    marks.append(("fetch_series", time.perf_counter()))
-
-    quality: list[str] = []
-    series: dict[str, dict[date, float]] = {}
-    args_by_metric: dict[str, dict[str, Any]] = {}
-    # The currency the data source reports per metric (as metrics_query records it),
-    # so diagnosis evidence carries its unit like every other figure.
-    units: dict[str, str] = {}
-    for m, (res, args) in zip(series_ids, series_results, strict=True):
-        if args is None:
-            if m == metric_id:
-                if seg_early is not None:
-                    seg_early.cancel()
-                return _data.fetch_failure(f"diagnose_metric_change({metric_id})", res.get("error"))
-            quality.append(f"{m}: fetch failed ({str(res.get('error'))[:120]})")
-            continue
-        if res.get("_dropped_filters"):
-            if m in change_log or (m in ladder_ends and m not in bridge_pool):
-                # Not recorded for this scope: a stage or an edit count for the whole account describes another scope.
-                quality.append(f"{m} is not recorded by {', '.join(res['_dropped_filters'])}, so it is left out of this scope")
-                continue
-            if m in bridge_pool and m not in (metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts):
-                # An unfiltered total cannot be a term of a filtered outcome.
-                bridge_pool.remove(m)
-                continue
-            if m != metric_id:
-                # A whole-account figure beside a filtered outcome describes another scope: the account's web
-                # purchases were reported as one campaign's (live 2026-10-10 thread_066b9cd1).
-                quality.append(
-                    f"{m} is not recorded by {', '.join(res['_dropped_filters'])}, so it is left out of this scope"
-                )
-                continue
-            quality.append(f"{m} cannot be filtered by {', '.join(res['_dropped_filters'])}; used unfiltered")
-        parsed = _parse_series(res, m)
-        if parsed:
-            series[m] = parsed
-            args_by_metric[m] = args
-            if currency := str((res.get("provenance") or {}).get("currency") or "").strip():
-                units[m] = currency
-    if metric_id not in series:
-        if seg_early is not None:
-            seg_early.cancel()
-        return _refuse(f"no daily data for {metric_id} over {hist_start}..{ev_end}")
-    history_days = sorted(d for d in series[metric_id] if d < ev_start and d not in partial)
-    numerator, weight = (None, None) if out_meta.additive else _rate_parts(metric_id, lineage, series, history_days)
-    seg_jobs = [(metric_id, d) for d in dims] + [(m, d) for m in (weight, numerator) if m for d in dims]
-    if seg_early is not None:
-        seg_results = await seg_early
-    else:
-        with _op("fetch_segments", {"jobs": len(seg_jobs)}):
-            seg_results = await _fetch_all(ctx, seg_jobs, hist_start, ev_end, filters, guarded)
-    marks.append(("fetch_segments", time.perf_counter()))
-    segments: dict[str, dict[str, dict[str, dict[date, float]]]] = {}
-    seg_args: dict[tuple[str, str], dict[str, Any]] = {}
-    for (m, d), (res, args) in zip(seg_jobs, seg_results, strict=True):
-        if args is None or len(res.get("rows") or []) > _MAX_SEGMENT_ROWS:
-            continue
-        seg_parsed = _parse_segments(res, m, d)
-        if len(seg_parsed) >= 2:
-            segments.setdefault(m, {})[d] = seg_parsed
-            seg_args[(m, d)] = args
-
-    # Phase B: segments for every chain rate the data actually verify (the
-    # engine picks which component leads; fetching for each verified chain
-    # avoids re-implementing that choice here).
-    targets = [metric_id] if out_meta.additive else []
-    for ident in engine.discover_identities(metric_id, lineage, series, history_days)[:1]:
-        targets += [m for m, _ in ident.factors if lineage.get(m, engine.MetricMeta(m)).additive]
-    chain_pairs: list[tuple[str, str]] = []
-    for t in dict.fromkeys(targets):
-        for ident in engine.discover_rate_chains(t, lineage, series, history_days)[:1]:
-            chain_pairs.append((ident.factors[0][0], ident.factors[1][0]))
-    jobs_b: list[tuple[str, str]] = []
-    for rate_m, base_m in dict.fromkeys(chain_pairs):
-        base_dims = set(ctx.deps.catalogue.supported_dimensions_for(base_m))
-        for d in _plan_dimensions(ctx, rate_m, P.DIAG_MAX_DIMENSIONS // 2):
-            if d in base_dims:
-                jobs_b += [(rate_m, d), (base_m, d)]
-    jobs_b = [j for j in dict.fromkeys(jobs_b) if j not in seg_args]
-    with _op("fetch_chain_segments", {"jobs": len(jobs_b)}):
-        res_b = await _fetch_all(ctx, jobs_b, hist_start, ev_end, filters, guarded)
-    marks.append(("fetch_chain_segments", time.perf_counter()))
-    for (m, d), (res, args) in zip(jobs_b, res_b, strict=True):
-        if args is None or len(res.get("rows") or []) > _MAX_SEGMENT_ROWS:
-            continue
-        seg_parsed = _parse_segments(res, m, d)
-        if len(seg_parsed) >= 2:
-            segments.setdefault(m, {})[d] = seg_parsed
-            seg_args[(m, d)] = args
-
-    inp = engine.DiagnosisInput(
-        outcome=metric_id, event_days=event_days, series=series, lineage=lineage, segments=segments,
-        candidate_drivers=[d for d in drivers if d in series], partial_days=partial,
-        claimed_direction=claimed_direction, denominators=({metric_id: weight} if weight else {}),
-        numerators=({metric_id: numerator} if numerator and weight else {}),
+    env = engine.default_env()
+    chain_dims = _chain_dims(ctx, series_ids, lineage, P.DIAG_MAX_DIMENSIONS // 2)
+    plan = GatherPlan(
+        outcome=metric_id, start=hist_start, end=ev_end, scope=filters, event_days=tuple(event_days),
+        partial_days=frozenset(partial), baseline_days=tuple(baseline), claimed_direction=claimed_direction,
+        lineage=lineage, series_ids=tuple(series_ids),
+        core=frozenset([metric_id, *identity_metrics, *chain_metrics, *drivers, *named, *named_parts]),
+        change_log=frozenset(change_log), ladder_ends=frozenset(ladder_ends), bridge_pool=tuple(bridge_pool),
+        drivers=tuple(drivers), dims=tuple(dims), chain_dims=chain_dims,
         scope_tokens=frozenset(t for d in _scope_dimensions(ctx) for t in d.lower().split("_") if t),
-        baseline_days=baseline,
-        bridge_candidates=[m for m in bridge_pool if m in series],
+        max_segment_rows=_MAX_SEGMENT_ROWS,
     )
+    recording = RecordingSeriesPort(CubeSeriesAdapter(ctx, guarded=guarded, report_dropped_filters=True))
+    gathered = await gather(
+        plan, recording, cfg=env.config, scoped=_op, phase=lambda name: marks.append((name, time.perf_counter())),
+    )
+    if gathered.failure == "fetch_failed":
+        return _data.fetch_failure(f"diagnose_metric_change({metric_id})", gathered.failure_detail)
+    if gathered.input is None:
+        return _refuse(f"no daily data for {metric_id} over {hist_start}..{ev_end}")
+    inp = gathered.input
+    series, segments = inp.series, inp.segments
+    args_by_metric, seg_args, units = gathered.series_args, gathered.segment_args, gathered.units
+    history_days, weight, numerator = gathered.history_days, gathered.weight, gathered.numerator
+    quality = gathered.notes
     for _ in inp.candidate_drivers:
         if not ctx.deps.budget.consume("causal_queries").ok:
             inp.candidate_drivers = inp.candidate_drivers[: max(0, len(inp.candidate_drivers) - 1)]
+    # The plan the record keeps is the one that was run: a replay gathers from it, so the budget's cut is part of it.
+    plan = replace(plan, drivers=tuple(inp.candidate_drivers))
     with _op("analyse", {"candidate_drivers": len(inp.candidate_drivers), "history_days": len(history_days)}) as scope:
-        report = await asyncio.to_thread(engine.diagnose, inp, engine.default_env(scope=_op))
+        # The engine runs as the replayable runner: its stages, hypotheses and failures appear on the live trace as they
+        # happen, and the record of the run (series, estimates, clock, events, report) is kept for replay.
+        report, record = await run_recorded(
+            inp, plan, recording, config=env.config, estimator=env.estimator, trace=trace
+        )
         scope.result = {"verdict": report.verdict, "drivers": len(report.drivers), "dimensions": len(report.dimensions)}
-    if trace is not None:
-        trace.report(report)
+    save_record(
+        ArtifactRunStore(
+            ctx.deps.artifact_store, workspace_id=ctx.deps.principal.workspace_id, mission_id=ctx.deps.mission_id,
+            thread_id=ctx.deps.thread_id or None,
+        ),
+        record,
+    )
     marks.append(("engine", time.perf_counter()))
     report.data_quality = [*notes, *quality, *report.data_quality]
 

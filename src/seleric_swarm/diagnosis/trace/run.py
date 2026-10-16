@@ -28,6 +28,7 @@ from seleric_swarm.diagnosis.domain.record import (
     RunRecord,
     SeriesSnapshot,
     decode_series,
+    decode_series_with_meta,
     encode_series,
     request_from_dict,
     request_key,
@@ -196,8 +197,11 @@ class ReplaySeriesPort:
         self._queues: dict[str, list[SeriesResult]] = {}
         for snap in record.snapshots:
             request = request_from_dict(snap.request)
-            values, segments = decode_series(record.blobs[snap.data_ref])
-            result = SeriesResult(request, values, segments, snap.source_query, snap.fingerprint, snap.error)
+            values, segments, meta = decode_series_with_meta(record.blobs[snap.data_ref])
+            result = SeriesResult(
+                request, values, segments, snap.source_query, snap.fingerprint, snap.error,
+                str(meta.get("currency") or ""), tuple(meta.get("dropped_filters") or ()), int(meta.get("rows") or 0),
+            )
             self._queues.setdefault(snap.key, []).append(result)
         self._served: dict[str, int] = {}
 

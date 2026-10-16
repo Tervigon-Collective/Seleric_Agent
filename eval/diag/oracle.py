@@ -5,7 +5,9 @@ named drivers, levers) and the artifacts. This records all of it per case, and t
 (``DiagnosisInput``) so a change to ``causal/diagnosis.py`` can be checked in seconds without the tool around it.
 
 usage:
-  python3 oracle.py record DIR [--only id,id]     run the cases, write DIR/<case>.json and DIR/<case>.input.pkl
+  python3 oracle.py record DIR [--only id,id]     run the cases, write DIR/<case>.json, DIR/<case>.input.pkl and
+                                                  DIR/<case>.record.json (the run record the tool kept), and replay each
+                                                  record offline: a replay that is not byte-identical fails the command
   python3 oracle.py compare A B [--tol 1e-6]      categorical equality, floats within tol (exit 1 on a difference)
   python3 oracle.py engine DIR                    re-run engine.diagnose on DIR's recorded inputs, compare with DIR's report
 """
@@ -23,6 +25,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 IGNORED_SOURCE_KEYS = {"investigation_id", "phase_ms"}
+RECORD_TYPE = "diagnosis_run_record"
 VOLATILE_KEYS = {"fetched_at"}  # wall-clock stamps the evidence rows carry; they differ on every run
 
 
@@ -52,7 +55,9 @@ def _normalise_ids(blob: dict[str, Any], ids: list[str]) -> dict[str, Any]:
 def capture(res: Any) -> dict[str, Any]:
     tr = res.tool_result
     meta = {k: v for k, v in (tr.provenance.source_metadata or {}).items() if k not in IGNORED_SOURCE_KEYS} if tr else {}
-    kinds = {a.id: a.artifact_type for a in res.artifacts}
+    # The run record is a by-product of the call, not part of its answer: it is checked by replaying it (``record``).
+    artifacts = [a for a in res.artifacts if a.artifact_type != RECORD_TYPE]
+    kinds = {a.id: a.artifact_type for a in artifacts}
     blob = {
         "success": res.success,
         "error": res.error,
@@ -65,11 +70,11 @@ def capture(res: Any) -> dict[str, Any]:
         "artifacts": [  # in creation order: the store keeps insertion order, ids are renamed by it below
             {"type": a.artifact_type, "classification": getattr(a, "classification", None), "payload": a.payload,
              "evidence_ids": list(getattr(a, "evidence_ids", []) or [])}
-            for a in res.artifacts
+            for a in artifacts
         ],
         "artifact_kinds": sorted(kinds.values()),
     }
-    ordered = [a.id for a in res.artifacts]
+    ordered = [a.id for a in artifacts]
     return _normalise_ids(_plain(blob), ordered)
 
 
@@ -100,17 +105,18 @@ def record(out: Path, only: set[str]) -> int:
     import runner as R
 
     sys.path.insert(0, str(R.ROOT / "src"))
-    from seleric_swarm.causal import diagnosis as engine
+    from seleric_swarm.toolsets import diagnosis as tool
 
     out.mkdir(parents=True, exist_ok=True)
     taken: list[Any] = []
-    real = engine.diagnose
+    real = tool.run_recorded
+    diverged = 0
 
-    def spy(inp: Any, *args: Any, **kwargs: Any) -> Any:
-        taken.append(inp)
-        return real(inp, *args, **kwargs)
+    async def spy(inp: Any, *args: Any, **kwargs: Any) -> Any:
+        taken.append(inp)  # the engine input the tool gathered, for ``engine``
+        return await real(inp, *args, **kwargs)
 
-    engine.diagnose = spy  # the tool calls ``engine.diagnose`` through the module, so this sees its input
+    tool.run_recorded = spy  # the tool calls ``run_recorded`` through its own namespace, so this sees every input
     try:
         for case in C.load_cases(HERE / "cases"):
             if only and case.id not in only:
@@ -119,10 +125,30 @@ def record(out: Path, only: set[str]) -> int:
             res = R.run_case(case)
             (out / f"{case.id}.json").write_text(json.dumps(capture(res), indent=1, default=str))
             (out / f"{case.id}.input.pkl").write_bytes(pickle.dumps(list(taken)))
-            print(f"{case.id:40s} success={res.success} inputs={len(taken)}", flush=True)
+            saved = [a for a in res.artifacts if a.artifact_type == RECORD_TYPE]
+            verdict = "no record (the tool stopped before the engine)"
+            if saved:
+                (out / f"{case.id}.record.json").write_text(json.dumps(saved[-1].payload))
+                verdict = replay_check(saved[-1].payload)
+                diverged += verdict != "identical"
+            print(f"{case.id:40s} success={res.success} inputs={len(taken)} replay={verdict}", flush=True)
     finally:
-        engine.diagnose = real
-    return 0
+        tool.run_recorded = real
+    return 1 if diverged else 0
+
+
+def replay_check(payload: dict[str, Any]) -> str:
+    """Replay a run record offline: no catalogue, no MCP, only the record. 'identical' or why not."""
+    import asyncio
+
+    from seleric_swarm.diagnosis.adapters import (
+        legacy_engine_runner,  # noqa: F401  (registers the runner it replays)
+    )
+    from seleric_swarm.diagnosis.domain.record import RunRecord
+    from seleric_swarm.diagnosis.trace.run import replay
+
+    result = asyncio.run(replay(RunRecord.from_dict(payload)))
+    return "identical" if result.identical else f"DIVERGED: {result.divergence}"
 
 
 def compare(a: Path, b: Path, tol: float) -> int:

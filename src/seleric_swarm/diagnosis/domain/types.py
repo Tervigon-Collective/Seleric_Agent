@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from typing import Any
 
 from seleric_swarm.diagnosis.domain.canonical import segments_fingerprint, series_fingerprint
 from seleric_swarm.diagnosis.domain.errors import InvalidRequest
@@ -48,6 +50,11 @@ class Scope:
             items.append((dimension, tuple(sorted(set(values)))))
         return cls(tuple(items))
 
+    @classmethod
+    def from_filters(cls, filters: Mapping[str, Any] | None) -> Scope:
+        """The scope of a question's filters: a dimension with no value (None, '', an empty list) filters nothing."""
+        return cls.of({k: v for k, v in (filters or {}).items() if v not in (None, "", [])})
+
     def as_mapping(self) -> dict[str, tuple[str, ...]]:
         return dict(self.filters)
 
@@ -80,6 +87,18 @@ class SeriesResult:
     source_query: str
     fingerprint: str
     error: str | None = None
+    # What the source said besides the numbers (additive since the first record version). ``currency`` is the unit the
+    # source reports the metric in, ``dropped_filters`` the scope dimensions the metric cannot be filtered by (the answer
+    # then is NOT scoped by them: the consumer decides what to do), ``rows`` the size of the raw answer.
+    currency: str = ""
+    dropped_filters: tuple[str, ...] = ()
+    rows: int = 0
+
+    @property
+    def query_args(self) -> dict[str, Any]:
+        """The query the source ran, as the evidence rows cite it (empty when the source recorded none)."""
+        loaded = json.loads(self.source_query) if self.source_query else {}
+        return dict(loaded) if isinstance(loaded, dict) else {}
 
 
 def result_fingerprint(

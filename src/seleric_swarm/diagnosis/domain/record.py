@@ -43,18 +43,26 @@ def request_key(request: SeriesRequest) -> str:
 
 
 def encode_series(result: SeriesResult) -> str:
-    body = {
+    body: dict[str, Any] = {
         "values": {d.isoformat(): v for d, v in result.values.items()},
         "segments": {s: {d.isoformat(): v for d, v in series.items()} for s, series in result.segments.items()},
     }
+    if result.currency or result.dropped_filters or result.rows:
+        body["meta"] = {"currency": result.currency, "dropped_filters": list(result.dropped_filters), "rows": result.rows}
     return base64.b64encode(gzip.compress(canonical_json(body).encode("utf-8"), mtime=0)).decode("ascii")
 
 
 def decode_series(blob: str) -> tuple[dict[date, float], dict[str, dict[date, float]]]:
+    values, segments, _ = decode_series_with_meta(blob)
+    return values, segments
+
+
+def decode_series_with_meta(blob: str) -> tuple[dict[date, float], dict[str, dict[date, float]], dict[str, Any]]:
+    """The series, the segments and what the source said besides the numbers (empty for a record that has none)."""
     body = json.loads(gzip.decompress(base64.b64decode(blob)).decode("utf-8"))
     values = {date.fromisoformat(d): float(v) for d, v in body["values"].items()}
     segments = {s: {date.fromisoformat(d): float(v) for d, v in series.items()} for s, series in body["segments"].items()}
-    return values, segments
+    return values, segments, dict(body.get("meta") or {})
 
 
 @dataclass(frozen=True)

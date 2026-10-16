@@ -22,6 +22,8 @@ import pytest
 
 from seleric_swarm.causal import diagnosis as engine
 from seleric_swarm.causal.diagnosis import DiagnosisInput, MetricMeta, diagnose
+from seleric_swarm.diagnosis.domain.config import DiagnosisConfig
+from seleric_swarm.diagnosis.operators.gather import rate_parts
 from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
 from seleric_swarm.toolsets import diagnosis as tool
 
@@ -143,11 +145,11 @@ def test_rate_parts_reads_the_denominator_from_the_data_across_views():
         "m_per": R("m_per", "v3", ("m_den",)),
     }
     series = {"m_ret": S(num / den), "m_num": S(num), "m_den": S(den)}
-    assert tool._rate_parts("m_ret", lineage, series, DAYS) == ("m_num", "m_den")
+    assert rate_parts("m_ret", lineage, series, DAYS, cfg=DiagnosisConfig()) == ("m_num", "m_den")
     # Listed the other way round, the data still name the divisor.
     flipped = {**lineage, "m_ret": R("m_ret", "v1", ("m_den", "m_num"))}
-    assert tool._rate_parts("m_ret", flipped, series, DAYS) == ("m_num", "m_den")
-    assert tool._rate_parts("m_per", lineage, series, DAYS) == (None, "m_den")
+    assert rate_parts("m_ret", flipped, series, DAYS, cfg=DiagnosisConfig()) == ("m_num", "m_den")
+    assert rate_parts("m_per", lineage, series, DAYS, cfg=DiagnosisConfig()) == (None, "m_den")
 
 
 class _Ctx:
