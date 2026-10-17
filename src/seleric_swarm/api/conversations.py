@@ -1216,13 +1216,47 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
     the Chart widget already exposes the same rows on its Table tab, so keeping
     both rendered the series twice (live 2026-10-08 stacked-bar thread).
     """
-    from seleric_swarm.agent.answer_text import strip_markdown_tables
+    from seleric_swarm.agent.answer_text import (
+        drop_enumerations,
+        numeric_tokens,
+        strip_markdown_tables,
+        with_roundings,
+    )
 
     text = final_response
     raw_charts = raw.get("charts")
-    if isinstance(raw_charts, list) and any(isinstance(c, dict) for c in raw_charts):
+    stored_parts: list[Any] = raw["parts"] if isinstance(raw.get("parts"), list) else []
+    attached = [p for p in stored_parts if isinstance(p, dict) and isinstance(p.get("content"), dict)]
+    # A P&L walk keeps its Markdown table: the waterfall draws the steps, the table carries the subtotals.
+    drawn = [c for c in raw_charts if isinstance(c, dict) and c.get("chart_type") != "waterfall"] if isinstance(raw_charts, list) else []
+    cells: set[str] = set()
+    for part in attached:
+        if str(part.get("type")).upper() == "TABLE":
+            content = part["content"]
+            cells |= numeric_tokens(" ".join(
+                str(v) for row in content.get("rows") or [] if isinstance(row, dict) for v in row.values()))
+    for chart in drawn:  # a chart holds its rows too: the figures as drawn, rounded the way the answer writes them
+        spec: dict[str, Any] = chart["data"] if isinstance(chart.get("data"), dict) else chart
+        for row in spec.get("data") or []:
+            for value in row.values() if isinstance(row, dict) else ():
+                if isinstance(value, bool):
+                    continue
+                if isinstance(value, (int, float)):
+                    cells |= numeric_tokens(f"{round(value)} {value:.1f} {value:.2f}")
+                elif isinstance(value, str):
+                    cells |= numeric_tokens(value)
+    if drawn:
         text = strip_markdown_tables(final_response)
-    parts = [MessagePart(type=MessagePartType.TEXT, content=text)]
+    elif cells:  # a table of figures is attached: drop only the answer's tables that table already holds
+        text = strip_markdown_tables(final_response, covered=lambda lines: numeric_tokens(" ".join(lines)) <= cells)
+    if cells:  # a row-by-row list of figures the visuals already show is dropped; the findings stay
+        text = drop_enumerations(text, with_roundings(cells))
+    # Headline numbers lead the message, ahead of the prose that explains them.
+    parts = [
+        MessagePart(type=MessagePartType.KPI_GRID, content=p["content"])
+        for p in attached if str(p.get("type")).upper() == "KPI_GRID"
+    ]
+    parts.append(MessagePart(type=MessagePartType.TEXT, content=text))
     raw_evidence = raw.get("evidence")
     evidence: list[Any]
     if isinstance(raw_evidence, list):
@@ -1308,8 +1342,8 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
                 continue
             ptype = str(part.get("type") or "").upper()
             content = part.get("content")
-            if ptype == "KPI_GRID" and isinstance(content, dict):
-                parts.append(MessagePart(type=MessagePartType.KPI_GRID, content=content))
+            if ptype == "KPI_GRID":
+                continue  # placed ahead of the text above
             elif ptype == "TABLE" and isinstance(content, dict):
                 parts.append(MessagePart(type=MessagePartType.TABLE, content=content))
             elif ptype == "CHART" and isinstance(content, dict) and not raw_charts:

@@ -34,8 +34,12 @@ from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-from seleric_swarm.agent.answer_text import replace_metric_ids, round_long_decimals
-from seleric_swarm.agent.auto_chart import auto_chart
+from seleric_swarm.agent import present
+from seleric_swarm.agent.answer_text import (
+    indian_digit_grouping,
+    replace_metric_ids,
+    round_long_decimals,
+)
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.grounding import (
     correction_message,
@@ -345,10 +349,11 @@ async def run_turn(
         answer += unverified_note(issues)
         limitations.append("UNVERIFIED_FIGURES")
     # Internal metric ids that slipped into the prose are written as their catalogue names (a known fix, not a model pass).
-    answer = round_long_decimals(replace_metric_ids(answer, {m.id: m.label for m in deps.catalogue.metrics if m.label}))
+    answer = indian_digit_grouping(
+        round_long_decimals(replace_metric_ids(answer, {m.id: m.label for m in deps.catalogue.metrics if m.label})))
     final = grounding(answer, figure_pool())
     if state.payloads and not limitations:
-        await auto_chart(deps, state, answer)
+        await present.attach(deps, state, answer)  # deterministic: KPI cards / table / chart by result shape, no model call
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     # First token = first model output of the turn; Answer starts = last model
     # output (the call that produced / revised the final prose). Falls back to

@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
 
+from seleric_swarm.agent import present
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.grounding import answer_numbers
 from seleric_swarm.agent.mcp_toolset import TurnState
@@ -45,13 +46,17 @@ def query_id_of(payload: dict[str, Any]) -> str:
     return str(payload.get("query_id") or (prov.get("query_id") if isinstance(prov, dict) else "") or "")
 
 
-def table_rows(payload: Any) -> list[dict[str, Any]]:
-    """The tabular rows of a query result: its own ``rows``, or those of every part of a multi-view result."""
-    if not isinstance(payload, dict):
-        return []
-    parts = payload.get("parts")
-    sources = [p for p in parts if isinstance(p, dict)] if isinstance(parts, list) and parts else [payload]
-    return [r for src in sources for r in (src.get("rows") or []) if isinstance(r, dict)]
+def _payload_for(state: TurnState, query_id: str) -> dict[str, Any] | None:
+    """The fetched result with this query id: a whole result, or one part of a multi-view result."""
+    for p in state.payloads:
+        if not isinstance(p, dict):
+            continue
+        if query_id_of(p) == query_id:
+            return p
+        for part in p.get("parts") or []:
+            if isinstance(part, dict) and query_id_of(part) == query_id:
+                return part
+    return None
 
 
 def _evidence_for(state: TurnState, query_ids: list[str] | None, evidence_ids: list[str] | None = None) -> list[str] | None:
@@ -168,9 +173,10 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
         """Show a chart of fetched results. Use for trends over time, more than 3 categories, compositions or
         distributions; not for a single number.
 
-        ``query_ids`` are the results to plot; ``intent`` says what the chart should show (trend, comparison,
-        share…); ``chart_type`` is one of line, area, bar, stacked_bar, grouped_bar, pie, donut, funnel, scatter,
-        radar, heatmap (omit to let the intent decide).
+        ``query_ids`` are the results to plot; ``intent`` says what the chart should show. ``chart_type`` (omit to
+        let the data decide): line/area trend, horizontal_bar ranking or top-N, bar few categories, stacked_bar
+        parts over time, donut/treemap share of a whole, grouped_bar or scatter two measures per entity, combo one
+        volume + one rate over time, funnel stages, waterfall signed steps, heatmap, radar.
         """
         return await analytics.generate_visualization(
             ctx, _evidence_for(state, query_ids) or [], intent, title, chart_type
@@ -179,17 +185,19 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
     async def show_table(ctx: RunContext[SelericDeps], query_id: str, caption: str = "") -> ToolResult:
         """Show the full rows of one fetched result as a sortable table next to the answer. Use it for a long breakdown
         (many campaigns, products, days) instead of pasting every row into the text; keep the text to the finding and
-        the top rows. ``query_id`` is the result to show; ``caption`` says what the table is."""
-        rows = table_rows(next((p for p in state.payloads if isinstance(p, dict) and query_id_of(p) == query_id), None))
-        if not rows:
+        the top rows. A result with several views is shown as one table joined on the shared entity. ``query_id`` is
+        the result to show; ``caption`` says what the table is."""
+        payload = _payload_for(state, query_id)
+        call_args = present.call_args_for(state, query_id)
+        frame = present.frame_of(present.sources_of(payload), present.sort_measure(call_args))
+        if frame is None or not frame.rows:
             return ToolResult(success=False, summary=f"No fetched result with rows has query_id {query_id!r}.",
                               error_code="INSUFFICIENT_EVIDENCE", retryable=False)
-        shown = rows[:MAX_TABLE_ROWS]
-        columns = list(dict.fromkeys(k for r in shown for k in r))
-        state.parts.append({"type": "TABLE", "content": {
-            "caption": caption, "columns": columns, "rows": shown, "query_id": query_id, "state": "ok"}})
-        more = f" (first {len(shown)} of {len(rows)} rows)" if len(rows) > len(shown) else ""
-        return ToolResult(success=True, summary=f"Table of {len(shown)} rows attached to your answer{more}. "
+        present.apply_call_hints(frame, call_args)  # the query's measure order and ranking
+        content = present.table_content(ctx.deps, frame, query_id=query_id, caption=caption, limit=MAX_TABLE_ROWS)
+        state.parts.append({"type": "TABLE", "content": content})
+        more = f" (first {len(content['rows'])} of {content['total_rows']} rows)" if content["total_rows"] > len(content["rows"]) else ""
+        return ToolResult(success=True, summary=f"Table of {len(content['rows'])} rows attached to your answer{more}. "
                           "Do not repeat the full table in the text.")
 
     async def business_snapshot(ctx: RunContext[SelericDeps]) -> dict[str, Any]:

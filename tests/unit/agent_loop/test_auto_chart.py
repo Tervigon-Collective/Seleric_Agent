@@ -142,7 +142,10 @@ async def test_a_multi_view_result_writes_evidence_per_part_under_every_id_the_m
     assert len(by_query["q_paid"]) == 4 and len(by_query["q_shop"]) == 4
     assert set(by_query["q_parent"]) == set(by_query["q_paid"]) | set(by_query["q_shop"])
     assert len(result.state.evidence_ids) == 8
-    assert result.status == "completed" and len(_charts(store)) == 1  # the part the answer quotes most is charted
+    # two views of the same campaigns are ONE joined table, not a chart of whichever part is quoted most
+    assert result.status == "completed" and not _charts(store)
+    (part,) = result.state.parts
+    assert part["type"] == "TABLE" and part["content"]["columns"] == ["Campaign Name", "Net Sales", "Ad Spend"]
 
 
 @pytest.mark.asyncio

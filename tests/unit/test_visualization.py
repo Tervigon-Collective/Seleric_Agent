@@ -176,9 +176,11 @@ def test_visualization_spec_multi_axis_units():
         _make_evidence("metric.conversion_rate", "2026-09-02T00:00:00", "2026-09-02T23:59:59", 3.1, unit="pct"),
     ]
     spec = generate_visualization_spec(evidence, title="Sales vs Conversion", chart_type="line")
+    # money and a rate never share axes: each gets its own panel with its own scale
     assert len(spec["yAxis"]) == 2
-    assert spec["yAxis"][0]["position"] == "left"
-    assert spec["yAxis"][1]["position"] == "right"
+    assert [p["unit"] for p in spec["panels"]] == ["inr", "pct"]
+    assert {s["metric"]: s["yAxisIndex"] for s in spec["series"]} == {
+        "metric.net_sales": 0, "metric.conversion_rate": 1}
 
 
 @pytest.mark.asyncio
@@ -250,10 +252,10 @@ async def test_generate_visualization_refuses_unknown_chart_type():
 
     result = await analytics.generate_visualization(
         ctx, evidence_ids=[id1, id2], intent="waterfall", title="Net profit",
-        chart_type="waterfall",
+        chart_type="sunburst",
     )
     assert result.success is False
-    assert "waterfall" in result.summary
+    assert "sunburst" in result.summary
     assert "stacked_bar" in result.summary
 
 
@@ -301,6 +303,7 @@ async def test_generate_visualization_unwraps_finding_to_backing_evidence():
 
 
 def test_crowded_multi_metric_campaign_chart_keeps_one_ratio_metric():
+    """Which one: the first ratio listed (by its catalogue unit), never a metric picked by name."""
     """live 2026-10-11 MS3-5637552cae: spend+clicks+cvr+roas × many campaigns was unreadable."""
     campaigns = [f"Camp-{i}" for i in range(10)]
     evidence = []
@@ -323,14 +326,14 @@ def test_crowded_multi_metric_campaign_chart_keeps_one_ratio_metric():
                     )
                 )
     kept, warnings = thin_evidence_for_chart(evidence)
-    assert {e.metric_id for e in kept} == {"gross_roas"}
+    assert {e.metric_id for e in kept} == {"conversion_rate"}
     assert len({e.dimensions["campaign_name"] for e in kept}) <= 8
     assert any("kept only" in w for w in warnings)
 
     spec = generate_visualization_spec(
         evidence, title="Campaign Performance Across Days", chart_type="grouped_bar"
     )
-    assert spec["metrics"] == ["gross_roas"]
+    assert spec["metrics"] == ["conversion_rate"]
     assert len(spec["series"]) <= 12
     assert any("kept only" in w for w in spec.get("warnings", []))
 
@@ -416,6 +419,19 @@ _TWO_METRIC_EVIDENCE = [
 ]
 
 
+_CHANNEL_TOTALS = [
+    _make_evidence("metric.revenue", "2026-10-02T00:00:00", "2026-10-03T23:59:59", float(v), grain="none",
+                   dimensions={"channel": ch})
+    for v, ch in [(500, "meta"), (300, "google"), (120, "direct"), (60, "email")]
+]
+
+_RATE_AND_VOLUME_EVIDENCE = [
+    _make_evidence(m, f"2026-10-0{d}T00:00:00", f"2026-10-0{d}T23:59:59", v, unit=u)
+    for d in (1, 2, 3)
+    for m, v, u in [("metric.ad_spend", 1000.0 * d, "inr"), ("metric.net_roas", 1.0 + d / 10, "ratio")]
+]
+
+
 def test_every_declared_chart_form_builds_a_spec():
     for chart_type in CHART_TYPES:
         if chart_type == "causal_graph":  # drawn from a diagnosis (causal/graph_chart.py), not from evidence rows
@@ -425,6 +441,10 @@ def test_every_declared_chart_form_builds_a_spec():
         evidence = (
             _CHANNEL_EVIDENCE
             if chart_type in ("stacked_bar", "pie", "donut", "funnel")
+            else _CHANNEL_TOTALS
+            if chart_type in ("horizontal_bar", "treemap", "waterfall")
+            else _RATE_AND_VOLUME_EVIDENCE
+            if chart_type == "combo"
             else _TWO_METRIC_EVIDENCE
         )
         spec = generate_visualization_spec(
@@ -471,7 +491,11 @@ def test_mixed_unit_default_is_grouped_not_stacked():
     shape = describe_evidence_shape(evidence)
     assert shape.series_count > 1
     groups = unit_groups_for_evidence(evidence)
-    assert infer_chart_type_from_shape(shape, groups) == "grouped_bar"
+    # several unlike measures over time are lines, each unit in its own panel: never stacked, never twin-axis bars
+    assert infer_chart_type_from_shape(shape, groups) == "line"
+    spec = generate_visualization_spec(evidence, title="Mixed")
+    assert len(spec["panels"]) >= 3
+    assert all(s.get("stack") is None for s in spec["series"])
 
 
 def test_compatible_currency_stack_still_stacks():
@@ -499,7 +523,7 @@ def test_ratios_never_stack():
 
 _SPEC_KEYS = {
     "title", "chart_type", "metrics", "dimensions", "series",
-    "xAxis", "yAxis", "radar", "data", "warnings",
+    "xAxis", "yAxis", "radar", "data", "warnings", "panels",
 }
 
 
@@ -598,6 +622,71 @@ def test_reconciliation_keeps_the_requested_form_when_it_fits():
     assert reconcile_chart_type(None, shape)[0] == "line"
 
 
+def test_ranking_of_many_entities_is_horizontal_bars():
+    spec = generate_visualization_spec(_CHANNEL_TOTALS, title="Revenue by channel")
+    assert spec["chart_type"] == "horizontal_bar"
+    assert [r["name"] for r in spec["data"]] == ["meta", "google", "direct", "email"]
+
+
+def test_few_entities_stay_plain_bars():
+    spec = generate_visualization_spec(_CHANNEL_TOTALS[:3], title="Revenue by channel")
+    assert spec["chart_type"] == "bar"
+
+
+def test_a_volume_and_a_rate_over_time_is_one_combo_with_two_axes():
+    spec = generate_visualization_spec(_RATE_AND_VOLUME_EVIDENCE, title="Spend and ROAS")
+    assert spec["chart_type"] == "combo"
+    kinds = {s["metric"]: (s["type"], s["yAxisIndex"]) for s in spec["series"]}
+    assert kinds == {"metric.ad_spend": ("bar", 0), "metric.net_roas": ("line", 1)}
+    assert [a["position"] for a in spec["yAxis"]] == ["left", "right"]
+
+
+def test_the_catalogue_aggregation_keeps_an_average_off_a_volume_axis():
+    """The screenshot case: net sales (~290k), orders (count) and AOV (~1.9k, an average) must not share an axis."""
+    evidence = [
+        _make_evidence(m, f"2026-10-0{d}T00:00:00", f"2026-10-0{d}T23:59:59", v, unit=u)
+        for d in (1, 2, 3)
+        for m, v, u in [("net_sales", 290000.0 + d, "INR"), ("orders", 150.0 + d, "count"), ("aov", 1900.0 + d, "INR")]
+    ]
+    spec = generate_visualization_spec(
+        evidence, title="x", aggregations={"net_sales": "additive", "orders": "additive", "aov": "ratio"},
+        labels={"aov": "AOV", "net_sales": "Net sales", "orders": "Orders"})
+    assert [p["title"] for p in spec["panels"]] == ["Net sales", "Orders", "AOV"]
+    assert {s["name"]: s["yAxisIndex"] for s in spec["series"]} == {"Net sales": 0, "Orders": 1, "AOV": 2}
+
+
+def test_same_unit_series_of_very_different_size_get_their_own_panel():
+    evidence = [
+        _make_evidence(m, f"2026-10-0{d}T00:00:00", f"2026-10-0{d}T23:59:59", v)
+        for d in (1, 2, 3) for m, v in [("net_sales", 290000.0), ("ad_spend", 200000.0), ("cpc", 12.0)]
+    ]
+    panels = generate_visualization_spec(evidence, title="x")["panels"]
+    assert [p["title"] for p in panels] == ["Net Sales, Ad Spend", "Cpc"]
+
+
+def test_a_missing_cell_is_empty_not_zero():
+    evidence = [
+        _make_evidence("metric.revenue", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 5.0, dimensions={"c": "a"}),
+        _make_evidence("metric.revenue", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 6.0, dimensions={"c": "b"}),
+        _make_evidence("metric.orders", "2026-10-02T00:00:00", "2026-10-02T23:59:59", 2.0, unit="count", dimensions={"c": "a"}),
+    ]
+    rows = {r["name"]: r for r in generate_visualization_spec(evidence, title="x", chart_type="grouped_bar")["data"]}
+    assert rows["b"]["Orders"] is None
+
+
+def test_waterfall_steps_are_signed_and_end_in_a_total():
+    spec = generate_visualization_spec(_CHANNEL_TOTALS[:3], title="x", chart_type="waterfall")
+    assert [d["kind"] for d in spec["data"]] == ["delta", "delta", "delta", "total"]
+    assert spec["data"][-1]["value"] == 920.0
+
+
+def test_negative_values_cannot_be_a_pie():
+    evidence = [_make_evidence("metric.profit", "2026-10-02T00:00:00", "2026-10-03T23:59:59", v, grain="none",
+                               dimensions={"c": c}) for v, c in [(50, "a"), (-20, "b"), (10, "c")]]
+    spec = generate_visualization_spec(evidence, title="x", chart_type="pie")
+    assert spec["chart_type"] == "horizontal_bar" and any("negative" in w for w in spec["warnings"])
+
+
 def test_multi_series_default_is_a_stacked_bar():
     """Regression: a multi-series trend used to come back as a line chart."""
     shape = describe_evidence_shape(_CHANNEL_EVIDENCE)
@@ -609,3 +698,18 @@ def test_single_series_default_is_a_line():
     shape = describe_evidence_shape(_TWO_METRIC_EVIDENCE[:2])
     assert shape.series_count == 1
     assert infer_chart_type_from_shape(shape) == "line"
+
+
+def test_a_single_measure_ranking_keeps_up_to_fifteen_entities():
+    one = [_make_evidence("metric.ad_spend", "2026-10-09T00:00:00", "2026-10-15T23:59:59", 1000.0 - i, grain="none",
+                          dimensions={"campaign_name": f"c{i}"}) for i in range(12)]
+    assert len(generate_visualization_spec(one, title="x")["data"]) == 12
+    two_metrics = one + [_make_evidence("metric.orders", "2026-10-09T00:00:00", "2026-10-15T23:59:59", 5.0 + i, unit="count",
+                                        grain="none", dimensions={"campaign_name": f"c{i}"}) for i in range(12)]
+    spec = generate_visualization_spec(two_metrics, title="x")
+    # entities x measures past the series cap keep ONE measure, which is then a plain ranking again
+    assert spec["metrics"] == ["metric.ad_spend"] and any("kept only" in w for w in spec["warnings"])
+    many = [_make_evidence("metric.ad_spend", "2026-10-09T00:00:00", "2026-10-15T23:59:59", 1000.0 - i, grain="none",
+                           dimensions={"campaign_name": f"c{i}"}) for i in range(20)]
+    capped = generate_visualization_spec(many, title="x")
+    assert len(capped["data"]) == 15 and any("top 15" in w for w in capped["warnings"])

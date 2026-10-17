@@ -24,7 +24,7 @@ from pydantic_ai import RunContext
 from seleric_swarm.agent.artifacts import EvidenceArtifact, Finding
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.output import ToolResult
-from seleric_swarm.conversations.contracts import ArtifactProvenance
+from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
 from seleric_swarm.exploration.space import default_brand_id, scope_dimensions
 from seleric_swarm.services.mcp_query import dimension_value
 from seleric_swarm.toolsets import _data, diagnosis
@@ -188,6 +188,39 @@ def _reconcile(node: _Node, values: dict[str, float]) -> list[str]:
 
 def _fmt(v: float) -> str:
     return f"{v:,.2f}"
+
+
+def _waterfall_spec(
+    definitions: dict[str, Any], root: Any, leaves: list[Any], values_by: dict[str, dict[str, float]],
+    metric_id: str, currency: str | None, window: tuple[date, date], compare_window: tuple[date, date] | None,
+) -> dict[str, Any] | None:
+    """The walk as a ``waterfall`` chart spec: a period's lines (each signed as it enters the top metric) ending in
+    the total, or a bridge from the comparison period's total to the period's through each line's effect."""
+    period, compare = values_by["period"], values_by.get("compare")
+    if len(leaves) < 2 or metric_id not in period:
+        return None
+    total_label = _label(definitions, metric_id)
+    if compare is not None:
+        if metric_id not in compare or any(n.metric not in compare for n in leaves):
+            return None
+        data = [{"name": f"{compare_window[0]}..{compare_window[1]}" if compare_window else "Before",
+                 "value": compare[metric_id], "kind": "start"}]
+        data += [{"name": _label(definitions, n.metric), "value": n.effective * (period[n.metric] - compare[n.metric]),
+                  "kind": "delta"} for n in leaves]
+        data.append({"name": f"{window[0]}..{window[1]}", "value": period[metric_id], "kind": "total"})
+        title = f"{total_label}: bridge between the two periods"
+    else:
+        data = [{"name": _label(definitions, n.metric), "value": n.effective * period[n.metric], "kind": "delta"}
+                for n in leaves]
+        data.append({"name": total_label, "value": period[metric_id], "kind": "total"})
+        title = f"{total_label} {window[0]}..{window[1]}"
+    return {
+        "title": title, "chart_type": "waterfall", "metrics": [metric_id], "dimensions": [],
+        "series": [{"key": "value", "name": total_label, "type": "waterfall", "metric": metric_id}],
+        "xAxis": {"type": "category", "key": "name"},
+        "yAxis": [{"type": "value", "name": currency or "val", "position": "left"}],
+        "data": data,
+    }
 
 
 async def break_down_metric(
@@ -453,9 +486,19 @@ async def break_down_metric(
     )
     finding_id = diagnosis._put_derived(ctx, "finding", finding, evidence_ids)
     ctx.deps.scratchpad.note(f"break_down_metric({metric_id}, {start}..{end}) → {'reconciled' if reconciled else 'GAP'}")
+    chart_ids: list[str] = []
+    if reconciled and not by:
+        spec = _waterfall_spec(definitions, root, leaves, values_by, metric_id, currency, (start, end), periods[1][1:] if compare else None)
+        if spec is not None:
+            chart = ctx.deps.artifact_store.put(Artifact(
+                workspace_id=ctx.deps.principal.workspace_id, artifact_type="chart_spec", payload=spec,
+                classification="derived", evidence_ids=list(evidence_ids),
+                provenance=ArtifactProvenance(evidence_ids=list(evidence_ids), calculation_version=_CALCULATION_VERSION),
+                mission_id=ctx.deps.mission_id))
+            chart_ids.append(chart.id)
     return ToolResult(
         success=True,
-        artifact_ids=[finding_id, *evidence_ids],
+        artifact_ids=[finding_id, *evidence_ids, *chart_ids],
         summary="\n\n".join(summary_parts),
         provenance=ArtifactProvenance(
             evidence_ids=evidence_ids,

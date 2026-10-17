@@ -11,11 +11,15 @@ export const CHART_TYPES = [
   "line",
   "area",
   "bar",
+  "horizontal_bar",
   "stacked_bar",
   "grouped_bar",
+  "combo",
   "pie",
   "donut",
+  "treemap",
   "funnel",
+  "waterfall",
   "scatter",
   "radar",
   "heatmap",
@@ -29,6 +33,22 @@ export const CHART_REGISTRY: Record<ChartType, { label: string; description: str
   line: { label: "Line", description: "Continuous change over time for one or more series." },
   area: { label: "Area", description: "Continuous change over time with filled magnitude." },
   bar: { label: "Bar", description: "Discrete comparison by period or category." },
+  horizontal_bar: {
+    label: "Horizontal bar",
+    description: "Ranking of many or long-named categories, largest first.",
+  },
+  combo: {
+    label: "Bars and line",
+    description: "Bars for a volume and a line for a rate on a second axis over time.",
+  },
+  treemap: {
+    label: "Treemap",
+    description: "Shares of a whole across many categories, area proportional to value.",
+  },
+  waterfall: {
+    label: "Waterfall",
+    description: "Signed steps from a start to an end: P&L walk or a bridge between two periods.",
+  },
   stacked_bar: {
     label: "Stacked bar",
     description: "Part-to-whole contribution of several series per period or category.",
@@ -54,11 +74,15 @@ const CHART_ALIASES: Record<string, ChartType> = {
   line: "line",
   area: "area",
   bar: "bar",
+  horizontal_bar: "horizontal_bar",
   stacked_bar: "stacked_bar",
   grouped_bar: "grouped_bar",
+  combo: "combo",
   pie: "pie",
   donut: "donut",
+  treemap: "treemap",
   funnel: "funnel",
+  waterfall: "waterfall",
   scatter: "scatter",
   radar: "radar",
   heatmap: "heatmap",
@@ -80,8 +104,19 @@ const CHART_ALIASES: Record<string, ChartType> = {
   clustered_bar: "grouped_bar",
   multi_bar: "grouped_bar",
   bar_chart: "bar",
-  horizontal_bar: "bar",
   bar_over_time: "bar",
+  ranking: "horizontal_bar",
+  ranked_bar: "horizontal_bar",
+  hbar: "horizontal_bar",
+  bar_horizontal: "horizontal_bar",
+  dual_axis: "combo",
+  bar_line: "combo",
+  bar_and_line: "combo",
+  mixed: "combo",
+  tree_map: "treemap",
+  bridge: "waterfall",
+  walk: "waterfall",
+  pnl_waterfall: "waterfall",
   // time series
   trend: "line",
   trendline: "line",
@@ -155,13 +190,15 @@ export const CARTESIAN_CHART_TYPES: readonly ChartType[] = [
   "line",
   "area",
   "bar",
+  "horizontal_bar",
   "stacked_bar",
   "grouped_bar",
+  "combo",
   "scatter",
 ];
 
 /** Forms whose payload carries slice rows instead of cartesian rows. */
-export const COMPOSITION_CHART_TYPES: readonly ChartType[] = ["pie", "donut", "funnel"];
+export const COMPOSITION_CHART_TYPES: readonly ChartType[] = ["pie", "donut", "treemap", "funnel"];
 
 export interface ChartTypeCatalogEntry {
   chart_type: string;
