@@ -1,0 +1,56 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_fbb6e5f3e07b4a3b921e5efd57234b48",
+ "mission": "MS3-2532415871",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 53,
+ "elapsed_s": 45.051,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 17,
+  "measured": 17,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "No \u2014 sales did not drop yesterday; net sales rose from \u20b940,119 on 2026-10-12 to \u20b991,220 on 2026-10-13 (+127%), so yesterday was materially higher than the day before.\n\nEvidence\n- Net sales (order-date): 2026-10-12 = \u20b940,119 \u2192 2026-10-13 = \u20b991,220 (+127%).\n- Primary drivers vs 2026-10-12:\n  - Orders: 26 \u2192 45 (+73%) \u2014 largest volume contributor to the sales increase.\n  - Net AOV: \u20b91,543 \u2192 \u20b92,027 (+31%) \u2014 higher order value helped scale revenue.\n  - Discounts increased: \u20b91,553 \u2192 \u20b95,173 (discounts rose, reducing some of the revenue gain).\n  - Return/cancel revenue fell: \u20b94,913 \u2192 \u20b91,601 (reduced returns/cancels added to gross sales).\n  - Ad spend rose: \u20b938,661 \u2192 \u20b950,440 (moved together with sessions and orders; correlation not proven as causal).\n\nContext: The change sits well within the metric\u2019s recent normal range; diagnostic checks did not identify a single causal event (the data shows what moved, not why).\n\nPeriod: 2026-10-12..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Want a campaign/ad-level drilldown for 2026-10-13 to see which campaigns or ads drove the orders and higher AOV?"
+}

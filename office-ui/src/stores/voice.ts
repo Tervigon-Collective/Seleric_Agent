@@ -40,6 +40,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
 
   start: async () => {
     if (get().status !== "idle" && get().status !== "error") return;
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      set({
+        status: "error",
+        error: "Microphone blocked: access via http://localhost:8090 or enable brave://flags/#unsafely-treat-insecure-origin-as-secure for http://132.154.65.28:8090",
+      });
+      return;
+    }
     const generation = ++attempt;
     set({ status: "connecting", muted: false, error: null, captions: { user: "", assistant: "" } });
     const conversation = useConversationStore.getState();

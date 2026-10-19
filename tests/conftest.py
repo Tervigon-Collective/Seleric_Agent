@@ -10,6 +10,9 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 os.environ["LLM_PROVIDER"] = "fake"
 os.environ["APP_ENV"] = "test"
+os.environ["LANGFUSE_TRACING"] = "false"
+os.environ["LANGFUSE_PUBLIC_KEY"] = ""
+os.environ["LANGFUSE_SECRET_KEY"] = ""
 os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["PERSISTENCE_BACKEND"] = "memory"
 os.environ["AZURE_OPENAI_API_KEY"] = ""
@@ -35,6 +38,9 @@ def settings() -> Settings:
     get_settings.cache_clear()
     return Settings(
         llm_provider="fake",
+        langfuse_tracing=False,
+        langfuse_public_key="",
+        langfuse_secret_key="",
         langsmith_tracing=False,
         persistence_backend="memory",
         app_env="test",
@@ -43,6 +49,8 @@ def settings() -> Settings:
     )
 
 
+_GLOBAL_MCP_CACHE = {}
+
 @pytest.fixture
 def runtime(settings: Settings):
     rt = build_runtime(settings)
@@ -50,6 +58,18 @@ def runtime(settings: Settings):
         reason = "SELERIC_MCP_URL/TOKEN not configured — live MCP required"
         # Skip in both CI and local when MCP credentials are absent
         pytest.skip(reason)
+        
+    original_call = rt.mcp.call
+
+    async def cached_mcp_call(*, agent_id: str, capability: str, arguments: dict):
+        import json
+        key = (agent_id, capability, json.dumps(arguments, sort_keys=True))
+        if key not in _GLOBAL_MCP_CACHE:
+            _GLOBAL_MCP_CACHE[key] = await original_call(agent_id=agent_id, capability=capability, arguments=arguments)
+        return _GLOBAL_MCP_CACHE[key]
+
+    rt.mcp.call = cached_mcp_call
+
     try:
         yield rt
     finally:

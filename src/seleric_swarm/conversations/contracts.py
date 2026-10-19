@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from seleric_swarm.analytics.chart_vocabulary import CHART_TYPES, normalize_chart_type
+
 
 def _id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
@@ -86,6 +88,7 @@ class MessagePartType(StrEnum):
     TOOL_CALL = "TOOL_CALL"
     ARTIFACT = "ARTIFACT"
     CHART = "CHART"
+    KPI_GRID = "KPI_GRID"
     AGENT_STATUS = "AGENT_STATUS"
     APPROVAL = "APPROVAL"
     WARNING = "WARNING"
@@ -156,16 +159,6 @@ class MemoryStatus(StrEnum):
     PENDING_CONSENT = "PENDING_CONSENT"
 
 
-class ApprovalStatus(StrEnum):
-    REQUESTED = "REQUESTED"
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
-    EXPIRED = "EXPIRED"
-    CANCELLED = "CANCELLED"
-    EXECUTED = "EXECUTED"
-    ROLLED_BACK = "ROLLED_BACK"
-
-
 class Thread(ContractModel):
     id: str = Field(default_factory=lambda: _id("thread"))
     workspace_id: str
@@ -198,6 +191,9 @@ class SourcePartContent(ContractModel):
 
 
 class ChartPartContent(ContractModel):
+    #: One of the canonical forms in ``analytics.chart_vocabulary``. Validated
+    #: here (with alias normalization) so the API and the UI never disagree
+    #: about what a chart can be.
     chart_type: str = Field(min_length=1)
     artifact_id: str | None = None
     data: dict[str, Any] | list[Any] | None = None
@@ -206,6 +202,17 @@ class ChartPartContent(ContractModel):
     def require_chart_source(self) -> ChartPartContent:
         if self.artifact_id is None and self.data is None:
             raise ValueError("CHART parts require artifact_id or data")
+        return self
+
+    @model_validator(mode="after")
+    def normalize_chart_type(self) -> ChartPartContent:
+        normalized = normalize_chart_type(self.chart_type)
+        if normalized is None:
+            raise ValueError(
+                f"unknown chart_type {self.chart_type!r}; supported forms: "
+                f"{', '.join(CHART_TYPES)}"
+            )
+        object.__setattr__(self, "chart_type", normalized)
         return self
 
 
@@ -580,6 +587,31 @@ class MemoryPreference(ContractModel):
     updated_at: datetime = Field(default_factory=_utc_now)
 
 
+class MessageFeedback(ContractModel):
+    """A reader's verdict on one assistant answer (thumbs up/down + optional
+    note). Members MUST match the DB CHECK constraint in
+    migrations/011_message_feedback.sql. Append-only: a re-vote supersedes the
+    previous row for the same message rather than editing it."""
+
+    id: str = Field(default_factory=lambda: _id("feedback"))
+    workspace_id: str
+    owner_user_id: str
+    thread_id: str
+    message_id: str
+    run_id: str | None = None
+    rating: Literal["up", "down"]
+    note: str = Field(default="")
+    supersedes_id: str | None = None
+    created_at: datetime = Field(default_factory=_utc_now)
+
+    @field_validator("note")
+    @classmethod
+    def note_is_bounded(cls, value: str) -> str:
+        if len(value) > 2000:
+            raise ValueError("feedback note must be 2000 characters or fewer")
+        return value
+
+
 class EpisodicEventType(StrEnum):
     """What kind of thing happened. Members MUST match the DB CHECK constraint
     in migrations/012_episodic_events.sql — adding one here requires the same
@@ -644,38 +676,3 @@ class SearchResult(ContractModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class ApprovalRequest(ContractModel):
-    id: str = Field(default_factory=lambda: _id("approval"))
-    workspace_id: str
-    owner_user_id: str
-    run_id: str | None = None
-    action_type: str
-    action_preview: dict[str, Any]
-    required_role: str
-    status: ApprovalStatus = ApprovalStatus.REQUESTED
-    idempotency_key: str
-    dry_run: bool = True
-    checkpoint_resume_token: str | None = None
-    expires_at: datetime | None = None
-    created_at: datetime = Field(default_factory=_utc_now)
-    updated_at: datetime = Field(default_factory=_utc_now)
-
-
-class ApprovalDecisionEvent(ContractModel):
-    id: str = Field(default_factory=lambda: _id("approval_event"))
-    approval_id: str
-    from_status: ApprovalStatus | None = None
-    to_status: ApprovalStatus
-    actor_principal_id: str
-    reason: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=_utc_now)
-
-
-class RollbackRecord(ContractModel):
-    id: str = Field(default_factory=lambda: _id("rollback"))
-    approval_id: str
-    actor_principal_id: str
-    action: dict[str, Any] = Field(default_factory=dict)
-    outcome: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=_utc_now)

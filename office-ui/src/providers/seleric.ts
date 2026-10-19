@@ -4,7 +4,7 @@ import { parseSseFrame } from "../api/runEvents";
 import type { ProviderHandlers, SwarmEventProvider } from "./types";
 
 /**
- * Live bridge to the Seleric swarm via the read-only office gateway
+ * Live bridge to Seleric via the read-only office gateway
  * (`/v1/office/*`). Snapshot + SSE stream; auto-reconnects with backoff and
  * resumes from the last seq it saw (events are idempotent in the store, so a
  * small replay overlap is harmless).

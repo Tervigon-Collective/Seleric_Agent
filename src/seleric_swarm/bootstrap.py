@@ -5,9 +5,8 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
-from seleric_swarm.api.v3_state import configure_v3_persistence
+from seleric_swarm.api.v3_state import configure_v3_persistence, configure_v3_postgres
 from seleric_swarm.cancellation import build_cancellation_backend
-from seleric_swarm.checkpointing import build_checkpoint_provider
 from seleric_swarm.config.settings import Settings, get_settings
 from seleric_swarm.conversations.blobs import (
     BlobStore,
@@ -16,12 +15,12 @@ from seleric_swarm.conversations.blobs import (
     MinioBlobStore,
 )
 from seleric_swarm.conversations.events import ActivityEventSink, build_event_notifier
-from seleric_swarm.conversations.phase7 import ActionExecutionService, build_query_embedder
+from seleric_swarm.conversations.phase7 import build_query_embedder
 from seleric_swarm.conversations.postgres import build_conversation_repositories
 from seleric_swarm.llm.factory import build_llm
 from seleric_swarm.llm.metering import MeteredLLMPort
 from seleric_swarm.observability.tracing import (
-    configure_langsmith_env,
+    configure_langfuse_env,
     configure_logging,
     configure_opentelemetry,
 )
@@ -44,6 +43,11 @@ def _sync_settings_to_environ(settings: Settings) -> None:
         "AZURE_OPENAI_ENDPOINT": settings.azure_openai_endpoint,
         "AZURE_OPENAI_API_KEY": settings.azure_openai_api_key,
         "AZURE_OPENAI_MODEL": settings.azure_openai_model,
+        "LANGFUSE_PUBLIC_KEY": settings.langfuse_public_key,
+        "LANGFUSE_SECRET_KEY": settings.langfuse_secret_key,
+        "LANGFUSE_BASE_URL": settings.langfuse_base_url,
+        "LANGFUSE_HOST": settings.langfuse_base_url,
+        "LANGFUSE_PROJECT_ID": settings.langfuse_project_id,
         "LANGSMITH_API_KEY": settings.langsmith_api_key,
         "LANGSMITH_PROJECT": settings.langsmith_project,
         "LANGSMITH_ENDPOINT": settings.langsmith_endpoint,
@@ -60,7 +64,7 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     settings.validate_for_startup()
     _sync_settings_to_environ(settings)
     configure_logging(settings)
-    configure_langsmith_env(settings)
+    configure_langfuse_env(settings)
     configure_opentelemetry(settings)
     mcp = MCPGateway(settings.mcp_config_path)
     # CatalogueBootstrap is created eagerly but NOT warmed here — build_runtime
@@ -68,7 +72,8 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
     # refresh_if_stale() which does the actual MCP call.
     cat_bootstrap = CatalogueBootstrap(mcp)
     metrics = MetricRegistry(settings.metric_registry_path)
-    metrics.bind_catalogue(cat_bootstrap)
+    # Bind after a successful warm, not here: the cache is still empty.
+    cat_bootstrap.attach_registry(metrics)
     query_embedder = build_query_embedder(settings)
     persist_path = str(repo_root() / settings.persistence_path)
     if settings.persistence_backend == "file":
@@ -78,6 +83,8 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
         if settings.persistence_backend == "postgres"
         else None
     )
+    if database_engine is not None:
+        configure_v3_postgres(database_engine)
     conversations = build_conversation_repositories(
         settings.persistence_backend,
         settings.database_url,
@@ -146,12 +153,8 @@ def build_runtime(settings: Settings | None = None) -> SwarmRuntime:
                 redis_url=settings.redis_url,
             ),
         ),
-        checkpoint_provider=build_checkpoint_provider(
-            settings.checkpoint_backend, settings.database_url
-        ),
         cancellation=build_cancellation_backend(settings.cancellation_backend, settings.redis_url),
         blob_store=blob_store,
-        action_execution=ActionExecutionService(conversations.approvals, {}),
     )
     # BusinessStateService holds a runtime reference (needs mcp/metrics at call
     # time, not construction time) -- built after so the two aren't circular.

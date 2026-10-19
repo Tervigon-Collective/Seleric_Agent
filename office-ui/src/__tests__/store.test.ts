@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useOffice } from "../store";
-import { blankAgents } from "../office/agents";
+import { blankAgents, blankLegacyAgents } from "../office/agents";
 import type { OfficeSnapshot, SwarmUIEvent } from "../types";
 
 const snapshot = (over: Partial<OfficeSnapshot> = {}): OfficeSnapshot => ({
@@ -16,7 +16,8 @@ const snapshot = (over: Partial<OfficeSnapshot> = {}): OfficeSnapshot => ({
   startedAt: "2026-09-09T10:00:00Z",
   lastEventAt: null,
   lastSeq: 0,
-  agents: blankAgents(),
+  // Legacy swarm snapshot shape (old persisted records still hydrate here).
+  agents: blankLegacyAgents(),
   board: { steps: [{ id: "verify", label: "Verify issue", state: "active" }] },
   handoffs: [],
   artifacts: {},
@@ -42,9 +43,15 @@ describe("store hydrate + ingest", () => {
   it("hydrates the full roster and mission fields", () => {
     useOffice.getState().hydrate(snapshot());
     const s = useOffice.getState();
-    expect(Object.keys(s.agents)).toHaveLength(blankAgents().length);
+    expect(Object.keys(s.agents)).toHaveLength(blankLegacyAgents().length);
     expect(s.query).toMatch(/CAC/);
     expect(s.board[0].id).toBe("verify");
+  });
+
+  it("hydrates the V3 single-agent roster", () => {
+    useOffice.getState().hydrate(snapshot({ route: "v3", agents: blankAgents() }));
+    const s = useOffice.getState();
+    expect(Object.keys(s.agents)).toEqual(["seleric_agent"]);
   });
 
   it("dedupes repeated events by seq (idempotent)", () => {

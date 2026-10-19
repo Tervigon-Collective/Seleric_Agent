@@ -1,0 +1,46 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_ff1a1f9d2b634c0ca1ef133743a4cfde",
+ "mission": "MS3-b7b8bc5424",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 67,
+ "elapsed_s": 64.919,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 25,
+  "measured": 25,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": false,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer \u2014 these Meta campaigns are clearly burning ad budget (last 30 days): they spent meaningfully on Meta and produced negative product-level net profit (losses) and net ROAS below their break\u2011even ROAS.\n\nTop measured offenders (2026-09-13..2026-10-12, numbers from product_pnl):\n- TH-383-SUSPENDER-26SEP-ADV+ (120250695088250783) \u2014 Ad spend: \u20b973,137 (Measured); Net profit: \u20b9-32,431 (Measured); Net ROAS: 0.56 (Measured) vs Break\u2011even ROAS: 1.42 (Measured). \u2014 Derived: net ROAS < break\u2011even \u2192 running below breakeven.  \n- TH-222-WINGBIRD-23SEP (120250597947340783) \u2014 Ad spend: \u20b973,105 (Measured); Net profit: \u20b9-15,008 (Measured); Net ROAS: 0.79 (Measured) vs BE ROAS: 1.57 (Measured). \u2014 Derived: below breakeven.  \n- TH-383-SUSPENDER-29SEP (120250726752410783) \u2014 Ad spend: \u20b956,657 (Measured); Net profit: \u20b9-20,702 (Measured); Net ROAS: 0.63 (Measured) vs BE ROAS: 1.34 (Measured). \u2014 Derived: below breakeven.  \n- DOG TOY CS-24SEP (120250667421200783) \u2014 Ad spend: \u20b934,634 (Measured); Net profit: \u20b9-25,589 (Measured); Net ROAS: 0.26 (Measured) vs BE ROAS: 2.18 (Measured). \u2014 Derived: far below breakeven.  \n- CAT TOY CS-26SEP (120250695726350783) \u2014 Ad spend: \u20b933,853 (Measured); Net profit: \u20b9-16,381 (Measured); Net ROAS: 0.52 (Measured) vs BE ROAS: 1.53 (Measured). \u2014 Derived: below breakeven.\n\nAlso measured: there are other campaigns with negative product_net_profit in the same window (e.g. TH-383-SUSPENDER-20JUNE, TH-383-SUSPENDER-26JUNE-ADV+, MONSOON-CTL-20JULY). Ad\u2011spend for some of those was not returned in the limited top-N ad\u2011spend part of this query \u2014 they still show measured losses and should be checked (Measured).\n\nCaveats: queries used product_pnl (product-level P&L), filtered to ad_platform=meta and default brand (Tilting Heads). The results spanned multiple time axes and the query hit row limits; some campaigns are missing ad_spend rows in this result set. Data freshness: last_30d (2026-09-13..2026-10-12) \u00b7 INR \u00b7 cube refresh 2026-10-13T17:44:42Z (Measured).\n\nSuggested next step: pick 1\u20132 of the big spend losers (e.g. the two TH\u2011383 campaigns or TH\u2011222) \u2014 shall I (a) run diagnose_metric_change to find why (CTR, AOV, returns, creative) or (b) drill the same window by adset/creative to find the bad creatives?"
+}

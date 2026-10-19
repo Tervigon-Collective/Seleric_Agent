@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     persistence_backend: Literal["memory", "postgres", "file"] = "memory"
     persistence_path: str = ".data/persistence"
     database_url: str = ""
-    checkpoint_backend: Literal["none", "memory", "postgres"] = "none"
     cancellation_backend: Literal["memory", "redis"] = "memory"
     event_notifier_backend: Literal["auto", "memory", "redis"] = "auto"
     redis_url: str = ""
@@ -39,6 +38,10 @@ class Settings(BaseSettings):
     run_max_concurrency: int = 4
     run_retry_delay_s: float = 5.0
     run_retry_jitter_s: float = 1.0
+    # On SIGTERM the worker stops claiming and lets running missions finish for up
+    # to this long. Keep it above MISSION_TIMEOUT_S and below the container's
+    # stop_grace_period (docker-compose.yml) so a redeploy never cuts a mission.
+    run_drain_timeout_s: float = 480.0
     shutdown_timeout_s: float = 10.0
     blob_backend: Literal["local", "minio"] = "local"
     blob_local_path: str = ".data/attachments"
@@ -87,29 +90,49 @@ class Settings(BaseSettings):
     # be deployed on AZURE_OPENAI_ENDPOINT. Empty (default) = model tiering off,
     # every mission uses the normal model chain.
     azure_openai_fast_model: str = ""
+    # Per-role deployments on AZURE_OPENAI_ENDPOINT (2026-10-07). Empty = the agent model.
+    # planner: reads the question into PlanSlots (agent/plan.py).
+    azure_openai_planner_model: str = ""
+    # The planner's reasoning effort ("low", "medium", "high"); empty = provider default.
+    azure_openai_planner_reasoning_effort: str = ""
+    # Effort for a second, deeper reading of a question the first reading calls a diagnosis (shape
+    # why_single_metric / composition). Empty = no second reading.
+    azure_openai_planner_diagnose_reasoning_effort: str = ""
+    # Tool-call turns of the agent loop. Empty = the normal model chain, one model
+    # for tools and the answer. Set with azure_openai_answer_model to split them.
+    azure_openai_tool_model: str = ""
+    # Sampling temperature for the tool-call model only. None = do not send one.
+    # gpt-5-mini rejects every temperature except the default, so this stays off
+    # the answer model.
+    azure_openai_tool_temperature: float | None = None
+    # Final-answer deployment. Empty = the tool-call model also writes the answer.
+    azure_openai_answer_model: str = ""
+    # Reasoning effort for that answer. "none" is off. Empty = provider default.
+    azure_openai_answer_reasoning_effort: str = ""
+    # Same, for diagnostic intents (why / causal). Empty = the ordinary answer effort.
+    azure_openai_answer_diagnosis_reasoning_effort: str = ""
+    # helper: short single-shot calls — value sense, business-state fast answer, /llm ping.
+    azure_openai_helper_model: str = ""
     azure_openai_api_version: str = "2024-05-01-preview"
     # "openai_compatible" -> Azure AI Inference; "azure" -> classic Azure OpenAI.
     azure_auth_style: Literal["openai_compatible", "azure"] = "openai_compatible"
     azure_key_vault_url: str | None = None
 
-    # Optional second Azure resource (distinct endpoint + key + quota), tried
-    # after every model on the primary resource is exhausted. Unlike
-    # AZURE_OPENAI_MODELS (multiple deployments on one resource, sharing one
-    # quota), this survives an endpoint-level rate limit. Same auth style as
-    # the primary resource. Empty (default) = no second resource, unchanged
-    # single-resource fallback behavior.
-    azure_openai_endpoint_2: str = ""
-    azure_openai_api_key_2: str = ""
-    azure_openai_models_2: str = ""
+    # One LLM resource only (2026-10-07: gpt-5-nano on seleric.cognitiveservices).
+    # The second Azure resource and the OpenRouter tail were removed: the tail's
+    # free models broke missions mid-revision, and a deployment-level 429 is now
+    # waited out (agent/model_health.PatientModel) rather than routed elsewhere.
 
-    # Optional independent-provider fallback tier (OpenRouter). Appended after
-    # every Azure model in resolve_v3_model's FallbackModel chain, so an
-    # Azure-wide 429 (both resources throttled) falls through to a genuinely
-    # separate provider pool. OpenAI-compatible; no api-version. Empty (default)
-    # = no OpenRouter tier, unchanged Azure-only behavior.
-    openrouter_api_key: str = ""
-    openrouter_models: str = ""  # JSON array or comma-separated; first = highest priority
-    openrouter_endpoint: str = "https://openrouter.ai/api/v1"
+    langfuse_tracing: bool = True
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = Field(
+        default="https://cloud.langfuse.com",
+        validation_alias=AliasChoices("langfuse_base_url", "LANGFUSE_BASE_URL", "LANGFUSE_HOST"),
+    )
+    langfuse_project_id: str = ""
+    langfuse_otel_endpoint: str = ""
+    langfuse_otel_headers: str = ""
 
     langsmith_tracing: bool = False
     langsmith_api_key: str = ""
@@ -122,15 +145,14 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = ""
     otel_exporter_otlp_headers: str = ""
     otel_trace_sample_ratio: float = 1.0
-    langfuse_otel_endpoint: str = ""
-    langfuse_otel_headers: str = ""
-    langfuse_base_url: str = "https://cloud.langfuse.com"
-    langfuse_project_id: str = ""
     search_embedding_model: str = ""
 
     mcp_config_path: str = "config/mcp_servers.yaml"
     seleric_mcp_url: str = ""
     seleric_mcp_token: str = ""
+    # Chronos-2 standalone inference service (chronos/docker-compose.yml).
+    # Empty → forecast pipeline skips Chronos and falls back to ETS.
+    chronos_base_url: str = ""
     # Catalogue LTM (long-term, cross-mission) semantic index — replaces the
     # remote catalogue_search_metrics/catalogue_resolve_term round trips in
     # toolsets/semantic.py::search_semantics with a local Qdrant search kept
@@ -146,9 +168,6 @@ class Settings(BaseSettings):
     # (glossary-backed) + get_metric_definitions instead of paying the dump on
     # every model turn. Flip on to revert to the in-prompt catalogue.
     catalogue_in_prompt: bool = False
-    jev_base_url: str = ""
-    jev_api_key: str = ""
-    jev_timeout_s: float = 1.0
     metric_registry_path: str = "config/metric_registry.yaml"
 
     a2a_public_base_url: str = ""
@@ -161,22 +180,42 @@ class Settings(BaseSettings):
     mission_timeout_s: float = 600.0
     # Bound on the pre-loop catalogue_resolve_values call (agent/runner.py).
     # Fail-open: a slow or warming value index just means no value hints.
-    value_resolve_timeout_s: float = 6.0
+    # The named values become required filters: a timeout drops them silently (live 2026-10-08, three concurrent
+    # missions pushed resolution past 6 s and an answer lost its product filter), so the budget is generous.
+    value_resolve_timeout_s: float = 15.0
     max_llm_calls: int = 6
     # Ceiling for the V3 loop. Per-intent budgets in agent/runner.py sit under
     # this; unknown intent uses the ceiling itself.
-    max_tool_calls: int = 160
+    max_tool_calls: int = 300
+    mcp_call_timeout_s: float = 15.0
+    max_semantic_searches: int = 5
+    max_definition_lookups: int = 8
     # PydanticAI per-run retries for the V3 agent (tool ModelRetry / output
     # validation recovery). See ExecutionLimits.agent_retries.
     agent_retries: int = 2
     completion_threshold: float = 0.90
 
-    allow_write_actions: bool = False
 
     # V3 refactor (docs/refactor/) — when True, conversations and
     # POST /v1/missions run Agent[SelericDeps, MissionResult] instead of
     # swarm_v2. Sprint 5: V3 is now the only mission path, default True.
     v3_agent_enabled: bool = True
+
+    # Semantic port (M0.5). off = legacy catalogue warm; shadow = port beside it;
+    # enforce = missions read the port's snapshot. Default brand and scope
+    # dimension ids: empty uses config/scope.yaml.
+    semantic_port_mode: Literal["off", "shadow", "enforce"] = Field(
+        default="off",
+        validation_alias=AliasChoices("semantic_port_mode", "SEMANTIC_PORT_MODE"),
+    )
+    default_brand_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("default_brand_id", "DEFAULT_BRAND_ID"),
+    )
+    scope_dimension_ids: str = Field(
+        default="",
+        validation_alias=AliasChoices("scope_dimension_ids", "SCOPE_DIMENSION_IDS"),
+    )
 
     workflow_version: str = "1.0.0"
 
@@ -186,7 +225,7 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("api_key", "API_KEY", "SELERIC_API_KEY"),
     )
-    rate_limit_enabled: bool = True
+    rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 60
     # Compatibility identity used until a first-class identity provider is configured.
     default_workspace_id: str = "default"
@@ -244,6 +283,10 @@ class Settings(BaseSettings):
         ),
     )
 
+    @property
+    def is_langfuse_configured(self) -> bool:
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
+
     def missing_voice_credentials(self) -> list[str]:
         """LiveKit settings that voice needs but does not have.
 
@@ -276,6 +319,8 @@ class Settings(BaseSettings):
         "langsmith_project",
         "langsmith_endpoint",
         "otel_exporter_otlp_endpoint",
+        "langfuse_public_key",
+        "langfuse_secret_key",
         "langfuse_otel_endpoint",
         "langfuse_base_url",
         "langfuse_project_id",
@@ -285,15 +330,10 @@ class Settings(BaseSettings):
         "azure_openai_models",
         "azure_openai_model1",
         "azure_openai_model2",
-        "azure_openai_endpoint_2",
-        "azure_openai_models_2",
-        "openrouter_models",
-        "openrouter_endpoint",
         "seleric_mcp_url",
         "qdrant_url",
         "qdrant_collection",
         "qdrant_embedding_model",
-        "jev_base_url",
         "a2a_public_base_url",
         "api_host",
         "redis_url",
@@ -312,12 +352,11 @@ class Settings(BaseSettings):
 
     @field_validator(
         "azure_openai_api_key",
-        "azure_openai_api_key_2",
-        "openrouter_api_key",
         "langsmith_api_key",
+        "langfuse_public_key",
+        "langfuse_secret_key",
         "api_key",
         "seleric_mcp_token",
-        "jev_api_key",
         "qdrant_api_key",
     )
     @classmethod
@@ -352,7 +391,6 @@ class Settings(BaseSettings):
             "shutdown_timeout_s": self.shutdown_timeout_s,
             "clamav_timeout_s": self.clamav_timeout_s,
             "readiness_timeout_s": self.readiness_timeout_s,
-            "jev_timeout_s": self.jev_timeout_s,
         }
         invalid = [name for name, value in positive.items() if value <= 0]
         if invalid:
@@ -393,8 +431,6 @@ class Settings(BaseSettings):
             errors.append("Azure LLM endpoint, API key, and model must be configured")
         if self.persistence_backend != "postgres" or not self.database_url.strip():
             errors.append("PostgreSQL persistence and database_url are required")
-        if self.checkpoint_backend != "postgres":
-            errors.append("checkpoint_backend=postgres is required")
         if self.cancellation_backend != "redis" or not self.redis_url.strip():
             errors.append("Redis cancellation and redis_url are required")
         if self.resolved_event_notifier_backend() != "redis" or not self.redis_url.strip():
@@ -478,6 +514,16 @@ class Settings(BaseSettings):
     def numbered_fallback_models(self) -> list[str]:
         """Every configured model after the primary, in priority order."""
         return self.resolved_models()[1:]
+
+
+def helper_chat_model(settings: object) -> str:
+    """Deployment for short helper calls: AZURE_OPENAI_HELPER_MODEL, else the fast model,
+    else "" (the adapter then uses the primary model)."""
+    for name in ("azure_openai_helper_model", "azure_openai_fast_model"):
+        value = str(getattr(settings, name, "") or "").strip()
+        if value:
+            return value
+    return ""
 
 
 def configured_chat_model(settings: object) -> str:

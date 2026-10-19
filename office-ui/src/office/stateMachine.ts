@@ -47,6 +47,17 @@ export function animationFor(status: AgentOfficeState): AnimationName {
 /** Resolve the world position a character should move toward for its state. */
 export function destinationFor(agent: OfficeAgent): Vec {
   const s = agent.status;
+  // V3: the single agent walks to the capability station for its live tool.
+  // `currentTool` is set by tool_started/tool_completed events (and the
+  // backend snapshot); without one the agent works from Mission Control.
+  const tool = (agent.currentTool ?? "").toLowerCase();
+  if (tool && (s === "tool_running" || s === "working")) return stationForTool(tool);
+  if (agent.agentId === "seleric_agent") {
+    if (s === "planning" || s === "thinking") return SPOTS.planning_board;
+    if (s === "reviewing") return SPOTS.validation_desk;
+    if (s === "retrieving_evidence" || s === "waiting_for_evidence") return SPOTS.data_terminal;
+    return homeOf(agent.agentId);
+  }
   if (agent.role === "coordinator" && (s === "planning" || s === "thinking")) return SPOTS.planning_board;
   if (agent.role === "coordinator" && s === "working") return SPOTS.mission_room;
   // After handoffs / collab, stay at desk — meetings handle the walk-and-talk
@@ -62,6 +73,43 @@ export function destinationFor(agent: OfficeAgent): Vec {
 const CALM: AgentOfficeState[] = ["idle", "offline"];
 export function isActive(status: AgentOfficeState): boolean {
   return !CALM.includes(status);
+}
+
+/**
+ * V3 tool name -> capability station. Mirrors the registered agent tools
+ * (`src/seleric_swarm/agent/agent.py::TOOLS`); unknown tools fall back to
+ * the data terminal so the agent still visibly leaves its desk.
+ */
+export function stationForTool(tool: string): Vec {
+  const t = tool.toLowerCase();
+  if (t.includes("find_metric") || t.includes("resolve_brand") || t.includes("metric_definition")) {
+    return SPOTS.semantic_station;
+  }
+  if (t.includes("query_metric") || t.includes("semantic_sql") || t.includes("drilldown")) {
+    return SPOTS.metrics_station;
+  }
+  if (t === "analyze" || t.includes("visualization") || t.includes("run_python")) {
+    return SPOTS.analytics_station;
+  }
+  if (t.includes("diagnose") || t.includes("explore_data")) {
+    return SPOTS.diagnosis_station;
+  }
+  if (t.includes("estimate_effect") || t.includes("refut")) {
+    return SPOTS.causal_station;
+  }
+  if (t.includes("forecast") || t.includes("predict")) {
+    return SPOTS.forecast_station;
+  }
+  if (t.includes("propose_action") || t.includes("commit_action")) {
+    return SPOTS.actions_station;
+  }
+  if (t.includes("knowledge")) {
+    return SPOTS.knowledge_station;
+  }
+  if (t.includes("experiment") || t.includes("sample_size")) {
+    return SPOTS.experiments_station;
+  }
+  return SPOTS.data_terminal;
 }
 
 export const STATUS_TOKEN: Record<AgentOfficeState, StatusToken> = {
@@ -104,11 +152,48 @@ export function applyEventToAgents(
     if (!id || !next[id]) return;
     next[id] = { ...next[id], ...patch, lastEventAt: ev.timestamp };
   };
+  /** Tool name carried by V3 tool beats (backend puts `tool` in metadata). */
+  const toolOf = (m: Record<string, unknown>): string | undefined => {
+    const t = m.tool ?? m.tool_name;
+    return typeof t === "string" && t ? t : undefined;
+  };
+  /** V3 beats target the one agent; legacy beats name their own character. */
+  const pickTarget = (id: string | undefined | null): string | undefined => {
+    if (id && next[id]) return id;
+    return next["seleric_agent"] ? "seleric_agent" : undefined;
+  };
 
   switch (ev.eventType) {
     case "mission_started":
     case "mission_created":
       set("coordinator", { status: "planning", currentAction: "Planning the investigation" });
+      set("seleric_agent", { status: "planning", currentAction: "Planning the investigation" });
+      break;
+    case "tool_started": {
+      const tool = toolOf(meta);
+      const target = pickTarget(ev.agentId);
+      set(target, {
+        status: "tool_running",
+        currentAction: ev.summary ?? (tool ? `Running ${tool}` : "Running a tool"),
+        ...(tool ? { currentTool: tool } : {}),
+      });
+      break;
+    }
+    case "tool_completed": {
+      const tool = toolOf(meta);
+      const target = pickTarget(ev.agentId);
+      set(target, {
+        status: "working",
+        currentAction: ev.summary ?? (tool ? `${tool} — done` : "Tool done"),
+        ...(tool ? { currentTool: tool } : {}),
+      });
+      break;
+    }
+    case "agent_thinking":
+      set(pickTarget(ev.agentId), { status: "thinking", currentAction: "Thinking…" });
+      break;
+    case "answering":
+      set(pickTarget(ev.agentId), { status: "working", currentAction: "Writing the answer" });
       break;
     case "decomposition_created":
       set("coordinator", { status: "planning", currentAction: "Decomposing the question" });
@@ -184,10 +269,15 @@ export function applyEventToAgents(
       set("coordinator", { status: "blocked", error: String(meta.reason ?? "budget exhausted") });
       break;
     case "mission_completed":
+      // Settle every active state — including tool_running, which the V3
+      // single-agent flow sits in for most of the run. The last action is
+      // preserved so post-run inspection still shows what each agent did.
+      // Terminal/quiescent states (completed, failed, blocked, idle,
+      // offline, assigned, needs_attention) are left untouched.
       Object.keys(next).forEach((id) => {
         const st = next[id].status;
-        if (["working", "thinking", "planning", "reviewing", "handoff", "retrieving_evidence"].includes(st)) {
-          next[id] = { ...next[id], status: "completed", currentAction: undefined };
+        if (["planning", "thinking", "working", "retrieving_evidence", "tool_running", "waiting_for_agent", "waiting_for_evidence", "collaborating", "reviewing", "handoff"].includes(st)) {
+          next[id] = { ...next[id], status: "completed" };
         }
       });
       break;

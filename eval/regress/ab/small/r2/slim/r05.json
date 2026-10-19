@@ -1,0 +1,35 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_0a8d3c92be774cb2a6ff295f71c4dbbd",
+ "mission": "MS3-2ffb7b6f9d",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 12.047,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 10,
+  "measured": 10,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Net sales and orders by campaign for Tilting Heads (order-date) in September 2026: the data shows one uncategorised campaign bucket with the largest volume (396 orders, \u20b9749,161), then paid Google and brand campaigns \u2014 together these account for the top sales. See key contributors below.\n\n- Unattributed / no campaign name: 396 orders \u2192 \u20b9749,161 \u2014 largest single bucket by orders and revenue (means many orders lack a campaign tag; check tagging).\n- [Google Build] PMax - Seasonal New | 27th May: 115 orders \u2192 \u20b9198,996 \u2014 2nd by revenue and the top explicitly-named campaign.\n- [Google Build] Brand Search | 5th March: 40 orders \u2192 \u20b971,275 \u2014 notable branded search contribution.\n- TH-152-TANGLELEASH-1SEP: 29 orders \u2192 \u20b956,263 \u2014 top product/campaign SKU among organic/product campaigns.\n- TH-284-CRABDASH TOY-1SEP: 25 orders \u2192 \u20b944,389 \u2014 another product campaign in the top contributors.\n\nIf you want the full ranked list or only paid campaigns, I can return a sorted top-N table or drill into ad_platform (Meta vs Google) next.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Show the top 10 campaigns by net sales (Sep 2026) sorted desc?"
+}

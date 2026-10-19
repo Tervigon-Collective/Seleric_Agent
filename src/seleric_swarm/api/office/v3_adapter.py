@@ -1,30 +1,24 @@
-"""V3 mission -> swarm_v2-shaped raw dict, for the Office UI's read path.
+"""V3 mission -> office raw dict, for the Office UI's read path.
 
-``api/office/normalize.py::build_office_snapshot`` and the frontend that
-consumes it (``office-ui/``) are entirely swarm_v2-shaped (``mission_lead``,
-``leadership_epoch``, ``handoff_history``, typed artifact buckets) and have
-no native concept of a V3 mission (see
-``docs/refactor/01_PROFILE_RUNTIME.md`` Key risks — this gap wasn't planned
-anywhere in the refactor docs before 2026-09-18). Building a real V3-native
-office view is bigger than Sprint 1/2 scaffolding warrants while no
-toolset exists to produce an interesting V3 mission to render.
-
-This adapter is the pragmatic middle ground: translate a V3 ``Mission`` +
-its ``Artifact``s into the same raw-dict shape ``build_office_snapshot``
-already knows how to render, reusing that logic instead of forking it. The
-one V3 concept it fakes is the mission lead — V3 has no leadership handoff,
-so every V3 mission reports ``"coordinator"`` (the one office-ui agent node
-that isn't a swarm_v2 domain/specialist) as its lead. This is a stand-in,
-not a real mapping — a genuine V3 view (showing the single-agent loop's own
-tool calls) is still tracked as exit criterion 5 in that profile brief.
+``api/office/normalize.py::build_office_snapshot`` renders ``route=v3``
+missions with the V3-native single-agent roster (``seleric_agent`` walking
+capability stations) while old ``route=swarm`` records keep the retired
+14-character roster. This adapter translates a V3 ``Mission`` + its
+``Artifact``s into the raw-dict shape ``build_office_snapshot`` consumes:
+lifecycle events plus one ``tool_completed`` beat per artifact bucket, so
+the timeline shows the loop's own tool walk (fetch → analyze → diagnose →
+forecast) instead of a single coordinator placeholder.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from seleric_swarm.api.v3_state import get_v3_artifact_store, get_v3_mission_store
 from seleric_swarm.state.missions import Mission
+
+_log = logging.getLogger("seleric.api.office.v3")
 
 # V3 Artifact.artifact_type (agent/artifacts.py) -> the closest swarm_v2
 # artifact bucket normalize.py already knows how to render/attribute.
@@ -33,6 +27,8 @@ _ARTIFACT_TYPE_TO_BUCKET = {
     "finding": "hypothesis",
     "causal": "causal",
     "prediction": "prediction",
+    "forecast": "prediction",
+    "forecast_input": "evidence",
 }
 
 
@@ -45,7 +41,14 @@ def _iso(value: Any) -> str | None:
     return text or None
 
 
-def _mission_events(mission: Mission, *, has_evidence: bool) -> list[dict[str, Any]]:
+def _mission_events(
+    mission: Mission,
+    *,
+    has_evidence: bool,
+    buckets: dict[str, list[str]],
+) -> list[dict[str, Any]]:
+    from seleric_swarm.api.office.normalize import V3_AGENT_ID
+
     created = {
         "kind": "mission_created",
         "family": "mission",
@@ -56,7 +59,35 @@ def _mission_events(mission: Mission, *, has_evidence: bool) -> list[dict[str, A
     }
     events: list[dict[str, Any]] = [created]
     seq = 2
-    if has_evidence:
+    # One timeline beat per capability the loop demonstrably used, so the
+    # office shows the tool walk even though V3 persists no per-call event
+    # log (live tool calls stream as agent.tool_* while running).
+    tool_beats: list[tuple[str, str]] = []
+    if has_evidence or buckets.get("evidence"):
+        tool_beats.append(("query_metrics", "Fetching metric data"))
+    if buckets.get("hypothesis"):
+        tool_beats.append(("analyze", "Analysing the fetched data"))
+    if buckets.get("causal"):
+        tool_beats.append(("estimate_effect", "Estimating causal effect"))
+    if buckets.get("prediction"):
+        tool_beats.append(("forecast_metrics", "Forecasting"))
+    for tool, summary in tool_beats:
+        events.append(
+            {
+                "kind": "tool_completed",
+                "family": "agent",
+                "mission_id": mission.mission_id,
+                "seq": seq,
+                "ts": mission.updated_at.isoformat().replace("+00:00", "Z"),
+                "route": "v3",
+                "agent": V3_AGENT_ID,
+                "tool": tool,
+                "success": True,
+                "summary": summary,
+            }
+        )
+        seq += 1
+    if has_evidence and not tool_beats:
         events.append(
             {
                 "kind": "task_wave_executed",
@@ -65,7 +96,7 @@ def _mission_events(mission: Mission, *, has_evidence: bool) -> list[dict[str, A
                 "seq": seq,
                 "ts": mission.updated_at.isoformat().replace("+00:00", "Z"),
                 "route": "v3",
-                "mission_lead": "coordinator",
+                "mission_lead": V3_AGENT_ID,
             }
         )
         seq += 1
@@ -138,6 +169,33 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
         if bucket:
             buckets.setdefault(bucket, []).append(artifact.id)
     evidence = _evidence_rows(artifacts)
+    # One chart per (chart_type, metrics) set — the most recent. A mission that revised,
+    # reset an answer, or was retried re-charts with different evidence or intent;
+    # only the latest chart for that metric set should render on the answer.
+    latest_chart: dict[Any, tuple[Any, str]] = {}
+    for artifact in artifacts:
+        if getattr(artifact, "artifact_type", None) != "chart_spec" or not isinstance(artifact.payload, dict):
+            continue
+        payload = artifact.payload
+        # The spec always names a canonical form (see chart_vocabulary). Only a
+        # payload that somehow lost it falls back here, and it says so.
+        chart_type = payload.get("chart_type")
+        if not chart_type:
+            _log.warning("chart_spec %s has no chart_type; defaulting to bar", artifact.id)
+            chart_type = "bar"
+        metrics_key = tuple(sorted(payload.get("metrics") or []))
+        key = (chart_type, metrics_key) if metrics_key else frozenset(getattr(artifact, "evidence_ids", None) or [artifact.id])
+        prior = latest_chart.get(key)
+        if prior is None or artifact.created_at >= prior[0].created_at:
+            latest_chart[key] = (artifact, str(chart_type))
+    charts = [
+        {
+            "chart_type": chart_type,
+            "artifact_id": artifact.id,
+            "data": artifact.payload,
+        }
+        for (artifact, chart_type) in sorted(latest_chart.values(), key=lambda pair: pair[0].created_at)
+    ]
 
     return {
         "route": "v3",
@@ -145,16 +203,17 @@ def v3_raw_snapshot(mission_id: str) -> dict[str, Any] | None:
         "mission_id": mission.mission_id,
         "query": mission.query,
         "status": mission.status,
-        "mission_lead": "coordinator",
-        "initial_mission_lead": "coordinator",
+        "mission_lead": "seleric_agent",
+        "initial_mission_lead": "seleric_agent",
         "leadership_epoch": 0,
         "workspace_id": mission.workspace_id,
         "owner_user_id": mission.owner_user_id,
         "thread_id": mission.thread_id,
         "run_id": mission.run_id,
-        "events": _mission_events(mission, has_evidence=bool(evidence)),
+        "events": _mission_events(mission, has_evidence=bool(evidence), buckets=buckets),
         "artifacts": buckets,
         "evidence": evidence,
+        "charts": charts,
         "final_response": mission.final_response or "",
         "error_code": mission.error_code,
         "limitations": [] if mission.status != "failed" else [mission.final_response or "failed"],

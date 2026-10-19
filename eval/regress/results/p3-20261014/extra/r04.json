@@ -1,0 +1,30 @@
+{
+ "n": 4,
+ "aspect": "p3_chart",
+ "q": "Show the last 30 days of daily net sales.",
+ "thread": "thread_95716fac7c1f4823ad51d4947c8eff83",
+ "mission": "MS3-03be1f19e9",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 15.213,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 30,
+  "measured": 30,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Measured \u2014 daily net sales (order-date) for the last 30 days (2026-09-14 \u2192 2026-10-13):\n\n- 2026-09-14: \u20b942,395  \n- 2026-09-15: \u20b915,050  \n- 2026-09-16: \u20b934,019  \n- 2026-09-17: \u20b98,488  \n- 2026-09-18: \u20b912,485  \n- 2026-09-19: \u20b919,644  \n- 2026-09-20: \u20b911,477  \n- 2026-09-21: \u20b947,943  \n- 2026-09-22: \u20b953,293  \n- 2026-09-23: \u20b948,620  \n- 2026-09-24: \u20b943,618  \n- 2026-09-25: \u20b972,841  \n- 2026-09-26: \u20b961,954  \n- 2026-09-27: \u20b975,440  \n- 2026-09-28: \u20b954,028  \n- 2026-09-29: \u20b976,919  \n- 2026-09-30: \u20b969,492  \n- 2026-10-01: \u20b983,389  \n- 2026-10-02: \u20b936,493  \n- 2026-10-03: \u20b91,14,118  \n- 2026-10-04: \u20b984,524  \n- 2026-10-05: \u20b91,36,061  \n- 2026-10-06: \u20b91,17,855  \n- 2026-10-07: \u20b91,02,401  \n- 2026-10-08: \u20b91,15,142  \n- 2026-10-09: \u20b969,088  \n- 2026-10-10: \u20b970,686  \n- 2026-10-11: \u20b934,377  \n- 2026-10-12: \u20b942,177  \n- 2026-10-13: \u20b991,220\n\nAll figures Measured from the commerce.Net sales metric (order-date). Data freshness: last Cube refresh 2026-10-13T22:28:32.627Z (covers through 2026-10-13). Period \u00b7 INR \u00b7 data as of 2026-10-13T22:28Z.\n\nWould you like this shown as a daily chart or broken down by channel (e.g., paid vs organic)?"
+}

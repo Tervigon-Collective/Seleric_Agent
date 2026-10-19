@@ -1,0 +1,35 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_3d71226a21894a7cb5066cdbcfcab799",
+ "mission": "MS3-7352b6ee77",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 14.835,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 15,
+  "measured": 15,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Total (order-date): 396 orders for net sales \u20b9749,161 between 2026-09-01 and 2026-09-30. The highest-selling campaign was \u201c[Google Build] PMax - Seasonal New | 27th May\u201d (\u20b9198,996, 115 orders); most other campaigns are long tail.\n\nWhat stands out\n- Total (all campaigns, order-date): 396 orders \u00b7 Net sales \u20b9749,161. This is the full 2026-09-01..2026-09-30 campaign-level result for the default brand (Tilting Heads).\n- Top campaign by net sales: \u201c[Google Build] PMax - Seasonal New | 27th May\u201d \u2014 \u20b9198,996 from 115 orders (largest single-campaign share).\n- Other top contributors: \u201c[Google Build] Brand Search | 5th March\u201d \u2014 \u20b971,274 (40 orders); \u201cTH-152-TANGLELEASH-1SEP\u201d \u2014 \u20b956,263 (29 orders); \u201cTH-284-CRABDASH TOY-1SEP\u201d \u2014 \u20b944,389 (25 orders); \u201cTH-336-PAWTECH-1SEP\u201d \u2014 \u20b944,274 (22 orders).\n- Many campaigns have small sales and order counts (long tail): 88 campaign rows returned in total.\n\nWorth checking: do you want the full campaign table (all 88 rows) or a top-N (e.g., top 10 by net sales) so I can return a sorted list?\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Show the full campaign table or a top-10 by net sales?"
+}

@@ -1,0 +1,47 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_8940a773972f4dcfb389b11470c7032d",
+ "mission": "MS3-cd37892e87",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 67,
+ "elapsed_s": 61.928,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 26,
+  "measured": 26,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "36 Meta campaigns for Tilting Heads spent \u20b912,66,519 in the last 30 days and generated a combined net loss of \u20b95,21,081 \u2014 they ran below each campaign's break\u2011even ROAS so the spend is money-losing. \n\nWhat I found\n- Sample total (Meta, Tilting Heads, P&L order-date): Spend \u20b912,66,519 \u00b7 Net loss \u20b95,21,081 \u00b7 36 campaigns with net ROAS < break\u2011even ROAS.\n- Top wasting campaigns by spend:\n  - TH-383-SUSPENDER-17JULY-ADV+ \u2014 Spend \u20b997,738 \u00b7 Loss \u20b954,299 \u00b7 Net ROAS 0.44x vs BE ROAS 1.6x\n  - TH-383-SUSPENDER-26SEP-ADV+ \u2014 Spend \u20b973,137 \u00b7 Loss \u20b941,921 \u00b7 Net ROAS 0.43x vs BE ROAS 1.6x\n  - TH-222-WINGBIRD-23SEP \u2014 Spend \u20b973,105 \u00b7 Loss \u20b919,699 \u00b7 Net ROAS 0.73x vs BE ROAS 1.6x\n  - TH-336-PAWTECH-26SEP \u2014 Spend \u20b966,632 \u00b7 Loss \u20b910,549 \u00b7 Net ROAS 0.84x vs BE ROAS 1.6x\n  - TH-149-SCRATCHLOUNGE-25SEP \u2014 Spend \u20b957,333 \u00b7 Loss \u20b97,028 \u00b7 Net ROAS 0.88x vs BE ROAS 1.6x\n- Implication: these campaigns are destroying contribution margin \u2014 pausing or reallocating their budgets should stop further losses while we investigate root causes (creative, audience, bids, or landing funnel).\n\nPeriod: 2026-09-14..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Should I drill into the top 10 losing campaigns by ad\u2011set and creative to find why (audience vs creative vs landing)?"
+}

@@ -1,0 +1,32 @@
+{
+ "n": 6,
+ "aspect": "books",
+ "q": "What was the finance P&L net profit for September 2026 as booked by event date, and how does it differ from the order-date net profit?",
+ "thread": "thread_fefedb1e7b2b456e913f5c25f12ff573",
+ "mission": "MS3-0e2b19a19d",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 17.422,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 7,
+  "measured": 7,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "The finance P&L (event-date) net profit for September 2026 was a loss of \u20b91,527,829 \u2014 \u20b91,355,602 worse than the order-date net profit, which shows a loss of \u20b9172,227. This means the books (event-date P&L) record a substantially larger loss than the order-date view.\n\n- What moved it: P&L net profit (event date) = \u20b9-1,527,829 vs net profit (order date) = \u20b9-172,227; difference = \u20b9-1,355,602 (pnl is more negative). This matters because the event-date P&L records returns, cancellations and cost postings when they hit the books, so the finance view shows the true booked loss for September.\n- Why it can differ: order-date net profit attributes revenue and ad cost to the order date (so some returns/adjustments appear later), while the P&L (event date) includes returns, cancellations and cost recognitions when they post to finance \u2014 inflating the loss in the finance month. The catalogue definitions confirm P&L net profit is event-date net profit (built from P&L contribution margin minus P&L ad spend) while net profit is order-date net profit (contribution margin minus ad spend (P&L basis)).\n\nWorth checking: run a P&L break-down for September (P&L net profit broken into P&L net sales, P&L net cogs, P&L ad spend and return/cancel lines) to see which line(s) cause the \u20b91.36M gap.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Break down the P&L net profit for Sep 2026 by its P&L lines (net sales, net COGS, ad spend, returns/cancels)."
+}

@@ -1,0 +1,52 @@
+[
+ {
+  "q": "Why did my sales drop yesterday?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q1",
+  "reference": "q1",
+  "ab_id": "six1"
+ },
+ {
+  "q": "Which Meta campaigns are wasting money?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q2",
+  "ab_id": "six2"
+ },
+ {
+  "q": "Which products are profitable after returns and advertising costs?",
+  "aspect": "test_agent6",
+  "checks": [],
+  "tool_checks": "q3",
+  "ab_id": "six3"
+ },
+ {
+  "q": "give me a net profit breakdown, waterfall for September 2026",
+  "aspect": "reconciliation",
+  "checks": [
+   {
+    "contains_sql": "select round(sum(net_profit),2) from serve.order_pnl_daily where brand_id=20 and order_date between '2026-09-01' and '2026-09-30'"
+   },
+   {
+    "not_contains": "residual"
+   }
+  ],
+  "ab_id": "g22"
+ },
+ {
+  "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+  "aspect": "failed_steps",
+  "checks": [
+   {
+    "not_contains": "2026-09-01..2026-09-01"
+   }
+  ],
+  "ab_id": "g30"
+ },
+ {
+  "q": "What was the finance P&L net profit for September 2026 as booked by event date, and how does it differ from the order-date net profit?",
+  "aspect": "books",
+  "ab_id": "books"
+ }
+]

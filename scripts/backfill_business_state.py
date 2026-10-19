@@ -5,7 +5,7 @@ have no history. This backfills one snapshot per day per domain (plus the
 cross-domain ``business`` headline snapshot) for the last N days, computed from
 each metric's real daily series fetched from Cube via MCP.
 
-    uv run python -m scripts.backfill_business_state [--days 365] [--brand-id 20]
+    uv run python -m scripts.backfill_business_state [--days 365] [--brand-id <id>]
 
 Each metric's full series is fetched ONCE (not per-day), then features
 (current_value / period_delta_pct / rolling_mean_7d / rolling_std_7d) and the
@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from seleric_swarm.config.settings import Settings
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import SeriesPoint
+from seleric_swarm.exploration.space import default_brand_id
 from seleric_swarm.paths import repo_root
 from seleric_swarm.services.business_state.detectors import robust_zscore
 from seleric_swarm.services.business_state.features import compute_features
@@ -34,7 +35,6 @@ from seleric_swarm.services.domain_health.models import DomainStateSnapshot, Res
 from seleric_swarm.services.domain_health.resolver import DomainHealthProfiles
 from seleric_swarm.services.domain_health.scheduler import ALL_DOMAINS, build_headline_snapshot
 from seleric_swarm.services.domain_health.snapshot_store import SnapshotStore
-from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID
 
 
 def _parse_days(window: str | None, default: int) -> int:
@@ -74,7 +74,7 @@ async def _fetch_all_series(
     for mid, task in tasks.items():
         try:
             points, prov = await task
-        except Exception as exc:  # noqa: BLE001 - one bad metric must not sink the backfill
+        except Exception as exc:
             print(f"  ! {mid}: fetch failed ({type(exc).__name__}: {str(exc)[:80]})")
             continue
         if prov.get("error"):
@@ -131,7 +131,8 @@ def _resolved_for_day(
     )
 
 
-async def backfill(days: int = 365, *, brand_id: str = DEFAULT_BRAND_ID) -> int:
+async def backfill(days: int = 365, *, brand_id: str | None = None) -> int:
+    brand_id = brand_id or default_brand_id()
     from seleric_swarm.bootstrap import build_runtime
 
     load_dotenv(repo_root() / ".env")
@@ -205,7 +206,7 @@ async def backfill(days: int = 365, *, brand_id: str = DEFAULT_BRAND_ID) -> int:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=365)
-    ap.add_argument("--brand-id", default=DEFAULT_BRAND_ID)
+    ap.add_argument("--brand-id", default=None)
     args = ap.parse_args()
     asyncio.run(backfill(days=args.days, brand_id=args.brand_id))
 

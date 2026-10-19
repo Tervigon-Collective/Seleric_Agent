@@ -300,7 +300,7 @@ async def test_insufficient_evidence_verdict_is_not_retried(monkeypatch):
     like INSUFFICIENT_EVIDENCE is deterministic — re-running the whole mission
     re-burns it to the identical answer. It must fail closed on the first
     attempt even though max_attempts leaves room, unlike a transient code."""
-    runtime, repositories, run, assistant = _submission_runtime()
+    runtime, repositories, run, _assistant = _submission_runtime()
     calls = 0
 
     async def fail_insufficient(runtime_arg, *, mission_id, **_kwargs):

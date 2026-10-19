@@ -1,0 +1,37 @@
+{
+ "n": 15,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_dd75af60ab35426b885efdc4823fbeda",
+ "mission": "MS3-1181fb54c6",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 15.873,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 13,
+  "measured": 13,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Here are orders and net sales by campaign for 1\u201330 Sep 2026 (order-date, Tilting Heads).\n\nTop campaigns by net sales (Sep 1\u201330, rounded)\n- Unattributed / no campaign: Orders 396 \u00b7 Net sales \u20b9749,161\n- [Google Build] PMax - Seasonal New | 27th May: Orders 115 \u00b7 Net sales \u20b9198,996\n- [Google Build] Brand Search | 5th March: Orders 40 \u00b7 Net sales \u20b971,275\n- TH-385-DUCKTOY-1SEP: Orders 31 \u00b7 Net sales \u20b940,071\n- TH-222-WINGBIRD-08SEP: Orders 30 \u00b7 Net sales \u20b934,447\n- TH-222-WINGBIRD-07SEP: Orders 29 \u00b7 Net sales \u20b939,644\n- TH-152-TANGLELEASH-1SEP: Orders 29 \u00b7 Net sales \u20b956,263\n- TH-284-CRABDASH TOY-1SEP: Orders 25 \u00b7 Net sales \u20b944,389\n\nNotes: numbers are order-date net sales (commerce.Net sales) and order counts; scoped to default brand Tilting Heads. Full campaign list contains 88 rows.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Do you want the full campaign table (all 88 rows) or the top N by net sales?"
+}

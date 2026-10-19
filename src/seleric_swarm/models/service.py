@@ -53,6 +53,15 @@ MODEL_VERSION = "1"
 OUTLIER_ROBUST_SIGMAS = 8.0
 # Intermittent demand needs a different method family; refuse rather than mis-forecast.
 MAX_ZERO_SHARE = 0.4
+# Trend estimation needs materially more than a couple of points before it
+# stops being noise amplification; below this the per-day ETS path smooths the level only.
+_MIN_POINTS_FOR_TREND = 10
+# ~95% two-sided normal interval for the per-day ETS path.
+_Z_95 = 1.96
+# 80% two-sided (P10..P90), the band the forecasting pipeline labels as such.
+Z_80 = 1.2816
+# Residuals used for that band: the recent past, not the whole history.
+_RESIDUAL_WINDOW = 120
 
 
 @dataclass
@@ -121,7 +130,12 @@ def forecast_series(
     # A period that has not finished yet (its day is the evidence's as_of day or
     # later) is a partial total, not an observation: forecasting from it biases the
     # level low. Drop it and say so.
-    complete = [e for e in usable if e.period_start.date() < e.as_of.date()]
+    # Callers that pass plain evidence objects without an as-of date keep every point.
+    complete = [
+        e
+        for e in usable
+        if getattr(e, "as_of", None) is None or e.period_start.date() < e.as_of.date()
+    ]
     if len(complete) < len(usable):
         warnings.append(
             f"excluded {len(usable) - len(complete)} in-progress period(s) at or after the "
@@ -198,6 +212,131 @@ def forecast_series(
         warnings=warnings,
         diagnostics=dict(raw.diagnostics),
     )
+
+
+@dataclass
+class ForecastPathResult:
+    """Per-day ETS path (governed forecasting pipeline)."""
+
+    model_id: str
+    model_version: str
+    points: list[float]
+    lows: list[float]
+    highs: list[float]
+    horizon_days: int
+    history_points: int
+    method: str
+    warnings: list[str] = field(default_factory=list)
+
+
+def forecast_path(
+    values: list[float],
+    *,
+    horizon_days: int,
+    model_id: str,
+    nonnegative: bool = False,
+    interval_z: float = _Z_95,
+) -> ForecastPathResult:
+    """Per-day ETS point + interval path.
+
+    Additive weekly seasonality once history is 28 days or more; otherwise the
+    same trend/level path the Holt backend uses. ``forecast_series`` stays the
+    evidence-toolset entrypoint and returns only the final horizon step.
+    """
+    if horizon_days < 1:
+        raise ForecastUnavailable(
+            f"horizon_days must be >= 1, got {horizon_days}", warning=policy.WARN_INVALID_HORIZON
+        )
+    if len(values) < policy.MIN_OBSERVATION_ROWS:
+        raise ForecastUnavailable(
+            f"{len(values)} usable point(s); forecasting needs at least "
+            f"{policy.MIN_OBSERVATION_ROWS}",
+            warning=policy.WARN_THIN_HISTORY,
+        )
+
+    points, fitted, method, alpha = _fit_and_forecast_path(values, horizon_days)
+    residuals = [actual - pred for actual, pred in zip(values, fitted, strict=True)]
+    # Recent residuals describe today's noise; a long history with an old level
+    # shift would otherwise inflate the band for every future day.
+    recent = residuals[-_RESIDUAL_WINDOW:]
+    sigma = statistics.pstdev(recent) if len(recent) > 1 else 0.0
+
+    lows: list[float] = []
+    highs: list[float] = []
+    warnings: list[str] = []
+    for step, point in enumerate(points, start=1):
+        # Variance of an h-step ETS forecast grows with the fitted level
+        # smoothing (alpha), not with sqrt(h): a daily value is level + noise.
+        growth = math.sqrt(1.0 + (step - 1) * alpha * alpha)
+        half_width = interval_z * sigma * growth
+        low, high = point - half_width, point + half_width
+        if nonnegative:
+            low = max(0.0, low)
+            point = max(0.0, point)
+            high = max(0.0, high)
+            points[step - 1] = point
+        lows.append(round(low, 6))
+        highs.append(round(high, 6))
+        points[step - 1] = round(point, 6)
+
+    if lows and highs and lows[-1] == highs[-1]:
+        warnings.append(
+            "residual spread is ~zero; the interval collapsed to a point and reflects "
+            "no observed variation, not certainty"
+        )
+
+    return ForecastPathResult(
+        model_id=model_id,
+        model_version=MODEL_VERSION,
+        points=points,
+        lows=lows,
+        highs=highs,
+        horizon_days=horizon_days,
+        history_points=len(values),
+        method=method,
+        warnings=warnings,
+    )
+
+
+def _fit_and_forecast_path(
+    values: list[float], horizon_days: int
+) -> tuple[list[float], list[float], str, float]:
+    """Returns (per-day points, in-sample fitted values, method name, level alpha)."""
+    try:
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    except ImportError as exc:  # pragma: no cover - declared dependency
+        raise ForecastUnavailable(
+            f"statsmodels unavailable: {exc}", warning=policy.WARN_MODEL_UNAVAILABLE
+        ) from exc
+
+    use_trend = len(values) >= _MIN_POINTS_FOR_TREND
+    use_seasonal = len(values) >= 28
+    if use_seasonal:
+        method = "holt_winters_add_weekly" if use_trend else "ets_add_weekly"
+    else:
+        method = "holt_linear_trend" if use_trend else "simple_exponential_smoothing"
+    try:
+        model = ExponentialSmoothing(
+            values,
+            trend="add" if use_trend else None,
+            seasonal="add" if use_seasonal else None,
+            seasonal_periods=7 if use_seasonal else None,
+            initialization_method="estimated",
+        )
+        fit = model.fit(optimized=True)
+        forecasted = [float(v) for v in fit.forecast(horizon_days)]
+        fitted = [float(v) for v in fit.fittedvalues]
+        alpha = float(fit.params.get("smoothing_level", 0.0) or 0.0)
+    except Exception as exc:
+        raise ForecastUnavailable(
+            f"exponential smoothing failed to fit: {exc}", warning=policy.WARN_MODEL_FIT_FAILED
+        ) from exc
+
+    if not forecasted or any(not math.isfinite(p) for p in forecasted):
+        raise ForecastUnavailable(
+            "model produced a non-finite forecast", warning=policy.WARN_MODEL_FIT_FAILED
+        )
+    return forecasted, fitted, method, min(max(alpha, 0.0), 1.0)
 
 
 # --------------------------------------------------------------------------- #

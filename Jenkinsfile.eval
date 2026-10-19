@@ -1,0 +1,34 @@
+// Static gates. The live eval is `eval/regress/run_regression.py` (golden 30, the 6, replay11),
+// run against the deployed API and checked in ClickHouse; it is not a Jenkins stage because it
+// needs the running stack (see plans/SLIM_LOOP_PLAN.md).
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    timeout(time: 45, units: 'MINUTES')
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+        sh 'uv sync --extra dev'
+      }
+    }
+
+    stage('Static gates') {
+      steps {
+        sh 'uv run ruff check .'
+        sh 'uv run mypy src'
+        sh 'uv run python scripts/lint_semantic_literals.py'
+      }
+    }
+
+    stage('Unit tests') {
+      steps {
+        sh 'uv run pytest -q tests/unit tests/api tests/contract'
+      }
+    }
+  }
+}

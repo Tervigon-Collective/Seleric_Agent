@@ -9,14 +9,12 @@ from typing import Any
 
 from seleric_swarm.conversations.contracts import (
     ActivityEvent,
-    ApprovalDecisionEvent,
-    ApprovalRequest,
     Artifact,
     Attachment,
     MemoryItem,
     MemoryPreference,
     Message,
-    RollbackRecord,
+    MessageFeedback,
     Run,
     RunAttempt,
     Thread,
@@ -46,6 +44,7 @@ _MUTATING = frozenset(
         "put",
         "record_usage",
         "set_preference",
+        "submit",
         "transition",
         "transition_failed_attempt",
         "update",
@@ -90,7 +89,6 @@ def snapshot_conversations(repositories: ConversationRepositories) -> dict[str, 
     attachments = repositories.attachments
     memories = repositories.memories
     summaries = repositories.thread_summaries
-    approvals = repositories.approvals
     return {
         "version": _STATE_VERSION,
         "threads": _dump_models(getattr(threads, "_items", {})),
@@ -108,9 +106,7 @@ def snapshot_conversations(repositories: ConversationRepositories) -> dict[str, 
             for preference in getattr(memories, "_preferences", {}).values()
         ],
         "thread_summaries": _dump_models(getattr(summaries, "_items", {})),
-        "approvals": _dump_models(getattr(approvals, "_items", {})),
-        "approval_events": _dump_model_lists(getattr(approvals, "_events", {})),
-        "approval_rollbacks": _dump_models(getattr(approvals, "_rollbacks", {})),
+        "feedback": _dump_models(getattr(repositories.feedback, "_items", {})),
     }
 
 
@@ -143,13 +139,7 @@ def restore_conversations(repositories: ConversationRepositories, payload: dict[
     repositories.thread_summaries._items = _load_models(  # type: ignore[attr-defined]
         ThreadSummary, payload.get("thread_summaries")
     )
-    repositories.approvals._items = _load_models(ApprovalRequest, payload.get("approvals"))  # type: ignore[attr-defined]
-    repositories.approvals._events = _load_model_lists(  # type: ignore[attr-defined]
-        ApprovalDecisionEvent, payload.get("approval_events")
-    )
-    repositories.approvals._rollbacks = _load_models(  # type: ignore[attr-defined]
-        RollbackRecord, payload.get("approval_rollbacks")
-    )
+    repositories.feedback._items = _load_models(MessageFeedback, payload.get("feedback"))  # type: ignore[attr-defined]
 
 
 class _SavingProxy:
@@ -207,6 +197,6 @@ def build_file_repositories(
         memories=_SavingProxy(inner.memories, save, deferring),  # type: ignore[arg-type]
         thread_summaries=_SavingProxy(inner.thread_summaries, save, deferring),  # type: ignore[arg-type]
         search=inner.search,
-        approvals=_SavingProxy(inner.approvals, save, deferring),  # type: ignore[arg-type]
+        feedback=_SavingProxy(inner.feedback, save, deferring),  # type: ignore[arg-type]
         unit_of_work=unit_of_work,
     )

@@ -1,0 +1,44 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_e56e6bd0193d4a1588de731192533b66",
+ "mission": "MS3-3a8cbbd144",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 18.817,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 24,
+  "measured": 24,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer: these Meta campaigns are spending the most while returning below 1x Net ROAS (losing money on order-date): TH-383-SUSPENDER-29SEP, TH-383-SUSPENDER-26SEP-ADV+, TH-222-WINGBIRD-23SEP, TH-149-SCRATCHLOUNGE-6OCT, TH-336-PAWTECH-26SEP, TH-012-SNUGBOO-23SEP and DOG DAD T-SHIRT-CS-06OCT. Together they show high ad spend with ROAS < 1, so they are the best candidates to pause or re-work first.\n\nWhat changed / why it matters:\n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b924,101 \u00b7 Net ROAS 0.6x (0.5559). Large spend with ~45%+ loss vs break-even; immediate candidate to cut. \n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b923,526 \u00b7 Net ROAS 0.5x (0.4802). High spend and the weakest ROAS in the top spenders. \n- TH-222-WINGBIRD-23SEP \u2014 Ad spend \u20b921,626 \u00b7 Net ROAS 0.7x (0.6971). Big spend but not recovering COGS + ad costs. \n- TH-149-SCRATCHLOUNGE-6OCT \u2014 Ad spend \u20b919,817 \u00b7 Net ROAS 0.9x (0.9248). Close to 1x but still loss-making on order-date P&L. \n- TH-336-PAWTECH-26SEP \u2014 Ad spend \u20b919,190 \u00b7 Net ROAS 0.9x (0.8543). Significant spend with below\u2011break-even returns. \n- TH-012-SNUGBOO-23SEP \u2014 Ad spend \u20b919,174 \u00b7 Net ROAS 0.7x (0.7360). Large spend, low efficiency. \n- DOG DAD T-SHIRT-CS-06OCT \u2014 Ad spend \u20b912,323 \u00b7 Net ROAS 0.5x (0.4501). Moderate spend, poor returns.\n\nWorth checking: pause or reduce budgets for the campaigns above while you (a) re-evaluate creative/landing pages and (b) drill down by adset and creative to see where performance is concentrated.\n\nPeriod: 2026-10-07..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Run a drilldown by adset and creative for the top 4 campaigns above?"
+}

@@ -27,7 +27,7 @@ class BudgetVerdict:
 _OK = BudgetVerdict(ok=True)
 
 # Counter attribute name -> the ExecutionLimits field that bounds it.
-_COUNTERS = ("tool_calls", "cube_queries", "causal_queries", "prediction_calls", "validation_revisions")
+_COUNTERS = ("tool_calls", "cube_queries", "causal_queries", "prediction_calls", "validation_revisions", "python_calls")
 
 
 @dataclass
@@ -40,6 +40,7 @@ class ExecutionBudgetTracker:
     causal_queries: int = 0
     prediction_calls: int = 0
     validation_revisions: int = 0
+    python_calls: int = 0
     _started_at: float = field(default_factory=time.monotonic, repr=False)
 
     def consume(self, key: str, *, amount: int = 1) -> BudgetVerdict:
@@ -67,29 +68,3 @@ class ExecutionBudgetTracker:
                 exhausted_key="runtime_seconds",
             )
         return _OK
-
-
-# --- per-mission tool withdrawal ------------------------------------------------
-#
-# A tool that must stop being called (a budget spent, a call the model keeps
-# repeating) is *withdrawn*: ``agent.py``'s prepare step drops it from the tool
-# list for the rest of the mission, and the tool returns a normal result saying
-# so. It never raises ``ModelRetry`` for this: a retry the model ignores counts
-# toward pydantic-ai's per-tool retry limit and kills the whole mission with
-# ``UnexpectedModelBehavior`` (live 2026-09-25: query_metrics duplicates,
-# search_semantics budget, catalogue_resolve_brand x30).
-
-WITHDRAWN_PREFIX = "withdrawn:"
-
-
-def withdraw_tool(deps: object, *names: str) -> None:
-    counts = getattr(deps, "call_counts", None)
-    if counts is None:
-        return
-    for name in names:
-        counts[f"{WITHDRAWN_PREFIX}{name}"] = 1
-
-
-def withdrawn_tools(deps: object) -> set[str]:
-    counts = getattr(deps, "call_counts", None) or {}
-    return {k[len(WITHDRAWN_PREFIX):] for k, v in counts.items() if k.startswith(WITHDRAWN_PREFIX) and v}

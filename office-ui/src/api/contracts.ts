@@ -2,7 +2,7 @@ export type ThreadStatus = "ACTIVE" | "ARCHIVED" | "DELETED";
 export type MessageRole = "USER" | "ASSISTANT" | "SYSTEM" | "TOOL";
 export type MessagePartType =
   | "TEXT" | "TABLE" | "CODE" | "SOURCE" | "TOOL_CALL"
-  | "ARTIFACT" | "CHART" | "AGENT_STATUS" | "APPROVAL" | "WARNING";
+  | "ARTIFACT" | "CHART" | "KPI_GRID" | "AGENT_STATUS" | "APPROVAL" | "WARNING";
 
 export interface Thread {
   id: string;
@@ -41,6 +41,49 @@ export interface Artifact {
   payload: Record<string, unknown>;
 }
 
+/** Payload of ``artifact_type="forecast"`` — per-day P10/P50/P90 + horizon totals. */
+export interface ForecastDailyPoint {
+  date: string;
+  mean: number;
+  p10: number;
+  p50: number;
+  p90: number;
+}
+
+export interface ForecastTargetPayload {
+  metric_id: string;
+  label?: string;
+  unit?: string | null;
+  status: "validated" | "provisional" | "refused";
+  entity_dimension?: string | null;
+  entity_value?: string | null;
+  days: ForecastDailyPoint[];
+  total_mean?: number | null;
+  total_p10?: number | null;
+  total_p90?: number | null;
+  reason_codes?: string[];
+}
+
+export interface ForecastArtifactPayload {
+  plan_spec: Record<string, unknown>;
+  cutoff: string;
+  maturity_cut: string;
+  targets: ForecastTargetPayload[];
+  entity: { dimension?: string | null; values?: string[] };
+  features: Array<Record<string, unknown>>;
+  quality_verdicts: Array<Record<string, unknown>>;
+  engine: string;
+  model_id: string;
+  model_version: string;
+  model_revision?: string | null;
+  status: "validated" | "provisional" | "refused";
+  warnings: string[];
+  input_artifact_id?: string | null;
+  input_hash: string;
+  evidence_ids: string[];
+  backtest_summary: Record<string, unknown>;
+}
+
 export interface Attachment {
   id: string;
   filename: string;
@@ -67,6 +110,19 @@ export interface Message {
   created_at: string;
   /** Set when the run writes the final answer; minus created_at = response time. */
   updated_at?: string;
+}
+
+export interface MessageFeedback {
+  id: string;
+  workspace_id: string;
+  owner_user_id: string;
+  thread_id: string;
+  message_id: string;
+  run_id: string | null;
+  rating: "up" | "down";
+  note: string;
+  supersedes_id: string | null;
+  created_at: string;
 }
 
 export interface SubmitMessageRequest {
@@ -146,4 +202,17 @@ export interface MemoryPreference {
   owner_user_id: string;
   opted_out: boolean;
   updated_at: string;
+}
+
+export interface MetricDefinitionView {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  formula: string;
+  unit: string | null;
+  grain: string;
+  domain: string;
+  version: number;
+  aliases: string[];
 }

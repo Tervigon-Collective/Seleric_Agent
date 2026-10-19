@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.responses import PlainTextResponse
@@ -95,3 +97,35 @@ def test_check_readiness_helper(runtime):
     payload = check_readiness(runtime)
     assert payload["ready"] is True
     assert payload["checks"]["mcp"]["ok"] is True
+
+
+def test_mcp_probe_cleans_up_ephemeral_loop_client(runtime):
+    from seleric_swarm.api.ready import _mcp_probe
+
+    _mcp_probe(runtime)
+    for server in runtime.mcp._servers.values():
+        transport = getattr(server, "_transport", None)
+        if transport is not None and hasattr(transport, "_loop_clients"):
+            assert len(transport._loop_clients) == 0
+
+
+
+def test_mcp_probe_uses_a_cheap_call_not_the_rate_limited_listing():
+    """The docker healthcheck runs the probe every 15 s; catalogue_list_metrics has a server-side
+    loop breaker shared by every MCP caller, so the probe must not spend it (2026-10-04)."""
+    from types import SimpleNamespace
+
+    from seleric_swarm.api.ready import _mcp_probe
+
+    calls: list[str] = []
+
+    class _Mcp:
+        capabilities: ClassVar[set[str]] = {"seleric.modules_list", "seleric.catalogue_list_metrics"}
+
+        async def call(self, *, agent_id, capability, arguments):
+            calls.append(capability)
+            return {}
+
+    rt = SimpleNamespace(mcp=_Mcp(), settings=SimpleNamespace(readiness_timeout_s=2.0))
+    assert _mcp_probe(rt) is True
+    assert calls == ["seleric.modules_list"]

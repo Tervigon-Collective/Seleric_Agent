@@ -1,0 +1,47 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_853b98539d6c456db5139db5486d9a1f",
+ "mission": "MS3-72a3827da7",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 46,
+ "elapsed_s": 43.269,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 30,
+  "measured": 30,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_get_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer \u2014 measured: these Meta campaigns lost money (negative net profit) in the last 30 days (2026-09-14\u20142026-10-13, default brand: Tilting Heads). Net profit = net sales \u2212 net COGS \u2212 ad spend (order-date P&L basis). Evidence (top 10 losing campaigns):\n\n- TH-383-SUSPENDER-26SEP-ADV+ (ID 120250695088250783): Measured net profit \u20b9-41,921 \u00b7 Measured P&L ad spend \u20b973,137.  \n- TH-383-SUSPENDER-29SEP (120250726752410783): Measured net profit \u20b9-31,273 \u00b7 Measured ad spend \u20b956,657.  \n- DOG TOY CS-24SEP (120250667421200783): Measured net profit \u20b9-22,264 \u00b7 Measured ad spend \u20b934,634.  \n- TH-222-WINGBIRD-23SEP (120250597947340783): Measured net profit \u20b9-19,699 \u00b7 Measured ad spend \u20b973,105.  \n- CAT TOY CS-26SEP (120250695726350783): Measured net profit \u20b9-17,581 \u00b7 Measured ad spend \u20b933,853.  \n- TH-012-SNUGBOO-23SEP (120250648999490783): Measured net profit \u20b9-14,769 \u00b7 Measured ad spend \u20b928,556.  \n- TH-445-PROSUSPENDERBOOTS-25SEP (120250684363180783): Measured net profit \u20b9-13,516 \u00b7 Measured ad spend \u20b929,675.  \n- TH-336-PAWTECH-26SEP (120250690866980783): Measured net profit \u20b9-10,545 \u00b7 Measured ad spend \u20b966,628.  \n- TH-348-FUSIONHARNESS-03OCT (120250788048700783): Measured net profit \u20b9-9,675 \u00b7 Measured ad spend \u20b914,667.  \n- TH-068_WILD-23SEP-CV (120250653880500783): Measured net profit \u20b9-9,520 \u00b7 Measured ad spend \u20b919,893.\n\nAll figures measured from the order_pnl view for ad_platform = meta (query returned 20 rows; above shows the top 10 worst). Data freshness: cube refresh 2026-10-13T22:09:35Z. (No brand filter specified explicitly \u2014 default brand_id=20 was applied.)\n\nSuggested next step \u2014 pick one:\n- I can drill these campaigns down to adset / ad / creative (to find which creatives/adsets waste most).  \n- Or I can run a P&L breakdown (orders, AOV, returns, COGS, ad ROAS) for any one campaign to see why it lost money.\n\nWhich follow-up would you like?"
+}

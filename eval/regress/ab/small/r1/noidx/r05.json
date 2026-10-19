@@ -1,0 +1,37 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_965428fbf42b4b56a79317c21b7795d5",
+ "mission": "MS3-cd1d09cadd",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 26,
+ "elapsed_s": 22.58,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 10,
+  "measured": 10,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Total (order-date, Tilting Heads): 1,096 orders for net sales \u20b91,943,109 in Sep 2026 (2026-09-01 to 2026-09-30). Campaign-tagged activity is concentrated: a large portion of sales have no campaign_name set (see bullets).\n\n- Unspecified campaign_name: 396 orders \u2192 \u20b9749,161. This is the single largest named row in the data (likely direct/untagged or missing UTM).\n- [Google Build] PMax - Seasonal New | 27th May: 115 orders \u2192 \u20b9198,996.\n- [Google Build] Brand Search | 5th March: 40 orders \u2192 \u20b971,275.\n- TH-152-TANGLELEASH-1SEP: 29 orders \u2192 \u20b956,263.\n- TH-284-CRABDASH TOY-1SEP: 25 orders \u2192 \u20b944,389.\n\nWorth checking: the high share of sales with no campaign_name \u2014 consider tagging/UTM coverage or mapping those orders to channels (I can break down the unspecified row by referrer/channel or return the full campaign list sorted by net sales).\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Do you want the full campaign list (all campaigns) or a drilldown of the unspecified/untagged sales by channel?"
+}

@@ -1,0 +1,58 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_bdf738f714514700b679a521514afa8d",
+ "mission": "MS3-e82685774f",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 52,
+ "elapsed_s": 48.399,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 12,
+  "measured": 12,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_concept",
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.15})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.15})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.15})"
+  }
+ ],
+ "answer": "Sales did not drop \u2014 net sales rose to \u20b991,220 on 2026-10-13 from \u20b940,119 on 2026-10-12 (+127%). (Measured)\n\nEvidence\n- Net sales: 2026-10-12 = \u20b940,119 \u2192 2026-10-13 = \u20b991,220. Measured.\n- Orders: 2026-10-12 = 26 \u2192 2026-10-13 = 45. Measured.\n- Net AOV (order-date): \u20b91,543 \u2192 \u20b92,027 (+31%). Measured.\n- Ad spend (P&L basis): \u20b938,661 \u2192 \u20b950,440 (+30%) \u2014 moved together with sales (correlation noted, not proven cause). Measured / Correlation.\n- Refunds and returns rose in absolute terms but the diagnosis ruled them out as a supported cause once weekday and trend were accounted for. Hypothesis tested & excluded.\n\nShort diagnosis (from automatic analysis)\n- The increase is within the metric\u2019s normal day-to-day range; the automated cause-finder found no single supported causal driver. Orders and AOV both rose (they explain the sales increase arithmetically); ad spend moved with sessions and sales but was labelled a correlation (not a confirmed cause).\n\nPeriod: 2026-10-12..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14.\n\nNext step: would you like me to break down the change by campaign or product to see which ads/products drove the uplift?"
+}

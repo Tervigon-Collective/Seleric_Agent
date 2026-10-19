@@ -53,13 +53,11 @@ TOOLS = (
     "modules_list",
     "metrics_query",
     "metrics_drilldown",
+    "insights_explain",
+    "semantic_sql",
     # Meta/Google ad-platform tools are not listed: they are third-party APIs
     # outside the certified Cube serve views and the gateway no longer exposes
     # them by default (SELERIC_MCP_ADS_TOOLS).
-    "actions_list_available",
-    "actions_propose",
-    "actions_commit",
-    "actions_status",
 )
 
 
@@ -79,37 +77,31 @@ class SelericMCPTransport:
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
         }
-        self._client = httpx.AsyncClient(timeout=timeout_s)
-        # httpx pools connections on the event loop that opened them. /readyz
-        # probes from a thread via asyncio.run() -- a fresh loop each time -- so
-        # sharing one client made every other probe fail with "Event loop is
-        # closed" (live 2026-09-25). The first loop to use the transport keeps
-        # `_client`; any other loop gets its own, dropped with that loop.
-        self._client_loop: asyncio.AbstractEventLoop | None = None
-        self._loop_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient] = (
-            weakref.WeakKeyDictionary()
-        )
-        # httpx's own `timeout=` has been observed to not fire on a stalled
-        # connection under real load (docs/BUG_SHEET.md #5: a request hung
-        # 10+ minutes with the asyncio event loop genuinely idle in
-        # `select()`, not looping -- a true stuck socket read the configured
-        # timeout never caught). This is a hard backstop at the asyncio layer
-        # so a single stuck call can never hang the mission indefinitely,
-        # regardless of why httpx's own timeout missed it.
         self._timeout_s = timeout_s
         self._hard_timeout_s = timeout_s + 10.0
         self._ids = itertools.count(1)
         self._session_id: str | None = None
+        # The server's own usage guide, from the initialize result (empty until a session exists).
+        self.instructions: str = ""
         self._init_lock = asyncio.Lock()
+        self._fallback_client: httpx.AsyncClient | None = None
+        self._loop_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, httpx.AsyncClient] = (
+            weakref.WeakKeyDictionary()
+        )
+
+    @property
+    def _client(self) -> httpx.AsyncClient:
+        try:
+            return self._loop_client()
+        except RuntimeError:
+            if self._fallback_client is None or self._fallback_client.is_closed:
+                self._fallback_client = httpx.AsyncClient(timeout=self._timeout_s)
+            return self._fallback_client
 
     def _loop_client(self) -> httpx.AsyncClient:
         loop = asyncio.get_running_loop()
-        if self._client_loop is None:
-            self._client_loop = loop
-        if loop is self._client_loop:
-            return self._client
         client = self._loop_clients.get(loop)
-        if client is None:
+        if client is None or client.is_closed:
             client = httpx.AsyncClient(timeout=self._timeout_s)
             self._loop_clients[loop] = client
         return client
@@ -140,6 +132,7 @@ class SelericMCPTransport:
                 },
             }
             resp = await self._post_with_retry(body)
+            self.instructions = str((_parse_jsonrpc_response(resp).get("result") or {}).get("instructions") or "")
             session_id = resp.headers.get("mcp-session-id")
             if not session_id:
                 raise RuntimeError("seleric mcp did not return an Mcp-Session-Id on initialize")
@@ -190,6 +183,24 @@ class SelericMCPTransport:
             return parsed if isinstance(parsed, dict) else {"value": parsed}
         return result if isinstance(result, dict) else {}
 
+    async def list_tools(self) -> list[dict[str, Any]]:
+        """The server's tool definitions (name, description, inputSchema), one JSON-RPC ``tools/list`` round trip."""
+        await self._ensure_session()
+        session = self._session_id
+        body = {"jsonrpc": "2.0", "id": next(self._ids), "method": "tools/list", "params": {}}
+        try:
+            resp = await self._post_with_retry(body)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404 or session is None:
+                raise
+            self._drop_session(session)
+            await self._ensure_session()
+            resp = await self._post_with_retry(body)
+        payload = _parse_jsonrpc_response(resp)
+        if "error" in payload:
+            raise RuntimeError(f"seleric mcp error listing tools: {payload['error']}")
+        return list((payload.get("result") or {}).get("tools") or [])
+
     async def _post_with_retry(self, body: dict[str, Any]) -> httpx.Response:
         """3 attempts, short exponential backoff, transient failures only.
 
@@ -217,8 +228,30 @@ class SelericMCPTransport:
             raise  # a real 4xx error — not a "down" signal, let it surface as-is
         raise AssertionError("unreachable")  # AsyncRetrying always returns or raises
 
+    async def aclose_current_loop(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        client = self._loop_clients.pop(loop, None)
+        if client is not None and not client.is_closed:
+            await client.aclose()
+
     async def aclose(self) -> None:
-        await self._client.aclose()
+        if self._fallback_client is not None:
+            try:
+                if not self._fallback_client.is_closed:
+                    await self._fallback_client.aclose()
+            except Exception:
+                pass
+            self._fallback_client = None
+        for client in list(self._loop_clients.values()):
+            try:
+                if not client.is_closed:
+                    await client.aclose()
+            except Exception:
+                pass
+        self._loop_clients.clear()
 
 
 def _loads_json(raw: Any, *, context: str) -> Any | None:

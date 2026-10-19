@@ -5,7 +5,7 @@ import { MessagePartRenderer } from "../components/MessagePartRenderer";
 import { useShellStore } from "../stores/shell";
 
 describe("typed message part rendering", () => {
-  beforeEach(() => useShellStore.setState({ selectedArtifact: null, detailTab: "Activity" }));
+  beforeEach(() => useShellStore.setState({ selectedArtifact: null, detailTab: "Debug" }));
   const draw = (part: Parameters<typeof MessagePartRenderer>[0]["part"]) => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -20,6 +20,17 @@ describe("typed message part rendering", () => {
     expect(container.querySelector("b")).toBeNull();
   });
 
+  it("orders table columns as the backend sent them, not by the key order of stored rows", () => {
+    const container = draw({ type: "TABLE", content: {
+      columns: ["Date", "Campaign Name", "Ad spend", "CTR"],
+      sort: { column: "Ad spend", direction: "desc" },
+      rows: [{ CTR: "1.4%", Date: "2026-10-09", "Ad spend": "₹34,506", "Campaign Name": "PMax" }],
+    } } as never);
+    const headers = Array.from(container.querySelectorAll("th")).map((th) => th.textContent?.replace(/[▲▼]/g, "").trim());
+    expect(headers).toEqual(["Date", "Campaign Name", "Ad spend", "CTR"]);
+    expect(container.querySelector('th[aria-sort="descending"]')?.textContent).toContain("Ad spend");
+  });
+
   it("opens artifact provenance in the details state", () => {
     const container = draw({
       type: "ARTIFACT",
@@ -29,7 +40,7 @@ describe("typed message part rendering", () => {
       },
     });
     act(() => container.querySelector("button")?.click());
-    expect(useShellStore.getState().detailTab).toBe("Artifacts");
+    expect(useShellStore.getState().detailTab).toBe("Debug");
     expect(useShellStore.getState().selectedArtifact?.calculation_version).toBe("1");
   });
 

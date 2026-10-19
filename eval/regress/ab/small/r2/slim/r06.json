@@ -1,0 +1,38 @@
+{
+ "n": 6,
+ "aspect": "books",
+ "q": "What was the finance P&L net profit for September 2026 as booked by event date, and how does it differ from the order-date net profit?",
+ "thread": "thread_35be520650654709bd0131a8403b5742",
+ "mission": "MS3-7d64e0962a",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 19.069,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "1,355,602",
+   "1,355,602",
+   "1.36M",
+   "1.36M",
+   "1.36M"
+  ],
+  "numbers": 9,
+  "measured": 4,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "The finance P&L (event-date) net profit for September 2026 was a loss of \u20b9-1,527,829, while the order-date net profit for the same month was a loss of \u20b9-172,227 \u2014 the P&L (event-date) result is \u20b9-1,355,602 worse. This is a timing/basis gap, not a data mismatch.\n\n- What changed (size): P&L net profit (event date) = \u20b9-1,527,829 vs order-date net profit = \u20b9-172,227 (difference \u20b9-1,355,602).  \n- Why it matters: the two metrics use different bases \u2014 P&L net profit is booked by event/report date (captures returns/adjustments and P&L timing when they post), while net profit is measured on order date (attributes costs/revenue to the order). The catalogue definitions show P&L net profit = P&L contribution margin \u2212 P&L ad spend (event date) and net profit = contribution margin \u2212 ad spend (P&L basis) (order date).  \n- Certainty / caveat: the numbers are from the certified P&L (event-date) and order-date P&L views; P&L source refresh is current as of 2026-10-14. I haven\u2019t broken the \u20b91.36M gap into lines (returns, net COGS, ad spend) yet \u2014 that would identify the dominant drivers.\n\nWorth checking: run a P&L breakdown of P&L net profit for Sept (event date) by line (return revenue, net COGS, ad spend) to see which line(s) drive the \u20b91.36M shortfall.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Break down the P&L (P&L net profit) for September by its lines to locate the largest contributors to the \u20b91.36M gap?"
+}

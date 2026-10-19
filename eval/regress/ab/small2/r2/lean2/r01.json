@@ -1,0 +1,61 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_43c55405fe2d44ecaecff3c6bf59a326",
+ "mission": "MS3-1d9160df85",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 56,
+ "elapsed_s": 52.904,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "127.4%",
+   "27.3%",
+   "30.5%"
+  ],
+  "numbers": 11,
+  "measured": 8,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754552, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Sales did not drop yesterday \u2014 net sales rose to \u20b991,220 on 2026-10-13 from \u20b940,119 on 2026-10-12 (+127.4%), so yesterday was materially stronger than the day before.\n\nWhat changed (ordered by impact)\n- More orders: Orders 26 \u2192 45 (+73.1%). This was the biggest volume swing and explains most of the sales increase.\n- Higher AOV: AOV \u20b92,116 \u2192 \u20b92,694 (+27.3%), so each order was worth more yesterday as well.\n- More ad investment: Ad spend \u20b938,661 \u2192 \u20b950,442 (+30.5%). Ad spend moved with sessions and conversions but the data does not establish direction (could be cause or response).\n- Returns / refunds and discounts changed but did not overturn the increase: discount and deduction lines rose, but gross sales and product sales increases dominated.\n\nWhat we can (and cannot) say\n- The data shows what moved (orders, AOV, ad spend) but the diagnosis found no single supported causal driver \u2014 sessions, add-to-carts and ad spend all moved together and the system cannot tell whether ad spend caused the lift or reacted to it.\n- Scope used: order-date figures for the default brand (Tilting Heads). Today\u2019s data snapshot is complete through 2026-10-13.\n\nWorth checking: a campaign or channel-level breakdown for 2026-10-13 to see which ads/campaigns produced the extra orders and AOV.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Do you want a campaign- or channel-level breakdown of yesterday\u2019s orders and sales?"
+}

@@ -38,6 +38,14 @@ interface MissionSlice {
   finalResponse: string | null;
   traceUrl: string | null;
   traceRequestId: string | null;
+  /** test_agent-style loop debug payload from answer.completed / /trace. */
+  loopDebug: {
+    stats: Record<string, unknown> | null;
+    grounding: Record<string, unknown> | null;
+    steps: Array<Record<string, unknown>> | null;
+  } | null;
+  /** Diagnosis DoWhy DAGs for the inspector Causal tab (not shown in chat). */
+  causalGraphs: Array<Record<string, unknown>> | null;
 }
 
 interface OfficeState extends MissionSlice {
@@ -73,7 +81,18 @@ interface OfficeState extends MissionSlice {
   setFollow: (m: "off" | "lead" | "activity") => void;
   toggleTimeline: () => void;
   toggleDebug: () => void;
+  setMissionId: (missionId: string | null) => void;
+  setLoopDebug: (loopDebug: MissionSlice["loopDebug"]) => void;
+  setCausalGraphs: (causalGraphs: MissionSlice["causalGraphs"]) => void;
   reset: () => void;
+}
+
+/** Real mission keys are `MS…` / `MS3-…`; placeholders must not hit /trace. */
+export function isTraceableMissionId(id: string | null | undefined): id is string {
+  if (!id) return false;
+  if (id === "pending" || id === "conversation" || id === "current-run") return false;
+  if (id.startsWith("run_")) return false;
+  return true;
 }
 
 const MISSION_DEFAULT: MissionSlice = {
@@ -95,6 +114,8 @@ const MISSION_DEFAULT: MissionSlice = {
   finalResponse: null,
   traceUrl: null,
   traceRequestId: null,
+  loopDebug: null,
+  causalGraphs: null,
 };
 
 const prefersReduced =
@@ -186,7 +207,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
     // leadership ring follows the freshest transfer
     let leadAgentId = s.leadAgentId;
     let missionLead = s.missionLead;
-    if (ev.eventType === "leadership_transferred" && ev.agentId) {
+    if (ev.eventType === "leadership_transferred" && typeof ev.agentId === "string" && ev.agentId) {
       leadAgentId = ev.agentId;
       missionLead = ev.agentId.replace(/_agent$/, "");
     }
@@ -213,6 +234,9 @@ export const useOffice = create<OfficeState>((set, get) => ({
   setFollow: (followMode) => set({ followMode }),
   toggleTimeline: () => set((s) => ({ timelineOpen: !s.timelineOpen })),
   toggleDebug: () => set((s) => ({ debugMode: !s.debugMode })),
+  setMissionId: (missionId) => set({ missionId }),
+  setLoopDebug: (loopDebug) => set({ loopDebug }),
+  setCausalGraphs: (causalGraphs) => set({ causalGraphs }),
   reset: () =>
     set({
       ...MISSION_DEFAULT,

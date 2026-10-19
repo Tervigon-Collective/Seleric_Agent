@@ -3,16 +3,18 @@ import type {
   Attachment,
   CreateThreadRequest,
   Message,
+  MessageFeedback,
   MemoryItem,
   MemoryPreference,
   MemoryScope,
   MemoryType,
+  MetricDefinitionView,
   SubmitMessageRequest,
   SubmitMessageResponse,
   Thread,
   InitiateAttachmentResponse,
 } from "./contracts";
-import { api, type HttpClient } from "./http";
+import { ApiError, api, type HttpClient } from "./http";
 
 const enc = encodeURIComponent;
 export const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
@@ -174,6 +176,39 @@ export class ConversationApi {
   }
   listRunMemories(runId: string): Promise<MemoryItem[]> {
     return this.http.request(`/v1/runs/${enc(runId)}/memories`);
+  }
+  listMetricDefinitions(): Promise<MetricDefinitionView[]> {
+    return this.http.request("/v1/metrics/definitions");
+  }
+  submitFeedback(
+    threadId: string,
+    messageId: string,
+    body: { rating: "up" | "down"; note?: string; runId?: string },
+  ): Promise<MessageFeedback> {
+    return this.http.request(
+      `/v1/threads/${enc(threadId)}/messages/${enc(messageId)}/feedback`,
+      {
+        method: "POST",
+        body: JSON.stringify({ rating: body.rating, note: body.note ?? "", run_id: body.runId ?? null }),
+      },
+    );
+  }
+  async getFeedback(threadId: string, messageId: string): Promise<MessageFeedback | null> {
+    try {
+      return await this.http.request(
+        `/v1/threads/${enc(threadId)}/messages/${enc(messageId)}/feedback`,
+      );
+    } catch (error) {
+      // 404 means "no vote yet" — not a failure worth surfacing.
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+  /** All verdicts on one thread — training-data export surface. */
+  listThreadFeedback(threadId: string, limit = 100): Promise<MessageFeedback[]> {
+    return this.http.request(
+      `/v1/threads/${enc(threadId)}/feedback?limit=${limit}`,
+    );
   }
 }
 

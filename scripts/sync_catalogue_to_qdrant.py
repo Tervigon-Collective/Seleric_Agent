@@ -14,11 +14,16 @@ Periodic scheduling is intentionally NOT wired into app startup here — this
 is the one-off script; a recurring job (cron/Task Scheduler) is a follow-up.
 
 Usage:
-    python scripts/sync_catalogue_to_qdrant.py
+    python scripts/sync_catalogue_to_qdrant.py [--prune]
+
+``--prune`` also deletes entries of each kind that the live catalogue no longer serves (e.g. the v1
+metric ids retired by the semantic v2 hard cut), so the fallback index can never hand the agent an id
+the MCP rejects. A kind whose live pull came back empty is never pruned.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 from collections.abc import Callable
 from typing import Any
@@ -29,6 +34,7 @@ from seleric_swarm.bootstrap import _sync_settings_to_environ
 from seleric_swarm.config.settings import get_settings
 from seleric_swarm.paths import repo_root
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
+from seleric_swarm.semantic import McpSemanticPort
 from seleric_swarm.toolsets import catalogue_index
 
 _AGENT_ID = "v3_agent"
@@ -40,9 +46,12 @@ _AGENT_ID = "v3_agent"
 # under "brands". No local canonicalization of these fields, just reading
 # them under their live-catalogue key names.
 _SOURCES: list[tuple[str, str, str, str, str]] = [
-    ("metric", "seleric.catalogue_list_metrics", "matches", "id", "display_name"),
-    ("dimension", "seleric.catalogue_list_dimensions", "dimensions", "id", "display_name"),
-    ("brand", "seleric.catalogue_list_brands", "brands", "id", "name"),
+    # metrics from the bootstrap listing (same queryable list as the metric listing, plus the
+    # semantic v2 fields). The metric listing is rate-limited server-side (3 calls / 60 s, shared
+    # with the /readyz probe), so a sync through it can come back as an error payload with 0 rows.
+    ("metric", "bootstrap", "metrics", "id", "display_name"),
+    ("dimension", "dimensions", "dimensions", "id", "display_name"),
+    ("brand", "brands", "brands", "id", "name"),
 ]
 
 
@@ -58,13 +67,13 @@ async def _sync_kind(
     embedder: Callable[[str], list[float]],
     *,
     kind: str,
-    capability: str,
+    pull_kind: str,
     list_key: str,
     id_field: str,
     name_field: str,
-) -> int:
-    payload = await gateway.call(agent_id=_AGENT_ID, capability=capability, arguments={})
-    count = 0
+) -> set[str]:
+    payload = await McpSemanticPort(gateway, agent_id=_AGENT_ID).pull(pull_kind)
+    synced: set[str] = set()
     for entry in _entries_from(payload, list_key):
         catalogue_id = str(entry.get(id_field) or "").strip()
         if not catalogue_id:
@@ -85,11 +94,25 @@ async def _sync_kind(
             unit=entry.get("unit"),
             full_definition=entry,
         )
-        count += 1
-    return count
+        synced.add(catalogue_id)
+    return synced
 
 
-async def _sync() -> int:
+def _prune_kind(client: Any, collection: str, kind: str, keep: set[str]) -> list[str]:
+    """Delete stored ``kind`` entries whose id the live catalogue no longer serves."""
+    from qdrant_client.http import models as qmodels
+
+    stored = {str(row.get("id")) for row in catalogue_index.list_catalogue(client, collection, kind=kind)}
+    stale = sorted(stored - keep)
+    if stale:
+        client.delete(
+            collection_name=collection,
+            points_selector=qmodels.PointIdsList(points=[catalogue_index.point_id(kind, cid) for cid in stale]),
+        )
+    return stale
+
+
+async def _sync(prune: bool = False) -> int:
     load_dotenv(repo_root() / ".env")
     settings = get_settings()
     _sync_settings_to_environ(settings)
@@ -101,20 +124,23 @@ async def _sync() -> int:
     gateway = MCPGateway(settings.mcp_config_path)
     synced = 0
     try:
-        for kind, capability, list_key, id_field, name_field in _SOURCES:
-            count = await _sync_kind(
+        for kind, pull_kind, list_key, id_field, name_field in _SOURCES:
+            ids = await _sync_kind(
                 gateway,
                 client,
                 settings,
                 embedder,
                 kind=kind,
-                capability=capability,
+                pull_kind=pull_kind,
                 list_key=list_key,
                 id_field=id_field,
                 name_field=name_field,
             )
-            print(f"  {kind}: {count} entries")
-            synced += count
+            print(f"  {kind}: {len(ids)} entries")
+            synced += len(ids)
+            if prune and ids:
+                stale = _prune_kind(client, settings.qdrant_collection, kind, ids)
+                print(f"  {kind}: pruned {len(stale)} stale" + (f" (e.g. {', '.join(stale[:5])})" if stale else ""))
     finally:
         await gateway.aclose()
 
@@ -123,7 +149,9 @@ async def _sync() -> int:
 
 
 def main() -> int:
-    return asyncio.run(_sync())
+    ap = argparse.ArgumentParser(description="Mirror the live seleric-mcp catalogue into Qdrant.")
+    ap.add_argument("--prune", action="store_true", help="delete entries the live catalogue no longer serves")
+    return asyncio.run(_sync(prune=ap.parse_args().prune))
 
 
 if __name__ == "__main__":

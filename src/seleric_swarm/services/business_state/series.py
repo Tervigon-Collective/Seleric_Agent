@@ -8,7 +8,7 @@ from seleric_swarm.domain.models import SeriesPoint
 from seleric_swarm.services.mcp_query import row_date
 from seleric_swarm.services.measure import module_args
 from seleric_swarm.services.time_range import resolve_time_range
-from seleric_swarm.toolsets.semantic import raw_query_metric
+from seleric_swarm.toolsets._data import raw_query_metric
 
 if TYPE_CHECKING:
     from seleric_swarm.runtime import SwarmRuntime
@@ -56,7 +56,13 @@ async def fetch_series(
         start=start,
         end=end,
         grain=grain,
-        filters=[{"dimension": "brand_id", "operator": "equals", "values": [brand_id]}],
+        filters=[
+            {"dimension": "brand_id", "operator": "equals", "values": [brand_id]},
+            *[
+                {"dimension": k, "operator": "equals", "values": [v]}
+                for k, v in (getattr(definition, "catalogue_filters", None) or {}).items()
+            ],
+        ],
         module=extra["module"] if extra else ...,
     )
     provenance = dict(result.get("provenance") or {})

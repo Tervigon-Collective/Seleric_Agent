@@ -1,0 +1,67 @@
+{
+ "n": 6,
+ "aspect": "test_agent6",
+ "q": "Break that down by product and channel.",
+ "thread": "thread_8ad28bc9cf43400094be1c1f68b69069",
+ "mission": "MS3-427efbf5e1",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 75,
+ "elapsed_s": 70.382,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 9,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [
+   "80%",
+   "82.7%",
+   "78.5%",
+   "79.4%",
+   "75.8%",
+   "45.8%",
+   "60.2%"
+  ],
+  "numbers": 38,
+  "measured": 26,
+  "misbound": [],
+  "problems": [
+   "percentages that do not follow from the figures written beside them (recompute from those figures): 78.5%, 79.4%, 75.8%, 45.8%, 60.2%"
+  ],
+  "unmatched": [
+   "78.5%",
+   "79.4%",
+   "75.8%",
+   "45.8%",
+   "60.2%"
+  ],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: product breakdown"
+  },
+  {
+   "ok": true,
+   "what": "tool: channel breakdown"
+  },
+  {
+   "ok": true,
+   "what": "tool: reuses prior scope (drilldown or same window)"
+  }
+ ],
+ "answer": "Net sales are down heavily in the same partial week: last week\u2019s top channels and products generated most revenue \u2014 this week to date those same channels and hero products are ~60\u201380% lower, concentrating the drop in Meta (IG/FB) and a few hero SKUs.\n\n- By channel (net sales \u00b7 orders)\n  - Last week (2026-10-05\u201310-11): IG feed \u20b9295,587 \u00b7 161 orders; FB feed \u20b961,291 \u00b7 33; Google PMax \u20b966,220 \u00b7 36; Google Search \u20b957,509 \u00b7 31; Exchange/Replacement \u20b997,032 \u00b7 47.\n  - This week so far (2026-10-12\u201310-14, partial): IG feed \u20b963,605 \u00b7 30 orders (\u221278.5% vs last week); FB feed \u20b912,625 \u00b7 10 (\u221279.4%); Google PMax \u20b915,995 \u00b7 12 (\u221275.8%); Google Search \u20b931,190 \u00b7 12 (\u221245.8%); Exchange/Replacement \u20b938,625 \u00b7 23 (\u221260.2%).\n- By product (product net revenue \u00b7 orders)\n  - Last week top sellers: Pawveralls Suspender Boots \u20b996,783 \u00b7 53 orders; Meow Scratch Lounge \u20b987,465 \u00b7 40; WingBird Smart Flapping Toy \u20b948,107 \u00b7 48.\n  - This week top sellers (partial): Play Scratch Lounge \u20b918,553 \u00b7 8; Pawveralls Suspender Boots \u20b916,731 \u00b7 9; Pawveralls Pro Suspender Boots \u20b915,037 \u00b7 7 \u2014 hero SKUs are producing far less revenue than last week (Pawveralls Suspender Boots: \u20b996,783 \u2192 \u20b916,731, \u221282.7%).\n- What this means\n  - The sales drop is concentrated where most revenue came from last week: IG/FB paid channels and a few hero SKUs \u2014 their combined shortfall explains the majority of the total drop reported earlier.\n  - Google Search held up relatively better (smaller % decline), so organic / search demand is less affected than paid social.\n  - Numbers for this week are partial (data through 15:00 IST on 2026-10-14); final week-over-week percentages may change as the week completes.\n\nPeriod: 2026-10-05..2026-10-11 vs 2026-10-12..2026-10-14 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Run a product \u00d7 channel cross-breakdown for the top 10 SKUs to show which product losses came from which channels?\n\n\u26a0 Not verified against the data: percentages that do not follow from the figures written beside them (recompute from those figures): 78.5%, 79.4%, 75.8%, 45.8%, 60.2%"
+}

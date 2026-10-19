@@ -1,0 +1,56 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_0c1c30865e794a87868f1b7c26f03cda",
+ "mission": "MS3-8452c523cc",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 47,
+ "elapsed_s": 40.086,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 21,
+  "measured": 21,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Sales did not drop yesterday \u2014 Net sales rose from \u20b940,119 on 2026-10-12 to \u20b991,220 on 2026-10-13 (\u2248+127%), so the premise is reversed: revenue spiked, not fell.\n\nWhat changed (ordered by impact)\n- Volume and conversion: Orders rose 26 \u2192 45 (+73%), and sessions were roughly steady (3,254 \u2192 3,434), so conversion improved (conversion rate 0.46% \u2192 1.08%). This explains ~66% of the sales increase.\n- Higher basket value: Net AOV rose \u20b91,543 \u2192 \u20b92,027 (+31%), accounting for ~34% of the uplift \u2014 more units per order and higher price per order both moved up.\n- Platform concentration: Meta ad-driven sales jumped (Net sales meta \u20b96,290 \u2192 \u20b947,854), contributing ~81% of the change by platform \u2014 a strong paid-media uplift on one channel.\n- Products / ads to check: notable movers include ad TH-152-TANGLELEASH_SI207_BN537 (\u20b90 \u2192 \u20b92,263), ad DOG TOYS-CS (\u20b9593 \u2192 \u20b94,345), and a new shipping-state contribution from MADHYA PRADESH (\u20b90 \u2192 \u20b93,537).\n\nWorth checking: did any Meta campaign/creative go live or receive a budget/optimization change yesterday that could explain the sudden lift in orders and AOV?\n\nPeriod: 2026-10-12..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Want a campaign-level drilldown on 2026-10-13 to identify which Meta campaigns/ads caused the spike?"
+}

@@ -1,0 +1,45 @@
+{
+ "n": 4,
+ "aspect": "golden",
+ "q": "What was the average order value and COD order count by product in September?",
+ "thread": "thread_3f7f96894db64c48ac0ee56b4b34b8ac",
+ "mission": "MS3-3da3ed7876",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 18.433,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 9,
+  "measured": 9,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_list_dimensions",
+  "catalogue_get_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "any of ['September', '2026-09']"
+  },
+  {
+   "ok": true,
+   "what": "not 'partial day'"
+  },
+  {
+   "ok": true,
+   "what": "not 'not available'"
+  }
+ ],
+ "answer": "Top-line: Here are product-level average order value (AOV, order-date) and COD order counts for September 2026 \u2014 I\u2019m showing the top AOV products and the main COD counts; the full table contains 174 products.\n\nWhat changed / key numbers:\n- Top 5 by AOV (Sept 1\u201330, 2026, order-date): BathEase Brush \u2014 AOV \u20b911,594 \u00b7 COD orders 0; SnapClean Poop Scooper \u2014 AOV \u20b910,689 \u00b7 COD 0; SlowSwirl Feeder \u2014 AOV \u20b910,395 \u00b7 COD 0; Cabana Dream Bed \u2014 AOV \u20b98,999 \u00b7 COD 0; Treatzilla Toy \u2014 AOV \u20b98,245 \u00b7 COD 0.\n- COD activity: most products had zero COD orders; the largest COD count seen in the returned rows was Paw Balm \u2014 COD orders 3 (AOV \u20b93,824). Several products had COD orders = 1 (e.g., Ironclad Harness, LaserPlay Collar, K9 Harness, Flexibristle, GripLock Leash, GlideWalk Set, FurEase Click Brush, Care & Glow Combo).\n- Coverage: query returned 174 product rows (basket_product_title used as the product title). No brand filter was given so numbers are scoped to the default brand (Tilting Heads).\n\nWorth checking: do you want the full product table (all 174 rows) sorted by COD orders or by AOV so you can spot products with both high AOV and COD volume?\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Show the full product list sorted by COD orders?"
+}

@@ -205,3 +205,25 @@ async def test_build_headline_snapshot_picks_headline_metrics_in_order():
         mid for mid in headline_ids if mid in {m.metric_id for s in snapshots for m in s.metrics}
     ]
     assert len(headline.metrics) == len(headline_ids)
+
+
+@pytest.mark.asyncio
+async def test_one_unanswerable_metric_degrades_the_domain_instead_of_hiding_it():
+    """Live 2026-10-14: `net_roas` (status=broken in the catalogue) made the whole performance domain UNAVAILABLE."""
+    states = {
+        **ALL_METRIC_STATES,
+        "metric.net_roas": _state("metric.net_roas", 0.0, status="UNAVAILABLE"),
+    }
+    snapshot = await DomainStateResolver(_FakeBusinessState(states)).resolve("performance", time_range=TIME_RANGE)
+    assert snapshot.status == "DEGRADED"
+    assert any(m.metric_id == "metric.spend" and m.value == 20000.0 for m in snapshot.metrics)
+
+
+@pytest.mark.asyncio
+async def test_domain_is_unavailable_only_when_no_metric_answers():
+    class _AllDown:
+        async def get_metric_state(self, request):
+            return _state(request.metric_id, 0.0, status="UNAVAILABLE")
+
+    snapshot = await DomainStateResolver(_AllDown()).resolve("performance", time_range=TIME_RANGE)
+    assert snapshot.status == "UNAVAILABLE"

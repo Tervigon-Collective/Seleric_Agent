@@ -12,12 +12,9 @@ import logging
 from typing import Any, Protocol, runtime_checkable
 
 from seleric_swarm.protocols.mcp.gateway import MCPGateway
+from seleric_swarm.semantic import McpSemanticPort
 
 _log = logging.getLogger("seleric.services.ontology")
-
-_GET_ONTOLOGY = "seleric.catalogue_get_ontology"
-_GET_METRIC = "seleric.catalogue_get_metric"
-_RELATED = "seleric.catalogue_related_metrics"
 
 
 def _bare_metric_id(metric_id: str) -> str:
@@ -41,22 +38,18 @@ class OntologyService:
 
     def __init__(self, mcp: MCPGateway) -> None:
         self._mcp = mcp
+        self._port = McpSemanticPort(mcp)
         self._by_agent: dict[str, dict[str, Any]] = {}
         self._by_module: dict[str, dict[str, Any]] = {}
         self._by_metric: dict[str, dict[str, Any]] = {}
         self._related: dict[str, dict[str, Any]] = {}
 
-    def _live(self, capability: str) -> bool:
-        return capability in self._mcp.capabilities
-
-    async def _call(self, *, agent_id: str, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def _read(self, label: str, call: Any) -> dict[str, Any]:
         # Ontology is query context, not numbers. A down/old MCP must not fail the mission.
         try:
-            result = await self._mcp.call(agent_id=agent_id, capability=capability, arguments=arguments)
+            result = await call
         except Exception:
-            _log.warning(
-                "ontology_call_failed", exc_info=True, extra={"capability": capability, "agent_id": agent_id}
-            )
+            _log.warning("ontology_call_failed", exc_info=True, extra={"operation": label})
             return {}
         return result if isinstance(result, dict) else {}
 
@@ -64,9 +57,9 @@ class OntologyService:
         cached = self._by_agent.get(agent_id)
         if cached is not None:
             return cached
-        if not self._live(_GET_ONTOLOGY):
+        if not self._port.supports("ontology"):
             return {}
-        result = await self._call(agent_id=agent_id, capability=_GET_ONTOLOGY, arguments={})
+        result = await self._read("ontology", self._port.ontology(agent_id=agent_id))
         if not result or result.get("error"):
             return {}
         self._by_agent[agent_id] = result
@@ -78,11 +71,9 @@ class OntologyService:
     async def for_module(self, module: str, *, agent_id: str = "observer_agent") -> dict[str, Any]:
         if module in self._by_module:
             return self._by_module[module]
-        if not self._live(_GET_ONTOLOGY):
+        if not self._port.supports("ontology"):
             return {}
-        result = await self._call(
-            agent_id=agent_id, capability=_GET_ONTOLOGY, arguments={"module": module}
-        )
+        result = await self._read("ontology", self._port.ontology(agent_id=agent_id, module=module))
         if not result or result.get("error"):
             return {}
         self._by_module[module] = result
@@ -92,11 +83,9 @@ class OntologyService:
         key = _bare_metric_id(metric_id)
         if key in self._by_metric:
             return self._by_metric[key]
-        if not self._live(_GET_METRIC):
+        if not self._port.supports("metric"):
             return {}
-        result = await self._call(
-            agent_id=agent_id, capability=_GET_METRIC, arguments={"metric_id": key}
-        )
+        result = await self._read("metric", self._port.fetch_metric(key, agent_id=agent_id))
         if not result or result.get("error"):
             return {}
         om = result.get("openmetadata") or {}
@@ -107,11 +96,9 @@ class OntologyService:
         key = _bare_metric_id(metric_id)
         if key in self._related:
             return self._related[key]
-        if not self._live(_RELATED):
+        if not self._port.supports("related"):
             return {}
-        result = await self._call(
-            agent_id=agent_id, capability=_RELATED, arguments={"metric_id": key}
-        )
+        result = await self._read("related", self._port.related_metrics(key, agent_id=agent_id))
         if not result or result.get("error"):
             return {}
         self._related[key] = result

@@ -103,7 +103,7 @@ async def test_toolset_falls_back_when_backend_unavailable_and_records_actual_mo
     from seleric_swarm.models.service import InMemoryModelRegistry
     from seleric_swarm.state.artifacts import InMemoryArtifactStore
     from seleric_swarm.toolsets import models
-    from tests.unit.test_models_toolset import FakeRunContext, _deps, _store_series
+    from tests.unit.test_models_service import FakeRunContext, _deps, _store_series
 
     reg = InMemoryModelRegistry(
         {

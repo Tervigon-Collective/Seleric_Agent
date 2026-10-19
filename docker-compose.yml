@@ -56,13 +56,20 @@ services:
       start_period: 30s
 
   api:
-    build: .
+    build:
+      context: .
+      target: runtime
     command: ["/bin/sh", "-c", "seleric-migrate && exec seleric-api"]
     ports:
       - "${API_PUBLISH_PORT:-8090}:8000"
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # /app is root-owned and the container runs as uid 10001, so the default
+      # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
+      # /app/var and every snapshot save raised PermissionError. Point writer and
+      # reader at /app/.data, which the Dockerfile creates and chowns to seleric.
+      SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
       API_HOST: 0.0.0.0
       API_PORT: 8000
       LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
@@ -70,7 +77,6 @@ services:
       # In-network URL only. Do not reuse host DATABASE_URL from .env (that
       # points at 127.0.0.1:POSTGRES_PUBLISH_PORT for local tools/API).
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
-      CHECKPOINT_BACKEND: ${CHECKPOINT_BACKEND:-postgres}
       CANCELLATION_BACKEND: ${CANCELLATION_BACKEND:-redis}
       EVENT_NOTIFIER_BACKEND: ${EVENT_NOTIFIER_BACKEND:-redis}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -87,26 +93,27 @@ services:
       MALWARE_SCANNER_BACKEND: ${MALWARE_SCANNER_BACKEND:-clamav}
       CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
       CLAMAV_PORT: ${CLAMAV_PORT:-3310}
+      LANGFUSE_TRACING: ${LANGFUSE_TRACING:-true}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}
+      LANGFUSE_PROJECT_ID: ${LANGFUSE_PROJECT_ID:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
-      ALLOW_WRITE_ACTIONS: "false"
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
       AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
-      AZURE_OPENAI_FAST_MODEL: ${AZURE_OPENAI_FAST_MODEL:-}
-      AZURE_OPENAI_STRONG_REASONING_EFFORT: ${AZURE_OPENAI_STRONG_REASONING_EFFORT:-}
-      AZURE_OPENAI_ENDPOINT_2: ${AZURE_OPENAI_ENDPOINT_2:-}
-      AZURE_OPENAI_API_KEY_2: ${AZURE_OPENAI_API_KEY_2:-}
-      AZURE_OPENAI_MODELS_2: ${AZURE_OPENAI_MODELS_2:-}
-      OPENROUTER_ENDPOINT: ${OPENROUTER_ENDPOINT:-https://openrouter.ai/api/v1}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODELS: ${OPENROUTER_MODELS:-}
+      AZURE_OPENAI_HELPER_MODEL: ${AZURE_OPENAI_HELPER_MODEL:-}
       QDRANT_URL: ${QDRANT_ENDPOINT:-}
       QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       QDRANT_EMBEDDING_MODEL: ${QDRANT_EMBEDDING_MODEL:-text-embedding-3-small}
       V3_AGENT_ENABLED: ${V3_AGENT_ENABLED:-true}
       # In-network URL wins; host SELERIC_MCP_URL (127.0.0.1) is unreachable here.
       SELERIC_MCP_URL: ${COMPOSE_SELERIC_MCP_URL:-${SELERIC_MCP_URL:-}}
+      # Chronos-2 forecasting service (chronos/docker-compose.yml, same network).
+      CHRONOS_BASE_URL: ${CHRONOS_BASE_URL:-http://seleric_agent-chronos-1:8112}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
       # POST /v1/voice/token (the browser's room join) is served by this service.
@@ -114,11 +121,9 @@ services:
       LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
-      JEV_BASE_URL: ${JEV_BASE_URL:-}
-      JEV_API_KEY: ${JEV_API_KEY:-}
-      JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}
       AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-240}
       MISSION_TIMEOUT_S: ${MISSION_TIMEOUT_S:-420}
+      BUSINESS_STATE_REFRESH_ENABLED: "0"
     # Join the external laya_default network so JEV/Laya is reachable as
     # http://laya-serve:8000 (its 127.0.0.1 host port is not reachable from
     # containers). `default` is kept so postgres/redis/minio/etc. still resolve.
@@ -135,6 +140,13 @@ services:
         condition: service_healthy
       clamav:
         condition: service_healthy
+    # Writer (lifespan refresh loop, main.py) and readers must share one
+    # filesystem: missions execute in the recovery container, which had no
+    # snapshots dir of its own, so the business-state fast path silently
+    # returned None for every mission (live 2026-09-30: "How is the business
+    # doing?" always fell through to the agent loop).
+    volumes:
+      - domain_health:/app/.data/domain_health_snapshots
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/readyz"]
       interval: 15s
@@ -144,22 +156,32 @@ services:
     restart: unless-stopped
 
   recovery:
-    build: .
+    build:
+      context: .
+      target: runtime
     command:
       - seleric-recover
       - --executor
       - seleric_swarm.api.conversations:build_submission_executor
       - --interval
       - "${RUN_RECOVERY_INTERVAL_S:-5}"
+    # SIGTERM makes the worker stop claiming and drain running missions (up to
+    # RUN_DRAIN_TIMEOUT_S, > MISSION_TIMEOUT_S). The grace period must outlast the
+    # drain, or docker SIGKILLs a mission mid-run on every redeploy.
+    stop_grace_period: ${RUN_STOP_GRACE_PERIOD:-9m}
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # /app is root-owned and the container runs as uid 10001, so the default
+      # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
+      # /app/var and every snapshot save raised PermissionError. Point writer and
+      # reader at /app/.data, which the Dockerfile creates and chowns to seleric.
+      SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
       LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
       PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
       # In-network URL only. Do not reuse host DATABASE_URL from .env (that
       # points at 127.0.0.1:POSTGRES_PUBLISH_PORT for local tools/API).
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
-      CHECKPOINT_BACKEND: ${CHECKPOINT_BACKEND:-postgres}
       CANCELLATION_BACKEND: ${CANCELLATION_BACKEND:-redis}
       EVENT_NOTIFIER_BACKEND: ${EVENT_NOTIFIER_BACKEND:-redis}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -167,6 +189,7 @@ services:
       RUN_LEASE_S: ${RUN_LEASE_S:-60}
       RUN_HEARTBEAT_S: ${RUN_HEARTBEAT_S:-15}
       RUN_MAX_ATTEMPTS: ${RUN_MAX_ATTEMPTS:-3}
+      RUN_DRAIN_TIMEOUT_S: ${RUN_DRAIN_TIMEOUT_S:-480}
       RUN_RETRY_DELAY_S: ${RUN_RETRY_DELAY_S:-5}
       BLOB_BACKEND: ${BLOB_BACKEND:-minio}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
@@ -177,32 +200,31 @@ services:
       MALWARE_SCANNER_BACKEND: ${MALWARE_SCANNER_BACKEND:-clamav}
       CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
       CLAMAV_PORT: ${CLAMAV_PORT:-3310}
+      LANGFUSE_TRACING: ${LANGFUSE_TRACING:-true}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}
+      LANGFUSE_PROJECT_ID: ${LANGFUSE_PROJECT_ID:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
-      ALLOW_WRITE_ACTIONS: "false"
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
       AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
       AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
-      AZURE_OPENAI_FAST_MODEL: ${AZURE_OPENAI_FAST_MODEL:-}
-      AZURE_OPENAI_STRONG_REASONING_EFFORT: ${AZURE_OPENAI_STRONG_REASONING_EFFORT:-}
-      AZURE_OPENAI_ENDPOINT_2: ${AZURE_OPENAI_ENDPOINT_2:-}
-      AZURE_OPENAI_API_KEY_2: ${AZURE_OPENAI_API_KEY_2:-}
-      AZURE_OPENAI_MODELS_2: ${AZURE_OPENAI_MODELS_2:-}
-      OPENROUTER_ENDPOINT: ${OPENROUTER_ENDPOINT:-https://openrouter.ai/api/v1}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODELS: ${OPENROUTER_MODELS:-}
+      AZURE_OPENAI_HELPER_MODEL: ${AZURE_OPENAI_HELPER_MODEL:-}
       QDRANT_URL: ${QDRANT_ENDPOINT:-}
       QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       QDRANT_EMBEDDING_MODEL: ${QDRANT_EMBEDDING_MODEL:-text-embedding-3-small}
       V3_AGENT_ENABLED: ${V3_AGENT_ENABLED:-true}
       SELERIC_MCP_URL: ${COMPOSE_SELERIC_MCP_URL:-${SELERIC_MCP_URL:-}}
+      # Chronos-2 forecasting service (chronos/docker-compose.yml, same network).
+      CHRONOS_BASE_URL: ${CHRONOS_BASE_URL:-http://seleric_agent-chronos-1:8112}
       SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
       API_KEY: ${API_KEY:-}
-      JEV_BASE_URL: ${JEV_BASE_URL:-}
-      JEV_API_KEY: ${JEV_API_KEY:-}
-      JEV_TIMEOUT_S: ${JEV_TIMEOUT_S:-10.0}
       AGENT_LLM_TIMEOUT_S: ${AGENT_LLM_TIMEOUT_S:-240}
       MISSION_TIMEOUT_S: ${MISSION_TIMEOUT_S:-420}
+      BUSINESS_STATE_REFRESH_ENABLED: "0"
     # Join the external laya_default network so JEV/Laya is reachable as
     # http://laya-serve:8000 (its 127.0.0.1 host port is not reachable from
     # containers). `default` is kept so postgres/redis/minio/etc. still resolve.
@@ -210,6 +232,10 @@ services:
       - default
       - laya_default
       - seleric-mcp_default
+    # Reader: this container executes the missions, so it must see the
+    # snapshots the api container's refresh loop writes (see api volumes).
+    volumes:
+      - domain_health:/app/.data/domain_health_snapshots
     depends_on:
       api:
         condition: service_healthy
@@ -224,10 +250,15 @@ services:
       # Adds livekit-agents on top of the shared app image (see Dockerfile).
       target: voice-runtime
     profiles: ["voice"]
-    command: ["seleric-voice"]
+    command: ["seleric-voice", "start"]
     environment:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # /app is root-owned and the container runs as uid 10001, so the default
+      # repo-relative 'var/domain_health_snapshots' resolves to an uncreatable
+      # /app/var and every snapshot save raised PermissionError. Point writer and
+      # reader at /app/.data, which the Dockerfile creates and chowns to seleric.
+      SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
       PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
       DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -243,6 +274,13 @@ services:
       VOICE_LLM_PROVIDER: ${VOICE_LLM_PROVIDER:-}
       AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:-}
       AZURE_SPEECH_REGION: ${AZURE_SPEECH_REGION:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
+      AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
+      AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
+      AZURE_OPENAI_HELPER_MODEL: ${AZURE_OPENAI_HELPER_MODEL:-}
       VOICE_NARRATION_ENABLED: ${VOICE_NARRATION_ENABLED:-true}
       VOICE_MISSION_TIMEOUT_S: ${VOICE_MISSION_TIMEOUT_S:-600}
       VOICE_RECORDING_ENABLED: ${VOICE_RECORDING_ENABLED:-false}
@@ -253,6 +291,55 @@ services:
       # in its own container. seleric_api_url also accepts SELERIC_API_BASE_URL
       # for compatibility, but SELERIC_API_URL is the name settings.py binds to.
       SELERIC_API_URL: ${SELERIC_API_URL:-http://api:8000}
+    # Reader of the shared snapshots (see api volumes).
+    volumes:
+      - domain_health:/app/.data/domain_health_snapshots
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  business-state-cron:
+    build:
+      context: .
+      target: runtime
+    command: >
+      /bin/sh -c "while true; do python -m seleric_swarm.services.domain_health.scheduler; python -m seleric_swarm.forecasting.score --if-due || true; sleep 60; done"
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SELERIC_DOMAIN_HEALTH_DIR: ${SELERIC_DOMAIN_HEALTH_DIR:-/app/.data/domain_health_snapshots}
+      SELERIC_REPORTS_DIR: /app/.data/reports
+      LLM_PROVIDER: ${LLM_PROVIDER:-azure_openai_compatible}
+      PERSISTENCE_BACKEND: ${PERSISTENCE_BACKEND:-postgres}
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-postgresql+psycopg://seleric:seleric@postgres:5432/seleric_swarm}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_AUTH_STYLE: ${AZURE_AUTH_STYLE:-openai_compatible}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-05-01-preview}
+      AZURE_OPENAI_MODELS: ${AZURE_OPENAI_MODELS:-}
+      AZURE_OPENAI_MODEL: ${AZURE_OPENAI_MODEL:-}
+      AZURE_OPENAI_HELPER_MODEL: ${AZURE_OPENAI_HELPER_MODEL:-}
+      SELERIC_MCP_URL: ${COMPOSE_SELERIC_MCP_URL:-${SELERIC_MCP_URL:-}}
+      SELERIC_MCP_TOKEN: ${SELERIC_MCP_TOKEN:-}
+      API_KEY: ${API_KEY:-}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-seleric-attachments}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      MALWARE_SCANNER_BACKEND: ${MALWARE_SCANNER_BACKEND:-clamav}
+      CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
+      CLAMAV_PORT: ${CLAMAV_PORT:-3310}
+      BUSINESS_STATE_REFRESH_ENABLED: "0"
+    networks:
+      - default
+      - laya_default
+      - seleric-mcp_default
+    volumes:
+      - domain_health:/app/.data/domain_health_snapshots
+      - forecast_reports:/app/.data/reports
     depends_on:
       api:
         condition: service_healthy
@@ -261,6 +348,8 @@ services:
 volumes:
   seleric_postgres:
   seleric_minio:
+  domain_health:
+  forecast_reports:
 
 networks:
   default:

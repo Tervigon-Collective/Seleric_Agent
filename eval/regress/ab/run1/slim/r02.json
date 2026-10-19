@@ -1,0 +1,48 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_8a5836da91d74a0db5f9b8efc236d622",
+ "mission": "MS3-b0756bc3e7",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 75,
+ "elapsed_s": 72.171,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 20,
+  "measured": 20,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_dimension",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer: these Meta campaigns spent significant money but returned below break\u2011even and lost margin in 2026-10-07 \u2192 2026-10-13 \u2014 stop or pause them first. Top offenders by ad spend (campaign \u00b7 ad spend \u00b7 net ROAS \u00b7 break\u2011even ROAS \u00b7 net profit, order\u2011date P&L):\n\n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b924,101 \u00b7 Net ROAS 0.56x \u00b7 Break\u2011even ROAS 1.40x \u00b7 Net profit \u2212\u20b910,702  \n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b923,526 \u00b7 Net ROAS 0.48x \u00b7 Break\u2011even ROAS 1.43x \u00b7 Net profit \u2212\u20b912,229  \n- TH-222-WINGBIRD-23SEP \u2014 Ad spend \u20b921,626 \u00b7 Net ROAS 0.70x \u00b7 Break\u2011even ROAS 1.59x \u00b7 Net profit \u2212\u20b96,550  \n- TH-149-SCRATCHLOUNGE-6OCT \u2014 Ad spend \u20b919,817 \u00b7 Net ROAS 0.92x \u00b7 Break\u2011even ROAS 1.62x \u00b7 Net profit \u2212\u20b91,490  \n- TH-336-PAWTECH-26SEP \u2014 Ad spend \u20b919,190 \u00b7 Net ROAS 0.85x \u00b7 Break\u2011even ROAS 1.53x \u00b7 Net profit \u2212\u20b92,795\n\nWhy this matters (brief):  \n- Each listed campaign delivered net ROAS below its break\u2011even ROAS (so ad spend exceeded the contribution the driven orders generated) and produced negative net profit \u2014 they directly reduce P&L.  \n- These five campaigns together are among the largest Meta spenders for the week, so pausing them would materially stop ongoing losses.  \n- Some other campaigns also lost money but at much smaller spend; focus on the high\u2011spend negatives above first.\n\nWorth checking: pause the top 2 immediately and run a quick drill (orders, new customers, return rate, CPA and contribution margin by campaign) for TH-383-SUSPENDER-29SEP and TH-383-SUSPENDER-26SEP-ADV+ to confirm there\u2019s no attribution quirk or short\u2011term stock/return event before reallocating budget.\n\nPeriod: 2026-10-07..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14  \nNext: Drill into one campaign's funnel (orders, CPA, CAC, contribution margin breakdown) \u2014 which campaign should I open first?"
+}

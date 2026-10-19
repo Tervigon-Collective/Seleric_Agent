@@ -1,0 +1,18 @@
+{
+ "items": 4,
+ "run_completed": 4,
+ "checked_items": 2,
+ "checked_pass": 1,
+ "unchecked_items": [
+  2,
+  3
+ ],
+ "checks_failed_items": [
+  4
+ ],
+ "wall_p50_s": 46,
+ "wall_p90_s": 61,
+ "concurrency": 2,
+ "revisions": 0,
+ "retries": 0
+}

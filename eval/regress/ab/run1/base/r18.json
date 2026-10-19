@@ -1,0 +1,32 @@
+{
+ "n": 18,
+ "aspect": "brand",
+ "q": "What were net sales yesterday for the brand Sniff Theory compared with the day before?",
+ "thread": "thread_375b175287014c9aa668b4625d339bcc",
+ "mission": "MS3-359d9c96b2",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 38,
+ "elapsed_s": 36.321,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 0,
+  "measured": 0,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_brand",
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "I cannot provide net sales data for Sniff Theory for yesterday and the day before because the underlying data is outdated and hasn't been updated since May 14, 2026. The system requires fresh data to ensure accurate reporting. \n\nLet me know if you'd like to explore other metrics or periods."
+}

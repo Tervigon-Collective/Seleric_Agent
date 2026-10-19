@@ -1,0 +1,35 @@
+{
+ "n": 2,
+ "aspect": "p3_explore",
+ "q": "What looks unusual in the last 14 days of our business?",
+ "thread": "thread_183f05232d1c4feda1d05a99aca6b61f",
+ "mission": "MS3-052ea87b8e",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 30,
+ "elapsed_s": 27.357,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 24,
+  "measured": 24,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "explore_data"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Short answer \u2014 four big unusual moves (measured):\n\n- Impressions: previous 13 days (2026-09-18..2026-09-30) 676,515 \u2192 current (2026-10-01..2026-10-13) 2,644,330; change +291.0%. \u2014 Measured.\n- Product ad spend (allocated): previous 13 days  \u20b9170,619 \u2192 current \u20b9502,394; change +194.0%. \u2014 Measured.\n- Sessions: previous 13 days 27,385 \u2192 current 53,782; change +96.0%. \u2014 Measured.\n- New customers: previous 13 days 204 \u2192 current 380; change +86.0%. \u2014 Measured.\n\nAdditional measured patterns the explorer flagged (step changes vs earlier baselines):\n- New customers stepped down \u224850% from around 2026-09-14 (daily rate changed from ~40.59 \u2192 ~20.13). \u2014 Measured.\n- Impressions stepped down \u224839% from around 2026-08-30 (daily ~245,052 \u2192 ~148,586). \u2014 Measured.\n- Product ad spend stepped down \u224843% from around 2026-09-13 (daily \u20b952,062 \u2192 \u20b929,886). \u2014 Measured.\n- Sessions stepped down \u224827% from around 2026-09-13 (daily ~4,003 \u2192 ~2,915). \u2014 Measured.\n\nWhat this means (short): we\u2019re seeing a large recent jump in impressions, ad\u2011spend (allocated), sessions and new customers in the 2026-10-01..2026-10-13 window vs the prior equal-length window \u2014 these are observations, not causal claims. The explorer rates these as the strongest, test-passed signals. \n\nWould you like me to run diagnose_metric_change on impressions and product ad spend (allocated) (they\u2019re the top two) to look for likely causes (channels, campaigns, edits)? \n\n2026-10-01..2026-10-13 \u00b7 INR \u00b7 data as of 2026-10-14 03:57 IST (today is partial)."
+}

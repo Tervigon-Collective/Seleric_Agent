@@ -79,7 +79,7 @@ export function AgentInspector() {
         ))}
       </section>
 
-      {(agent.role === "coordinator" || handoffs.length > 0) && (
+      {(handoffs.length > 0 || agent.agentId === "coordinator") && agent.role === "coordinator" && (
         <section>
           <h3>Leadership / dependencies</h3>
           {handoffs.length === 0 && <div style={{ color: "var(--text-dim)", fontSize: 12 }}>No handoffs yet.</div>}
@@ -107,7 +107,7 @@ export function AgentInspector() {
         </div>
       </section>
 
-      {agent.agentId === "coordinator" && finalResponse && (
+      {(agent.agentId === "coordinator" || agent.agentId === "seleric_agent") && finalResponse && (
         <section>
           <h3>Final answer</h3>
           <div className="final-answer">{finalResponse}</div>
@@ -139,6 +139,15 @@ function processFor(agent: OfficeAgent, timeline: SwarmUIEvent[], artifacts: Rec
   });
 
   switch (agent.agentId) {
+    case "seleric_agent":
+      return [
+        mk("Understand the question", kinds.has("mission_started") || kinds.has("mission_created")),
+        mk("Fetch metrics", (artifacts.evidence ?? 0) > 0, agent.currentTool === "query_metrics"),
+        mk("Analyze", (artifacts.hypothesis ?? 0) > 0 || kinds.has("tool_completed")),
+        mk("Diagnose cause", (artifacts.causal ?? 0) > 0),
+        mk("Forecast impact", (artifacts.prediction ?? 0) > 0),
+        mk("Validate & answer", kinds.has("mission_completed")),
+      ];
     case "coordinator":
       return [
         mk("Normalize the query", kinds.has("mission_started")),

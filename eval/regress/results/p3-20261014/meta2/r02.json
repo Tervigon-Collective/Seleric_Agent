@@ -1,0 +1,36 @@
+{
+ "n": 2,
+ "aspect": "p3_meta3",
+ "q": "Which Meta campaigns performed best in the last 7 days? Rank them using spend, ROAS, CAC, CTR, CPC and CPM.",
+ "thread": "thread_4182d7239b574461a2c760a6adbd8567",
+ "mission": "MS3-cf4c31a288",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 67,
+ "elapsed_s": 64.827,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 7,
+ "grounding": {
+  "derived": [
+   "52"
+  ],
+  "numbers": 60,
+  "measured": 59,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Answer up front\n- Top Meta campaigns (2026-10-07 \u2192 2026-10-13). I ranked campaigns separately by each requested metric using Meta (paid_media) ad delivery rows plus commerce (order-date) sales/new-customer attribution. Campaigns missing from one view are left blank for that metric (they are not zero). See compact ranked lists below.\n\nKey evidence (previous period not requested). Measured = from metrics_query; Derived = computed here (ROAS = net sales / ad spend; CAC = ad spend / new customers; CTR = clicks / impressions; CPC = ad spend / clicks; CPM shown as ad spend divided by impressions and scaled).\n\n1) Ranked by ad spend (highest \u2192 lower)\n- TH-383-SUSPENDER-29SEP \u2014 Spend \u20b924,101; Net sales \u20b920,247; New customers 9; ROAS 0.84; CAC \u20b92,678; CTR 2.2%; CPC \u20b910; CPM \u20b9234. (Measured)\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Spend \u20b923,526; Net sales \u20b918,262; New customers 5; ROAS 0.78; CAC \u20b94,705; CTR 2.7%; CPC \u20b913; CPM \u20b9349. (Measured)\n- TH-222-WINGBIRD-23SEP \u2014 Spend \u20b921,626; Net sales \u20b926,234; New customers 18; ROAS 1.21; CAC \u20b91,201; CTR 2.4%; CPC \u20b924; CPM \u20b9582. (Measured)\n- TH-149-SCRATCHLOUNGE-6OCT \u2014 Spend \u20b919,817; Net sales \u20b929,575; New customers 13; ROAS 1.49; CAC \u20b91,524; CTR 2.4%; CPC \u20b917; CPM \u20b9405. (Measured)\n- TH-336-PAWTECH-26SEP \u2014 Spend \u20b919,188; Net sales \u20b924,891; New customers 11; ROAS 1.30; CAC \u20b91,744; CTR 1.6%; CPC \u20b923; CPM \u20b9364. (Measured)\n\n2) Ranked by ROAS (best \u2192 lower)\n- TH-471-PLAYSCRATCHLOUNGE-13OCT-PMF \u2014 ROAS 3.44; Spend \u20b97,247; Net sales \u20b924,962; CAC \u20b91,208; CTR 3.2%; CPC \u20b917; CPM \u20b9558. (Measured/Derived)\n- TH-287-MISTCALMBRUSH-10OCT-UGC \u2014 ROAS 2.35; Spend \u20b91,622; Net sales \u20b93,811; CAC \u20b91,622. (Measured/Derived)\n- TH-149-SCRATCHLOUNGE-6OCT \u2014 ROAS 1.49; (see above). (Measured/Derived)\n- TH-012-SNUGBOO-23SEP \u2014 ROAS 1.45. (Measured/Derived)\n- DOG TOY CS-24SEP \u2014 ROAS 1.41. (Measured/Derived)\n\n3) Ranked by CAC (lowest = best)\n- (campaign_id null row) \u2014 CAC \u20b90 (ad spend 0 with new customers 9). Measured but lacks campaign id/name; treat carefully. (Measured)\n- TH-054-TOTE-12AUG \u2014 CAC \u20b90 (ad spend 0, new customers 1). Measured (no spend). \n- TH-222-WINGBIRD-23SEP \u2014 CAC \u20b91,201. (Measured/Derived)\n- TH-471-PLAYSCRATCHLOUNGE-13OCT-PMF \u2014 CAC \u20b91,208. (Measured/Derived)\n- DOG TOY CS-24SEP \u2014 CAC \u20b91,339. (Measured/Derived)\n\n4) Ranked by CTR (highest \u2192 lower)\n- VODY-eSIM-Telegram-08OCT-TRAFFIC \u2014 CTR 7.0%; CPC \u20b91; CPM \u20b939. (Measured)\n- TH-249-BOWBELLEHARNESS-13OCT-CS \u2014 CTR 3.9%. (Measured)\n- DOG-SHOES-CTL-7OCT \u2014 CTR 3.4%. (Measured)\n- TH-471-PLAYSCRATCHLOUNGE-13OCT-PMF \u2014 CTR 3.2%. (Measured)\n- TH-229-BLUEJAY SNEAKS-10TH-OCT \u2014 CTR 3.1%. (Measured)\n\n5) Ranked by CPC (lowest = best)\n- VODY-eSIM-Telegram-08OCT-TRAFFIC \u2014 CPC \u20b91; CTR 7.0%; CPM \u20b939. (Measured)\n- TH-383-SUSPENDER-29SEP \u2014 CPC \u20b910. (Measured/Derived)\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 CPC \u20b913. (Measured/Derived)\n- DOG DAD T-SHIRT-CS-06OCT \u2014 CPC \u20b913. (Measured/Derived)\n- TH-249-BOWBELLEHARNESS-13OCT-CS \u2014 CPC \u20b915. (Measured)\n\n6) Ranked by CPM (lowest = best)\n- VODY-eSIM-Telegram-08OCT-TRAFFIC \u2014 CPM \u20b939. (Measured)\n- TH-279-BATHEASEBRUSH-07OCT \u2014 CPM \u20b9199. (Measured)\n- TH-383-SUSPENDER-29SEP \u2014 CPM \u20b9234. (Measured)\n- DOG HARNESS-CTL-12OCT \u2014 CPM \u20b9244. (Measured)\n- DOG DAD T-SHIRT-CS-06OCT \u2014 CPM \u20b9274. (Measured)\n\nCaveats and important notes\n- Data joined across two views (paid_media by report_date and commerce by order_date). The composed query warns 25 of 52 campaigns are missing from at least one part; when a campaign appears only in ad spend rows its sales/new-customer cells are unknown, not zero. I did not impute missing values. (Measured)\n- Default brand = Tilting Heads (no brand filter in your request). If you want a specific brand, tell me. (Measured)\n- Period = last 7 complete days: 2026-10-07..2026-10-13. (Measured)\n- Today is partial; I excluded it. (Measured)\n\nSuggested next step\n- Would you like a single combined \u201cbest\u201d score (weighted) to produce a concise top-5, or a side-by-side table of the top 10 campaigns showing all metrics together? I can run either now (or add a brand filter / compare vs previous 7 days). \n\nPeriod \u00b7 INR \u00b7 data as of 2026-10-13."
+}

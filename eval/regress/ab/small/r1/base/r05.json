@@ -1,0 +1,36 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_fecc1d38169c4bc494ee7041eb774f21",
+ "mission": "MS3-d35e23128a",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 16.59,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 9,
+  "measured": 9,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Net sales for September 2026 totaled \u20b919,43,109 across 1,096 orders. Campaign-wise, the top contributors were:\n\n- **[Google Build] PMax - Seasonal New | 27th May**: \u20b91,98,996 from 115 orders.\n- **[Google Build] Brand Search | 5th March**: \u20b971,275 from 40 orders.\n- **TH-152-TANGLELEASH-1SEP**: \u20b956,263 from 29 orders.\n- **TH-284-CRABDASH TOY-1SEP**: \u20b944,389 from 25 orders.\n- **TH-336-PAWTECH-1SEP**: \u20b944,274 from 22 orders.\n\nThe remaining campaigns contributed smaller amounts. \n\nPeriod: 2026-09-01 to 2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Would you like a breakdown of the top campaigns by product or region?"
+}

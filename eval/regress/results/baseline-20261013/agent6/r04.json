@@ -1,0 +1,25 @@
+{
+ "n": 4,
+ "aspect": "test_agent6",
+ "q": "Why is ROAS increasing while net profit is declining?",
+ "thread": "thread_dfc900cc23ae452ba7f63edbf0ad4462",
+ "mission": "MS3-da13286227",
+ "run_status": "FAILED",
+ "status": "failed",
+ "wall_s": 34,
+ "elapsed_s": null,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 0,
+ "llm_calls": null,
+ "grounding": null,
+ "tools": [],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": null,
+   "what": "tool checks skipped: trace.steps carries no tool calls (pre-slim-loop system)"
+  }
+ ],
+ "answer": "v2 pipeline could not answer: scope_uncovered:metric:net_profit"
+}

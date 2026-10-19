@@ -1,0 +1,49 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_d3ceb6e759e444d19d1eaf0fd3eacca1",
+ "mission": "MS3-5ec44d8d8a",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 88,
+ "elapsed_s": 84.787,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 7,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 25,
+  "measured": 25,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_dimension",
+  "catalogue_search_metrics",
+  "escalate",
+  "metrics_query",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer: Yes \u2014 several Meta campaigns are losing money on the order\u2011date P&L (Tilting Heads, last 7 days). Top offenders spent tens of thousands of rupees but returned well below their break\u2011even ROAS, so those budgets are reducing contribution margin.\n\nWhat\u2019s behind it (order\u2011date P&L, Tilting Heads):\n- High spend but below break\u2011even (net ROAS < break\u2011even ROAS):  \n  - TH-383-SUSPENDER-29SEP \u2014 Spend: \u20b924,101 \u00b7 Net ROAS: 0.6 \u00b7 Break\u2011even ROAS: 1.4  \n  - TH-383-SUSPENDER-26SEP-ADV+ \u2014 Spend: \u20b923,526 \u00b7 Net ROAS: 0.5 \u00b7 Break\u2011even ROAS: 1.4  \n  - TH-222-WINGBIRD-23SEP \u2014 Spend: \u20b921,626 \u00b7 Net ROAS: 0.7 \u00b7 Break\u2011even ROAS: 1.6  \n  - TH-149-SCRATCHLOUNGE-6OCT \u2014 Spend: \u20b919,817 \u00b7 Net ROAS: 0.9 \u00b7 Break\u2011even ROAS: 1.6  \n  - TH-336-PAWTECH-26SEP \u2014 Spend: \u20b919,190 \u00b7 Net ROAS: 0.9 \u00b7 Break\u2011even ROAS: 1.5  \n  - TH-012-SNUGBOO-23SEP \u2014 Spend: \u20b919,174 \u00b7 Net ROAS: 0.7 \u00b7 Break\u2011even ROAS: 2.0  \n  (These campaigns are spending substantial budgets while delivering returns below what\u2019s needed to cover product cost + COGS.)\n- Zero\u2011order spend (no attributed orders): DOG SHOES-10OCT-CS \u2014 Spend: \u20b96,714 (orders = 0); TH-348-FUSIONHARNESS-03OCT \u2014 Spend: \u20b94,867 (orders = 0); TH-447-CABANADREAMBED-06OCT \u2014 Spend: \u20b93,814 (orders = 0). These are pure waste until attribution/orders appear.\n- Extreme underperformer to act on now: TH-445-PROSUSPENDERBOOTS-6OCT \u2014 Spend: \u20b97,399 \u00b7 Net ROAS: 0.1 \u00b7 Break\u2011even ROAS: 5.0 (orders = 2). Very large gap from break\u2011even.\n\nWorth checking: pause or cut budgets on campaigns spending >\u20b910k with net ROAS < break\u2011even, and run a diagnosis on TH-383-SUSPENDER-29SEP and TH-445-PROSUSPENDERBOOTS-6OCT (creative, targeting, recent bid/budget edits, and attribution windows).\n\nPeriod: 2026-10-07..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Run a diagnosis on TH-383-SUSPENDER-29SEP to identify why its ROAS is below break\u2011even?"
+}

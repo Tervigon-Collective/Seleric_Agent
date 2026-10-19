@@ -190,3 +190,94 @@ def test_evidence_a2a_events_normalize() -> None:
     assert ui[0]["agentId"] == "diagnostic_agent"
     assert "mobile_latency" in ui[0]["summary"]
     assert ui[1]["eventType"] == "evidence_received" and ui[1]["status"] == "working"
+
+
+def _v3_raw(**over: object) -> dict:
+    base: dict = {
+        "route": "v3",
+        "mission_id": "MS3-v3",
+        "status": "running",
+        "query": "what were net sales yesterday?",
+        "mission_lead": "seleric_agent",
+        "initial_mission_lead": "seleric_agent",
+        "leadership_epoch": 0,
+        "unresolved_questions": [],
+        "final_response": None,
+        "artifacts": {
+            "evidence": [], "anomaly": [], "hypothesis": [], "causal": [],
+            "prediction": [], "strategy": [], "skeptic": [],
+        },
+        "events": [
+            {"kind": "mission_created", "seq": 1, "ts": "2026-09-09T14:00:00Z",
+             "mission_id": "MS3-v3", "family": "mission", "route": "v3"},
+        ],
+    }
+    base.update(over)
+    return base
+
+
+def test_v3_snapshot_has_only_the_single_agent() -> None:
+    snap = build_office_snapshot(_v3_raw(), mission_id="MS3-v3")
+    assert [a["agentId"] for a in snap["agents"]] == ["seleric_agent"]
+    assert snap["leadAgentId"] == "seleric_agent"
+    assert snap["missionLead"] == "seleric_agent"
+    assert [s["id"] for s in snap["board"]["steps"]] == [
+        "understand", "fetch", "analyze", "diagnose", "forecast", "validate",
+    ]
+
+
+def test_v3_old_coordinator_lead_folds_onto_seleric() -> None:
+    snap = build_office_snapshot(_v3_raw(mission_lead="coordinator"), mission_id="MS3-v3")
+    assert [a["agentId"] for a in snap["agents"]] == ["seleric_agent"]
+    assert snap["leadAgentId"] == "seleric_agent"
+
+
+def test_v3_tool_events_drive_agent_and_board() -> None:
+    raw = _v3_raw(
+        artifacts={
+            "evidence": ["EV-1"], "anomaly": [], "hypothesis": ["H-1"], "causal": [],
+            "prediction": [], "strategy": [], "skeptic": [],
+        },
+        events=[
+            {"kind": "mission_created", "seq": 1, "ts": "2026-09-09T14:00:00Z",
+             "mission_id": "MS3-v3", "family": "mission", "route": "v3"},
+            {"kind": "tool_completed", "seq": 2, "ts": "2026-09-09T14:01:00Z",
+             "mission_id": "MS3-v3", "family": "agent", "route": "v3",
+             "agent": "seleric_agent", "tool": "query_metrics", "success": True},
+            {"kind": "agent.tool_started", "seq": 3, "ts": "2026-09-09T14:02:00Z",
+             "mission_id": "MS3-v3", "family": "agent", "route": "v3",
+             "tool": "analyze"},
+        ],
+    )
+    ui = normalize_events(raw["events"], mission_id="MS3-v3")
+    assert ui[1]["eventType"] == "tool_completed" and ui[1]["agentId"] == "seleric_agent"
+    assert ui[1]["status"] == "working"
+    assert ui[2]["eventType"] == "tool_started" and ui[2]["status"] == "tool_running"
+    snap = build_office_snapshot(raw, mission_id="MS3-v3")
+    me = snap["agents"][0]
+    assert me["status"] == "tool_running"
+    assert me["currentTool"] == "analyze"
+    states = {s["id"]: s["state"] for s in snap["board"]["steps"]}
+    assert states["understand"] == "done" and states["fetch"] == "done"
+    assert states["analyze"] == "done"
+    assert snap["stage"] == "diagnosing"
+
+
+def test_v3_completed_mission_settles_and_validates() -> None:
+    raw = _v3_raw(status="completed", final_response="net sales: 123")
+    raw["events"].append(
+        {"kind": "mission_completed", "seq": 2, "ts": "2026-09-09T14:05:00Z",
+         "mission_id": "MS3-v3", "family": "mission", "route": "v3"}
+    )
+    snap = build_office_snapshot(raw, mission_id="MS3-v3")
+    assert snap["agents"][0]["status"] == "completed"
+    assert snap["stage"] == "complete"
+    assert all(s["state"] == "done" for s in snap["board"]["steps"])
+
+
+def test_legacy_swarm_roster_unchanged() -> None:
+    snap = build_office_snapshot(_raw(), mission_id="MS-cac")
+    assert len(snap["agents"]) == len(OFFICE_AGENTS)
+    assert [s["id"] for s in snap["board"]["steps"]] == [
+        "verify", "frontier", "diagnose", "forecast", "strategy", "skeptic",
+    ]

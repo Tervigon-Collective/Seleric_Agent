@@ -31,11 +31,111 @@ _MONTH_YEAR = re.compile(
 # relative period → whether this is a full calendar-period comparison
 # (period A = the current period to date, period B = the matching prior
 # period) rather than a single point 7/30/365 days back.
+# A bare "last month" is NOT one of these. It is an explicit period the handlers
+# below already resolve to that whole calendar month, and treating it as a
+# period-over-period comparison whenever _COMPARISON_VERB appears anywhere in the
+# sentence silently rewrites the window the user asked for: "for last month, how
+# did this channel compare to the site average" is a channel-vs-site comparison,
+# not a month-vs-month one, and it resolved to "September to date vs Aug 1-30",
+# dropping Aug 31. So the period must be *bound* to the comparison — an idiom
+# (month over month), both periods named, or a preposition joining them.
+_VS = r"(?:vs\.?|versus|against|compared?\s+(?:to|with))\s+"
 _RELATIVE_COMPARE = (
-    (re.compile(r"\b(week[\s-]*over[\s-]*week|wow|this week\b.*\blast week|last week)\b", re.IGNORECASE), "week"),
-    (re.compile(r"\b(month[\s-]*over[\s-]*month|mom|this month\b.*\blast month|last month)\b", re.IGNORECASE), "month"),
-    (re.compile(r"\b(year[\s-]*over[\s-]*year|yoy|this year\b.*\blast year|last year)\b", re.IGNORECASE), "year"),
+    (re.compile(rf"\b(week[\s-]*over[\s-]*week|wow|this week\b.*\blast week|{_VS}last week)\b", re.IGNORECASE), "week"),
+    (re.compile(rf"\b(month[\s-]*over[\s-]*month|mom|this month\b.*\blast month|{_VS}last month)\b", re.IGNORECASE), "month"),
+    (re.compile(rf"\b(year[\s-]*over[\s-]*year|yoy|this year\b.*\blast year|{_VS}last year)\b", re.IGNORECASE), "year"),
 )
+
+
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_WEEKDAY = re.compile(r"\b(" + "|".join(_WEEKDAYS) + r")s?\b")
+
+# Locator for "the question names a window here". Deliberately a *coarse*
+# boundary finder only: each matched phrase is handed to ``_single_window``,
+# which does the actual resolution, so this pattern can never drift from the
+# single-window semantics. Ordered longest-alternative-first within each class
+# so "2026-06-01 to 2026-06-30" wins over the bare day inside it.
+_WINDOW_PHRASE = re.compile(
+    r"last\s+\d+\s+(?:days?|weeks?|months?|quarters?)"
+    r"|(?:" + "|".join(sorted(_MONTH_NAMES, key=len, reverse=True)) + r")\s+\d{4}"
+    r"|20\d{2}-\d{2}-\d{2}(?:\s+(?:to|through|-|–)\s+20\d{2}-\d{2}-\d{2})?"
+    r"|this\s+(?:week|month|year)"
+    r"|last\s+(?:week|month|year)"
+    r"|(?:today|yesterday)",
+    re.IGNORECASE,
+)
+
+
+# Words that may join two windows named side by side in a comparison ("A and B", "A, B").
+_MAX_JOINER_WORDS = 2
+
+
+def _two_named_windows(text: str, anchor: date) -> TimeRangeV1 | None:
+    """Two separately named windows joined by a comparison preposition.
+
+    "last 3 days versus today" names two periods. The chain in
+    ``_single_window`` returns on its first match, so the second was dropped and
+    the mission silently answered a different question (live MS3-167d9f4838).
+    This resolves the pair first and emits ``kind="comparison"``.
+
+    Precision is the whole design. Two conditions, both required:
+
+    - **A comparison preposition sits between the two phrases.** The same
+      reasoning as ``_RELATIVE_COMPARE`` above: the second window must be *bound*
+      to the comparison, not merely present in the sentence. "for last month, how
+      did this channel compare to the site average" names one window and a
+      non-temporal comparison; "change" and "over" in the looser
+      ``_COMPARISON_VERB`` must not manufacture a period-over-period reading, so
+      only ``_VS``-style joiners count here.
+    - **The two resolve to different spans.** "last 7 days vs the last 7 days"
+      names no comparison; falling through leaves the single-window answer.
+
+    Fail-open throughout: anything not matching both conditions returns ``None``
+    and the original behaviour is untouched.
+    """
+    matches = list(_WINDOW_PHRASE.finditer(text))
+    if len(matches) < 2:
+        return None
+    first, second = matches[0], matches[1]
+    between = text[first.end() : second.start()]
+    # Bound by a "vs"-style joiner, or — in a question that asks to compare — named side by
+    # side with only a short joiner between them ("compare … from yesterday and today": today
+    # was dropped, so the same-hours comparison never ran, live 2026-10-09 MS3-0f473daefd).
+    side_by_side = len(between.split()) <= _MAX_JOINER_WORDS and _COMPARISON_VERB.search(text) is not None
+    if not (re.search(_VS, between, re.IGNORECASE) or side_by_side):
+        return None
+
+    period_a = _single_window(first.group(0), anchor)
+    period_b = _single_window(second.group(0), anchor)
+    if period_a is None or period_b is None:
+        return None
+    if not (period_a.start and period_a.end and period_b.start and period_b.end):
+        return None
+    if (period_a.start, period_a.end) == (period_b.start, period_b.end):
+        return None
+
+    def _token(period: TimeRangeV1) -> str:
+        return (period.relative_token or "custom").replace("_", " ")
+
+    return TimeRangeV1(
+        kind="comparison",
+        start=period_a.start,
+        end=period_a.end,
+        start_b=period_b.start,
+        end_b=period_b.end,
+        # The token is what `_resolved_window_line` gates on to tell the model
+        # the dates at all, so it must be populated for the pair too.
+        relative_token=f"{_token(period_a)} vs {_token(period_b)}",
+    )
+
+
+def _last_complete_day(anchor: date) -> str:
+    """End of a trailing "last N days/weeks/months/quarters" window: yesterday.
+    Today is still in progress, so "last 7 days" is the 7 complete days before
+    it — the gateway's last_7d preset does the same. Ending on today made the
+    diagnosis drop the partial day and analyse 6 days (live thread_e75c2615:
+    "last 7 days" = 09-28..10-03), and weeks/months/quarters ran one day long."""
+    return (anchor - timedelta(days=1)).isoformat()
 
 
 def _sub_months(anchor: date, n: int) -> date:
@@ -94,9 +194,121 @@ def as_of_date(as_of: str | None, timezone: str) -> date:
 
 
 def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRangeV1 | None:
-    """Resolve an explicit window from the question: last-N days/weeks/months/quarters, ISO dates, yesterday/today.
+    """Resolve the question's time window(s).
 
-    Priority order (first match wins):
+    A question that names **two** windows joined by a comparison preposition
+    ("last 3 days versus today") resolves to ``kind="comparison"`` with both
+    periods, so the second one is never silently dropped. Before 2026-10-06 the
+    priority chain returned on its *first* match, so "the last 3 days versus
+    today" resolved to ``2026-10-03..2026-10-05`` and ``today`` vanished: the
+    model was told one window, fetched one window, and answered half the
+    question as ``completed`` (live MS3-167d9f4838). Nothing downstream could
+    catch it — ``RequiredScope`` had no slot for a second window, so
+    ``check_scope_coverage`` had nothing to reconcile.
+
+    Everything else defers to ``_single_window``, which owns the single-window
+    priority chain unchanged.
+    """
+    text = query or ""
+    anchor = as_of_date(as_of, timezone)
+    if (explicit := _explicit_ranges(text, anchor)) is not None:
+        return explicit
+    if (comparison := _two_named_windows(text, anchor)) is not None:
+        return comparison
+    return _single_window(text, anchor)
+
+
+# Words that join two calendar dates into ONE span. "and" only does after "between" ("between X and Y");
+# otherwise "X and Y" names two days.
+_RANGE_JOINERS = frozenset({"..", "to", "until", "till", "through", "thru", "-", "–", "—"})
+_TOKEN_EDGE = ",;:()[]{}'\""
+
+
+def _iso_day(token: str) -> date | None:
+    try:
+        return date.fromisoformat(token)
+    except ValueError:
+        return None
+
+
+def _explicit_ranges(text: str, anchor: date | None = None) -> TimeRangeV1 | None:
+    """Spans written as calendar dates: ``2026-10-01..2026-10-05``, ``2026-10-01 to 2026-10-05``,
+    ``between 2026-09-01 and 2026-09-30``. The phrase matcher reads each date as its own window, so
+    "between 09-01 and 09-30" became a comparison of two single days and "10-07..10-08 vs 10-06..10-07"
+    compared 10-07 with 10-08 (live 2026-10-09 dev replay of MS3-e4ba59ad63). One span → that window when the
+    question names no other date; two spans → a comparison in the order named. Token-based, so a written
+    range is only ever read from whole date tokens."""
+    tokens = [t.strip(_TOKEN_EDGE) for t in text.replace("..", " .. ").split()]
+    spans: list[tuple[date, date]] = []
+    used: set[int] = set()
+    loose_dates = 0
+    i = 0
+    while i < len(tokens):
+        first = _iso_day(tokens[i])
+        if first is None:
+            i += 1
+            continue
+        joiner = tokens[i + 1].lower() if i + 1 < len(tokens) else ""
+        second = _iso_day(tokens[i + 2]) if i + 2 < len(tokens) else None
+        bounded = joiner in _RANGE_JOINERS or (joiner == "and" and i > 0 and tokens[i - 1].lower() == "between")
+        if second is not None and bounded:
+            spans.append((min(first, second), max(first, second)))
+            used.update((i, i + 1, i + 2))
+            i += 3
+            continue
+        loose_dates += 1
+        i += 1
+    if len(spans) >= 2:
+        (a0, a1), (b0, b1) = spans[0], spans[1]
+        if (a0, a1) == (b0, b1):
+            return None
+        return TimeRangeV1(kind="comparison", start=a0.isoformat(), end=a1.isoformat(),
+                           start_b=b0.isoformat(), end_b=b1.isoformat(), relative_token="custom vs custom")
+    if len(spans) == 1 and loose_dates == 0:
+        a0, a1 = spans[0]
+        # The rest of the question may name the other side ("2026-09-01..2026-09-30 vs last month"): pair them.
+        # Each phrase is read on its own, as _two_named_windows does: "vs last month" beside a written span is
+        # the whole of last month, not a month-to-date comparison.
+        rest_text = " ".join(t for k, t in enumerate(tokens) if k not in used)
+        phrase = next(iter(_WINDOW_PHRASE.finditer(rest_text)), None) if anchor else None
+        rest = _single_window(phrase.group(0), anchor) if phrase is not None and anchor else None
+        other = (rest.start, rest.end) if rest is not None and rest.start and rest.end else None
+        if other is not None and other != (a0.isoformat(), a1.isoformat()):
+            return TimeRangeV1(kind="comparison", start=a0.isoformat(), end=a1.isoformat(), start_b=other[0],
+                               end_b=other[1], relative_token=f"custom vs {(rest.relative_token if rest else None) or 'custom'}")
+        return TimeRangeV1(kind="absolute", start=a0.isoformat(), end=a1.isoformat(), relative_token="custom")
+    return None
+
+
+def _bare_months(text: str, anchor: date) -> list[tuple[str, str]]:
+    """Month names written without a year ("in September"), each as its most recent occurrence on or before the
+    anchor; the running month ends at its last complete day. Without this a bare month resolved to nothing and the
+    mission answered for today instead (regression 2026-10-10 Q20, "… by product in September").
+
+    A short form (Sep, Mar) or "May" counts only capitalised and not opening the sentence, so the modal verb and
+    ordinary words are never read as months."""
+    out: list[tuple[str, str]] = []
+    words = text.split()
+    for index, raw in enumerate(words):
+        token = raw.strip(".,;:!?()[]{}\"'’")
+        month = _MONTH_NAMES.get(token.lower())
+        if month is None:
+            continue
+        full = len(token) > 3 and token.lower() != "may"
+        if not full and (not token[:1].isupper() or index == 0):
+            continue
+        year = anchor.year if month <= anchor.month else anchor.year - 1
+        start, end = _month_range(year, month)
+        last = _last_complete_day(anchor)
+        if end > last:
+            end = max(last, start)
+        if (start, end) not in out:
+            out.append((start, end))
+    return out
+
+
+def _single_window(text: str, anchor: date) -> TimeRangeV1 | None:
+    """Resolve one explicitly named window. Priority order (first match wins):
       1. last N days           → last_Nd  (capped at 90 to guard against typos)
       2. last N weeks          → last_Nw  (calendar weeks, no cap)
       3. last N months         → last_Nm  (calendar months, no cap)
@@ -115,17 +327,14 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
           matching prior period)
       12. yesterday / today / this week / this month / this year
     """
-    text = query or ""
-    anchor = as_of_date(as_of, timezone)
-
     found = _LAST_N_DAYS.search(text)
     if found:
         n = max(1, min(int(found.group(1)), 90))
-        start = anchor - timedelta(days=n - 1)
+        start = anchor - timedelta(days=n)
         return TimeRangeV1(
             kind="absolute",
             start=start.isoformat(),
-            end=anchor.isoformat(),
+            end=_last_complete_day(anchor),
             relative_token=f"last_{n}d",
         )
 
@@ -136,7 +345,7 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
         return TimeRangeV1(
             kind="absolute",
             start=start.isoformat(),
-            end=anchor.isoformat(),
+            end=_last_complete_day(anchor),
             relative_token=f"last_{n}w",
         )
 
@@ -147,7 +356,7 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
         return TimeRangeV1(
             kind="absolute",
             start=start.isoformat(),
-            end=anchor.isoformat(),
+            end=_last_complete_day(anchor),
             relative_token=f"last_{n}m",
         )
 
@@ -159,7 +368,7 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
         return TimeRangeV1(
             kind="absolute",
             start=start.isoformat(),
-            end=anchor.isoformat(),
+            end=_last_complete_day(anchor),
             relative_token=f"last_{n}q",
         )
 
@@ -182,6 +391,14 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
         month_start, month_end = _month_range(int(year), _MONTH_NAMES[name.lower()])
         return TimeRangeV1(kind="absolute", start=month_start, end=month_end)
 
+    bare = _bare_months(text, anchor)
+    if len(bare) >= 2:
+        (a_start, a_end), (b_start, b_end) = bare[0], bare[1]
+        return TimeRangeV1(kind="comparison", start=a_start, end=a_end, start_b=b_start, end_b=b_end)
+    if len(bare) == 1:
+        only_start, only_end = bare[0]
+        return TimeRangeV1(kind="absolute", start=only_start, end=only_end)
+
     dates = _ISO_DAY.findall(text)
     if len(dates) >= 2:
         return TimeRangeV1(kind="comparison", start=dates[0], end=dates[0], start_b=dates[1], end_b=dates[1])
@@ -190,7 +407,11 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
     # Relative period-over-period ("this week vs last week", "MoM change") resolves
     # to a full-period comparison anchored on as_of, so the mission runs instead of
     # failing with "comparison time range requires two dates".
-    if _COMPARISON_VERB.search(text):
+    # The patterns bind the period to the comparison themselves; a "compared with/to" joiner
+    # opens the gate as well, since the verb list's "compare" never matches "compared"
+    # ("Why did ROAS decline compared with last week?" diagnosed last week on its own,
+    # live 2026-10-09 MS3-2ec0e4a115).
+    if _COMPARISON_VERB.search(text) or re.search(_VS, text, re.IGNORECASE):
         for pattern, unit in _RELATIVE_COMPARE:
             if not pattern.search(text):
                 continue
@@ -204,6 +425,17 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
                 relative_token=_PERIOD_VS_PRIOR_TOKENS[unit],
             )
     lower = text.lower()
+    # A single named weekday ("on Monday", "last Monday") = its most recent
+    # COMPLETED occurrence, strictly before as_of: today is still in progress.
+    # Left to the model before, which once dated "Monday" as a Sunday (live
+    # 2026-10-04) and diagnosed an incomplete day. Two names = a comparison,
+    # not handled here.
+    named = {m.group(1) for m in _WEEKDAY.finditer(lower)}
+    if len(named) == 1:
+        target = _WEEKDAYS.index(named.pop())
+        back = (anchor.weekday() - target) % 7 or 7
+        day = (anchor - timedelta(days=back)).isoformat()
+        return TimeRangeV1(kind="absolute", start=day, end=day, relative_token=f"last_{_WEEKDAYS[target]}")
     if re.search(r"\byesterday\b", lower):
         day = (anchor - timedelta(days=1)).isoformat()
         return TimeRangeV1(kind="absolute", start=day, end=day, relative_token="yesterday")
@@ -229,8 +461,8 @@ def window_from_query(query: str, timezone: str, as_of: str | None) -> TimeRange
     # mission and September (this month) in another (live L1 vs L7).
     if re.search(r"\blast\s+month\b", lower):
         prev = _sub_months(anchor, 1)
-        start, end = _month_range(prev.year, prev.month)
-        return TimeRangeV1(kind="absolute", start=start, end=end, relative_token="last_month")
+        m_start, m_end = _month_range(prev.year, prev.month)
+        return TimeRangeV1(kind="absolute", start=m_start, end=m_end, relative_token="last_month")
     if re.search(r"\blast\s+week\b", lower):
         this_monday = anchor - timedelta(days=anchor.weekday())
         start = this_monday - timedelta(weeks=1)
@@ -258,11 +490,11 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
         last_n = re.fullmatch(r"last_(\d+)d", token)
         if last_n:
             n = max(1, min(int(last_n.group(1)), 90))
-            start = anchor - timedelta(days=n - 1)
+            start = anchor - timedelta(days=n)
             return TimeRangeV1(
                 kind="absolute",
                 start=start.isoformat(),
-                end=anchor.isoformat(),
+                end=_last_complete_day(anchor),
                 relative_token=token,
             )
         last_nw = re.fullmatch(r"last_(\d+)w", token)
@@ -272,7 +504,7 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
             return TimeRangeV1(
                 kind="absolute",
                 start=start.isoformat(),
-                end=anchor.isoformat(),
+                end=_last_complete_day(anchor),
                 relative_token=token,
             )
         last_nm = re.fullmatch(r"last_(\d+)m", token)
@@ -282,7 +514,7 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
             return TimeRangeV1(
                 kind="absolute",
                 start=start.isoformat(),
-                end=anchor.isoformat(),
+                end=_last_complete_day(anchor),
                 relative_token=token,
             )
         last_nq = re.fullmatch(r"last_(\d+)q", token)
@@ -292,7 +524,7 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
             return TimeRangeV1(
                 kind="absolute",
                 start=start.isoformat(),
-                end=anchor.isoformat(),
+                end=_last_complete_day(anchor),
                 relative_token=token,
             )
         if token == "today":
@@ -315,13 +547,13 @@ def resolve_time_range(time_range: TimeRangeV1, timezone: str, as_of: str | None
             )
         if token == "last_month":
             prev = _sub_months(anchor, 1)
-            start, end = _month_range(prev.year, prev.month)
-            return TimeRangeV1(kind="absolute", start=start, end=end, relative_token=token)
+            m_start, m_end = _month_range(prev.year, prev.month)
+            return TimeRangeV1(kind="absolute", start=m_start, end=m_end, relative_token=token)
         if token == "last_week":
             this_monday = anchor - timedelta(days=anchor.weekday())
-            start = this_monday - timedelta(weeks=1)
-            end = this_monday - timedelta(days=1)
-            return TimeRangeV1(kind="absolute", start=start.isoformat(), end=end.isoformat(), relative_token=token)
+            wk_start = this_monday - timedelta(weeks=1)
+            wk_end = this_monday - timedelta(days=1)
+            return TimeRangeV1(kind="absolute", start=wk_start.isoformat(), end=wk_end.isoformat(), relative_token=token)
         if token == "last_year":
             y = anchor.year - 1
             return TimeRangeV1(kind="absolute", start=date(y, 1, 1).isoformat(), end=date(y, 12, 31).isoformat(), relative_token=token)

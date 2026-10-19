@@ -1,0 +1,210 @@
+[
+ {
+  "q": "What were net sales yesterday?",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "What were net sales, orders, and ad spend yesterday?",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Give me net sales for each of the last 7 days.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "What is the current business status for the last 7 completed days?",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Compare net sales, orders, CAC, MER, Net ROAS, and net profit for the last 7 days versus the previous 7 days. Show absolute and percentage change.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Compare this month to the same number of days last month.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Show the last 30 days of daily net sales, ad spend, MER, CAC, and net profit and identify the best and worst 3 days.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Which products generated the most net sales in the last 14 days? Give units sold, orders, net sales, refunds, and return rate.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Which Meta campaigns performed best in the last 7 days? Rank them using spend, revenue, ROAS, CAC, CTR, CPC, CPM, clicks, LPVs, and purchases.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "For the top 5 Meta campaigns from the last 7 days, show their daily CTR, CPC, CPM, spend, purchases, and ROAS trends.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Which products are driving revenue but destroying profit in the last 30 days?",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Find products whose sales increased versus the previous 30 days but whose contribution margin deteriorated. Explain the trade-off.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Why did sales fall yesterday compared with the average of the previous 7 comparable days? Break the change into traffic, conversion, AOV, cancellations, returns, and paid-media performance.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Why did CAC increase yesterday? Check whether the change came from CPM, CTR, CPC, landing-page conversion, checkout conversion, product mix, or channel mix. Rank the drivers by likely contribution.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "On 2026-10-02 we recorded a loss. Quantify exactly how much of the profit deterioration versus 2026-10-01 came from lower revenue, advertising cost, COGS, discounts, refunds, shipping, payment costs, and other available cost components. Reconcile the components back to the total profit change.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "For 2026-10-02, identify which campaigns, products, and channels contributed most to the loss. Do not call correlation causal unless supported. Separate arithmetic contributors from statistically supported causal drivers.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Analyze Pawveralls Suspender Boots for the last 60 days. Show sales by Meta campaign, Google sub-channel, organic, WhatsApp, direct, and other sources. Reconcile attributed revenue against total product revenue and quantify unattributed revenue.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Which Meta campaigns appear profitable at platform ROAS but become unprofitable when evaluated using blended net sales, returns, discounts, COGS, and contribution margin?",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "Which products had the best and worst ROAS in September? Show ad spend, revenue and ROAS by product.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "What was the average order value and COD order count by product in September?",
+  "aspect": "golden",
+  "checks": [
+   {
+    "contains_any": [
+     "September",
+     "2026-09"
+    ]
+   },
+   {
+    "not_contains": "partial day"
+   },
+   {
+    "not_contains": "not available"
+   }
+  ]
+ },
+ {
+  "q": "Show LTV, CAC and LTV:CAC by platform for September.",
+  "aspect": "golden",
+  "checks": []
+ },
+ {
+  "q": "give me a net profit breakdown, waterfall for September 2026",
+  "aspect": "reconciliation",
+  "checks": [
+   {
+    "contains_sql": "select round(sum(net_profit),2) from serve.order_pnl_daily where brand_id=20 and order_date between '2026-09-01' and '2026-09-30'"
+   },
+   {
+    "not_contains": "residual"
+   }
+  ]
+ },
+ {
+  "q": "On 2026-10-02 we recorded a loss. Quantify exactly how much of the profit deterioration versus 2026-10-01 came from lower revenue, advertising cost, COGS, discounts, refunds, shipping, payment costs, and other available cost components. Reconcile the components back to the total profit change.",
+  "aspect": "reconciliation",
+  "checks": [
+   {
+    "contains_sql": "select round(sum(net_profit),2) from serve.order_pnl_daily where brand_id=20 and order_date between '2026-10-02' and '2026-10-02'"
+   },
+   {
+    "contains_sql": "select round(sum(net_profit),2) from serve.order_pnl_daily where brand_id=20 and order_date between '2026-10-01' and '2026-10-01'"
+   },
+   {
+    "contains_sql": "select round((select sum(net_profit) from serve.order_pnl_daily where brand_id=20 and order_date='2026-10-02')-(select sum(net_profit) from serve.order_pnl_daily where brand_id=20 and order_date='2026-10-01'),2)"
+   }
+  ]
+ },
+ {
+  "q": "Why did CAC increase yesterday? Check whether the change came from CPM, CTR, CPC, landing-page conversion, checkout conversion, product mix, or channel mix. Rank the drivers by likely contribution.",
+  "aspect": "diagnosis",
+  "checks": [
+   {
+    "contains_all_words": [
+     "CPM",
+     "CTR",
+     "CPC"
+    ]
+   },
+   {
+    "not_lead": "product CAC"
+   }
+  ]
+ },
+ {
+  "q": "Why did ROAS rise compared with last week?",
+  "aspect": "diagnosis",
+  "checks": [
+   {
+    "not_contains": "694%"
+   }
+  ]
+ },
+ {
+  "q": "Fetch campaign-level ad spend, orders, cost per order (CPA) and net ROAS for the top 5 Meta campaigns by spend over 2026-10-07..2026-10-08 and 2026-10-06..2026-10-07 for comparison.",
+  "aspect": "failed_steps",
+  "checks": [
+   {
+    "contains_any": [
+     "2026-10-06"
+    ]
+   },
+   {
+    "max_revisions": 1
+   }
+  ]
+ },
+ {
+  "q": "Why were sales bad yesterday?",
+  "aspect": "diagnosis",
+  "checks": []
+ },
+ {
+  "q": "Sales haven't been great for the last few days. Check whether Meta is responsible and tell me exactly what's happening.",
+  "aspect": "diagnosis",
+  "checks": []
+ },
+ {
+  "q": "What changed this week compared to last week?",
+  "aspect": "diagnosis",
+  "checks": []
+ },
+ {
+  "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+  "aspect": "failed_steps",
+  "checks": [
+   {
+    "not_contains": "2026-09-01..2026-09-01"
+   }
+  ]
+ }
+]

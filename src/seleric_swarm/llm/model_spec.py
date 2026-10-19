@@ -15,6 +15,8 @@ class ModelSpec:
     supports_tool_calling: bool = False
     supports_vision: bool = False
     max_context_tokens: int = 128_000
+    # Per-model timeout override (seconds). None = use gateway default.
+    timeout_s: float | None = None
 
     def supports(self, request: LLMRequest) -> bool:
         """Capability-aware routing gate: is this model even eligible for the request?"""

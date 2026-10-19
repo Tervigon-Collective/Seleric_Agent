@@ -1,0 +1,41 @@
+{
+ "n": 1,
+ "aspect": "forecast+chart",
+ "q": "Forecast orders and order-date net sales for the next 7 days and show the daily values in a chart",
+ "thread": "thread_e463aeb338cf4a66ae7d0af03e6d700c",
+ "mission": "MS3-3e6c1b7673",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 30,
+ "elapsed_s": 26.026,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 23,
+  "measured": 15,
+  "misbound": [],
+  "problems": [
+   "figures in no tool result and not one arithmetic step from them: 558,600, 1,545,000, 558,600, 1,545,000"
+  ],
+  "unmatched": [
+   "558,600",
+   "1,545,000",
+   "558,600",
+   "1,545,000",
+   "558,600",
+   "1,545,000",
+   "558,600",
+   "1,545,000"
+  ],
+  "placeholders": []
+ },
+ "tools": [
+  "forecast_metrics"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Forecast (provisional): we expect about 307 orders (mean) and \u20b9558,600 net sales over 2026\u201110\u201114 \u2192 2026\u201110\u201120, with wide uncertainty (80% band up to \u20b91,545,000 or as low as near zero).\n\nEvidence\n- Orders (7\u2011day horizon, forecast): total mean = 306.6 orders; daily average \u2248 43.8 orders; 7\u2011day p10\u2013p90 total \u2248 1.407 \u2013 735.7.  \n- Net sales (7\u2011day horizon, forecast): total mean = \u20b9558,600; daily average \u2248 \u20b979,802; 7\u2011day p10\u2013p90 total \u2248 \u20b90 \u2013 \u20b91,545,000.  \n- Shape notes: both series show a small upward tilt inside the week (second half +3.5% orders, +6.2% net sales), strongest day = 2026\u201110\u201118 (orders ~48.2; net sales \u2248 \u20b986,367), weakest = 2026\u201110\u201116 (orders ~41.8; net sales \u2248 \u20b974,960).  \n- Model status / data: provisional ETS forecasts, cutoff 2026\u201110\u201112; training window ~2024\u201110\u201123 \u2192 2026\u201110\u201112 with outages masked; key validated features: calendar (dow/festival/payday) and Orders used as a driver for Net sales. Uncertainty is high (80% band typically 277% of median day).\n\nA forecast chart (history + median path + P10\u2013P90 band) is already attached to this answer.\n\nPeriod: 2026-10-14 .. 2026-10-20 \u00b7 Currency: INR \u00b7 Data as of 2026-10-12\n\nNext step: would you like the day-by-day table alongside the chart or the same forecast broken down by channel?\n\n\u26a0 Not verified against the data: figures in no tool result and not one arithmetic step from them: 558,600, 1,545,000, 558,600, 1,545,000"
+}

@@ -1,0 +1,31 @@
+{
+ "n": 14,
+ "aspect": "diagnosis",
+ "q": "What changed this week compared to last week?",
+ "thread": "thread_a198b29a5b284623a57fd58f7089ef87",
+ "mission": "MS3-b8f8b7e9b1",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 16.222,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 7,
+  "measured": 7,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "explore_data"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "This week (Mon-Wed) compared to the same weekdays last week, the most notable change is a significant drop in P&L net sales, which fell by 69%. The decline is primarily concentrated in two ad sets:\n\n- \"(not set)\": \u20b929,707 \u2192 \u20b90 (-100%)\n- \"Broad Advantage+\": \u20b939,958 \u2192 \u20b913,222 (-67%)\n\nThese two ad sets together account for 106% of the total decline in P&L net sales.\n\nPeriod: 2026-10-12 to 2026-10-14 vs 2026-10-05 to 2026-10-07 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Should I investigate the drop in P&L net sales further?"
+}

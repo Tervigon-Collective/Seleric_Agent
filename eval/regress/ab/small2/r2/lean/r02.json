@@ -1,0 +1,49 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_d4be4df3b17a4ac09884b2f98f5e80e4",
+ "mission": "MS3-3c0a59415a",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 34,
+ "elapsed_s": 29.379,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 7,
+ "llm_calls": 7,
+ "grounding": {
+  "derived": [],
+  "numbers": 0,
+  "measured": 0,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "metrics_query",
+  "run_python",
+  "run_python",
+  "show_table"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "The Meta campaigns with the lowest gross ROAS (return on ad spend) are now available in the attached table. These campaigns are likely underperforming and may be wasting money. You can review the table to identify campaigns with a gross ROAS below 1, which indicates that they are not generating enough revenue to cover their ad spend.\n\nPeriod: 2026-10-01\u20132026-10-14 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Should I highlight the top 10 campaigns with the highest ad spend and low ROAS?"
+}

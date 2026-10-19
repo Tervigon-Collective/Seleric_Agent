@@ -1,0 +1,33 @@
+{
+ "n": 1,
+ "aspect": "sandbox",
+ "q": "Get daily net sales and orders for the last 14 days, then use python to compute net sales per order for each of the two weeks.",
+ "thread": "thread_225d3ec704604a6a9732ac2c64424ef9",
+ "mission": "MS3-21dd952216",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 34,
+ "elapsed_s": 28.849,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 6,
+  "measured": 6,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query",
+  "run_python",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Here are the two weekly totals and the computed net sales per order.\n\n- Week 1 (2026-09-30..2026-10-06) \u2014 Measured: net sales \u20b9641,932; orders 336. Derived: net sales per order \u20b91,911.  \n- Week 2 (2026-10-07..2026-10-13) \u2014 Measured: net sales \u20b9525,092; orders 283. Derived: net sales per order \u20b91,855.\n\nTags: Week totals and orders are **Measured** (queried). Net sales per order are **Derived** (total net sales \u00f7 orders; inputs listed above).\n\nPeriod \u00b7 INR \u00b7 data through 2026-10-13 (freshness: commerce view last refreshed 2026-10-13T19:25:22.762Z).\n\nWould you like a day-by-day table or a chart of net sales per order across these 14 days?"
+}

@@ -1,0 +1,40 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_041353eaaa0449acba5b0cc476dd163c",
+ "mission": "MS3-044321b7a6",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 67,
+ "elapsed_s": 64.717,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 10,
+  "measured": 10,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Total (order\u2011date, Tilting Heads): 1,096 orders and net sales \u20b91,943,109 for 2026-09-01..2026-09-30. This is the orders+net-sales split by campaign; a large share is unattributed to a campaign (null).\n\nWhat matters\n- Unattributed / no campaign: 396 orders; net sales \u20b9749,161 \u2014 the single largest line by both orders and sales. This suggests many orders aren\u2019t tied to a named campaign.\n- Top campaign by sales: \u201c[Google Build] PMax - Seasonal New | 27th May\u201d \u2014 115 orders; net sales \u20b9198,996.\n- Other high performers: \u201c[Google Build] Brand Search | 5th March\u201d \u2014 40 orders; net sales \u20b971,275; \u201cTH-385-DUCKTOY-1SEP\u201d \u2014 31 orders; net sales \u20b940,071.\n- Full table: 88 campaign rows returned (including null). Numbers are order-date (commerce net sales) and scoped to the default brand (Tilting Heads).\n\nWorth checking: attribute the null / unattributed orders (campaign_name null) \u2014 split might change if you need P&L-attributed sales instead.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Show the top 10 campaigns by net sales (with orders and net sales)?"
+}

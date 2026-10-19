@@ -11,18 +11,58 @@ recently-failed model than to fail the mission without a single call.
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
+import os
 import time
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
-from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
+import structlog
+from pydantic_ai.exceptions import (
+    FallbackExceptionGroup,
+    ModelAPIError,
+    ModelHTTPError,
+    UnexpectedModelBehavior,
+)
+from pydantic_ai.messages import ModelResponse, ModelResponseStreamEvent, TextPart, ToolCallPart
+from pydantic_ai.models import StreamedResponse
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.wrapper import WrapperModel
+
+_log = structlog.get_logger()
 
 COOLDOWN_RATE_LIMITED_S = 45.0
+# Consecutive 429s double the cooldown up to this cap; a success resets it. A
+# per-minute TOKEN quota smaller than one agent prompt (DeepSeek-V4-Pro,
+# southindia, ~50k-token steps) re-trips within a minute, so a flat 45s made
+# the first step of nearly every mission eat a 429 (12 of 19 missions on
+# 2026-10-06) before falling through.
+COOLDOWN_RATE_LIMITED_MAX_S = float(os.getenv("AGENT_LLM_429_COOLDOWN_MAX_S", "600"))
 COOLDOWN_TIMEOUT_S = 90.0
 COOLDOWN_SERVER_ERROR_S = 30.0
 COOLDOWN_UNAVAILABLE_S = 300.0
+
+# Wall-clock cap on ONE model request. The httpx read timeout cannot bound it:
+# it resets on every byte, and a stalled deployment trickling bytes held a
+# request for 248-292s (live 2026-10-04 MS3-c645523b51 / MS3-63801a5f52, with
+# AGENT_LLM_TIMEOUT_S=240), i.e. the whole MISSION_TIMEOUT_S=300 budget. Healthy
+# agent steps measured over 3 days of run events: p50 3.5s, p99 22s, max 43s.
+# A request past the cap is a ModelAPIError, so the chain falls through to the
+# next model instead of the mission dying.
+AGENT_LLM_REQUEST_CAP_S = float(os.getenv("AGENT_LLM_REQUEST_CAP_S", "60"))
+# A live (token-streamed) step: no chunk for this long means the provider stalled mid-answer.
+AGENT_LLM_STALL_CAP_S = float(os.getenv("AGENT_LLM_STALL_CAP_S", "30"))
+# Set by the loop for the steps whose text should reach the user as it is generated. Off: every step is a plain
+# request replayed as a stream (cap, cooldown, fallback and patience all apply to the whole response).
+LIVE_STREAM: contextvars.ContextVar[bool] = contextvars.ContextVar("seleric_live_stream", default=False)
+
+
+class StreamStalled(ModelAPIError):
+    """A live stream broke after it had opened (stall, dropped connection). The loop redoes the turn unstreamed."""
 
 
 class ModelHealth:
@@ -30,6 +70,7 @@ class ModelHealth:
         self._clock = clock
         self._until: dict[str, float] = {}
         self._known: set[str] = set()
+        self._strikes: dict[str, int] = {}
 
     def register(self, key: str) -> None:
         self._known.add(key)
@@ -39,6 +80,15 @@ class ModelHealth:
 
     def recover(self, key: str) -> None:
         self._until.pop(key, None)
+        self._strikes.pop(key, None)
+
+    def rate_limited(self, key: str, base: float, hint: float | None = None) -> float:
+        """Cooldown for a 429: doubles per consecutive strike (capped), never shorter
+        than the provider's own retry-after hint."""
+        strikes = self._strikes.get(key, 0) + 1
+        self._strikes[key] = strikes
+        seconds = min(base * 2 ** (strikes - 1), max(base, COOLDOWN_RATE_LIMITED_MAX_S))
+        return max(seconds, hint or 0.0)
 
     def _cooling(self, key: str) -> bool:
         return self._until.get(key, 0.0) > self._clock()
@@ -47,6 +97,12 @@ class ModelHealth:
         if not self._cooling(key):
             return False
         return any(not self._cooling(other) for other in self._known if other != key)
+
+    def seconds_until_any_ready(self) -> float:
+        """0 when some known model is not cooling, else until the first cooldown ends."""
+        now = self._clock()
+        remaining = [self._until.get(k, 0.0) - now for k in self._known]
+        return max(0.0, min(remaining, default=0.0))
 
 
 MODEL_HEALTH = ModelHealth()
@@ -64,13 +120,44 @@ def cooldown_for(exc: ModelAPIError) -> float:
     return COOLDOWN_TIMEOUT_S  # timeouts / connection errors
 
 
+def retry_after_hint(exc: ModelAPIError) -> float | None:
+    """Seconds the provider's standard ``Retry-After`` response header asks for, if
+    it sent one in delta-seconds form."""
+    headers = getattr(exc, "headers", None) or {}
+    raw = next((v for k, v in headers.items() if str(k).lower() == "retry-after"), None)
+    try:
+        return float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _spent_without_output(response: Any) -> bool:
+    if getattr(response, "finish_reason", None) != "length":
+        return False
+    return not any(
+        isinstance(part, ToolCallPart) or (isinstance(part, TextPart) and part.content.strip())
+        for part in getattr(response, "parts", [])
+    )
+
+
 class HealthGatedChatModel(OpenAIChatModel):
     """``OpenAIChatModel`` that fails instantly while cooling down."""
 
-    def __init__(self, model_name: str, *, health: ModelHealth, health_key: str, **kwargs: Any):
+    def __init__(
+        self,
+        model_name: str,
+        *,
+        health: ModelHealth,
+        health_key: str,
+        request_cap_s: float | None = None,
+        **kwargs: Any,
+    ):
         super().__init__(model_name, **kwargs)
         self._health = health
         self._health_key = health_key
+        # None uses the process default. The understand call at high effort runs
+        # 43–60s and was falling through the 60s cap; that role passes a longer cap.
+        self._request_cap_s = request_cap_s
         health.register(health_key)
 
     def _gate(self) -> None:
@@ -79,18 +166,42 @@ class HealthGatedChatModel(OpenAIChatModel):
 
     def _record_failure(self, exc: ModelAPIError) -> None:
         seconds = cooldown_for(exc)
+        if isinstance(exc, ModelHTTPError) and exc.status_code == 429:
+            seconds = self._health.rate_limited(self._health_key, seconds, retry_after_hint(exc))
         if seconds:
             self._health.cool(self._health_key, seconds)
 
     async def request(self, *args: Any, **kwargs: Any) -> Any:
         self._gate()
         try:
-            response = await super().request(*args, **kwargs)
+            try:
+                response = await self._capped(super().request(*args, **kwargs))
+            except UnexpectedModelBehavior as exc:
+                # A completion the client cannot parse (live 2026-10-07 MS3-4f7be7ba30:
+                # an OpenRouter tail model answered 200 with choices=null) is this
+                # model failing, not the mission: fall through to the next model, and
+                # let PatientModel wait for the chain when it was the last one.
+                raise ModelAPIError(self.model_name, f"malformed response: {exc}") from exc
+            if _spent_without_output(response):
+                # Live 2026-10-05 (MS3-3eeef3a493): a reasoning model used its whole
+                # output budget thinking over a long thread and returned nothing; the
+                # agent graph raised UnexpectedModelBehavior, which is not a model
+                # error, so the mission failed instead of trying the next model.
+                raise ModelAPIError(self.model_name, "hit its token limit before producing any output")
         except ModelAPIError as exc:
             self._record_failure(exc)
             raise
         self._health.recover(self._health_key)
         return response
+
+    async def _capped(self, call: Awaitable[Any]) -> Any:
+        cap = AGENT_LLM_REQUEST_CAP_S if self._request_cap_s is None else self._request_cap_s
+        if cap <= 0:
+            return await call
+        try:
+            return await asyncio.wait_for(call, timeout=cap)
+        except TimeoutError as exc:
+            raise ModelAPIError(self.model_name, f"no response within {cap:.0f}s") from exc
 
     @asynccontextmanager
     async def request_stream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
@@ -102,3 +213,200 @@ class HealthGatedChatModel(OpenAIChatModel):
             self._record_failure(exc)
             raise
         self._health.recover(self._health_key)
+
+
+# How long one model request may wait for the chain to come back after every
+# model failed transiently (429 / 5xx / timeout). Without it the mission died and
+# the recovery worker re-ran it from scratch, discarding every tool result: live
+# thread_e75c2615 restarted twice on LLM_RATE_LIMITED and took 7 minutes.
+# Stays well under MISSION_TIMEOUT_S; 0 disables waiting.
+AGENT_LLM_WAIT_BUDGET_S = float(os.getenv("AGENT_LLM_WAIT_BUDGET_S", "60"))
+_MAX_SINGLE_WAIT_S = 20.0
+_MIN_WAIT_S = 2.0
+
+
+def _causes(exc: BaseException) -> list[BaseException]:
+    if isinstance(exc, BaseExceptionGroup):
+        return [c for sub in exc.exceptions for c in _causes(sub)]
+    return [exc]
+
+
+def is_transient(exc: BaseException) -> bool:
+    """Some model in the chain failed in a way that heals by itself: a 429, a 5xx,
+    a timeout / connection error or a cooldown skip. Auth/credit errors and other
+    4xx are not — waiting does not change them."""
+    for c in _causes(exc):
+        if isinstance(c, ModelHTTPError):
+            if c.status_code == 429 or c.status_code >= 500:
+                return True
+        elif isinstance(c, ModelAPIError):
+            return True
+    return False
+
+
+class PatientModel(WrapperModel):
+    """Retries the SAME model request when the whole chain failed transiently.
+
+    Waits for the first cooldown to end (else a short backoff), within
+    ``budget_s`` per request, so the mission keeps its message history and tool
+    results instead of failing into a from-scratch run retry."""
+
+    def __init__(
+        self,
+        wrapped: Any,
+        *,
+        health: ModelHealth = MODEL_HEALTH,
+        budget_s: float | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        super().__init__(wrapped)
+        self._health = health
+        self._budget_s = AGENT_LLM_WAIT_BUDGET_S if budget_s is None else budget_s
+        self._sleep = sleep
+        self._clock = clock
+
+    async def _wait_or_raise(self, exc: BaseException, started: float, attempt: int) -> None:
+        left = self._budget_s - (self._clock() - started)
+        if not is_transient(exc) or left <= 0:
+            raise exc
+        wait = self._health.seconds_until_any_ready() or _MIN_WAIT_S * (2**attempt)
+        wait = max(_MIN_WAIT_S, min(wait, _MAX_SINGLE_WAIT_S, left))
+        _log.warning("llm_chain_unavailable_waiting", wait_s=round(wait, 1), attempt=attempt + 1)
+        await self._sleep(wait)
+
+    async def request(self, *args: Any, **kwargs: Any) -> Any:
+        started, attempt = self._clock(), 0
+        while True:
+            try:
+                return await self.wrapped.request(*args, **kwargs)
+            except (ModelAPIError, FallbackExceptionGroup) as exc:
+                await self._wait_or_raise(exc, started, attempt)
+                attempt += 1
+
+    @asynccontextmanager
+    async def request_stream(
+        self, messages: Any, model_settings: Any, model_request_parameters: Any, run_context: Any = None
+    ) -> AsyncIterator[Any]:
+        """A step is a plain request replayed as a stream, unless the loop asked for a live one (``LIVE_STREAM``).
+
+        Why replay is the default: a live stream cannot fall back or be retried once it is open — pydantic-ai's
+        FallbackModel propagates mid-stream failures — so a provider stall became a raw ReadTimeout that failed the
+        mission and restarted it from scratch (live 2026-10-04: 658s for one CTR chart).
+
+        A live step keeps the protections up to the first event (fallback, cooldown, patience, first-event cap) and
+        guards the rest with a per-chunk stall cap. A failure after the stream opened raises ``StreamStalled``; the
+        loop discards what was shown and redoes the turn with streaming off."""
+        if not LIVE_STREAM.get():
+            response = await self.request(messages, model_settings, model_request_parameters)
+            yield ReplayedStreamedResponse(model_request_parameters=model_request_parameters, response=response)
+            return
+        started, attempt = self._clock(), 0
+        while True:
+            stack = AsyncExitStack()
+            try:
+                inner = await stack.enter_async_context(
+                    self.wrapped.request_stream(messages, model_settings, model_request_parameters, run_context)
+                )
+                events = inner.__aiter__()
+                first = await _first_event(events, AGENT_LLM_REQUEST_CAP_S)
+                break
+            except (ModelAPIError, FallbackExceptionGroup, UnexpectedModelBehavior) as exc:
+                await stack.aclose()
+                if isinstance(exc, UnexpectedModelBehavior):  # unparseable first chunk: this model failed, not the mission
+                    exc = ModelAPIError("stream", f"malformed response: {exc}")
+                await self._wait_or_raise(exc, started, attempt)
+                attempt += 1
+        try:
+            yield _LiveStream(inner, events, first, AGENT_LLM_STALL_CAP_S)
+        finally:
+            await stack.aclose()
+
+
+_NO_EVENT = object()
+
+
+async def _first_event(events: AsyncIterator[Any], cap_s: float) -> Any:
+    try:
+        return await asyncio.wait_for(events.__anext__(), timeout=cap_s) if cap_s > 0 else await events.__anext__()
+    except StopAsyncIteration:
+        return _NO_EVENT
+    except TimeoutError as exc:
+        raise ModelAPIError("stream", f"no first token within {cap_s:.0f}s") from exc
+
+
+class _LiveStream:
+    """The opened stream with its first event already read: yields it, then the rest under a per-chunk stall cap.
+
+    Everything else (``get()``, ``usage()``, ``model_name``, ``final_result_event``, ``cancel()``) is the real
+    response's, so the agent graph treats it exactly like the stream it would have opened itself."""
+
+    def __init__(self, inner: Any, events: AsyncIterator[Any], first: Any, stall_cap_s: float) -> None:
+        self._inner, self._events, self._first, self._cap = inner, events, first, stall_cap_s
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def __aiter__(self) -> AsyncIterator[Any]:
+        return self._iterate()
+
+    async def _iterate(self) -> AsyncIterator[Any]:
+        if self._first is _NO_EVENT:
+            return
+        yield self._first
+        while True:
+            try:
+                event = await asyncio.wait_for(self._events.__anext__(), timeout=self._cap) if self._cap > 0 \
+                    else await self._events.__anext__()
+            except StopAsyncIteration:
+                return
+            except TimeoutError as exc:
+                raise StreamStalled("stream", f"no output for {self._cap:.0f}s mid-answer") from exc
+            except Exception as exc:  # dropped connection, malformed chunk: the stream is gone either way
+                raise StreamStalled("stream", f"stream broke: {type(exc).__name__}: {exc}") from exc
+            yield event
+
+
+@dataclass
+class ReplayedStreamedResponse(StreamedResponse):
+    """A finished ``ModelResponse`` presented as a stream: one start event per
+    part, so the run's event handler (tool progress, final-result detection)
+    behaves as it does on a live stream."""
+
+    response: ModelResponse | None = None
+
+    def __post_init__(self) -> None:
+        assert self.response is not None
+        self._usage = self.response.usage
+        self.provider_response_id = self.response.provider_response_id
+        self.provider_details = self.response.provider_details
+        self.finish_reason = self.response.finish_reason
+        self.metadata = self.response.metadata
+
+    async def _get_event_iterator(self) -> AsyncIterator[ModelResponseStreamEvent]:
+        assert self.response is not None
+        for index, part in enumerate(self.response.parts):
+            yield self._parts_manager.handle_part(vendor_part_id=index, part=part)
+
+    async def close_stream(self) -> None:
+        pass
+
+    @property
+    def model_name(self) -> str:
+        assert self.response is not None
+        return self.response.model_name or ""
+
+    @property
+    def provider_name(self) -> str | None:
+        assert self.response is not None
+        return self.response.provider_name
+
+    @property
+    def provider_url(self) -> str | None:
+        assert self.response is not None
+        return self.response.provider_url
+
+    @property
+    def timestamp(self) -> datetime:
+        assert self.response is not None
+        return self.response.timestamp

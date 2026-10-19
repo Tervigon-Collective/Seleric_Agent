@@ -1,0 +1,58 @@
+{
+ "n": 4,
+ "aspect": "test_agent6",
+ "q": "Why is ROAS increasing while net profit is declining?",
+ "thread": "thread_467062eae8af4c26966a2aab40672ab0",
+ "mission": "MS3-c793557891",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 109,
+ "elapsed_s": 103.772,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 12,
+ "llm_calls": 7,
+ "grounding": {
+  "derived": [],
+  "numbers": 21,
+  "measured": 21,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "diagnose_metric_change",
+  "diagnose_metric_change",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": false,
+   "what": "tool: ROAS attempted or derived from its definition"
+  },
+  {
+   "ok": true,
+   "what": "tool: net profit queried"
+  },
+  {
+   "ok": true,
+   "what": "tool: compares periods"
+  },
+  {
+   "ok": true,
+   "what": "tool: definitions fetched via catalogue"
+  }
+ ],
+ "answer": "Short answer \u2014 the data does not agree with your premise: net ROAS fell to 0.86x while order\u2011date net profit was negative (\u20b9-6,921) for 2026-09-30..2026-10-13; the diagnostic engine found no single supported cause and judged the moves within recent variation.  \n\nEvidence (Measured)\n- Net ROAS (order-date): prior \u2248 0.92x \u2192 current 0.86x. \u2014 Measured  \n- Net profit (order-date): current = \u20b9-6,921. \u2014 Measured  \n- Net profit, recent normal days: median = \u20b95,158; range = \u20b9-12,846 \u2192 \u20b926,973. \u2014 Measured (daily net profit series)  \n- Key components: contribution margin \u20b9562,162 \u2192 \u20b9648,034 (+15.0%); ad spend \u20b9610,468 \u2192 \u20b9744,922 (+22.0%). \u2014 Measured  \n- Lever highlights: ad spend per order \u20b9946.7 \u2192 \u20b91,203 (+27%) which moved Net ROAS down (~-21.3%); contribution margin per order \u2191(+8%) which moved Net ROAS up (~+7.9%); CPA / cost-per-order rose (~+58%) even as CPC/CPM fell, so spend bought volume but at weaker profit per order. \u2014 Measured\n\nInterpretation\n- Measured: higher ad spend and higher cost per converted order outpaced contribution improvements, producing lower ROAS on the lever ladder and a decline in net profit.  \n- Hypothesis: mix and allocation shifts (which campaigns/products the spend went to) likely explain why volume rose but profitability fell \u2014 the diagnostic run found mix shifts but no single statistically supported upstream cause.\n\nPeriod: 2026-09-30..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext step: want a campaign-level drilldown (ad spend, contribution margin, CPA, net profit) for 2026-09-30..2026-10-13 vs 2026-09-16..2026-09-29 to show which campaigns raised spend and compressed profit?"
+}

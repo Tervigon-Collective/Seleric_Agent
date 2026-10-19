@@ -1,0 +1,41 @@
+{
+ "n": 4,
+ "aspect": "reconciliation",
+ "q": "give me a net profit breakdown, waterfall for September 2026",
+ "thread": "thread_fd9ffafd08d149969771c8d1222efbc6",
+ "mission": "MS3-7c0f0d5f82",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 13.716,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "117%"
+  ],
+  "numbers": 19,
+  "measured": 18,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "break_down_metric"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "number -172226.96 (live)"
+  },
+  {
+   "ok": true,
+   "what": "not 'residual'"
+  }
+ ],
+ "answer": "Net profit for September 2026 was a loss of \u20b9172,227 (order-date P&L basis). That loss happened because marketing spend exceeded the month\u2019s contribution margin.\n\n- Biggest hits: Ad spend (ad spend (P&L basis)) = \u20b91,193,322 \u2014 larger than the contribution margin, driving the negative net profit.  \n- Revenue and top-line: Net sales (net sales (P&L basis)) = \u20b91,697,336 from Gross sales = \u20b92,253,539 after \u2212 Discounts \u20b9110,359, \u2212 Returns \u20b9371,999 and \u2212 Cancels \u20b973,845. Returns alone subtracted \u20b9371,999 from gross.  \n- Costs inside contribution margin: Net COGS = \u20b9676,241 (Product cost \u20b9553,170 + Operating cost \u20b9123,071). Operating cost breakdown: Shipping \u20b976,743, Packaging \u20b918,237, Payment fees \u20b912,919, RTO \u20b915,171.  \n- Result: Contribution margin = \u20b91,021,095; minus Ad spend \u20b91,193,322 = Net profit \u2212\u20b9172,227.\n\nWorth checking: ad efficiency (ROAS) and the return rate \u2014 reducing either would materially improve profit (ad spend \u2248 117% of contribution margin).\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Want this waterfall split by channel (ad platform) or by product/category to pinpoint where returns or spend concentrate?"
+}

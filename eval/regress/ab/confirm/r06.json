@@ -1,0 +1,51 @@
+{
+ "n": 6,
+ "aspect": "diagnosis",
+ "q": "Why did CAC increase yesterday? Check whether the change came from CPM, CTR, CPC, landing-page conversion, checkout conversion, product mix, or channel mix. Rank the drivers by likely contribution.",
+ "thread": "thread_7c97e5b326964ac2a575519d6a41db1a",
+ "mission": "MS3-6464d05fca",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 101,
+ "elapsed_s": 95.438,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 8,
+ "llm_calls": 8,
+ "grounding": {
+  "derived": [
+   "8.3%",
+   "8.3%"
+  ],
+  "numbers": 11,
+  "measured": 9,
+  "misbound": [],
+  "problems": [
+   "percentages that do not follow from the figures written beside them (recompute from those figures): 8.3%"
+  ],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change",
+  "metrics_query",
+  "metrics_query",
+  "diagnose_metric_change",
+  "diagnose_metric_change",
+  "run_python",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "all of ['CPM', 'CTR', 'CPC']"
+  },
+  {
+   "ok": true,
+   "what": "does not lead with 'product CAC'"
+  }
+ ],
+ "answer": "Short answer: the premise is off \u2014 CAC on 2026-10-13 was INR 2,102. That is 8.3% above its \u201cusual\u201d same\u2011weekday baseline but 51.1% LOWER than the previous day (2026-10-12). So there was not a yesterday-to-yesterday increase to explain; versus the weekday baseline it was slightly high.  \n\nWhat the data shows (ranked by likely contribution to the small rise vs weekday baseline / the big move vs the prior day):  \n- 1) Channel mix (likely contributor): Meta ad spend rose sharply (Meta ad spend +49% day\u2011on\u2011day) and the platform mix shifted; this changed per\u2011channel CAC behaviour and is the largest mover in decomposition.  \n- 2) Ad spend / reach change (likely contributor): overall ad spend increased (\u219130% vs 12\u2011Oct) and impressions rose, changing the leverage between spend and new customers. That movement explains most of the period-level splits.  \n- 3) CPM (moderate contribution): CPM rose ~18% \u2014 it moved cost of reaching users up and contributes to higher unit ad cost.  \n- 4) CTR and CPC (small/moderate, moved together): CTR improved ~11% and CPC edged up ~6%; the higher CTR partially offset higher CPM, so net effect was small.  \n- 5) Landing-page and checkout conversion (worked in the opposite direction): landing page views and checkout\u2192purchase rate both improved (LP views +69%, checkout conversion +44%), which should lower CAC rather than raise it.  \n- 6) Product mix (ruled out as primary): orders with product and product-level signals moved but stayed within normal variation and did not explain the adjusted change.\n\nCertainty: the diagnosis found no single supported causal driver; channel mix and the increase in spend (especially on Meta) are the top likely contributors. Also note that compared to the immediate prior day CAC actually fell sharply, so day\u2011to\u2011day volatility and mix are the dominant story, not a systematic sudden inefficiency.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14  \nNext: do you want the same decomposition restricted to Meta vs Google separately (showing CPM/CTR/CPC \u2192 landing/checkout per platform)?\n\n\u26a0 Not verified against the data: percentages that do not follow from the figures written beside them (recompute from those figures): 8.3%"
+}

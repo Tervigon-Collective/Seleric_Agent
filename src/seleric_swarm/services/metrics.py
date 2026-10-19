@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -9,6 +11,8 @@ from seleric_swarm.paths import repo_root
 
 if TYPE_CHECKING:
     from seleric_swarm.services.catalogue_bootstrap import CatalogueBootstrap, CatalogueMetricMeta
+
+log = logging.getLogger(__name__)
 
 # Deterministic map: catalogue category → swarm domain (then ``{domain}_agent``).
 # Not a metric list — MCP is the metric repository.
@@ -57,6 +61,11 @@ class MetricDefinition:
         self.domain: str = payload.get("domain", self.owner)
         self.aliases: list[str] = [str(a).lower() for a in (payload.get("aliases") or [])]
         self.catalogue_metric: str | None = payload.get("catalogue_metric") or None
+        # Semantic v2: filters the catalogue metric needs to give this entry's number
+        # (e.g. metric.meta_spend = ad_spend with ad_platform = meta). Sent with every query.
+        self.catalogue_filters: dict[str, str] = {
+            str(k): str(v) for k, v in (payload.get("catalogue_filters") or {}).items()
+        }
         self.seleric_module: str | None = payload.get("seleric_module")
         direction_bad = payload.get("direction_bad", "up")
         self.direction_bad: Literal["up", "down"] = (
@@ -80,9 +89,13 @@ class MetricRegistry:
             path = root / path
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         self._metrics = {item["id"]: MetricDefinition(item) for item in data.get("metrics", [])}
-        self._by_catalogue = {
-            m.catalogue_metric: m.id for m in self._metrics.values() if m.catalogue_metric
-        }
+        # catalogue id -> the YAML overlay for the live catalogue entry. Semantic v2 maps several
+        # legacy entries onto one id (meta / google spend -> ad_spend + filter); only an UNFILTERED
+        # entry may overlay the live metric, and the first one wins (deterministic).
+        self._by_catalogue: dict[str, str] = {}
+        for m in self._metrics.values():
+            if m.catalogue_metric and not m.catalogue_filters:
+                self._by_catalogue.setdefault(m.catalogue_metric, m.id)
         self._live: CatalogueBootstrap | None = None
         self._live_defs: dict[str, MetricDefinition] = {}
 
@@ -92,6 +105,16 @@ class MetricRegistry:
         self._live_defs = {}
         if bootstrap is None or not bootstrap.is_warm():
             return
+        skipped: list[str] = []
+        for entry in self._metrics.values():
+            catalogue_id = entry.catalogue_metric
+            if catalogue_id and not bootstrap.has(catalogue_id):
+                skipped.append(catalogue_id)
+        if skipped:
+            log.warning(
+                "metric_registry keys not in the live catalogue (skipped): %s",
+                ", ".join(sorted(set(skipped))),
+            )
         self._live_defs = {meta.id: self._from_live(meta) for meta in bootstrap.entries()}
 
     def _overlay_for(self, catalogue_id: str) -> MetricDefinition | None:
@@ -131,13 +154,11 @@ class MetricRegistry:
             "timezone": "Asia/Kolkata",
         }
         if overlay is not None:
+            # Agent policy only. Synonyms belong to Core concepts, not this YAML.
             payload["direction_bad"] = overlay.direction_bad
             payload["seleric_module"] = overlay.seleric_module
-            payload["aliases"] = overlay.aliases
-            payload["unit"] = overlay.unit
             if "seleric_module" in overlay.raw:
                 payload["seleric_module"] = overlay.seleric_module
-                raw = {**overlay.raw, **raw}
         payload["raw"] = raw
         return MetricDefinition(payload)
 
@@ -210,12 +231,7 @@ class MetricRegistry:
         return f"{m.domain}_agent"
 
     def resolve_alias(self, hint: str) -> MetricDefinition | None:
-        """Exact id or declared YAML alias only — never substring/keyword match.
-
-        Operator shorthand lives on each metric's ``aliases`` list in
-        ``metric_registry.yaml`` (the same overlay ``gs`` already used). This is
-        not the retired ``resolve_measure`` heuristic.
-        """
+        """Exact id only. YAML aliases are not a vocabulary; Core concepts own synonyms."""
         raw = str(hint or "").strip().lower()
         if not raw:
             return None
@@ -223,27 +239,19 @@ class MetricRegistry:
             hit = self.get(candidate) or self._metrics.get(candidate)
             if hit is not None:
                 return hit
-        for metric in self._metrics.values():
-            if raw in metric.aliases:
-                return metric
         return None
 
     def resolve_hint(self, hint: str) -> str | None:
-        """Best-effort resolve a raw classifier hint (e.g. ``metric.roas``) to a
-        known metric id, checking YAML aliases and the live catalogue before
-        giving up. Returns None (never the original hint) so callers can tell
-        an unresolved hint apart from an already-valid one.
+        """Resolve a classifier hint to a known metric id.
+
+        Exact ids pass through. YAML aliases are ignored. A live catalogue id or
+        description may still match the slug. Returns None when nothing matches.
         """
         if self.get(hint) is not None:
             return hint
         slug = hint.removeprefix("metric.").replace("_", " ").strip().lower()
         if not slug:
             return None
-        for metric in self._metrics.values():
-            if slug in metric.aliases:
-                return metric.id
-        # ponytail: substring match on live catalogue id/description, not token-ranked
-        # like catalogue_grounding.hints_from_catalogue — upgrade if false positives show up.
         for metric in self._live_defs.values():
             haystack = f"{metric.id} {metric.description}".lower().replace("_", " ")
             if slug in haystack:
@@ -290,3 +298,64 @@ def lead_agent_for_hints(hints: list[str], metrics: MetricRegistry | None = None
             if owner:
                 return owner
     return "coordinator_agent"
+
+
+# Share-like ratios the semantic layer stores as 0–1 (Cube ``format: percent`` /
+# catalogue ``unit: ratio`` for CTR, CVR, bounce rate, …). Multiples (ROAS, MER,
+# LTV:CAC) stay as plain numbers — never ×100.
+_PERCENT_UNITS = frozenset({"pct", "percent", "%"})
+_MULTIPLE_HINT = re.compile(r"(?:^|_)(?:roas|mer|ltv_?cac|frequency)(?:_|$)", re.IGNORECASE)
+_SHARE_HINT = re.compile(
+    r"(?:^|_)(?:ctr|cvr|cvr_rate|hook_rate|hold_rate|bounce_rate|repeat_rate|"
+    r"conversion_rate|session_conversion_rate|checkout_rate|checkout_to_purchase_rate|"
+    r"product_view_rate|video_completion_rate|completion_rate)(?:_|$)"
+    r"|(?:^|_).+_rate(?:_|$)",
+    re.IGNORECASE,
+)
+
+
+def is_percent_share_metric(metric_id: str, unit: str | None = None) -> bool:
+    """True when ``metric_id`` is a 0–1 share that readers expect as a percent.
+
+    ROAS / MER / LTV:CAC stay False even when the catalogue unit is ``ratio``.
+    """
+    mid = (metric_id or "").split(".")[-1]
+    u = (unit or "").strip().lower()
+    if _MULTIPLE_HINT.search(mid):
+        return False
+    if u in _PERCENT_UNITS:
+        return True
+    if u in {"ratio", "rate"} and _SHARE_HINT.search(mid):
+        return True
+    return bool(not u and _SHARE_HINT.search(mid))
+
+
+def percent_points(value: float) -> float:
+    """Canonical 0–1 share → percent points; values already on a 0–100 scale stay.
+
+    Cube v2 returns CTR as ``0.0238``; gold / some Meta extracts already store
+    ``2.38``. Multiplying the latter again is the live double-percent bug
+    (thread_c8b3c93d / MS3 campaign tables). Threshold: only scale when
+    ``|value| ≤ 1``.
+    """
+    if abs(value) <= 1.0:
+        return value * 100.0
+    return value
+
+
+def format_metric_value(value: float, *, metric_id: str = "", unit: str | None = None) -> str:
+    """Compact display for tool summaries and merged tables.
+
+    Share metrics print as ``2.38%`` (never raw ``0.0238``, never double-scaled).
+    Other values keep the compact numeric form the model copies verbatim.
+    """
+    number = float(value)
+    if is_percent_share_metric(metric_id, unit):
+        pct = percent_points(number)
+        text = f"{pct:.2f}".rstrip("0").rstrip(".")
+        return f"{text}%"
+    if number.is_integer():
+        return str(int(number))
+    if abs(number) >= 1:
+        return f"{number:.2f}"
+    return f"{number:.4g}"

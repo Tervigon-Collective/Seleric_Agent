@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import time
+import weakref
 from typing import Any
 
 from openai import (
@@ -39,6 +41,16 @@ from seleric_swarm.llm.tracing import (
     enforce_llm_run_metadata,
     llm_run_metadata,
     llm_run_name,
+)
+
+# model -> learned request fixes ("max_completion_tokens", "drop_temperature").
+_LEARNED_PARAM_FIXES: dict[str, set[str]] = {}
+# One SDK client per event loop and connection settings. A client per mission
+# (agent, planner and helper models each built one) paid a fresh TLS handshake to
+# the endpoint (~170ms measured) on every call path; the client's pool keeps
+# connections warm instead. Keyed by loop: an httpx pool cannot cross loops.
+_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
+    weakref.WeakKeyDictionary()
 )
 
 
@@ -110,8 +122,11 @@ class AzureOpenAICompatibleAdapter:
         # want `max_completion_tokens` not `max_tokens`, and reject a non-default
         # `temperature`. Learned from the API's own 400 (unsupported_parameter)
         # and cached so later calls skip the failed attempt. See
-        # `_create_with_param_adaptation`.
-        self._param_fixes: dict[str, set[str]] = {}
+        # `_create_with_param_adaptation`. Shared by every adapter in the process:
+        # adapters are built per call path, and a per-instance cache re-learned
+        # both 400s on every helper call (live 2026-10-05: 18 wasted gpt-5-mini
+        # round trips in one batch of value-sense checks).
+        self._param_fixes = _LEARNED_PARAM_FIXES
 
     @property
     def async_client(self) -> Any:
@@ -120,6 +135,25 @@ class AzureOpenAICompatibleAdapter:
 
     @staticmethod
     def _build_client(settings: Settings, api_key: str) -> Any:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return AzureOpenAICompatibleAdapter._new_client(settings, api_key)
+        key = (
+            settings.azure_auth_style,
+            settings.azure_openai_endpoint,
+            settings.azure_openai_api_version,
+            api_key,
+            settings.llm_timeout_s,
+        )
+        clients = _CLIENTS.setdefault(loop, {})
+        client = clients.get(key)
+        if client is None or client.is_closed():
+            client = clients[key] = AzureOpenAICompatibleAdapter._new_client(settings, api_key)
+        return client
+
+    @staticmethod
+    def _new_client(settings: Settings, api_key: str) -> Any:
         endpoint = settings.azure_openai_endpoint.rstrip("/")
         # `*.services.ai.azure.com` is Azure AI Inference (OpenAI-compatible), which
         # does not use classic Azure "deployment name" routing. Default to the
@@ -147,12 +181,10 @@ class AzureOpenAICompatibleAdapter:
 
     @staticmethod
     def _wrap_tracing(client: Any) -> tuple[Any, bool]:
-        try:
-            from langsmith.wrappers import wrap_openai
+        # Once per process — a register_tracing() per client stacked wrappers.
+        from seleric_swarm.observability.tracing import ensure_openai_tracing
 
-            return wrap_openai(client), True
-        except Exception:
-            return client, False
+        return client, ensure_openai_tracing()
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         # Model-to-model fallback is handled by LLMGateway, which swaps
@@ -186,15 +218,23 @@ class AzureOpenAICompatibleAdapter:
                     }
                     extra: dict[str, Any] = {}
                     if self._traced:
-                        extra["langsmith_extra"] = {
-                            "name": run_name,
-                            "tags": list(request.tags),
-                            "metadata": llm_run_metadata(
+                        # Langfuse 4's OpenAI wrapper takes only name/metadata as extra
+                        # kwargs; tags and session ride in metadata as langfuse_* keys.
+                        # Passing tags=/session_id= made every traced complete() raise
+                        # TypeError (found 2026-10-04 via the value-sense call).
+                        extra["name"] = run_name
+                        metadata = dict(
+                            llm_run_metadata(
                                 request,
                                 retry_count=retry_count,
                                 resolved_model=resolved_model,
-                            ),
-                        }
+                            )
+                        )
+                        if request.tags:
+                            metadata["langfuse_tags"] = list(request.tags)
+                        if request.metadata.session_id:
+                            metadata["langfuse_session_id"] = request.metadata.session_id
+                        extra["metadata"] = metadata
                     completion = await self._create_with_param_adaptation(
                         resolved_model, base_kwargs, extra
                     )

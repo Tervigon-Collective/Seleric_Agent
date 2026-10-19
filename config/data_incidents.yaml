@@ -1,0 +1,10 @@
+# Versioned data-incident ranges. Days in these ranges are masked to null in
+# forecast feature frames (quality gate Q_INCIDENT).
+version: 1
+incidents: []
+# Example:
+# - id: cube_outage_2026_03
+#   start: "2026-03-01"
+#   end: "2026-03-03"
+#   metrics: ["net_sales", "orders"]  # empty = all
+#   reason: "warehouse replay gap"

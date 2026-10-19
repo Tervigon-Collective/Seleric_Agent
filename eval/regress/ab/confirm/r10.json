@@ -1,0 +1,32 @@
+{
+ "n": 10,
+ "aspect": "brand",
+ "q": "What were net sales yesterday for the brand Sniff Theory compared with the day before?",
+ "thread": "thread_418d6efb66c14d59876ba45ea9cbc665",
+ "mission": "MS3-410c88a7db",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 16.214,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 0,
+  "measured": 0,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_brand",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "I cannot provide net sales for Sniff Theory for yesterday or the day before because the data for this metric is stale and has not been updated since 2026-05-14. The system expects hourly updates, but the data is currently significantly behind.\n\nNext: Would you like to explore another metric or a different time period?"
+}

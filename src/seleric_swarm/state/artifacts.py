@@ -50,3 +50,14 @@ class InMemoryArtifactStore:
 
     def list_for_mission(self, mission_id: str) -> list[Artifact]:
         return [a for a in self._by_id.values() if a.mission_id == mission_id]
+
+    def list_for_context(self, workspace_id: str, thread_id: str) -> list[Artifact]:
+        """A thread's artifacts, newest first. An empty workspace_id matches any.
+        ``runner._latest_turn_record`` reads the previous turn through this; without
+        it the lookup silently found nothing and follow-ups lost the prior period."""
+        found = [
+            a
+            for a in self._by_id.values()
+            if a.thread_id == thread_id and (not workspace_id or a.workspace_id == workspace_id)
+        ]
+        return sorted(found, key=lambda a: a.created_at, reverse=True)

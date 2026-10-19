@@ -7,8 +7,7 @@ dependencies = [
   "dowhy>=0.14",
   "fastapi>=0.115",
   "httpx>=0.28",
-  "langgraph>=1.2",
-  "langsmith>=0.3",
+  "jsonschema>=4.23",
   "minio>=7.2.20",
   "numpy>=2.0",
   "openai>=1.60",
@@ -25,11 +24,11 @@ dependencies = [
   "structlog>=25.0",
   "tenacity>=9.0",
   "uvicorn[standard]>=0.34",
-  "langgraph-checkpoint-postgres>=3.1.2",
-  "opentelemetry-api>=1.44.0",
-  "opentelemetry-sdk>=1.44.0",
-  "opentelemetry-exporter-otlp-proto-http>=1.44.0",
+  "opentelemetry-api>=1.45.0",
+  "opentelemetry-sdk>=1.45.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.0",
   "opentelemetry-instrumentation-fastapi>=0.65b0",
+  "langfuse>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -70,14 +69,25 @@ seleric-voice = "seleric_swarm.voice.worker:main"
 
 [tool.ruff]
 line-length = 100
+target-version = "py312"
 
 [tool.ruff.lint]
 ignore = ["BLE001"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/seleric_swarm/orchestration/runner.py" = ["S110"]
 "src/seleric_swarm/observability/tracing.py" = ["S110"]
-"src/seleric_swarm/eval/evaluators.py" = ["SIM103"]
+# Best-effort telemetry / enrichment: a failure here must never fail the mission.
+"src/seleric_swarm/observability/traces.py" = ["S110"]
+"src/seleric_swarm/forecasting/{entities,insights,pipeline}.py" = ["S110"]
+"src/seleric_swarm/protocols/mcp/servers/seleric_remote.py" = ["S110"]
+"src/seleric_swarm/toolsets/analytics.py" = ["S112"]
+"src/seleric_swarm/voice/worker.py" = ["S110"]
+# Offline scoring / backtest CLIs use the wall-clock date.
+"src/seleric_swarm/forecasting/{score,backtest}.py" = ["DTZ011", "DTZ003"]
+# `v != v` is the NaN test in the standalone Chronos service.
+"chronos/*.py" = ["PLR0124"]
+# Offline A/B harness scripts (run by hand): blocking file reads, no check= on subprocess.
+"eval/regress/ab/*.py" = ["SIM115", "PLW1510", "ASYNC230"]
 "src/seleric_swarm/llm/adapters/fake.py" = ["TRY203", "DTZ005"]
 "src/seleric_swarm/services/time_range.py" = ["DTZ005"]
 
@@ -96,7 +106,13 @@ module = [
   "statsmodels.*",
   "statsforecast",
   "statsforecast.*",
+  "scipy",
+  "scipy.*",
   "livekit.*",
+  "networkx",
+  "networkx.*",
+  "jsonschema",
+  "jsonschema.*",
 ]
 ignore_missing_imports = true
 
@@ -110,8 +126,6 @@ markers = [
 filterwarnings = [
   # langsmith still imports pydantic.v1 on Python 3.13
   "ignore:Failing to pass a value to the 'type_params' parameter:DeprecationWarning",
-  # langgraph isinstance(RunnableSequence) probes pydantic v1 __fields__
-  "ignore:The `__fields__` attribute is deprecated",
   # Proactor / httpx teardown noise on Windows when transports close late
   "ignore::ResourceWarning",
 ]

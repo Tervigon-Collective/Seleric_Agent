@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import seleric_swarm.main as main
+from seleric_swarm import main
 from seleric_swarm.main import MissionRequest, _sse_frame, _stream_mission_response
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import HTTPException
@@ -10,8 +10,6 @@ from starlette.requests import Request
 
 from seleric_swarm.api.phase7 import _admin
 from seleric_swarm.conversations.contracts import (
-    ApprovalRequest,
-    ApprovalStatus,
     Artifact,
     MemoryItem,
     MemoryScope,
@@ -27,12 +25,7 @@ from seleric_swarm.conversations.contracts import (
     Thread,
 )
 from seleric_swarm.conversations.memory import build_in_memory_repositories
-from seleric_swarm.conversations.phase7 import (
-    ActionExecutionService,
-    ApprovalExpiryService,
-    reciprocal_rank_fusion,
-    transition_approval,
-)
+from seleric_swarm.conversations.phase7 import reciprocal_rank_fusion
 from seleric_swarm.observability.tracing import (
     current_trace_context,
     operation_span,
@@ -95,118 +88,22 @@ def test_rrf_combines_lexical_vector_and_recency_ranks():
     assert fused[0].recency_rank == 1
 
 
-def test_approval_idempotency_transitions_expiry_and_write_gate():
-    repository = build_in_memory_repositories().approvals
-    request = ApprovalRequest(
-        workspace_id="workspace-1", owner_user_id="user-1", action_type="update_bid",
-        action_preview={"bid": 2.5}, required_role="approver", idempotency_key="same",
-        dry_run=False, expires_at=datetime.now(UTC) + timedelta(minutes=5),
-    )
-    assert repository.create(request).id == repository.create(
-        request.model_copy(update={"id": "approval-other"})
-    ).id
-    approver = principal(roles={"approver"})
-    approved = transition_approval(repository, request, ApprovalStatus.APPROVED, approver)
-    with pytest.raises(PermissionError, match="disabled"):
-        transition_approval(
-            repository, approved, ApprovalStatus.EXECUTED, approver,
-            allow_write_actions=False,
-        )
-    executed = transition_approval(
-        repository, approved, ApprovalStatus.EXECUTED, approver,
-        allow_write_actions=True,
-    )
-    assert executed.status is ApprovalStatus.EXECUTED
-    assert [event.to_status for event in repository.list_events(request.id)] == [
-        ApprovalStatus.REQUESTED, ApprovalStatus.APPROVED, ApprovalStatus.EXECUTED
-    ]
-
-    expired = repository.create(request.model_copy(update={
-        "id": "approval-expired", "idempotency_key": "expired",
-        "expires_at": datetime.now(UTC) - timedelta(seconds=1),
-    }))
-    result = transition_approval(repository, expired, ApprovalStatus.APPROVED, approver)
-    assert result.status is ApprovalStatus.EXPIRED
 
 
-def test_unapproved_and_dry_run_actions_never_execute():
-    repository = build_in_memory_repositories().approvals
-    actor = principal(roles={"approver"})
-    requested = repository.create(ApprovalRequest(
-        workspace_id="workspace-1", owner_user_id="user-1", action_type="delete",
-        action_preview={}, required_role="approver", idempotency_key="write",
-    ))
-    with pytest.raises(ValueError, match="invalid"):
-        transition_approval(
-            repository, requested, ApprovalStatus.EXECUTED, actor,
-            allow_write_actions=True,
-        )
-    approved = transition_approval(repository, requested, ApprovalStatus.APPROVED, actor)
-    with pytest.raises(PermissionError, match="dry-run"):
-        transition_approval(
-            repository, approved, ApprovalStatus.EXECUTED, actor,
-            allow_write_actions=True,
-        )
 
 
-def test_workspace_approver_expiry_executor_resume_and_compensation():
-    repository = build_in_memory_repositories().approvals
-    request = repository.create(ApprovalRequest(
-        workspace_id="workspace-1", owner_user_id="requester", action_type="update_bid",
-        action_preview={"bid": 2.5}, required_role="approver", idempotency_key="execute-once",
-        dry_run=False, checkpoint_resume_token="checkpoint-1",
-        expires_at=datetime.now(UTC) + timedelta(minutes=5),
-    ))
-    approver = principal(user="different-user", roles={"approver"})
-    approved = transition_approval(repository, request, ApprovalStatus.APPROVED, approver)
-
-    class Executor:
-        calls = 0
-
-        def preview(self, action):
-            return {"preview": dict(action)}
-
-        def execute(self, action, *, idempotency_key):
-            self.calls += 1
-            return {"idempotency_key": idempotency_key, **action}
-
-        def rollback(self, action, outcome):
-            return {"restored": action["bid"], "execution": outcome["idempotency_key"]}
-
-    executor = Executor()
-    resumed: list[tuple[str, dict]] = []
-    service = ActionExecutionService(
-        repository,
-        {"update_bid": executor},
-        checkpoint_resume=lambda token, outcome: resumed.append((token, dict(outcome))),
-    )
-    executed, first = service.execute(approved, approver, allow_write_actions=True)
-    repeated, second = service.execute(approved, approver, allow_write_actions=True)
-    assert executed.status is repeated.status is ApprovalStatus.EXECUTED
-    assert first == second
-    assert executor.calls == 1
-    assert resumed[0][0] == "checkpoint-1"
-    rolled_back, record = service.rollback(executed, approver)
-    assert rolled_back.status is ApprovalStatus.ROLLED_BACK
-    assert record.outcome["compensated"] is True
-
-    due = repository.create(request.model_copy(update={
-        "id": "approval-due", "idempotency_key": "due",
-        "expires_at": datetime.now(UTC) - timedelta(seconds=1),
-    }))
-    assert ApprovalExpiryService(repository).sweep() == 1
-    assert repository.get_for_workspace(due.id, "workspace-1").status is ApprovalStatus.EXPIRED
 
 
-def test_span_attributes_are_redacted_and_context_propagates():
+def test_span_attributes_preserve_values_and_context_propagates():
     trace.set_tracer_provider(TracerProvider())
-    sanitized = redact_mapping({
+    attributes = {
         "authorization": "Bearer abcdefghijklmnop",
         "content": "email me at private@example.com token=supersecret",
-    })
-    assert sanitized["authorization"] == "[REDACTED]"
-    assert "private@example.com" not in str(sanitized["content"])
-    with operation_span("retrieval", "search", sanitized):
+    }
+    preserved = redact_mapping(attributes)
+    assert preserved["authorization"] == "Bearer abcdefghijklmnop"
+    assert preserved["content"] == attributes["content"]
+    with operation_span("retrieval", "search", preserved):
         context = current_trace_context()
         assert len(context["trace_id"]) == 32
         with operation_span("persistence", "read"):

@@ -1,0 +1,42 @@
+{
+ "n": 13,
+ "aspect": "failed_steps",
+ "q": "Fetch campaign-level ad spend, orders, cost per order (CPA) and net ROAS for the top 5 Meta campaigns by spend over 2026-10-07..2026-10-08 and 2026-10-06..2026-10-07 for comparison.",
+ "thread": "thread_124255f86f814cc7a2e2e03c678f8ead",
+ "mission": "MS3-986807c499",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 46,
+ "elapsed_s": 44.461,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 30,
+  "measured": 30,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "any of ['2026-10-06']"
+  },
+  {
+   "ok": true,
+   "what": "revisions <= 1"
+  }
+ ],
+ "answer": "Here are the top 5 Meta campaigns by spend for each period, with ad spend, orders, cost per order (CPA) and net ROAS.\n\n2026-10-07..2026-10-08 (top 5 by spend)\n- TH-149-SCRATCHLOUNGE-6OCT \u2014 Ad spend \u20b917,251 \u00b7 Orders 13 \u00b7 CPA \u20b91,327 \u00b7 Net ROAS 1.0\n- TH-222-WINGBIRD-23SEP \u2014 Ad spend \u20b914,884 \u00b7 Orders 18 \u00b7 CPA \u20b9827 \u00b7 Net ROAS 0.9\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b911,989 \u00b7 Orders 5 \u00b7 CPA \u20b92,398 \u00b7 Net ROAS 0.4\n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b911,659 \u00b7 Orders 6 \u00b7 CPA \u20b91,943 \u00b7 Net ROAS 0.5\n- TH-279-BATHEASEBRUSH-07OCT \u2014 Ad spend \u20b97,749 \u00b7 Orders 2 \u00b7 CPA \u20b93,874 \u00b7 Net ROAS 0.2\n\n2026-10-06..2026-10-07 (top 5 by spend)\n- TH-222-WINGBIRD-23SEP \u2014 Ad spend \u20b916,111 \u00b7 Orders 16 \u00b7 CPA \u20b91,006.9 \u00b7 Net ROAS 0.6\n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b915,856 \u00b7 Orders 7 \u00b7 CPA \u20b92,265.1 \u00b7 Net ROAS 0.3\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b912,633 \u00b7 Orders 6 \u00b7 CPA \u20b92,105.5 \u00b7 Net ROAS 0.7\n- CAT TOY CS-26SEP \u2014 Ad spend \u20b99,049 \u00b7 Orders 7 \u00b7 CPA \u20b91,292.7 \u00b7 Net ROAS 0.7\n- TH-149-SCRATCHLOUNGE-6OCT \u2014 Ad spend \u20b98,145 \u00b7 Orders 9 \u00b7 CPA \u20b9905.0 \u00b7 Net ROAS 1.5\n\nWorth noting: ad spend and order rows come from the paid_media and order_pnl views respectively; some campaigns appear in one period\u2019s spend-top5 but have different presence in the order table \u2014 the parts were fetched per their native views, not joined; missing values would require re-querying a specific campaign filter to confirm cross-view matches.\n\nPeriod: 2026-10-06..2026-10-08 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Create a single side-by-side table showing change (\u0394) in each metric for these campaigns?"
+}

@@ -1,7 +1,8 @@
 """Unit tests for toolsets/sandbox.py — the in-process python sandbox.
 
 Covers the failure paths, not just the happy one: code error / syntax error /
-blocked import / no-output all raise ModelRetry (the model's recovery signal);
+blocked import / no-output return a failed, retryable result (the model's recovery
+signal — never ModelRetry, whose exhaustion fails the whole attempt);
 timeout and evidence-miss return structured refusals. The NullMcpClient deps
 prove the sandbox never fetches (non-negotiable rule 5).
 
@@ -10,10 +11,10 @@ Fake-context pattern mirrors tests/unit/test_analytics_toolset.py.
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 
 import pytest
-from pydantic_ai import ModelRetry
 
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import ExecutionLimits, NullMcpClient, SelericDeps
@@ -47,7 +48,9 @@ def _deps(store: InMemoryArtifactStore, mission_id: str = "mission-sbx") -> Sele
     )
 
 
-def _put_evidence(store: InMemoryArtifactStore, *, metric: str = "net_sales", value: float = 100.0) -> str:
+def _put_evidence(
+    store: InMemoryArtifactStore, *, metric: str = "net_sales", value: float = 100.0, dimensions: dict[str, str] | None = None
+) -> str:
     evidence = EvidenceArtifact(
         metric_id=metric,
         grain="day",
@@ -56,6 +59,7 @@ def _put_evidence(store: InMemoryArtifactStore, *, metric: str = "net_sales", va
         period_end=datetime(2026, 9, 18, tzinfo=UTC),
         value=value,
         unit="INR",
+        dimensions=dimensions or {},
         source_query={"measure": metric},
     )
     return store.put(
@@ -92,42 +96,73 @@ async def test_happy_path_writes_finding_with_numeric_metrics() -> None:
 
 
 @pytest.mark.asyncio
-async def test_code_error_raises_model_retry() -> None:
+async def test_code_error_returns_a_retryable_failure() -> None:
     store = InMemoryArtifactStore()
     eid = _put_evidence(store)
     ctx = FakeRunContext(_deps(store))
-    with pytest.raises(ModelRetry) as exc:
-        await sandbox.run_python(ctx, "result = 1 / 0", [eid])
-    assert "ZeroDivisionError" in str(exc.value)
+    res = await sandbox.run_python(ctx, 'result = 1 / 0', [eid])
+    assert not res.success and res.retryable
+    assert "ZeroDivisionError" in res.summary
 
 
 @pytest.mark.asyncio
-async def test_syntax_error_raises_model_retry() -> None:
+async def test_globals_get_evidence_succeeds() -> None:
+    """Live 2026-10-10: ``evidence = globals().get('evidence')`` used to NameError."""
     store = InMemoryArtifactStore()
-    eid = _put_evidence(store)
+    eid = _put_evidence(store, value=80.0)
     ctx = FakeRunContext(_deps(store))
-    with pytest.raises(ModelRetry) as exc:
-        await sandbox.run_python(ctx, "result = (", [eid])
-    assert "syntax" in str(exc.value).lower()
+    code = (
+        "evidence = globals().get('evidence', None)\n"
+        "result = {'total': evidence[0]['value']}\n"
+    )
+    res = await sandbox.run_python(ctx, code, [eid])
+    assert res.success is True
+    assert store.get(res.artifact_ids[0]).payload["metrics"]["total"] == 80.0
 
 
 @pytest.mark.asyncio
-async def test_blocked_import_raises_model_retry() -> None:
+async def test_globals_locals_vars_see_sandbox_namespace() -> None:
     store = InMemoryArtifactStore()
-    eid = _put_evidence(store)
+    eid = _put_evidence(store, value=12.0)
     ctx = FakeRunContext(_deps(store))
-    with pytest.raises(ModelRetry) as exc:
-        await sandbox.run_python(ctx, "import socket", [eid])
-    assert "socket" in str(exc.value)
+    code = (
+        "ev = globals()['evidence']\n"
+        "assert locals()['WORKDIR']\n"
+        "assert vars()['os'] is not None\n"
+        "result = ev[0]['value'] * 3\n"
+    )
+    res = await sandbox.run_python(ctx, code, [eid])
+    assert res.success is True
+    assert store.get(res.artifact_ids[0]).payload["metrics"]["result"] == 36.0
 
 
 @pytest.mark.asyncio
-async def test_no_output_raises_model_retry() -> None:
+async def test_syntax_error_returns_a_retryable_failure() -> None:
     store = InMemoryArtifactStore()
     eid = _put_evidence(store)
     ctx = FakeRunContext(_deps(store))
-    with pytest.raises(ModelRetry):
-        await sandbox.run_python(ctx, "x = 1 + 1", [eid])
+    res = await sandbox.run_python(ctx, 'result = (', [eid])
+    assert not res.success and res.retryable
+    assert "syntax" in res.summary.lower()
+
+
+@pytest.mark.asyncio
+async def test_blocked_import_returns_a_retryable_failure() -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    ctx = FakeRunContext(_deps(store))
+    res = await sandbox.run_python(ctx, 'import socket', [eid])
+    assert not res.success and res.retryable
+    assert "socket" in res.summary
+
+
+@pytest.mark.asyncio
+async def test_no_output_returns_a_retryable_failure() -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    ctx = FakeRunContext(_deps(store))
+    res = await sandbox.run_python(ctx, 'x = 1 + 1', [eid])
+    assert not res.success and res.retryable
 
 
 @pytest.mark.asyncio
@@ -236,3 +271,78 @@ async def test_writes_files_to_workdir(tmp_path, monkeypatch) -> None:
     assert (tmp_path / ".data" / "sandbox" / "mission-files" / "out.txt").read_text() == "hi"
     assert "out.txt" in result.summary  # filenames are listed in the finding statement
     assert any("1 file" in w for w in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_dimensions_are_keys_of_the_row() -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store, value=100.0, dimensions={"campaign_name": "alpha"})
+    ctx = FakeRunContext(_deps(store))
+    res = await sandbox.run_python(ctx, "result = {e['campaign_name']: e['dimensions']['campaign_name'] for e in evidence}", [eid])
+    assert res.success is True
+    assert '"alpha": "alpha"' in res.summary
+
+
+@pytest.mark.asyncio
+async def test_printing_without_a_result_says_what_to_do() -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    ctx = FakeRunContext(_deps(store))
+    res = await sandbox.run_python(ctx, "print(sum(e['value'] for e in evidence))", [eid])
+    assert not res.success and res.retryable
+    assert "assign the value to `result`" in res.summary
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "code",
+    [
+        "result = os.path.os.popen('id').read()",
+        "result = os.path.os.system('id')",
+        "result = open('/etc/hostname').read()",
+        "open('/tmp/sandbox_escape_probe', 'w').write('x')\nresult = 1",
+        (
+            "b = [c for c in ().__class__.__base__.__subclasses__() if c.__name__ == '_wrap_close'][0]\n"
+            "result = b.__init__.__globals__['sys'].modules['builtins'].__import__('_posixsubprocess')"
+        ),
+        (
+            "b = [c for c in ().__class__.__base__.__subclasses__() if c.__name__ == '_wrap_close'][0]\n"
+            "result = b.__init__.__globals__['sys'].modules['builtins'].__import__('socket')"
+        ),
+    ],
+)
+async def test_escape_attempts_are_refused(code: str) -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), code, [eid])
+    assert not res.success and res.retryable
+    assert not os.path.exists("/tmp/sandbox_escape_probe")
+
+
+@pytest.mark.asyncio
+async def test_script_sees_no_environment_secrets(monkeypatch) -> None:
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "super-secret")
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), "import os\nresult = sorted(os.path.os.environ)", [eid])
+    assert res.success is True
+    assert "AZURE_OPENAI_API_KEY" not in res.summary
+
+
+@pytest.mark.asyncio
+async def test_runaway_script_is_killed_not_abandoned(monkeypatch) -> None:
+    monkeypatch.setenv("SELERIC_SANDBOX_TIMEOUT_S", "1")
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), "while True:\n    pass", [eid])
+    assert res.error_code == "SANDBOX_TIMEOUT"
+
+
+@pytest.mark.asyncio
+async def test_numpy_and_pandas_results_are_plain_numbers() -> None:
+    store = InMemoryArtifactStore()
+    eid = _put_evidence(store)
+    code = "import numpy as np\nimport pandas as pd\nresult = {'n': np.int64(5), 'rows': pd.DataFrame({'a': [1, 2]}).to_dict(orient='records')}"
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), code, [eid])
+    assert res.success is True
+    assert store.get(res.artifact_ids[0]).payload["metrics"]["n"] == 5.0

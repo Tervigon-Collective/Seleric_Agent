@@ -1,0 +1,31 @@
+{
+ "n": 2,
+ "aspect": "p3_forecast3",
+ "q": "Forecast orders for the next 7 days.",
+ "thread": "thread_e4d1ec9875b64a8a87a488e7324c9db8",
+ "mission": "MS3-650b6cb339",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 13.86,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 19,
+  "measured": 19,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_concept",
+  "forecast_metrics"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Headline \u2014 next 7 days (2026-10-14..2026-10-20): forecast total ~307 orders (mean) with a wide plausible range: P10 = 1.4 orders, P90 = 736 orders. Expect a typical daily average \u2248 43.8 orders/day (80% uncertainty band very wide). Measured.\n\nQuick evidence\n- Forecast total (7d mean): 306.6 orders; 7d P10\u2013P90: 1.4 \u2013 735.7. Measured.\n- Forecast daily average: 43.8 orders vs last 7 days actual average 43.0 (+1.9%). Measured.\n- vs 90-day baseline the forecast is \u221213.2%; vs same weekdays a year earlier it is +76.2%. Measured.\n- Within the window the model expects a mild upward shape (second half \u2248 +3.5% vs first half); highest day = 2026-10-18 (48.2), lowest = 2026-10-16 (41.8). Measured.\n\nWhat to expect and risks\n- The model is an ETS-style daily forecast with high uncertainty (80% band large; several days have lower bound \u2248 0). Measured.\n- Known-calendar effects included (day-of-week, festivals, payday). Dussehra on 2026-10-20 sits inside the window and contributes to the shape. Measured.\n- The model used ad spend as a covariate (helped reduce backtest error) \u2014 if ad spend changes materially the forecast level can shift. Measured/Derived.\n- Forecast flagged provisional warnings: model cutoff at 2026-10-12; forecast labelled provisional (some inputs/validation notes). Measured.\n\nData & model notes (brief)\n- Training window: 2024\u201110\u201123 \u2192 2026\u201110\u201112; latest mature actual used: 2026\u201110\u201112. 34 outage days masked. Engine: ETS-like, provisional status. Measured.\n\nSuggested next step\n- Do you want the 7-day forecast broken down by channel (Shopify/orders by channel) or a chart showing median and 10\u201390% bands? I can drill those now.\n\n2026-10-14..2026-10-20 \u00b7 orders \u00b7 data as of 2026-10-14 (cutoff 2026-10-12)"
+}

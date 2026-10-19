@@ -1,0 +1,41 @@
+{
+ "n": 4,
+ "aspect": "reconciliation",
+ "q": "give me a net profit breakdown, waterfall for September 2026",
+ "thread": "thread_a684b3c775034227a388376ef9118e11",
+ "mission": "MS3-b7af0a2150",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 22,
+ "elapsed_s": 17.542,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "556k"
+  ],
+  "numbers": 24,
+  "measured": 23,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "break_down_metric"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "number -172226.96 (live)"
+  },
+  {
+   "ok": true,
+   "what": "not 'residual'"
+  }
+ ],
+ "answer": "Tilting Heads lost \u20b9172,227 in September 2026 on a P&L (event-date) basis \u2014 the business made a positive contribution margin of \u20b91,021,095 but P&L ad spend of \u20b91,193,322 pushed the month into a net loss of \u20b9172,227.\n\nKey points\n- Top line and deductions: Gross sales were \u20b92,253,539 \u2192 after discounts (\u20b9110,359), returns (\u20b9371,999) and cancels (\u20b973,845) P&L net sales = \u20b91,697,336. This shows returns and discounts together subtracted ~\u20b9556k from gross sales.\n- Cost of goods and operating costs: Net COGS = \u20b9676,241 (product cost \u20b9553,170 + operating cost \u20b9123,071). These are the second-largest drain after ad spend and leave contribution margin at \u20b91,021,095.\n- Advertising pushed the result negative: P&L ad spend = \u20b91,193,322, larger than the contribution margin and the primary cause of the net loss.\n- Final reconciliation (waterfall): Gross sales \u20b92,253,539 \u2212 discounts \u20b9110,359 \u2212 returns \u20b9371,999 \u2212 cancels \u20b973,845 \u2212 product cost \u20b9553,170 \u2212 shipping/packaging/gateway/RTO (combined \u20b9123,071) \u2212 ad spend \u20b91,193,322 = Net profit \u2212\u20b9172,227 (all figures P&L / event-date).\n\nWorth checking: ad spend efficiency (ROAS by channel/product) and the drivers of the \u20b9372k return revenue (which cut net sales materially).\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Do you want this broken down by channel or by product to see where ad spend and returns sit?"
+}

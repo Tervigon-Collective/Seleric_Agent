@@ -10,7 +10,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 # voice-api is small (JWT minting) and lets the API serve POST /v1/voice/token.
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN rm -rf /app/.venv && \
     uv sync --frozen --no-dev --no-editable --extra voice-api
 
 # Voice worker image. livekit-agents is installed here rather than declared in
@@ -37,7 +37,7 @@ WORKDIR /ui
 COPY office-ui/package.json office-ui/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY office-ui/ ./
-RUN npx tsc -b && npx vite build --base=/ui/
+RUN npx tsc -p tsconfig.build.json && npx vite build --base=/ui/
 
 FROM python:3.12-slim-bookworm AS runtime
 
@@ -58,6 +58,8 @@ COPY pyproject.toml README.md ./
 COPY --from=ui-builder /ui/dist ./office-ui/dist
 
 RUN mkdir -p /app/.data/attachments \
+        /app/.data/domain_health_snapshots \
+        /app/.data/reports \
     && chown -R seleric:seleric /app/.data
 
 ENV PATH="/app/.venv/bin:$PATH" \
@@ -73,8 +75,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     EVENT_NOTIFIER_BACKEND=redis \
     BLOB_BACKEND=minio \
     MALWARE_SCANNER_BACKEND=clamav \
+    LANGFUSE_TRACING=true \
     LANGSMITH_TRACING=false \
-    ALLOW_WRITE_ACTIONS=false \
     MCP_CONFIG_PATH=config/mcp_servers.yaml \
     METRIC_REGISTRY_PATH=config/metric_registry.yaml \
     PROMPT_VERSIONS_PATH=config/prompt_versions.yaml \

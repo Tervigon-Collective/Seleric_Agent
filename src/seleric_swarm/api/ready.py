@@ -54,19 +54,26 @@ def _mcp_probe(runtime: SwarmRuntime) -> bool:
     capabilities = runtime.mcp.capabilities
     if not capabilities:
         return False
-    capability = "seleric.catalogue_list_metrics"
+    # A cheap read-only call (~3 KB). Not catalogue_list_metrics: the docker healthcheck runs this
+    # every 15 s and that tool's server-side loop breaker is shared by every MCP caller.
+    capability = "seleric.modules_list"
     if capability not in capabilities:
         return False
 
     async def call() -> None:
-        await asyncio.wait_for(
-            runtime.mcp.call(
-                agent_id="v3_agent",
-                capability=capability,
-                arguments={},
-            ),
-            timeout=runtime.settings.readiness_timeout_s,
-        )
+        try:
+            await asyncio.wait_for(
+                runtime.mcp.call(
+                    agent_id="v3_agent",
+                    capability=capability,
+                    arguments={},
+                ),
+                timeout=runtime.settings.readiness_timeout_s,
+            )
+        finally:
+            closer = getattr(runtime.mcp, "aclose_current_loop", None)
+            if closer is not None:
+                await closer()
 
     asyncio.run(call())
     return True
@@ -205,8 +212,6 @@ def effective_capabilities(
     readiness = readiness or check_readiness(runtime)
     checks = readiness["checks"]
     repositories = runtime.conversations
-    action_execution = runtime.action_execution
-    executors = getattr(action_execution, "executors", {}) if action_execution else {}
     embedding_ready = bool(
         runtime.settings.search_embedding_model
         and runtime.settings.azure_openai_endpoint
@@ -217,10 +222,6 @@ def effective_capabilities(
         "vector_search": repositories is not None
         and embedding_ready
         and bool(checks["database"]["ok"]),
-        "approval_audit": repositories is not None and bool(checks["database"]["ok"]),
-        "scheduled_expiry": runtime.run_queue is not None and bool(checks["queue"]["ok"]),
-        "action_execution": bool(executors),
-        "write_actions": bool(runtime.settings.allow_write_actions and executors),
         "immutable_audit": repositories is not None and bool(checks["database"]["ok"]),
         "replay_execution": False,
     }

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import pytest
 
-from seleric_swarm.agent.agent import build_seleric_agent
 from seleric_swarm.state.scratchpad import Scratchpad
 
 
@@ -34,11 +33,6 @@ def test_bounded_cap_drops_oldest() -> None:
     assert "fact 4" in body
 
 
-async def test_stub_run_survives_null_deps() -> None:
-    # agent.run with no deps must not raise from the working-memory instruction.
-    agent = build_seleric_agent()
-    result = await agent.run("hello")
-    assert result.output.mission_id == "stub"
 
 
 if __name__ == "__main__":

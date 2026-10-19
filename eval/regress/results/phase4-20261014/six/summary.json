@@ -1,0 +1,13 @@
+{
+ "items": 6,
+ "run_completed": 6,
+ "checked_items": 6,
+ "checked_pass": 6,
+ "unchecked_items": [],
+ "checks_failed_items": [],
+ "wall_p50_s": 64,
+ "wall_p90_s": 123,
+ "concurrency": 1,
+ "revisions": 0,
+ "retries": 0
+}

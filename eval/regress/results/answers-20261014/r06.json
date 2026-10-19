@@ -1,0 +1,44 @@
+{
+ "n": 6,
+ "aspect": "test_agent6",
+ "q": "Break that down by product and channel.",
+ "thread": "thread_57ae50f7a52e45bfb33f8eecb360ba71",
+ "mission": "MS3-66068f4cd6",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 25,
+ "elapsed_s": 22.978,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 8,
+  "measured": 8,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: product breakdown"
+  },
+  {
+   "ok": true,
+   "what": "tool: channel breakdown"
+  },
+  {
+   "ok": true,
+   "what": "tool: reuses prior scope (drilldown or same window)"
+  }
+ ],
+ "answer": "This week (partial) the decline is concentrated in Instagram feed traffic and in a few top SKUs \u2014 key examples: Meow Scratch Lounge, Pawveralls Suspender Boots and WingBird Smart Flapping Toy earned most revenue last week from ig_feed but are much smaller this partial week on the same channel.\n\nEvidence\n- Top affected product \u00d7 channel (last week \u2192 this week, revenue \u00b7 orders)\n  - Meow Scratch Lounge (ig_feed): \u20b962,899 \u00b7 29 orders \u2192 not present on ig_feed this week (top ig_feed scratch-style sale this week is Play Scratch Lounge \u20b918,553 \u00b7 8 orders).\n  - Pawveralls Suspender Boots (ig_feed): \u20b940,450 \u00b7 24 orders \u2192 \u20b92,118 \u00b7 1 order (ig_feed) this week.\n  - WingBird Smart Flapping Toy (ig_feed): \u20b937,099 \u00b7 38 orders \u2192 \u20b92,202 \u00b7 2 orders (ig_feed) this week.\n- Ad spend and ROAS by channel (selected)\n  - ig_feed: large ad spend on these SKUs last week (e.g. Pawveralls ig_feed ad spend \u20b953,608 last week) fell sharply this week (ad spend for those SKUs on ig_feed mostly \u226a last week), matching the drop in revenue.\n  - Google channels kept some high-ROAS pockets (examples: Pawveralls on google_pmax/ search show product net ROAS (allocated) >2 in both periods), so loss is concentrated in paid social rather than paid search.\n- What this implies\n  - Most of the week-to-week sales loss sits in ig_feed traffic for top SKUs; lower ig_feed ad spend and fewer orders on those SKUs together explain most of the change.\n\nPeriod: 2026-10-05..2026-10-11 vs 2026-10-12..2026-10-14 (this week partial) \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Run a campaign-level drilldown for ig_feed (campaign_name) on those three SKUs to see which campaigns lost impressions/budgets?"
+}

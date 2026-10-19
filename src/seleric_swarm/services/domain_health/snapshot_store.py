@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from seleric_swarm.paths import repo_root
-from seleric_swarm.services.domain_health.models import DomainStateSnapshot
+from seleric_swarm.services.domain_health.models import DomainStateSnapshot, ResolvedMetric
 
 _SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -27,8 +27,17 @@ class SnapshotStore:
     docs/features/business-state-service/04_DOMAIN_HEALTH_SNAPSHOTS.md).
     """
 
-    def __init__(self, base_dir: str | Path = "var/domain_health_snapshots") -> None:
-        path = Path(base_dir)
+    def __init__(self, base_dir: str | Path | None = None) -> None:
+        # Deployments where repo_root() is read-only (e.g. /app/var in a container)
+        # made every save() raise PermissionError — the refresh loop then failed each
+        # cycle and no snapshot ever persisted, silently disabling business-state
+        # priming. The base dir is env-configurable so ops can point writer and reader
+        # (same env, so both resolve identically) at a writable volume; the default is
+        # unchanged for local/dev. Explicit base_dir arg still wins for tests.
+        raw = base_dir if base_dir is not None else os.getenv(
+            "SELERIC_DOMAIN_HEALTH_DIR", "var/domain_health_snapshots"
+        )
+        path = Path(raw)
         self._base = path if path.is_absolute() else repo_root() / path
 
     def save(self, snapshot: DomainStateSnapshot) -> Path:
@@ -48,15 +57,40 @@ class SnapshotStore:
         if not domain_dir.is_dir():
             return None
         files = sorted(p for p in domain_dir.glob("*.json") if not p.name.startswith("."))
+        # The newest snapshot that carries data; an UNAVAILABLE one (a cycle where nothing resolved) only when no
+        # other exists — it must not shadow the last good state.
+        fallback: DomainStateSnapshot | None = None
         for file_path in reversed(files):
             try:
-                return DomainStateSnapshot.model_validate_json(file_path.read_text(encoding="utf-8"))
+                snapshot = DomainStateSnapshot.model_validate_json(file_path.read_text(encoding="utf-8"))
             except Exception:  # noqa: S112 - skip corrupt snapshots and try the next newest
                 continue
-        return None
+            if snapshot.status != "UNAVAILABLE" or snapshot.metrics:
+                return snapshot
+            fallback = fallback or snapshot
+        return fallback
 
     async def asave(self, snapshot: DomainStateSnapshot) -> Path:
         return await asyncio.to_thread(self.save, snapshot)
 
     async def aget_latest(self, domain: str) -> DomainStateSnapshot | None:
         return await asyncio.to_thread(self.get_latest, domain)
+
+    async def afind_metric(
+        self,
+        metric_id: str,
+        *,
+        max_age_hours: float = 2.0,
+    ) -> tuple[ResolvedMetric, DomainStateSnapshot] | None:
+        """Return a fresh ResolvedMetric and its snapshot from any domain, or None."""
+        from seleric_swarm.services.business_state.formatter import is_stale
+        from seleric_swarm.services.domain_health.scheduler import ALL_DOMAINS
+
+        for domain in ALL_DOMAINS:
+            snapshot = await self.aget_latest(domain)
+            if snapshot is None or snapshot.status == "UNAVAILABLE" or is_stale(snapshot, max_age_hours=max_age_hours):
+                continue
+            for metric in snapshot.metrics:
+                if metric.metric_id == metric_id:
+                    return metric, snapshot
+        return None

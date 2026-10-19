@@ -1,0 +1,30 @@
+{
+ "n": 3,
+ "aspect": "golden",
+ "q": "Give me net sales for each of the last 7 days.",
+ "thread": "thread_2784fdfbae514d68975c85d09f41435c",
+ "mission": "MS3-541672c7e6",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 13,
+ "elapsed_s": 10.492,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 7,
+  "measured": 7,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Net sales for each of the last 7 days (Tilting Heads, measured):\n\n- 2026-10-05: \u2014 not in range (showing 2026-10-06..2026-10-12)\n- 2026-10-06: Measured \u20b9117,855  \n- 2026-10-07: Measured \u20b9102,401  \n- 2026-10-08: Measured \u20b9115,142  \n- 2026-10-09: Measured \u20b969,088  \n- 2026-10-10: Measured \u20b970,686  \n- 2026-10-11: Measured \u20b934,377  \n- 2026-10-12: Measured \u20b942,177  \n\nAll figures: Measured (from commerce.net_sales, daily totals for 2026-10-06 \u2192 2026-10-12). Data scoped to default brand Tilting Heads (no brand filter supplied). Provenance: last cube refresh 2026-10-13 22:45 IST \u2014 today\u2019s data may still be updating for later dates if asked for partial days.\n\n2026-10-06..2026-10-12 \u00b7 INR \u00b7 data as of 2026-10-13 22:45 IST\n\nWould you like this broken down by channel (Shopify vs paid platforms) or compared with the previous 7-day window?"
+}

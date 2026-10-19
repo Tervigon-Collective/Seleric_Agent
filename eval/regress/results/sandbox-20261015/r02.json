@@ -1,0 +1,34 @@
+{
+ "n": 2,
+ "aspect": "diagnosis",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_cbc28e92ea2641b7bd166fdf6161b829",
+ "mission": "MS3-9c407344c1",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 63,
+ "elapsed_s": 58.071,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 32,
+  "measured": 32,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "run_python",
+  "run_python",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Short answer: These Meta campaigns lost more in ad spend than they generated in order-date sales last 7 days (Tilting Heads). Top offenders (last 7 days, 2026-10-08..2026-10-14, net sales = order date; ad spend = Meta report_date):\n\n- DOG DAD T-SHIRT-CS-06OCT \u2014 Ad spend \u20b910,233 \u2192 Net sales \u20b96,126; ROAS 0.6x; shortfall \u20b94,108.  \n- DOG SHOES-CR-7OCT \u2014 Ad spend \u20b99,363 \u2192 Net sales \u20b95,548; ROAS 0.6x; shortfall \u20b93,814.  \n- DOG TOY CS-10TH-OCT-CS \u2014 Ad spend \u20b96,334 \u2192 Net sales \u20b93,049; ROAS 0.5x; shortfall \u20b93,284.  \n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b917,476 \u2192 Net sales \u20b914,238; ROAS 0.8x; shortfall \u20b93,238.  \n- DOG MOM T-SHIRT-CS-06OCT \u2014 Ad spend \u20b99,072 \u2192 Net sales \u20b95,884; ROAS 0.6x; shortfall \u20b93,188.  \n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b917,746 \u2192 Net sales \u20b914,972; ROAS 0.8x; shortfall \u20b92,773.  \n- TH-149-SCRATCHLOUNGE-6OCT \u2014 Ad spend \u20b912,336 \u2192 Net sales \u20b910,070; ROAS 0.8x; shortfall \u20b92,266.  \n- TH-068_WILD-12OCT-CV \u2014 Ad spend \u20b96,729 \u2192 Net sales \u20b94,743; ROAS 0.7x; shortfall \u20b91,986.\n\nWhy this matters: each listed campaign spent more than it returned in order-date sales (ROAS < 1), so they are net negative for topline in this window.\n\nCaveats / certainty: ad spend is platform-reported (report_date) while sales are order-date; some campaigns in the paid_media top list had no matching commerce rows (18 of 29 entities miss one side), so this ranking only includes campaigns present in both feeds.\n\nWorth checking: pause or reduce spend on the top 3 listed, or drill into their creative/targeting/landing pages and recent budget/bid edits before reallocation.\n\nPeriod: 2026-10-08..2026-10-14 \u00b7 Currency: INR \u00b7 Data as of 2026-10-15\nNext: Want me to drill into orders, AOV and return rate for the top 5 offending campaigns?"
+}

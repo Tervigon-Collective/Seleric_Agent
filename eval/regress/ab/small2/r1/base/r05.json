@@ -1,0 +1,35 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_555a4d30d655422a9015180b3193c092",
+ "mission": "MS3-57b7b79353",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 14.005,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 11,
+  "measured": 11,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "Top campaigns in Sep 2026: the largest campaign (by net sales) was the Google PMax seasonal build with \u20b9198,996 in net sales and 115 orders; five campaigns accounted for the biggest campaign-level sales.  \n\n- Top campaign sales (campaign \u00b7 orders \u00b7 net sales)\n  - [Google Build] PMax - Seasonal New | 27th May \u00b7 115 orders \u00b7 \u20b9198,996  \n  - [Google Build] Brand Search | 5th March \u00b7 40 orders \u00b7 \u20b971,275  \n  - TH-152-TANGLELEASH-1SEP \u00b7 29 orders \u00b7 \u20b956,263  \n  - TH-284-CRABDASH TOY-1SEP \u00b7 25 orders \u00b7 \u20b944,389  \n  - TH-336-PAWTECH-1SEP \u00b7 22 orders \u00b7 \u20b944,274\n\n- Note: there is a row with no campaign_name (unattributed/blank) showing 396 orders and \u20b9749,161 net sales \u2014 check whether those orders should be assigned to a campaign or filtered.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: do you want the full campaign ranking (all campaigns) or this broken down by ad platform?"
+}

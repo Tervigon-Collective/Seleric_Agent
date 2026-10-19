@@ -3,8 +3,49 @@ import { conversationsApi, conversationScope } from "../api/conversations";
 import type { ActivityEvent, MemoryItem, Message, Thread } from "../api/contracts";
 import { ApiError } from "../api/http";
 import { subscribeToRunEvents, subscribeToThreadEvents } from "../api/runEvents";
-import { useOffice } from "../store";
+import { traceApi } from "../api/trace";
+import { readRoute } from "../routing";
+import { isTraceableMissionId, useOffice } from "../store";
 import type { SwarmUIEvent } from "../types";
+
+/** Reload Debug / Causal from the mission record so they survive refresh + thread switches. */
+async function restoreInspectorFromTrace(missionId: string, threadId: string): Promise<void> {
+  if (!isTraceableMissionId(missionId)) return;
+  try {
+    const response = await traceApi.get(missionId);
+    if (useConversationStore.getState().selectedThreadId !== threadId) return;
+    if (useOffice.getState().missionId && useOffice.getState().missionId !== missionId) {
+      // A newer submit already moved on.
+      if (isTraceableMissionId(useOffice.getState().missionId)) return;
+    }
+    const stats = response.trace?.stats && typeof response.trace.stats === "object"
+      ? response.trace.stats as Record<string, unknown> : null;
+    const grounding = response.trace?.grounding && typeof response.trace.grounding === "object"
+      ? response.trace.grounding as Record<string, unknown> : null;
+    const steps = Array.isArray(response.trace?.steps)
+      ? response.trace.steps.filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+      : null;
+    if (stats || grounding || steps) {
+      useOffice.getState().setLoopDebug({ stats, grounding, steps });
+    }
+    const graphs = Array.isArray(response.causal_graphs)
+      ? response.causal_graphs.filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+      : [];
+    useOffice.getState().setCausalGraphs(graphs.length ? graphs : null);
+  } catch {
+    /* mission may still be running or purged */
+  }
+}
+
+function preferMissionId(...candidates: Array<string | null | undefined>): string | null {
+  for (const id of candidates) {
+    if (isTraceableMissionId(id)) return id;
+  }
+  for (const id of candidates) {
+    if (id) return id;
+  }
+  return null;
+}
 
 interface ConversationState {
   threads: Thread[];
@@ -21,6 +62,8 @@ interface ConversationState {
   memoryOptedOut: boolean;
   currentRunId: string | null;
   progress: string | null;
+  /** Accumulated thinking text streamed live from a thinking-capable model. */
+  thinkingText: string | null;
   /** Words being spoken by voice that have no persisted user message yet. */
   voicePending: string | null;
   setVoicePending: (text: string | null) => void;
@@ -88,34 +131,49 @@ const textMessage = (threadId: string, role: "USER" | "ASSISTANT", text: string,
 });
 const optionalString = (value: unknown): string | undefined =>
   typeof value === "string" && value ? value : undefined;
+/**
+ * Render-safe text from untrusted event payloads (SSE JSON, stored rows, error
+ * paths). Strings pass through; finite numbers stringify; anything else is
+ * null so callers fall back instead of crashing React with a non-child.
+ */
+export const asText = (value: unknown): string | null => {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+};
 const messageText = (message: Message | undefined): string =>
   message?.parts
     .filter((part) => part.type === "TEXT" && typeof part.content === "string")
     .map((part) => String(part.content))
     .join("\n")
     .trim() ?? "";
-const toOfficeEvent = (event: ActivityEvent): SwarmUIEvent => {
-  const sourceKind = optionalString(event.payload.source_kind);
-  const eventType = (sourceKind ?? event.event_type).replaceAll(".", "_");
-  const artifactId = optionalString(event.payload.artifact_id);
+export const toOfficeEvent = (event: ActivityEvent): SwarmUIEvent => {
+  const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
+  const rawType = asText(payload.source_kind) ?? asText(event.event_type) ?? "unknown_event";
+  const eventType = rawType.replaceAll(".", "_");
+  const artifactId = optionalString(payload.artifact_id);
+  const seq = Number(event.sequence);
   return {
-    eventId: event.id,
-    seq: event.sequence,
-    timestamp: event.created_at,
-    missionId: optionalString(event.payload.mission_id) ?? event.run_id ?? "current-run",
-    taskId: optionalString(event.payload.task_id),
+    eventId: asText(event.id) ?? `event_${Math.abs(seq) || 0}`,
+    seq: Number.isFinite(seq) ? seq : 0,
+    timestamp: asText(event.created_at) ?? new Date().toISOString(),
+    missionId: optionalString(payload.mission_id) ?? asText(event.run_id) ?? "current-run",
+    taskId: optionalString(payload.task_id),
     agentId:
-      event.actor_id
-      ?? optionalString(event.payload.agent_id)
-      ?? optionalString(event.payload.agent)
-      ?? (optionalString(event.payload.route) === "v3" ? "coordinator" : undefined),
+      asText(event.actor_id)
+      ?? optionalString(payload.agent_id)
+      ?? optionalString(payload.agent)
+      ?? (optionalString(payload.route) === "v3" ? "seleric_agent" : undefined),
     eventType,
     summary:
-      event.summary
-      ?? event.title
+      asText(event.summary)
+      ?? asText(event.title)
       ?? eventType.replaceAll("_", " "),
-    artifactRefs: [...event.evidence_ids, ...(artifactId ? [artifactId] : [])],
-    metadata: { ...event.metadata, ...event.payload, conversationEventType: event.event_type },
+    artifactRefs: [
+      ...(Array.isArray(event.evidence_ids) ? event.evidence_ids.filter((id) => typeof id === "string") : []),
+      ...(artifactId ? [artifactId] : []),
+    ],
+    metadata: { ...(event.metadata && typeof event.metadata === "object" ? event.metadata : {}), ...payload, conversationEventType: rawType },
   };
 };
 
@@ -134,6 +192,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   memoryOptedOut: false,
   currentRunId: null,
   progress: null,
+  thinkingText: null,
   voicePending: null,
 
   setVoicePending: (voicePending) => set({ voicePending }),
@@ -158,6 +217,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         if (event.run_id !== follow.runId) {
           if (state.submitting || TERMINAL_EVENTS.includes(event.event_type)) return;
           follow.runId = event.run_id;
+          const payload = event.payload && typeof event.payload === "object"
+            ? event.payload as Record<string, unknown> : {};
+          const mid = optionalString(payload.mission_id);
+          if (isTraceableMissionId(mid)) useOffice.getState().setMissionId(mid);
           set({ currentRunId: event.run_id, submitting: true, progress: null, error: null });
           void conversationsApi.listMessages(threadId).then((messages) => {
             if (get().selectedThreadId !== threadId) return;
@@ -208,16 +271,47 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   createThread: async () => {
+    // Detach from any in-flight run on the previous thread. Leaving
+    // submitting/progress set makes the empty new chat render the old
+    // "Working…" / "Revising…" card (assistant-ui treats isRunning as an
+    // empty assistant placeholder).
+    if (threadFollow) stopThreadFollow();
+    selectionGeneration += 1;
+    submissionGeneration += 1;
+    subscriptions.forEach((stop) => stop());
+    subscriptions.clear();
     useOffice.getState().reset();
     if (get().demoMode) {
       const id = `thread_demo_${Date.now()}`;
       const thread = { ...DEMO_THREAD, id, title: "New conversation", created_at: now(), updated_at: now() };
-      set((s) => ({ threads: [thread, ...s.threads], selectedThreadId: id, messages: { ...s.messages, [id]: [] } }));
+      set((s) => ({
+        threads: [thread, ...s.threads],
+        selectedThreadId: id,
+        messages: { ...s.messages, [id]: [] },
+        loading: false,
+        submitting: false,
+        currentRunId: null,
+        progress: null,
+        thinkingText: null,
+        voicePending: null,
+        error: null,
+      }));
       return;
     }
     try {
       const thread = await conversationsApi.createThread();
-      set((s) => ({ threads: [thread, ...s.threads], selectedThreadId: thread.id, messages: { ...s.messages, [thread.id]: [] } }));
+      set((s) => ({
+        threads: [thread, ...s.threads],
+        selectedThreadId: thread.id,
+        messages: { ...s.messages, [thread.id]: [] },
+        loading: false,
+        submitting: false,
+        currentRunId: null,
+        progress: null,
+        thinkingText: null,
+        voicePending: null,
+        error: null,
+      }));
     } catch (error) {
       set({ error: error instanceof Error ? error.message : "Unable to create thread" });
     }
@@ -257,27 +351,32 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       );
       const artifactIds = new Map<string, Set<string>>();
       runEvents.forEach((event) => {
-        const artifactType = optionalString(event.payload.artifact_type);
-        if (!artifactType || !event.event_type.startsWith("artifact.")) return;
+        const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
+        const artifactType = optionalString(payload.artifact_type);
+        if (!artifactType || typeof event.event_type !== "string" || !event.event_type.startsWith("artifact.")) return;
         const ids = artifactIds.get(artifactType) ?? new Set<string>();
-        ids.add(optionalString(event.payload.artifact_id) ?? event.id);
+        ids.add(optionalString(payload.artifact_id) ?? asText(event.id) ?? "event");
         artifactIds.set(artifactType, ids);
       });
+      const payloadOf = (event: { payload: unknown }) =>
+        event.payload && typeof event.payload === "object" ? event.payload as Record<string, unknown> : {};
       const route = [...runEvents]
         .reverse()
-        .map((event) => optionalString(event.payload.route))
+        .map((event) => optionalString(payloadOf(event).route))
         .find(Boolean) ?? null;
-      const missionId = [...runEvents]
+      const fromEvents = [...runEvents]
         .reverse()
-        .map((event) => optionalString(event.payload.mission_id))
-        .find(Boolean) ?? latestRunId ?? "conversation";
+        .map((event) => optionalString(payloadOf(event).mission_id))
+        .find(Boolean);
+      const fromUrl = readRoute().missionId;
+      const missionId = preferMissionId(fromEvents, fromUrl, latestRunId, "conversation") ?? "conversation";
       office.hydrate({
         missionId,
         query: messageText(latestUserMessage),
         status: terminal?.event_type.replace("run.", "") ?? (latestRunId ? "running" : "idle"),
         route,
         stage: terminal?.event_type.replace("run.", "") ?? (
-          runEvents[runEvents.length - 1]?.event_type.replaceAll(".", " ") ?? "intake"
+          asText(runEvents[runEvents.length - 1]?.event_type)?.replaceAll(".", " ") ?? "intake"
         ),
         leadershipEpoch: 0,
         lastSeq: timeline[timeline.length - 1]?.seq ?? 0,
@@ -300,8 +399,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (stillRunning && latestRunId) {
         const runId = latestRunId;
         const lastProgress = [...runEvents].reverse().find(
-          (event) => event.event_type.startsWith("agent.") && event.summary,
-        )?.summary ?? null;
+          (event) => typeof event.event_type === "string" && event.event_type.startsWith("agent.") && asText(event.summary),
+        )?.summary;
+        const resumeProgress = asText(lastProgress);
         subscriptions.get(id)?.();
         subscriptions.set(id, subscribeToRunEvents(runId, {
           onEvent: (event) => {
@@ -335,10 +435,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           loading: false,
           submitting: true,
           currentRunId: runId,
-          progress: lastProgress,
+          progress: resumeProgress,
         }));
       } else {
         set((s) => ({ messages: { ...s.messages, [id]: messages }, loading: false, submitting: false, currentRunId: null, progress: null }));
+      }
+      // Debug/Causal live in the mission record — rehydrate after reset() cleared them.
+      if (isTraceableMissionId(missionId)) {
+        void restoreInspectorFromTrace(missionId, id);
       }
     } catch (error) {
       if (generation === selectionGeneration && get().selectedThreadId === id) {
@@ -494,7 +598,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (submission !== demoSubmission || cancelledSubmissions.delete(generation)) return;
       const reply = textMessage(
         threadId, "ASSISTANT",
-        "Demo mode is active. The office is replaying a representative swarm run; switch to Live to submit this request to Seleric.",
+        "Demo mode is active. The office is replaying a representative run; switch to Live to submit this request to Seleric.",
         `demo_reply_${Date.now()}`,
       );
       set((s) => ({ submitting: false, messages: { ...s.messages, [threadId]: [...(s.messages[threadId] ?? []), reply] } }));
@@ -522,6 +626,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         generation !== submissionGeneration
         || get().selectedThreadId !== threadId
       ) return;
+      useOffice.getState().setLoopDebug(null);
+      useOffice.getState().setCausalGraphs(null);
       useOffice.getState().hydrate({
         missionId: result.mission_id,
         query: value,
@@ -590,7 +696,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!get().submitting) return;
     const generation = submissionGeneration;
     if (!currentRunId) cancelledSubmissions.add(generation);
-    set({ submitting: false, currentRunId: null, progress: null });
+    set({ submitting: false, currentRunId: null, progress: null, thinkingText: null });
     try {
       if (!demoMode && currentRunId) await conversationsApi.cancelRun(currentRunId);
       demoSubmission += 1;
@@ -753,19 +859,30 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   applyRunEvent: (event) => {
     const state = get();
     if (
-      event.thread_id !== state.selectedThreadId
+      !event || typeof event !== "object"
+      || event.thread_id !== state.selectedThreadId
       || (state.currentRunId && event.run_id !== state.currentRunId)
     ) return;
+    const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
+    // Keep Debug/Causal keyed to the real mission id as soon as any event carries it
+    // (submit may still be on "pending"; refresh may have fallen back to run_id).
+    const eventMissionId = optionalString(payload.mission_id);
+    if (isTraceableMissionId(eventMissionId)) {
+      const current = useOffice.getState().missionId;
+      if (!isTraceableMissionId(current)) {
+        useOffice.getState().setMissionId(eventMissionId);
+      }
+    }
     // Live answer streaming: accumulate answer.delta into an optimistic
     // assistant message; answer.reset clears a revised-away draft. The full
     // message fetched on answer.completed is authoritative and replaces this.
     // Handled before ingestEvent so per-token deltas never spam the timeline.
     if (event.event_type === "answer.delta" || event.event_type === "answer.reset") {
       const threadId = event.thread_id;
-      const messageId = optionalString(event.payload.message_id);
+      const messageId = optionalString(payload.message_id);
       if (!messageId) return;
       const reset = event.event_type === "answer.reset";
-      const delta = reset ? "" : optionalString(event.payload.delta) ?? "";
+      const delta = reset ? "" : optionalString(payload.delta) ?? "";
       if (!reset && !delta) return;
       set((s) => {
         const list = s.messages[threadId] ?? [];
@@ -790,24 +907,34 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       return;
     }
     useOffice.getState().ingestEvent(toOfficeEvent(event));
-    if (event.event_type.startsWith("agent.") && event.summary) {
-      set({ progress: event.summary });
+    if (event.event_type === "agent.thinking_delta") {
+      const delta = typeof payload.delta === "string" ? payload.delta : "";
+      if (delta) {
+        set((s) => ({ thinkingText: (s.thinkingText ?? "") + delta }));
+      }
+      return;
+    }
+    // Progress must stay a renderable string: a structured error payload here
+    // used to unmount the whole app (React cannot render objects as children).
+    if (typeof event.event_type === "string" && event.event_type.startsWith("agent.")) {
+      const text = asText(event.summary);
+      if (text) set({ progress: text });
     }
     const office = useOffice.getState();
-    const incomingRoute = optionalString(event.payload.route);
-    const streamedAnswer = optionalString(event.payload.final_response);
+    const incomingRoute = optionalString(payload.route);
+    const streamedAnswer = optionalString(payload.final_response);
     const terminal = ["run.completed", "run.failed", "run.cancelled"].includes(event.event_type);
     if (event.event_type === "answer.completed" || terminal || incomingRoute) {
       const route = incomingRoute ?? office.route;
       const status = terminal ? event.event_type.replace("run.", "") : office.status;
       office.hydrate({
-        missionId: optionalString(event.payload.mission_id) ?? office.missionId ?? event.run_id ?? "conversation",
-        query: optionalString(event.payload.query) ?? office.query,
+        missionId: optionalString(payload.mission_id) ?? office.missionId ?? asText(event.run_id) ?? "conversation",
+        query: optionalString(payload.query) ?? office.query,
         status,
         route,
         stage: status || office.stage,
         leadershipEpoch: office.leadershipEpoch,
-        lastSeq: event.sequence,
+        lastSeq: Number.isFinite(Number(event.sequence)) ? Number(event.sequence) : office.lastSeq,
         agents: [],
         board: { steps: office.board },
         handoffs: office.handoffs,
@@ -818,8 +945,27 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         timeline: [],
       });
     }
+    if (event.event_type === "answer.completed" || terminal) {
+      const stats = payload.stats && typeof payload.stats === "object"
+        ? payload.stats as Record<string, unknown> : null;
+      const grounding = payload.grounding && typeof payload.grounding === "object"
+        ? payload.grounding as Record<string, unknown> : null;
+      const steps = Array.isArray(payload.steps)
+        ? payload.steps.filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+        : null;
+      if (stats || grounding || steps) {
+        useOffice.getState().setLoopDebug({ stats, grounding, steps });
+      }
+      if (Array.isArray(payload.causal_graphs)) {
+        const graphs = payload.causal_graphs.filter(
+          (row): row is Record<string, unknown> => !!row && typeof row === "object",
+        );
+        useOffice.getState().setCausalGraphs(graphs.length ? graphs : null);
+        // Stay on Debug by default; Causal is there when a DAG exists.
+      }
+    }
     if (streamedAnswer && (event.event_type === "answer.completed" || terminal)) {
-      const evidence = Array.isArray(event.payload.evidence) ? event.payload.evidence : [];
+      const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
       const parts: Message["parts"] = [{ type: "TEXT", content: streamedAnswer }];
       for (const row of evidence) {
         if (!row || typeof row !== "object") continue;
@@ -837,7 +983,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         });
       }
       const answer: Message = {
-        id: optionalString(event.payload.message_id) ?? `answer_${event.run_id ?? event.id}`,
+        id: optionalString(payload.message_id) ?? `answer_${asText(event.run_id) ?? asText(event.id) ?? "run"}`,
         thread_id: event.thread_id,
         workspace_id: event.workspace_id,
         user_id: null,
@@ -846,6 +992,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         run_id: event.run_id,
         parent_message_id: null,
         created_at: event.created_at,
+        // Mark final immediately so thumbs + response time render without
+        // waiting for the listMessages refetch below (streaming deltas carry
+        // no updated_at and stay vote-free by design).
+        updated_at: event.created_at,
       };
       set((s) => {
         const existing = s.messages[event.thread_id] ?? [];
@@ -859,6 +1009,12 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return { messages: { ...s.messages, [event.thread_id]: next }, error: null };
       });
     }
+    // Stop / isRunning tracks whether the user can send again. The answer is
+    // done at answer.completed; run.completed only arrives after post-answer
+    // persist (summary + artifacts), which used to leave Stop stuck on.
+    if (event.event_type === "answer.completed" && get().selectedThreadId === event.thread_id) {
+      set({ submitting: false, progress: null, thinkingText: null });
+    }
     if (event.event_type === "answer.completed" || terminal) {
       void conversationsApi.listMessages(event.thread_id).then((messages) => {
         const current = get();
@@ -866,14 +1022,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           current.selectedThreadId !== event.thread_id
           || (current.currentRunId && event.run_id !== current.currentRunId)
         ) return;
-        set((s) => ({ messages: { ...s.messages, [event.thread_id]: messages }, submitting: !terminal && s.submitting, error: null }));
+        // Never revive submitting from a stale refetch — answer.completed (or
+        // a newer submit) owns that flag now.
+        set((s) => ({ messages: { ...s.messages, [event.thread_id]: messages }, error: null }));
       });
     }
     if (terminal) {
       subscriptions.get(event.thread_id)?.();
       subscriptions.delete(event.thread_id);
       if (get().selectedThreadId === event.thread_id) {
-        set({ submitting: false, currentRunId: null, progress: null });
+        set({ submitting: false, currentRunId: null, progress: null, thinkingText: null });
       }
     }
   },
@@ -886,6 +1044,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     cancelledSubmissions.clear();
     subscriptions.forEach((stop) => stop());
     subscriptions.clear();
-    set({ threads: [], selectedThreadId: null, messages: {}, loading: false, submitting: false, uploads: {}, error: null, search: "", demoMode: false, memories: [], usedMemories: [], memoryOptedOut: false, currentRunId: null, progress: null, voicePending: null });
+    set({ threads: [], selectedThreadId: null, messages: {}, loading: false, submitting: false, uploads: {}, error: null, search: "", demoMode: false, memories: [], usedMemories: [], memoryOptedOut: false, currentRunId: null, progress: null, thinkingText: null, voicePending: null });
+
   },
 }));

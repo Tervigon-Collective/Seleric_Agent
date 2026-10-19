@@ -1,0 +1,37 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_d992614d3e254a849d613ffe94e60a2f",
+ "mission": "MS3-7994ceb9f5",
+ "run_status": "FAILED",
+ "status": "failed",
+ "wall_s": 42,
+ "elapsed_s": null,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 0,
+ "llm_calls": null,
+ "grounding": null,
+ "tools": [],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": null,
+   "what": "tool checks skipped: trace.steps carries no tool calls (pre-slim-loop system)"
+  },
+  {
+   "ok": false,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 42177.333233606856, 'net_sales_prev_day': 34376.90261950712})"
+  },
+  {
+   "ok": false,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 42177.333233606856, 'net_sales_prev_day': 34376.90261950712})"
+  },
+  {
+   "ok": false,
+   "what": "reference direction_ok ({'net_sales_yesterday': 42177.333233606856, 'net_sales_prev_day': 34376.90261950712})"
+  }
+ ],
+ "answer": "v2 pipeline could not answer: scope_uncovered:metric:net_sales"
+}

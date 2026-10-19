@@ -25,6 +25,11 @@ const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value
 describe("voice store", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue({}) },
+      configurable: true,
+      writable: true,
+    });
     useConversationStore.getState().reset();
     useConversationStore.setState({ selectedThreadId: "t1", messages: { t1: [] } });
     vi.spyOn(conversationsApi, "listThreadEvents").mockResolvedValue([]);

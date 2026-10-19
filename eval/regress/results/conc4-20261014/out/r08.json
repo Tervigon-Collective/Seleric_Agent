@@ -1,0 +1,32 @@
+{
+ "n": 8,
+ "aspect": "replay11",
+ "q": "yes",
+ "thread": "thread_3b9526bc83184ac79509a05d8c0e14f9",
+ "mission": "MS3-e371e65087",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 21,
+ "elapsed_s": 19.068,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 12,
+  "measured": 12,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_drilldown",
+  "metrics_drilldown",
+  "metrics_drilldown"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Top drivers on Meta for 2026-10-13: TH-471-PLAYSCRATCHLOUNGE (10 orders) contributed the largest uplift with net sales \u20b924,962 and ad spend \u20b97,249; several other active campaigns each added \u20b91\u20136k of sales. Discounts were higher on the top campaign (\u20b91,964) but returns were zero for these top ads.\n\n- Top Meta campaign/ad (2026-10-13): TH-471-PLAYSCRATCHLOUNGE \u00b7 IMG_6516 \u2014 Net sales \u20b924,962 \u00b7 Orders 10 \u00b7 AOV \u20b93,823 \u00b7 Discounts \u20b91,964 \u00b7 Ad spend \u20b97,249.  \n- Other notable Meta contributors: DOG BEDS-CS \u2014 Net sales \u20b96,440 \u00b7 Orders 1 \u00b7 Ad spend \u20b94,207; DOG TOYS-CS \u2014 Net sales \u20b93,049 \u00b7 Orders 1 \u00b7 Ad spend \u20b92,066.  \n- What this means: the day\u2019s sales uplift was concentrated in a few high-performing Meta creatives (one campaign alone delivered ~10 orders); ad spend increased behind those winners, and discounts were applied on the largest campaign but did not offset its volume.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Do you want ROAS and cost-per-order for these top campaigns (Meta) so we can judge efficiency?"
+}

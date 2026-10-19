@@ -1,0 +1,48 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_fc8b439a7fdc4dc1859174bbf7799b8d",
+ "mission": "MS3-d6ff969d5c",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 63,
+ "elapsed_s": 60.849,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 7,
+ "grounding": {
+  "derived": [],
+  "numbers": 9,
+  "measured": 9,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_dimension",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Top-line \u2014 Several Meta campaigns are spending meaningful budgets with gross ROAS below 1 (they return less gross sales than the ads cost); 23 campaigns meet this condition in 2026-10-01..2026-10-14 and the top five by spend are listed below \u2014 that\u2019s wasted marketing budget and lowers margin.\n\nWhat changed / why it matters\n- Biggest wasted spenders (Meta, 2026-10-01..2026-10-14, order-date gross ROAS):  \n  - TH-383-SUSPENDER-26SEP-ADV+: ad spend \u20b955,793 \u00b7 gross ROAS 0.943 (below 1 \u2192 losing money on ads vs gross sales)  \n  - TH-383-SUSPENDER-29SEP: ad spend \u20b949,163 \u00b7 gross ROAS 0.919  \n  - CAT TOY CS-26SEP: ad spend \u20b928,431 \u00b7 gross ROAS 0.927  \n  - TH-149-SCRATCHLOUNGE-6OCT: ad spend \u20b920,481 \u00b7 gross ROAS 0 (no attributed gross sales)  \n  - DOG TOY CS-24SEP: ad spend \u20b919,622 \u00b7 gross ROAS 0.969\n- Scope and basis: brand = Tilting Heads (default) on Meta only; ad spend is report_date, ROAS is order-date gross ROAS. Window = 2026-10-01..2026-10-14 (14 Oct is partial).\n- Size: 23 campaigns have gross ROAS < 1 in this window (they generated less gross sales than the ad spend allocated to them).\n- Certainty / caveats: today (2026-10-14) is partial so totals may rise slightly as the day completes; product-level allocated spend can differ from campaign-level spend.\n\nWorth checking:\n- Pause or reduce bids on the top wasted campaigns above (start with the TH-383* set and CAT TOY CS), and reallocate to campaigns with ROAS > 1 \u2014 I can list the best-performing Meta campaigns next.\n\nPeriod: 2026-10-01..2026-10-14 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Do you want the full list of the 23 low-ROAS campaigns or the Meta campaigns ranked by ROAS (so we can reallocate)?"
+}

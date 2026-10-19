@@ -10,17 +10,15 @@ from pydantic import BaseModel
 
 from seleric_swarm.conversations.contracts import (
     ActivityEvent,
-    ApprovalDecisionEvent,
-    ApprovalRequest,
     Artifact,
     Attachment,
     MemoryItem,
     MemoryPreference,
     Message,
+    MessageFeedback,
     MessagePage,
     MessagePart,
     Principal,
-    RollbackRecord,
     Run,
     RunAttempt,
     SearchResult,
@@ -46,10 +44,8 @@ CONVERSATION_CONTRACTS: tuple[type[BaseModel], ...] = (
     ThreadSummary,
     MemoryItem,
     MemoryPreference,
+    MessageFeedback,
     SearchResult,
-    ApprovalRequest,
-    ApprovalDecisionEvent,
-    RollbackRecord,
 )
 
 

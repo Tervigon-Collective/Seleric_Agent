@@ -2,11 +2,12 @@ import { useMemo, useState } from "react";
 import { useOffice } from "../store";
 import { SPEC_BY_ID } from "../office/agents";
 
-const FILTERS = ["all", "mission", "leadership", "skeptic", "task", "artifact", "error"] as const;
+const FILTERS = ["all", "mission", "tools", "leadership", "skeptic", "task", "artifact", "error"] as const;
 type Filter = (typeof FILTERS)[number];
 
 function familyOf(evType: string): Filter {
   if (evType.startsWith("mission")) return "mission";
+  if (evType.startsWith("tool_") || evType === "agent_thinking" || evType === "answering") return "tools";
   if (evType.startsWith("leadership")) return "leadership";
   if (evType.startsWith("skeptic")) return "skeptic";
   if (evType.startsWith("task") || evType === "agent_started" || evType.startsWith("remediation")) return "task";

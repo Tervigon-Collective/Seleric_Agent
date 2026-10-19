@@ -1,294 +1,101 @@
-# Seleric Agent — Current Architecture (V3)
+# Seleric Agent — Current Architecture (single loop)
 
-**As of 2026-09-28.** This is the as-built reference for the system that's
-actually running: a single `PydanticAI Agent[SelericDeps, MissionResult]`
-loop over Cube, mediated by `seleric-mcp`. It replaces the old LangGraph
-"swarm_v2" multi-agent design (Coordinator, domain agents, five intelligence
-specialists, Blackboard, LeadershipManager, A2A protocol), which has been
-deleted from `src/` — see the migration pointer in §1.
+**As of 2026-10-14.** One PydanticAI agent runs one loop per turn over the Core MCP tools and a few local analysis
+helpers. There is no understand / spec / plan stage, no validated-revision wrapper and no write actions. The previous
+V3 architecture document is kept in `docs/archive/CURRENT_ARCHITECTURE_V3_2026-09-28.md`; the rebuild plan and its
+progress log are in `plans/SLIM_LOOP_PLAN.md`.
 
-For the migration's own planning history (sprint-by-sprint execution log,
-profile briefs, open decisions), see `docs/refactor/` — that folder remains
-the source of truth for *how the migration was carried out*; this doc
-describes *what exists today*.
+## 1. Request path
 
-## 1. Overview & migration pointer
+```
+office-ui / voice / cron / business-state ─► api (conversations, office, business_state, async_missions)
+        │  durable runs: lease + heartbeat queue (api/async_missions.py), executed by the `recovery` container
+        ▼
+agent/runner.py::run_v3_mission      context (history, memories, earlier queries + figures) → loop → persist
+        ▼
+agent/loop.py::run_turn              one Agent run + one grounding correction pass
+        ▼
+tools: agent/mcp_toolset.py (Core MCP read tools)   agent/local_tools.py (helpers)
+        ▼
+protocols/mcp  ─►  Seleric_Agent_Core :8765  ─►  Cube v2  ─►  ClickHouse
+```
 
-- **Target design:** `diagrams/new.mmd` — `Agent → Toolset → Seleric MCP
-  Gateway → CubeClient → Cube`. The LLM never calls Cube/ClickHouse directly.
-  (The diagram was corrected 2026-09-28: a `Temporal` durable-execution node
-  was removed — Temporal was never adopted; durable missions run on the
-  lease/heartbeat run queue in `api/async_missions.py` + `recovery.py`.)
-- **Migration source of truth:** `docs/refactor/00_OVERVIEW.md`,
-  `01_PROFILE_RUNTIME.md`, `02_PROFILE_SEMANTIC_MCP.md`,
-  `03_PROFILE_CAPABILITIES.md`, `SPRINT_PLAN.md`, `TASK_SHEET.md`.
-- **What changed:** Coordinator classify/decompose/intake pipeline, domain
-  agents, intelligence specialists (Observer/Anomaly/Diagnostic/Prediction/
-  Strategy/Skeptic), the Blackboard, LeadershipManager, and the A2A protocol
-  are all deleted. A single agent now decides every tool call; there are no
-  agent-to-agent handoffs, no `mission_lead`/`active_specialist` state.
-- **Residue in the tree (cleanup candidates, not live code):** no swarm_v2
-  module is *tracked* in git anymore, but the working tree still contains
-  dead package husks — `src/seleric_swarm/coordinator/` and
-  `src/seleric_swarm/prompts/` hold only stale `__pycache__/` (no `.py`
-  files), `src/seleric_swarm/ml/` is an empty package, and `.gitignore`
-  still carries a `!src/seleric_swarm/coordinator/artifacts/` negation for a
-  directory that no longer exists. One swarm-era module *is* live:
-  `swarm/providers/base.py`, imported by
-  `services/business_state/detectors.py`.
-- **Historical decision records:** `docs/ADR/ADR-001*`/`ADR-002*` document
-  the now-reversed specialist/domain-axis and LangGraph/A2A decisions
-  (superseded, see their headers). `docs/ADR/ADR-003*` (evidence-first
-  claims) and `ADR-004*` (read-only-first) are unchanged.
-- **Archived incident history:** `docs/BUG_SHEET.md` (swarm_v2-era, frozen).
+Missions execute in the `recovery` container, not in `api`: after an agent change rebuild and restart
+`api recovery business-state-cron` together.
 
-## 2. Mission lifecycle & API surface
+## 2. The loop (`agent/loop.py`)
 
-Entry point: `src/seleric_swarm/main.py` (FastAPI app).
+- `Agent.run` with parallel tool calls, an event handler for progress (`agent.stage`, `tool_started`,
+  `tool_completed`, `answering`), cancellation checked before every model request.
+- Budgets: `AGENT_MAX_STEPS` (10), `AGENT_MAX_TOOL_CALLS` (20), `AGENT_TURN_BUDGET_S` (150, soft). When one is
+  exhausted a `PrepareTools` hook withdraws all tools and the model is told to answer from the evidence it has.
+- Degenerate output (content filter, repetition, `length` without a tool call) is retried once; a second time the
+  user gets a fixed "couldn't produce a reliable answer" text, never the junk.
+- Grounding (`agent/grounding.py`): every figure in the answer must be in a tool result of this turn or the thread's
+  last 8 payloads, or follow from them by one arithmetic step on figures that belong together. Findings (unmatched,
+  misbound to another row, placeholders) go back for ONE corrective pass; `lost_substance` keeps the draft if the
+  rewrite drops verified content. Anything still failing ships with a visible "Not verified against the data" note,
+  also written to `limitations` and `trace.grounding`.
+- Answer cleaning (`agent/answer_text.py`): metric ids replaced by names, tables realigned, decimals rounded.
+- `agent/present.py` runs after the answer (no model call) and attaches the visuals the main result's *shape* calls for:
+  KPI cards (snapshot of 2+ measures, with the change when there are two periods), a table (several measures or a long
+  list; several views are joined on the shared entity/day, a cell a view lacks is a dash, never 0) or a chart
+  (`agent/auto_chart.py` builds it). Nothing reads wording; shares are detected from the answer quoting percentages of
+  the rows' sum (donut/treemap). `Meta` formats values from the catalogue (unit, aggregation, ratio components).
 
-| Route | Purpose |
-|---|---|
-| `POST /v1/missions` | Submit a query. `wait: true` runs synchronously via `run_v3_mission` and returns the full `MissionResult` (including `trace.events`, the full event timeline, added inline). `wait: false` seeds a running placeholder and completes on the durable run queue (`enqueue_durable_mission`/`publish_durable_mission`). |
-| `GET /v1/missions/{mission_id}` | Poll a mission's current state. |
-| `POST /v1/missions/{mission_id}/cancel` | Cooperative best-effort cancellation. |
-| `GET /v1/missions/{mission_id}/events` | Paginated structured control-plane events (`family`, `after_seq`, `limit`). |
-| `GET /v1/missions/{mission_id}/trace` | Trace metadata (`request_id`, `session_id`, `langsmith_run_id`, `elapsed_seconds`) plus the full event timeline in one call. |
+## 3. Tools
 
-The conversational surface (`src/seleric_swarm/api/conversations.py`, mounted
-router) is the primary production entry point: threads/messages/runs with
-durable queueing, memory, and attachments. `_dispatch_route()` is hardcoded
-to `"v3"` — there is no live classification gate routing to anything else.
+| Group | Where | Notes |
+|---|---|---|
+| Core MCP read tools | `agent/mcp_toolset.py` | Schemas from `tools/list` at boot, read-only allowlist (no `actions_*`, no `semantic_sql`), jsonschema validation, `filter_misuse`, `flag_partial` / `flag_composed`, per-turn dedup, `compact`, evidence artifacts per `query_id` |
+| `diagnose_metric_change` | `toolsets/diagnosis.py`, `causal/*` | Exact decomposition, segment localisation, DoWhy driver estimates in a forkserver pool (`causal/estimate_pool.py`) |
+| `break_down_metric` | `toolsets/composition.py` | P&L / waterfall from the catalogue's verified composition |
+| `forecast_metrics` | `toolsets/forecasting.py`, `forecasting/*` | Chronos service |
+| `explore_data` | `toolsets/exploration.py` | What is unusual |
+| `run_python`, `show_chart`, `show_table` | `toolsets/sandbox.py`, `analytics.py` | Take `query_id`s of fetched results |
+| `business_snapshot` | `agent/local_tools.py` | Latest hourly snapshot when fresh |
+| `escalate` | `agent/local_tools.py` | Raises reasoning effort; the diagnosis and breakdown helpers also raise it |
 
-A secondary surface: the **voice agent** (`src/seleric_swarm/voice/` —
-LiveKit-based `token.py`/`worker.py`/`dev_page.py`, router mounted in
-`main.py`, compose `voice` service behind the `voice` profile) submits
-missions through the same conversation path.
+Local tools return a slim `ToolView` (summary, warnings, error code) to the model; the bulky structured result stays
+server-side. A failed helper call (`ok:false`) is recorded in `trace.stats.errors` like an MCP failure.
 
-A mission's `route` field is one of `v3` (created today), or a historical
-`swarm`/`pending`/`failed`/`lookup` value on an old persisted record — the
-old values are read-only compatibility, not a live creation path.
+## 4. Prompt and model
 
-## 3. Agent loop & toolsets
+- `agent/prompt.py`: working rules + answer rules, the Core MCP server instructions (data rules live in Core:
+  `Seleric_Agent_Core/.../gateway/prompts.py`), a compact catalogue index, and the calendar last so the prefix is
+  byte-stable.
+- `agent/model.py`: `resolve_loop_model` builds HealthGated → Fallback → Patient over `AZURE_OPENAI_MODELS`
+  (`gpt-5-mini`, then `gpt-4o-code`). `EffortModel` reads a per-mission effort holder: `AGENT_REASONING_EFFORT` (low)
+  by default, `AGENT_ESCALATED_EFFORT` (medium) after `escalate`, `AGENT_WRITEUP_EFFORT` (low) after the diagnosis /
+  breakdown helper returns.
 
-- `agent/runner.py::run_v3_mission` — builds `SelericDeps`, calls
-  `build_seleric_agent()` + `run_validated_mission`, converts the result into
-  `contracts/lookup.py::MissionResult`, persists it.
-- `agent/agent.py::build_seleric_agent` — the `Agent[SelericDeps,
-  MissionResult]`, wired with `agent/instructions.py::INSTRUCTIONS` and every
-  toolset.
-- `agent/dependencies.py` — `SelericDeps`, `ExecutionLimits`, `NullMcpClient`.
-- `agent/model.py::resolve_v3_model`, `agent/validation/__init__.py::run_validated_mission`
-  (the `EvidenceValidator` gate — bounded by
-  `max_validation_revisions = 2`, i.e. one revision pass beyond the initial
-  run; see `agent/dependencies.py` — note the module docstring in
-  `agent/validation/__init__.py` still says 1 and is stale).
-- Toolsets (`src/seleric_swarm/toolsets/`): `semantic.py` (metric/dimension
-  resolution + `query_metrics`/`drilldown` against the live catalogue —
-  Cube is the only authority for business metrics), `analytics.py`
-  (statistics/anomaly detection, consumes evidence already fetched — never
-  fetches independently), `causal.py` (DoWhy-backed causal estimation +
-  refutation), `models.py` (forecasting), `actions.py` (Meta write actions
-  only, gated by the propose→confirm→commit flow — Google Ads action
-  execution is explicitly out of scope), `knowledge.py`, `experiments.py`,
-  `sandbox.py` (registered Python-execution tool, `sandbox.run_python`).
-  Helper modules that are *not* tool surfaces: `catalogue_index.py`,
-  `policy_config.py`, `ads.py` (defined but deliberately unregistered —
-  see §11.2).
-- Backing service packages (toolsets are thin adapters over these):
-  `analytics/`, `knowledge/`, `experiments/`, `models/`, `causal/`,
-  `services/` (catalogue bootstrap, evidence, ontology, claim gate, numeric
-  audit, business-state, domain-health), `llm/` (provider factory/gateway,
-  metering, circuit breaker, OpenRouter), `protocols/mcp/gateway.py`
-  (`MCPGateway`).
-- Every agent loop is bounded (`max_tool_calls`, `max_llm_calls`, etc. in
-  `config/settings.py`) and the bound is enforced, not a no-op. Repeat/
-  paraphrase loops are additionally walled by `agent/repeat_guard.py` and
-  the per-tool call caps noted in §11.1.
+## 5. Persistence and surfaces (unchanged contracts)
 
-## 4. Evidence, provenance & causal validation
+Threads / runs / messages / message parts, memories and attachments, mission events timeline, `v3_artifacts` (evidence,
+`turn_payloads` per turn for follow-up grounding), `TurnRecord` with the query digest, Langfuse tracing, metering,
+voice, `/v1/business-state` (runs the loop with `business_snapshot`), the business-state cron.
+`trace.steps` holds every tool call / return (with `ms`, `phase_ms` for diagnosis); `trace.stats.llm_steps` holds per
+step ms, tokens, cached and reasoning tokens, effort; `trace.grounding` the grounding result.
+There is no Prometheus exporter in this repo.
 
-Full rules: `docs/08_EVIDENCE_AND_PROVENANCE.md` (unchanged, era-agnostic).
-Key points as implemented in V3:
+### Charts
 
-- Every numerical claim maps to an immutable `EvidenceArtifact`
-  (`contracts/lookup.py::EvidenceView`) with a traceable evidence id.
-- Missing evidence returns `INSUFFICIENT_EVIDENCE`, never a fabricated
-  number.
-- Causal claims carry an explicit classification (OBSERVATION / ASSOCIATION
-  / HYPOTHESIS / CAUSALLY_SUPPORTED / EXPERIMENTALLY_VALIDATED);
-  `causal/dowhy_service.py` runs refutation/sensitivity checks before a
-  claim can be reported as causally supported.
-- `.cursor/rules/01-evidence-policy.mdc` and `03-ml-causal.mdc` carry the
-  full non-negotiable list (hallucination guards, temporal-leakage checks
-  for predictive features, model id/version stamping on every prediction).
+`analytics/chart_vocabulary.py` is the one list of forms (mirrored in `office-ui/src/api/chartContract.ts`, checked by
+`tests/api/test_office_v3_adapter.py`): line, area, bar, horizontal_bar, stacked_bar, grouped_bar, combo, pie, donut,
+treemap, funnel, waterfall, scatter, radar, heatmap, causal_graph. `analytics/visualization.py` picks a default from the
+evidence shape (ranking -> horizontal bars, trend -> line, volume + rate over time -> combo, several measures over time
+-> lines, never stacked) and the model can name a form in `show_chart`. Measures that differ in unit kind (money /
+counts / averages, from the catalogue `aggregation`) or in size (>30x) are drawn in separate **panels** (`spec.panels`),
+never on twin axes. `break_down_metric` attaches a waterfall (P&L walk or period bridge) itself.
 
-## 5. Storage & persistence
+## 6. Evaluation
 
-- `src/seleric_swarm/persistence/postgres.py::build_store` — the mission
-  store `runtime.store` (Postgres-backed in production, with an in-memory
-  fallback via `persistence/memory.py`). This is the one live mission store
-  used by both `main.py`'s synchronous path and the durable run queue —
-  it is **not** a swarm_v2-only duplicate despite an older module docstring
-  implying a since-resolved "two pipelines share nothing" caution.
-- `src/seleric_swarm/state/{missions,artifacts}.py` — typed V3 mission/
-  artifact scaffolding (`Mission`, `ArtifactStore`), used by the still-
-  unmounted `api/missions.py` stub and `api/v3_state.py`'s Office UI
-  snapshot fallback.
-- `src/seleric_swarm/conversations/` (~7,300 lines) — the conversation/
-  memory/artifact platform: threads, messages, runs with lease-based durable
-  execution, consent-based memory (`MemoryService`, plus episodic tracking in
-  `conversations/memory_manager.py`), blob storage
-  (`conversations/blobs.py` — backends are `local` or `minio` only
-  (`config/settings.py::blob_backend`); **production requires MinIO**
-  (settings validation rejects any other value), local-fs is the dev
-  default. There is no Postgres blob backend.)
-- `src/seleric_swarm/conversations/phase7.py` — the propose → validate →
-  preview → confirm → commit → audit flow for write actions. The
-  `ApprovalRequest`/`RollbackRecord` types themselves live in
-  `conversations/contracts.py`; `phase7.py` hosts the in-memory/Postgres
-  approval repositories and the flow logic.
+`eval/regress/run_regression.py <items.json> <out_dir> [concurrency] [only=…]` drives the real API: wall time, LLM and
+tool counts, grounding, answer checks (`contains_sql` against ClickHouse truth, `window_reference` against direct MCP
+totals) and p50/p90. Sets: `test_agent6.json`, `replay11.json` (multi-turn), `regression.json` (golden 30, 7 items
+carry checks). Run the 6 plus the golden items relevant to a change; do not run the whole golden 30.
 
-## 6. Observability & tracing
+## 7. Known open items
 
-- The live V3 event stream is `conversations/events.py::ActivityEventSink`
-  (thread/run `ActivityEvent`s, persisted via `append_event`). The only
-  surviving piece of the old swarm control-plane observability is
-  `conversations/event_mapping_v1.py::canonical_kind` — a backward-compat
-  alias map (moved out of the deleted `coordinator/observability/events.py`)
-  used to normalize kinds on old persisted records. The
-  `observe_mission_events`/`notify_mission_event` observer plane and the
-  swarm event vocabulary (leadership/skeptic/specialist/remediation
-  constants) were deleted as dead no-op plumbing — nothing emitted through
-  them in V3. (Note: `src/seleric_swarm/coordinator/` may still exist in a
-  working tree as `__pycache__`-only residue; it contains no source.)
-- `src/seleric_swarm/observability/traces.py::mission_trace` — wraps each
-  agent run; `observability/tracing.py` configures OpenTelemetry/LangSmith
-  export (`configure_opentelemetry`, `instrument_fastapi`).
-- Every relevant log/trace event carries `mission_id`, `task_id`/`run_id`,
-  `agent_id`/`tool_name`, `evidence_id`, `trace_id` where applicable.
-- `GET /v1/missions/{id}/events` and `/trace` (§2) are the two read paths
-  for after-the-fact investigation.
-
-## 7. Security & governance
-
-Full policy: `docs/18_SECURITY_GOVERNANCE.md` (unchanged, era-agnostic
-principles — least privilege, audit, secrets handling). As implemented:
-
-- `src/seleric_swarm/api/security.py::ApiSecurityMiddleware` — API key /
-  rate limiting, applied to all non-probe routes (exempts `/health`-style
-  probes, the whole `/ui/*` static bundle, and `/v1/voice/dev`).
-- `src/seleric_swarm/api/mission_access.py::require_mission_access` —
-  workspace/owner scoping on every mission read.
-- Write actions always go through `conversations/phase7.py`'s approval flow
-  (§5) — never direct autonomous execution.
-
-## 8. Office UI gateway
-
-`src/seleric_swarm/api/office/gateway.py` (+ `normalize.py`, `registry.py`,
-`v3_adapter.py`) — a read-only SSE snapshot/event-stream gateway over the
-same mission stores. Reusable docs: `docs/office-ui/06_REALTIME_ARCHITECTURE.md`
-(snapshot/stream/reconnect/dedupe mechanics), `13_PERFORMANCE.md`,
-`14_ACCESSIBILITY.md`, `16_PRODUCTION_READINESS.md`. The event *vocabulary*
-those docs assume (leadership transfer, per-specialist office zones) was
-swarm_v2-specific and its docs were removed — the gateway mechanics are
-unchanged, but the front-end's event mapping will need updating for
-whatever vocabulary V3 actually emits (see `docs/office-ui/00_OVERVIEW.md`).
-
-## 9. Deployment & operations
-
-- `docker-compose.yml` / `Makefile` — services: `api`, `postgres` (host
-  port 5433 by default), `redis`, `minio`, `clamav`, `recovery` (the
-  durable-queue worker — its *command* is the `seleric-recover` console
-  script), and `voice` (profile-gated). `seleric-migrate` / `make migrate`
-  for schema; the recovery worker runs
-  `seleric_swarm.api.conversations:build_submission_executor`.
-- `config/settings.py` (`Settings`) — all runtime configuration; see the
-  file directly for the current field list (several old-pipeline-only
-  fields were removed in this cleanup — see the audit doc,
-  `docs/audits/2026-09-21_v3_cleanup_and_anomalies.md`).
-
-## 10. Testing approach
-
-- `tests/unit/` — fast, mostly-mocked coverage of individual modules
-  (toolsets, contracts, settings, conversations).
-- `tests/contract/` — interface-shape tests against the live MCP gateway
-  (`tests/contract/test_mcp_gateway.py`).
-- `tests/integration/` — real-backend tests (e.g. blob storage).
-- `tests/api/`, `tests/fixtures/` — route-level tests and shared fixtures.
-- The old `tests/replay/` and `tests/adversarial/` suites were deleted in
-  the V3 refactor (only stale `__pycache__/` may remain locally). The
-  eval harness lives in `src/seleric_swarm/evals/`: the golden-dataset
-  loader is covered by `tests/unit/test_v3_golden_dataset.py`;
-  `evals/parity.py` currently has no live test consumer.
-- Every new agent/tool/model contract needs both a unit test and a contract
-  test; missing/stale/conflicting-data paths and prompt injection carried
-  in tool-returned text are explicitly tested, not just the happy path.
-  Full bar: `.cursor/rules/04-testing-observability.mdc`.
-
-## 11. Open items carried forward
-
-Nothing substantive survived from the deleted stale-planning trackers
-(`docs/33_PROJECT_CHECKLIST.md`, `44_ROBUSTNESS_SCALABILITY_ADAPTABILITY_BACKLOG.md`,
-`45_TICKET_TRACKER.md`, `46_ARCHITECTURE_CONSOLIDATION_PLAN.md`) — their open
-items were all scoped to code that's now deleted (the five intelligence
-specialists' load/cost validation, the three-independent-MCP-path
-consolidation that only existed because swarm_v2's `HybridMcpDataProvider`
-existed). Two small items worth tracking separately, found during this
-cleanup pass (see the audit doc for detail):
-
-- The Office UI's event vocabulary (§8) needs updating for V3's actual
-  event kinds — currently undocumented for the new architecture.
-- Follow-up query time/metric inheritance (e.g. "gross sales today" → "gross
-  sale" inheriting the time range) had an implementation
-  (`coordinator/intake/conversation_context.py`) that was never wired into
-  the live V3 conversation submission path (`api/conversations.py`) — it
-  was deleted as dead code in this pass, not as a live regression, but if
-  follow-up context inheritance is a wanted V3 feature it needs a real
-  implementation, not a resurrection of the deleted one.
-
-### 11.1 Known constraints at the seleric-mcp seam (intentional)
-
-These are accepted design points, not defects — documented so they aren't
-rediscovered as bugs. They live on the gateway (`Base_Agent`) side; the agent
-inherits them through the shared service token.
-
-- **Single shared service token — no per-user RBAC.** The gateway authenticates
-  as one `service-token` actor with one `caller_scopes` set. A metric's
-  `access_policy.roles_allowed` (e.g. `net_profit` → exec/finance) is
-  informational only; just the scope check is enforced. There is no per-user
-  identity to authorize sensitive metrics against, and brand/tenant isolation is
-  by filter argument, not identity.
-- **Module scoping is unpinned in V3.** Sprint 5 removed per-agent module
-  pinning (`MCPGateway._build_allowlist` returns an empty module map). Calls are
-  unscoped unless the model passes `module=` explicitly; the gateway's
-  module-scoping machinery still works but nothing pins it.
-- **Freshness gate fails open on uncertainty.** The gateway blocks only
-  *positively-known-stale* views; a Cube probe error, unparseable cadence, or a
-  view with no date dimension is not blocked (so one transient hiccup can't take
-  every metric down). Enforcement is also behind a settings flag.
-- **Result store is in-process (~1h TTL) → single gateway instance.** `drilldown`
-  and `insights_explain` depend on a stored parent query. `toolsets/semantic.py`
-  re-runs the parent to sidestep the TTL, but a horizontally-scaled gateway would
-  not find a `parent_query_id` created on another instance.
-- **Loop-breaker caps.** `search_semantics` is hard-disabled after 3 searches per
-  mission and `query_metrics` walls after 2 identical repeat calls — deliberate
-  guardrails against small-model paraphrase/duplicate loops.
-- **Write path is Pipeboard-only and unverified.** The action broker registers a
-  single Pipeboard executor; direct Meta/Google Graph-API writes are not wired.
-  The Pipeboard `POST /actions/{type}` endpoint is an inherited convention never
-  confirmed against Pipeboard's real API.
-
-### 11.2 Read-only ad surfaces (CONTRACTS.md A2)
-
-`toolsets/ads.py` defines `query_meta_insights` (Cube-backed, certified —
-`meta_ad_performance` via the same planner as `metrics_query`, so it writes
-`EvidenceArtifact`s), plus `list_meta_accounts` / `list_google_accounts` /
-`query_google_ads` (live Graph/GAQL reads, uncertified reference data —
-outside the semantic layer, freshness gate, and catalogue). **As of
-2026-09-28 these tools are deliberately NOT registered on the agent**
-(`agent/agent.py::TOOLS` carries an explicit comment): third-party ad API
-surfaces were pulled back from the model, and Meta ad delivery numbers stay
-reachable through `query_metrics` (`meta_ad_performance`). No ad write/CRUD
-tools are wired either. `semantic.resolve_brand` is registered so
-multi-brand questions resolve a `brand_id` instead of the model inventing
-one.
+See the progress log in `plans/SLIM_LOOP_PLAN.md`: latency above the p50 25s / p90 45s bar, real token streaming of the
+last step, tuning of budgets, a decision on Prometheus, office-ui leftovers for the removed approvals endpoints.

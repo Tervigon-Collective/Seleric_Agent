@@ -5,36 +5,41 @@ import { useOffice } from "../store";
 import type { SwarmUIEvent } from "../types";
 
 describe("demo CAC fixture", () => {
-  it("initial snapshot has the whole roster idle and a running mission", () => {
+  it("initial snapshot has the V3 agent idle and a running mission", () => {
     const s = demoInitialSnapshot();
-    expect(s.agents).toHaveLength(14);
+    expect(s.agents).toHaveLength(1);
+    expect(s.agents[0].agentId).toBe("seleric_agent");
     expect(s.agents.every((a) => a.status === "idle")).toBe(true);
     expect(s.status).toBe("running");
+    expect(s.route).toBe("v3");
   });
 
-  it("script exercises every required beat (brief §68 + §83)", () => {
+  it("script walks the tool pipeline with no swarm handoffs", () => {
     const types = DEMO_SCRIPT.map((b) => b.event.eventType);
     for (const need of [
       "mission_started",
-      "decomposition_created",
-      "decomposition_refined",
-      "task_started",
-      "leadership_transferred",
-      "agent_started",
-      "artifact_created",
-      "skeptic_review_started",
-      "skeptic_revise",
-      "remediation_created",
-      "task_assigned",
-      "task_completed",
-      "skeptic_pass",
+      "tool_started",
+      "tool_completed",
+      "agent_thinking",
+      "answering",
       "mission_completed",
     ]) {
       expect(types, `missing ${need}`).toContain(need);
     }
-    // exactly two leadership handoffs: performance -> funnel -> technical
-    const handoffs = DEMO_SCRIPT.filter((b) => b.event.eventType === "leadership_transferred");
-    expect(handoffs.map((b) => b.event.agentId)).toEqual(["funnel_agent", "technical_agent"]);
+    // No retired vocabulary: no leadership transfers, no skeptic, no remediation.
+    for (const retired of [
+      "leadership_transferred",
+      "agent_started",
+      "skeptic_review_started",
+      "skeptic_revise",
+      "skeptic_pass",
+      "remediation_created",
+      "task_assigned",
+    ]) {
+      expect(types, `retired ${retired}`).not.toContain(retired);
+    }
+    const tools = DEMO_SCRIPT.filter((b) => b.event.eventType === "tool_completed");
+    expect(tools.length).toBeGreaterThanOrEqual(4);
   });
 
   it("replays through the store to a completed mission with a final answer", async () => {
@@ -61,7 +66,7 @@ describe("demo CAC fixture", () => {
     expect(new Set(events.map((e) => e.seq)).size).toBe(events.length); // unique seqs
     expect(s.status).toBe("completed");
     expect(s.finalResponse).toMatch(/frontend regression/i);
-    expect(s.leadAgentId).toBe("technical_agent");
+    expect(s.leadAgentId).toBe("seleric_agent");
     expect(s.board.every((step) => step.state === "done")).toBe(true);
   });
 
@@ -75,12 +80,12 @@ describe("demo CAC fixture", () => {
       onState: () => {},
     });
 
-    // Through first investigation wave + artifact (patches fire after each)
+    // Through first tool beats (patches fire after each)
     await vi.advanceTimersByTimeAsync(12_000);
     const mid = useOffice.getState();
-    const active = Object.values(mid.agents).filter((a) => a.status !== "idle" && a.status !== "offline");
-    expect(active.length).toBeGreaterThan(2);
-    expect(active.some((a) => !!a.currentAction)).toBe(true);
+    const me = mid.agents["seleric_agent"];
+    expect(me.status).not.toBe("idle");
+    expect(me.currentAction).toBeTruthy();
 
     unsub();
     vi.useRealTimers();

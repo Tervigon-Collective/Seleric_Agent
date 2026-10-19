@@ -1,0 +1,30 @@
+{
+ "n": 8,
+ "aspect": "golden",
+ "q": "Which Meta campaigns performed best in the last 7 days? Rank them using spend, revenue, ROAS, CAC, CTR, CPC, CPM, clicks, LPVs, and purchases.",
+ "thread": "thread_59a1054645b9466db529a3007c650e71",
+ "mission": "MS3-706217426f",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 30,
+ "elapsed_s": 27.007,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 75,
+  "measured": 75,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Top 10 Meta campaigns by ad spend (last 7 days), with revenue, ROAS, CAC and performance metrics \u2014 ranked by ad spend. TH-383-SUSPENDER-29SEP, TH-383-SUSPENDER-26SEP-ADV+ and TH-222-WINGBIRD-23SEP are the biggest spenders but none exceed ROAS = 2x; several high-spend campaigns have ROAS <1.\n\nCampaign \u00b7 Spend \u00b7 Revenue (order-date) \u00b7 ROAS \u00b7 CAC \u00b7 CTR \u00b7 CPC \u00b7 CPM \u00b7 Clicks \u00b7 LPVs \u00b7 Purchases\n- TH-383-SUSPENDER-29SEP \u00b7 \u20b924,101 \u00b7 \u20b920,247 \u00b7 0.6x \u00b7 \u20b92,678 \u00b7 2.2% \u00b7 \u20b910 \u00b7 \u20b9234 \u00b7 2,300 \u00b7 1,580 \u00b7 10\n- TH-383-SUSPENDER-26SEP-ADV+ \u00b7 \u20b923,526 \u00b7 \u20b918,262 \u00b7 0.5x \u00b7 \u20b94,705 \u00b7 2.7% \u00b7 \u20b913 \u00b7 \u20b9349 \u00b7 1,820 \u00b7 1,024 \u00b7 8\n- TH-222-WINGBIRD-23SEP \u00b7 \u20b921,626 \u00b7 \u20b926,234 \u00b7 0.7x \u00b7 \u20b91,201 \u00b7 2.4% \u00b7 \u20b924 \u00b7 \u20b9582 \u00b7 899 \u00b7 707 \u00b7 21\n- TH-149-SCRATCHLOUNGE-6OCT \u00b7 \u20b919,817 \u00b7 \u20b929,575 \u00b7 0.9x \u00b7 \u20b91,524 \u00b7 2.4% \u00b7 \u20b917 \u00b7 \u20b9405 \u00b7 1,155 \u00b7 934 \u00b7 14\n- TH-336-PAWTECH-26SEP \u00b7 \u20b919,190 \u00b7 \u20b924,891 \u00b7 0.9x \u00b7 \u20b91,745 \u00b7 1.6% \u00b7 \u20b923 \u00b7 \u20b9364 \u00b7 830 \u00b7 609 \u00b7 12\n- TH-012-SNUGBOO-23SEP \u00b7 \u20b919,174 \u00b7 \u20b927,842 \u00b7 0.7x \u00b7 \u20b91,917 \u00b7 2.2% \u00b7 \u20b924 \u00b7 \u20b9533 \u00b7 798 \u00b7 606 \u00b7 15\n- DOG DAD T-SHIRT-CS-06OCT \u00b7 \u20b912,323 \u00b7 \u20b910,492 \u00b7 0.5x \u00b7 \u20b92,054 \u00b7 2.1% \u00b7 \u20b913 \u00b7 \u20b9274 \u00b7 926 \u00b7 607 \u00b7 8\n- DOG SHOES-CR-7OCT \u00b7 \u20b910,704 \u00b7 \u20b97,885 \u00b7 No data available (ROAS) \u00b7 No data available (CAC) \u00b7 2.7% \u00b7 \u20b921 \u00b7 \u20b9581 \u00b7 498 \u00b7 391 \u00b7 5\n- DOG MOM T-SHIRT-CS-06OCT \u00b7 \u20b910,268 \u00b7 \u20b95,884 \u00b7 No data available (ROAS) \u00b7 No data available (CAC) \u00b7 2.1% \u00b7 \u20b923 \u00b7 \u20b9483 \u00b7 448 \u00b7 357 \u00b7 4\n- TH-279-BATHEASEBRUSH-07OCT \u00b7 \u20b910,111 \u00b7 No data available (revenue) \u00b7 No data available (ROAS/CAC) \u00b7 0.7% \u00b7 \u20b955 \u00b7 \u20b9398 \u00b7 185 \u00b7 141 \u00b7  Not available\n\nNotes:\n- \"No data available\" means that metric was missing from the campaign in one of the views returned (the parts come from paid_media, commerce and order_pnl); missing \u2260 zero.\n- All figures are order-date for revenue/purchases and report-date for paid metrics; currency rounded to whole rupees, CTR shown as percent (one decimal).\n\nPeriod: 2026-10-07..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Would you like this ranked instead by ROAS or by CAC (I can re-run the sort and show top performers by that metric)?"
+}

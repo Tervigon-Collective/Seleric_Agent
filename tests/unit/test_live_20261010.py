@@ -1,0 +1,208 @@
+"""Live thread_066b9cd1 (2026-10-10): a campaign drill-down answered from account totals, and why-questions that
+named no driver while conversion had halved."""
+
+from __future__ import annotations
+
+import random
+from datetime import date, timedelta
+
+from seleric_swarm.toolsets import diagnosis
+
+_QUESTION = (
+    "TH-383-SUSPENDER-26SEP-ADV+ , drill down into this campaign and why did it not perform yesterdays as compare "
+    "to the other days"
+)
+
+
+def _dim(dimension: str, view: str, *values: tuple[str, float, str]) -> dict:
+    return {"dimension": dimension, "view": view,
+            "values": [{"value": v, "volume": vol, "match": m} for v, vol, m in values]}
+
+
+# The gateway's reply, trimmed: the name split into word terms, the whole name only a token hit.
+_RESOLUTION = {"status": "ok", "terms": [
+    {"term": "adv", "catalogue_vocabulary": False, "best_match": "exact", "dimensions": [
+        _dim("entity_name", "paid_media_changes", ("Adv+", 0.0, "exact"), ("TH-053-COAT-3JULY-ADV+", 1.0, "token")),
+        _dim("adset_name", "paid_media_changes", ("Adv+", 0.0, "exact")),
+    ]},
+    {"term": "other", "catalogue_vocabulary": False, "best_match": "exact", "dimensions": [
+        _dim("channel", "orders", ("other", 120.0, "exact")),
+    ]},
+    {"term": "campaign", "catalogue_vocabulary": False, "best_match": "exact", "dimensions": [
+        _dim("entity_type", "paid_media_changes", ("CAMPAIGN", 166.0, "exact")),
+    ]},
+    {"term": "suspender 26sep adv", "catalogue_vocabulary": False, "best_match": "token", "dimensions": [
+        _dim("campaign_name", "payments", ("TH-383-SUSPENDER-26SEP-ADV+", 75318.9, "token"),
+             ("TH-383-SUSPENDER", 9000.0, "token")),
+        _dim("acquisition_campaign", "customers", ("TH-383-SUSPENDER-26SEP-ADV+", 24.0, "token")),
+    ]},
+    {"term": "suspender", "catalogue_vocabulary": False, "best_match": "token", "dimensions": [
+        _dim("ad_name", "paid_media", ("TH-383-SUSPENDER-UGC", 500.0, "token")),
+    ]},
+    {"term": "26sep", "catalogue_vocabulary": False, "best_match": "token", "dimensions": [
+        _dim("campaign_name", "payments", ("TH-383-SUSPENDER-26SEP-ADV+", 75318.9, "token")),
+    ]},
+]}
+
+
+
+
+
+
+
+
+
+
+def _sales_lineage() -> dict:
+    from seleric_swarm.causal import diagnosis as engine
+
+    def m(i: str, agg: str, deps: tuple[str, ...] = ()) -> engine.MetricMeta:
+        return engine.MetricMeta(i, aggregation=agg, depends_on=deps, label=i.upper())
+
+    return {
+        "sales": m("sales", "additive"), "orders": m("orders", "additive"), "sessions": m("sessions", "additive"),
+        "clicks": m("clicks", "additive"), "impr": m("impr", "additive"),
+        "cvr": m("cvr", "ratio", ("orders", "sessions")), "aov": m("aov", "ratio", ("sales", "orders")),
+        "ctr": m("ctr", "ratio", ("clicks", "impr")),
+    }
+
+
+def _sales_series() -> dict[str, dict[date, float]]:
+    """2026-10-08 → 10-09 (ClickHouse): sessions 5,042 → 5,094, purchases 58 → 26, gross sales 121,848 → 70,852."""
+    rng = random.Random(3)
+    series: dict[str, dict[date, float]] = {k: {} for k in ("sales", "orders", "sessions", "clicks", "impr")}
+    for i in range(37):
+        d = date(2026, 9, 2) + timedelta(days=i)
+        se = 4800 + rng.random() * 500
+        od = se * (0.010 + rng.random() * 0.003)
+        series["sessions"][d], series["orders"][d] = se, od
+        series["sales"][d] = od * (1900 + rng.random() * 300)
+        series["impr"][d] = 190000 + rng.random() * 20000
+        series["clicks"][d] = series["impr"][d] * 0.027
+    for d, (se, od, sa) in {date(2026, 10, 8): (5042, 58, 121848.0), date(2026, 10, 9): (5094, 26, 70851.77)}.items():
+        series["sessions"][d], series["orders"][d], series["sales"][d] = se, od, sa
+        series["impr"][d], series["clicks"][d] = 200000, 5400
+    series["cvr"] = {d: series["orders"][d] / series["sessions"][d] for d in series["sessions"]}
+    series["aov"] = {d: series["sales"][d] / series["orders"][d] for d in series["sessions"]}
+    series["ctr"] = {d: series["clicks"][d] / series["impr"][d] for d in series["impr"]}
+    return series
+
+
+def test_a_total_splits_exactly_through_the_rates_that_rebuild_it():
+    series = _sales_series()
+    history = sorted(d for d in series["sales"] if d < date(2026, 10, 9))
+    text, figures = diagnosis._ratio_split(
+        "sales", ["cvr", "aov", "ctr"], _sales_lineage(), series, history, [date(2026, 10, 9)], [date(2026, 10, 8)]
+    )
+    assert "EXACT SPLIT" in text
+    effects = {k.split(" | ")[0]: v for k, v in figures.items() if k.endswith("effect on sales %")}
+    assert set(effects) == {"CVR", "AOV", "SESSIONS"}
+    # conversion halved on flat traffic: the drop is conversion's, not traffic's
+    assert effects["CVR"] < -50 and abs(effects["SESSIONS"]) < 2
+    product = 1.0
+    for v in effects.values():
+        product *= 1 + v / 100
+    assert abs(product - 70851.77 / 121848.0) < 1e-6
+
+
+def test_rates_that_do_not_rebuild_a_total_give_no_split():
+    series = _sales_series()
+    history = sorted(d for d in series["sales"] if d < date(2026, 10, 9))
+    text, figures = diagnosis._ratio_split(
+        "sales", ["ctr"], _sales_lineage(), series, history, [date(2026, 10, 9)], [date(2026, 10, 8)]
+    )
+    assert (text, figures) == ("", {})
+
+
+def _campaign_catalogue():
+    from seleric_swarm.services.catalogue_bootstrap import CatalogueMetricMeta, CatalogueSnapshot
+
+    def m(i: str, agg: str) -> CatalogueMetricMeta:
+        return CatalogueMetricMeta(id=i, label=i.replace("_", " ").title(), supported_dimensions=["campaign_name"],
+                                   raw={"aggregation": agg})
+
+    return CatalogueSnapshot(
+        metrics=(m("net_sales", "additive"), m("net_roas", "ratio"), m("ad_spend", "additive"),
+                 m("ctr", "ratio"), m("orders", "additive")),
+        dimension_families=(("campaign_name", "campaign", 0), ("acquisition_campaign", "campaign", 1)),
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+def test_a_lever_outside_its_own_usual_range_leads_the_drivers():
+    """TH-383-SUSPENDER-26SEP-ADV+ 10-02..10-08 (ClickHouse): CPM 350, 286, 250, 297, 326, 356, 353; clicks
+    191..1,079. A CPM of 520 yesterday is out of line for this campaign; clicks of 558 are not."""
+    from seleric_swarm.causal import diagnosis as engine
+
+    days = [date(2026, 10, 2) + timedelta(days=i) for i in range(7)]
+    event = [date(2026, 10, 9)]
+    series = {
+        "cpm": dict(zip(days, [350.3, 286.1, 249.8, 296.8, 325.6, 355.6, 352.9], strict=True)) | {event[0]: 520.0},
+        "clicks": dict(zip(days, [191, 143, 1079, 428, 572, 473, 513], strict=True)) | {event[0]: 558.0},
+    }
+    lineage = {"cpm": engine.MetricMeta("cpm", aggregation="ratio", label="CPM"),
+               "clicks": engine.MetricMeta("clicks", aggregation="additive", label="Clicks")}
+    report = engine.DiagnosisReport(outcome="net_roas", event_window=["2026-10-09"], verdict="no_unusual_change",
+                                    headline="", event=None)
+    text, figures = diagnosis._named_driver_lines(["clicks", "cpm"], series, event, days, lineage, report, days)
+    assert text.index("CPM") < text.index("Clicks")
+    assert "CPM" in text.split("OUTSIDE its own usual range")[0]
+    assert "Clicks" in text and "within its own usual range" in text
+    assert figures["cpm | z vs its own normal days"] > 2 > abs(figures["clicks | z vs its own normal days"])
+
+
+
+
+def test_the_outcome_is_placed_among_its_own_normal_days():
+    from seleric_swarm.causal import diagnosis as engine
+
+    days = [date(2026, 10, 2) + timedelta(days=i) for i in range(7)]
+    roas = dict(zip(days, [0.0, 0.77, 0.39, 0.38, 0.90, 0.47, 0.71], strict=True)) | {date(2026, 10, 9): 0.65}
+    lineage = {"net_roas": engine.MetricMeta("net_roas", aggregation="ratio", label="Net ROAS")}
+    text = diagnosis._outcome_on_its_normal_days(
+        "net_roas", {"net_roas": roas}, [date(2026, 10, 9)], days, days, lineage
+    )
+    assert "Net ROAS ranged" in text and "over 7 normal days" in text and "standing problem" in text
+
+
+def test_the_count_of_an_outcomes_own_units_comes_from_its_grain():
+    from seleric_swarm.causal import diagnosis as engine
+
+    lineage = {
+        "gross_sales": engine.MetricMeta("gross_sales", aggregation="additive", view="commerce", grain="order"),
+        "orders": engine.MetricMeta("orders", aggregation="additive", view="commerce", grain="order"),
+        "funnel_purchases": engine.MetricMeta("funnel_purchases", aggregation="additive", view="web_funnel",
+                                              grain="brand_day"),
+        "sessions": engine.MetricMeta("sessions", aggregation="additive", view="web_sessions", grain="session"),
+        "conversion_rate": engine.MetricMeta("conversion_rate", aggregation="ratio", view="web_sessions",
+                                             grain="session"),
+    }
+    assert engine.unit_count_metric("gross_sales", lineage) == "orders"
+    assert engine.unit_count_metric("conversion_rate", lineage) == "sessions"
+    assert engine.unit_count_metric("orders", lineage) is None
+    assert engine.unit_count_metric("funnel_purchases", lineage) is None
+
+
+def test_a_multi_day_window_is_reported_as_a_per_day_average_not_a_total():
+    from seleric_swarm.causal import diagnosis as engine
+
+    days = [date(2026, 9, 1) + timedelta(days=i) for i in range(14)]
+    event = [date(2026, 9, 15) + timedelta(days=i) for i in range(14)]
+    profit = {d: 5000.0 for d in days} | {d: -6921.0 for d in event}
+    lineage = {"net_profit": engine.MetricMeta("net_profit", aggregation="additive", label="Net profit")}
+    text = diagnosis._outcome_on_its_normal_days("net_profit", {"net_profit": profit}, event, days, days, lineage)
+    assert "2026-09-15..2026-09-28: averaged" in text and "per day (not the period total)" in text
+    assert "2026-09-16, 2026-09-17" not in text
+
+
+def test_a_window_longer_than_a_week_defaults_to_the_period_just_before_it():
+    assert diagnosis._USUAL_MAX_DAYS == 7 < diagnosis._MAX_EVENT_DAYS

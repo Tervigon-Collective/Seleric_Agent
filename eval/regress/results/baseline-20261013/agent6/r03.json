@@ -1,0 +1,25 @@
+{
+ "n": 3,
+ "aspect": "test_agent6",
+ "q": "Which products are profitable after returns and advertising costs?",
+ "thread": "thread_ec7762d893c34c24af1855674c6a8019",
+ "mission": "MS3-5c222dbb03",
+ "run_status": "FAILED",
+ "status": "failed",
+ "wall_s": 42,
+ "elapsed_s": null,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 0,
+ "llm_calls": null,
+ "grounding": null,
+ "tools": [],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": null,
+   "what": "tool checks skipped: trace.steps carries no tool calls (pre-slim-loop system)"
+  }
+ ],
+ "answer": "v2 pipeline could not answer: no_template"
+}

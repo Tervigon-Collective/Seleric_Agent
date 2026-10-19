@@ -1,0 +1,47 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_9424f48387fb41de8f25fd234f40dd07",
+ "mission": "MS3-52d0a3bfd0",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 55,
+ "elapsed_s": 52.266,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 18,
+  "measured": 18,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "metrics_query",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer: Several Meta campaigns are spending substantial budget while returning less than \u20b91 in gross sales per \u20b91 spent (gross ROAS < 1). The biggest offenders (Oct 1\u201314, order-date basis for ROAS; ad spend on delivery date) are:\n\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b955,793 \u00b7 Gross ROAS 0.9 (\u20b90.94 per \u20b91)  \n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b949,163 \u00b7 Gross ROAS 0.9 (\u20b90.92 per \u20b91)  \n- CAT TOY CS-26SEP \u2014 Ad spend \u20b928,431 \u00b7 Gross ROAS 0.9 (\u20b90.93 per \u20b91)  \n- DOG TOY CS-24SEP \u2014 Ad spend \u20b919,622 \u00b7 Gross ROAS 1.0 (\u20b90.97 per \u20b91)  \n- TH-348-FUSIONHARNESS-03OCT \u2014 Ad spend \u20b914,667 \u00b7 Gross ROAS 0.7 (\u20b90.75 per \u20b91)  \n- DOG DAD T-SHIRT-CS-06OCT \u2014 Ad spend \u20b914,069 \u00b7 Gross ROAS 1.0 (\u20b90.96 per \u20b91)\n\nWhy this matters (top drivers):\n- Spend concentrated on a few product campaigns with ROAS below 1 \u2014 each rupee spent returns less than a rupee of gross sales, so these campaigns reduce contribution margin.\n- Some campaigns show near-zero or zero ROAS (no attributed order revenue) \u2014 any non-trivial spend on those is pure waste until creative/targeting or attribution is fixed.\n- Totals and ROAS are order-date (gross ROAS from the P&L/order view) while ad spend is platform delivery date (standard mismatch; figures above are the platform spend vs order-date gross ROAS slice for Meta).\n\nWorth checking: pause or reduce budget on the top 3 listed and reallocate to higher-ROAS campaigns; investigate the zero-ROAS campaigns for tracking/attribution or poor targeting before more spend.\n\nPeriod: 2026-10-01..2026-10-14 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Drill down these campaigns by day and adset (show me campaign \u2192 adset daily ROAS for the top 3)."
+}

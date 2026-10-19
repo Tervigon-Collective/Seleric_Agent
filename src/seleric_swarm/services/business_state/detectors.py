@@ -47,7 +47,7 @@ def robust_zscore(history: list[float], observed: float, *, z_threshold: float =
     # distribution-aware minimum if flat metrics prove noisy in practice.
     sigma = _MAD_TO_SIGMA * mad if mad else 1e-9
     z = (observed - median) / sigma
-    deviation_pct = ((observed - median) / median * 100) if median else None
+    deviation_pct = ((observed - median) / abs(median) * 100) if median else None  # abs keeps the sign of the move on a negative base
     direction = "up" if observed > median else ("down" if observed < median else "flat")
     return RobustZScoreResult(
         observed=observed,
@@ -75,7 +75,7 @@ def _rescore_against_expected(
     if sigma <= 0:
         sigma = 1e-9  # same flat-history guard as robust_zscore
     z = (observed - expected) / sigma
-    deviation_pct = ((observed - expected) / expected * 100) if expected else None
+    deviation_pct = ((observed - expected) / abs(expected) * 100) if expected else None
     direction = "up" if observed > expected else ("down" if observed < expected else "flat")
     return RobustZScoreResult(
         observed=observed,

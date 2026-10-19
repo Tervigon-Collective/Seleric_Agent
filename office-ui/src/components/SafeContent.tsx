@@ -50,15 +50,70 @@ const TABLE_SEP_SHAPE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // The pipe requirement keeps a bare "---" rule from being read as a delimiter row.
 const TABLE_SEP = { test: (line: string) => line.includes("|") && TABLE_SEP_SHAPE.test(line) };
 
-const splitRow = (line: string): string[] =>
-  line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+/** Split a GFM row. `\|` stays inside its cell (campaign names often contain `|`). */
+const splitRow = (line: string): string[] => {
+  const body = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  const cells: string[] = [];
+  let current = "";
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] === "\\" && body[i + 1] === "|") {
+      current += "|";
+      i++;
+      continue;
+    }
+    if (body[i] === "|") {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += body[i];
+  }
+  cells.push(current.trim());
+  return cells;
+};
+
+/**
+ * A row wider than its header has an unescaped `|` in a label (live: Google
+ * campaign names like "[Google Build] Brand Search | 5th March"). Fold the
+ * overflow back into the first cell so later columns stay on their headers.
+ * Rendering only `head.length` cells used to drop the last metric.
+ */
+const alignRow = (row: string[], width: number): string[] => {
+  if (width <= 0 || row.length <= width) return row;
+  const extra = row.length - width;
+  return [row.slice(0, extra + 1).join(" | "), ...row.slice(extra + 1)];
+};
+
+/** Currency / count / ratio cells — keep on one line and right-align. */
+const NUMERIC_CELL =
+  /^(?:[-+−]|₹|\$|€|£)?\s*[\d,]+(?:\.\d+)?\s*%?$/;
+
+const isNumericCell = (cell: string): boolean => {
+  const t = cell.replace(/\*\*|__/g, "").trim();
+  return t !== "" && NUMERIC_CELL.test(t.replace(/\u2212/g, "-"));
+};
+
+const numericColumns = (width: number, rows: string[][]): boolean[] =>
+  Array.from({ length: width }, (_, c) => {
+    const values = rows.map((r) => (r[c] ?? "").trim()).filter(Boolean);
+    return values.length > 0 && values.every(isNumericCell);
+  });
 
 const isBlockStart = (line: string, next: string | undefined): boolean =>
   HEADING.test(line) || RULE.test(line) || BULLET.test(line) || ORDERED.test(line)
   || QUOTE.test(line) || (line.includes("|") && next !== undefined && TABLE_SEP.test(next));
 
+/** Model-escaped ``\\n`` between table rows must become real newlines or the
+ *  whole Markdown table stays one paragraph with visible ``\\n`` (live 2026-10-09). */
+function normalizeNewlines(source: string): string {
+  let text = source.replace(/\r\n?/g, "\n");
+  if (!text.includes("\\n")) return text;
+  if (!text.includes("\\n|") && !text.includes("|\\n") && !text.includes("\\n\\n|")) return text;
+  return text.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\n");
+}
+
 function blocks(source: string, keyPrefix: string): ReactNode[] {
-  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  const lines = normalizeNewlines(source).split("\n");
   const out: ReactNode[] = [];
   let i = 0;
   let k = 0;
@@ -86,13 +141,25 @@ function blocks(source: string, keyPrefix: string): ReactNode[] {
         rows.push(splitRow(lines[i]));
         i++;
       }
+      const alignedRows = rows.map((row) => alignRow(row, head.length));
+      const numeric = numericColumns(head.length, alignedRows);
       out.push(
         <div className="md-table-wrap" key={key()}>
           <table>
-            <thead><tr>{head.map((cell, c) => <th key={c}>{inline(cell)}</th>)}</tr></thead>
+            <thead>
+              <tr>
+                {head.map((cell, c) => (
+                  <th key={c} className={numeric[c] ? "num" : undefined}>{inline(cell)}</th>
+                ))}
+              </tr>
+            </thead>
             <tbody>
-              {rows.map((row, r) => (
-                <tr key={r}>{head.map((_, c) => <td key={c}>{inline(row[c] ?? "")}</td>)}</tr>
+              {alignedRows.map((row, r) => (
+                <tr key={r}>
+                  {head.map((_, c) => (
+                    <td key={c} className={numeric[c] ? "num" : undefined}>{inline(row[c] ?? "")}</td>
+                  ))}
+                </tr>
               ))}
             </tbody>
           </table>
@@ -146,7 +213,7 @@ function blocks(source: string, keyPrefix: string): ReactNode[] {
 }
 
 export function SafeContent({ text }: { text: string }) {
-  const parts = text.split(/```/);
+  const parts = normalizeNewlines(text).split(/```/);
   return (
     <div className="safe-content">
       {parts.map((part, index) =>

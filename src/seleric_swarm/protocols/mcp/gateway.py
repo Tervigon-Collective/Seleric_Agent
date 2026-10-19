@@ -15,16 +15,7 @@ from seleric_swarm.protocols.mcp.servers.seleric_remote import build_seleric_ser
 # Every domain agent with catalogue access gets the same read-only tool set
 # (a catalogue-level constant, not a per-domain one); what differs per agent is
 # which module (data-access scope) the gateway pins, read from the registry.
-SELERIC_ACTION_TOOLS = {
-    "actions_list_available",
-    "actions_propose",
-    "actions_commit",
-    "actions_status",
-}
-SELERIC_CAPABILITIES = {
-    f"seleric.{tool}" for tool in SELERIC_TOOLS if tool not in SELERIC_ACTION_TOOLS
-}
-SELERIC_ACTION_CAPABILITIES = {f"seleric.{tool}" for tool in SELERIC_ACTION_TOOLS}
+SELERIC_CAPABILITIES = {f"seleric.{tool}" for tool in SELERIC_TOOLS}
 
 # Tools whose server signature accepts ``module``. The gateway pins the agent's
 # seleric_module onto these only — listing/resolve tools reject the extra argument.
@@ -51,11 +42,7 @@ def _build_allowlist() -> tuple[dict[str, set[str]], dict[str, str]]:
     registry-driven per-agent lookup.
     """
 
-    # The single-agent runtime gets the action surface without granting
-    # write capabilities to anything else. The remote MCP server still
-    # enforces caller scopes, proposal eligibility, explicit confirmation
-    # tokens, its write kill switch, and executor-level policy.
-    allowlist = {"v3_agent": SELERIC_CAPABILITIES | SELERIC_ACTION_CAPABILITIES}
+    allowlist = {"v3_agent": set(SELERIC_CAPABILITIES)}
     return allowlist, {}
 
 
@@ -94,14 +81,9 @@ class MCPGateway:
         return self._module.get(agent_id)
 
     def _authorize(self, agent_id: str, capability: str) -> None:
-        # Writes stay v3_agent-only. Reads are open to any caller identity —
-        # surviving service paths (catalogue warmup, ontology, business_state)
-        # still stamp coordinator/observer/domain agent_ids for provenance,
-        # and there is no multi-agent permission model left after Sprint 5.
-        if capability in SELERIC_ACTION_CAPABILITIES:
-            if agent_id != "v3_agent":
-                raise PermissionError(f"agent {agent_id} is not allowed to call {capability}")
-            return
+        # Reads are open to any caller identity — surviving service paths (catalogue warmup, ontology,
+        # business_state) still stamp coordinator/observer/domain agent_ids for provenance. There are
+        # no write capabilities.
         if capability in SELERIC_CAPABILITIES:
             return
         allowed = self._allowlist.get(agent_id, set())
@@ -128,6 +110,34 @@ class MCPGateway:
             result = await result
         self.invocations.append({"agent_id": agent_id, "capability": capability, "arguments": arguments})
         return result
+
+    def _transport(self) -> Any:
+        for server in self._servers.values():
+            transport = getattr(server, "_transport", None)
+            if transport is not None:
+                return transport
+        raise NotImplementedError("no MCP server is configured")
+
+    async def list_tools(self) -> list[dict[str, Any]]:
+        """Tool definitions (name, description, inputSchema) the MCP server publishes."""
+        return await self._transport().list_tools()
+
+    async def server_instructions(self) -> str:
+        """The MCP server's own usage guide (initialize result)."""
+        transport = self._transport()
+        await transport._ensure_session()
+        return str(transport.instructions or "")
+
+    async def aclose_current_loop(self) -> None:
+        """Close HTTP transport clients created for the current event loop."""
+        seen: set[int] = set()
+        for server in self._servers.values():
+            transport = getattr(server, "_transport", None)
+            if transport is not None and id(transport) not in seen:
+                seen.add(id(transport))
+                aclose_loop = getattr(transport, "aclose_current_loop", None)
+                if aclose_loop is not None:
+                    await aclose_loop()
 
     async def aclose(self) -> None:
         """Close underlying HTTP transports (shared across tool wrappers)."""

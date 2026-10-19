@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import os
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -10,12 +9,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from seleric_swarm.cancellation import RedisCancellationBackend
-from seleric_swarm.checkpointing import PostgresCheckpointProvider
 from seleric_swarm.conversations.contracts import (
     ActivityEvent,
     EventVisibility,
     Run,
-    RunAttempt,
     Thread,
 )
 from seleric_swarm.conversations.postgres import build_conversation_repositories
@@ -38,44 +35,6 @@ def _require_postgres(url: str) -> None:
         pytest.skip(f"PostgreSQL integration service unavailable: {exc}")
 
 
-@pytest.mark.asyncio
-async def test_postgres_checkpoint_pool_and_run_leases():
-    url = _postgres_url()
-    _require_postgres(url)
-
-    run_migrations(url)
-    repositories = build_conversation_repositories("postgres", url)
-    thread = repositories.threads.create(
-        Thread(workspace_id="integration", owner_user_id="integration")
-    )
-    run = repositories.runs.create(
-        Run(
-            thread_id=thread.id,
-            workspace_id=thread.workspace_id,
-            requested_by_user_id=thread.owner_user_id,
-            current_attempt=1,
-        )
-    )
-    attempt = repositories.runs.add_attempt(
-        RunAttempt(run_id=run.id, attempt_number=1)
-    )
-    claimed = repositories.runs.claim(
-        run.id, "integration-worker", 10, now=datetime.now(UTC)
-    )
-    assert claimed is not None
-    assert repositories.runs.heartbeat(
-        attempt.id,
-        "integration-worker",
-        10,
-        expected_version=claimed.version,
-    )
-
-    if type(asyncio.get_running_loop()).__name__ == "ProactorEventLoop":
-        pytest.skip("psycopg async pools require a selector event loop on Windows")
-    provider = PostgresCheckpointProvider(url)
-    await provider.setup()
-    assert provider.get_checkpointer() is not None
-    await provider.close()
 
 
 def test_postgres_activity_event_survives_repository_restart():

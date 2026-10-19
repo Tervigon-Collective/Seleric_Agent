@@ -22,8 +22,20 @@ export class HttpClient {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
+  private getApiKey(): string {
+    if (typeof window !== "undefined") {
+      return (window as any).__SELERIC_API_KEY__ || "";
+    }
+    return "";
+  }
+
   headers(extra?: HeadersInit): Headers {
-    return new Headers(extra);
+    const headers = new Headers(extra);
+    const apiKey = this.getApiKey();
+    if (apiKey && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${apiKey}`);
+    }
+    return headers;
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {

@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import tempfile
+import threading
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -23,6 +25,7 @@ from seleric_swarm.api.async_missions import (
     run_mission_job,
     seed_running_mission,
 )
+from seleric_swarm.causal import estimate_pool
 from seleric_swarm.conversations.blobs import (
     BlobStore,
     BlobValidationError,
@@ -52,6 +55,7 @@ from seleric_swarm.conversations.contracts import (
     MemoryStatus,
     MemoryType,
     Message,
+    MessageFeedback,
     MessagePage,
     MessagePart,
     MessagePartType,
@@ -75,6 +79,8 @@ from seleric_swarm.recovery import (
     RunWorkQueue,
 )
 from seleric_swarm.runtime import SwarmRuntime
+
+_log = logging.getLogger("seleric.api.conversations")
 
 router = APIRouter(prefix="/v1", tags=["conversations"])
 ArtifactClassification = Literal["ui", "factual", "derived"]
@@ -416,6 +422,67 @@ def list_messages_paginated(
     return MessagePage(items=items, next_cursor=next_cursor, has_more=next_cursor is not None)
 
 
+class SubmitFeedbackRequest(BaseModel):
+    rating: Literal["up", "down"]
+    note: str = ""
+    run_id: str | None = None
+
+
+@router.post(
+    "/threads/{thread_id}/messages/{message_id}/feedback",
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_message_feedback(
+    thread_id: str, message_id: str, body: SubmitFeedbackRequest, request: Request
+) -> MessageFeedback:
+    principal = _authenticated_principal(request)
+    repositories = _repositories(_runtime(request))
+    _owned_thread(repositories, principal, thread_id)
+    message = repositories.messages.get(message_id)
+    if message is None or message.thread_id != thread_id:
+        raise HTTPException(status_code=404, detail="message not found")
+    return repositories.feedback.submit(
+        MessageFeedback(
+            workspace_id=principal.workspace_id,
+            owner_user_id=principal.user_id,
+            thread_id=thread_id,
+            message_id=message_id,
+            run_id=body.run_id,
+            rating=body.rating,
+            note=(body.note or "")[:2000],
+        )
+    )
+
+
+@router.get("/threads/{thread_id}/messages/{message_id}/feedback")
+def get_message_feedback(
+    thread_id: str, message_id: str, request: Request
+) -> MessageFeedback | None:
+    principal = _authenticated_principal(request)
+    repositories = _repositories(_runtime(request))
+    _owned_thread(repositories, principal, thread_id)
+    return repositories.feedback.latest_for_message(
+        message_id, principal.workspace_id, principal.user_id
+    )
+
+
+@router.get("/threads/{thread_id}/feedback")
+def list_thread_feedback(
+    thread_id: str, request: Request, limit: int = Query(default=100, ge=1, le=500)
+) -> list[MessageFeedback]:
+    """All reader verdicts on one thread — training-data export surface.
+
+    Append-only `message_feedback` rows (a re-vote supersedes the prior row for
+    the same message rather than editing it), scoped to the caller's workspace.
+    """
+    principal = _authenticated_principal(request)
+    repositories = _repositories(_runtime(request))
+    _owned_thread(repositories, principal, thread_id)
+    return repositories.feedback.list_for_thread(
+        thread_id, principal.workspace_id, principal.user_id, limit=limit
+    )
+
+
 @router.get("/memories")
 def list_memories(
     request: Request,
@@ -601,6 +668,85 @@ def list_run_memories(run_id: str, request: Request) -> list[MemoryItem]:
     return repositories.memories.list_used_by_run(
         run_id, principal.workspace_id, principal.user_id
     )
+
+
+class MetricDefinitionView(BaseModel):
+    """Governed metric definition for the evidence inspector.
+
+    Read-only projection of the runtime MetricRegistry (live catalogue when
+    warm, YAML overlay otherwise). The frontend matches thread evidence
+    against ``key``/``aliases`` and renders one card per distinct metric.
+    """
+
+    id: str
+    key: str
+    name: str
+    description: str = ""
+    formula: str = ""
+    unit: str | None = None
+    grain: str = "day"
+    domain: str = ""
+    version: int = 1
+    aliases: list[str] = Field(default_factory=list)
+
+
+@router.get("/metrics/definitions")
+def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
+    _authenticated_principal(request)
+    registry = getattr(_runtime(request), "metrics", None)
+    if registry is None:
+        raise HTTPException(status_code=503, detail="metric registry is not configured")
+    views: list[MetricDefinitionView] = []
+    for definition in registry.all():
+        key = definition.catalogue_metric or definition.id.removeprefix("metric.")
+        views.append(
+            MetricDefinitionView(
+                id=definition.id,
+                key=key,
+                name=key.replace("_", " "),
+                description=definition.description,
+                formula=definition.formula,
+                unit=definition.unit,
+                grain=definition.grain,
+                domain=definition.domain,
+                version=definition.version,
+                aliases=sorted({*definition.aliases, key.replace("_", " ")}),
+            )
+        )
+    return views
+
+
+class EnhanceQueryRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+
+
+class EnhanceQueryResponse(BaseModel):
+    original: str
+    enhanced: str
+
+
+@router.post("/query/enhance", response_model=EnhanceQueryResponse)
+async def enhance_query(body: EnhanceQueryRequest, request: Request) -> EnhanceQueryResponse:
+    """Fast rewrite of an ambiguous draft into a system-ready analytics question.
+
+    Updates nothing on the server — the UI replaces the composer text with
+    ``enhanced`` so the user can edit or send.
+    """
+    _authenticated_principal(request)
+    runtime = _runtime(request)
+    original = body.query.strip()
+    if not original:
+        raise HTTPException(status_code=422, detail="query is required")
+
+    from seleric_swarm.services.query_enhance import QueryEnhanceError
+    from seleric_swarm.services.query_enhance import enhance_query as _enhance
+
+    request_id = getattr(getattr(request, "state", None), "request_id", None)
+    try:
+        enhanced = await _enhance(runtime, query=original, request_id=request_id)
+    except QueryEnhanceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc) or "query enhance failed") from exc
+    return EnhanceQueryResponse(original=original, enhanced=enhanced)
 
 
 @router.post(
@@ -1051,9 +1197,66 @@ async def stream_thread_events(
     return _stream_response(generate())
 
 
+def _row_labels(raw_parts: object) -> dict[str, str]:
+    """evidence_id → the row's display name, from the TABLE parts the report assembler wrote."""
+    labels: dict[str, str] = {}
+    for part in raw_parts if isinstance(raw_parts, list) else ():
+        content = part.get("content") if isinstance(part, dict) else None
+        rows = content.get("rows") if isinstance(content, dict) else None
+        for row in rows if isinstance(rows, list) else ():
+            if isinstance(row, dict) and row.get("evidence_id") and row.get("label"):
+                labels[str(row["evidence_id"])] = str(row["label"])
+    return labels
+
+
 def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]:
-    """Transcript TEXT plus SOURCE rows so the office UI can show lookup evidence."""
-    parts = [MessagePart(type=MessagePartType.TEXT, content=final_response)]
+    """Transcript TEXT plus SOURCE rows so the office UI can show lookup evidence.
+
+    When charts are attached, Markdown tables are stripped from the TEXT part:
+    the Chart widget already exposes the same rows on its Table tab, so keeping
+    both rendered the series twice (live 2026-10-08 stacked-bar thread).
+    """
+    from seleric_swarm.agent.answer_text import (
+        drop_enumerations,
+        numeric_tokens,
+        strip_markdown_tables,
+        with_roundings,
+    )
+
+    text = final_response
+    raw_charts = raw.get("charts")
+    stored_parts: list[Any] = raw["parts"] if isinstance(raw.get("parts"), list) else []
+    attached = [p for p in stored_parts if isinstance(p, dict) and isinstance(p.get("content"), dict)]
+    # A P&L walk keeps its Markdown table: the waterfall draws the steps, the table carries the subtotals.
+    drawn = [c for c in raw_charts if isinstance(c, dict) and c.get("chart_type") != "waterfall"] if isinstance(raw_charts, list) else []
+    cells: set[str] = set()
+    for part in attached:
+        if str(part.get("type")).upper() == "TABLE":
+            content = part["content"]
+            cells |= numeric_tokens(" ".join(
+                str(v) for row in content.get("rows") or [] if isinstance(row, dict) for v in row.values()))
+    for chart in drawn:  # a chart holds its rows too: the figures as drawn, rounded the way the answer writes them
+        spec: dict[str, Any] = chart["data"] if isinstance(chart.get("data"), dict) else chart
+        for row in spec.get("data") or []:
+            for value in row.values() if isinstance(row, dict) else ():
+                if isinstance(value, bool):
+                    continue
+                if isinstance(value, (int, float)):
+                    cells |= numeric_tokens(f"{round(value)} {value:.1f} {value:.2f}")
+                elif isinstance(value, str):
+                    cells |= numeric_tokens(value)
+    if drawn:
+        text = strip_markdown_tables(final_response)
+    elif cells:  # a table of figures is attached: drop only the answer's tables that table already holds
+        text = strip_markdown_tables(final_response, covered=lambda lines: numeric_tokens(" ".join(lines)) <= cells)
+    if cells:  # a row-by-row list of figures the visuals already show is dropped; the findings stay
+        text = drop_enumerations(text, with_roundings(cells))
+    # Headline numbers lead the message, ahead of the prose that explains them.
+    parts = [
+        MessagePart(type=MessagePartType.KPI_GRID, content=p["content"])
+        for p in attached if str(p.get("type")).upper() == "KPI_GRID"
+    ]
+    parts.append(MessagePart(type=MessagePartType.TEXT, content=text))
     raw_evidence = raw.get("evidence")
     evidence: list[Any]
     if isinstance(raw_evidence, list):
@@ -1062,6 +1265,7 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
         artifacts = raw.get("artifacts")
         nested = artifacts.get("evidence") if isinstance(artifacts, dict) else None
         evidence = nested if isinstance(nested, list) else []
+    row_labels = _row_labels(raw.get("parts"))
     for row in evidence:
         if not isinstance(row, dict):
             continue
@@ -1070,6 +1274,10 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
             continue
         metric = str(row.get("metric_or_fact") or row.get("title") or "Evidence")
         title = metric.removeprefix("metric.").replace("_", " ")
+        # A row of a breakdown names what it is for; a bare "93,251.70" under the metric does not.
+        entity = row_labels.get(evidence_id)
+        if entity:
+            title = f"{title} — {entity}"
         window_raw = row.get("time_range")
         window = window_raw if isinstance(window_raw, dict) else {}
         start = str(window["start"])[:10] if window.get("start") else None
@@ -1101,6 +1309,56 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
                 },
             )
         )
+    if isinstance(raw_charts, list):
+        for chart in raw_charts:
+            if not isinstance(chart, dict):
+                continue
+            artifact_id = chart.get("artifact_id")
+            chart_type = str(chart.get("chart_type") or "").strip()
+            # Causal DAGs from diagnosis belong in the inspector sidebar, not the transcript.
+            if chart_type in {"causal_graph", "dag", "gcm", "gcm_graph", "causal_dag", "dowhy_graph"}:
+                continue
+            if not chart_type:
+                _log.warning(
+                    "CHART part without chart_type for artifact %r; rendering as bar", artifact_id
+                )
+                chart_type = "bar"
+            chart_data = chart.get("data") if isinstance(chart.get("data"), (dict, list)) else chart
+            parts.append(
+                MessagePart(
+                    type=MessagePartType.CHART,
+                    content={
+                        "chart_type": chart_type,
+                        "artifact_id": str(artifact_id) if artifact_id else None,
+                        "data": chart_data,
+                    },
+                )
+            )
+    # AG-08: structured parts from the v2 report assembler (KPI_GRID / TABLE / CHART).
+    raw_parts = raw.get("parts")
+    if isinstance(raw_parts, list):
+        for part in raw_parts:
+            if not isinstance(part, dict):
+                continue
+            ptype = str(part.get("type") or "").upper()
+            content = part.get("content")
+            if ptype == "KPI_GRID":
+                continue  # placed ahead of the text above
+            elif ptype == "TABLE" and isinstance(content, dict):
+                parts.append(MessagePart(type=MessagePartType.TABLE, content=content))
+            elif ptype == "CHART" and isinstance(content, dict) and not raw_charts:
+                # Prefer explicit charts list when present; otherwise accept assembler charts.
+                chart_type = str(content.get("chart_type") or "bar")
+                parts.append(
+                    MessagePart(
+                        type=MessagePartType.CHART,
+                        content={
+                            "chart_type": chart_type,
+                            "artifact_id": content.get("artifact_id"),
+                            "data": content.get("data") or content,
+                        },
+                    )
+                )
     return parts
 
 
@@ -1397,6 +1655,22 @@ async def _execute_submission(
             )
         )
         evidence = raw.get("evidence")
+        # Debug console (test_agent parity): ship loop stats/grounding/steps on
+        # the terminal answer event so the UI does not need a second round-trip.
+        raw_trace_value = raw.get("trace")
+        raw_trace: dict[str, Any] = raw_trace_value if isinstance(raw_trace_value, dict) else {}
+        causal_graphs = [
+            chart for chart in (raw.get("charts") or [])
+            if isinstance(chart, dict)
+            and str(chart.get("chart_type") or (chart.get("data") or {}).get("chart_type") or "")
+            in {"causal_graph", "dag", "gcm", "gcm_graph", "causal_dag", "dowhy_graph"}
+        ] if isinstance(raw.get("charts"), list) else []
+        # chart rows are {chart_type, artifact_id, data}; data is the full spec.
+        causal_payloads = []
+        for chart in causal_graphs:
+            data = chart.get("data") if isinstance(chart.get("data"), dict) else chart
+            if isinstance(data, dict) and (data.get("nodes") or data.get("links")):
+                causal_payloads.append(data)
         sink.emit(
             running,
             "answer.completed",
@@ -1409,6 +1683,10 @@ async def _execute_submission(
                 "status": str(mission_status or final_status.value).lower(),
                 "final_response": final_response,
                 "evidence": evidence if isinstance(evidence, list) else [],
+                "stats": raw_trace.get("stats") if isinstance(raw_trace.get("stats"), dict) else None,
+                "grounding": raw_trace.get("grounding") if isinstance(raw_trace.get("grounding"), dict) else None,
+                "steps": raw_trace.get("steps") if isinstance(raw_trace.get("steps"), list) else None,
+                "causal_graphs": causal_payloads or None,
             },
         )
         summary_thread = repositories.threads.get(run.thread_id)
@@ -1672,6 +1950,8 @@ class SubmissionRunExecutor:
 
 
 def build_submission_executor(runtime: SwarmRuntime) -> SubmissionRunExecutor:
+    # The diagnosis tool estimates its drivers in worker processes; start them now so no mission waits for their imports.
+    threading.Thread(target=estimate_pool.warm, name="diagnosis-pool-warm", daemon=True).start()
     repositories = _repositories(runtime)
     return SubmissionRunExecutor(runtime, repositories)
 

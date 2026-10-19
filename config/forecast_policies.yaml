@@ -1,0 +1,132 @@
+# Forecast eligibility and feature-bundle policy (Agent-side registry).
+# Keyed by canonical catalogue metric ids. Loaded by forecasting/policies.py.
+# Invalid shape fails at load; unknown metric ids fail at warm-up against the catalogue.
+version: 1
+defaults:
+  grain: day
+  context_days: 1095      # maximum history available, up to 3 years
+  min_history_days: 270   # fewer observed days than this refuses the forecast
+  cutoff_lag_days: 2      # context ends 2 days before the forecast date
+  max_horizon_days: 90
+  quantiles: [0.1, 0.5, 0.9]
+  provisional:
+    folds: 4
+    engine: chronos-2-small
+promotion:
+  min_skill_vs_seasonal_naive: 0.0
+  min_wql_gain_vs_ets: 0.05
+  min_fold_win_rate: 0.6
+  coverage_80_band: [0.70, 0.90]
+  min_feature_gain: 0.02
+targets:
+  net_sales:
+    drivers: [ad_spend]
+    eligibility:
+      status: validated
+      maturity_days: 14
+      nonnegative: true
+      date_basis: order_date
+    entities:
+      lt_platform: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+      finance_channel: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+      acquisition_platform: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+      campaign_name: {max_horizon_days: 14, max_entities: 6, min_volume_share: 0.05}
+      product_title: {max_horizon_days: 14, max_entities: 6, min_volume_share: 0.05}
+      product_sku: {max_horizon_days: 14, max_entities: 6, min_volume_share: 0.05}
+    bundles:
+      - id: net_sales.v1
+        status: candidate
+        engine: chronos-2
+        co_targets: []
+        past_covariates: []
+        known_future: []
+        backtest:
+          report: reports/forecasting/2026-10-10/net_sales.json
+          wql: 12890.127132
+          mase: 0.795983
+          coverage_80: 0.744914
+          total_error_quantiles:
+            h14: [-0.316, 0.316]
+  orders:
+    drivers: [ad_spend]
+    eligibility:
+      status: validated
+      maturity_days: 3
+      nonnegative: true
+      date_basis: order_date
+    entities:
+      lt_platform: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+      finance_channel: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+      acquisition_platform: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+      campaign_name: {max_horizon_days: 14, max_entities: 6, min_volume_share: 0.05}
+      product_title: {max_horizon_days: 14, max_entities: 6, min_volume_share: 0.05}
+      product_sku: {max_horizon_days: 14, max_entities: 6, min_volume_share: 0.05}
+    bundles:
+      - id: orders.v1
+        status: candidate
+        engine: chronos-2
+        co_targets: []
+        past_covariates: []
+        known_future: []
+        backtest:
+          report: reports/forecasting/2026-10-10/orders.json
+          wql: 6.627659
+          mase: 0.85046
+          coverage_80: 0.806129
+          total_error_quantiles:
+            h14: [-0.364, 0.364]
+  gross_sales:
+    drivers: [ad_spend]
+    eligibility:
+      status: validated
+      maturity_days: 3
+      nonnegative: true
+      date_basis: order_date
+    entities:
+      lt_platform: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+      finance_channel: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+      acquisition_platform: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+    bundles: []
+  ad_spend:
+    drivers: []
+    eligibility:
+      status: provisional
+      maturity_days: 1
+      nonnegative: true
+      date_basis: null
+    entities:
+      lt_platform: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+      acquisition_platform: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+    bundles: []
+  sessions:
+    drivers: []
+    eligibility:
+      status: provisional
+      maturity_days: 1
+      nonnegative: true
+      date_basis: null
+    entities:
+      acquisition_platform: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+      finance_channel: {max_horizon_days: 30, max_entities: 6, min_volume_share: 0.05}
+    bundles: []
+derived:
+  aov:
+    op: ratio
+    numerator: net_sales
+    denominator: orders
+  net_roas:
+    op: ratio
+    numerator: net_sales
+    denominator: ad_spend
+    direct_ok: false
+  mer:
+    op: ratio
+    numerator: net_sales
+    denominator: ad_spend
+    direct_ok: false
+  conversion_rate:
+    op: ratio
+    numerator: orders
+    denominator: sessions
+    direct_ok: false
+blocked_features: {}

@@ -1,0 +1,48 @@
+{
+ "n": 20,
+ "aspect": "golden",
+ "q": "What was the average order value and COD order count by product in September?",
+ "thread": "thread_1900db73861442338ec9a954d910699b",
+ "mission": "MS3-a2eb6b4daf",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 34,
+ "elapsed_s": 31.539,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 6,
+ "grounding": {
+  "derived": [],
+  "numbers": 30,
+  "measured": 30,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "any of ['September', '2026-09']"
+  },
+  {
+   "ok": true,
+   "what": "not 'partial day'"
+  },
+  {
+   "ok": true,
+   "what": "not 'not available'"
+  }
+ ],
+ "answer": "Answer \u2014 September 2026, by product (top 30 by net revenue): average order value (AOV, order value incl tax basis) and COD order count.\n\nMeasured \u2014 values come from:\n- product net revenue (net sales by product, order-date) and orders with the product (orders by product) for 2026-09-01..2026-09-30\n- orders with the product filtered is_cod=1 for COD counts (same dates)\nTable (previous \u2192 current not applicable; single-period totals):\n\n- Pawveralls Pro Suspender Boots \u2014 AOV \u20b91,609.69 \u00b7 COD orders 12  \n- Pawveralls Suspender Boots \u2014 AOV \u20b91,331.71 \u00b7 COD orders 2  \n- WingBird Smart Flapping Toy \u2014 AOV \u20b9891.88 \u00b7 COD orders 7  \n- PawTech Cleaner with Paw Cleanser 500ml \u2014 AOV \u20b91,735.00 \u00b7 COD orders 4  \n- CrabDash Toy \u2014 AOV \u20b91,355.62 \u00b7 COD orders 5  \n- WildTrail Boots \u2014 AOV \u20b91,362.75 \u00b7 COD orders 1  \n- TangleGuard Leash \u2013 Dual Leash \u2014 AOV \u20b91,672.52 \u00b7 COD orders 2  \n- DuckDash Treat Toy \u2014 AOV \u20b91,084.26 \u00b7 COD orders 3  \n- FlexiDine Feeder \u2014 AOV \u20b91,552.90 \u00b7 COD orders 1  \n- FusionGrip Harness \u2014 AOV \u20b91,555.77 \u00b7 COD orders 1  \n- PocketPup Tote Bag (For Small Dogs & Cats) - Up to 6.5kg \u2014 AOV \u20b91,039.75 \u00b7 COD orders 3  \n- SnugSole Boots \u2014 AOV \u20b91,660.69 \u00b7 COD orders 2  \n- Meow Scratch Lounge \u2014 AOV \u20b91,785.35 \u00b7 COD orders 1  \n- FlippyFish Toy \u2014 AOV \u20b91,225.29 \u00b7 COD orders 0  \n- Hands-Free Dog Belt - Unisex \u2014 AOV \u20b91,460.17 \u00b7 COD orders 4  \n- TrimEase Paw Trimmer \u2014 AOV \u20b9933.06 \u00b7 COD orders 0  \n- K9 Harness \u2014 AOV \u20b92,311.62 \u00b7 COD orders 1  \n- SteelMate Bottle \u2014 AOV \u20b91,764.83 \u00b7 COD orders 0  \n- Cabana Dream Bed \u2014 AOV \u20b97,626.27 \u00b7 COD orders 0  \n- SipNova Bottle \u2014 AOV \u20b9532.11 \u00b7 COD orders 3  \n- Wovyn Cat Hammock \u2014 AOV \u20b94,066.95 \u00b7 COD orders 0  \n- Ave Walk Harness Set \u2014 AOV \u20b91,242.11 \u00b7 COD orders 0  \n- Ironclad Harness \u2014 AOV \u20b93,671.75 \u00b7 COD orders 1  \n- AvoCool Mat \u2014 AOV \u20b92,753.39 \u00b7 COD orders 0  \n- TenderTrek Silicone Boots \u2014 AOV \u20b91,694.35 \u00b7 COD orders 1  \n- Kixie Boots \u2014 AOV \u20b92,477.99 \u00b7 COD orders 0  \n- Luxe Car Seat Cover \u2014 AOV \u20b92,477.97 \u00b7 COD orders 0  \n- Paw Balm \u2014 AOV \u20b9320.47 \u00b7 COD orders 3  \n- SipMate Water Bottle \u2014 AOV \u20b9634.23 \u00b7 COD orders 1  \n- MistCalm Brush \u2014 AOV \u20b91,415.83 \u00b7 COD orders 0\n\nTagging: Measured (from product view metrics). Currency: INR. Data freshness: product view hourly, last refresh 2026-10-13T22:46:40 IST. Period: 2026-09-01..2026-09-30 \u00b7 partial? No, September is complete.\n\nWould you like the full product list (all SKUs) or a CSV export of these rows?"
+}

@@ -82,6 +82,53 @@ describe("conversation store submit", () => {
     });
   });
 
+  it("clears in-flight run chrome when starting a new chat", async () => {
+    useConversationStore.setState({
+      demoMode: true,
+      selectedThreadId: "t1",
+      threads: [{
+        id: "t1", workspace_id: "demo", owner_user_id: "demo", project_id: null,
+        title: "Old run", status: "ACTIVE", metadata: {},
+        created_at: "2026-09-17T10:00:00Z", updated_at: "2026-09-17T10:00:00Z",
+      }],
+      messages: { t1: [] },
+      submitting: true,
+      currentRunId: "run-old",
+      progress: "Revising the answer — blocking evidence gap",
+      thinkingText: "checking…",
+      error: "stale",
+    });
+    useOffice.getState().hydrate({
+      missionId: "mission-old",
+      query: "old question",
+      status: "running",
+      route: "v3",
+      stage: "answer",
+      leadershipEpoch: 0,
+      lastSeq: 1,
+      agents: [],
+      board: { steps: [] },
+      handoffs: [],
+      artifacts: {},
+      unresolvedQuestions: [],
+      limitations: [],
+      timeline: [],
+    });
+
+    await useConversationStore.getState().createThread();
+
+    const state = useConversationStore.getState();
+    expect(state.selectedThreadId).not.toBe("t1");
+    expect(state.selectedThreadId).toBeTruthy();
+    expect(state.submitting).toBe(false);
+    expect(state.currentRunId).toBeNull();
+    expect(state.progress).toBeNull();
+    expect(state.thinkingText).toBeNull();
+    expect(state.error).toBeNull();
+    expect(state.messages[state.selectedThreadId!]).toEqual([]);
+    expect(useOffice.getState().status).toBe("idle");
+  });
+
   it("creates a conversation when the first message is sent", async () => {
     useConversationStore.setState({
       demoMode: false,
@@ -333,6 +380,48 @@ describe("conversation store submit", () => {
     expect(messages.at(-1)?.parts[1]?.type).toBe("SOURCE");
   });
 
+  it("clears Stop/isRunning on answer.completed without waiting for run.completed", () => {
+    useConversationStore.setState({
+      demoMode: false,
+      selectedThreadId: "t1",
+      currentRunId: "run-1",
+      submitting: true,
+      progress: "Writing the answer",
+      thinkingText: "checking tor…",
+      messages: { t1: [] },
+    });
+    vi.spyOn(conversationsApi, "listMessages").mockResolvedValue([]);
+    useConversationStore.getState().applyRunEvent({
+      id: "event-answer",
+      thread_id: "t1",
+      workspace_id: "w1",
+      run_id: "run-1",
+      sequence: 4,
+      event_type: "answer.completed",
+      actor_type: null,
+      actor_id: null,
+      title: null,
+      summary: null,
+      evidence_ids: [],
+      payload: {
+        mission_id: "MS-1",
+        final_response: "Confirm and I'll fetch.",
+        message_id: "assistant-1",
+      },
+      metadata: {},
+      started_at: null,
+      completed_at: null,
+      duration_ms: null,
+      created_at: "2026-10-14T10:00:00Z",
+    });
+    const state = useConversationStore.getState();
+    expect(state.submitting).toBe(false);
+    expect(state.progress).toBeNull();
+    expect(state.thinkingText).toBeNull();
+    // Keep the run id until terminal so late artifact events still apply.
+    expect(state.currentRunId).toBe("run-1");
+  });
+
   it("hydrates v3 route from run.started so Activity is not stuck on Swarm", () => {
     useConversationStore.setState({
       demoMode: false,
@@ -360,6 +449,6 @@ describe("conversation store submit", () => {
       created_at: "2026-09-19T06:00:00Z",
     });
     expect(useOffice.getState().route).toBe("v3");
-    expect(useOffice.getState().timeline[0]?.agentId).toBe("coordinator");
+    expect(useOffice.getState().timeline[0]?.agentId).toBe("seleric_agent");
   });
 });

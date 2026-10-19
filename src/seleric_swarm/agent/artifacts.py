@@ -47,6 +47,18 @@ class EvidenceArtifact(BaseModel):
     source_query: dict[str, Any]
     fetched_at: datetime = Field(default_factory=_utc_now)
 
+    @model_validator(mode="after")
+    def _aware_periods(self) -> EvidenceArtifact:
+        """Every period stamp carries a timezone (the row's own ``as_of`` zone, else UTC). Tools wrote both naive
+        and aware stamps, and any comparison across them — sorting a merge, ordering grounding rows — raised
+        TypeError and restarted the mission (full regression 2026-10-10: Q8, Q16)."""
+        zone = self.as_of.tzinfo or UTC
+        for name in ("period_start", "period_end", "as_of"):
+            moment = getattr(self, name)
+            if moment.tzinfo is None:
+                object.__setattr__(self, name, moment.replace(tzinfo=zone))
+        return self
+
 
 class Finding(BaseModel):
     """``artifact_type="finding"``, ``classification="derived"``.
@@ -106,3 +118,32 @@ class PredictionArtifact(BaseModel):
     # How the method was chosen/scored (e.g. per-candidate backtest MAE for the
     # generic forecaster). None for models validated ahead of time.
     method_diagnostics: dict[str, object] | None = None
+
+
+class ForecastArtifact(BaseModel):
+    """``artifact_type="forecast"``, ``classification="derived"``.
+
+    Per-day P10/P50/P90 bands plus horizon totals, feature roles, quality
+    verdicts and engine provenance. Horizon-total ``PredictionArtifact`` is
+    also written so ``check_prediction`` / evaluation keep working.
+    """
+
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
+
+    plan_spec: dict[str, Any] = Field(default_factory=dict)
+    cutoff: str
+    maturity_cut: str
+    targets: list[dict[str, Any]] = Field(default_factory=list)
+    entity: dict[str, Any] = Field(default_factory=dict)
+    features: list[dict[str, Any]] = Field(default_factory=list)
+    quality_verdicts: list[dict[str, Any]] = Field(default_factory=list)
+    engine: str
+    model_id: str
+    model_version: str
+    model_revision: str | None = None
+    status: Literal["validated", "provisional", "refused"] = "provisional"
+    warnings: list[str] = Field(default_factory=list)
+    input_artifact_id: str | None = None
+    input_hash: str = ""
+    evidence_ids: list[str] = Field(min_length=1)
+    backtest_summary: dict[str, Any] = Field(default_factory=dict)

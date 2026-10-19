@@ -12,11 +12,13 @@ async def test_gateway_allowlist_and_live_seleric(runtime):
             capability="seleric.actions_propose",
             arguments={},
         )
+    # commerce_net_revenue_daily was retired by semantic v2; pnl_net_sales
+    # is the live id the service itself suggests as the replacement.
     row = await gw.call(
         agent_id="v3_agent",
         capability="seleric.metrics_query",
         arguments={
-            "measures": ["commerce_net_revenue_daily"],
+            "measures": ["pnl_net_sales"],
             "time_range": {"start": "2026-08-01", "end": "2026-08-01"},
         },
     )
@@ -38,8 +40,8 @@ async def test_read_capabilities_are_live_and_ad_platform_tools_are_not(runtime)
         "seleric.google_accounts_list_accessible",
     ):
         assert cap not in gw.capabilities
-    # insights_explain was removed from the adapter (dead — never called).
-    assert "seleric.insights_explain" not in gw.capabilities
+    # insights_explain is a read tool again (the loop calls it).
+    assert "seleric.insights_explain" in gw.capabilities
 
     resolved = await gw.call(
         agent_id="v3_agent",

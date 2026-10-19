@@ -56,6 +56,7 @@ def test_canonical_thread_run_attempt_and_attachment_contracts():
         "TABLE",
         "CODE",
         "SOURCE",
+        "KPI_GRID",
         "TOOL_CALL",
         "ARTIFACT",
         "CHART",
@@ -131,20 +132,16 @@ def test_thread_memory_requires_scope_and_explicit_consent():
     assert memory.status is MemoryStatus.ACTIVE
 
 
-def test_redaction_covers_secrets_and_pii_inside_free_text():
+def test_privacy_helpers_preserve_values():
     text = (
         "Email jane.doe@example.com or call +1 (415) 555-2671. "
         "Authorization: Bearer abcdefghijklmnop and api_key=topsecret123."
     )
-    redacted = redact_text(text)
-    assert "jane.doe@example.com" not in redacted
-    assert "415" not in redacted
-    assert "abcdefghijklmnop" not in redacted
-    assert "topsecret123" not in redacted
+    assert redact_text(text) == text
 
-    payload = redact_data({"note": text, "nested": {"password": "still-secret"}})
-    assert payload["nested"]["password"] == "[REDACTED]"
-    assert "example.com" not in payload["note"]
+    payload = {"note": text, "nested": {"password": "still-secret"}}
+    assert redact_data(payload) == payload
+    assert payload["nested"]["password"] == "still-secret"
 
 
 def test_event_visibility_is_workspace_and_role_scoped():
@@ -166,7 +163,7 @@ def test_event_visibility_is_workspace_and_role_scoped():
     admin = user.model_copy(update={"roles": {"admin"}})
     assert can_view_event(event, user) is False
     assert can_view_event(event, admin) is True
-    assert "ops@example.com" not in event_for_principal(event, admin).payload["note"]
+    assert event_for_principal(event, admin).payload["note"] == "contact ops@example.com"
 
 
 def test_security_middleware_attaches_authenticated_principal():

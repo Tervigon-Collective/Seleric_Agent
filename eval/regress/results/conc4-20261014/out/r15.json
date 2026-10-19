@@ -1,0 +1,32 @@
+{
+ "n": 15,
+ "aspect": "replay11",
+ "q": "can you pin point which campaign gave the low intent traffic and which were actually profitables",
+ "thread": "thread_3b9526bc83184ac79509a05d8c0e14f9",
+ "mission": "MS3-20dbbff4b5",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 63,
+ "elapsed_s": 56.883,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 11,
+  "measured": 11,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [],
+ "answer": "Short answer: High-volume, low-intent traffic came mainly from Google demand campaigns (notably \"Demand Gen | Hero Products\") while the most profitable campaigns were search/Performance Max and a few Meta product campaigns \u2014 e.g. \"[Google Build] PMax - Seasonal New | 27th May\" and \"[Google Build] Brand Search | 5th March\".\n\nEvidence (Oct 1\u201313, compared internally)\n- Low-intent, high-volume campaigns (many clicks, very low CPC, but small share of net sales)\n  - [Google Build] Demand Gen | Hero Products | 20 Apr \u2014 22,119 clicks, CPC ~\u20b91.79, large click volume but not among top net sales (behaviour of high clicks + low net sales = lower intent).\n  - TH-383-SUSPENDER-26SEP-ADV+ (meta) \u2014 4,564 clicks, CPC ~\u20b912.22, high spend but proportionally less net sales vs other high-AOV campaigns.\n- Profitable / high net-sales campaigns (strong net sales per order / higher AOV)\n  - [Google Build] PMax - Seasonal New | 27th May \u2014 net sales \u2248 \u20b9116,562; orders 65; AOV \u2248 \u20b92,338.\n  - [Google Build] Brand Search | 5th March \u2014 net sales \u2248 \u20b991,976; orders 47; AOV \u2248 \u20b92,596.\n  - TH-336-PAWTECH-26SEP and TH-149-SCRATCHLOUNGE-25SEP (meta) \u2014 each delivered >\u20b960k net sales with healthy AOVs.\n- Why this supports your hypothesis\n  - Big jump in clicks from demand-gen channels with very low CPCs indicates broader / lower-intent audiences.  \n  - Conversion rates by campaign vary; the demand-gen campaign has many clicks but comparatively small net sales/orders, consistent with creative/landing mismatch or traffic intent issues.\n  - Several campaigns with higher AOVs and fewer clicks drove most of the profitable sales.\n\nCaveats: metrics came from combined commerce, paid_media and web_sessions parts; some entities are missing from one or more parts so per-campaign comparisons are best when run together for a selected campaign list. Data as of 2026-10-14.\n\nPeriod: 2026-10-01..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Shall I run a campaign-level funnel (clicks \u2192 add-to-cart \u2192 conversion \u2192 net sales and ROAS) for the top 20 campaigns to quantify intent vs profitability?"
+}

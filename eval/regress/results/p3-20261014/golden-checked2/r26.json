@@ -1,0 +1,45 @@
+{
+ "n": 26,
+ "aspect": "failed_steps",
+ "q": "Fetch campaign-level ad spend, orders, cost per order (CPA) and net ROAS for the top 5 Meta campaigns by spend over 2026-10-07..2026-10-08 and 2026-10-06..2026-10-07 for comparison.",
+ "thread": "thread_8caea61b9f0a4c5bbc3397027c2de0dc",
+ "mission": "MS3-a94a59ad48",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 42,
+ "elapsed_s": 38.741,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 7,
+ "llm_calls": 7,
+ "grounding": {
+  "derived": [],
+  "numbers": 30,
+  "measured": 30,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_concept",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "metrics_query",
+  "run_python",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "any of ['2026-10-06']"
+  },
+  {
+   "ok": true,
+   "what": "revisions <= 1"
+  }
+ ],
+ "answer": "Result (top 5 Meta campaigns by spend)\n\nMeasured: Ad spend (P&L basis), orders (by channel / campaign), contribution margin (order_pnl view, P&L basis). net ROAS = contribution margin \u00f7 ad spend (metric net_roas is broken so I computed this from measured lines). Numbers rounded: spend/CPA to \u20b9, ROAS to 1 decimal.\n\nPeriod: 2026-10-06 \u2192 2026-10-07 (previous)\n- TH-222-WINGBIRD-23SEP \u2014 Ad spend \u20b916,111; Orders 16; CPA \u20b91,007; Net ROAS 0.6. (Measured)\n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b915,856; Orders 7; CPA \u20b92,265; Net ROAS 0.3. (Measured)\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b912,633; Orders 6; CPA \u20b92,106; Net ROAS 0.7. (Measured)\n- CAT TOY CS-26SEP \u2014 Ad spend \u20b99,049; Orders 7; CPA \u20b91,293; Net ROAS 0.7. (Measured)\n- TH-149-SCRATCHLOUNGE-6OCT \u2014 Ad spend \u20b98,145; Orders 9; CPA \u20b9905; Net ROAS 1.5. (Measured)\n\nPeriod: 2026-10-07 \u2192 2026-10-08 (current)\n- TH-149-SCRATCHLOUNGE-6OCT \u2014 Ad spend \u20b917,251; Orders 13; CPA \u20b91,327; Net ROAS 1.0. (Measured)\n- TH-222-WINGBIRD-23SEP \u2014 Ad spend \u20b914,884; Orders 18; CPA \u20b9827; Net ROAS 0.9. (Measured)\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b911,989; Orders 5; CPA \u20b92,398; Net ROAS 0.4. (Measured)\n- TH-383-SUSPENDER-29SEP \u2014 Ad spend \u20b911,659; Orders 6; CPA \u20b91,943; Net ROAS 0.5. (Measured)\n- TH-279-BATHEASEBRUSH-07OCT \u2014 Ad spend \u20b97,749; Orders 2; CPA \u20b93,874; Net ROAS 0.2. (Measured)\n\nNotes and caveats\n- I used ad spend (P&L basis) (P&L ad spend), orders (by channel / campaign) and contribution margin (order_pnl view) and computed Net ROAS = contribution margin \u00f7 ad spend because the catalogue's net_roas metric is broken; this computation is Derived from measured lines. (If you prefer a different ROAS basis \u2014 gross sales \u00f7 spend or order-date commerce ROAS \u2014 tell me and I'll fetch those.) \n- Default brand (Tilting Heads) was used. Data freshness: cube last refreshed 2026-10-13 ~22:55 IST. Periods are full days.\n\nPeriod \u00b7 INR \u00b7 data as of 2026-10-13 (cube refresh) \u00b7 Suggested follow-up: Do you want a campaign-level delta table (this period vs previous) showing absolute and % change, or a channel/campaign drilldown of orders and ROAS?"
+}

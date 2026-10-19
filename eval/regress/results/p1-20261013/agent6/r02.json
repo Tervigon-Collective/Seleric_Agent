@@ -1,0 +1,64 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_b0fa7604ae504c1f8dae2e9beee9337d",
+ "mission": "MS3-34de3a13fc",
+ "run_status": "COMPLETED",
+ "status": "partial",
+ "wall_s": 71,
+ "elapsed_s": 67.507,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 6,
+ "grounding": {
+  "derived": [],
+  "numbers": 30,
+  "measured": 16,
+  "misbound": [],
+  "problems": [
+   "figures in no tool result and not one arithmetic step from them: 383, 383, 383, 383, 383, 383, 222"
+  ],
+  "unmatched": [
+   "383",
+   "383",
+   "383",
+   "383",
+   "383",
+   "383",
+   "222",
+   "383",
+   "383",
+   "383",
+   "383",
+   "383",
+   "383",
+   "222"
+  ],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_resolve_concept",
+  "metrics_query",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": false,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "These Meta campaigns lost net profit in the last 30 days (largest losses first). Each row = Net profit \u00b7 Ad spend. All numbers are measured from the P&L view.  \n\n- TH-383-SUSPENDER-20JUNE: Net profit \u2212\u20b983,461 \u00b7 Ad spend \u20b90. Measured.  \n- TH-383-SUSPENDER-26JUNE-ADV+: Net profit \u2212\u20b979,156 \u00b7 Ad spend \u20b90. Measured.  \n- MONSOON-CTL-20JULY: Net profit \u2212\u20b925,806 \u00b7 Ad spend \u20b90. Measured.  \n- TH-383-SUSPENDER-26SEP-ADV+: Net profit \u2212\u20b924,562 \u00b7 Ad spend \u20b973,137. Measured.  \n- DOG TOY CS-24SEP: Net profit \u2212\u20b922,976 \u00b7 Ad spend \u20b934,634. Measured.  \n- TH-383-SUSPENDER-29SEP: Net profit \u2212\u20b920,629 \u00b7 Ad spend \u20b956,657. Measured.  \n- TH-383-SUSPENDER-17JULY-ADV+: Net profit \u2212\u20b917,971 \u00b7 Ad spend \u20b915,935. Measured.  \n- CAT TOY CS-26SEP: Net profit \u2212\u20b917,687 \u00b7 Ad spend \u20b933,853. Measured.  \n- TH-383-SUSPENDER-17JUNE: Net profit \u2212\u20b916,889 \u00b7 Ad spend \u20b90. Measured.  \n- TH-222-WINGBIRD-23SEP: Net profit \u2212\u20b915,749 \u00b7 Ad spend \u20b973,105. Measured.  \n\nDefinition/caveat: pnl_net_profit = net sales \u2212 net COGS \u2212 ad spend (P&L basis). All rows are for ad_platform = Meta and default brand (Tilting Heads) \u2014 no brand filter was supplied. Data freshness: Cube refresh 2026-10-13 (costs may lag \u22481 day). Measured.\n\n2026-09-13..2026-10-12 \u00b7 INR \u00b7 data as of 2026-10-13 22:33 IST (cube refresh)\n\nWould you like me to diagnose the top 3 campaigns (test drivers: ad spend, orders, AOV, returns) to recommend which to pause or reallocate?\n\n\u26a0 Not verified against the data: figures in no tool result and not one arithmetic step from them: 383, 383, 383, 383, 383, 383, 222"
+}

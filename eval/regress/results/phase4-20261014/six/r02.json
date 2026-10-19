@@ -1,0 +1,48 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_bce124a8068c487cbcc95107dc1f91b6",
+ "mission": "MS3-9f3256fa93",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 55,
+ "elapsed_s": 49.14,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 30,
+  "measured": 30,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer: these Meta campaigns for Tilting Heads lost the most money in the last 30 days \u2014 top 10 wasting campaigns (order-date P&L net profit):\n\n- TH-383-SUSPENDER-26SEP-ADV+: Ad spend \u20b973,137 \u00b7 Net sales \u20b948,491 \u00b7 Net profit \u2212\u20b941,921 (Measured)  \n- TH-383-SUSPENDER-29SEP: Ad spend \u20b956,657 \u00b7 Net sales \u20b938,250 \u00b7 Net profit \u2212\u20b931,273 (Measured)  \n- DOG TOY CS-24SEP: Ad spend \u20b934,634 \u00b7 Net sales \u20b923,473 \u00b7 Net profit \u2212\u20b922,264 (Measured)  \n- TH-222-WINGBIRD-23SEP: Ad spend \u20b973,105 \u00b7 Net sales \u20b987,038 \u00b7 Net profit \u2212\u20b919,699 (Measured)  \n- CAT TOY CS-26SEP: Ad spend \u20b933,853 \u00b7 Net sales \u20b925,566 \u00b7 Net profit \u2212\u20b917,581 (Measured)  \n- TH-012-SNUGBOO-23SEP: Ad spend \u20b928,557 \u00b7 Net sales \u20b928,315 \u00b7 Net profit \u2212\u20b914,770 (Measured)  \n- TH-445-PROSUSPENDERBOOTS-25SEP: Ad spend \u20b929,675 \u00b7 Net sales \u20b929,561 \u00b7 Net profit \u2212\u20b913,516 (Measured)  \n- TH-336-PAWTECH-26SEP: Ad spend \u20b966,630 \u00b7 Net sales \u20b990,207 \u00b7 Net profit \u2212\u20b910,547 (Measured)  \n- TH-348-FUSIONHARNESS-03OCT: Ad spend \u20b914,667 \u00b7 Net sales \u20b910,985 \u00b7 Net profit \u2212\u20b99,675 (Measured)  \n- TH-068_WILD-23SEP-CV: Ad spend \u20b919,893 \u00b7 Net sales \u20b918,288 \u00b7 Net profit \u2212\u20b99,520 (Measured)\n\nPeriod: 2026-09-14..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-13.\n\nNext step suggestion: do you want a diagnosis of the top 5 losers (drivers: ROAS, conversion, AOV, returns, or high CAC)? I can run a root-cause diagnosis next."
+}

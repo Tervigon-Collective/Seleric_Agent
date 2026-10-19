@@ -1,0 +1,58 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_24cdb99b4b3d4ddd8b9423990e41a6b8",
+ "mission": "MS3-607cae7672",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 81,
+ "elapsed_s": 73.172,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 19,
+  "measured": 19,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Sales did not drop \u2014 they rose. Net sales on 2026-10-13 were \u20b991,220 vs \u20b940,119 on 2026-10-12 (+127%), so yesterday was a stronger day, not a decline.\n\nWhat changed (top items, why it matters)\n- Orders and basket size: Orders rose 26 \u2192 45 (+73%) and Net AOV rose \u20b91,543 \u2192 \u20b92,027 (+31%) \u2014 together these explain the jump in net sales.  \n- Ad activity and reach rose: Ad spend \u20b938,661 \u2192 \u20b950,442 (+30%) and impressions 133,023 \u2192 147,290 (+11%). Sessions and add-to-cart events moved up with them, but the data cannot tell whether spend caused the sales uplift or just moved together.  \n- Discounts, refunds and deductions increased: Discounts \u20b91,553 \u2192 \u20b95,173 and net sales deductions \u20b95,110 \u2192 \u20b96,569 (both higher), and refund-related lines flagged larger values (refunds rose in the tested comparisons) \u2014 these reduce net sales but did not outweigh the orders/AOV increase.  \n- Product / campaign signals to check: one ad (TH-471-PLAYSCRATCHLOUNGE_IMG_6516) appeared with +\u20b924,962 vs usual and some campaigns/ad names dropped to zero (e.g., TH-383-SUSPENDER-26SEP-ADV+) \u2014 these shifts explain where the volume moved.\n\nTakeaway and certainty\n- The data shows an increase, not a drop; no single upstream cause (e.g., a campaign pause or data error) was identified by the diagnostic engine \u2014 sessions, add-to-cart and ad spend rose together but causality is not established. Some refunds and discounts were higher and partially offset the gain.\n\nWorth checking: drill to sales by campaign/ad and by product for 2026-10-13 to see which creatives or SKUs drove the order and AOV jump.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Do you want a campaign-level or product-level breakdown of 2026-10-13?"
+}

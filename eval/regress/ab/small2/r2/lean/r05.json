@@ -1,0 +1,36 @@
+{
+ "n": 5,
+ "aspect": "failed_steps",
+ "q": "orders and net sales between 2026-09-01 and 2026-09-30 by campaign",
+ "thread": "thread_c0cecc4b25964af08ea3c796fc923e88",
+ "mission": "MS3-a989a5ec7a",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 14.947,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 9,
+  "measured": 9,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '2026-09-01..2026-09-01'"
+  }
+ ],
+ "answer": "In September 2026, the total net sales were \u20b97,49,161, and 396 orders were placed. Below are the top campaigns by net sales:\n\n| Campaign Name                                      | Orders | Net Sales (\u20b9) |\n|---------------------------------------------------|--------|---------------|\n| [Google Build] PMax - Seasonal New | 27th May    | 115    | 1,98,996      |\n| [Google Build] Brand Search | 5th March         | 40     | 71,275        |\n| TH-152-TANGLELEASH-1SEP                          | 29     | 56,263        |\n| TH-222-WINGBIRD-07SEP                            | 29     | 39,644        |\n| TH-385-DUCKTOY-1SEP                              | 31     | 40,071        |\n\nThe remaining campaigns contributed smaller amounts to the total. \n\nPeriod: 2026-09-01 to 2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Would you like to see the performance of a specific campaign?"
+}

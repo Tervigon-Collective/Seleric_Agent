@@ -1,0 +1,50 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_70075f50116d49b6b1a17db763261498",
+ "mission": "MS3-b7d07120e3",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 75,
+ "elapsed_s": 71.834,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 8,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 13,
+  "measured": 13,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_values",
+  "catalogue_get_metrics",
+  "metrics_query",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "Short answer: these Meta campaigns are spending material budget with very low net ROAS (order-date basis) \u2014 I recommend pausing or auditing them first. Top offenders (week 2026-10-07..2026-10-13, ad_platform = Meta, order-date):\n\n- TH-383-SUSPENDER-26SEP-ADV+ \u2014 Ad spend \u20b923,526 \u00b7 Net ROAS 0.5x  \n- TH-445-PROSUSPENDERBOOTS-6OCT \u2014 Ad spend \u20b97,399 \u00b7 Net ROAS 0.1x  \n- TH-149-SCRATCHLOUNGE-25SEP \u2014 Ad spend \u20b94,751 \u00b7 Net ROAS 0.2x  \n- DOG DAD T-SHIRT-CS-06OCT \u2014 Ad spend \u20b912,323 \u00b7 Net ROAS 0.5x  \n- DOG SHOES-CR-7OCT \u2014 Ad spend \u20b910,704 \u00b7 Net ROAS 0.4x\n\nWhy this matters (brief): each listed campaign spent non-trivial budget while returning less contribution than the ad spend (net ROAS well under 1.0), so they reduce consolidated profitability. The full Meta channel that week had net ROAS ~0.58x and ad spend ~\u20b9295,993 (order-date basis), so these campaigns are meaningful drivers of poor efficiency.\n\nWorth checking: drill each campaign by adset / creative and by orders / new-customers (I can run a campaign \u2192 adset/creative drilldown for any one campaign next).\n\nPeriod: 2026-10-07..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14  \nNext: which of these campaigns should I drill into first (adset, creative or landing page)?"
+}

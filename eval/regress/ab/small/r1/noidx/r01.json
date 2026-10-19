@@ -1,0 +1,66 @@
+{
+ "n": 1,
+ "aspect": "test_agent6",
+ "q": "Why did my sales drop yesterday?",
+ "thread": "thread_c67f5faea12247a5b29b16af965dfddd",
+ "mission": "MS3-ec5e92a75d",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 64,
+ "elapsed_s": 58.065,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 8,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [
+   "31.3%",
+   "30.5%",
+   "5.6%"
+  ],
+  "numbers": 19,
+  "measured": 16,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "catalogue_resolve_concept",
+  "metrics_query",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: measures the change with compare_period"
+  },
+  {
+   "ok": true,
+   "what": "tool: decomposes it (drilldown or breakdown)"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses a sales metric"
+  },
+  {
+   "ok": true,
+   "what": "reference has_yesterday_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference has_prev_value ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  },
+  {
+   "ok": true,
+   "what": "reference direction_ok ({'net_sales_yesterday': 91219.64793754554, 'net_sales_prev_day': 40119.149999999994})"
+  }
+ ],
+ "answer": "Sales did not drop yesterday \u2014 net sales on 2026-10-13 were \u20b991,220 versus \u20b940,119 on 2026-10-12 (+127.0%), so revenue rose sharply day\u2011over\u2011day.\n\nWhat changed (order\u2011date basis)\n- Net sales: \u20b940,119 \u2192 \u20b991,220 (+127.0%). This is the headline movement.  \n- Orders: 26 \u2192 45 (+73.1%) and Net AOV: \u20b91,543 \u2192 \u20b92,027 (+31.3%) \u2014 both higher, so more orders and a higher value per order together explain the sales increase.  \n- Ad spend and traffic rose: Ad spend \u20b938,661 \u2192 \u20b950,442 (+30.5%); Sessions 3,254 \u2192 3,434 (+5.6%). These moved together with sales but the diagnosis found only same\u2011day associations, not a tested causal link.  \n- Returns / cancel revenue fell: \u20b94,913 \u2192 \u20b91,601 (lower), which also raised net sales versus the prior day.\n\nWhat the analysis says about cause\n- The automated diagnosis found no single supported cause \u2014 ad spend, sessions and orders moved together and none met the threshold to be labelled a supported_cause; they are likely correlated. Confidence is that the day\u2019s change is within expected variation for this metric on normal days.  \nWorth checking: campaign- and ad-level breakdown for 2026-10-13 (the diagnosis flagged specific ads/campaigns with large changes) to see which drove the orders and higher AOV.\n\nPeriod: 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\nNext: Drill into campaign/ad performance for 2026-10-13?"
+}

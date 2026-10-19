@@ -28,6 +28,7 @@ from seleric_swarm.api.ready import check_readiness
 from seleric_swarm.api.request_id import RequestIdMiddleware
 from seleric_swarm.api.security import ApiSecurityMiddleware
 from seleric_swarm.bootstrap import build_runtime
+from seleric_swarm.config.settings import helper_chat_model
 from seleric_swarm.llm.port import ChatMessage, LLMRequest, LLMRequestMetadata
 from seleric_swarm.observability.tracing import (
     configure_opentelemetry,
@@ -63,24 +64,13 @@ async def _close_component(component: object | None, method: str = "close") -> N
         await result
 
 
-async def _warmup(runtime: Any) -> None:
-    """Fire-and-forget: warm Laya/JEV once at boot so the first real query
-    doesn't eat its model cold-start (first call can take >12s). Laya is shared
-    server-side, so warming from the api process also benefits the recovery
-    worker. Never raises — a warmup failure must not affect startup."""
+async def _warmup_catalogue(runtime: Any) -> None:
+    """Fire-and-forget: warm the catalogue bootstrap at startup so the first
+    mission doesn't pay the cold-start MCP call. Never raises."""
     try:
-        from seleric_swarm.agent.intent import classify_query
-
-        s = runtime.settings
-        base = getattr(s, "jev_base_url", "")
-        if not base:
-            return
-        await classify_query(
-            "warmup",
-            base_url=base,
-            api_key=getattr(s, "jev_api_key", ""),
-            timeout=float(getattr(s, "jev_timeout_s", 20.0)),
-        )
+        bootstrap = getattr(runtime, "bootstrap", None)
+        if bootstrap is not None:
+            await bootstrap.refresh_if_stale()
     except Exception:  # noqa: S110 - warmup is best-effort
         pass
 
@@ -113,7 +103,7 @@ async def _business_state_refresh_loop(runtime: Any) -> None:
         try:
             snapshots = await run_once(resolver, store)
             log.info("business_state_refreshed domains=%d", len(snapshots))
-        except Exception:  # noqa: BLE001 - a refresh failure must never kill the loop
+        except Exception:
             log.warning("business_state_refresh_failed", exc_info=True)
         await asyncio.sleep(interval)
 
@@ -123,11 +113,7 @@ async def lifespan(_app: FastAPI):
     global _runtime
     if _runtime is None:
         _runtime = build_runtime()
-    checkpoint_provider = getattr(_runtime, "checkpoint_provider", None)
-    checkpoint_setup = getattr(checkpoint_provider, "setup", None)
-    if checkpoint_setup is not None:
-        await checkpoint_setup()
-    asyncio.create_task(_warmup(_runtime))
+    asyncio.create_task(_warmup_catalogue(_runtime))
     asyncio.create_task(_business_state_refresh_loop(_runtime))
     try:
         yield
@@ -138,7 +124,6 @@ async def lifespan(_app: FastAPI):
             notifier = getattr(activity_events, "notifier", None)
             shutdown = asyncio.gather(
                 _close_component(getattr(rt, "run_queue", None)),
-                _close_component(getattr(rt, "checkpoint_provider", None)),
                 _close_component(notifier),
                 _close_component(rt.mcp, "aclose"),
                 return_exceptions=True,
@@ -166,15 +151,29 @@ app.include_router(conversations_router)
 app.include_router(phase7_router)
 app.include_router(business_state_router)
 
+# Load repo .env before anything reads settings (CWD-independent): the voice
+# route's voice_enabled check below and the middleware further down.
+_settings_boot = None
+try:
+    from dotenv import load_dotenv
+
+    from seleric_swarm.config.settings import get_settings
+    from seleric_swarm.paths import repo_root
+
+    load_dotenv(repo_root() / ".env")
+    get_settings.cache_clear()
+    _settings_boot = get_settings()
+except Exception:
+    _settings_boot = None
+
 # Voice agent token route (docs/features/voice-agent/). Mounted unconditionally
 # so the route can answer 404 "voice is not enabled" rather than vanishing —
 # but an import failure while voice is switched ON is fatal, not a warning that
 # would leave a silent 404 in production.
 try:
-    from seleric_swarm.voice.token import router as _voice_router
-
     # Registers GET /v1/voice/dev on the same router (dev surfaces only).
     from seleric_swarm.voice import dev_page as _voice_dev_page  # noqa: F401
+    from seleric_swarm.voice.token import router as _voice_router
 
     app.include_router(_voice_router)
 except Exception:
@@ -211,20 +210,6 @@ except Exception:  # office UI is optional — never block the core API on it
 
     def _register_mission(_mission_id: str | None) -> None:  # type: ignore[misc]
         return None
-
-# Load repo .env before middleware reads settings (CWD-independent).
-_settings_boot = None
-try:
-    from dotenv import load_dotenv
-
-    from seleric_swarm.config.settings import get_settings
-    from seleric_swarm.paths import repo_root
-
-    load_dotenv(repo_root() / ".env")
-    get_settings.cache_clear()
-    _settings_boot = get_settings()
-except Exception:
-    _settings_boot = None
 
 # Starlette applies middleware in reverse add order: CORS outermost so
 # Swagger / Cursor-preview preflights never hit API-key or rate-limit 401s.
@@ -283,12 +268,9 @@ class MissionRequest(BaseModel):
     )
     mode: str = "read_only"
     session_id: str | None = None
-    # When the query is diagnostic / predictive / prescriptive it is routed to the
-    # dynamic two-axis swarm. These switch in the full agent subsystems
-    # (agents/diagnostic, agents/prediction, agents/skeptic) instead of the
-    # lightweight in-loop specialists. Lookup / comparison queries ignore them.
-    # When True they ALSO ensure the matching intent is present so the specialist
-    # actually runs (e.g. full_prediction on a "why" query still forecasts).
+    # Deprecated, ignored: these switched swarm_v2's specialist subsystems, which
+    # were deleted in Sprint 5 (V3 is the only mission path). Kept so existing
+    # clients that send them still validate; run_v3_mission discards them.
     full_diagnostic: bool = True
     full_prediction: bool = True
     full_skeptic: bool = True
@@ -372,13 +354,13 @@ async def llm_ping(req: PingRequest) -> dict[str, Any]:
         "workflow_version": runtime.settings.workflow_version,
         "agent_name": "llm_port",
         "agent_version": "0.1.0",
-        "model": runtime.settings.azure_openai_model,
+        "model": helper_chat_model(runtime.settings),
     }
-    with traced_span("llm.ping", metadata, runtime.settings.langsmith_tracing):
+    with traced_span("llm.ping", metadata, runtime.settings.langfuse_tracing):
         response = await runtime.llm.complete(
             LLMRequest(
                 messages=[ChatMessage(role="user", content=req.message)],
-                model=runtime.settings.azure_openai_model,
+                model=helper_chat_model(runtime.settings),
                 temperature=0,
                 max_tokens=32,
                 timeout_s=runtime.settings.llm_timeout_s,
@@ -768,7 +750,7 @@ def get_mission_events(
 
 @app.get("/v1/missions/{mission_id}/trace")
 def get_mission_trace(mission_id: str, request: Request) -> dict[str, Any]:
-    """Return trace metadata (request/session/langsmith ids) plus the full event timeline."""
+    """Return trace metadata (request/session/langfuse ids) plus the full event timeline."""
     runtime = get_runtime()
     store = runtime.store
     raw = getattr(store, "get_raw", lambda _m: None)(mission_id)
@@ -777,9 +759,15 @@ def get_mission_trace(mission_id: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="mission not found")
     require_mission_access(request, raw if isinstance(raw, dict) else {}, runtime)
 
-    trace = (raw or {}).get("trace") if isinstance(raw, dict) else None
-    if not isinstance(trace, dict):
-        trace = result.trace.model_dump() if result is not None else {}
+    # raw.trace used to be a request/session stub that hid stats/steps/grounding
+    # sitting on result.trace — merge so the richer side wins key-by-key.
+    raw_trace = (raw or {}).get("trace") if isinstance(raw, dict) else None
+    result_trace = result.trace.model_dump() if result is not None and result.trace is not None else {}
+    if not isinstance(raw_trace, dict):
+        raw_trace = {}
+    if not isinstance(result_trace, dict):
+        result_trace = {}
+    trace = {**raw_trace, **{k: v for k, v in result_trace.items() if v is not None}}
 
     list_events = getattr(store, "list_events", None)
     if list_events is None:
@@ -790,11 +778,24 @@ def get_mission_trace(mission_id: str, request: Request) -> dict[str, Any]:
         events = list_events(mission_id, family=None, after_seq=0, limit=1000)
 
     status = (raw or {}).get("status") if isinstance(raw, dict) else (result.status if result else None)
+    # Inspector Causal tab: diagnosis DAGs live on chart_spec artifacts, not in chat.
+    causal_graphs: list[dict[str, Any]] = []
+    if isinstance(raw, dict):
+        for chart in raw.get("charts") or []:
+            if not isinstance(chart, dict):
+                continue
+            data = chart.get("data") if isinstance(chart.get("data"), dict) else chart
+            if not isinstance(data, dict):
+                continue
+            ctype = str(chart.get("chart_type") or data.get("chart_type") or "")
+            if ctype in {"causal_graph", "dag", "gcm", "gcm_graph", "causal_dag", "dowhy_graph"}:
+                causal_graphs.append(data)
     return {
         "mission_id": mission_id,
         "status": status,
         "trace": trace,
         "events": events,
+        "causal_graphs": causal_graphs,
     }
 
 

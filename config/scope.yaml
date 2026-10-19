@@ -1,0 +1,7 @@
+# Tenant scope used when the catalogue snapshot does not declare scope dimensions.
+# A read model with scope_dimensions (or a dimension extra.role of "scope") replaces this list.
+default_brand_id: "20"
+scope_dimension_ids:
+  - brand_id
+  - brand
+  - brand_name

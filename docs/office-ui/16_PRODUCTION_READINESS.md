@@ -10,7 +10,7 @@
   in `main.py` for a real deployment origin.
 - `normalize.py` only forwards event envelope + known metadata fields; it strips
   `workflow_name/version` internals. It never forwards secrets/tokens because the
-  source control-plane events don't carry them — if that changes, add a redaction
+  source control-plane events don't carry them — if that changes, tighten the
   allow-list in `_event_summary` / the metadata filter.
 - No chain-of-thought is ever exposed — only structured stage lists and event summaries.
 

@@ -1,8 +1,19 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, NewType
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+# ``EvidenceView.time_range`` and ``EvidenceView.dimensions`` are both
+# ``dict[str, str]`` structurally, so swapping them is invisible to a checker —
+# and one was swapped: ``persistence/postgres.py`` wrote ``time_range`` into the
+# evidence_artifacts ``dimensions`` column, so every persisted row read
+# ``{"start": ..., "end": ...}`` and the real grouping (``campaign_name`` &co)
+# was discarded. Distinct NewTypes make that a type error at the assignment.
+# Nominal, not structural: a plain ``dict[str, str]`` literal still fits either,
+# but a ``TimeWindow`` variable can no longer be passed where dimensions belong.
+DimensionValues = NewType("DimensionValues", dict[str, str])
+TimeWindow = NewType("TimeWindow", dict[str, str])
 
 QueryClass = Literal["lookup", "comparison", "unsupported"]
 MissionStatus = Literal[
@@ -59,13 +70,23 @@ class DimensionMappingV1(BaseModel):
 
 
 class TraceInfo(BaseModel):
+    # Extra keys (the runner's intent/classification fields) are kept: this
+    # model dropped them, and with them ``validation``, so no stored mission
+    # showed why a draft was revised (live 2026-10-04: MS3-e18a06b408 revised
+    # a correct total away and the record could not say why).
+    model_config = ConfigDict(extra="allow")
+
     request_id: str
     session_id: str
+    langfuse_trace_id: str | None = None
+    langfuse_trace_url: str | None = None
     langsmith_run_id: str | None = None
     langsmith_run_url: str | None = None
     elapsed_seconds: float | None = None
     # Per-step agent trace (tool calls + args, returns, retries, model text).
     steps: list[dict[str, Any]] | None = None
+    # Verdict, trust score and every rejected revision with its reason.
+    validation: dict[str, Any] | None = None
 
 
 class MissionError(BaseModel):
@@ -87,10 +108,10 @@ class EvidenceView(BaseModel):
     metric_or_fact: str
     value: Any
     unit: str | None = None
-    time_range: dict[str, Any] = Field(default_factory=dict)
+    time_range: TimeWindow = Field(default_factory=TimeWindow)
     source: str
     freshness: str | None = None
-    dimensions: dict[str, Any] = Field(default_factory=dict)
+    dimensions: DimensionValues = Field(default_factory=DimensionValues)
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 

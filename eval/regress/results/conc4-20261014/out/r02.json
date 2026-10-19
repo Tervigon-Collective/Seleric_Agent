@@ -1,0 +1,47 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_93ed9754fb73438897fae93a1f7fd013",
+ "mission": "MS3-c92ece275c",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 30,
+ "elapsed_s": 28.246,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 22,
+  "measured": 22,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "escalate",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "The following Meta campaigns are wasting money, as they have negative net profits over the last 30 days:\n\n| Campaign Name                          | Orders | Contribution Margin | Ad Spend | Net Profit | ROAS |\n|----------------------------------------|--------|----------------------|----------|------------|------|\n| TH-383-SUSPENDER-26SEP-ADV+            | 34     | \u20b931,216             | \u20b973,137  | -\u20b941,921   | 0.43 |\n| TH-383-SUSPENDER-29SEP                 | 26     | \u20b926,087             | \u20b956,657  | -\u20b930,569   | 0.46 |\n| DOG TOY CS-24SEP                       | 19     | \u20b912,297             | \u20b934,634  | -\u20b922,337   | 0.36 |\n| TH-222-WINGBIRD-23SEP                  | 77     | \u20b953,405             | \u20b973,105  | -\u20b919,699   | 0.73 |\n| CAT TOY CS-26SEP                       | 18     | \u20b916,272             | \u20b933,853  | -\u20b917,581   | 0.48 |\n\nThese campaigns have low ROAS (below 1), indicating that the revenue generated does not cover the ad spend. \n\nWorth checking: Consider pausing or optimizing these campaigns to improve profitability.\n\nPeriod: 2026-09-14 to 2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Would you like to analyze the drivers behind these campaigns' poor performance?"
+}

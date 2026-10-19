@@ -1,0 +1,46 @@
+{
+ "n": 2,
+ "aspect": "test_agent6",
+ "q": "Which Meta campaigns are wasting money?",
+ "thread": "thread_0edfb05e5a524de68e50003a389aa2cb",
+ "mission": "MS3-b87567653e",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 30,
+ "elapsed_s": 24.344,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 18,
+  "measured": 18,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query",
+  "catalogue_search_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "tool: filters to Meta"
+  },
+  {
+   "ok": true,
+   "what": "tool: breaks down by campaign"
+  },
+  {
+   "ok": true,
+   "what": "tool: uses spend plus an outcome metric"
+  }
+ ],
+ "answer": "These Meta campaigns lost money last week (net profit by order date); the worst offenders and their size are below \u2014 pause or review these first.\n\n- TH-383-SUSPENDER-26SEP-ADV+: Net profit \u2212\u20b912,229 \u00b7 Net ROAS 0.5x \u00b7 Ad spend \u20b923,526  \n- TH-383-SUSPENDER-29SEP: Net profit \u2212\u20b910,703 \u00b7 Net ROAS 0.6x \u00b7 Ad spend \u20b924,101  \n- TH-279-BATHEASEBRUSH-07OCT: Net profit \u2212\u20b98,636 \u00b7 Net ROAS 0.1x \u00b7 Ad spend \u20b910,111  \n- CAT TOY CS-26SEP: Net profit \u2212\u20b98,148 \u00b7 Net ROAS 0.2x \u00b7 Ad spend \u20b99,707  \n- TH-445-PROSUSPENDERBOOTS-6OCT: Net profit \u2212\u20b96,963 \u00b7 Net ROAS 0.1x \u00b7 Ad spend \u20b97,399  \n- DOG DAD T-SHIRT-CS-06OCT: Net profit \u2212\u20b96,776 \u00b7 Net ROAS 0.5x \u00b7 Ad spend \u20b912,323\n\nPeriod: 2026-10-07..2026-10-13 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext: Do you want the full list of Meta campaigns (top 20) or a drill-down by adset to see where to cut?"
+}

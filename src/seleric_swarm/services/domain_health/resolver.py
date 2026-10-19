@@ -8,13 +8,13 @@ import yaml
 
 from seleric_swarm.contracts.lookup import TimeRangeV1
 from seleric_swarm.domain.models import StateNeed, StateRequest
+from seleric_swarm.exploration.space import configured_scope_ids, default_brand_id
 from seleric_swarm.paths import repo_root
 from seleric_swarm.services.domain_health.models import (
     DomainStateSnapshot,
     DomainStatus,
     ResolvedMetric,
 )
-from seleric_swarm.services.mcp_query import DEFAULT_BRAND_ID
 from seleric_swarm.services.time_range import resolve_time_range
 
 if TYPE_CHECKING:
@@ -118,14 +118,26 @@ class DomainStateResolver:
         self._business_state = business_state
         self._profiles = profiles or DomainHealthProfiles()
 
+    def _timezone(self, block: dict[str, Any]) -> str:
+        """The timezone the domain's metrics are resolved in (their registry entries)."""
+        registry = getattr(getattr(self._business_state, "_runtime", None), "metrics", None)
+        for entry in block.get("metrics", []):
+            definition = registry.get(entry["metric_id"]) if registry is not None else None
+            if definition is not None and getattr(definition, "timezone", None):
+                return str(definition.timezone)
+        return "UTC"
+
     async def resolve(
         self,
         domain: str,
         *,
         time_range: TimeRangeV1,
-        brand_id: str = DEFAULT_BRAND_ID,
+        brand_id: str | None = None,
         store: SnapshotStore | None = None,
     ) -> DomainStateSnapshot:
+        brand_id = brand_id or default_brand_id()
+        scope_ids = configured_scope_ids()
+        scope_dim = scope_ids[0] if scope_ids else ""
         block = self._profiles.get(domain)
         agent_id = block.get("agent_id", f"{domain}_agent")
         # `time_range` is typically still unresolved (kind="relative",
@@ -135,13 +147,17 @@ class DomainStateResolver:
         # Resolved here once, display-only; per-metric fetching below still
         # goes through facade.get_metric_state's own (per-metric-timezone)
         # resolution unchanged.
-        resolved_range = resolve_time_range(time_range, "UTC", None)
+        # In the metrics' own timezone: resolved in UTC, a snapshot computed between
+        # 00:00 and 05:30 IST was labelled with the day before the one its values
+        # are for (live 2026-10-08: 10-07 figures stamped "as of 2026-10-06").
+        resolved_range = resolve_time_range(time_range, self._timezone(block), None)
         previous = await store.aget_latest(domain) if store else None
         previous_by_metric = {m.metric_id: m for m in previous.metrics} if previous else {}
 
         resolved: list[ResolvedMetric] = []
         query_ids: list[str] = []
         status: DomainStatus = "OK"
+        unavailable = 0
         for entry in block.get("metrics", []):
             metric_id = entry["metric_id"]
             windowed_point = entry.get("feature_class") == "windowed_point"
@@ -159,14 +175,16 @@ class DomainStateResolver:
             request = StateRequest(
                 metric_id=metric_id,
                 time_range=time_range,
-                dimensions={"brand_id": brand_id},
+                dimensions={scope_dim: brand_id} if scope_dim else {},
                 agent_id=agent_id,
                 need=need,
             )
             state = await self._business_state.get_metric_state(request)
 
+            # One metric the catalogue cannot answer (status=broken, retired) degrades the domain; it is UNAVAILABLE
+            # only when none of its metrics answered. Before, a single broken metric hid the whole domain.
             if state.status == "UNAVAILABLE":
-                status = "UNAVAILABLE"
+                unavailable += 1
             elif state.status == "PARTIAL" and status == "OK":
                 status = "DEGRADED"
 
@@ -198,6 +216,8 @@ class DomainStateResolver:
             if query_id:
                 query_ids.append(str(query_id))
 
+        if unavailable:
+            status = "UNAVAILABLE" if unavailable == len(resolved) else "DEGRADED"
         return DomainStateSnapshot(
             domain=domain,
             brand_id=brand_id,

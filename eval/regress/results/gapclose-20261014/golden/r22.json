@@ -1,0 +1,39 @@
+{
+ "n": 22,
+ "aspect": "reconciliation",
+ "q": "give me a net profit breakdown, waterfall for September 2026",
+ "thread": "thread_0f8e39e6363c44ad8d85f13c619487e7",
+ "mission": "MS3-86c8897a32",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 17,
+ "elapsed_s": 15.447,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 1,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 16,
+  "measured": 16,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": []
+ },
+ "tools": [
+  "break_down_metric"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "number -172226.96 (live)"
+  },
+  {
+   "ok": true,
+   "what": "not 'residual'"
+  }
+ ],
+ "answer": "Order-date net profit for September 2026 was a loss of -\u20b9172,227. (Measured)\n\nEvidence \u2014 waterfall (major lines, rupees)\n- Net profit (order-date): -\u20b9172,227. (Measured)\n- Contribution margin: \u20b91,021,095. (Measured)\n  - Net sales (P&L basis): \u20b91,697,336. (Measured)\n    - Gross sales (P&L basis): \u20b92,253,539. (Measured)\n    - \u2212 Discounts (P&L basis): \u2212\u20b9110,359. (Measured)\n    - \u2212 Return revenue (P&L basis): \u2212\u20b9371,999. (Measured)\n    - \u2212 Cancel revenue (P&L basis): \u2212\u20b973,845. (Measured)\n  - \u2212 Net COGS: \u2212\u20b9676,241. (Measured)\n    - Product cost: \u2212\u20b9553,170. (Measured)\n    - Operating cost: \u2212\u20b9123,071. (Measured)\n      - Shipping cost: \u2212\u20b976,743. (Measured)\n      - Packaging cost: \u2212\u20b918,237. (Measured)\n      - Payment gateway fees: \u2212\u20b912,919. (Measured)\n      - RTO cost: \u2212\u20b915,171. (Measured)\n- \u2212 Ad spend (P&L basis): \u2212\u20b91,193,322. (Measured)\n\nAll lines reconcile to the reported net profit; figures come from the system's verified P&L breakdown and order-date net profit composition. \n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-14\n\nNext step: Would you like this waterfall broken down by finance channel (P&L channel) so we can see which channel drove the loss?"
+}

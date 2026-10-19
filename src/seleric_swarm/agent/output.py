@@ -48,6 +48,12 @@ class ToolResult(BaseModel):
         return self
 
 
+# "running" is NOT a legal terminal state — it is kept in the Literal only so a
+# mid-work call still PARSES. Removing it would make pydantic reject the call at
+# schema level, and output validation cannot retry under streaming (see
+# _empty_means_none below), which would fail the whole mission. Instead the
+# EvidenceValidator gates it and sends the model back through the revision loop,
+# which re-runs the agent and works under streaming too.
 MissionStatus = Literal["running", "completed", "partial", "failed"]
 
 
@@ -62,17 +68,45 @@ class MissionResult(BaseModel):
     # fabricate throwaway values (live: "m_001") — which wastes output tokens
     # and, when omitted/empty, cost a final_result validation retry.
     mission_id: str = ""
-    status: MissionStatus
+    status: MissionStatus = Field(
+        description=(
+            "Terminal state of the mission: 'completed' when every requested outcome is "
+            "fulfilled, 'partial' when the answer is useful but incomplete, 'failed' when "
+            "no requested result is usable. Calling this tool ENDS the mission, so never "
+            "report 'running' — finish the tool work first."
+        ),
+    )
     query: str = ""
     as_of: datetime | None = None
     final_response: str
     evidence_ids: list[str] = Field(default_factory=list)
     finding_ids: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+    not_values: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Words from the [values in the data] hints that the question uses as ordinary language, "
+            "not as that value (e.g. 'other' in 'compared to other days' is not payment_method = other). "
+            "Listed words are not required as filters. Never list a word the user meant as a filter "
+            "for that specific dimension. However, if the hint suggests a dimension that does not match "
+            "the user's intended entity type (e.g. the hint suggests ad_name but the user meant a product), "
+            "you MUST list the word in not_values to reject the incorrect dimension mapping."
+        ),
+    )
+    next_step: str = Field(
+        default="",
+        description=(
+            "The one next step this answer ends by proposing (the same step as its closing 'Next' "
+            "line), in one sentence; '' when it proposes none. A reply of 'yes' runs exactly this."
+        ),
+    )
     error_code: str | None = None
+    # AG-08: structured Office UI parts (CHART / TABLE / KPI_GRID). Additive.
+    parts: list[dict[str, Any]] = Field(default_factory=list)
+    charts: list[dict[str, Any]] = Field(default_factory=list)
     trace: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("evidence_ids", "finding_ids", "limitations", mode="before")
+    @field_validator("evidence_ids", "finding_ids", "limitations", "not_values", mode="before")
     @classmethod
     def _empty_means_none(cls, value: Any) -> Any:
         # Models regularly send "" or null for "none" (live: limitations="" and

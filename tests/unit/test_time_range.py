@@ -59,21 +59,21 @@ def test_sub_months(anchor: str, n: int, expected: str):
             "What is the best selling product in the last 5 months",
             "2026-09-03",
             "2026-04-03",
-            "2026-09-03",
+            "2026-09-02",
             "last_5m",
         ),
         (
             "Show me sales for the last 1 month",
             "2026-09-03",
             "2026-08-03",
-            "2026-09-03",
+            "2026-09-02",
             "last_1m",
         ),
         (
             "Orders in last 12 months",
             "2026-09-03",
             "2025-09-03",
-            "2026-09-03",
+            "2026-09-02",
             "last_12m",
         ),
         # Plural vs singular
@@ -81,7 +81,7 @@ def test_sub_months(anchor: str, n: int, expected: str):
             "Revenue over the last 3 month",
             "2026-06-30",
             "2026-03-30",
-            "2026-06-30",
+            "2026-06-29",
             "last_3m",
         ),
         # End-of-month clamping in query context
@@ -89,7 +89,7 @@ def test_sub_months(anchor: str, n: int, expected: str):
             "Performance last 1 month",
             "2026-03-31",
             "2026-02-28",
-            "2026-03-31",
+            "2026-03-30",
             "last_1m",
         ),
     ],
@@ -116,21 +116,21 @@ def test_window_from_query_months(
             "Top products in the last 2 weeks",
             "2026-09-03",
             "2026-08-20",
-            "2026-09-03",
+            "2026-09-02",
             "last_2w",
         ),
         (
             "Sales last 1 week",
             "2026-09-03",
             "2026-08-27",
-            "2026-09-03",
+            "2026-09-02",
             "last_1w",
         ),
         (
             "Performance last 4 weeks",
             "2026-09-03",
             "2026-08-06",
-            "2026-09-03",
+            "2026-09-02",
             "last_4w",
         ),
     ],
@@ -157,21 +157,21 @@ def test_window_from_query_weeks(
             "Revenue over last 1 quarter",
             "2026-09-03",
             "2026-06-03",
-            "2026-09-03",
+            "2026-09-02",
             "last_1q",
         ),
         (
             "What happened in the last 2 quarters",
             "2026-09-03",
             "2026-03-03",
-            "2026-09-03",
+            "2026-09-02",
             "last_2q",
         ),
         (
             "Best sellers last quarter",
             "2026-09-03",
             "2026-06-03",
-            "2026-09-03",
+            "2026-09-02",
             "last_1q",
         ),
     ],
@@ -195,8 +195,8 @@ def test_window_from_query_days_still_works():
     window = window_from_query("Sales in the last 3 days", "Asia/Kolkata", "2026-09-03")
     assert window is not None
     assert window.relative_token == "last_3d"
-    assert window.start == "2026-09-01"
-    assert window.end == "2026-09-03"
+    assert window.start == "2026-08-31"
+    assert window.end == "2026-09-02"  # complete days only: today is in progress
 
 
 def test_window_from_query_days_capped_at_90():
@@ -219,12 +219,12 @@ def test_window_from_query_months_not_capped():
 @pytest.mark.parametrize(
     "token,as_of,expected_start,expected_end",
     [
-        ("last_5m", "2026-09-03", "2026-04-03", "2026-09-03"),
-        ("last_1m", "2026-03-31", "2026-02-28", "2026-03-31"),
-        ("last_2w", "2026-09-03", "2026-08-20", "2026-09-03"),
-        ("last_1w", "2026-09-03", "2026-08-27", "2026-09-03"),
-        ("last_1q", "2026-09-03", "2026-06-03", "2026-09-03"),
-        ("last_2q", "2026-09-03", "2026-03-03", "2026-09-03"),
+        ("last_5m", "2026-09-03", "2026-04-03", "2026-09-02"),
+        ("last_1m", "2026-03-31", "2026-02-28", "2026-03-30"),
+        ("last_2w", "2026-09-03", "2026-08-20", "2026-09-02"),
+        ("last_1w", "2026-09-03", "2026-08-27", "2026-09-02"),
+        ("last_1q", "2026-09-03", "2026-06-03", "2026-09-02"),
+        ("last_2q", "2026-09-03", "2026-03-03", "2026-09-02"),
     ],
 )
 def test_resolve_time_range_relative_tokens(token, as_of, expected_start, expected_end):
@@ -239,8 +239,8 @@ def test_resolve_time_range_relative_tokens(token, as_of, expected_start, expect
 def test_resolve_time_range_last_nd_still_works():
     tr = TimeRangeV1(kind="relative", start=None, end=None, relative_token="last_7d")
     resolved = resolve_time_range(tr, "Asia/Kolkata", "2026-09-03")
-    assert resolved.start == "2026-08-28"
-    assert resolved.end == "2026-09-03"
+    assert resolved.start == "2026-08-27"
+    assert resolved.end == "2026-09-02"  # 7 complete days, same as the gateway's last_7d
 
 
 def test_resolve_time_range_last_nd_capped():
@@ -248,7 +248,7 @@ def test_resolve_time_range_last_nd_capped():
     resolved = resolve_time_range(tr, "Asia/Kolkata", "2026-09-03")
     # 90-day cap applies to days tokens
     from datetime import date, timedelta
-    expected = (date.fromisoformat("2026-09-03") - timedelta(days=89)).isoformat()
+    expected = (date.fromisoformat("2026-09-03") - timedelta(days=90)).isoformat()
     assert resolved.start == expected
 
 
@@ -299,3 +299,104 @@ def test_months_phrase_beats_days_phrase():
     # the test confirms whichever fires first returns a consistent result.
     assert window.relative_token is not None
     assert window.kind == "absolute"
+
+
+def test_named_weekday_is_its_last_completed_occurrence() -> None:
+    from seleric_swarm.services.time_range import window_from_query
+
+    # 2026-10-04 is a Sunday: "Monday" is 2026-09-28, never today or a future day.
+    w = window_from_query("what caused the spike in CAC on Monday?", "Asia/Kolkata", "2026-10-04")
+    assert (w.start, w.end, w.relative_token) == ("2026-09-28", "2026-09-28", "last_monday")
+    # Asked on a Monday, "Monday" is last week's (today is still in progress).
+    w = window_from_query("why did orders drop on Monday", "Asia/Kolkata", "2026-10-05")
+    assert (w.start, w.end) == ("2026-09-28", "2026-09-28")
+    # Two weekday names are a comparison, not a single day.
+    assert window_from_query("Monday vs Tuesday orders", "Asia/Kolkata", "2026-10-04") is None
+
+
+# -- two named windows joined by a comparison -----------------------------------
+#
+# Live 2026-10-06 (MS3-167d9f4838): the priority chain returned on its first
+# match, so "the last 3 days versus today" resolved to the 3-day window alone and
+# `today` was dropped. The mission fetched, analysed and shipped only the first
+# window as `completed`. These lock the comparison down AND its precision: a
+# second window must be *bound* to a comparison, not merely present.
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        # The incident itself.
+        (
+            "Analyze the last 3 days' best-performing campaigns versus today",
+            ("2026-10-03", "2026-10-05", "2026-10-06", "2026-10-06"),
+        ),
+        ("revenue yesterday versus today", ("2026-10-05", "2026-10-05", "2026-10-06", "2026-10-06")),
+        ("this week vs last week", ("2026-10-05", "2026-10-06", "2026-09-28", "2026-10-04")),
+        ("last month vs this month", ("2026-09-01", "2026-09-30", "2026-10-01", "2026-10-06")),
+    ],
+)
+def test_two_named_windows_become_a_comparison(query: str, expected: tuple[str, ...]) -> None:
+    from seleric_swarm.services.time_range import window_from_query
+
+    w = window_from_query(query, "Asia/Kolkata", "2026-10-06")
+    assert w is not None, query
+    assert w.kind == "comparison", query
+    assert (w.start, w.end, w.start_b, w.end_b) == expected, query
+    # The token is what `_resolved_window_line` gates on to tell the model the
+    # dates at all — an unpinned comparison silently loses both windows again.
+    assert w.relative_token, query
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # One window and a NON-temporal comparison: not a period comparison. This
+        # is the exact case the `_RELATIVE_COMPARE` comment warns about.
+        "for last month, how did this channel compare to the site average",
+        # The same window twice names no comparison.
+        "spend in the last 7 days vs the last 7 days",
+        # A second window that is not joined to the first.
+        "spend last 30 days across all channels vs target",
+        # Single window, unchanged.
+        "total ad spend in the last 7 days",
+        "how many orders came in today",
+    ],
+)
+def test_one_named_window_is_not_turned_into_a_comparison(query: str) -> None:
+    from seleric_swarm.services.time_range import window_from_query
+
+    w = window_from_query(query, "Asia/Kolkata", "2026-10-06")
+    assert w is not None, query
+    assert w.kind == "absolute", query
+    assert w.start_b is None and w.end_b is None, query
+
+
+
+
+def test_two_windows_named_side_by_side_in_a_comparison_are_both_kept():
+    """Live 2026-10-09 MS3-0f473daefd: "compare … from yesterday and today" kept only yesterday."""
+    from seleric_swarm.services.time_range import window_from_query
+
+    w = window_from_query(
+        "compare performance of meta ads campaigns, from yesterday and today, same time till 11 am",
+        "Asia/Kolkata", "2026-10-09",
+    )
+    assert w is not None and w.kind == "comparison"
+    assert {(w.start[:10], w.end[:10]), (w.start_b[:10], w.end_b[:10])} == {
+        ("2026-10-08", "2026-10-08"), ("2026-10-09", "2026-10-09"),
+    }
+    # Without a comparison, two windows in a sentence stay what they were.
+    plain = window_from_query("orders yesterday and today", "Asia/Kolkata", "2026-10-09")
+    assert plain is None or plain.kind != "comparison"
+
+
+def test_compared_with_last_week_is_this_week_against_last():
+    """Live 2026-10-09 MS3-2ec0e4a115: "compare" in the verb list never matched "compared",
+    so "Why did ROAS decline compared with last week?" diagnosed last week alone."""
+    from seleric_swarm.services.time_range import window_from_query
+
+    w = window_from_query("Why did ROAS decline compared with last week?", "Asia/Kolkata", "2026-10-09")
+    assert w is not None and w.kind == "comparison"
+    assert (w.start, w.end, w.start_b, w.end_b) == ("2026-10-05", "2026-10-09", "2026-09-28", "2026-10-02")
+    assert window_from_query("net sales last week", "Asia/Kolkata", "2026-10-09").kind == "absolute"
