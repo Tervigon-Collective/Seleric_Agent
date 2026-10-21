@@ -351,6 +351,9 @@ async def break_down_metric(
     header = f"| Line | {start}..{end} |" + (f" {periods[1][1]}..{periods[1][2]} | Change | Effect on {metric_id} |" if compare else "")
     lines.append(header)
     lines.append("| --- | ---: |" + (" ---: | ---: | ---: |" if compare else ""))
+    period_col = f"{start}..{end}"
+    table_cols = ["Line", period_col] + ([f"{periods[1][1]}..{periods[1][2]}", "Change", f"Effect on {metric_id}"] if compare else [])
+    table_rows: list[dict[str, str]] = []
     for n in nodes:
         v = values_by["period"].get(n.metric)
         if v is None:
@@ -358,16 +361,19 @@ async def break_down_metric(
         indent = "  " * n.depth
         sign = "" if n.depth == 0 else ("+ " if n.sign > 0 else "− ")
         row = f"| {indent}{sign}{_label(definitions, n.metric)} ({n.metric}) | {_fmt(v)} |"
+        cells = {"Line": "\u00a0\u00a0" * n.depth + sign + _label(definitions, n.metric), period_col: _fmt(v)}
         metrics_out[f"{n.metric} | {start}..{end}"] = v
         if compare is not None and n.metric in compare:
             change = v - compare[n.metric]
             effect = n.effective * change
             row += f" {_fmt(compare[n.metric])} | {_fmt(change)} | {_fmt(effect)} |"
+            cells.update({table_cols[2]: _fmt(compare[n.metric]), "Change": _fmt(change), table_cols[4]: _fmt(effect)})
             metrics_out[f"{n.metric} | {periods[1][1]}..{periods[1][2]}"] = compare[n.metric]
             metrics_out[f"{n.metric} | change"] = change
             if n.depth:
                 metrics_out[f"{n.metric} | effect on {metric_id}"] = effect
         lines.append(row)
+        table_rows.append(cells)
 
     # The flat waterfall: the leaves in order, each with its sign in the top metric, end at the total.
     leaves = [n for n in nodes if not n.children and n.depth > 0 and n.metric in values_by["period"]]
@@ -503,7 +509,14 @@ async def break_down_metric(
         provenance=ArtifactProvenance(
             evidence_ids=evidence_ids,
             calculation_version=_CALCULATION_VERSION,
-            source_metadata={"finding_id": finding_id, "reconciled": reconciled, "currency": currency},
+            source_metadata={
+                "finding_id": finding_id, "reconciled": reconciled, "currency": currency,
+                # the lines as a table the answer can attach (``show_table(finding_id)``): rows, not markdown to re-parse
+                "table": {"columns": table_cols, "rows": table_rows, "total_rows": len(table_rows), "state": "ok",
+                          "caption": f"{_label(definitions, metric_id)}{f' ({currency})' if currency else ''}, "
+                                     f"{start}..{end}; " + ("lines reconcile" if reconciled else "lines do NOT reconcile")
+                                     + (f"; filters not carried by this view, NOT applied: {', '.join(sorted(set(dropped_any)))}"
+                                        if dropped_any else "")}},
         ),
         warnings=gaps + notes,
     )

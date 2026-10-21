@@ -137,6 +137,33 @@ async def test_a_bridge_gives_each_lines_effect_on_the_total(defs: None) -> None
     assert "sum to -30.00" in res.summary
 
 
+async def test_a_breakdown_hands_over_its_lines_as_a_table_with_the_findings_id(defs: None) -> None:
+    mcp = _Mcp({"2026-10-01": {"np": -20.0, "cm": 80.0, "ns": 100.0, "cogs": 20.0, "ad": 100.0}})
+    res = await composition.break_down_metric(
+        _Ctx(_deps(mcp)), "np", period_start=datetime(2026, 10, 1, tzinfo=UTC), period_end=datetime(2026, 10, 7, tzinfo=UTC)
+    )
+    meta = res.provenance.source_metadata
+    table = meta["table"]
+    assert meta["finding_id"] in res.artifact_ids
+    assert table["columns"] == ["Line", "2026-10-01..2026-10-07"] and table["total_rows"] == len(table["rows"]) == 5
+    assert [(r["Line"].strip(), r["2026-10-01..2026-10-07"]) for r in table["rows"]] == [
+        ("Net profit", "-20.00"), ("+ Contribution margin", "80.00"), ("+ Net sales", "100.00"), ("− COGS", "20.00"), ("− Ad spend", "100.00")]
+    assert "lines reconcile" in table["caption"]
+
+
+async def test_a_bridges_table_carries_the_change_and_effect_columns(defs: None) -> None:
+    mcp = _Mcp({
+        "2026-10-02": {"np": -20.0, "cm": 80.0, "ns": 100.0, "cogs": 20.0, "ad": 100.0},
+        "2026-10-01": {"np": 10.0, "cm": 90.0, "ns": 110.0, "cogs": 20.0, "ad": 80.0},
+    })
+    res = await composition.break_down_metric(
+        _Ctx(_deps(mcp)), "np", period_start=datetime(2026, 10, 2, tzinfo=UTC), compare_start=datetime(2026, 10, 1, tzinfo=UTC))
+    table = res.provenance.source_metadata["table"]
+    assert table["columns"][2:] == ["2026-10-01..2026-10-01", "Change", "Effect on np"]
+    ad = next(r for r in table["rows"] if r["Line"].strip() == "− Ad spend")
+    assert (ad["Change"], ad["Effect on np"]) == ("20.00", "-20.00")
+
+
 async def test_a_metric_without_composition_names_those_with_one(defs: None) -> None:
     res = await composition.break_down_metric(_Ctx(_deps(_Mcp({}))), "other")
     assert not res.success and "np (Net profit)" in res.summary

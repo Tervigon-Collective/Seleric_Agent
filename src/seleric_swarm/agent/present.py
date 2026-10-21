@@ -5,10 +5,12 @@ reads the question or the answer's wording to decide; the rule is the shape of t
 
 * a snapshot (no entity, at most two periods) with two or more measures -> KPI cards (with the change when there are
   two periods); one measure is a sentence, never a card;
-* a trend (three or more periods) -> a chart; a table too when it carries three or more measures;
+* a trend (three or more periods) -> a chart; a table too when it carries two or more measures;
 * a ranking (entities) -> a chart for one measure; a table for several measures or a long list;
 * a multi-view result (several parts) -> ONE table, the parts joined on the entity columns they share; a cell a part
-  does not have stays empty (unknown, never zero).
+  does not have stays empty (unknown, never zero). On a shared time axis every day from every view stays (a day with
+  only returns, or only sales, is still a row); on an entity ranking the leading (shortest / ranked) view still
+  defines which rows exist, and the others' extras are noted as omitted.
 
 ``show_table`` (the model's own call) uses the same table builder, so both agree on labels, units and joins.
 """
@@ -25,6 +27,7 @@ from seleric_swarm.agent.auto_chart import auto_chart, has_transcript_chart
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.agent.grounding import answer_numbers, is_query_payload, measured_in
 from seleric_swarm.agent.mcp_toolset import TurnState
+from seleric_swarm.services.metrics import is_percent_share_metric
 
 _log = logging.getLogger("seleric.agent.present")
 
@@ -179,7 +182,11 @@ class Meta:
             (net sales ÷ ad spend) is a multiple. The catalogue's own components say which."""
             meta = by_id.get(m)
             parts = meta.ratio_components if meta is not None else None
-            if cat.unit_for(m) != "ratio" or not parts or float(parts.get("multiplier") or 1.0) != 1.0:
+            if cat.unit_for(m) != "ratio":
+                return False
+            if not parts:  # no components in the catalogue (hook_rate, hold_rate_15s): the share classifier decides, so 0.21 reads 21.0%
+                return is_percent_share_metric(m, "ratio")
+            if float(parts.get("multiplier") or 1.0) != 1.0:
                 return False
             return cat.unit_for(str(parts.get("numerator"))) == "count" == cat.unit_for(str(parts.get("denominator")))
 
@@ -229,9 +236,34 @@ class Frame:
         return next((s.currency for s in self.sources if s.currency), "")
 
 
-def frame_of(sources: list[Source], lead: str | None = None) -> Frame | None:
+def named_entities(args: dict[str, Any]) -> tuple[str, list[str]] | None:
+    """The entity list the query itself named: an ``equals`` filter with several values on one dimension (the 24
+    campaigns a user pasted). Every part is filtered to that list, so the rows to show are all of them."""
+    for key in ("filters", "additional_filters"):
+        for f in args.get(key) or []:
+            if isinstance(f, dict) and f.get("operator") == "equals" and f.get("dimension"):
+                values = [str(v) for v in f.get("values") or []]
+                if len(values) >= 2:
+                    return str(f["dimension"]), values
+    return None
+
+
+def frame_for(sources: list[Source], args: dict[str, Any]) -> Frame | None:
+    """The frame of a result as the call that fetched it asked for it: ranked by its sort, rows named by its filters."""
+    return frame_of(sources, sort_measure(args), named_entities(args))
+
+
+def frame_of(sources: list[Source], lead: str | None = None, named: tuple[str, list[str]] | None = None) -> Frame | None:
     """One frame from the sources: a single one as it is; several joined on the key columns they all have (the
-    source with the fewest rows leads, so a top-N defines the order), or merged into one row when none has keys."""
+    source with the fewest rows leads, so a top-N defines the order), or merged into one row when none has keys.
+
+    When the query named its entities (``named``) every part was filtered to that list, so no row is "outside": the
+    join keeps all of them (a cell a view lacks stays empty: a campaign with no orders is a row, not a gap) and the
+    rows come in the order the user named them.
+
+    When the shared keys include a time axis, every day from every view stays too (sales by order date and returns by
+    refund date line up day by day; a day only one view has is still a row, with the other measure empty). Entity
+    rankings without a named list still drop the other views' extras: a top-N asked for those rows, not the rest."""
     if not sources:
         return None
     if len(sources) == 1:
@@ -258,6 +290,7 @@ def frame_of(sources: list[Source], lead: str | None = None) -> Frame | None:
     extra = list(dict.fromkeys(c for m in maps for k, c in m.items() if k not in shared))
     keys = [first[k] for k in shared] + extra
     time_key = next((k for k in shared if k.startswith("time:")), None)
+    keep_all = bool(time_key) or bool(named and named[0] in shared)
     merged: dict[tuple[str, ...], dict[str, Any]] = {}
     outside: set[tuple[str, ...]] = set()
     for index, (s, m) in enumerate(zip(sources, maps, strict=True)):
@@ -267,8 +300,8 @@ def frame_of(sources: list[Source], lead: str | None = None) -> Frame | None:
                 return str(value)[:10] if k == time_key and value is not None else value
 
             ident = tuple(str(cell(k) if cell(k) is not None else "") for k in shared)
-            if index and ident not in merged:  # not in the leading view: it asked for these rows, not the others
-                outside.add(ident)
+            if index and ident not in merged and not keep_all:
+                outside.add(ident)  # not in the leading view: it asked for these rows, not the others
                 continue
             slot = merged.setdefault(ident, {first[k]: cell(k) for k in shared})
             for c in extra:
@@ -276,8 +309,12 @@ def frame_of(sources: list[Source], lead: str | None = None) -> Frame | None:
                     slot[c] = row.get(c)
             for measure in s.measures:
                 slot[measure] = row.get(measure)
+    rows = list(merged.values())
+    if named and named[0] in shared:  # the user's order; a row the filter did not name (none expected) goes last
+        order = {v: i for i, v in enumerate(named[1])}
+        rows.sort(key=lambda r: order.get(str(r.get(first[named[0]]) or ""), len(order)))
     return Frame(keys=keys, time_col=first[time_key] if time_key else None,
-                 measures=measures, rows=list(merged.values()), sources=sources, joined=True, omitted=len(outside))
+                 measures=measures, rows=rows, sources=sources, joined=True, omitted=len(outside))
 
 
 # ---- table ---------------------------------------------------------------------------------------------
@@ -431,7 +468,12 @@ def plan_for(frame: Frame, *, kpi_possible: bool) -> Plan:
         return Plan(kpi=True)
     if frame.time_col:  # a measure over time (optionally split by entity)
         points = len({str(r.get(frame.time_col)) for r in frame.rows})
-        return Plan(chart=True, table=n_measures >= 3) if points >= TREND_MIN_POINTS else Plan()
+        if points < TREND_MIN_POINTS:
+            return Plan()
+        # two measures (net sales + returns by day) need the table; one measure is the chart alone.
+        # A long hourly series truncated to TABLE_MAX_ROWS looks like "wrong data" next to week totals in the prose.
+        hour_dense = frame.time_col.endswith(".hour") and len(frame.rows) > TABLE_MAX_ROWS
+        return Plan(chart=True, table=n_measures >= 2 and not hour_dense)
     if frame.keys and n_rows >= TABLE_MIN_ROWS:  # a ranking
         return Plan(chart=n_measures == 1, table=n_measures >= 2 or n_rows > TABLE_LONG_LIST)
     return Plan()
@@ -480,7 +522,7 @@ def main_frame(answer: str, state: TurnState) -> tuple[Frame, dict[str, Any]] | 
                       and src.window != base.window):
                     previous = src
     args = call_args_for(state, query_id_of(best))
-    frame = frame_of(sources, sort_measure(args))
+    frame = frame_for(sources, args)
     if frame is None:
         return None
     apply_call_hints(frame, args)

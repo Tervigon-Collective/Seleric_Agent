@@ -1,0 +1,77 @@
+{
+ "n": 1,
+ "aspect": "analysis",
+ "q": "Analysis of the Meta ads performance for 2026-10-16 to 2026-10-17: which campaigns work, which waste money, and what should I do?",
+ "thread": "thread_ad9e1fa3c57649a5a6345310e10bef96",
+ "mission": "MS3-268531ed80",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 76,
+ "elapsed_s": 70.128,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 6,
+ "llm_calls": 6,
+ "grounding": {
+  "derived": [
+   "23.2%",
+   "23.2%",
+   "48"
+  ],
+  "numbers": 37,
+  "measured": 34,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "audit_entities",
+  "run_python",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "any of ['Verdict']"
+  },
+  {
+   "ok": true,
+   "what": "any of ['Where money is leaking', 'leaking']"
+  },
+  {
+   "ok": true,
+   "what": "any of ['What I would do', 'would do']"
+  },
+  {
+   "ok": false,
+   "what": "not 'paused'"
+  },
+  {
+   "ok": true,
+   "what": "revisions <= 1"
+  },
+  {
+   "ok": true,
+   "what": "tool: fetches by the entity (campaign / product / channel), not account totals only"
+  },
+  {
+   "ok": true,
+   "what": "tool: fetches spend together with an outcome (orders / revenue)"
+  },
+  {
+   "ok": true,
+   "what": "tool: audits the entities in code"
+  },
+  {
+   "ok": true,
+   "what": "tool: does not open with the diagnosis helper"
+  }
+ ],
+ "answer": "Verdict: Meta campaigns returned slightly more than they cost but performance is thin and concentrated \u2014 across the 13 campaigns with sales the portfolio spent \u20b945,914 and generated net sales \u20b951,559 (1.12x net-sales per \u20b91 spent) with 26 orders (ad spend per order \u20b91,766). This is a small positive return but depends on a few campaigns and many campaigns spent with no sales.\n\nWhat is working\n- Portfolio-level: the 13 campaigns that recorded sales produced net sales \u20b951,559 on \u20b945,914 spend (orders by order date, 2026-10-16..2026-10-17) \u2192 1.12x net-sales \u00f7 ad spend.  \n- Early signals (too few orders to scale yet): TH-471-PLAYSCRATCHLOUNGE-13OCT-PMF \u2014 net sales \u20b97,156 on spend \u20b93,783.67 = 1.89x (3 orders); TH-075-NAPDEN-16OCT \u2014 net sales \u20b95,039 on spend \u20b92,754.89 = 1.83x (3 orders); TH-264-STORMBORNHARNESS-16OCT-CS \u2014 net sales \u20b95,165 on spend \u20b93,258.85 = 1.58x (2 orders). These look promising but are small samples.\n\nWhere money is leaking\n- Across all Meta campaigns returned in the paid_media result (120 campaigns with spend), \u20b931,383 was spent on 14 campaigns that recorded no net sales in this period \u2014 23.2% of that Meta spend (period 2026-10-16..2026-10-17, paid_media rows). Top campaigns that spent but bought no sales: TH-448-HANDSFREEDOGBELT-13OCT-CS (\u20b93,696.27), TH-229-BLUEJAY SNEAKS-15OCT-CS (\u20b93,314.30), CAT SCRATCHERS-CS-10TH-OCT (\u20b93,305.25), TH-469-SNUGFITSUSPENDERBOOTS-13OCT (\u20b92,681.26), TH-445-PROSUSPENDERBOOTS-16OCT-CS (\u20b92,391.79).\n\nWhy (what the data supports)\n- Performance is concentrated: three campaigns account for ~34.0% of spend.  \n- A material share of spend (\u20b931,383 / 23.2% of Meta spend) bought no measured net sales in the window \u2014 this is the clearest source of waste.  \n- Several promising campaigns have too few orders to be confident; the data supports testing scale but not wide reallocation yet.\n\nWhat I would do (ordered by money at stake)\n1. Pause / reassign the obvious no-sale spend (quick wins): temporarily stop or reallocate the top campaigns that spent but generated no net sales (top 5 listed above; combined \u20b96,620.01 of those five) and re-evaluate after 48 hours; if they still show no orders, keep paused. Check the full list of the 14 no-sales campaigns for smaller quick wins too.  \n2. Trim or fix campaigns losing money: reduce budget on high-spend campaigns with net sales < ad spend (example TH-290: spend \u20b95,659.14 vs net sales \u20b94,640.01) while you investigate landing pages, tracking and audience. If fixes restore conversions, consider cautious reallocation.  \n3. Scale small winners carefully: increase budget gradually on the early-signal campaigns (TH-471, TH-075, TH-264 \u2014 combined \u20b99,797.41) but cap increases (e.g., +25\u201350%) and monitor orders over the next 3 days; require at least consistent conversion before larger scale.  \n4. Investigate targeting/creative and attribution gaps for mid-spend, low-conversion campaigns (CTR/clicks are present on many of them) rather than immediate cut \u2014 a technical or landing-page issue can look like wasted spend.\n\nNotes\n- Basis: Meta ad spend (paid_media) and net sales on order date (commerce), period 2026-10-16..2026-10-17. Portfolio summary (\u20b945,914 spend / \u20b951,559 net sales / 26 orders) comes from the audit_entities analysis over the 13 campaigns that recorded sales; the no-sales figure (\u20b931,383 across 14 campaigns) is computed from the full paid_media campaign list (120 campaigns with spend) returned for the same period.  \n- Data as of 2026-10-19; platform ad rows are native-time and commerce is order-date. Partial-day caveats do not apply (the period is complete days).\n\nPeriod: 2026-10-16..2026-10-17 \u00b7 Currency: INR \u00b7 Data as of 2026-10-19\nNext: Re-run the same analysis but filtered to the top 10 spend campaigns so I can prioritise fixes (want that?)."
+}

@@ -115,7 +115,7 @@ class EvidenceArtifact(BaseModel):
 
     metric_id: str              # catalogue id, as returned by seleric-mcp, never a local alias
     dimensions: dict[str, str] = Field(default_factory=dict)
-    grain: Literal["day", "week", "month", "none"]
+    grain: Literal["day", "week", "month", "hour", "none"]  # hour added 2026-10-21: Cube .hour buckets keep their timestamp
     as_of: datetime             # inherited from SelericDeps.as_of
     period_start: datetime
     period_end: datetime
@@ -123,6 +123,7 @@ class EvidenceArtifact(BaseModel):
     unit: str | None = None
     source_query: dict[str, Any]  # the exact query_metrics()/drilldown() args sent to seleric-mcp
     fetched_at: datetime = Field(default_factory=_utc_now)
+    period: Literal["current", "previous"] = "current"  # additive 2026-10-19: which side of a compare_period query
 ```
 
 ### `Finding` (`artifact_type="finding"`, `classification="derived"`)

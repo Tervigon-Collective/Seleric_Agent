@@ -115,6 +115,18 @@ def test_day_series_and_catalogue_payload():
     assert wrong["misbound"] and "2026-10-06" in wrong["misbound"][0], wrong
 
 
+def test_short_day_form_binds_to_iso_row():
+    # live: "13 Oct (₹11,173)" was flagged misbound because only ISO labels were matched
+    days = {"query_id": "q_ret", "columns": ["report_date", "product_returns_value"],
+            "provenance": {"query_id": "q_ret", "metric_ids": ["product_returns_value"]},
+            "rows": [{"report_date": "2026-10-13T00:00:00.000", "product_returns_value": "11173"},
+                     {"report_date": "2026-10-10T00:00:00.000", "product_returns_value": "4024"}]}
+    ok = grounding("Largest return spike: 13 Oct (₹11,173 return posted).", [days])
+    assert not ok["misbound"] and not ok["unmatched"], ok
+    bad = grounding("Largest return spike: 13 Oct (₹4,024 return posted).", [days])
+    assert bad["misbound"] and "2026-10-10" in bad["misbound"][0], bad
+
+
 def test_metric_name_is_not_an_entity():
     ex = {"provenance": {"query_id": "q6", "metric_ids": ["net_sales", "ad_spend"]},
           "totals": [{"metric_id": "net_sales", "delta": 7800.43, "pct_change": 22.69}, {"metric_id": "ad_spend", "delta": -1419.0, "pct_change": -3.5}]}
@@ -197,6 +209,22 @@ def test_a_percentage_must_follow_from_the_figures_beside_it():
     assert not right["unmatched"], right
     # one operand on the line is not enough to bind it: the other may be stated elsewhere
     assert not grounding("Orders rose 36.8% (to 26).", [data])["unmatched"]
+
+
+def test_a_relative_change_between_two_rates_follows_from_the_rates_beside_it():
+    # live 2026-10-17 MS3-21bea80c05: correct figures flagged "Not verified" because rate levels were never operands, so the
+    # unverified answer also shipped without its table/cards. Rates in the data are ratios (0.1306); the answer says 13.056%.
+    data = {"query_id": "q", "rows": [{"hook_rate": "0.1305557941757581", "hold_rate_15s": "0.2499013028030004", "ctr": "0.02670", "cpc": "11.07"}],
+            "compare_rows": [{"hook_rate": "0.09175", "hold_rate_15s": "0.26073", "ctr": "0.02854", "cpc": "10.42"}]}
+    answer = (
+        "- Efficiency: CTR 2.670% → 2.854% = −6.4%; CPC ₹11.07 → ₹10.42 = +6.3%.\n"
+        "- Engagement: hook rate 13.056% → 9.175% = +42.3%; hold rate 24.990% → 26.073% = −4.2%."
+    )
+    g = grounding(answer, [data])
+    assert not g["unmatched"], g
+    # the strictness stays: a wrong change next to the same rates is still caught
+    wrong = grounding("Engagement: hook rate 13.056% → 9.175% = +45.0%.", [data])
+    assert "45.0%" in wrong["unmatched"], wrong
 
 
 def test_iso_timestamp_is_a_date_not_numbers():

@@ -1,0 +1,58 @@
+{
+ "n": 4,
+ "aspect": "analysis",
+ "q": "Which products are working and which are leaking money across ads in the last 14 days?",
+ "thread": "thread_923929f4226e4406be969705a357954f",
+ "mission": "MS3-fadf8df10d",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 55,
+ "elapsed_s": 50.016,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 35,
+  "measured": 35,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "audit_entities"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not 'paused'"
+  },
+  {
+   "ok": true,
+   "what": "revisions <= 1"
+  },
+  {
+   "ok": true,
+   "what": "tool: fetches by the entity (campaign / product / channel), not account totals only"
+  },
+  {
+   "ok": false,
+   "what": "tool: fetches spend together with an outcome (orders / revenue)"
+  },
+  {
+   "ok": true,
+   "what": "tool: audits the entities in code"
+  },
+  {
+   "ok": true,
+   "what": "tool: does not open with the diagnosis helper"
+  }
+ ],
+ "answer": "Verdict: The product portfolio is mixed \u2014 overall ad spend \u20b96,79,481 bought 585 orders (\u20b91,162 ad spend per order), but a single unattributed row absorbed \u20b92,32,698 (34.2% of spend) with no orders and is the biggest leak. Several small products are converting profitably, but a few high\u2011spend SKUs are marginal or losing efficiency.\n\nWhat is working\n- MistCalm Brush \u2014 ad spend \u20b96,524; product-attributed net ROAS 2.08; 13 orders. Strong efficiency and a clear positive return on the ad dollars shown.  \n- Play Scratch Lounge \u2014 ad spend \u20b910,875; net ROAS 1.84; 15 orders. Good return with reasonable volume.  \n- PawTech Cleaner (500ml) \u2014 ad spend \u20b915,450; net ROAS 1.32; 16 orders. Healthy ROAS at moderate spend.  \n- K9 Harness \u2014 ad spend \u20b913,631; net ROAS 1.13; 13 orders. Small but profitable signal.  \n- WildTrail Boots \u2014 ad spend \u20b918,624; net ROAS 1.05; 22 orders. Near-breakeven but positive ROAS at scale.\n\nWhere money is leaking\n- Unattributed / (not set) spend \u2014 ad spend \u20b92,32,698 (34.2% of total) and recorded no orders. This is the single largest leak.  \n- Pawveralls Suspender Boots \u2014 ad spend \u20b977,085; net ROAS 1.00 (0.9976); 55 orders. Very large spend with essentially break\u2011even attributed net sales \u2014 high risk given product & operating costs not shown here.  \n- WingBird Smart Flapping Toy \u2014 ad spend \u20b934,348; net ROAS 0.69; 43 orders. High spend, low efficiency.  \n- Ave Walk Harness Set \u2014 ad spend \u20b96,451; net ROAS 0.14; 10 orders. Poor efficiency even at modest spend.\n\nWhy (what the data shows)\n- Concentration: three largest spenders (including the unattributed row and Pawveralls) account for ~50.6% of spend; that concentrates risk.  \n- Unattributed spend is the dominant immediate problem \u2014 a large amount of ad dollars is not tied to any product orders.  \n- Several SKUs with high spend have net ROAS below 1.0 (less net sales than ad dollars), so they currently return less than the ad investment.\n\nWhat I would do (ordered by money at stake)\n- Immediately inspect the \u20b92,32,698 unattributed spend: drill by campaign_name, ad_platform and creative. Check whether it\u2019s a tracking/attribution issue or a true spend on non-converting placements. Confirm within 48\u201372 hours; if still unattributed and non-converting, reduce/stop that spend. (Check: drill to campaign-level.)  \n- Reduce or reallocate budget from large, marginal SKUs: Pawveralls Suspender Boots (\u20b977,085, ROAS \u22481.00) and WingBird Toy (\u20b934,348, ROAS 0.69). Move at-risk budget to the top performers above and monitor 7-day performance. (Check: spend \u00f7 orders and ROAS over next 7 days.)  \n- Investigate Ave Walk Harness Set (ROAS 0.14) and similar low-ROAS items; if creative/landing-page fixes are not found within 3 days, pause paid promotion. (Check: landing-page conversion and on-site funnel for this SKU.)\n\nNotes\n- Basis: product-level figures are \"Product ad spend (allocated)\" and \"Product attributed net sales\" on order-date. Totals come from the product ad spend (allocated)/product attributed net sales (allocated) and orders with the product queries for 2026-10-06..2026-10-19. Today (2026-10-19) is a partial day of data.  \nPeriod: 2026-10-06..2026-10-19 \u00b7 Currency: INR \u00b7 Data as of 2026-10-19\nNext: Drill into the \u20b92,32,698 unattributed spend by campaign_name and ad_platform to identify its source."
+}

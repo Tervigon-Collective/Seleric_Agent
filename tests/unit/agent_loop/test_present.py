@@ -108,11 +108,16 @@ DAYS = [f"2026-10-{d:02d}T00:00:00.000" for d in range(9, 16)]
 
 
 @pytest.mark.asyncio
-async def test_a_trend_is_a_chart_and_only_a_wide_one_also_a_table():
+async def test_a_trend_is_a_chart_and_a_table_when_it_has_two_or_more_measures():
     one = payload("q1", ["order_date.day", "net_sales"],
                   [{"order_date.day": d, "net_sales": str(100000 + i * 5000)} for i, d in enumerate(DAYS)], ["net_sales"])
     result, charts = await run(one, "Net sales rose from ₹1,00,000 to ₹1,30,000.")
     assert kinds(result) == [] and [c["chart_type"] for c in charts] == ["line"]
+    two = payload("q1b", ["order_date.day", "net_sales", "orders"],
+                  [{"order_date.day": d, "net_sales": str(100000 + i * 5000), "orders": str(50 + i)} for i, d in enumerate(DAYS)],
+                  ["net_sales", "orders"])
+    result, charts = await run(two, "Net sales rose from ₹1,00,000 to ₹1,30,000 while orders went from 50 to 56.")
+    assert kinds(result) == ["TABLE"] and len(charts) == 1
     three = payload("q2", ["order_date.day", "net_sales", "orders", "ad_spend"],
                     [{"order_date.day": d, "net_sales": str(100000 + i * 5000), "orders": str(50 + i), "ad_spend": str(20000 + i)}
                      for i, d in enumerate(DAYS)], ["net_sales", "orders", "ad_spend"])
@@ -332,7 +337,7 @@ async def test_views_on_different_date_columns_line_up_by_day_and_the_query_deci
     composed = {"query_id": "qp", "composed": True, "parts": [sales, spend]}
     result, charts = await run(composed, "Net sales ran ₹1,00,000 to ₹1,30,000 while ad spend ran ₹40,000 to ₹45,400.")
     assert [c["chart_type"] for c in charts] == ["line"] and sorted(charts[0]["metrics"]) == ["ad_spend", "net_sales"]
-    assert kinds(result) == []  # two measures over time: the chart carries it
+    assert kinds(result) == ["TABLE"]  # two measures over time: chart plus the day-by-day table
 
 
 def test_the_query_s_measure_order_and_sort_lead_the_table():
@@ -414,6 +419,69 @@ async def test_a_multi_view_overview_is_one_set_of_cards_each_dated_by_its_own_v
     assert cards["Net sales"]["comparison"]["delta_display"] == "▼ 12.9%" and cards["Net sales"]["time_basis"] == "15 Oct vs 14 Oct"
     assert cards["Ad spend"]["comparison"]["delta_display"] == "▼ 20.0%"
     assert cards["Orders"]["display"] == "37"
+
+
+def _campaign_sources(names: list[str], with_orders: int) -> tuple[present.Source, present.Source]:
+    paid = present.Source(query_id="paid", measures=["ad_spend", "hook_rate"], time_col=None, dims=["campaign_name"], compare_rows=[],
+                          rows=[{"campaign_name": n, "ad_spend": str(1000 + i), "hook_rate": "0.2105" if i % 2 else None}
+                                for i, n in enumerate(names)], currency="INR", window=None, compare_window=None)
+    commerce = present.Source(query_id="commerce", measures=["orders"], time_col=None, dims=["campaign_name"], compare_rows=[],
+                              rows=[{"campaign_name": n, "orders": "2"} for n in names[:with_orders]],
+                              currency="INR", window=None, compare_window=None)
+    return paid, commerce
+
+
+def test_campaigns_the_user_named_all_stay_in_the_table_even_when_a_view_has_no_row_for_them():
+    # live 2026-10-17 thread_0a9caa: 24 campaigns pasted, orders had 13 rows; the orders view led and 11 campaigns (the waste) vanished
+    names = [f"C{i:02d}" for i in range(24)]
+    paid, commerce = _campaign_sources(names, 13)
+    args = {"filters": [{"dimension": "campaign_name", "operator": "equals", "values": list(reversed(names))}]}
+    frame = present.frame_for([commerce, paid], args)  # the 13-row view would lead by the fewest-rows rule
+    assert frame is not None and len(frame.rows) == 24 and frame.omitted == 0
+    table = present.table_content(SimpleNamespaceDeps(CATALOGUE), frame, query_id="q")  # type: ignore[arg-type]
+    assert [r["Campaign Name"] for r in table["rows"]] == list(reversed(names))  # the user's order
+    no_orders = [r for r in table["rows"] if r["Orders"] == present.BLANK]
+    assert len(no_orders) == 11  # a dash, never a zero
+
+
+def test_without_a_named_list_the_shortest_view_still_leads_a_top_n():
+    names = [f"C{i:02d}" for i in range(24)]
+    paid, commerce = _campaign_sources(names, 13)
+    frame = present.frame_for([commerce, paid], {"limit": 13})
+    assert frame is not None and len(frame.rows) == 13 and frame.omitted == 11
+
+
+def test_days_from_every_view_stay_when_joining_on_a_time_axis():
+    # live Wingbird: returns had 2 days, net sales ~10; the short view led and sales days were "8 more rows … not in this list"
+    sales = present.Source(
+        query_id="sales", measures=["net_sales"], time_col="order_date.day", dims=[], compare_rows=[],
+        rows=[{"order_date.day": f"2026-10-{d:02d}T00:00:00.000", "net_sales": str(1000 * d)}
+              for d in (7, 8, 9, 11, 12, 13, 14, 15, 16, 19)],
+        currency="INR", window=("2026-10-07", "2026-10-21"), compare_window=None)
+    returns = present.Source(
+        query_id="returns", measures=["product_returns_value"], time_col="refund_date.day", dims=[], compare_rows=[],
+        rows=[{"refund_date.day": "2026-10-13T00:00:00.000", "product_returns_value": "11173"},
+              {"refund_date.day": "2026-10-15T00:00:00.000", "product_returns_value": "1101"}],
+        currency="INR", window=("2026-10-07", "2026-10-21"), compare_window=None)
+    frame = present.frame_for([sales, returns], {})
+    assert frame is not None and frame.omitted == 0 and len(frame.rows) == 10
+    by_day = {str(r.get(frame.time_col))[:10]: r for r in frame.rows}
+    assert present.number(by_day["2026-10-08"].get("net_sales")) == 8000.0
+    assert present.number(by_day["2026-10-13"].get("product_returns_value")) == 11173.0
+    assert by_day["2026-10-08"].get("product_returns_value") is None  # unknown, not zero
+    table = present.table_content(SimpleNamespaceDeps(CATALOGUE), frame, query_id="q")  # type: ignore[arg-type]
+    assert "more row" not in table["caption"]
+    assert any(r.get("Product Returns Value") == present.BLANK for r in table["rows"])
+
+
+def test_a_hook_rate_the_catalogue_stores_as_a_ratio_is_shown_as_a_percentage():
+    cat = CatalogueSnapshot(metrics=(
+        CatalogueMetricMeta(id="hook_rate", label="Hook rate", raw={"unit": "ratio", "aggregation": "ratio"}),
+        CatalogueMetricMeta(id="net_roas", label="Net ROAS", raw={"unit": "ratio", "aggregation": "ratio"}),
+    ))
+    meta = present.Meta.of(SimpleNamespaceDeps(cat), ["hook_rate", "net_roas"])  # type: ignore[arg-type]
+    assert meta.show("hook_rate", 0.2105) == "21.1%" and meta.show("hook_rate", None) == present.BLANK
+    assert meta.show("net_roas", 1.19) == "1.19"  # a multiple stays a number
 
 
 def test_a_change_is_written_the_way_its_unit_should_be_read():

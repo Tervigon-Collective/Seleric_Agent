@@ -117,6 +117,55 @@ async def test_show_table_for_an_unknown_query_is_a_failed_result_not_an_excepti
     assert getattr(res, "success", True) is False and not state.parts
 
 
+@pytest.mark.asyncio
+async def test_show_table_miss_on_an_earlier_turns_query_says_to_run_it_again():
+    from seleric_swarm.agent.local_tools import build_local_tools
+    from seleric_swarm.agent.mcp_toolset import TurnState
+
+    state = TurnState(prior_queries=['q_old: metrics_query {"measures":["ad_spend"]}'])
+    tool = next(t for t in build_local_tools(state) if t.__name__ == "show_table")
+    res = await tool(SimpleNamespace(deps=None), "q_old")
+    assert res.success is False and not state.parts
+    assert "earlier turn" in res.summary and '{"measures":["ad_spend"]}' in res.summary
+
+
+@pytest.mark.asyncio
+async def test_show_table_miss_on_an_unknown_query_lists_what_this_turn_fetched():
+    from seleric_swarm.agent.local_tools import build_local_tools
+    from seleric_swarm.agent.mcp_toolset import TurnState
+
+    state = TurnState()
+    state.by_query["q_here"] = ["e1"]
+    tool = next(t for t in build_local_tools(state) if t.__name__ == "show_table")
+    res = await tool(SimpleNamespace(deps=None), "q_made_up")
+    assert res.success is False and "q_here" in res.summary and "break_down_metric" in res.summary
+
+
+@pytest.mark.asyncio
+async def test_a_breakdowns_lines_are_offered_to_and_shown_by_show_table():
+    from seleric_swarm.agent import local_tools
+    from seleric_swarm.agent.mcp_toolset import TurnState
+    from seleric_swarm.agent.output import ToolResult
+    from seleric_swarm.conversations.contracts import ArtifactProvenance
+
+    table = {"columns": ["Line", "2026-10-01..2026-10-07"], "rows": [{"Line": "Net profit", "2026-10-01..2026-10-07": "-20.00"}],
+             "total_rows": 1, "state": "ok", "caption": "Net profit, 2026-10-01..2026-10-07; lines reconcile"}
+
+    async def break_down_metric(ctx: Any) -> ToolResult:
+        return ToolResult(success=True, summary="Net profit = -20.00", provenance=ArtifactProvenance(
+            source_metadata={"finding_id": "finding_1", "table": table}))
+
+    state = TurnState()
+    offered = await local_tools._tracked(state, break_down_metric)(SimpleNamespace(deps=None))
+    assert "show_table(query_id='finding_1')" in offered.summary
+    show = next(t for t in local_tools.build_local_tools(state) if t.__name__ == "show_table")
+    res = await show(SimpleNamespace(deps=None), "finding_1", "Cost breakdown")
+    (part,) = state.parts
+    assert res.success and part["type"] == "TABLE" and part["content"]["rows"] == table["rows"]
+    assert part["content"]["caption"] == "Cost breakdown; Net profit, 2026-10-01..2026-10-07; lines reconcile"
+    assert part["content"]["query_id"] == "finding_1"
+
+
 def _part(qid: str, metric: str, rows: list[tuple[str, float]]) -> dict[str, Any]:
     return {
         "query_id": qid, "columns": ["campaign_name", metric],

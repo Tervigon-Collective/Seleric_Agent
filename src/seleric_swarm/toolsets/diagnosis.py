@@ -332,6 +332,21 @@ def _parse_series(result: dict[str, Any], metric_id: str) -> dict[date, float]:
     return out
 
 
+def _fill_idle_days(series: dict[date, float], end: date, today: date) -> dict[date, float]:
+    """An additive measure (sales, orders, edits) has no row on a day nothing happened for the scope, which is a 0, not
+    a gap: left out, a 7-day average ran over the 3 days that had a row (₹734/day instead of ₹315 — live 2026-10-21
+    MS3-7100f30301) and a "normal range" skipped every idle day. Filled from the first day with a row to ``end``,
+    complete days only; before its first row the scope may simply not have existed or been loaded."""
+    if not series:
+        return series
+    filled = dict(series)
+    day, stop = min(series), min(end, today - timedelta(days=1))
+    while day <= stop:
+        filled.setdefault(day, 0.0)
+        day += timedelta(days=1)
+    return filled
+
+
 def _parse_segments(result: dict[str, Any], metric_id: str, dimension: str) -> dict[str, dict[date, float]]:
     """metric per segment per day. Rows with no value for the dimension are kept as
     one explicit segment: dropping them made a split stop adding up to the total
@@ -1424,6 +1439,8 @@ async def diagnose_metric_change(
                 continue
             quality.append(f"{m} cannot be filtered by {', '.join(res['_dropped_filters'])}; used unfiltered")
         parsed = _parse_series(res, m)
+        if parsed and lineage.get(m, engine.MetricMeta(m)).additive:
+            parsed = _fill_idle_days(parsed, ev_end, today)
         if parsed:
             series[m] = parsed
             args_by_metric[m] = args

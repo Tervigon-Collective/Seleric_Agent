@@ -110,6 +110,19 @@ def test_visualization_spec_trend():
     assert spec["series"][0]["type"] == "line"
 
 
+def test_hourly_series_keeps_each_hour_not_last_write_of_the_day():
+    # live: hour grain collapsed to day labels → only the last hour of 10 Oct (₹517) survived on the chart
+    evidence = [
+        _make_evidence("ad_spend", "2026-10-10T09:00:00", "2026-10-10T09:00:00", 1200.0, grain="hour"),
+        _make_evidence("ad_spend", "2026-10-10T14:00:00", "2026-10-10T14:00:00", 517.0, grain="hour"),
+        _make_evidence("ad_spend", "2026-10-14T10:00:00", "2026-10-14T10:00:00", 800.0, grain="hour"),
+    ]
+    spec = generate_visualization_spec(evidence, title="Ad spend", chart_type="line")
+    assert [r["time"] for r in spec["data"]] == ["2026-10-10 09:00", "2026-10-10 14:00", "2026-10-14 10:00"]
+    by_t = {r["time"]: r["Ad Spend"] for r in spec["data"]}
+    assert by_t["2026-10-10 09:00"] == 1200.0 and by_t["2026-10-10 14:00"] == 517.0
+
+
 def test_visualization_spec_bar_over_time():
     """Per-day bars must keep each day as its own category — not sum into one bar."""
     evidence = [

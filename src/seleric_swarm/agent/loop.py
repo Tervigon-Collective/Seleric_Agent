@@ -236,7 +236,7 @@ async def run_turn(
 ) -> LoopResult:
     begin_loop_effort()
     started = time.perf_counter()
-    state = TurnState(today=datetime.now(deps.as_of.tzinfo or UTC).date())
+    state = TurnState(today=datetime.now(deps.as_of.tzinfo or UTC).date(), prior_queries=list(prior_queries or []))
     budget = _Budget(state, is_cancelled=is_cancelled, started=started)
     usage = RunUsage()
     mission_id = deps.mission_id

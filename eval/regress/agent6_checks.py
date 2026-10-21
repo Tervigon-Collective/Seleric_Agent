@@ -91,6 +91,13 @@ CHECKS = {
     "q5": [("compares against last week or same weekdays last week", _week_windows),
            ("compares periods", _compares),
            ("decomposes", _decomposed)],
+    "analysis": [("fetches by the entity (campaign / product / channel), not account totals only",
+                  lambda t: any(_dims(c) & ({"campaign_name", "campaign_id", "campaign"} | _PRODUCT | _CHANNEL) for c in _calls(t))),
+                 ("fetches spend together with an outcome (orders / revenue)",
+                  lambda t: any("ad_spend" in m for m in _measures(t)) and any(_has(m, ("orders", "revenue", "net_sales", "roas")) for m in _measures(t))),
+                 ("audits the entities in code", lambda t: any(c["name"] == "audit_entities" for c in t["tools"])),
+                 ("does not open with the diagnosis helper", lambda t: not t["tools"] or next(
+                     (c["name"] for c in t["tools"] if c["name"] not in ("escalate",) and not c["name"].startswith("catalogue_")), "") != DIAGNOSIS)],
     "q6": [("product breakdown", lambda t: any(_dims(c) & _PRODUCT or c["args"].get("hierarchy") == "product" for c in _calls(t))),
            ("channel breakdown", lambda t: any(_dims(c) & _CHANNEL for c in _calls(t))),
            ("reuses prior scope (drilldown or same window)", lambda t: any(c["name"] == "metrics_drilldown" for c in _calls(t)) or _week_windows(t))],

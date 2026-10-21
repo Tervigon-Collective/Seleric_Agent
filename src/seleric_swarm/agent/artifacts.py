@@ -38,7 +38,7 @@ class EvidenceArtifact(BaseModel):
 
     metric_id: str
     dimensions: dict[str, str] = Field(default_factory=dict)
-    grain: Literal["day", "week", "month", "none"]
+    grain: Literal["day", "week", "month", "hour", "none"]
     as_of: datetime
     period_start: datetime
     period_end: datetime
@@ -46,6 +46,8 @@ class EvidenceArtifact(BaseModel):
     unit: str | None = None
     source_query: dict[str, Any]
     fetched_at: datetime = Field(default_factory=_utc_now)
+    # Additive: which side of a compare_period query the row is. Rows written before this field default to "current".
+    period: Literal["current", "previous"] = "current"
 
     @model_validator(mode="after")
     def _aware_periods(self) -> EvidenceArtifact:

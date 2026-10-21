@@ -292,10 +292,11 @@ def reconcile_chart_type(
     return resolved, warnings
 
 
-def _format_time_label(dt: Any) -> str:
+def _format_time_label(dt: Any, *, hour: bool = False) -> str:
     if hasattr(dt, "strftime"):
-        return dt.strftime("%Y-%m-%d")
-    return str(dt)[:10]
+        return dt.strftime("%Y-%m-%d %H:%M" if hour else "%Y-%m-%d")
+    text = str(dt)
+    return text[:16].replace("T", " ") if hour and len(text) >= 16 else text[:10]
 
 
 _LABELS: ContextVar[dict[str, str] | None] = ContextVar("chart_labels", default=None)
@@ -345,10 +346,11 @@ def _group_by_time_multi(
     key_builder: Callable[[EvidenceArtifact], str],
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Group time series data by time string and dynamic series keys."""
+    hourly = any(getattr(e, "grain", None) == "hour" for e in evidence)
     time_series: dict[str, dict[str, float]] = defaultdict(dict)
     all_keys: set[str] = set()
     for item in evidence:
-        time_str = _format_time_label(item.period_start)
+        time_str = _format_time_label(item.period_start, hour=hourly)
         s_key = key_builder(item)
         all_keys.add(s_key)
         if item.value is not None:
@@ -387,6 +389,7 @@ def _build_scatter(
     x_metric = metrics[0] if len(metrics) > 1 else None
     periods = sorted({e.period_start for e in evidence})
     period_index = {p: i for i, p in enumerate(periods)}
+    hourly = any(e.grain == "hour" for e in evidence)
 
     # One point per slice, never one per metric row: the pair is read off the
     # slice, not emitted per measure.
@@ -397,7 +400,7 @@ def _build_scatter(
         stage = (
             _dimension_key(item, varying_dim_keys)
             if varying_dim_keys
-            else _format_time_label(item.period_start)
+            else _format_time_label(item.period_start, hour=hourly)
         )
         y_value = (
             _co_metric_value(evidence, y_metric, item)
@@ -719,6 +722,7 @@ def _build_heatmap(
     """Magnitude of each metric per period (or per category)."""
     periods = sorted({e.period_start for e in evidence})
     across_periods = len(periods) > 1
+    hourly = any(e.grain == "hour" for e in evidence)
     category_of = (
         (lambda e: _dimension_key(e, varying_dim_keys))
         if varying_dim_keys
@@ -726,7 +730,7 @@ def _build_heatmap(
     )
 
     x_labels = (
-        [_format_time_label(p) for p in periods]
+        [_format_time_label(p, hour=hourly) for p in periods]
         if across_periods
         else sorted({category_of(e) for e in evidence})
     )
@@ -737,7 +741,7 @@ def _build_heatmap(
         if e.value is None:
             continue
         key = (
-            _format_time_label(e.period_start) if across_periods else category_of(e),
+            _format_time_label(e.period_start, hour=hourly) if across_periods else category_of(e),
             _format_metric_label(e.metric_id),
         )
         row = rows.setdefault(key, {"x": key[0], "y": key[1], "value": 0.0})
@@ -903,7 +907,8 @@ def _generate_spec(
 
     if resolved in CARTESIAN_CHART_TYPES:
         periods = sorted({e.period_start for e in evidence})
-        time_labels = [_format_time_label(p) for p in periods] if len(periods) > 1 else []
+        hourly = any(e.grain == "hour" for e in evidence)
+        time_labels = [_format_time_label(p, hour=hourly) for p in periods] if len(periods) > 1 else []
         _build_cartesian(spec, evidence, metrics, varying_dim_keys, time_labels, unit_groups)
         _apply_panels(spec, evidence, metrics, unit_groups, units)
     elif resolved in ("pie", "donut", "treemap", "funnel"):

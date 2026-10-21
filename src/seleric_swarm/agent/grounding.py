@@ -319,6 +319,37 @@ def _day(s: str) -> str:
     return s[:10] if len(s) > 10 and s[10] == "T" and s[4] == "-" and s[7] == "-" and s[:4].isdigit() else s
 
 
+_MONTH_ALIASES: dict[int, tuple[str, ...]] = {
+    1: ("jan", "january"), 2: ("feb", "february"), 3: ("mar", "march"), 4: ("apr", "april"),
+    5: ("may", "may"), 6: ("jun", "june"), 7: ("jul", "july"), 8: ("aug", "august"),
+    9: ("sep", "sept", "september"), 10: ("oct", "october"), 11: ("nov", "november"), 12: ("dec", "december"),
+}
+
+
+def _day_ordinal(day: int) -> str:
+    if 11 <= day % 100 <= 13:
+        return "th"
+    return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+
+
+def _day_aliases(iso: str) -> list[str]:
+    """Short forms an answer may use for an ISO day label ('13 Oct', 'Oct 13', '13th Oct')."""
+    if len(iso) < 10 or iso[4] != "-" or iso[7] != "-" or not iso[:4].isdigit():
+        return []
+    try:
+        day, month = int(iso[8:10]), int(iso[5:7])
+    except ValueError:
+        return []
+    names = _MONTH_ALIASES.get(month)
+    if not names or not 1 <= day <= 31:
+        return []
+    d, ord_ = str(day), _day_ordinal(day)
+    out: list[str] = []
+    for mon in names:
+        out.extend((f"{d} {mon}", f"{d}{ord_} {mon}", f"{mon} {d}", f"{mon} {d}{ord_}"))
+    return out
+
+
 def _word_in(line: str, label: str) -> bool:
     """label occurs in line as whole words."""
     i = line.find(label)
@@ -331,8 +362,13 @@ def _word_in(line: str, label: str) -> bool:
 
 
 def _entities(line: str, labels: Any) -> set[str]:
-    """Longest-match labels named on this line."""
+    """Longest-match labels named on this line (ISO days also match '13 Oct' / 'Oct 13')."""
     found = [lab for lab in labels if _word_in(line, lab)]
+    for lab in labels:
+        if lab in found:
+            continue
+        if any(_word_in(line, alias) for alias in _day_aliases(lab)):
+            found.append(lab)
     return {lab for lab in found if not any(lab != o and lab in o for o in found)}
 
 
@@ -407,9 +443,11 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         ents = _entities(_norm(line), by_label)
         line_nums = answer_numbers(line)
         for n in line_nums:
+            # The figures a percentage can be a claim about: the other amounts on its line, and the other unsigned percentages
+            # (rate levels: CTR 2.670% -> 2.854% = -6.4%). A signed percentage is itself a change, never an operand.
             line_operands.setdefault(
                 n["text"] + "|" + str(n["value"]),
-                [abs(o["value"]) for o in line_nums if o is not n and not o["pct"]],
+                [abs(o["value"]) for o in line_nums if o is not n and (not o["pct"] or not o["sign"])],
             )
         scope = ents or carry
         if ents and not line_nums and max(map(len, ents)) * 2 >= len(_norm(line.strip("#*-|: "))):
