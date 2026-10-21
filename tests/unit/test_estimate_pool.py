@@ -35,6 +35,12 @@ def test_a_broken_pool_falls_back_to_in_process(monkeypatch: pytest.MonkeyPatch)
     assert [e.treatment for e in out] == ["a", "b"]
 
 
+def test_workers_without_cpu_affinity_stay_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DIAGNOSIS_WORKERS", raising=False)
+    monkeypatch.delattr(estimate_pool.os, "sched_getaffinity", raising=False)
+    assert estimate_pool.workers() == 0
+
+
 def test_a_single_job_never_starts_a_pool(monkeypatch: pytest.MonkeyPatch) -> None:
     def no_pool() -> Any:
         raise AssertionError("pool requested for one job")

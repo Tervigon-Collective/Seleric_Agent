@@ -17,11 +17,12 @@ __all__ = ["room_name_for_thread"]
 
 
 def room_name_for_thread(thread_id: str) -> str:
-    """Deterministic room name for a thread.
+    """Stable room name for a thread.
 
-    Deterministic so a reconnecting browser rejoins the room it left without
-    server-side session state. Thread ids are already opaque, so this leaks
-    nothing a holder of the id does not have.
+    The same thread always maps to the same room, so a network blip rejoins
+    the call already in progress. A new call has to delete that room first:
+    LiveKit only dispatches the agent when the room is created, and a room
+    left behind by a hangup would otherwise accept the next join with no agent.
     """
 
     cleaned = thread_id.strip()

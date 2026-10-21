@@ -8,6 +8,7 @@ token for a thread in another workspace.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -18,7 +19,11 @@ from seleric_swarm.conversations.contracts import Principal, PrincipalAuthMethod
 from seleric_swarm.conversations.memory import build_in_memory_repositories
 from seleric_swarm.voice import dev_page as _voice_dev_page  # noqa: F401
 from seleric_swarm.voice import room_name_for_thread
+from seleric_swarm.voice import token as voice_token
 from seleric_swarm.voice.token import router as voice_router
+
+# Kept before the autouse stub replaces the name the route calls.
+_release_voice_room = voice_token.release_voice_room
 
 livekit_api = pytest.importorskip(
     "livekit.api", reason="voice token minting needs the 'voice-api' extra"
@@ -82,6 +87,12 @@ def client(runtime: _Runtime) -> TestClient:
     return _build_client(runtime)
 
 
+@pytest.fixture(autouse=True)
+def _no_livekit_room_delete(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Token tests must not call LiveKit. The release itself is tested below."""
+    monkeypatch.setattr(voice_token, "release_voice_room", lambda *_args, **_kwargs: None)
+
+
 def _auth() -> dict[str, str]:
     return {"x-api-key": API_KEY}
 
@@ -123,6 +134,22 @@ def test_token_grant_is_scoped_to_exactly_one_room(client: TestClient) -> None:
     assert claims.video.room_join is True
     # A participant must not be able to inject data messages into the room.
     assert not claims.video.can_publish_data
+    # No named worker: any registered agent may take the room.
+    agents = list(claims.room_config.agents) if claims.room_config else []
+    assert agents == []
+
+
+def test_named_agent_is_requested_when_configured(runtime: _Runtime, client: TestClient) -> None:
+    """A cloud agent on the same LiveKit project must not be able to take a
+    local room once a local worker name is configured."""
+    runtime.settings.voice_agent_name = "seleric-local"
+
+    body = client.post("/v1/voice/token", json={}, headers=_auth()).json()
+    claims = livekit_api.TokenVerifier(
+        _Settings.livekit_api_key, _Settings.livekit_api_secret
+    ).verify(body["token"])
+
+    assert [agent.agent_name for agent in claims.room_config.agents] == ["seleric-local"]
 
 
 def test_unauthenticated_caller_is_refused(client: TestClient) -> None:
@@ -301,7 +328,60 @@ def test_format_spoken_summary_cleans_markdown() -> None:
     spoken = format_spoken_summary(raw_markdown)
     assert "###" not in spoken
     assert "**" not in spoken
-    assert "Revenue: $4.2M" in spoken
+    assert "$" not in spoken
+    assert "forty two lakh dollars" in spoken
+
+
+def test_token_route_releases_the_previous_room(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    released: list[str] = []
+    monkeypatch.setattr(
+        voice_token, "release_voice_room", lambda _settings, room: released.append(room)
+    )
+
+    body = client.post("/v1/voice/token", json={}, headers=_auth()).json()
+
+    assert released == [body["room"]]
+
+
+def test_new_call_deletes_the_room_left_by_the_previous_hangup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LiveKit dispatches the agent only when the room is created. A second
+    call has to remove the room the hangup left behind."""
+    deleted: list[str] = []
+
+    class _Room:
+        async def delete_room(self, request: Any) -> None:
+            deleted.append(request.room)
+
+    class _Api:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            self.room = _Room()
+
+        async def aclose(self) -> None:
+            deleted.append("closed")
+
+    monkeypatch.setattr(livekit_api, "LiveKitAPI", _Api)
+    settings = _Settings()
+
+    _release_voice_room(settings, "seleric-voice-thr_1")
+
+    assert deleted == ["seleric-voice-thr_1", "closed"]
+
+
+def test_room_release_does_not_block_a_token_when_livekit_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Api:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("livekit unavailable")
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(livekit_api, "LiveKitAPI", _Api)
+
+    _release_voice_room(_Settings(), "seleric-voice-thr_1")
 
 
 def test_principal_from_metadata_parses_valid_json() -> None:

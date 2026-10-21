@@ -243,6 +243,14 @@ class Settings(BaseSettings):
     livekit_api_secret: str = ""
     # Room JWT lifetime. Short by design — the browser re-mints on reconnect.
     voice_token_ttl_s: int = 900
+    # When set, room tokens dispatch only a worker registered under this name.
+    # Leave empty to let any registered worker take the room. A LiveKit Cloud
+    # agent on the same project will otherwise answer local rooms and 404 the
+    # thread, because that thread exists only in the local database.
+    voice_agent_name: str = Field(
+        default="",
+        validation_alias=AliasChoices("VOICE_AGENT_NAME", "LIVEKIT_AGENT_NAME"),
+    )
     # fake = no vendor calls (CI default, mirrors llm_provider="fake").
     stt_provider: str = "fake"
     # "multi" = Deepgram Nova-3 code-switching (Hindi/English mixed speech); a

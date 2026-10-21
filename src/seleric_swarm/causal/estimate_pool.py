@@ -30,7 +30,12 @@ def workers() -> int:
     raw = os.environ.get("DIAGNOSIS_WORKERS", "").strip()
     if raw.isdigit():
         return int(raw)
-    return max(0, min(6, len(os.sched_getaffinity(0)) - 1))
+    # sched_getaffinity is Unix-only. Windows also has no forkserver, so the
+    # process pool cannot start there; estimates run in the calling thread.
+    affinity = getattr(os, "sched_getaffinity", None)
+    if affinity is None:
+        return 0
+    return max(0, min(6, len(affinity(0)) - 1))
 
 
 def _estimate(kwargs: dict[str, Any]) -> TimeSeriesEffect:

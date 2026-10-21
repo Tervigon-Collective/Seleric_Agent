@@ -11,7 +11,9 @@ back to ``default_workspace_id`` / ``default_user_id`` (blocker B6 in
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -21,6 +23,7 @@ from seleric_swarm.conversations.contracts import Principal, Thread, ThreadStatu
 from seleric_swarm.voice import room_name_for_thread
 
 router = APIRouter(prefix="/v1/voice", tags=["voice"])
+logger = logging.getLogger(__name__)
 
 
 class VoiceTokenRequest(BaseModel):
@@ -120,6 +123,10 @@ def mint_voice_token(body: VoiceTokenRequest, request: Request) -> VoiceTokenRes
     principal = _authenticated_principal(request)
     thread = _resolve_thread(_repositories(runtime), principal, body)
     room = room_name_for_thread(thread.id)
+    # The previous hangup leaves this room up. A token's agent dispatch is
+    # applied only when the room is created, so a second call would join a
+    # room that never gets an agent.
+    release_voice_room(settings, room)
     ttl_s = int(getattr(settings, "voice_token_ttl_s", 900))
 
     token = mint_room_jwt(
@@ -133,6 +140,7 @@ def mint_voice_token(body: VoiceTokenRequest, request: Request) -> VoiceTokenRes
             "user_id": principal.user_id,
             "thread_id": thread.id,
         },
+        agent_name=str(getattr(settings, "voice_agent_name", "") or ""),
     )
     return VoiceTokenResponse(
         url=settings.livekit_url,
@@ -144,6 +152,61 @@ def mint_voice_token(body: VoiceTokenRequest, request: Request) -> VoiceTokenRes
     )
 
 
+def release_voice_room(settings: Any, room: str) -> None:
+    """Delete a leftover voice room so the next join creates it again.
+
+    A missing room is the normal case (first call, or LiveKit already expired
+    it) and is not an error. Any other LiveKit failure is logged and ignored:
+    minting the token still has to succeed.
+    """
+
+    url = str(getattr(settings, "livekit_url", "") or "").strip()
+    api_key = str(getattr(settings, "livekit_api_key", "") or "").strip()
+    api_secret = str(getattr(settings, "livekit_api_secret", "") or "").strip()
+    if not (url and api_key and api_secret and room.strip()):
+        return
+    try:
+        _run_coroutine(_delete_livekit_room(url, api_key, api_secret, room))
+    except Exception as exc:
+        _log_room_release_failure(room, exc)
+
+
+async def _delete_livekit_room(url: str, api_key: str, api_secret: str, room: str) -> None:
+    import aiohttp
+    from livekit import api as livekit_api
+
+    client = livekit_api.LiveKitAPI(
+        url,
+        api_key,
+        api_secret,
+        timeout=aiohttp.ClientTimeout(total=4),
+    )
+    try:
+        await client.room.delete_room(livekit_api.DeleteRoomRequest(room=room))
+    finally:
+        await client.aclose()
+
+
+def _run_coroutine(coro: Any) -> None:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(coro)
+        return
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(asyncio.run, coro).result(timeout=5)
+
+
+def _log_room_release_failure(room: str, exc: BaseException) -> None:
+    text = str(exc).lower()
+    if "not_found" in text or "not found" in text or "404" in text:
+        logger.debug("voice room already gone", extra={"room": room})
+        return
+    logger.warning("voice room release failed: %s", exc, extra={"room": room})
+
+
 def mint_room_jwt(
     *,
     api_key: str,
@@ -152,6 +215,7 @@ def mint_room_jwt(
     room: str,
     ttl_s: int,
     metadata: dict[str, str],
+    agent_name: str = "",
 ) -> str:
     """Build a LiveKit access token granting join on exactly one room.
 
@@ -178,11 +242,18 @@ def mint_room_jwt(
         # inject arbitrary data messages into the room.
         can_publish_data=False,
     )
-    return (
+    token = (
         livekit_api.AccessToken(api_key, api_secret)
         .with_identity(identity)
         .with_grants(grants)
         .with_metadata(json.dumps(metadata, separators=(",", ":")))
         .with_ttl(timedelta(seconds=ttl_s))
-        .to_jwt()
     )
+    name = agent_name.strip()
+    if name:
+        token = token.with_room_config(
+            livekit_api.RoomConfiguration(
+                agents=[livekit_api.RoomAgentDispatch(agent_name=name)]
+            )
+        )
+    return token.to_jwt()

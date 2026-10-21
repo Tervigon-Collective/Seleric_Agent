@@ -246,7 +246,10 @@ def _build_turn_handling() -> Any:
         # Dynamic endpointing adapts the silence wait to how fast this user
         # speaks; the 0.3s floor cuts the fixed 0.5s default.
         "endpointing": {"mode": "dynamic", "min_delay": 0.3, "max_delay": 3.0},
-        "interruption": {"enabled": True, "resume_false_interruption": True},
+        # A barge-in must discard the current answer. Resuming a "false"
+        # interruption plays the rest of the previous answer after the pause
+        # the user hears as listening.
+        "interruption": {"enabled": True, "resume_false_interruption": False},
         # Start the LLM *and* TTS on the partial transcript; both are discarded
         # if the user keeps talking. Tools still wait for the confirmed turn.
         "preemptive_generation": {"enabled": True, "preemptive_tts": True},
@@ -335,21 +338,108 @@ def _spoken_date(year: str, month: str, day: str) -> str:
     return f"{month_name} {_ORDINAL_WORDS[int(day)]}"
 
 
-def _rupees_to_indian_words(amount: int) -> str:
-    """Render a rupee amount using Indian lakh/crore grouping instead of digits."""
+_ONES = (
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+    "seventeen", "eighteen", "nineteen",
+)
+_TENS = ("", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
+_MONTHS = {
+    "jan": "January", "feb": "February", "mar": "March", "apr": "April",
+    "may": "May", "jun": "June", "jul": "July", "aug": "August",
+    "sep": "September", "sept": "September", "oct": "October",
+    "nov": "November", "dec": "December",
+}
+_QUARTERS = {"1": "first", "2": "second", "3": "third", "4": "fourth"}
+_SUFFIX_MULTIPLIERS = {
+    "crore": 10_000_000, "crores": 10_000_000, "cr": 10_000_000,
+    "million": 1_000_000, "millions": 1_000_000, "mn": 1_000_000, "m": 1_000_000,
+    "lakh": 100_000, "lakhs": 100_000, "lac": 100_000, "lacs": 100_000, "l": 100_000,
+    "thousand": 1_000, "thousands": 1_000, "k": 1_000,
+}
+_CURRENCY_NAMES = {
+    "₹": "rupees", "$": "dollars", "€": "euros", "£": "pounds", "rs": "rupees", "inr": "rupees",
+}
+_MINOR_UNITS = {"rupees": "paise", "dollars": "cents", "euros": "cents", "pounds": "pence"}
+_SINGULAR_UNITS = {
+    "rupees": "rupee", "dollars": "dollar", "euros": "euro", "pounds": "pound",
+    "paise": "paisa", "cents": "cent", "pence": "penny",
+}
+_RATE_UNITS = "day|week|month|year|hour|session|order|orders"
+_SHORT_MONTH = r"Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec"
+# Real Unicode minus (U+2212), not the six characters backslash-u-2212.
+_SIGN_CLASS = "[-\u2212+]"
+
+
+def _below_thousand(amount: int) -> str:
+    if amount < 20:
+        return _ONES[amount]
+    if amount < 100:
+        tens, ones = divmod(amount, 10)
+        return _TENS[tens] if ones == 0 else f"{_TENS[tens]} {_ONES[ones]}"
+    hundreds, remainder = divmod(amount, 100)
+    head = f"{_ONES[hundreds]} hundred"
+    return head if remainder == 0 else f"{head} {_below_thousand(remainder)}"
+
+
+def _int_words(amount: int) -> str:
+    """Indian grouping: crore, lakh, thousand, then the remainder."""
+    if amount < 0:
+        return "minus " + _int_words(-amount)
+    if amount < 1000:
+        return _below_thousand(amount)
     crore, remainder = divmod(amount, 10_000_000)
     lakh, remainder = divmod(remainder, 100_000)
     thousand, remainder = divmod(remainder, 1000)
-    parts = []
+    parts: list[str] = []
     if crore:
-        parts.append(f"{crore} crore")
+        parts.append(f"{_int_words(crore)} crore")
     if lakh:
-        parts.append(f"{lakh} lakh")
+        parts.append(f"{_int_words(lakh)} lakh")
     if thousand:
-        parts.append(f"{thousand} thousand")
+        parts.append(f"{_int_words(thousand)} thousand")
     if remainder or not parts:
-        parts.append(str(remainder))
-    return " ".join(parts) + " rupees"
+        parts.append(_below_thousand(remainder))
+    return " ".join(parts)
+
+
+def _decimal_words(raw: str) -> str:
+    raw = raw.replace(",", "")
+    if "." not in raw:
+        return _int_words(int(raw))
+    whole, frac = raw.split(".", 1)
+    words = _int_words(int(whole or "0"))
+    frac = frac.rstrip("0")
+    if not frac:
+        return words
+    if len(frac) <= 2 and not frac.startswith("0"):
+        return f"{words} point {_int_words(int(frac))}"
+    point = " ".join(_ONES[int(digit)] for digit in frac)
+    return f"{words} point {point}"
+
+
+def _unit_name(amount: int, name: str) -> str:
+    if amount == 1:
+        return _SINGULAR_UNITS.get(name, name)
+    return name
+
+
+def _money_words(amount: float, name: str, *, suffix_used: bool) -> str:
+    minor = _MINOR_UNITS[name]
+    if not suffix_used and abs(amount) < 100:
+        rupees = int(abs(amount))
+        paise = round((abs(amount) - rupees) * 100)
+        if paise == 100:
+            rupees += 1
+            paise = 0
+        if paise and rupees:
+            major = _unit_name(rupees, name)
+            return f"{_int_words(rupees)} {major} and {_int_words(paise)} {_unit_name(paise, minor)}"
+        if paise:
+            return f"{_int_words(paise)} {_unit_name(paise, minor)}"
+        return f"{_int_words(rupees)} {_unit_name(rupees, name)}"
+    whole = int(abs(amount) + 0.5)
+    return f"{_int_words(whole)} {_unit_name(whole, name)}"
 
 
 def _normalize_for_speech(text: str) -> str:
@@ -391,50 +481,247 @@ def _normalize_for_speech(text: str) -> str:
         lambda m: _spoken_date(*m.groups()),
         text,
     )
+    return _speak_symbols(text)
 
-    # "-₹805,381" / "−₹1,722,486" / "₹416,307" / "₹17L" / "₹28L+" -> lakh/crore
-    # words, with "a loss of" for a negative profit/margin figure, "down by"
-    # for any other negative delta, and "up by" for an explicit "+" delta.
-    # The abbreviated L/Cr/K suffix (e.g. "17L" for 17 lakh) is expanded and
-    # consumed here too, so it never survives to glue onto "rupees" below.
-    _SUFFIX_MULTIPLIERS = {
-        "crore": 10_000_000, "cr": 10_000_000,
-        "million": 1_000_000, "mn": 1_000_000, "m": 1_000_000,
-        "lakh": 100_000, "lac": 100_000, "l": 100_000,
-        "thousand": 1_000, "k": 1_000,
-    }
 
-    def _rupees(m: re.Match[str]) -> str:
-        sign = m.group("sign")
+def _short_month_day(day: str, month: str) -> str:
+    number = int(day)
+    if not 1 <= number <= 31:
+        return f"{day} {month}"
+    return f"{_MONTHS[month.lower()]} {_ORDINAL_WORDS[number]}"
+
+
+def _speak_symbols(text: str) -> str:
+    """Turn the symbols TTS would spell into words and pauses.
+
+    Dates and the report footer are already rewritten. Money runs before
+    dashes and brackets so a rupee figure is not treated as a range.
+    """
+    import re
+
+    text = _speak_short_dates(text, re)
+    text = _speak_fiscal_terms(text, re)
+    text = _speak_money(text, re)
+    text = _speak_percents(text, re)
+    text = _speak_plain_numbers(text, re)
+    text = _speak_punctuation(text, re)
+    return _tidy_speech(text, re)
+
+
+def _speak_short_dates(text: str, re: Any) -> str:
+    """'1 Sep – 28 Sep' and '1 Sep vs 28 Aug', the form the answer cards use."""
+
+    def _span(m: re.Match[str]) -> str:
+        left = _short_month_day(m.group(1), m.group(2))
+        right = _short_month_day(m.group(4), m.group(5))
+        joiner = "versus" if m.group("joiner").lower().startswith("v") else "to"
+        return f"{left} {joiner} {right}"
+
+    text = re.sub(
+        rf"\b(\d{{1,2}})\s+({_SHORT_MONTH})\s*(?P<joiner>vs\.?|[–—-])\s*"
+        rf"(\d{{1,2}})\s+({_SHORT_MONTH})\b",
+        _span,
+        text,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(
+        rf"\b(\d{{1,2}})\s+({_SHORT_MONTH})\b",
+        lambda m: _short_month_day(m.group(1), m.group(2)),
+        text,
+        flags=re.IGNORECASE,
+    )
+
+
+def _speak_fiscal_terms(text: str, re: Any) -> str:
+    text = re.sub(r"\bFY\s?(\d{2,4})\b", r"financial year \1", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\bQ([1-4])\b",
+        lambda m: f"{_QUARTERS[m.group(1)]} quarter",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\bH([12])\b",
+        lambda m: f"{_QUARTERS[m.group(1)]} half",
+        text,
+        flags=re.IGNORECASE,
+    )
+    for token, spoken in (
+        ("MoM", "month over month"),
+        ("YoY", "year over year"),
+        ("WoW", "week over week"),
+        ("QoQ", "quarter over quarter"),
+    ):
+        text = re.sub(rf"\b{token}\b", spoken, text)
+    return text
+
+
+def _speak_money(text: str, re: Any) -> str:
+    """₹, Rs, INR, $, € and £, including the sign sitting on either side."""
+
+    def _amount(m: re.Match[str]) -> str:
+        sign = m.group("sign") or m.group("sign2") or ""
         try:
             amount = float(m.group("num").replace(",", ""))
         except ValueError:
             return m.group(0)
         suffix = (m.group("suffix") or "").strip().lower()
-        if suffix:
+        suffix_used = bool(suffix)
+        if suffix_used:
             amount *= _SUFFIX_MULTIPLIERS[suffix]
-        words = _rupees_to_indian_words(int(amount))
+        name = _CURRENCY_NAMES[m.group("cur").lower().rstrip(".")]
+        words = _money_words(amount, name, suffix_used=suffix_used)
         approx = m.group("approx")
         if approx:
             words += " or more" if approx == "+" else " or less"
+        if m.group("uncertain"):
+            before = text[max(0, m.start() - 12) : m.start()].lower()
+            if "about" not in before:
+                words = f"about {words}"
         if not sign:
             return words
         context = text[max(0, m.start() - 60) : m.start()].lower()
-        is_profit_figure = any(k in context for k in ("profit", "margin", "loss"))
+        profit = any(word in context for word in ("profit", "margin", "loss"))
         if sign == "+":
-            return f"{'a profit of' if is_profit_figure else 'up by'} {words}"
-        return f"{'a loss of' if is_profit_figure else 'down by'} {words}"
+            lead = "a profit of" if profit else "up by"
+        else:
+            lead = "a loss of" if profit else "down by"
+        return f"{lead} {words}"
 
-    text = re.sub(
-        r"(?P<sign>[+−-])?₹\s?(?P<num>[\d,]+(?:\.\d+)?)"
-        r"(?P<suffix>\s?(?:crore|million|thousand|lakh|mn|lac|cr|l|k|m)(?![a-zA-Z]))?"
-        r"(?P<approx>[+-])?",
-        _rupees,
+    currency = r"(?:₹|\$|€|£|(?<![A-Za-z])Rs\.?|(?<![A-Za-z])INR)"
+    suffix = r"crores?|millions?|thousands?|lakhs?|lacs?|mn|cr|l|k|m"
+    return re.sub(
+        rf"(?:(?P<sign>{_SIGN_CLASS})\s*)?(?P<cur>{currency})\s*(?:(?P<sign2>{_SIGN_CLASS})\s*)?"
+        rf"(?P<num>\d[\d,]*(?:\.\d+)?)(?P<suffix>\s?(?:{suffix})(?![A-Za-z]))?"
+        rf"(?P<approx>[+\-])?(?P<uncertain>\?)?",
+        _amount,
         text,
         flags=re.IGNORECASE,
     )
 
+
+def _speak_percents(text: str, re: Any) -> str:
+    def _percent(m: re.Match[str]) -> str:
+        words = _decimal_words(m.group("num"))
+        unit = "percentage points" if m.group("unit").lower() == "pp" else "percent"
+        sign = m.group("sign") or ""
+        if sign == "+":
+            return f"up by {words} {unit}"
+        if sign in {"-", "\u2212"}:
+            return f"down by {words} {unit}"
+        return f"{words} {unit}"
+
+    return re.sub(
+        rf"(?:(?P<sign>{_SIGN_CLASS})\s*)?(?P<num>\d[\d,]*(?:\.\d+)?)\s*(?P<unit>%|pp\b)",
+        _percent,
+        text,
+        flags=re.IGNORECASE,
+    )
+
+
+def _speak_plain_numbers(text: str, re: Any) -> str:
+    def _times(m: re.Match[str]) -> str:
+        return f"{_decimal_words(m.group(1))} times"
+
+    def _about(m: re.Match[str]) -> str:
+        return f"about {_decimal_words(m.group(1))}"
+
+    def _plus_minus(m: re.Match[str]) -> str:
+        return f"plus or minus {_decimal_words(m.group(1))}"
+
+    def _range(m: re.Match[str]) -> str:
+        return f"{_int_words(int(m.group(1)))} to {_int_words(int(m.group(2)))}"
+
+    def _grouped(m: re.Match[str]) -> str:
+        digits = m.group(1).replace(",", "")
+        if len(digits) < 6:
+            return m.group(0)
+        return _int_words(int(digits))
+
+    def _clock(m: re.Match[str]) -> str:
+        hour, minute = int(m.group(1)), int(m.group(2))
+        if len(m.group(2)) == 2 and hour <= 23 and minute <= 59:
+            if minute == 0:
+                return f"{_int_words(hour)} o'clock"
+            if minute < 10:
+                return f"{_int_words(hour)} oh {_int_words(minute)}"
+            return f"{_int_words(hour)} {_int_words(minute)}"
+        return f"{_int_words(hour)} to {_int_words(minute)}"
+
+    def _ordinal(m: re.Match[str]) -> str:
+        number = int(m.group(1))
+        return _ORDINAL_WORDS.get(number) or _int_words(number)
+
+    text = re.sub(r"[~≈]\s*(\d+(?:\.\d+)?)", _about, text)
+    text = re.sub(r"±\s*(\d+(?:\.\d+)?)", _plus_minus, text)
+    text = text.replace("±", " plus or minus ")
+    text = re.sub(r"\b(\d+(?:\.\d+)?)[xX]\b", _times, text)
+    text = text.replace("×", " times ").replace("÷", " divided by ")
+    text = re.sub(r"\b(\d{1,6})\s*[-–—]\s*(\d{1,6})\b", _range, text)
+    text = re.sub(r"\b(\d{1,3}(?:,\d{2,3})+)\b", _grouped, text)
+    text = re.sub(r"\b(\d{1,2}):(\d{1,2})\b", _clock, text)
+    text = re.sub(r"\b(\d+)(?:st|nd|rd|th)\b", _ordinal, text, flags=re.IGNORECASE)
+    return re.sub(r"#(\d+)\b", r"number \1", text)
+
+
+def _speak_punctuation(text: str, re: Any) -> str:
+    text = re.sub(r"[—–-]\s*=\s*no data\b[^.]*", "no data means no data for that row", text)
+    text = re.sub(r"[—–-]\s*no change\b", "no change", text)
+    text = text.replace("&amp;", " and ").replace("&nbsp;", " ")
+    text = text.replace("&lt;", " less than ").replace("&gt;", " greater than ")
+    text = text.replace("&quot;", "")
+    text = re.sub(r"<[^>\n]+>", " ", text)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"\[\^\d+\]", "", text)
+    text = re.sub(r"~~([^~]*)~~", r"\1", text)
+
+    def _aside(m: re.Match[str]) -> str:
+        inner = m.group(1).strip()
+        return f", {inner}," if inner else ""
+
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(r"\(([^()]*)\)", _aside, text)
+        text = re.sub(r"\[([^\[\]]*)\]", _aside, text)
+        text = re.sub(r"\{([^{}]*)\}", _aside, text)
+    text = re.sub(r"[()\[\]{}]", "", text)
+    text = re.sub(r"(?<=\w)[ \t]*[—–][ \t]*(?=\w)", ", ", text)
+    text = re.sub(r"(?<=\w)[ \t]+-[ \t]+(?=\w)", ", ", text)
+    # A dash that is the whole value means the figure is missing, not zero.
+    text = re.sub(r"(?<!\w)[—–](?!\w)", " no data ", text)
+    text = re.sub(r"\band/or\b", "and or", text, flags=re.IGNORECASE)
+    text = re.sub(rf"\b([A-Za-z]+)/({_RATE_UNITS})\b", r"\1 per \2", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b([A-Za-z]{2,})/([A-Za-z]{2,})\b", r"\1, \2", text)
+    text = text.replace("&", " and ")
+    text = text.replace(">=", " at least ").replace("<=", " at most ")
+    text = text.replace("≠", " not equal to ")
+    text = text.replace(">", " greater than ").replace("<", " less than ")
+    for mark in ("•", "·", "→", "⇒", "►", "▶"):
+        text = text.replace(mark, ", ")
+    text = text.replace("...", ", ").replace("…", ", ")
+    text = text.replace("▲", " up ").replace("▼", " down ")
+    text = re.sub(r"\bvs\.?\b", "versus", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?<=\w)’(?=\w)", "'", text)
+    text = text.replace("“", "").replace("”", "").replace("‘", "").replace("’", "")
+    text = text.replace('"', "")
+    text = re.sub(r"(?<!\w)'([^']+)'(?!\w)", r"\1", text)
+    text = re.sub(
+        r"\b[a-z]+(?:_[a-z0-9]+)+\b",
+        lambda m: m.group(0).replace("_", " "),
+        text,
+    )
     return text
+
+
+def _tidy_speech(text: str, re: Any) -> str:
+    text = text.replace("\u00a0", " ").replace("\u200b", "").replace("\ufeff", "")
+    text = re.sub(r"[^\S\n]+,", ",", text)
+    text = re.sub(r",(?:[^\S\n]*,)+", ", ", text)
+    text = re.sub(r"[^\S\n]{2,}", " ", text)
+    text = re.sub(r"[^\S\n]+([.;!?])", r"\1", text)
+    return text.strip()
 
 
 def format_spoken_summary(text: str) -> str:
@@ -456,18 +743,29 @@ def format_spoken_summary(text: str) -> str:
         line = raw.strip()
         if not line or (re.fullmatch(r"[|\s:\-]+", line) and "-" in line):
             continue  # blank line or table separator row
+        if line in {"—", "–", "-"}:
+            lines.append("No data.")
+            continue
+        line = re.sub(r"^>\s*", "", line)
         line = re.sub(r"^#+\s*", "", line)
-        line = re.sub(r"^(?:[-*+]|\d+[.)])\s+", "", line)
-        line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)
+        ranked = re.match(r"^(\d+)[.)]\s+", line)
+        if ranked:
+            rank = _int_words(int(ranked.group(1)))
+            line = f"Number {rank}, " + line[ranked.end() :]
+        else:
+            line = re.sub(r"^[-*+•]\s+", "", line)
         line = re.sub(r"[*_`]{1,3}", "", line)
-        line = ", ".join(
-            cell.strip()
-            for cell in line.replace("\\|", "\x00").strip("|").split("|")
-            if cell.strip()
-        ).replace("\x00", "|")
+        cells: list[str] = []
+        for cell in line.replace("\\|", "\x00").strip("|").split("|"):
+            spoken = cell.strip().replace("\x00", "|")
+            if spoken in {"—", "–", "-"}:
+                spoken = "no data"
+            if spoken:
+                cells.append(spoken)
+        line = ", ".join(cells)
         if line:
             lines.append(line if line[-1] in ".!?:\u0964" else line + ".")
-    cleaned = " ".join(" ".join(lines).split())
+    cleaned = _tidy_speech(" ".join(lines), re)
 
     if not cleaned:
         return "Seleric finished, but I don't have anything to read out."
@@ -627,6 +925,9 @@ class VoiceTurnRunner:
         self._task: asyncio.Task[Any] | None = None
         self._run_id: str | None = None
         self._pending_run_id: str | None = None  # timed out unfinished; check() can still fetch it
+        # Bumped when the user barges in, so a chunk loop stops instead of
+        # queueing the rest of the answer it was reading.
+        self._playback_epoch = 0
 
         api_url = str(getattr(settings, "seleric_api_url", "http://127.0.0.1:8000")).rstrip("/")
         self._api_url = api_url.replace("localhost", "127.0.0.1")
@@ -666,10 +967,30 @@ class VoiceTurnRunner:
         if broadcast:
             self._broadcast(text)
 
+    def drop_playback(self) -> None:
+        """Drop the clip that is playing and every clip still queued.
+
+        Answers are spoken as several clips. LiveKit's barge-in stops only the
+        current one, then the rest of the previous answer plays after the
+        pause. A new question has to clear that queue.
+        """
+
+        self._playback_epoch += 1
+        interrupt = getattr(self._session, "interrupt", None)
+        if interrupt is None:
+            return
+        try:
+            interrupt(force=True)
+        except RuntimeError:
+            return
+        except Exception as err:
+            logger.warning(f"could not interrupt speech: {err}")
+
     # -- lifecycle ------------------------------------------------------
 
     def submit(self, query: str) -> None:
         """Start a turn for ``query``, superseding any run still in flight."""
+        self.drop_playback()
         previous, previous_run = self._task, self._run_id
         if previous is not None and not previous.done():
             previous.cancel()
@@ -831,8 +1152,12 @@ class VoiceTurnRunner:
                             self._pending_run_id = None
                         spoken = format_spoken_summary(content)
                         self._broadcast(spoken)
+                        epoch = self._playback_epoch
                         for chunk in split_spoken_chunks(spoken):
+                            if epoch != self._playback_epoch:
+                                return
                             self._say(chunk, broadcast=False)
+                            await asyncio.sleep(0)
                         return
         logger.error(f"run {run_id} had no readable answer message")
         self._say(fallback)
@@ -904,6 +1229,13 @@ async def _voice_entrypoint(ctx: Any) -> None:
     runner = VoiceTurnRunner(session, principal, settings, ctx)
     session.on("metrics_collected", LatencyLog().on_metrics)
 
+    @session.on("user_state_changed")
+    def _on_user_state(event: Any) -> None:
+        # The user started talking over the agent. Drop the rest of the
+        # previous answer now, not after the new turn is committed.
+        if getattr(event, "new_state", None) == "speaking":
+            runner.drop_playback()
+
     @session.on("user_input_transcribed")
     def _on_transcript(event: Any) -> None:
         transcript = str(getattr(event, "transcript", "") or "").strip()
@@ -964,6 +1296,7 @@ def _export_livekit_env(settings: Settings) -> None:
         ("LIVEKIT_URL", settings.livekit_url),
         ("LIVEKIT_API_KEY", settings.livekit_api_key),
         ("LIVEKIT_API_SECRET", settings.livekit_api_secret),
+        ("LIVEKIT_AGENT_NAME", str(getattr(settings, "voice_agent_name", "") or "")),
     ):
         if value.strip() and not os.environ.get(name):
             os.environ[name] = value.strip()

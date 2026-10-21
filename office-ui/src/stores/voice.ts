@@ -22,6 +22,9 @@ interface VoiceState {
 let room: Room | null = null;
 let audioEls: HTMLMediaElement[] = [];
 let attempt = 0;
+// stop() marks the call idle before LiveKit finishes leaving. The next start
+// has to wait, or the new join races the old one on the same identity.
+let leaving: Promise<void> = Promise.resolve();
 
 const isAgent = (identity: string) => identity.startsWith("agent-");
 
@@ -49,6 +52,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     }
     const generation = ++attempt;
     set({ status: "connecting", muted: false, error: null, captions: { user: "", assistant: "" } });
+    await leaving;
+    if (generation !== attempt) return;
     const conversation = useConversationStore.getState();
     try {
       if (!conversation.selectedThreadId) await conversation.createThread();
@@ -123,7 +128,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     detachAudio();
     useConversationStore.getState().stopFollowingThread();
     set({ status: "idle", muted: false, error: null, micStream: null, agentStream: null, captions: { user: "", assistant: "" } });
-    if (active) await active.disconnect().catch(() => undefined);
+    leaving = active ? active.disconnect().then(() => undefined).catch(() => undefined) : Promise.resolve();
+    await leaving;
   },
 
   toggleMute: async () => {

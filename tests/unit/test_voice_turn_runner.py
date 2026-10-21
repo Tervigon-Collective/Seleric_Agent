@@ -142,7 +142,7 @@ async def test_completed_run_narrates_then_speaks_only_the_validated_answer(monk
     runner.submit("how are sales?")
     await _drain(runner)
 
-    assert session.said == ["Comparing periods…", "Sales rose 12% on the prior period."]
+    assert session.said == ["Comparing periods…", "Sales rose twelve percent on the prior period."]
 
 
 async def test_failed_run_is_refused_and_unvalidated_text_is_never_spoken(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -316,7 +316,9 @@ def test_spoken_summary_keeps_the_whole_answer_without_thread_pointers() -> None
 
     spoken = worker.format_spoken_summary(text)
 
-    assert spoken.startswith("Sales. North up 12%. South down 3%. Region, Value. East, 40.")
+    assert spoken.startswith(
+        "Sales. North up twelve percent. South down three percent. Region, Value. East, 40."
+    )
     assert spoken.count("More detail here.") == 40
     assert "thread" not in spoken.lower() and "|" not in spoken
 
@@ -333,9 +335,9 @@ def test_spoken_summary_speaks_dates_and_rupees_instead_of_reading_symbols() -> 
     assert "2026-09" not in spoken
     assert "₹" not in spoken and "−" not in spoken
     assert "September first to September twenty-eighth" in spoken
-    assert "4 lakh 16 thousand 307 rupees" in spoken
-    assert "26 lakh 8 thousand 133 rupees" in spoken
-    assert "a loss of 17 lakh 22 thousand 486 rupees" in spoken
+    assert "four lakh sixteen thousand three hundred seven rupees" in spoken
+    assert "twenty six lakh eight thousand one hundred thirty three rupees" in spoken
+    assert "a loss of seventeen lakh twenty two thousand four hundred eighty six rupees" in spoken
     assert "This is based on data through September twenty-eighth." in spoken
 
 
@@ -349,11 +351,11 @@ def test_spoken_summary_expands_abbreviated_lakh_crore_suffixes() -> None:
     spoken = worker.format_spoken_summary(text)
 
     assert "L " not in spoken and "L." not in spoken and "rupeesL" not in spoken
-    assert "down by 17 lakh rupees" in spoken
-    assert "4 lakh rupees" in spoken
-    assert "28 lakh rupees or more" in spoken
-    assert "up by 9 lakh 43 thousand 191 rupees" in spoken
-    assert "2 crore rupees" in spoken
+    assert "down by seventeen lakh rupees" in spoken
+    assert "four lakh rupees" in spoken
+    assert "twenty eight lakh rupees or more" in spoken
+    assert "up by nine lakh forty three thousand one hundred ninety one rupees" in spoken
+    assert "two crore rupees" in spoken
     assert "+" not in spoken and "₹" not in spoken
 
 
@@ -363,9 +365,51 @@ def test_spoken_summary_expands_abbreviated_million_suffix() -> None:
     spoken = worker.format_spoken_summary(text)
 
     assert "rupeesM" not in spoken and "M " not in spoken and "M." not in spoken
-    assert "4 lakh 16 thousand rupees" in spoken
-    assert "20 lakh rupees" in spoken
-    assert "a loss of 10 lakh rupees" in spoken
+    assert "four lakh sixteen thousand rupees" in spoken
+    assert "twenty lakh rupees" in spoken
+    assert "a loss of ten lakh rupees" in spoken
+
+
+def test_spoken_summary_reads_symbols_as_conversation() -> None:
+    text = (
+        "Sales (net) were Rs. 73.14, INR 4,16,307 and $1,200, about ₹16,227?. "
+        "The move was −3.1% and ▲ 1.5 pp, then – no change. "
+        "ROAS was 2x, roughly ~10, from 10-20 orders/day for CBO/ASC. "
+        "1 Sep – 28 Sep versus the prior window, Q1 FY26.\n"
+        "1. Prospecting did best.\n"
+        "Missing: —.\n"
+        "net_sales grew MoM and the row was (not set)."
+    )
+
+    spoken = worker.format_spoken_summary(text)
+
+    assert "seventy three rupees and fourteen paise" in spoken
+    assert "four lakh sixteen thousand three hundred seven rupees" in spoken
+    assert "one thousand two hundred dollars" in spoken
+    assert "about sixteen thousand two hundred twenty seven rupees" in spoken
+    assert "down by three point one percent" in spoken
+    assert "up one point five percentage points" in spoken
+    assert "no change" in spoken and "–" not in spoken
+    assert "two times" in spoken and "about ten" in spoken
+    assert "ten to twenty" in spoken and "orders per day" in spoken
+    assert "CBO, ASC" in spoken
+    assert "September first to September twenty-eighth" in spoken
+    assert "first quarter" in spoken and "financial year 26" in spoken
+    assert "Number one, Prospecting" in spoken
+    assert "no data" in spoken
+    assert "net sales" in spoken and "month over month" in spoken
+    assert "not set" in spoken
+    assert not any(mark in spoken for mark in "₹$%()[]—–▲▼")
+
+
+def test_spoken_summary_leaves_ids_years_and_word_hyphens() -> None:
+    text = "In 2026, SKU123456 stayed best-selling and campaign-123 was unchanged. Count was 40."
+
+    spoken = worker.format_spoken_summary(text)
+
+    assert "2026" in spoken and "SKU123456" in spoken
+    assert "best-selling" in spoken and "campaign-123" in spoken
+    assert "40" in spoken
 
 
 def test_split_spoken_chunks_keeps_every_sentence() -> None:
@@ -389,5 +433,54 @@ async def test_timed_out_run_is_remembered_and_check_speaks_the_answer(monkeypat
     assert "Checking" in runner.check()
     await asyncio.sleep(0.05)
 
-    assert session.said[-1] == "Sales rose 12%."
+    assert session.said[-1] == "Sales rose twelve percent."
     assert runner.check() == "Nothing to check."
+
+
+async def test_barge_in_stops_the_rest_of_the_spoken_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    long_answer = " ".join(f"Sentence number {i} about revenue." for i in range(40))
+    client = _Client(
+        [],
+        messages=[
+            {
+                "role": "ASSISTANT",
+                "run_id": "run_9",
+                "parts": [{"type": "TEXT", "content": long_answer}],
+            }
+        ],
+    )
+    runner, session = _runner(client, monkeypatch)
+    interrupted: list[bool] = []
+
+    def interrupt(*, force: bool = False) -> None:
+        interrupted.append(force)
+
+    session.interrupt = interrupt  # type: ignore[attr-defined]
+    original_say = session.say
+
+    def say(text: str) -> None:
+        original_say(text)
+        if len(session.said) == 1:
+            runner.drop_playback()
+
+    session.say = say  # type: ignore[method-assign]
+
+    await runner._speak_answer("run_9")
+
+    chunks = worker.split_spoken_chunks(worker.format_spoken_summary(long_answer))
+    assert len(chunks) > 1
+    assert session.said == [chunks[0]]
+    assert interrupted == [True]
+
+
+async def test_new_question_interrupts_speech_already_queued(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner, session = _runner(_Client([]), monkeypatch)
+    calls: list[dict[str, Any]] = []
+    session.interrupt = lambda **kwargs: calls.append(kwargs)  # type: ignore[attr-defined]
+
+    runner.submit("which campaigns were most efficient?")
+    await asyncio.sleep(0)
+
+    assert calls == [{"force": True}]
+    if runner._task is not None:
+        runner._task.cancel()
