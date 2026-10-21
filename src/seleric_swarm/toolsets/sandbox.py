@@ -24,6 +24,7 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import secrets
 import shutil
 import sys
@@ -207,7 +208,7 @@ async def run_python(
 
     In scope, the script sees:
       - ``evidence``: list of dicts, one per evidence id (metric_id, value,
-        unit, dimensions, period_start/period_end, grain). Prefer this name
+        unit, dimensions, period 'current'/'previous', period_start/period_end, grain). Prefer this name
         directly; ``globals()``/``locals()``/``vars()`` also see the sandbox
         namespace (including ``evidence``), not the host process.
       - ``WORKDIR``: str path to a per-mission dir; write intermediate files
@@ -268,15 +269,18 @@ async def run_python(
         return _fix_the_script(
             "the script types fetched values in as literals ("
             + ", ".join(f"{v:g}" for v in typed[:5])
-            + "); read them from `evidence` (each row has metric_id, value, dimensions, period_start/period_end) "
+            + "); read them from `evidence` (each row has metric_id, value, dimensions, period ('current'/'previous'), period_start/period_end) "
             "so the result follows the data"
         )
 
     workdir = _workdir(ctx.deps.mission_id)
     before = {p.name for p in workdir.iterdir()} if workdir.exists() else set()
     evidence_dicts = [e.model_dump(mode="json") for e in evidence]
+    cut: dict[str, str] = {}  # query id -> how much of it was kept, for the queries whose stored evidence is partial
     for row, evidence_id in zip(evidence_dicts, evidence_ids, strict=False):  # which query a row came from, for filtering
         artifact = ctx.deps.artifact_store.get(evidence_id)
+        if note := (getattr(getattr(artifact, "provenance", None), "source_metadata", None) or {}).get("evidence_truncated"):
+            cut[str(getattr(artifact.provenance, "query_version", "") or "?")] = str(note)
         if (query_id := getattr(getattr(artifact, "provenance", None), "query_version", None)):
             row["query_id"] = query_id
         for key, value in (row.get("dimensions") or {}).items():  # row["campaign_name"] works as well as row["dimensions"][...]
@@ -307,6 +311,8 @@ async def run_python(
         )
 
     result = outcome.get("result")
+    if (refusal := _empty_current_period(result, evidence_dicts)) is not None:
+        return _fix_the_script(refusal)
     new_files = sorted(
         {p.name for p in workdir.iterdir()} - before
     ) if workdir.exists() else []
@@ -345,6 +351,11 @@ async def run_python(
 
     warnings = [f"wrote {len(new_files)} file(s) to {workdir}"] if new_files else []
     warnings += [
+        f"the evidence of query {qid} is partial ({note}): totals, averages and ranges in this result cover only those "
+        "rows, not the whole window. Do not state them as the period's figures; re-query a coarser grain or a shorter window."
+        for qid, note in sorted(cut.items())
+    ]
+    warnings += [
         f"output exceeded {_result_chars()} chars; full text in {name} under WORKDIR"
         for name in spilled
     ]
@@ -355,6 +366,39 @@ async def run_python(
         provenance=_provenance(list(evidence_ids)),
         warnings=warnings,
     )
+
+
+_CURRENT_KEY = re.compile(r"(^|_)(curr|cur|current)(_|$)", re.IGNORECASE)
+
+
+def _current_values(value: Any, out: list[float]) -> list[float]:
+    """Numbers stored under a key that names the current period (``curr_spend``, ``current``, ``spend_current``)."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if isinstance(child, (int, float)) and not isinstance(child, bool) and _CURRENT_KEY.search(str(key)):
+                out.append(float(child))
+            else:
+                _current_values(child, out)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            _current_values(child, out)
+    return out
+
+
+def _empty_current_period(result: Any, evidence: list[dict[str, Any]]) -> str | None:
+    """A script whose "current period" figures are all zero although the fetched current-period rows are not: its filter
+    matched no row, so every current figure is a fabricated 0 and the comparison (a "campaign went to ₹0") is false.
+    Live 2026-10-17 MS3-ac2bc6865d: a filter on ``period_start`` matched nothing and both windows were summed as
+    "previous"."""
+    current = _current_values(result, [])
+    if len(current) < 2 or any(abs(v) > 1e-9 for v in current):
+        return None
+    if not any(e.get("period") == "current" and isinstance(e.get("value"), (int, float)) and abs(e["value"]) > 1e-9
+               for e in evidence):
+        return None
+    return ("every current-period figure in the result is 0, but the fetched current-period rows are not: the script's "
+            "filter matched no row. Each evidence row has `period` ('current' or 'previous'): filter on "
+            "e['period'] == 'current' / 'previous' (compare_period rows are separate rows, not columns), then retry.")
 
 
 def _serialize(value: Any) -> str:

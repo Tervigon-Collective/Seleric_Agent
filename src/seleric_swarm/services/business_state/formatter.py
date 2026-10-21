@@ -10,6 +10,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from seleric_swarm.toolsets import policy_config as P
+
 if TYPE_CHECKING:
     from seleric_swarm.runtime import SwarmRuntime
     from seleric_swarm.services.domain_health.models import DomainStateSnapshot
@@ -44,14 +46,20 @@ def _snapshot_context(snapshot: DomainStateSnapshot, units: dict[str, str] | Non
     units = units or {}
     metrics = []
     for m in snapshot.metrics:
+        change = m.period_delta_pct
         entry: dict = {
             "metric": m.metric_id.removeprefix("metric."),
             "value": m.value,
             "unit": units.get(m.metric_id),
-            "change_pct_vs_prior_day": m.period_delta_pct,
+            "change_pct_vs_prior_day": change,
             "avg_7d": m.rolling_mean_7d,
             "freshness": m.freshness,
         }
+        if change is not None and abs(change) > P.MAX_REPORTABLE_PCT_CHANGE:
+            # live 2026-10-15: "refunds +5,851.7%" was reported as the top priority. A percent off a near-zero base says
+            # nothing: state the levels (value, avg_7d) instead of a percent.
+            entry["change_pct_vs_prior_day"] = None
+            entry["change_note"] = "the day before was near zero, so no percent change is meaningful: compare value with avg_7d"
         if m.anomaly:
             entry["anomaly"] = {
                 "is_anomaly": m.anomaly.get("is_anomaly"),

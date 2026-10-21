@@ -5,6 +5,8 @@
 * ``run_python`` and ``show_chart`` take the ``query_id`` of a fetched result instead of evidence ids: the model sees
   query ids in every MCP result, the evidence rows behind them stay server-side.
 * ``show_table`` attaches a full table of a fetched result next to the answer (a TABLE part).
+* ``audit_entities`` computes the derived facts of a performance analysis (return on spend, spend with no orders, best/worst
+  with enough orders) from fetched results, in code.
 * ``business_snapshot`` returns the latest hourly business-health snapshot as data, when it is fresh.
 * ``escalate`` raises the reasoning effort for the rest of the turn.
 """
@@ -30,6 +32,7 @@ from seleric_swarm.toolsets import (
     analytics,
     composition,
     diagnosis,
+    entity_audit,
     exploration,
     forecasting,
     sandbox,
@@ -57,6 +60,18 @@ def _payload_for(state: TurnState, query_id: str) -> dict[str, Any] | None:
             if isinstance(part, dict) and query_id_of(part) == query_id:
                 return part
     return None
+
+
+def _no_table(state: TurnState, query_id: str, *, found: bool) -> str:
+    """Why ``show_table`` has nothing for this id, and what to do next (a dead end made the model give up on the table)."""
+    if found:
+        return f"The result {query_id!r} has no rows to tabulate. Show its figures in the text, or fetch the breakdown you want with metrics_query."
+    earlier = next((q[len(query_id) + 2:] for q in state.prior_queries if q.startswith(f"{query_id}: ")), None)
+    if earlier is not None:
+        return (f"{query_id!r} is from an earlier turn and its rows were not kept. Run that query again this turn ({earlier}), "
+                "then call show_table with the new query_id.")
+    return (f"No fetched result has query_id {query_id!r}. Fetched this turn: {sorted(state.by_query) or 'nothing yet'}. "
+            "Fetch the rows with metrics_query first, or pass the table id that break_down_metric printed for its lines.")
 
 
 def _evidence_for(state: TurnState, query_ids: list[str] | None, evidence_ids: list[str] | None = None) -> list[str] | None:
@@ -98,6 +113,18 @@ def _remember_figures(state: TurnState, result: Any) -> None:
         state.payloads.append({"helper_figures": figures})
 
 
+def _offer_table(state: TurnState, result: Any) -> Any:
+    """A helper that computed its lines as a table (break_down_metric) is offered to ``show_table`` under its finding id."""
+    source = getattr(getattr(result, "provenance", None), "source_metadata", None)
+    table = source.get("table") if isinstance(source, dict) else None
+    table_id = str(source.get("finding_id") or "") if isinstance(source, dict) else ""
+    if not (getattr(result, "success", False) and isinstance(table, dict) and table.get("rows") and table_id):
+        return result
+    state.tables[table_id] = table
+    return result.model_copy(update={"summary": f"{result.summary}\n\nThese lines can be shown as a table next to the answer: "
+                                                f"show_table(query_id={table_id!r}). Do not paste them into the text as well."})
+
+
 def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
     """Wrap a local tool: time it, record it in the turn's trace like an MCP call, keep its figures quotable."""
 
@@ -119,6 +146,7 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
         if failed:  # MCP failures are recorded by the toolset; a helper that returns ok:false must show up the same way
             state.errors.append(f"{fn.__name__}: {str(summary)[:300]}")
         _remember_figures(state, result)
+        result = _offer_table(state, result)
         if raises_effort and not failed:  # the engine did the causal reasoning; a refusal leaves real reasoning to do
             set_loop_effort(LOOP_WRITEUP_EFFORT)
         return _view(result)
@@ -141,7 +169,9 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
         The script is plain top-level code with exactly two data names, ``evidence`` and ``WORKDIR``. No variable is
         named after a query id and there is no ``query_results``; no ``return``, no function wrapper.
           - ``evidence``: a LIST of dicts, one per fetched value. Each row has metric_id, value, unit, grain,
+            period ("current" or "previous": a compare_period result brings the previous window as its own rows),
             period_start, period_end, query_id and ``dimensions`` (a dict); every dimension is also a key of the row.
+            Split windows with ``e["period"]``, never by comparing period_start to a string.
           - ``WORKDIR``: a directory for intermediate files; stdlib math/statistics/json/collections (+ numpy/pandas).
         A complete script (rank campaigns by spend, share of the total)::
 
@@ -187,18 +217,58 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
         (many campaigns, products, days) instead of pasting every row into the text; keep the text to the finding and
         the top rows. A result with several views is shown as one table joined on the shared entity. ``query_id`` is
         the result to show; ``caption`` says what the table is."""
+        if (offered := state.tables.get(query_id)) is not None:  # the lines of a break_down_metric
+            content = {**offered, "caption": "; ".join(x for x in (caption, offered.get("caption")) if x), "query_id": query_id}
+            state.parts.append({"type": "TABLE", "content": content})
+            return ToolResult(success=True, summary=f"Table of {len(content['rows'])} lines attached to your answer. "
+                              "Do not repeat the full table in the text.")
         payload = _payload_for(state, query_id)
         call_args = present.call_args_for(state, query_id)
-        frame = present.frame_of(present.sources_of(payload), present.sort_measure(call_args))
+        frame = present.frame_for(present.sources_of(payload), call_args)
         if frame is None or not frame.rows:
-            return ToolResult(success=False, summary=f"No fetched result with rows has query_id {query_id!r}.",
-                              error_code="INSUFFICIENT_EVIDENCE", retryable=False)
+            return ToolResult(success=False, summary=_no_table(state, query_id, found=payload is not None),
+                              error_code="INSUFFICIENT_EVIDENCE", retryable=True)
         present.apply_call_hints(frame, call_args)  # the query's measure order and ranking
         content = present.table_content(ctx.deps, frame, query_id=query_id, caption=caption, limit=MAX_TABLE_ROWS)
         state.parts.append({"type": "TABLE", "content": content})
         more = f" (first {len(content['rows'])} of {content['total_rows']} rows)" if content["total_rows"] > len(content["rows"]) else ""
+        left_out = (f" {frame.omitted} more row(s) exist in the other views and are NOT in this table: do not say they have no data."
+                    if frame.omitted else "")
         return ToolResult(success=True, summary=f"Table of {len(content['rows'])} rows attached to your answer{more}. "
-                          "Do not repeat the full table in the text.")
+                          f"Do not repeat the full table in the text.{left_out}")
+
+    async def audit_entities(ctx: RunContext[SelericDeps], query_ids: list[str]) -> ToolResult:
+        """The derived facts of a performance analysis, computed from results you already fetched: the portfolio's return
+        on spend and spend per order, the share of spend on entities with no orders, concentration, the best and worst
+        entities among those with enough orders to say so, and attention (clicks, hook rate) that does not convert.
+
+        Use it for "analyse / which campaigns, products or channels work or waste money" questions, after fetching, by
+        the entity (campaign_name, product_title, ...): ad spend, orders and revenue (and CTR / hook rate when asked).
+        ``query_ids`` are those results; a result with several views is joined on the shared entity, and an entity a view
+        has no row for stays in (no orders recorded is a finding). It never fetches. Quote its figures; do not recompute
+        them, and keep its sample-size wording ("early signal") in your answer."""
+        sources: list[present.Source] = []
+        call_args: dict[str, Any] = {}
+        for qid in query_ids:
+            payload = _payload_for(state, qid)
+            if payload is None:
+                return ToolResult(success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE",
+                                  summary=f"No fetched result has query_id {qid!r}. Fetched this turn: {sorted(state.by_query) or 'nothing yet'}.")
+            sources += present.sources_of(payload)
+            call_args = call_args or present.call_args_for(state, qid)
+        roles = entity_audit.pick_roles([m for src in sources for m in src.measures])
+        # every entity with spend is audited: the spend view leads the join, so an entity another view (orders) has no row for
+        # stays in (live 2026-10-19: the 13-row orders view led and 107 of 120 campaigns, the waste, were dropped)
+        frame = present.frame_of(sources, roles.spend, present.named_entities(call_args)) if sources and roles else None
+        entity_col = next((k for k in (frame.keys if frame else []) if k != (frame.time_col if frame else None)), None)
+        if frame is None or roles is None or entity_col is None:
+            return ToolResult(success=False, retryable=True, error_code="INSUFFICIENT_EVIDENCE",
+                              summary="Nothing to audit: fetch ad spend (with orders and revenue) broken down by the entity "
+                                      "(campaign_name, product_title, ...) with metrics_query, then pass its query_id.")
+        meta = present.Meta.of(ctx.deps, frame.measures)
+        found = entity_audit.audit(entity_audit.entities_of(frame.rows, entity_col, roles), labels=meta.labels, roles=roles,
+                                   symbol=present._CURRENCY_SYMBOLS.get((frame.currency or "INR").upper(), "₹"))
+        return ToolResult(success=True, summary=found.text())
 
     async def business_snapshot(ctx: RunContext[SelericDeps]) -> dict[str, Any]:
         """The latest hourly business-health snapshot (one day against the day before, plus 7-day averages and
@@ -226,5 +296,5 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
         forecasting.forecast_metrics,
         exploration.explore_data,
     ]
-    own = [run_python, show_chart, show_table, business_snapshot, escalate]
+    own = [run_python, show_chart, show_table, audit_entities, business_snapshot, escalate]
     return [*(_tracked(state, fn, raises_effort=fn is diagnosis.diagnose_metric_change) for fn in [*helpers, *own])]

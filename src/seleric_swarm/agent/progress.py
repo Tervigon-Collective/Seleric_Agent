@@ -48,6 +48,8 @@ _TOOL_LABELS: dict[str, str] = {
     "forecast_metrics": "Forecasting",
     "run_python": "Calculating over the fetched data",
     "show_chart": "Drawing a chart",
+    "show_table": "Preparing the table",
+    "audit_entities": "Checking which entities earn their spend",
     "business_snapshot": "Reading the business snapshot",
     "escalate": "Thinking harder about this",
 }

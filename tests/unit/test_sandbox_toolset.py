@@ -346,3 +346,62 @@ async def test_numpy_and_pandas_results_are_plain_numbers() -> None:
     res = await sandbox.run_python(FakeRunContext(_deps(store)), code, [eid])
     assert res.success is True
     assert store.get(res.artifact_ids[0]).payload["metrics"]["n"] == 5.0
+
+
+def _put_period_evidence(store: InMemoryArtifactStore, *, campaign: str, value: float, period: str) -> str:
+    evidence = EvidenceArtifact(
+        metric_id="ad_spend", grain="none", as_of=datetime(2026, 9, 18, tzinfo=UTC),
+        period_start=datetime(2026, 9, 17, tzinfo=UTC), period_end=datetime(2026, 9, 18, tzinfo=UTC),
+        value=value, unit="INR", dimensions={"campaign_name": campaign}, source_query={"measure": "ad_spend"}, period=period,
+    )
+    return store.put(Artifact(
+        workspace_id="ws1", artifact_type="evidence", payload=evidence.model_dump(mode="json"), classification="factual",
+        evidence_ids=["raw:ad_spend"], provenance=ArtifactProvenance(query_version="q1"), mission_id="mission-sbx",
+    )).id
+
+
+@pytest.mark.asyncio
+async def test_a_script_can_split_compare_windows_on_period() -> None:
+    store = InMemoryArtifactStore()
+    ids = [_put_period_evidence(store, campaign="PMax", value=7064.0, period="current"),
+           _put_period_evidence(store, campaign="PMax", value=9463.0, period="previous")]
+    code = (
+        "cur = sum(e['value'] for e in evidence if e['period'] == 'current')\n"
+        "prev = sum(e['value'] for e in evidence if e['period'] == 'previous')\n"
+        "result = {'curr_spend': cur, 'prev_spend': prev}"
+    )
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), code, ids)
+    assert res.success is True
+    metrics = store.get(res.artifact_ids[0]).payload["metrics"]
+    assert metrics["curr_spend"] == 7064.0 and metrics["prev_spend"] == 9463.0
+
+
+@pytest.mark.asyncio
+async def test_all_zero_current_figures_over_non_zero_current_rows_is_refused() -> None:
+    """Live 2026-10-17 MS3-ac2bc6865d: the filter matched nothing, so every 'current' became 0 and both windows were summed
+    as 'previous' — the answer then claimed the campaigns had paused."""
+    store = InMemoryArtifactStore()
+    ids = [_put_period_evidence(store, campaign=c, value=v, period=p)
+           for c, v, p in (("PMax", 7064.0, "current"), ("PMax", 9463.0, "previous"),
+                           ("WILD", 5029.0, "current"), ("WILD", 6770.0, "previous"))]
+    code = (
+        "cur = [e for e in evidence if e['period_start'] == '2026-10-16']\n"  # matches no row: period_start is a datetime string
+        "result = [{'campaign': c, 'curr_spend': sum(e['value'] for e in cur if e['campaign_name'] == c),\n"
+        "           'prev_spend': sum(e['value'] for e in evidence if e['campaign_name'] == c)} for c in ('PMax', 'WILD')]"
+    )
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), code, ids)
+    assert res.success is False and res.error_code == "SANDBOX_SCRIPT_ERROR" and res.retryable is True
+    assert "period" in res.summary
+
+
+@pytest.mark.asyncio
+async def test_a_genuinely_zero_current_period_is_not_refused() -> None:
+    store = InMemoryArtifactStore()
+    ids = [_put_period_evidence(store, campaign="PMax", value=0.0, period="current"),
+           _put_period_evidence(store, campaign="PMax", value=9463.0, period="previous")]
+    code = (
+        "prev = sum(e['value'] for e in evidence if e['period'] == 'previous')\n"
+        "result = [{'campaign': 'PMax', 'curr_spend': 0, 'prev_spend': prev}, {'campaign': 'X', 'curr_spend': 0}]"
+    )
+    res = await sandbox.run_python(FakeRunContext(_deps(store)), code, ids)
+    assert res.success is True

@@ -83,6 +83,19 @@ WARN_INVALID_HORIZON: str = "policy:invalid_horizon"
 # other funnel the catalogue grows.
 
 
+# ---- Entity audit (toolsets/entity_audit.py) --------------------------------
+# Which catalogue measures play which role when a set of entities (campaigns, products, channels) is audited, in order of
+# preference. These are catalogue ids, so they live here with the other policy, not in a prompt. Thresholds are how much
+# evidence makes an entity a "winner" or a "loser" rather than "too early to say".
+AUDIT_SPEND_MEASURES: tuple[str, ...] = ("ad_spend", "product_ad_spend", "order_pnl_ad_spend")
+AUDIT_RETURN_MEASURES: tuple[str, ...] = ("funnel_order_revenue", "order_pnl_net_sales", "net_sales", "product_net_revenue", "funnel_revenue")
+AUDIT_ROAS_MEASURES: tuple[str, ...] = ("product_net_roas", "net_roas", "product_gross_roas", "gross_roas")  # return = ratio x spend when no revenue measure came
+AUDIT_ORDER_MEASURES: tuple[str, ...] = ("orders", "funnel_order_purchases", "funnel_purchases", "product_orders")
+AUDIT_SIGNAL_MEASURES: tuple[str, ...] = ("ctr", "hook_rate", "link_clicks", "landing_page_views")  # attention that should convert
+AUDIT_MIN_ORDERS: int = 5            # fewer orders than this and a good or bad ratio is "early", not a verdict
+AUDIT_TOP_N: int = 3                 # entities named per list (best, worst, concentration)
+AUDIT_LEAK_LIST: int = 5             # entities named in the no-orders list, with their spend (the question is often a ranking)
+
 # ---- Exploration engine (exploration/engine.py) -----------------------------
 # Statistical conventions for open-ended exploration. As with the diagnosis
 # numbers above, nothing here names a metric, dimension or business threshold:
@@ -90,6 +103,9 @@ WARN_INVALID_HORIZON: str = "policy:invalid_horizon"
 EXPLORE_FDR: float = 0.10                 # Benjamini-Hochberg level across every test a run performs
 EXPLORE_HISTORY_WINDOWS: int = 6          # equal-length windows before the current one (the "normal" variation)
 EXPLORE_MAX_SPAN_DAYS: int = 400          # cap on fetched history (windows x window length)
+# A percent change beyond this is an artefact of a near-zero base ("refunds +5,851.7%"), not information: the figures are
+# stated instead and no percent is printed (business_snapshot, diagnosis and exploration statements).
+MAX_REPORTABLE_PCT_CHANGE: float = 1000.0
 EXPLORE_DEFAULT_WINDOW_DAYS: int = 7      # window when the question names no period
 EXPLORE_MAX_WINDOW_DAYS: int = 92
 EXPLORE_MIN_RELATIVE_CHANGE: float = 0.03  # smallest window-over-window change worth reporting

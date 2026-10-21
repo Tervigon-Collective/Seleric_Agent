@@ -1,0 +1,62 @@
+{
+ "n": 2,
+ "aspect": "analysis",
+ "q": "Which Meta campaigns are wasting money in the last 7 days? Rank them and tell me what to do about them.",
+ "thread": "thread_c0169b9c77844beaa4d6000aee2b9822",
+ "mission": "MS3-ecbcf58c55",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 42,
+ "elapsed_s": 36.142,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 33,
+  "measured": 33,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "audit_entities"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "any of ['no orders', 'no order']"
+  },
+  {
+   "ok": false,
+   "what": "not 'paused'"
+  },
+  {
+   "ok": true,
+   "what": "revisions <= 1"
+  },
+  {
+   "ok": true,
+   "what": "tool: fetches by the entity (campaign / product / channel), not account totals only"
+  },
+  {
+   "ok": true,
+   "what": "tool: fetches spend together with an outcome (orders / revenue)"
+  },
+  {
+   "ok": true,
+   "what": "tool: audits the entities in code"
+  },
+  {
+   "ok": true,
+   "what": "tool: does not open with the diagnosis helper"
+  }
+ ],
+ "answer": "Verdict: Over 2026-10-12..2026-10-18 Meta campaigns spent \u20b92,35,838 and returned net sales \u20b92,03,894 on the campaigns that recorded sales \u2014 overall ROAS ~1.05x, but 18.0% of spend (\u20b942,406) bought no orders. That 18% leakage and a few low-ROAS campaigns are where money is wasted now.\n\nWhat is working\n- TH-471-PLAYSCRATCHLOUNGE-13OCT-PMF \u2014 spend \u20b918,602 \u2192 net sales \u20b940,910 = 2.20x, 17 orders. Reliable top performer to scale cautiously.\n- TH-287-MISTCALMBRUSH-16OCT \u2014 spend \u20b97,584 \u2192 net sales \u20b911,702 = 1.54x, 6 orders.\n- TH-452-FLEXIDINEFEEDER-12OCT \u2014 spend \u20b910,313 \u2192 net sales \u20b913,591 = 1.32x, 8 orders.\n\nWhere money is leaking\n- No-orders campaigns: 17 of 49 campaigns recorded zero orders and absorbed \u20b942,406 (18.0% of Meta spend). Largest no-order spenders include DOG DAD T-SHIRT-CS-06OCT and TH-229-BLUEJAY SNEAKS-15OCT.\n- Low-ROAS campaign (enough orders to judge): TH-012-SNUGBOO-23SEP \u2014 spend \u20b911,870 \u2192 net sales \u20b910,240 = 0.86x (shortfall ~\u20b91,630).\n- Portfolio efficiency: 106 orders total, ad spend per order \u20b92,225 \u2014 spend is concentrated but not all converting.\n\nWhy (what the data shows)\n- A substantial share of spend is on campaigns that produced no recorded orders in the week (direct leakage). \n- One mid-sized campaign (TH-012) has measurable shortfall vs spend. \n- Several small campaigns show good ROAS but have too few orders to be reliable signals.\n\nWhat I would do (prioritised, with the figures to validate each step)\n1) Stop or zero-budget the 17 campaigns with no orders (saves \u20b942,406 = 18.0% of spend) and reallocate that budget to proven performers (start with TH-471). Check: if any paused campaign records an order within 3 days, consider reinstating; otherwise keep paused.\n2) Cut or cap spend on TH-012-SNUGBOO-23SEP (spend \u20b911,870; ROAS 0.86). Put it on a short creative/landing check and limit daily spend until its 7-day ROAS reaches \u22651.0 (or orders rise). Check: if next 7 days still ROAS <1, pause.\n3) Redirect freed budget to TH-471 (ROAS 2.20, 17 orders) and to TH-287/TH-452 while monitoring ad spend per order and ROAS. Stop reallocations if their ROAS falls toward portfolio average or ad spend per order exceeds current portfolio \u20b92,225.\n\nNotes\n- Basis: net sales are order-date net sales; ad spend is platform native (Meta). Brand: default brand (Tilting Heads) scope applied. Period: 2026-10-12..2026-10-18. Data as of 2026-10-19.\n- Sample size: campaigns labelled \u201cearly signal\u201d had <5 orders \u2014 treat them as low-confidence for scaling decisions.\n- The queries returned 49 campaigns with spend; 32 campaigns recorded net sales.\n\nPeriod: 2026-10-12..2026-10-18 \u00b7 Currency: INR \u00b7 Data as of 2026-10-19\nNext: Do you want me to drill into clicks, CTR and landing page views for the 17 no-order campaigns to see whether they got attention but failed to convert?"
+}
