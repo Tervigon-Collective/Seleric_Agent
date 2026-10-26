@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -47,12 +48,19 @@ class BusinessStateService:
     def __init__(self, runtime: SwarmRuntime, profiles: ProfileLoader | None = None) -> None:
         self._runtime = runtime
         self._profiles = profiles or ProfileLoader()
+        self._warm_lock = asyncio.Lock()
 
     @property
     def runtime(self) -> SwarmRuntime:
         return self._runtime
 
     async def get_metric_state(self, request: StateRequest) -> MetricState:
+        # The metric registry is the live catalogue: warm it (a no-op while fresh) before any lookup, so cron and API
+        # entry points work without a mission having warmed it first.
+        bootstrap = getattr(self._runtime, "bootstrap", None)
+        if bootstrap is not None:
+            async with self._warm_lock:  # eight domains resolve at once: one warm, not eight
+                await bootstrap.refresh_if_stale()
         definition = self._runtime.metrics.get(request.catalogue_metric_id or request.metric_id)
         if definition is None:
             return MetricState(

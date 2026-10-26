@@ -692,9 +692,13 @@ class MetricDefinitionView(BaseModel):
 
 
 @router.get("/metrics/definitions")
-def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
+async def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
     _authenticated_principal(request)
-    registry = getattr(_runtime(request), "metrics", None)
+    runtime = _runtime(request)
+    registry = getattr(runtime, "metrics", None)
+    bootstrap = getattr(runtime, "bootstrap", None)
+    if registry is not None and bootstrap is not None:
+        await bootstrap.refresh_if_stale()
     if registry is None:
         raise HTTPException(status_code=503, detail="metric registry is not configured")
     views: list[MetricDefinitionView] = []

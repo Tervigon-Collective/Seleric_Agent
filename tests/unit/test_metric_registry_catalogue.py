@@ -78,3 +78,27 @@ async def test_a_profile_slice_sends_its_filters_and_axis_to_the_catalogue_metri
     assert sent["measures"] == ["ad_spend"] and sent["date_axis"] == "event_date"
     assert {"dimension": "ad_platform", "operator": "equals", "values": ["meta"]} in sent["filters"]
     assert state.metric_id == "meta_spend" and state.catalogue_metric_id == "ad_spend"
+
+
+@pytest.mark.asyncio
+async def test_a_state_request_warms_the_catalogue_first():
+    """Cron and API entry points have no mission to warm the catalogue for them: the registry is empty until it is."""
+    from types import SimpleNamespace
+
+    registry = MetricRegistry()
+    warmed = []
+
+    class _Bootstrap:
+        async def refresh_if_stale(self) -> None:
+            warmed.append(True)
+            registry.bind_catalogue(_Catalogue(CatalogueMetricMeta(id="net_sales", label="Net sales", raw={"category": "commerce"})))
+
+    runtime = SimpleNamespace(metrics=registry, mcp=_Gateway(), bootstrap=_Bootstrap())
+    state = await BusinessStateService(runtime).get_metric_state(
+        StateRequest(
+            metric_id="net_sales",
+            time_range=TimeRangeV1(kind="absolute", start="2026-09-01", end="2026-09-07"),
+            agent_id="commerce_agent",
+        )
+    )
+    assert warmed and "CATALOGUE_MISS" not in state.quality_flags
