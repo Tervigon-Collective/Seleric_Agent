@@ -586,7 +586,7 @@ class CatalogueBootstrap:
             log.warning('CatalogueBootstrap.warm() failed — using empty cache')
         if registry_hints and count > 0:
             for stale_id in self.unresolvable(registry_hints):
-                log.warning("metric_registry stale: catalogue_metric '%s' not found in live catalogue — update metric_registry.yaml to silence this warning", stale_id)
+                log.warning("domain health profile names '%s', which is not in the live catalogue — fix config/domain_health_profiles.yaml warning", stale_id)
         return count
 
     async def refresh_if_stale(self) -> None:

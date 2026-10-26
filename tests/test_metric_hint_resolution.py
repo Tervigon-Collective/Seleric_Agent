@@ -1,41 +1,24 @@
-from seleric_swarm.services.metrics import MetricDefinition, MetricRegistry
+from seleric_swarm.services.metrics import MetricRegistry
 
 
-def _registry(live_defs=None, yaml_metrics=None):
-    r = MetricRegistry.__new__(MetricRegistry)
-    r._metrics = {m.id: m for m in (yaml_metrics or [])}
-    r._by_catalogue = {m.catalogue_metric: m.id for m in r._metrics.values() if m.catalogue_metric}
-    r._live = None
-    r._live_defs = live_defs or {}
-    return r
+def _registry(*payloads):
+    return MetricRegistry.from_definitions(list(payloads))
 
 
 def test_resolve_hint_matches_live_catalogue_by_substring():
-    live = {
-        "net_roas_all_channels": MetricDefinition(
-            {"id": "net_roas_all_channels", "description": "All-channels Net ROAS", "domain": "performance"}
-        ),
-    }
-    r = _registry(live_defs=live)
-    assert r.resolve_hint("metric.roas") == "net_roas_all_channels"
-
-
-def test_resolve_hint_ignores_yaml_aliases():
-    yaml_metric = MetricDefinition(
-        {"id": "metric.net_sales", "aliases": ["sales", "revenue"], "domain": "commerce"}
-    )
-    r = _registry(yaml_metrics=[yaml_metric])
-    assert r.resolve_hint("metric.sales") is None
-    assert r.resolve_alias("sales") is None
-    assert r.resolve_alias("metric.net_sales") is yaml_metric
+    r = _registry({"id": "net_roas_all_channels", "description": "All-channels Net ROAS", "domain": "performance"})
+    assert r.resolve_hint("roas") == "net_roas_all_channels"
 
 
 def test_resolve_hint_returns_none_when_nothing_matches():
-    r = _registry()
-    assert r.resolve_hint("metric.does_not_exist") is None
+    assert _registry().resolve_hint("does_not_exist") is None
 
 
 def test_resolve_hint_passthrough_for_already_known_id():
-    yaml_metric = MetricDefinition({"id": "metric.net_sales", "domain": "commerce"})
-    r = _registry(yaml_metrics=[yaml_metric])
-    assert r.resolve_hint("metric.net_sales") == "metric.net_sales"
+    r = _registry({"id": "net_sales", "domain": "commerce"})
+    assert r.resolve_hint("net_sales") == "net_sales"
+
+
+def test_aliases_are_not_a_vocabulary():
+    r = _registry({"id": "net_sales", "aliases": ["sales", "revenue"], "domain": "commerce"})
+    assert r.resolve_hint("revenue") is None

@@ -122,7 +122,7 @@ class DomainStateResolver:
         """The timezone the domain's metrics are resolved in (their registry entries)."""
         registry = getattr(getattr(self._business_state, "_runtime", None), "metrics", None)
         for entry in block.get("metrics", []):
-            definition = registry.get(entry["metric_id"]) if registry is not None else None
+            definition = registry.get(entry.get("catalogue_metric") or entry["metric_id"]) if registry is not None else None
             if definition is not None and getattr(definition, "timezone", None):
                 return str(definition.timezone)
         return "UTC"
@@ -174,6 +174,9 @@ class DomainStateResolver:
                 need.append("anomaly")
             request = StateRequest(
                 metric_id=metric_id,
+                catalogue_metric_id=entry.get("catalogue_metric"),
+                filters=entry.get("filters") or {},
+                date_axis=entry.get("date_axis"),
                 time_range=time_range,
                 dimensions={scope_dim: brand_id} if scope_dim else {},
                 agent_id=agent_id,

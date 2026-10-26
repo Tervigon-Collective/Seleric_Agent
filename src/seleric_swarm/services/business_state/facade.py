@@ -53,7 +53,7 @@ class BusinessStateService:
         return self._runtime
 
     async def get_metric_state(self, request: StateRequest) -> MetricState:
-        definition = self._runtime.metrics.get(request.metric_id)
+        definition = self._runtime.metrics.get(request.catalogue_metric_id or request.metric_id)
         if definition is None:
             return MetricState(
                 metric_id=request.metric_id,
@@ -96,6 +96,8 @@ class BusinessStateService:
             brand_id=brand_id,
             grain=series_cfg.get("grain", "day"),
             max_lookback_days=series_cfg.get("max_lookback_days", 90),
+            filters=request.filters,
+            date_axis=request.date_axis,
         )
 
         if provenance.get("error") or not series:

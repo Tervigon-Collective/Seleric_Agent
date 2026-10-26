@@ -699,7 +699,7 @@ def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
         raise HTTPException(status_code=503, detail="metric registry is not configured")
     views: list[MetricDefinitionView] = []
     for definition in registry.all():
-        key = definition.catalogue_metric or definition.id.removeprefix("metric.")
+        key = definition.id
         views.append(
             MetricDefinitionView(
                 id=definition.id,
@@ -711,7 +711,7 @@ def list_metric_definitions(request: Request) -> list[MetricDefinitionView]:
                 grain=definition.grain,
                 domain=definition.domain,
                 version=definition.version,
-                aliases=sorted({*definition.aliases, key.replace("_", " ")}),
+                aliases=[key.replace("_", " ")],
             )
         )
     return views

@@ -78,7 +78,6 @@ ENV PATH="/app/.venv/bin:$PATH" \
     LANGFUSE_TRACING=true \
     LANGSMITH_TRACING=false \
     MCP_CONFIG_PATH=config/mcp_servers.yaml \
-    METRIC_REGISTRY_PATH=config/metric_registry.yaml \
     PROMPT_VERSIONS_PATH=config/prompt_versions.yaml \
     PROMPTS_DIR=prompts \
     COORDINATOR_POLICIES_PATH=config/coordinator_policies.yaml

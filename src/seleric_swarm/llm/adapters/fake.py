@@ -14,13 +14,35 @@ from seleric_swarm.llm.port import LLMRequest, LLMResponse, StructuredLLMRespons
 from seleric_swarm.llm.structured import parse_structured, with_schema_instruction
 from seleric_swarm.services.metrics import MetricRegistry, lead_agent_for_hints
 
+# The double's own vocabulary (catalogue ids + the words it matches them on). The product has no such list: real
+# metrics come from the MCP catalogue; this only lets the fake LLM classify a question without one.
+_FAKE_METRICS: list[dict[str, Any]] = [
+    {"id": 'net_sales', "domain": 'commerce', "description": 'Shopify Net Sales (ex-GST), dashboard-parity daily rollup.', "aliases": ['sales', 'revenue', 'net sale', 'net sales', 'ns']},
+    {"id": 'gross_sales', "domain": 'commerce', "description": 'Gross Sales (Shopify-only, ex-GST) before discounts.', "aliases": ['gs', 'gross sale', 'gross sales']},
+    {"id": 'channel_cac', "domain": 'performance', "description": 'Cost to acquire a purchase/order under the approved attribution definition.', "aliases": ['cac']},
+    {"id": 'ad_spend', "domain": 'performance', "description": 'Total paid media ad spend across all platforms (Meta + Google + Amazon Ads) from serve.canonical_pnl. Use for blended-spend, MER, and net profit calculations.', "aliases": ['ad spend', 'media spend', 'adsp', 'adspend']},
+    {"id": 'gross_roas', "domain": 'performance', "description": 'Gross return on ad spend (gross sales or attributed revenue per unit of paid media spend).', "aliases": ['gross roas']},
+    {"id": 'net_roas', "domain": 'performance', "description": 'Net return on ad spend (net sales per unit of paid media spend).', "aliases": ['net roas']},
+    {"id": 'add_to_cart_rate', "domain": 'funnel', "description": 'Session add-to-cart rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.', "aliases": ['add to cart rate', 'atc rate', 'funnel add to cart step', 'funnel step 2']},
+    {"id": 'sessions', "domain": 'funnel', "description": "Snowplow website sessions (web_sessions on serve.session_funnel). Base metric for funnel decomposition — all funnel rates divide by this. Sliceable by channel, device, UTM, geo, landing page. Previously registered as 'sessions' which does not exist in the catalogue.", "aliases": ['web sessions', 'funnel base', 'sessions base']},
+    {"id": 'product_view_rate', "domain": 'funnel', "description": 'PDP view rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.', "aliases": ['product view rate', 'pdp rate', 'funnel product view step', 'funnel step 1']},
+    {"id": 'checkout_rate', "domain": 'funnel', "description": 'Checkout start rate on the website funnel. Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count.', "aliases": ['checkout rate', 'funnel checkout step', 'funnel step 3']},
+    {"id": 'conversion_rate', "domain": 'funnel', "description": 'Purchase conversion rate — sessions that completed a purchase, expressed as a ratio (purchased_sessions / sessions). Use for funnel decomposition (product view → add-to-cart → checkout → purchase). This is a ratio (rate), not a count. Sliceable by channel, device, geo, ad on serve.session_funnel.', "aliases": ['purchase conversion rate', 'conversion rate', 'funnel purchase step', 'funnel step 4']},
+    {"id": 'net_profit', "domain": 'finance', "description": 'All-channels Net Profit (Shopify net + Amazon Attribution net − TOC − Meta+Google+Amazon spend). Distinct from Shopify-only net_profit.\n', "aliases": []},
+    {"id": 'units_sold', "domain": 'product', "description": 'Net units (ordered minus refunded) on eligible placement lines.', "aliases": ['best selling product', 'best selling products', 'top selling product', 'top selling products', 'units', 'units sold']},
+    {"id": 'repeat_rate', "domain": 'customer', "description": 'Repeat customers divided by customers in the query window.', "aliases": []},
+    {"id": 'refunded_amount_excl_tax', "domain": 'operations', "description": 'Refund amount excluding tax on the refund event date.', "aliases": ['refunded amount', 'refund amount', 'refunds', 'refund']},
+    {"id": 'product_order_net_sales', "domain": 'product', "description": 'Net revenue per product.', "aliases": ['product net sales', 'net sales by product', 'product net revenue']},
+    {"id": 'product_order_gross_sales', "domain": 'product', "description": 'Gross revenue (sales) per product.', "aliases": ['product gross sales', 'product gross revenue', 'gross sales by product']},
+    {"id": 'funnel_purchases', "domain": 'funnel', "description": 'Last-touch attributed orders on the channel-day funnel (COUNT, NOT a rate). For funnel decomposition, use metric.purchase_cvr (session_conversion_rate) instead.', "aliases": ['funnel purchases']}
+]
 _REGISTRY: MetricRegistry | None = None
 
 
 def _registry() -> MetricRegistry:
     global _REGISTRY
     if _REGISTRY is None:
-        _REGISTRY = MetricRegistry("config/metric_registry.yaml")
+        _REGISTRY = MetricRegistry.from_definitions(_FAKE_METRICS)
     return _REGISTRY
 
 
@@ -71,14 +93,14 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
     # Handle both correct spelling and common typos (seeling for selling)
     top_best_product_pattern = re.compile(r"\b(top|best).*\b(product|seeling|selling)")
     if top_best_product_pattern.search(q):
-        units_metric = metrics.get("metric.units_sold")
+        units_metric = metrics.get("units_sold")
         if units_metric:
-            return ["metric.units_sold"]
+            return ["units_sold"]
 
     scored: list[tuple[int, int, str]] = []
     weak_channel_desc_matches: list[tuple[int, int, str]] = []
     for metric in metrics.all():
-        slug = metric.id.removeprefix("metric.")
+        slug = metric.id
         slug_phrase = slug.replace("_", " ")
         slug_parts = [p for p in slug.split("_") if p]
         phrases = [slug_phrase, slug_phrase.replace("sales", "sale"), *metric.aliases]
@@ -94,10 +116,10 @@ def hints_from_registry(query: str, metrics: MetricRegistry | None = None) -> li
                         continue
                 elif alias not in q and not all(_fuzzy_word_in(p, q_words) for p in alias_parts):
                     continue
-                if metric.id == "metric.net_sales" and wants_gross and not mentions_net:
+                if metric.id == "net_sales" and wants_gross and not mentions_net:
                     continue
                 if (
-                    metric.id == "metric.net_sales"
+                    metric.id == "net_sales"
                     and attributed
                     and "sale" not in q_words
                     and "sales" not in q_words
@@ -246,7 +268,7 @@ def _collect_hints(lower: str) -> list[str]:
 
 def _lead_for_hints(hints: list[str]) -> str:
     # Performance metrics (CAC, ROAS, etc.) take priority when mixed with other domains
-    performance_priority = ["metric.cac", "metric.roas", "metric.gross_roas", "metric.net_roas"]
+    performance_priority = ["channel_cac", "gross_roas", "net_roas"]
     for metric_id in performance_priority:
         if metric_id in hints:
             return "performance_agent"
@@ -315,27 +337,27 @@ def map_metric(
     lower = query.lower()
     candidates: list[str] = []
     if "cac" in lower:
-        candidates.append("metric.cac")
+        candidates.append("channel_cac")
     if "gross sale" in lower:
-        candidates.append("metric.gross_sales")
+        candidates.append("gross_sales")
     if "attributed" in lower and "revenue" in lower:
-        candidates.append("metric.attributed_net_revenue")
+        candidates.append("net_sales")
     if "net sale" in lower or (
         "gross sale" not in lower
         and ("revenue" in lower or _SALES_WORD.search(lower) is not None)
         and "attributed" not in lower
     ):
-        candidates.append("metric.net_sales")
+        candidates.append("net_sales")
     elif "net profit" in lower or "profit" in lower:
-        candidates.append("metric.net_profit")
+        candidates.append("net_profit")
     elif "atc rate" in lower or "add-to-cart rate" in lower or "add to cart rate" in lower:
-        candidates.append("metric.atc_rate")
+        candidates.append("add_to_cart_rate")
     elif "units sold" in lower:
-        candidates.append("metric.units_sold")
+        candidates.append("units_sold")
     elif "repeat rate" in lower:
-        candidates.append("metric.repeat_rate")
+        candidates.append("repeat_rate")
     elif "refunded amount" in lower or "refund amount" in lower:
-        candidates.append("metric.refunded_amount_excl_tax")
+        candidates.append("refunded_amount_excl_tax")
     allowed_set = set(allowed or [])
     if allowed_set:
         candidates = [item for item in candidates if item in allowed_set]

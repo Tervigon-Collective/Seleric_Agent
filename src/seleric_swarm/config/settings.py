@@ -168,7 +168,6 @@ class Settings(BaseSettings):
     # (glossary-backed) + get_metric_definitions instead of paying the dump on
     # every model turn. Flip on to revert to the in-prompt catalogue.
     catalogue_in_prompt: bool = False
-    metric_registry_path: str = "config/metric_registry.yaml"
 
     a2a_public_base_url: str = ""
     api_host: str = ""

@@ -134,11 +134,14 @@ def build_metrics_query_args(
     compare_period: str | None = None,
     module: Any = ...,
     inject_default_brand: bool = True,
+    date_axis: str | None = None,
 ) -> dict[str, Any]:
     arguments: dict[str, Any] = {
         "measures": [measure],
         "time_range": {"start": start, "end": end},
     }
+    if date_axis:
+        arguments["date_axis"] = date_axis
     if grain:
         arguments["granularity"] = grain
     if dimensions:

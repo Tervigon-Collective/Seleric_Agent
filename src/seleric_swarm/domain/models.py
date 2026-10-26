@@ -51,6 +51,9 @@ class StateRequest(BaseModel):
     catalogue_metric_id: str | None = None
     time_range: TimeRangeV1
     dimensions: dict[str, Any] = Field(default_factory=dict)
+    # Fixed slice of the catalogue metric this id names (e.g. meta_spend = ad_spend with ad_platform=meta); from the domain health profile.
+    filters: dict[str, str] = Field(default_factory=dict)
+    date_axis: Literal["order_date", "event_date"] | None = None  # profile entry's own axis (finance event-date family); None = Core default
     agent_id: str
     as_of: str | None = None
     profile_id: str = "default_v1"
