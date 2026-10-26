@@ -8,6 +8,7 @@ import {
 import { useVoiceStore, type VoiceStatus } from "../stores/voice";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { enhanceQuery } from "../api/queryEnhance";
+import { DATE_AXES, useDateAxisStore, type DateAxis } from "../stores/dateAxis";
 import { attachAutoCorrect, type AutoCorrectItem } from "../utils/autocorrect";
 import { MicIcon, PaperclipIcon, SendIcon, SparklesIcon, StopIcon } from "./icons";
 
@@ -71,6 +72,23 @@ function EnhanceButton({ text }: { text: string }) {
   );
 }
 
+function DateAxisSelect() {
+  const axis = useDateAxisStore((s) => s.axis);
+  const setAxis = useDateAxisStore((s) => s.setAxis);
+  const current = DATE_AXES.find((a) => a.value === axis);
+  return (
+    <select
+      className="date-axis-select"
+      aria-label="Date axis"
+      title={current?.hint}
+      value={axis}
+      onChange={(e) => setAxis(e.target.value as DateAxis)}
+    >
+      {DATE_AXES.map((a) => <option key={a.value} value={a.value} title={a.hint}>{a.label}</option>)}
+    </select>
+  );
+}
+
 function VoiceControls({ text }: { text: string }) {
   const status = useVoiceStore((s) => s.status);
   const error = useVoiceStore((s) => s.error);
@@ -79,6 +97,7 @@ function VoiceControls({ text }: { text: string }) {
   return (
     <div className="voice-controls">
       {status === "error" && error && <span className="voice-status" role="alert">{error}</span>}
+      <DateAxisSelect />
       <EnhanceButton text={text} />
       <button
         type="button"

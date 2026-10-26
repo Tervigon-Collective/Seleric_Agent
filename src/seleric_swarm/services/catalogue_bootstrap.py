@@ -26,6 +26,7 @@ Design constraints
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -208,6 +209,15 @@ class CatalogueSnapshot:
                 aggregation = str((meta.raw or {}).get('aggregation') or '').strip().lower()
                 return aggregation or None
         return None
+
+    def ignores_date_axis(self, metric_id: str) -> bool:
+        """True when the catalogue says the metric is not switchable (placement only / cohort only / native), read from
+        the "Date axis: ..." sentence of its description. False when unknown, so an unknown metric still gets the axis."""
+        for meta in self.metrics:
+            if meta.id == metric_id:
+                found = re.search(r'Date axis: (switchable|placement only|cohort only|native)', str((meta.raw or {}).get('description') or ''))
+                return bool(found) and found.group(1) != 'switchable'
+        return False
 
     def supported_dimensions_for(self, metric_id: str) -> list[str]:
         """The metric's ``supported_dimensions``, or [] if unknown/not carried."""

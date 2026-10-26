@@ -1,0 +1,216 @@
+Database,Object,Engine,Rows,# columns,Built from (direct sources),Cube cubes reading it,Cube views exposing it,# metrics in those views
+serve,ad_changes,View,,18,"serve.google_ads_status_history, serve.meta_ads_status_history",ad_changes,paid_media_changes,3
+serve,"ad_channel_pnl_daily  [DROPPED during run, B-17]",View,,30,"gold.fct_ad_channel_pnl_daily, serve.channel_pnl",,,0
+serve,ad_delivery_daily,View,,25,"serve.google_ads_daily, serve.meta_ads_daily",,,0
+serve,ad_delivery_hourly,View,,21,"serve.google_ads_hourly, serve.meta_ads_hourly",,,0
+serve,attribution_paths,View,,21,gold.fct_attribution_paths,attribution_path,attribution_paths,1
+serve,bridge_order_attribution,View,,21,semantic.bridge_order_attribution,,,0
+serve,campaign_products,View,,4,"serve.commerce_orders, serve.product_performance",campaign_products,,0
+serve,"canonical_pnl  [DROPPED during run, B-17]",View,,32,"gold.fct_order_items, serve.commerce_performance_daily, serve.google_ads_daily, serve.meta_ads_daily",,,0
+serve,cfg_traffic_platforms,View,,6,semantic.cfg_traffic_platforms,,,0
+serve,cfg_traffic_source_rules,View,,18,semantic.cfg_traffic_source_rules,,,0
+serve,channel_attribution_daily,View,,15,serve.order_attribution,,,0
+serve,"channel_pnl  [DROPPED during run, B-17]",View,,25,"gold.fct_order_attribution, gold.fct_order_items, semantic.cfg_traffic_platforms, semantic.dim_traffic_source, serve.commerce_orders, serve.google_ads_daily, serve.meta_ads_daily",,,0
+serve,commerce_order_events,View,,9,gold.fct_order_items,,,0
+serve,commerce_orders,View,,95,"gold.fct_order_attribution, gold.fct_orders, serve.product_performance",,,0
+serve,commerce_performance_daily,View,,12,"serve.commerce_order_events, serve.commerce_orders",,,0
+serve,customer_data,View,,29,gold.dim_customers,,,0
+serve,customer_ltv,View,,26,"gold.dim_customers, gold.fct_orders",,,0
+serve,dim_ad,View,,11,gold.dim_ad,ad,"attribution, attribution_paths, commerce, finance, funnel_orders, paid_media, paid_media_breakdowns, paid_media_changes, paid_media_hourly, product_ads, product_profit, returns, web_event_detail, web_sessions",198
+serve,dim_adset,View,,11,gold.dim_adset,adset,"attribution, attribution_paths, commerce, finance, funnel_orders, paid_media, paid_media_breakdowns, paid_media_changes, paid_media_hourly, product_ads, product_profit, returns, web_event_detail, web_sessions",198
+serve,dim_brand,View,,10,"gold.fct_google_ads_daily, gold.fct_meta_ads_daily, gold.fct_orders, gold.fct_session_funnel, semantic.dim_brand",brand,commerce,25
+serve,dim_campaign,View,,13,"gold.dim_campaign, serve.google_ads_daily, serve.meta_ads_daily",campaign,"attribution, attribution_paths, commerce, finance, funnel_orders, paid_media, paid_media_breakdowns, paid_media_changes, paid_media_hourly, payments, product_ads, product_profit, returns, web_event_detail, web_sessions",201
+serve,dim_funnel_channel,View,,6,"serve.dim_traffic_source, serve.fct_ad_delivery, serve.fct_web_session",funnel_channel,"web_funnel, web_funnel_hourly",3
+serve,dim_product_variant,View,,17,semantic.dim_product_variant,"product_variant, first_order_product","attribution, attribution_paths, commerce, customers, funnel_orders, paid_media_changes, payments, product_ads, product_cost_changes, product_profit, returns",115
+serve,dim_traffic_source,View,,23,semantic.dim_traffic_source,traffic_source,"attribution, attribution_paths, commerce, funnel_orders, payments, returns, web_event_detail, web_sessions",67
+serve,fct_ad_delivery,View,,30,"gold.fct_google_ads_daily, gold.fct_meta_ads_daily",,,0
+serve,fct_ad_delivery_hourly,View,,23,"gold.fct_google_campaigns_hourly, gold.fct_meta_ads_hourly",,,0
+serve,fct_customer,View,,22,"gold.dim_customers, gold.fct_orders, serve.bridge_order_attribution, serve.dim_campaign, serve.fct_order, serve.fct_order_line, serve.mart_product_profit",customer,customers,3
+serve,fct_order,View,,50,"gold.fct_orders, semantic.core_order_class",,,0
+serve,fct_order_commerce,View,,45,"serve.bridge_order_attribution, serve.commerce_orders, serve.fct_order",fact_orders,"attribution_paths, commerce, payments, returns",37
+serve,fct_order_line,View,,46,"gold.int_finance_order_lines, semantic.core_order_class, semantic.core_order_line_class",basket_lines,,0
+serve,fct_paid_media_daily,View,,33,"serve.fct_ad_delivery, serve.fct_web_session",ad_delivery,paid_media,15
+serve,fct_paid_media_hourly,View,,27,"serve.fct_ad_delivery_hourly, serve.fct_web_session",ad_delivery_hourly,paid_media_hourly,0
+serve,fct_payment,View,,19,"gold.fct_payments, semantic.core_order_class",payment_transaction,payments,3
+serve,fct_web_event,View,,37,gold.fct_web_events,web_event,"web_event_detail, web_sessions",26
+serve,fct_web_session,View,,51,gold.fct_session_funnel,sessions,"web_event_detail, web_sessions",26
+serve,"finance_waterfall_daily  [DROPPED during run, B-17]",View,,24,gold.fct_finance_waterfall_daily,,,0
+serve,funnel_daily,View,,21,gold.mart_funnel_daily,funnel_daily,web_funnel,3
+serve,funnel_orders,View,,6,"gold.fct_order_attribution, serve.order_attribution",funnel_order,funnel_orders,2
+serve,google_ads_daily,View,,21,"gold.dim_campaign, gold.fct_google_ads_daily",,,0
+serve,google_ads_hourly,View,,24,"gold.dim_campaign, gold.fct_google_campaigns_hourly",,,0
+serve,google_ads_status_history,View,,26,gold.fct_google_ads_status_history,,,0
+serve,inventory_item_daily,View,,9,gold.fct_inventory_item_daily,,,0
+serve,inventory_movements,View,,25,gold.fct_inventory_movements,inv_movements,stock_movements,5
+serve,inventory_receipt_layers,View,,36,gold.fct_inventory_receipt_layers,inv_layers,stock_layers,5
+serve,inventory_stock_current,View,,24,gold.dim_inventory_stock_current,inv_levels,stock_levels,8
+serve,inventory_sync_errors,View,,17,gold.fct_inventory_sync_errors,inv_sync_errors,stock_sync_errors,3
+serve,ledger_order_component,View,,22,semantic.ledger_order_component_v2,,,0
+serve,"ltv_cac_daily  [DROPPED during run, B-17]",View,,5,"serve.google_ads_daily, serve.meta_ads_daily, serve.order_attribution",,,0
+serve,mart_period_profit,View,,54,"semantic.snap_profit_monthly_v2, serve.mart_profit",,,0
+serve,mart_period_profit_closed,View,,56,semantic.snap_profit_monthly_v2,,,0
+serve,mart_pnl_event,View,,55,"semantic.snap_profit_monthly_v2, serve.mart_profit",,,0
+serve,mart_pnl_event_closed,View,,57,semantic.snap_profit_monthly_v2,,,0
+serve,mart_product_ad_allocated,View,,24,semantic.mart_product_ad_allocated,,,0
+serve,mart_product_ad_profit,View,,42,"serve.fct_order, serve.mart_product_ad_allocated, serve.mart_product_profit",product_ads_fact,product_ads,27
+serve,mart_product_profit,View,,67,"gold.fct_orders, semantic.core_order_class, serve.bridge_order_attribution, serve.dim_traffic_source, serve.fct_order_line, serve.ledger_order_component","product_profit_fact, order_events","commerce, product_profit",66
+serve,mart_profit,View,,58,"semantic.mart_profit_fact_v2, semantic.snap_profit_monthly_v2",profit,finance,48
+serve,"meta_ad_attribution_daily  [DROPPED during run, B-17]",View,,28,"gold.dim_ad, gold.dim_ad_neurohack_map, gold.dim_adset, gold.dim_campaign, gold.mart_meta_ad_daily_attribution, serve.order_attribution",,,0
+serve,meta_ads_breakdown_daily,View,,50,"gold.dim_ad, gold.dim_ad_neurohack_map, gold.dim_adset, gold.dim_campaign, gold.dim_creative, gold.mart_meta_ad_breakdown_daily",ad_breakdowns,paid_media_breakdowns,0
+serve,meta_ads_daily,View,,64,"gold.dim_ad, gold.dim_ad_neurohack_map, gold.dim_adset, gold.dim_campaign, gold.dim_creative, gold.fct_meta_ads_daily",,,0
+serve,meta_ads_hourly,View,,39,"gold.dim_ad, gold.dim_ad_neurohack_map, gold.dim_adset, gold.dim_campaign, gold.dim_creative, gold.fct_meta_ads_hourly",,,0
+serve,meta_ads_status_history,View,,27,gold.fct_meta_ads_status_history,,,0
+serve,order_attribution,View,,50,"gold.fct_order_attribution, semantic.cfg_traffic_platforms, semantic.dim_traffic_source, serve.commerce_orders",,,0
+serve,"order_pnl_daily  [DROPPED during run, B-17]",View,,32,semantic.fct_order_pnl_daily,,,0
+serve,"orders_all_channels  [DROPPED during run, B-17]",View,,14,serve.commerce_orders,,,0
+serve,payments,View,,21,gold.fct_payments,,,0
+serve,platform_attribution_commerce,View,,11,"serve.commerce_orders, serve.order_attribution",,,0
+serve,"pnl_daily  [DROPPED during run, B-17]",View,,27,semantic.fct_pnl_daily,,,0
+serve,procurement_sampling,View,,23,gold.fct_procurement_sampling,sampling_variants,procurement_sampling,7
+serve,"product_ad_line  [DROPPED during run, B-17]",View,,17,"serve.ad_delivery_daily, serve.commerce_orders, serve.product_performance",,,0
+serve,product_hierarchy_conflicts,View,,4,semantic.dim_product_variant,,,0
+serve,product_performance,View,,79,"gold.fct_order_items, gold.fct_orders",,,0
+serve,"product_pnl  [DROPPED during run, B-17]",View,,30,semantic.fct_product_pnl,,,0
+serve,purchase_request_items,View,,35,gold.fct_purchase_request_items,po_lines,purchase_order_lines,5
+serve,purchase_requests,View,,33,gold.fct_purchase_requests,po_headers,purchase_orders,9
+serve,purchase_sequence,View,,33,"gold.dim_customers, gold.fct_orders",,,0
+serve,quality_checks,View,,26,gold.fct_quality_checks,qc_checks,quality_checks,9
+serve,refund_events,View,,37,"gold.fct_orders, gold.fct_refunds",refunds,returns,8
+serve,return_lifecycle,View,,32,gold.fct_refund_line_items,refund_lines,returns,8
+serve,"returns_cancels_all_channels  [DROPPED during run, B-17]",View,,5,serve.commerce_order_events,,,0
+serve,"sales_all_channels  [DROPPED during run, B-17]",View,,14,serve.commerce_orders,,,0
+serve,session_funnel,View,,74,"gold.dim_ad, gold.dim_campaign, gold.fct_session_funnel",,,0
+serve,touchpoints,View,,19,gold.fct_touchpoints,touchpoints,attribution,2
+serve,traffic_hierarchy_conflicts,View,,5,semantic.dim_traffic_source,,,0
+serve,traffic_unmapped,View,,13,semantic.dim_traffic_source,,,0
+serve,vendors,View,,10,gold.dim_vendor,vendor_dim,vendors,1
+serve,web_events,View,,38,gold.fct_web_events,,,0
+serve,web_events_daily,View,,12,gold.mart_web_events_daily,web_events_daily,web_events,6
+gold,_ch_sync_snapshot_state,ReplacingMergeTree,81,4,,,,0
+gold,dim_ad,ReplacingMergeTree,3554,22,,,,0
+gold,dim_ad_neurohack_map,ReplacingMergeTree,4242,9,,,,0
+gold,dim_adset,ReplacingMergeTree,2135,22,,,,0
+gold,dim_adset_geo,ReplacingMergeTree,1580,10,,,,0
+gold,dim_amazon_ads_campaigns,ReplacingMergeTree,473,20,,,,0
+gold,dim_amazon_charge_type,ReplacingMergeTree,40,4,,,,0
+gold,dim_amazon_listings,ReplacingMergeTree,765,72,,,,0
+gold,dim_amazon_settlement_charge_type,ReplacingMergeTree,25,7,,,,0
+gold,dim_campaign,ReplacingMergeTree,1307,18,,,,0
+gold,dim_creative,ReplacingMergeTree,12390,41,,,,0
+gold,dim_customers,ReplacingMergeTree,44160,56,,,,0
+gold,dim_inventory_stock_current,ReplacingMergeTree,1065,25,,,,0
+gold,dim_neurohack,ReplacingMergeTree,550,7,,,,0
+gold,dim_shopify_inventory_items,ReplacingMergeTree,1279,17,,,,0
+gold,dim_sku_cost_aliases,ReplacingMergeTree,0,10,,,,0
+gold,dim_th_sku_seasonal_map,View,,18,gold.raw_th_sku_seasonal_map,,,0
+gold,dim_vendor,ReplacingMergeTree,110,11,,,,0
+gold,fct_ad_channel_pnl_daily,ReplacingMergeTree,35308,30,,,,0
+gold,fct_amazon_ads_ad_groups_daily,ReplacingMergeTree,2081,31,,,,0
+gold,fct_amazon_ads_ad_order_attribution,ReplacingMergeTree,594,41,,,,0
+gold,fct_amazon_ads_ads_daily,ReplacingMergeTree,12455,34,,,,0
+gold,fct_amazon_ads_campaigns_daily,ReplacingMergeTree,1819,31,,,,0
+gold,fct_amazon_daily_pnl,ReplacingMergeTree,308,93,,,,0
+gold,fct_amazon_order_items,ReplacingMergeTree,4212,33,,,,0
+gold,fct_amazon_return_items,ReplacingMergeTree,1231,38,,,,0
+gold,fct_amazon_returns_daily,ReplacingMergeTree,120,18,,,,0
+gold,fct_amazon_sp_finance_events,ReplacingMergeTree,35824,23,,,,0
+gold,fct_amazon_sp_finance_items,ReplacingMergeTree,4241,81,,,,0
+gold,fct_amazon_sp_order_pnl,ReplacingMergeTree,3919,120,,,,0
+gold,fct_amazon_sp_orders,ReplacingMergeTree,3919,28,,,,0
+gold,fct_amazon_sp_settlement_lines,ReplacingMergeTree,12330,39,,,,0
+gold,fct_amazon_sp_settlement_order_pnl,ReplacingMergeTree,986,34,,,,0
+gold,fct_amazon_sp_settlements,ReplacingMergeTree,37,23,,,,0
+gold,fct_attribution_paths,ReplacingMergeTree,26476,22,,,,0
+gold,fct_city_weather_day,ReplacingMergeTree,392,16,,,,0
+gold,fct_daily_pnl,ReplacingMergeTree,1195,145,,,,0
+gold,fct_finance_waterfall_daily,ReplacingMergeTree,1195,29,,,,0
+gold,fct_google_ads_daily,ReplacingMergeTree,32035,42,,,,0
+gold,fct_google_ads_status_history,ReplacingMergeTree,342,35,,,,0
+gold,fct_google_campaigns_hourly,ReplacingMergeTree,256785,27,,,,0
+gold,fct_inventory_item_daily,ReplacingMergeTree,3630,10,,,,0
+gold,fct_inventory_movements,ReplacingMergeTree,6800,26,,,,0
+gold,fct_inventory_receipt_layers,ReplacingMergeTree,608,41,,,,0
+gold,fct_inventory_sync_errors,ReplacingMergeTree,2722,18,,,,0
+gold,fct_meta_ads_breakdown_daily,ReplacingMergeTree,348846,96,,,,0
+gold,fct_meta_ads_daily,ReplacingMergeTree,25159,101,,,,0
+gold,fct_meta_ads_hourly,ReplacingMergeTree,159430,74,,,,0
+gold,fct_meta_ads_status_history,ReplacingMergeTree,10334,37,,,,0
+gold,fct_order_attribution,ReplacingMergeTree,24552,41,,,,0
+gold,fct_order_attribution_credit,ReplacingMergeTree,30529,20,,,,0
+gold,fct_order_cogs_scd2,View,,29,,,,0
+gold,fct_order_items,ReplacingMergeTree,30903,173,,,,0
+gold,fct_order_price_scd2,View,,18,,,,0
+gold,fct_orders,ReplacingMergeTree,24552,109,,,,0
+gold,fct_payments,ReplacingMergeTree,34432,23,,,,0
+gold,fct_procurement_sampling,ReplacingMergeTree,501,24,,,,0
+gold,fct_product_variant_cost,ReplacingMergeTree,1523,27,,,,0
+gold,fct_product_variant_cost__stage,ReplacingMergeTree,1541,27,,,,0
+gold,fct_product_variant_cost_history,ReplacingMergeTree,12313,36,,,,0
+gold,fct_product_variant_cost_history__bak_20261001,ReplacingMergeTree,13855,36,,,,0
+gold,fct_purchase_request_items,ReplacingMergeTree,649,36,,,,0
+gold,fct_purchase_requests,ReplacingMergeTree,165,36,,,,0
+gold,fct_quality_checks,ReplacingMergeTree,610,27,,,,0
+gold,fct_refund_line_items,ReplacingMergeTree,4265,52,,,,0
+gold,fct_refunds,ReplacingMergeTree,3767,44,,,,0
+gold,fct_session_funnel,ReplacingMergeTree,327653,86,,,,0
+gold,fct_session_funnel_sync_tmp_635022,ReplacingMergeTree,184000,86,,,,0
+gold,fct_shopify_product_cost_history,ReplacingMergeTree,8992,23,,,,0
+gold,fct_touchpoints,ReplacingMergeTree,10853,21,,,,0
+gold,fct_web_events,ReplacingMergeTree,1623388,50,,,,0
+gold,fct_web_events__old_20261024,ReplacingMergeTree,3157307,50,,,,0
+gold,int_amazon_return_amount_reconciliation,ReplacingMergeTree,1565,19,,,,0
+gold,int_amazon_return_label_reconciliation,ReplacingMergeTree,1231,15,,,,0
+gold,int_amazon_return_reconciliation,ReplacingMergeTree,1231,31,,,,0
+gold,int_amazon_sp_settlement_reconciliation,ReplacingMergeTree,83,37,,,,0
+gold,int_finance_daily_rollups,ReplacingMergeTree,707,55,,,,0
+gold,int_finance_order_lines,ReplacingMergeTree,30903,188,,,,0
+gold,int_payment_reconciliation,ReplacingMergeTree,24551,16,,,,0
+gold,int_payment_reconciliation__dbt_backup,ReplacingMergeTree,0,16,,,,0
+gold,mart_ad_funnel_daily,ReplacingMergeTree,32175,35,,,,0
+gold,mart_city_campaign_attributed,View,,15,"gold.fct_meta_ads_daily, gold.fct_order_attribution, gold.fct_order_items, gold.fct_orders",,,0
+gold,mart_city_product_sales,View,,9,"gold.fct_order_items, gold.fct_orders",,,0
+gold,mart_city_weather_sales_lag,View,,14,"gold.fct_city_weather_day, gold.mart_city_product_sales",,,0
+gold,mart_funnel_daily,ReplacingMergeTree,3142,23,,,,0
+gold,mart_geo_product_opportunity,ReplacingMergeTree,595,35,,,,0
+gold,mart_geo_whitespace,ReplacingMergeTree,0,11,,,,0
+gold,mart_landing_page_daily,ReplacingMergeTree,31798,17,,,,0
+gold,mart_meta_ad_breakdown_daily,ReplacingMergeTree,348846,91,,,,0
+gold,mart_meta_ad_daily_attribution,ReplacingMergeTree,4019,20,,,,0
+gold,mart_meta_ad_daily_combined,ReplacingMergeTree,24663,36,,,,0
+gold,mart_meta_ad_daily_performance,ReplacingMergeTree,24460,32,,,,0
+gold,mart_meta_ad_neurotag_daily,ReplacingMergeTree,39971,123,,,,0
+gold,mart_web_events_daily,ReplacingMergeTree,9000,10,,,,0
+gold,raw_th_sku_seasonal_map,ReplacingMergeTree,213,19,,,,0
+gold,v_geo_discovery,View,,18,gold.mart_geo_product_opportunity,,,0
+gold,v_geo_region_rollup,View,,15,gold.mart_geo_product_opportunity,,,0
+semantic,bridge_order_attribution,MergeTree,123902,21,,,,0
+semantic,cfg_traffic_platforms,MergeTree,11,6,,,,0
+semantic,cfg_traffic_source_rules,MergeTree,29,18,,,,0
+semantic,core_order_class,MergeTree,24551,30,,,,0
+semantic,core_order_line_class,MergeTree,30903,15,,,,0
+semantic,dim_brand,MergeTree,7,7,,,,0
+semantic,dim_product_variant,MergeTree,1536,17,,,,0
+semantic,dim_traffic_source,MergeTree,2908,23,,,,0
+semantic,fct_order_pnl_daily,MergeTree,57844,32,,,,0
+semantic,fct_pnl_daily,MergeTree,36964,27,,,,0
+semantic,fct_product_pnl,MergeTree,126027,30,,,,0
+semantic,ledger_order_component,MergeTree,280947,19,,,,0
+semantic,ledger_order_component_v2,MergeTree,280947,20,,,,0
+semantic,mart_product_ad_allocated,MergeTree,31071,23,,,,0
+semantic,mart_profit_fact,MergeTree,65167,51,,,,0
+semantic,mart_profit_fact_v2,MergeTree,66026,52,,,,0
+semantic,mv_bridge_order_attribution,MaterializedView,,21,"gold.fct_order_attribution, gold.fct_order_attribution_credit, gold.fct_session_funnel, semantic.core_order_class",,,0
+semantic,mv_core_order_class,MaterializedView,,30,"gold.dim_customers, gold.fct_order_attribution, gold.fct_orders, gold.fct_refunds, gold.int_finance_order_lines",,,0
+semantic,mv_core_order_line_class,MaterializedView,,15,"gold.int_finance_order_lines, semantic.core_order_class",,,0
+semantic,mv_dim_product_variant,MaterializedView,,17,"gold.fct_order_items, gold.fct_product_variant_cost",,,0
+semantic,mv_dim_traffic_source,MaterializedView,,23,"gold.fct_order_attribution, gold.fct_order_attribution_credit, gold.fct_session_funnel, gold.fct_touchpoints, semantic.cfg_traffic_platforms, semantic.cfg_traffic_source_rules",,,0
+semantic,mv_fct_order_pnl_daily,MaterializedView,,31,"gold.fct_order_attribution, serve.ad_delivery_daily, serve.channel_pnl, serve.dim_campaign, serve.meta_ads_breakdown_daily",,,0
+semantic,mv_fct_pnl_daily,MaterializedView,,27,serve.ad_channel_pnl_daily,,,0
+semantic,mv_fct_product_pnl,MaterializedView,,30,"serve.ad_delivery_daily, serve.channel_pnl, serve.commerce_orders, serve.product_ad_line, serve.product_performance",,,0
+semantic,mv_ledger_order_component,MaterializedView,,19,"gold.fct_orders, gold.int_finance_order_lines, semantic.core_order_class, semantic.core_order_line_class",,,0
+semantic,mv_ledger_order_component_v2,MaterializedView,,20,"gold.fct_orders, gold.int_finance_order_lines, semantic.core_order_class, semantic.core_order_line_class",,,0
+semantic,mv_mart_product_ad_allocated,MaterializedView,,23,"gold.int_finance_order_lines, semantic.bridge_order_attribution, semantic.ledger_order_component_v2, serve.fct_ad_delivery, serve.fct_web_session",,,0
+semantic,mv_mart_profit_fact,MaterializedView,,51,"gold.fct_orders, semantic.bridge_order_attribution, semantic.core_order_class, semantic.ledger_order_component, serve.dim_traffic_source, serve.fct_ad_delivery, serve.meta_ads_breakdown_daily",,,0
+semantic,mv_mart_profit_fact_v2,MaterializedView,,52,"gold.fct_orders, semantic.bridge_order_attribution, semantic.core_order_class, semantic.ledger_order_component_v2, serve.dim_traffic_source, serve.fct_ad_delivery, serve.meta_ads_breakdown_daily",,,0
+semantic,snap_profit_monthly,MergeTree,0,53,,,,0
+semantic,snap_profit_monthly_v2,MergeTree,5460,54,,,,0

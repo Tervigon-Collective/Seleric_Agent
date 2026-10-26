@@ -30,6 +30,7 @@ from pydantic_ai.tools import Tool
 from seleric_swarm.agent.artifacts import EvidenceArtifact
 from seleric_swarm.agent.dependencies import SelericDeps
 from seleric_swarm.conversations.contracts import Artifact, ArtifactProvenance
+from seleric_swarm.services.mcp_query import relabel_undated, with_date_axis
 
 _log = logging.getLogger("seleric.agent.mcp_toolset")
 
@@ -38,9 +39,12 @@ ALLOW: tuple[str, ...] = (
     "catalogue_search_metrics", "catalogue_get_metrics", "catalogue_get_metric", "catalogue_list_dimensions",
     "catalogue_resolve_dimension", "catalogue_resolve_term", "catalogue_resolve_concept", "catalogue_resolve_values",
     "catalogue_resolve_brand", "catalogue_list_brands", "catalogue_get_ontology", "catalogue_related_metrics",
-    "modules_list", "metrics_query", "metrics_drilldown", "insights_explain",
+    "modules_list", "metrics_query", "metrics_drilldown", "insights_explain", "build_dataset_query",
 )
 QUERY_TOOLS = frozenset({"metrics_query", "metrics_drilldown"})
+DATASET_TOOL = "build_dataset_query"
+DATASET_PAGE = 5000  # rows per get page (the server's maximum)
+MAX_DATASET_EVIDENCE = int(os.getenv("AGENT_MAX_DATASET_EVIDENCE", "5000"))  # evidence points per dataset (an artifact write each; raise only after timing the store)
 
 MAX_ROWS = int(os.getenv("AGENT_MAX_ROWS", "60"))  # list cap inside a tool result
 MAX_RESULT_CHARS = int(os.getenv("AGENT_MAX_RESULT_CHARS", "14000"))
@@ -301,7 +305,7 @@ def _flag_evidence_cut(payload: dict[str, Any], provenance: ArtifactProvenance, 
         "window or fewer measures before stating a period total.")
 
 
-def write_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericDeps) -> list[str]:
+def write_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericDeps, *, max_points: int | None = None) -> list[str]:
     """Persist a query result's rows (and compare rows) as evidence; returns the artifact ids."""
     prov = payload.get("provenance") or {}
     columns = [c for c in payload.get("columns") or [] if isinstance(c, str)]
@@ -324,7 +328,7 @@ def write_evidence(payload: dict[str, Any], args: dict[str, Any], deps: SelericD
             continue
         rows = [r for r in rows if isinstance(r, dict)]
         # Whole rows only: a cut through a row would give one measure more days than another.
-        keep = max(MAX_EVIDENCE_ROWS // len(measures), 1)
+        keep = max((max_points or MAX_EVIDENCE_ROWS) // len(measures), 1)
         if len(rows) > keep:
             _flag_evidence_cut(payload, provenance, kept=keep, total=len(rows), rows=rows[:keep], columns=columns)
             rows = rows[:keep]
@@ -363,6 +367,56 @@ def write_query_evidence(payload: dict[str, Any], args: dict[str, Any], deps: Se
     if payload.get("query_id"):
         out[str(payload["query_id"])] = list(dict.fromkeys(i for ids in out.values() for i in ids))
     return out
+
+
+# ---- datasets (build_dataset_query) ------------------------------------------------------------
+def _stamp(bucket: Any) -> str:
+    """'2026-10-22 09:00' / '2026-10-22' as a Cube-style time bucket, which the evidence and table code read."""
+    text = str(bucket or "")
+    return f"{text[:10]}T{text[11:16]}:00.000" if len(text) >= 16 else f"{text[:10]}T00:00:00.000"
+
+
+def dataset_as_query_payload(payload: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """A dataset (server schema + every row) in the shape of a metrics_query result, so evidence, tables, charts and
+    run_python treat its handle like any query_id. Time column ``bucket.<grain>``; measures are the catalogue ids."""
+    schema = [c for c in payload.get("columns") or [] if isinstance(c, dict)]
+    prov = payload.get("provenance") if isinstance(payload.get("provenance"), dict) else {}
+    grain = str(payload.get("grain") or prov.get("grain") or "day")
+    measures = [c["name"] for c in schema if c.get("role") == "measure"]
+    dims = [c["name"] for c in schema if c.get("role") == "dimension"]
+    time_col = f"bucket.{grain}"
+    out_rows = [{time_col: _stamp(r.get("bucket")), **{k: r.get(k) for k in (*dims, *measures)}} for r in rows]
+    handle = str(payload.get("handle") or payload.get("query_id") or "")
+    return {
+        "query_id": handle, "handle": handle, "dataset": True,
+        "columns": [time_col, *dims, *measures], "schema": schema, "rows": out_rows,
+        "row_count": len(out_rows), "grain": grain,
+        "provenance": {**prov, "query_id": handle, "metric_ids": measures, "freshness": {"sources": prov.get("sources")}},
+        "warnings": list(payload.get("warnings") or []),
+        "notes": payload.get("notes"), "limitations": payload.get("limitations"), "stats": payload.get("stats"),
+        "partial_bucket": payload.get("partial_bucket"),
+    }
+
+
+async def load_dataset(gateway: Any, handle: str, today: date | None) -> tuple[list[dict[str, Any]], dict[str, Any], str | None]:
+    """(every row, the first page's envelope: schema columns and provenance, why it stopped or None) of a dataset."""
+    rows: list[dict[str, Any]] = []
+    first: dict[str, Any] = {}
+    offset: int | None = 0
+    while offset is not None:
+        page, is_err = await _execute(gateway, DATASET_TOOL,
+                                      {"action": "get", "handle": handle, "offset": offset, "limit": DATASET_PAGE}, today)
+        if is_err or not isinstance(page, dict):
+            return rows, first, compact(page)[:300]
+        first = first or page
+        rows.extend(r for r in page.get("rows") or [] if isinstance(r, dict))
+        offset = page.get("next_offset")
+    return rows, first, None
+
+
+async def load_dataset_rows(gateway: Any, handle: str, today: date | None) -> tuple[list[dict[str, Any]], str | None]:
+    rows, _, stopped = await load_dataset(gateway, handle, today)
+    return rows, stopped
 
 
 # ---- per-turn state and the tools --------------------------------------------------------------
@@ -413,7 +467,44 @@ async def _execute(gateway: Any, name: str, args: dict[str, Any], today: date | 
     if not is_err and isinstance(payload, dict):
         flag_partial(payload, today or ist_today())
         flag_composed(payload)
+        relabel_undated(payload)
     return payload, is_err
+
+
+async def _take_dataset(ctx: RunContext[SelericDeps], gateway: Any, state: TurnState, args: dict[str, Any],
+                        payload: dict[str, Any]) -> dict[str, Any] | None:
+    """A dataset the turn has not loaded yet: a build (or a saved slice), or a get on a handle from an earlier turn.
+    Load every row, record it as evidence under its handle and as a fetched result, and return what the model sees:
+    a build shows schema, preview, stats and notes (not the rows); a get shows the page it asked for."""
+    handle = str(payload["handle"])
+    rows, first, stopped = await load_dataset(gateway, handle, state.today)
+    is_build = "preview" in payload
+    base = payload if is_build else {**first, "handle": handle, "query_id": handle, "row_count": first.get("row_count", len(rows))}
+    full = dataset_as_query_payload(base, rows)
+    if stopped:
+        full.setdefault("warnings", []).append(f"Only {len(rows)} of {base.get('row_count')} rows could be loaded ({stopped}).")
+    state.payloads.append(full)
+    state.evidence.append({"tool": DATASET_TOOL, "args": args, "query_id": handle})
+    ids = write_evidence(full, args, ctx.deps, max_points=MAX_DATASET_EVIDENCE)
+    state.evidence_ids.extend(i for i in ids if i not in state.evidence_ids)
+    state.by_query[handle] = ids
+    note = (f"All {len(rows)} rows are loaded: pass query_id={handle!r} to run_python, show_chart or show_table. "
+            "Quote the notes, the latest complete bucket per source and the limitations. A null cell is missing data, not zero.")
+    if is_build:
+        seen = {k: v for k, v in payload.items() if k not in ("provenance", "how_to_use")}
+        seen["rows_loaded"] = len(rows)
+    else:
+        seen = dict(payload)
+    seen["agent_note"] = note
+    if full.get("warnings"):
+        seen["warnings"] = [*seen.get("warnings", []), *full["warnings"]]
+    return seen
+
+
+def _takes_date_axis(definition: dict[str, Any] | None, args: dict[str, Any]) -> bool:
+    """The tool's published schema has a ``date_axis`` and this call builds or queries (not a dataset get / delete)."""
+    props = ((definition or {}).get("schema") or {}).get("properties") or {}
+    return "date_axis" in props and args.get("action", "build") == "build"
 
 
 def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnState) -> list[Tool[SelericDeps]]:
@@ -423,6 +514,8 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
     def make(name: str) -> Any:
         async def call(ctx: RunContext[SelericDeps], **raw_args: Any) -> str:
             args = {k: v for k, v in raw_args.items() if v is not None}  # some models emit explicit nulls
+            if _takes_date_axis(defs.get(name), args):
+                args = with_date_axis(args, ctx.deps.date_axis, ctx.deps.catalogue)
             started = time.perf_counter()
             err = validate(defs, name, args)
             if err:
@@ -443,6 +536,11 @@ def build_mcp_tools(gateway: Any, defs_list: list[dict[str, Any]], state: TurnSt
                 if is_err:
                     state.seen.pop(key, None)  # a failure is not cached: the model's retry must run again
                     state.errors.append(f"{name}: {compact(payload)[:300]}")
+                elif (name == DATASET_TOOL and isinstance(payload, dict) and payload.get("handle")
+                      and ("preview" in payload or (args.get("action") == "get" and payload["handle"] not in state.by_query))):
+                    shown = await _take_dataset(ctx, gateway, state, args, payload)
+                    if shown is not None:
+                        payload = shown
                 else:
                     state.payloads.append(payload)
                     qid = payload.get("query_id") if isinstance(payload, dict) else None

@@ -310,6 +310,7 @@ async def run_v3_mission(
     query: str,
     timezone: str = "Asia/Kolkata",
     as_of: str | None = None,
+    date_axis: str | None = None,
     session_id: str | None = None,
     request_id: str | None = None,
     mission_id: str | None = None,
@@ -378,7 +379,7 @@ async def run_v3_mission(
                     mcp_call_timeout_s=float(getattr(runtime.settings, "mcp_call_timeout_s", 15.0)),
                     agent_retries=int(getattr(runtime.settings, "agent_retries", 2)),
                 ),
-                catalogue=catalogue, metrics=getattr(runtime, "metrics", None),
+                catalogue=catalogue, metrics=getattr(runtime, "metrics", None), date_axis=date_axis,
             )
             loop_result = await asyncio.wait_for(
                 run_turn(

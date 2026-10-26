@@ -942,7 +942,9 @@ def build_server() -> Any:
     from livekit.agents import AgentServer
 
     _import_plugins()
-    server = AgentServer()
+    # SDK default is one warm process per visible CPU (80 in this container).
+    # Each idle process loads Silero; that set filled the 8G swap file.
+    server = AgentServer(num_idle_processes=4)
     server.setup_fnc = _prewarm
     server.rtc_session()(_voice_entrypoint)
     return server

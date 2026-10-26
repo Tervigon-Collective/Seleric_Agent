@@ -21,6 +21,7 @@ from seleric_swarm.semantic import McpSemanticPort
 from seleric_swarm.services.mcp_query import (
     build_metrics_query_args,
     call_metrics_query,
+    with_date_axis,
 )
 
 # Single agent identity for MCPGateway allowlisting: the runtime has one agent loop.
@@ -42,6 +43,7 @@ async def cached_metrics_query(
 ) -> dict[str, Any]:
     import asyncio
 
+    arguments = with_date_axis(arguments, ctx.deps.date_axis, ctx.deps.catalogue)
     key = cache_key("seleric.metrics_query", arguments)
 
     def call() -> Awaitable[dict[str, Any]]:

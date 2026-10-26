@@ -79,6 +79,7 @@ from seleric_swarm.recovery import (
     RunWorkQueue,
 )
 from seleric_swarm.runtime import SwarmRuntime
+from seleric_swarm.services.mcp_query import scope_date_axis
 
 _log = logging.getLogger("seleric.api.conversations")
 
@@ -1455,6 +1456,7 @@ async def _execute_submission(
     as_of: str | None,
     request_id: str,
     execution_mode: str,
+    date_axis: str | None = None,
     assistant_message_id: str,
     full_diagnostic: bool = True,
     full_prediction: bool = True,
@@ -1575,6 +1577,7 @@ async def _execute_submission(
             query=query,
             timezone=timezone,
             as_of=as_of,
+            date_axis=date_axis,
             session_id=run.thread_id,
             request_id=request_id,
             full_diagnostic=full_diagnostic,
@@ -1941,6 +1944,7 @@ class SubmissionRunExecutor:
             ),
             request_id=str(submission.get("request_id") or run.id),
             execution_mode=str(submission.get("execution_mode") or "development"),
+            date_axis=submission.get("date_axis") or None,
             assistant_message_id=assistant_message_id,
             full_diagnostic=bool(submission.get("full_diagnostic", True)),
             full_prediction=bool(submission.get("full_prediction", True)),
@@ -2030,6 +2034,10 @@ async def submit_message(
             raise HTTPException(status_code=409, detail="attachment is already associated")
         attachments.append(attachment)
 
+    try:
+        date_axis = scope_date_axis(body.scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     context_bundle = ContextBuilder(repositories).build(
         thread,
         query=query,
@@ -2130,6 +2138,7 @@ async def submit_message(
                                 ),
                                 "as_of": body.scope.get("as_of")
                                 or body.scope.get("asOf"),
+                                "date_axis": date_axis,
                                 "request_id": request_id,
                                 "execution_mode": body.execution_mode,
                                 "assistant_message_id": assistant_message.id,
