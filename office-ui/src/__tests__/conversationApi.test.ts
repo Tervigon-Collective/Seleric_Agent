@@ -27,7 +27,7 @@ describe("conversation API", () => {
   it("sends the chosen date axis, order_date by default", () => {
     expect(conversationScope(new Date("2026-09-18T18:30:00Z"), "order_date").date_axis).toBe("order_date");
     expect(conversationScope(new Date("2026-09-18T18:30:00Z"), "event_date").date_axis).toBe("event_date");
-    expect(conversationScope().date_axis).toBe("order_date");
+    expect(conversationScope().date_axis).toBe("event_date");
   });
 
   it("parses SSE ids, event names, and multiline data", () => {

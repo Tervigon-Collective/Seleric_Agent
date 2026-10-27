@@ -867,7 +867,6 @@ button { color: inherit; }
 .send-btn:disabled { opacity: 0.25; cursor: default; }
 .send-btn.cancel-btn { background: var(--danger); color: #fff; }
 .voice-controls { position: absolute; right: 50px; bottom: 10px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); }
-.date-axis-select { height: 32px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text-dim); font-size: 11px; padding: 0 6px; cursor: pointer; }
 .voice-btn {
   width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 9px;
   background: var(--panel); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: var(--text-dim);

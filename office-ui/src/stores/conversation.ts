@@ -398,10 +398,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const stillRunning = Boolean(latestRunId && !terminal);
       if (stillRunning && latestRunId) {
         const runId = latestRunId;
+        // Same rule as applyRunEvent: thinking deltas feed thinkingText, never the step label.
         const lastProgress = [...runEvents].reverse().find(
-          (event) => typeof event.event_type === "string" && event.event_type.startsWith("agent.") && asText(event.summary),
+          (event) => typeof event.event_type === "string" && event.event_type.startsWith("agent.")
+            && event.event_type !== "agent.thinking_delta" && asText(event.summary),
         )?.summary;
         const resumeProgress = asText(lastProgress);
+        const resumeThinking = runEvents
+          .filter((event) => event.event_type === "agent.thinking_delta")
+          .map((event) => optionalString(payloadOf(event).delta) ?? "")
+          .join("");
         subscriptions.get(id)?.();
         subscriptions.set(id, subscribeToRunEvents(runId, {
           onEvent: (event) => {
@@ -436,6 +442,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           submitting: true,
           currentRunId: runId,
           progress: resumeProgress,
+          thinkingText: resumeThinking || null,
         }));
       } else {
         set((s) => ({ messages: { ...s.messages, [id]: messages }, loading: false, submitting: false, currentRunId: null, progress: null }));
