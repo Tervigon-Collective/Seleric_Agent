@@ -34,6 +34,7 @@ _HYPHENS = "-‐‑‒–—−"  # hyphen, non-breaking hyphen, dashes, minus: 
 
 # A payload with at most this many numbers may combine freely.
 SMALL_POOL = 40
+SERIES_LINE = 3  # out-of-scope rows on one line that make it a series listing, not a swapped figure
 
 
 # ---- answer numbers -------------------------------------------------------------------------
@@ -436,7 +437,8 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
     scoped: dict[str, set[str]] = {}
     line_operands: dict[str, list[float]] = {}  # figure -> the other non-percent figures on its line
     carry: set[str] = set()
-    for line in answer.split("\n"):
+    line_of: dict[str, int] = {}  # figure -> index of its answer line
+    for li, line in enumerate(answer.split("\n")):
         if not line.strip():
             carry = set()
             continue
@@ -455,6 +457,7 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         for n in line_nums:
             if scope:
                 scoped.setdefault(n["text"] + "|" + str(n["value"]), scope)
+                line_of.setdefault(n["text"] + "|" + str(n["value"]), li)
 
     def group(scope: set[str]) -> set[float]:
         return set(loose).union(*(by_label[lab] for lab in scope)) if scope else set(loose)
@@ -488,6 +491,7 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         if len(left) == len(pending):
             break
         pending = left
+    swapped: dict[int, list[str]] = {}  # answer line -> the "wrong row" notes it would raise
     for i, an in enumerate(ans_nums):
         kind = status.get(i)
         if kind == "sign":
@@ -504,9 +508,13 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
         if scope and not classify(an, sorted(group(scope)), [group(scope) | accepted, *small]):
             owners = sorted(lab for lab, ns in by_label.items() if lab not in scope and classify(an, sorted(ns)) == "measured")
             if len(owners) == 1:  # a figure found in several rows is a coincidence, not a swap
-                out["misbound"].append(
+                swapped.setdefault(line_of.get(an["text"] + "|" + str(an["value"]), -1), []).append(
                     f"{an['text']} on the line about {', '.join(sorted(shown[s] for s in scope))} is not in that row; "
                     f"it is in the row for {', '.join(shown[o] for o in owners[:3])}")
+    # shortcut: 3+ out-of-scope rows on one line = a series listing ("week 10-20 -> 10-26: a, b, c, d"), not a swapped figure
+    for notes in swapped.values():
+        if len(notes) < SERIES_LINE:
+            out["misbound"].extend(notes)
     return out
 
 

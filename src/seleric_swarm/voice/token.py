@@ -12,6 +12,7 @@ back to ``default_workspace_id`` / ``default_user_id`` (blocker B6 in
 from __future__ import annotations
 
 import json
+import secrets
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -119,7 +120,10 @@ def mint_voice_token(body: VoiceTokenRequest, request: Request) -> VoiceTokenRes
 
     principal = _authenticated_principal(request)
     thread = _resolve_thread(_repositories(runtime), principal, body)
-    room = room_name_for_thread(thread.id)
+    # Fresh room per join: LiveKit dispatches the agent only when a room is
+    # created, and the agent session closes when its participant leaves, so
+    # rejoining a still-open room (empty_timeout 300s) lands in front of a dead agent.
+    room = f"{room_name_for_thread(thread.id)}-{secrets.token_hex(4)}"
     ttl_s = int(getattr(settings, "voice_token_ttl_s", 900))
 
     token = mint_room_jwt(

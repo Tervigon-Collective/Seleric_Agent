@@ -59,6 +59,13 @@ export function splitAnswerAndContext(raw: string): { answer: string; context: s
   const answer = kept.join("\n").trimEnd();
   return { answer, context: ctx.length ? ctx.join(" · ") : null };
 }
+/** The answer's closing "Next: <question>" line becomes a click-to-ask button, not prose. */
+export function splitNext(answer: string): { answer: string; next: string | null } {
+  const lines = answer.split("\n");
+  const m = /^\s*\*{0,2}Next:?\*{0,2}\s*(.+?)\s*$/i.exec(lines[lines.length - 1] ?? "");
+  if (!m) return { answer, next: null };
+  return { answer: lines.slice(0, -1).join("\n").trimEnd(), next: m[1].replace(/^\*+|\*+$/g, "").trim() || null };
+}
 const sourcesOf = (message: Message) => message.parts.filter((part) => part.type === "SOURCE");
 
 // SOURCE parts collapse into one trailing disclosure so evidence rows don't
@@ -68,17 +75,21 @@ const sourcesOf = (message: Message) => message.parts.filter((part) => part.type
 // A feedback part pins reader verdicts to the message.
 const assistantContent = (message: Message) => {
   let context: string | null = null;
+  let next: string | null = null;
   const content = message.parts
     .filter((part) => part.type !== "SOURCE")
     .flatMap((part) => {
       if (part.type === "TEXT" && typeof part.content === "string") {
         const split = splitAnswerAndContext(part.content);
         if (split.context) context = context ? `${context} · ${split.context}` : split.context;
-        if (!split.answer.trim()) return [];
-        return [{ type: "data-seleric-part" as const, data: { ...part, content: split.answer } }];
+        const tail = splitNext(split.answer);
+        next = tail.next ?? next;
+        if (!tail.answer.trim()) return [];
+        return [{ type: "data-seleric-part" as const, data: { ...part, content: tail.answer } }];
       }
       return [{ type: "data-seleric-part" as const, data: part }];
     });
+  if (next) content.push({ type: "data-seleric-next" as const, data: { text: next } } as never);
   const sources = sourcesOf(message);
   const withSources = sources.length
     ? [...content, { type: "data-seleric-sources" as const, data: sources }]

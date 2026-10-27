@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { SelericFeedback, SelericContext } from "../components/Transcript";
-import { splitAnswerAndContext } from "../providers/SelericAssistantRuntime";
+import { splitAnswerAndContext, splitNext } from "../providers/SelericAssistantRuntime";
 import { conversationsApi } from "../api/conversations";
 import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
@@ -217,5 +217,16 @@ describe("sharing and keyboard polish", () => {
     expect(container.querySelector('[aria-label="Conversations"]')).toBeTruthy();
     act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(container.querySelector('[aria-label="Conversations"]')).toBeNull();
+  });
+});
+
+describe("next-step button", () => {
+  it("lifts a trailing Next: question out of the answer", () => {
+    expect(splitNext("Sales are up.\n\nNext: Want the split by channel?")).toEqual({
+      answer: "Sales are up.", next: "Want the split by channel?",
+    });
+  });
+  it("leaves answers without a Next line alone", () => {
+    expect(splitNext("Sales are up.")).toEqual({ answer: "Sales are up.", next: null });
   });
 });

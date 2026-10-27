@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Composer } from "./components/Composer";
 import { DetailPanel } from "./components/DetailPanel";
 import { PanelErrorBoundary } from "./components/ErrorBoundary";
@@ -10,7 +10,7 @@ import { CommandSearch } from "./components/CommandSearch";
 import { AdminDiagnostics } from "./components/AdminDiagnostics";
 import { PromptRegistryModal } from "./components/PromptRegistryModal";
 import {
-  CheckIcon, LinkIcon, MenuIcon, MoonIcon, PanelRightIcon, PromptsIcon, SearchIcon, SlidersIcon, SunIcon,
+  CheckIcon, LinkIcon, MenuIcon, MoonIcon, MoreIcon, PanelRightIcon, PromptsIcon, SearchIcon, SlidersIcon, SunIcon,
 } from "./components/icons";
 import { SelericAssistantRuntimeProvider } from "./providers/SelericAssistantRuntime";
 import { useConversationStore } from "./stores/conversation";
@@ -19,14 +19,15 @@ import { isTraceableMissionId, useOffice } from "./store";
 import { readRoute, writeRoute } from "./routing";
 
 /** Copy-link sharing: the URL already encodes the thread, so the link reopens it. */
-function ShareButton({ threadId }: { threadId: string | null }) {
+function ShareButton({ threadId, className = "", role }: { threadId: string | null; className?: string; role?: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
   if (!threadId) return null;
   return (
     <button
-      className="search-trigger"
+      className={`search-trigger ${className}`.trim()}
+      role={role}
       aria-label={copied ? "Link copied" : "Copy link to this conversation"}
       title="Copy link to this conversation"
       onClick={() => {
@@ -46,6 +47,27 @@ function ShareButton({ threadId }: { threadId: string | null }) {
       {copied ? <CheckIcon size={14} /> : <LinkIcon size={14} />}
       <span className="label">{copied ? "Copied" : "Share"}</span>
     </button>
+  );
+}
+
+/** Narrow screens fold the secondary header actions into one menu (CSS shows it only there). */
+function HeaderMenu({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: Event) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    const esc = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  return (
+    <div className="header-more" ref={root}>
+      <button className="icon-btn" aria-label="More actions" aria-haspopup="menu" aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}><MoreIcon /></button>
+      {open && <div className="header-menu" role="menu" onClick={() => setOpen(false)}>{children}</div>}
+    </div>
   );
 }
 
@@ -185,7 +207,7 @@ export default function App() {
         {currentTitle && <span className="thread-context-title" title={currentTitle}>{currentTitle}</span>}
         <span className="header-spacer" />
         <button
-          className="search-trigger"
+          className="search-trigger hide-sm"
           onClick={() => setPromptsOpen(true)}
           aria-label="Open prompt registry"
           title="Prompt registry"
@@ -196,7 +218,7 @@ export default function App() {
           aria-keyshortcuts="Control+K Meta+K" aria-label="Search conversations">
           <SearchIcon size={14} /><span className="label">Search</span><kbd>⌘K</kbd>
         </button>
-        <ShareButton threadId={selectedThreadId} />
+        <ShareButton threadId={selectedThreadId} className="hide-sm" />
         <button
           className="icon-btn"
           aria-label="Toggle conversation details"
@@ -204,11 +226,19 @@ export default function App() {
           onClick={toggleDetails}
           title="Inspector (causal, debug, memory)"
         ><PanelRightIcon /></button>
-        <button className="icon-btn" onClick={() => setDiagnosticsOpen(true)}
+        <button className="icon-btn hide-sm" onClick={() => setDiagnosticsOpen(true)}
           aria-label="Open admin diagnostics" title="Diagnostics"><SlidersIcon /></button>
-        <button className="icon-btn" onClick={() => setDark((value) => !value)} aria-label={`Use ${dark ? "light" : "dark"} theme`} title="Theme">
+        <button className="icon-btn hide-sm" onClick={() => setDark((value) => !value)} aria-label={`Use ${dark ? "light" : "dark"} theme`} title="Theme">
           {dark ? <SunIcon /> : <MoonIcon />}
         </button>
+        <HeaderMenu>
+          <button role="menuitem" onClick={() => setPromptsOpen(true)}><PromptsIcon size={15} />Prompts</button>
+          <ShareButton threadId={selectedThreadId} role="menuitem" />
+          <button role="menuitem" onClick={() => setDiagnosticsOpen(true)}><SlidersIcon size={15} />Diagnostics</button>
+          <button role="menuitem" onClick={() => setDark((value) => !value)}>
+            {dark ? <SunIcon size={15} /> : <MoonIcon size={15} />}{dark ? "Light theme" : "Dark theme"}
+          </button>
+        </HeaderMenu>
       </header>
       <main className="conversation-layout">
         {(sidebarOpen || detailsOpen) && <button className="mobile-panel-backdrop" aria-label="Close open panel" onClick={closePanels} tabIndex={-1} />}

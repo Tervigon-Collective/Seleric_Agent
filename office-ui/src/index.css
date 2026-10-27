@@ -167,6 +167,8 @@ button { color: inherit; }
   height: 100%;
   display: grid;
   grid-template-rows: 52px minmax(0, 1fr);
+  /* An implicit `auto` column grows to a wide table's intrinsic width and drags the page sideways. */
+  grid-template-columns: minmax(0, 1fr);
   background: var(--bg);
 }
 
@@ -518,6 +520,15 @@ button { color: inherit; }
 /* Report metadata lifted out of the answer prose (Period / Currency / Data
  * as of). Rendered alongside Sources, never copied with the answer. */
 .message-context { margin: 8px 0 0; color: var(--text-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+/* The answer's closing "Next:" question as a one-click follow-up. */
+.next-step {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; margin: 10px 0 0; padding: 8px 14px;
+  border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--text);
+  font-size: 13px; text-align: left; cursor: pointer;
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease;
+}
+.next-step:hover:not(:disabled) { background: var(--accent); color: #fff; }
+.next-step:disabled { opacity: 0.5; cursor: default; }
 .message-actions .copy-failed { color: var(--danger, #c0392b); }
 
 /* Answer feedback — quiet verdict row pinned to each final answer. */
@@ -1185,7 +1196,7 @@ button.btn:hover { border-color: var(--line-strong); }
    Office workspace (spatial view) — inherits tokens, layout preserved
    =========================================================================== */
 
-.office-workspace { height: 100%; min-height: 0; display: grid; grid-template-rows: 48px minmax(0, 1fr) auto; }
+.office-workspace { height: 100%; min-height: 0; display: grid; grid-template-rows: 48px minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); }
 .app { display: grid; grid-template-rows: 48px 1fr auto; height: 100%; position: relative; }
 .topbar { display: flex; align-items: center; gap: 14px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); z-index: 5; }
 .topbar .brand { font-weight: 700; letter-spacing: 0; font-size: 14px; }
@@ -1353,6 +1364,66 @@ button.btn:hover { border-color: var(--line-strong); }
   .composer { padding-bottom: 30px; }
   .composer small.hint { display: none; }
   .empty-state h1 { font-size: 20px; }
+}
+
+/* ---- Mobile shell (phones): header fits one row, secondary actions fold into a menu ---- */
+.header-more { display: none; position: relative; }
+.header-menu {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 60; min-width: 196px;
+  padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-lg);
+}
+.header-menu button, .header-menu .search-trigger {
+  display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; max-width: none; min-height: 44px;
+  padding: 0 12px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--text); font-size: 14px; text-align: left; cursor: pointer;
+}
+.header-menu button:hover { background: var(--hover); }
+.header-menu .search-trigger span.label { display: inline; }
+
+@supports (height: 100dvh) {
+  html, body, #root { height: 100dvh; }
+}
+
+@media (max-width: 767px) {
+  .hide-sm { display: none !important; }
+  .header-more { display: block; }
+  .shell-header { z-index: 50; padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+  .brand-button { padding: 4px; }
+  .brand-button strong { display: none; }
+  .workspace-switch button { padding: 5px 9px; font-size: 12px; }
+  .icon-btn, .search-trigger { min-width: 36px; height: 36px; justify-content: center; }
+  .thread-sidebar, .detail-panel { width: min(360px, 92vw); }
+  /* 16px stops iOS Safari zooming the page when the composer is focused. */
+  .composer textarea, .composer-backdrop { font-size: 16px; }
+  .composer-wrap { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .send-btn, .voice-btn { width: 36px; height: 36px; }
+  .voice-controls { right: 52px; }
+  .chart-modal { max-height: calc(100dvh - 24px); }
+}
+@media (max-width: 560px) {
+  .brand-button { display: none; }
+}
+@media (max-width: 359px) {
+  .shell-header { gap: 2px; }
+  .workspace-switch button { padding: 5px 6px; font-size: 11.5px; }
+  .icon-btn, .search-trigger { min-width: 32px; }
+}
+/* Office toolbar: one swipeable row instead of eleven controls fighting for the width. */
+@media (max-width: 1023px) {
+  .topbar { gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  .topbar::-webkit-scrollbar { display: none; }
+  .topbar > * { flex: none; }
+  .topbar .spacer, .topbar .mission-title { display: none; }
+  .topbar select { max-width: 180px !important; }
+  .topbar .btn { min-height: 34px; }
+  .timeline .tl-head { overflow-x: auto; scrollbar-width: none; }
+  .timeline .tl-head > * { flex: none; }
+}
+@media (max-width: 767px) {
+  .minimap { display: none; } /* the topbar mission picker covers it */
+  .tl-row { grid-template-columns: 52px 1fr; }
+  .tl-row .ev-type { grid-column: 2; }
 }
 
 @media (prefers-reduced-motion: reduce) {

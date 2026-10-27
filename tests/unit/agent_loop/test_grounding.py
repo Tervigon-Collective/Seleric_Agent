@@ -254,3 +254,13 @@ def test_explicit_sign_must_match_the_data():
     assert wrong["sign_mismatch"] == ["96,900"] and wrong["measured"] == 0
     assert any("sign" in line for line in problems(wrong))
     assert grounding("- ₹96,900 net profit", p)["sign_mismatch"] == []  # a list bullet is not a sign
+
+
+def test_series_listing_line_is_not_misbound():
+    # live MS3-ad015c8cc1: "lowest on 10-22 ... week 10-20 -> 10-26: a, b, c, ..." flagged every day not named on the line
+    vals = [53791.61, 78857.21, 31734.54, 66875.96, 43650.36, 42043.27, 44812.72]
+    days = {"query_id": "q1", "rows": [{"report_date": f"2026-10-{20 + i}T00:00:00.000", "gross_sales": str(v)} for i, v in enumerate(vals)]}
+    ans = ("Lowest on 2026-10-22 at ₹31,735 (week 2026-10-20 → 2026-10-26: daily gross sales = ₹53,792, ₹78,857, ₹31,735, "
+           "₹66,876, ₹43,650, ₹42,043, ₹44,813).")
+    assert not grounding(ans, [days])["misbound"]
+    assert grounding("- 2026-10-22: ₹78,857", [days])["misbound"]
