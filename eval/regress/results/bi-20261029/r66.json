@@ -1,0 +1,44 @@
+{
+ "n": 66,
+ "aspect": "bi_cross",
+ "q": "Which products get lots of page views but few sales?",
+ "thread": "thread_473a1cef9221409994652852f017c5bc",
+ "mission": "MS3-1b1ac4b659",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 109,
+ "elapsed_s": 104.648,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 5,
+  "measured": 5,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "catalogue_list_dimensions",
+  "metrics_query",
+  "audit_entities"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "By PDP page-view date for Tilting Heads (last 7 days: 2026-10-22..2026-10-28), these product pages had high attention but very few credited orders \u2014 a sign to check their PDPs and conversion funnel.\n\n- calmfrost-puffer-jacket \u2014 189 page views, 0 credited orders.  \n- buy-frostfit-jacket-for-pets-tilting-heads \u2014 79 page views, 1 credited order.  \n- empress-plush-bed \u2014 72 page views, 0 credited orders.  \n- gulzaar-kurta \u2014 68 page views, 0 credited orders.  \n- shop-ave-walk-harness-set-with-leash-collar-tilting-heads \u2014 58 page views, 0 credited orders.\n\nNotes: I used product handles (URL slugs) because the PDP visits data is by product_handle; product titles are not available in this view. These counts are PDP page views vs PDP credited orders for 2026-10-22..2026-10-28.\n\nWorth checking: add-to-cart rate and PDP engagement for these handles, current price/stock/variant availability, and whether the traffic source (platform/campaign) is sending low-intent visits.\n\nPeriod: 2026-10-22..2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28\nNext: Break this down by product title and add-to-cart actions for these product handles."
+}

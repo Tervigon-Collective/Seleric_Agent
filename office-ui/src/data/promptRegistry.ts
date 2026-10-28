@@ -247,6 +247,50 @@ export const PROMPT_REGISTRY: RegistryPrompt[] = [
     tags: ["golden", "successful"],
   },
 
+  // BI + causal round 2026-10-29 (regression.json 48-82): numbers or root cause checked against ClickHouse
+  {
+    id: "uat-bi-sept-walkthrough",
+    text: "Walk me through September: how much did we sell, what did it cost us to get those sales, and what was left at the end?",
+    domain: "cross",
+    level: "L5",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-bi-best-worst-day",
+    text: "In October so far, what was our best day and our worst day for profit, and what was different about them?",
+    domain: "operations",
+    level: "L6",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-bi-whatif-meta-cut",
+    text: "If we cut Meta spend by 30% next month, what would happen to our profit?",
+    domain: "marketing",
+    level: "L6",
+    tags: ["golden", "successful"],
+  },
+  {
+    id: "uat-bi-scope",
+    text: "What kinds of questions can you answer for me, and what can't you answer?",
+    domain: "operations",
+    level: "L2",
+    tags: ["successful"],
+  },
+  {
+    id: "uat-why-oct9-sales-drop",
+    text: "Why did sales drop on 9 October?",
+    domain: "sales",
+    level: "L7",
+    tags: ["golden", "diagnosis", "successful"],
+  },
+  {
+    id: "uat-why-ads-cause-orders",
+    text: "Do our ads actually cause more orders, or do the two just move together?",
+    domain: "marketing",
+    level: "L7",
+    tags: ["golden", "diagnosis", "successful"],
+  },
+
   // ── Extra diagnosis / domain starters (stress + UI chips) ───────────────
   {
     id: "diag-roas-decline",

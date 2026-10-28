@@ -1,0 +1,38 @@
+{
+ "n": 61,
+ "aspect": "bi_whatif",
+ "q": "What's the safest way to test that before committing?",
+ "thread": "thread_1a14b9e94cbe4f5e9ec4a8d4b7293bd2",
+ "mission": "MS3-2cf092dec2",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 42,
+ "elapsed_s": 40.231,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 0,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 3,
+  "measured": 3,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Run a staged A/B test on Meta by campaign: cut spend in a controlled subset of campaigns (or ad sets) and measure the actual sales/profit impact before you change account-level budgets. This limits downside while giving a clean signal about responsiveness.\n\nHow to run it (safe, low-risk steps)\n- Pick the test window and sample: 14 days is a good balance (gives enough conversions). Compare it with the immediately preceding 14-day window (same weekdays) so seasonality is matched.\n- Test design (two patterns; pick one):\n  - Holdout campaigns: keep a set of stable campaigns at current spend (control) and reduce spend by 30% in a matched set of similar campaigns (treatment). Match by historical spend, ROAS and audience. This isolates the effect of spend changes.\n  - Geo / audience split: run the 30% cut in one geography or audience segment and keep the other as control (useful when campaigns target many regions).\n- Metrics to watch (by order date basis):\n  - Primary: Net sales (P&L basis) (P&L net sales) and net profit (order-date net profit) \u2014 the business outcome.\n  - Secondary: orders, AOV, return rate / cancelled orders, and ad spend (P&L: Ad spend (P&L basis)). Watch conversion rate (sessions \u2192 orders) if you can align it.\n  - Timing: check early signals (3\u20134 days) but make decisions only after the full 14-day window.\n- Analysis approach:\n  - Compare absolute net profit and net sales (not ratios) between treatment and control for the test window vs their previous windows; use percent change and contribution to overall profit.\n  - Flag campaign-level winners/losers by whether the treatment lost more profit than the ad spend saved.\n  - Watch for delayed effects (higher returns or cancellations in subsequent days); extend observation for returns if needed.\n- Practical safeguards:\n  - Don\u2019t cut all spend in any campaign; phase the reduction (start with a smaller initial cut, then move to 30%) to reduce shock and get early signals.\n  - Limit the test to campaigns that historically drove measurable sales (enough orders) \u2014 avoid experimenting on very low-volume campaigns where results are \u201cearly signals.\u201d\n  - Keep creatives, landing pages and bids constant during the test; only change budget to isolate spend effect.\n  - Pre-register the decision rule: e.g., if net profit across treatment is better by at least the saved spend after 14 days, roll the cut wider; if net sales fall beyond the breakeven threshold, revert.\n\nWorth checking: run the test by campaign on Meta with ad spend (P&L), net sales (P&L basis) and net profit; audit campaign-level results for \u201cspend that bought nothing\u201d before scaling the cut.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break the proposed test down by Meta campaign (ad spend, net sales (P&L basis), net profit)."
+}

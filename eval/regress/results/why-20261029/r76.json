@@ -1,0 +1,45 @@
+{
+ "n": 76,
+ "aspect": "why_rootcause",
+ "q": "Why did Meta spend jump so much yesterday?",
+ "thread": "thread_f153c7d4f56b4833954e2e0b93396bd1",
+ "mission": "MS3-f609e8ad6d",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 46,
+ "elapsed_s": 43.548,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 14,
+  "measured": 14,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "any of ['TRAVELPODBED', 'TH-475', 'DIWALI', 'new campaign', 'launched']"
+  }
+ ],
+ "answer": "Meta ad spend jumped sharply yesterday: spend was \u20b945,594 on 2026-10-28 versus a usual level of \u20b927,611 (\u2248+65.1%) and up 64.6% vs 2026-10-27. That large, concentrated rise drove a big fall in efficiency (ROAS/MER) even though revenue barely moved \u2014 it\u2019s a real delivery event, not a data glitch.\n\nWhat changed, in order of impact\n- Volume and price both rose: impressions +112% and clicks +87.4% versus 2026-10-27, while CPC fell (\u20b931.4 \u2192 \u20b927.6) but cost per landing-page view rose (\u20b936.07 \u2192 \u20b941.11, +14.0%). The higher price per engaged visit explains ~73% of the spend lift; higher volume explains ~27%.\n- Reach mix shifted: one campaign/ad cohort (DIWALI SALE / DIWALI SALE-27OCT and related adsets) moved from zero share to ~7% of volume and raised the campaign-level landing-page view rate (Simpson\u2019s paradox \u2014 mix change increased the overall rate).\n- Logged edits: budget change events rose (17 \u2192 26 budget change logs yesterday). Bid_strategy and status change logs did not spike, so they were not flagged as drivers.\n\nWhy we can\u2019t name a single cause\n- The diagnosis finds the mechanics (more impressions, more clicks, higher cost per LPV) but no single tested causal driver met the threshold (budget edits correlate but the analysis cannot prove they caused the surge rather than responded to it).\n\nWorth checking:\n- Inspect the campaigns added or re-queued yesterday (DIWALI SALE / 27OCT ads and the ICP Pet Parent adset) and the specific budget edits timestamped yesterday.\n\nPeriod: 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this down by campaign and ad set (ad_platform = Meta)"
+}

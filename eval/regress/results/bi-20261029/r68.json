@@ -1,0 +1,43 @@
+{
+ "n": 68,
+ "aspect": "bi_cross",
+ "q": "So for the worst one, what would you change first?",
+ "thread": "thread_473a1cef9221409994652852f017c5bc",
+ "mission": "MS3-dea2eb8855",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 46,
+ "elapsed_s": 40.543,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 2,
+  "measured": 2,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "show_table",
+  "escalate",
+  "metrics_query",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "The worst-converting product by page views and sales in the last 7 days is \"calmfrost-puffer-jacket,\" with 189 PDP page views and no credited orders. Its add-to-cart rate and engagement metrics show:\n\n- **Add-to-cart rate**: 0.0 (no add-to-cart actions recorded).\n- **Average engaged seconds**: Not available for this product.\n\n### First action to consider:\n- **Check the PDP content**: Ensure the product page clearly communicates the value proposition, has high-quality images, and addresses potential customer concerns (e.g., sizing, material, or use case).\n- **Review traffic sources**: Investigate whether the traffic to this page is coming from low-intent sources or campaigns.\n- **Test pricing and promotions**: Consider running a limited-time discount or bundle offer to increase conversions.\n\nWorth checking: Traffic sources and campaigns driving visits to this product, and whether ad spend is allocated to it.\n\nPeriod: 2026-10-22..2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28\nNext: Break down traffic sources and campaigns driving visits to \"calmfrost-puffer-jacket\"."
+}

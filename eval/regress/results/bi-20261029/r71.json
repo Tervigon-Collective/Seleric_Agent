@@ -1,0 +1,41 @@
+{
+ "n": 71,
+ "aspect": "bi_trap",
+ "q": "why did it jump in september?",
+ "thread": "thread_c0802dbadc6d4e35ad12d2e52941c228",
+ "mission": "MS3-f471098016",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 59,
+ "elapsed_s": 49.939,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 18,
+  "measured": 18,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Short answer: September didn\u2019t show a clear jump in CAC for new customers \u2014 ad spend and new-customer counts both fell by ~46%, so CAC stayed roughly level once those moves are accounted for. The data points to matched declines in investment and volume, not a single failing channel.\n\nWhat changed, and why it matters\n- Ad spend fell from \u20b922,03,894 (Aug) to \u20b911,93,322 (Sep) (\u221245.9%) while new customers fell from 1,278 to 687 (\u221246.2%). Because spend and new-customer volume fell almost the same amount, their effects largely offset and CAC did not move strongly in one direction.\n- By platform: Meta spend dropped \u20b915,77,922 \u2192 \u20b98,55,043 and new customers 833 \u2192 439; Google spend dropped \u20b96,25,972 \u2192 \u20b93,38,279 and new customers 372 \u2192 193. Both platforms contributed similar proportional declines.\n- Secondary signals: gross and net sales also fell ~44\u201346%, contribution margin declined less (-36.6%) and Net ROAS improved slightly \u2014 the funnel compressed but efficiency per rupee was not the main issue.\n\nWorth checking:\n- Which campaigns had the biggest absolute drop in new-customer volume (not just share) \u2014 that will show where to restore spend first.\n\nPeriod: 2026-09-01..2026-09-30 vs 2026-08-01..2026-08-31 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break this down by channel and campaign."
+}
