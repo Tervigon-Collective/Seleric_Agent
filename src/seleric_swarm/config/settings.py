@@ -149,6 +149,13 @@ class Settings(BaseSettings):
 
     mcp_config_path: str = "config/mcp_servers.yaml"
     seleric_mcp_url: str = ""
+    # session email: Microsoft Graph app + the mailbox it sends as (same variables ReportAutomation uses)
+    azure_tenant_id: str = ""
+    azure_client_id: str = ""
+    azure_client_secret: str = ""
+    email_sender: str = ""
+    email_contacts_path: str = "config/email_contacts.yaml"
+    email_allowed_domains: str = "seleric.ai"  # comma list: explicit addresses elsewhere need an entry in the contacts file
     seleric_mcp_token: str = ""
     # Chronos-2 standalone inference service (chronos/docker-compose.yml).
     # Empty → forecast pipeline skips Chronos and falls back to ETS.

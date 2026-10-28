@@ -1,0 +1,48 @@
+{
+ "n": 40,
+ "aspect": "uat_web",
+ "q": "Where are people dropping off between landing on the site and paying? Is mobile worse than desktop?",
+ "thread": "thread_587ec9c858554bdc8106b18af5d610c9",
+ "mission": "MS3-37425e22ec",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 113,
+ "elapsed_s": 110.935,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 5,
+ "llm_calls": 5,
+ "grounding": {
+  "derived": [],
+  "numbers": 6,
+  "measured": 6,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_resolve_dimension",
+  "build_dataset_query",
+  "build_dataset_query",
+  "show_table",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "any of ['mobile', 'device']"
+  }
+ ],
+ "answer": "The data shows that the drop-offs between landing on the site and paying are significant, with conversion rates averaging 1.5% across all devices. Here's the breakdown:\n\n- **Unattributed device type**: Out of 13,704 sessions, 723 resulted in add-to-cart actions (5.3% of sessions). The average checkout rate was 2.9%, and the average conversion rate was 1.5%.\n\nMobile and desktop-specific data was not available in this dataset, as all sessions were grouped under \"unattributed.\" If you need device-specific insights, we can refine the query further.\n\nPeriod: 2026-10-22 to 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Refine this by device type to compare mobile and desktop."
+}

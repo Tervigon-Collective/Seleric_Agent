@@ -105,11 +105,27 @@ describe("compact thread context", () => {
     useConversationStore.setState({
       selectedThreadId: "t1",
       threads: [thread("t1", "Why did ROAS decline?")],
-      messages: { t1: [] },
+      messages: {
+        t1: [{
+          id: "m1", thread_id: "t1", workspace_id: "w", user_id: "u", role: "USER",
+          parts: [{ type: "TEXT", content: "Why did ROAS decline?" }],
+          run_id: null, parent_message_id: null, created_at: "now",
+        }],
+      },
     });
     act(() => root.render(<App />));
     const context = container.querySelector(".thread-context");
     expect(context?.textContent).toContain("Why did ROAS decline?");
     expect(context?.querySelector("h2")).toBeNull();
+  });
+
+  it("hides the context line on empty threads", () => {
+    useConversationStore.setState({
+      selectedThreadId: "t1",
+      threads: [thread("t1", null)],
+      messages: { t1: [] },
+    });
+    act(() => root.render(<App />));
+    expect(container.querySelector(".thread-context")).toBeNull();
   });
 });

@@ -22,6 +22,7 @@ from seleric_swarm.api.async_missions import (
 )
 from seleric_swarm.api.business_state import router as business_state_router
 from seleric_swarm.api.conversations import router as conversations_router
+from seleric_swarm.api.emails import router as emails_router
 from seleric_swarm.api.mission_access import request_principal, require_mission_access
 from seleric_swarm.api.phase7 import router as phase7_router
 from seleric_swarm.api.ready import check_readiness
@@ -150,6 +151,7 @@ app = FastAPI(
 app.state.runtime_provider = get_runtime
 app.include_router(conversations_router)
 app.include_router(phase7_router)
+app.include_router(emails_router)
 app.include_router(business_state_router)
 
 # Load repo .env before anything reads settings (CWD-independent): the voice

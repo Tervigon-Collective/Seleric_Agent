@@ -63,7 +63,10 @@ export const ArchiveIcon = (p: IconProps) => (
 export const MicIcon = (p: IconProps) => (
   <Base {...p}><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="17" x2="12" y2="22" /></Base>
 );
-export const SparklesIcon = (p: IconProps) => (
+export const MicOffIcon = (p: IconProps) => (
+  <Base {...p}><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="17" x2="12" y2="22" /><line x1="3" y1="3" x2="21" y2="21" /></Base>
+);
+export const SparklesIcon =(p: IconProps) => (
   <Base {...p}>
     <path d="M12 3v3" /><path d="M12 18v3" /><path d="M3 12h3" /><path d="M18 12h3" />
     <path d="m5.6 5.6 2.1 2.1" /><path d="m16.3 16.3 2.1 2.1" />

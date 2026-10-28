@@ -4,6 +4,7 @@ import { useShellStore } from "../stores/shell";
 import { useConversationStore } from "../stores/conversation";
 import { SafeContent } from "./SafeContent";
 import { ApprovalCard } from "./ApprovalCard";
+import { EmailPreviewCard } from "./EmailPreviewCard";
 import { ChartRenderer, SelectionInsight } from "./charts/ChartRenderer";
 import { useChartVocabularyDrift } from "../api/chartContract";
 import { buildFollowUp, buildPointContext } from "../api/drillContext";
@@ -212,7 +213,7 @@ export function MessagePartRenderer({ part }: { part: MessagePart }) {
     case "KPI_GRID":
       return <KpiGrid content={value} />;
     case "AGENT_STATUS": return <p className="part-status" aria-live="polite">{text(part.content)}</p>;
-    case "APPROVAL": return <ApprovalCard value={value} />;
+    case "APPROVAL": return value.action === "send_email" ? <EmailPreviewCard value={value} /> : <ApprovalCard value={value} />;
     case "WARNING": return <aside className="part-card warning" role="alert">{text(part.content)}</aside>;
     default: return null;
   }

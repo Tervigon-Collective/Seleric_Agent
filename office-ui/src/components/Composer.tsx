@@ -9,6 +9,7 @@ import { useVoiceStore, type VoiceStatus } from "../stores/voice";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { enhanceQuery } from "../api/queryEnhance";
 import { attachAutoCorrect, type AutoCorrectItem } from "../utils/autocorrect";
+import { VoiceDock } from "./VoiceOverlay";
 import { MicIcon, PaperclipIcon, SendIcon, SparklesIcon, StopIcon } from "./icons";
 
 const VOICE_LABEL: Record<VoiceStatus, string> = {
@@ -147,6 +148,7 @@ export function Composer() {
   const backdropRef = useRef<HTMLDivElement>(null);
   const [corrections, setCorrections] = useState<AutoCorrectItem[]>([]);
   const text = useAuiState((s) => (s.composer.isEditing ? s.composer.text : ""));
+  const voiceLive = useVoiceStore((s) => s.status === "connecting" || s.status === "listening" || s.status === "speaking");
 
   useEffect(() => {
     const el = inputRef.current;
@@ -202,7 +204,9 @@ export function Composer() {
 
   return (
     <div className="composer-wrap">
-      <div className="composer-inner">
+      <VoiceDock />
+      {/* Hidden, not unmounted: keeps the draft and the autocorrect listeners alive. */}
+      <div className="composer-inner" hidden={voiceLive}>
         <ComposerPrimitive.Root className="composer" aria-label="Message composer">
           <ComposerPrimitive.AddAttachment className="attach-btn" aria-label="Choose attachments" title="Attach a file">
             <PaperclipIcon size={16} />

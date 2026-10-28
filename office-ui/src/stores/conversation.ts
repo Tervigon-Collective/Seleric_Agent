@@ -368,7 +368,12 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         .reverse()
         .map((event) => optionalString(payloadOf(event).mission_id))
         .find(Boolean);
-      const fromUrl = readRoute().missionId;
+      // Only trust ?mission= when this thread already has activity. A stale
+      // mission from a prior chat must not attach to an empty / untitled thread.
+      const appRoute = readRoute();
+      const fromUrl = appRoute.threadId === id && (messages.length > 0 || events.length > 0)
+        ? appRoute.missionId
+        : null;
       const missionId = preferMissionId(fromEvents, fromUrl, latestRunId, "conversation") ?? "conversation";
       office.hydrate({
         missionId,

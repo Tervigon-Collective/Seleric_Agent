@@ -1,0 +1,42 @@
+{
+ "n": 51,
+ "aspect": "bi_reconcile",
+ "q": "Do the channel numbers add up to the September total you gave me?",
+ "thread": "thread_8ff1d58eafa5428d9ba40e52cfb78c52",
+ "mission": "MS3-ff28f4cd03",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 117,
+ "elapsed_s": 112.722,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 11,
+  "measured": 11,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_get_metrics",
+  "metrics_query",
+  "run_python"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "By order date on a P&L basis, the finance-channel rows do add up to the September net sales total: they sum to \u20b915,74,765, the same month total I gave you.\n\n- Biggest channel: Meta \u2014 \u20b99,36,516 (59.5% of September net sales).\n- Others: Google \u20b94,48,030 (28.5%), Unattributed \u20b91,46,638 (9.3%), WhatsApp \u20b937,783 (2.4%), Organic \u20b95,798 (0.4%).\n- Why it matters: Meta delivered the majority of P&L net sales in September; focusing the campaign-level profitability check there will cover most of the sales impact.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29 \u00b7 Data basis: by order date (P&L net sales)\nNext: Break this down by campaign inside the Meta finance channel."
+}

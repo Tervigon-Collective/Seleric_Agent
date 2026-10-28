@@ -1,0 +1,46 @@
+{
+ "n": 46,
+ "aspect": "uat_strategy",
+ "q": "Give me a read on September: what worked, what didn't, and what should we change for November?",
+ "thread": "thread_5e5b4102a1794331a9c92fc6d27ddd6b",
+ "mission": "MS3-5dafe6fe27",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 104,
+ "elapsed_s": 99.346,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 7,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 40,
+  "measured": 40,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "metrics_query",
+  "audit_entities",
+  "insights_explain",
+  "insights_explain",
+  "insights_explain"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Verdict: September saw sharply lower activity but cleaner economics \u2014 orders and net sales fell ~44.5% vs the prior month (orders 931, net sales \u20b915,74,765) while ad delivery fell harder and ROAS improved. On an attributed basis the ad portfolio returned \u20b910,34,955 on \u20b99,13,327 spend = 1.13x (ad spend = delivery date, revenue = order date), and 9 campaigns spent \u20b91,40,837 (13.4% of spend) with no orders.\n\nWhat is working\n- Clear winners with enough scale: TH-383-SUSPENDER-17JULY-ADV+ (\u20b931,675 net sales on \u20b915,935 spend = 1.99x, 16 orders); TH-284-CRABDASH TOY and TH-336-PAWTECH-26SEP also show healthy ROI (1.8x and 1.7x with \u22657 orders). Scale these first.\n\nWhere money is leaking\n- No-orders spend: 9 campaigns consumed \u20b91,40,837 (13.4% of September spend) but recorded zero orders \u2014 obvious reallocation candidates.\n- Evidenced losers: TH-054-TOTE-1SEP lost ~\u20b910,135 (net sales \u20b910,409 on spend \u20b920,544, 12 orders); several campaigns return <1x and should be cut or reworked.\n- Concentration: three campaigns account for ~28% of spend \u2014 check their efficiency before further scaling.\n\nWhy (data-backed)\n- Ad spend dropped ~45.9% vs prior period (ad spend (P&L basis) \u20b911,93,322 vs \u20b922,03,894 prior). Sales/orders also fell ~44.5% (net sales \u20b915,74,765 vs \u20b928,35,191), so the primary driver of lower revenue was materially lower spend; because spend fell more than sales, net ROAS and net profit improved (net profit moved from -\u20b97,73,786 to -\u20b92,86,297).\n\nWhat I would do for November (in order of money at stake)\n1. Reclaim no-orders spend: pause or sharply reduce bids on the 9 no-order campaigns (\u20b91,40,837). Check: if a campaign still shows 0 orders in 3 days, keep paused; reallocate to top performers.  \n2. Scale proven winners by +20\u201340% of their current spend (start with TH-383-SUSPENDER and the two listed above). Check: target same or better ROAS and stable CPA over 7 days.  \n3. Cut or rework losing campaigns (TH-054-TOTE and others returning <1x): reduce spend by 50% and test alternate creative/landing pages. Check: CPA falls or ROAS moves >1.0 within 7\u201314 days before re-scaling.  \n4. Audit high-spend Demand Gen/brand buckets with big drops (e.g., [Google Build] Demand Gen spent \u20b971,444 with no orders): review audience/creative and tracking attribution; if tracking is correct, reallocate to demand-capture (search/PMax) until performance proven.\n\nNotes\n- Basis: revenue and orders are by order date (commerce); ad spend rows are platform delivery date (paid_media). The portfolio ROI quoted (1.13x) uses attributed net sales \u00f7 ad spend (campaign rows), not P&L reconciliation.  \n- Totals: Orders 931 \u00b7 Net sales \u20b915,74,765 \u00b7 Portfolio ad spend (campaign rows) \u20b910,54,164 \u00b7 Ad spend (P&L view) \u20b911,93,322 \u00b7 Net profit (order-date) -\u20b92,86,297. Brand scoped to default (Tilting Heads). Data as of latest sync.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28\nNext: Break this down by ad platform and campaign to pick the exact reallocations for November"
+}

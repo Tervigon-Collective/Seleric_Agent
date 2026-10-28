@@ -137,11 +137,11 @@ def _unit_after(text: str, end: int) -> str:
     return ""
 
 
-def answer_numbers(text: str) -> list[dict[str, Any]]:
+def answer_numbers(text: str, *, small: bool = False) -> list[dict[str, Any]]:
     """Numbers stated in an answer with their rounding tolerance. Skips dates, times, years and small bare integers.
 
     Each: ``{text, value, pct, tol}``. ``value`` is scaled by a lakh/crore/k/m suffix, ``tol`` is one unit of the
-    last digit shown (scaled the same way) and never below 0.01.
+    last digit shown (scaled the same way) and never below 0.01. ``small=True`` keeps the bare integers under 32.
     """
     out: list[dict[str, Any]] = []
     i, n = 0, len(text)
@@ -180,7 +180,7 @@ def answer_numbers(text: str) -> list[dict[str, Any]]:
         unit = _unit_after(text, i)
         if not unit and i < n and text[i].isalpha():  # glued to letters that are no unit: 500ml, 4XL, 26SEP -> part of a name
             continue
-        if not unit and decimals < 0 and not grouped and (value < 32 or 1990 <= value <= 2100):
+        if not unit and decimals < 0 and not grouped and ((value < 32 and not small) or 1990 <= value <= 2100):
             continue
         mult = _UNIT_SCALE.get(unit, 1)
         tol = max(10 ** -max(decimals, 0) * mult, 0.01)
@@ -444,12 +444,13 @@ def grounding(answer: str, payloads: list[Any]) -> dict[str, Any]:
             continue
         ents = _entities(_norm(line), by_label)
         line_nums = answer_numbers(line)
+        line_all = answer_numbers(line, small=True)  # a count under 32 is not checked itself but is what "28 -> 42 (+50%)" follows from
         for n in line_nums:
             # The figures a percentage can be a claim about: the other amounts on its line, and the other unsigned percentages
             # (rate levels: CTR 2.670% -> 2.854% = -6.4%). A signed percentage is itself a change, never an operand.
             line_operands.setdefault(
                 n["text"] + "|" + str(n["value"]),
-                [abs(o["value"]) for o in line_nums if o is not n and (not o["pct"] or not o["sign"])],
+                [abs(o["value"]) for o in line_all if (o["text"], o["value"]) != (n["text"], n["value"]) and (not o["pct"] or not o["sign"])],
             )
         scope = ents or carry
         if ents and not line_nums and max(map(len, ents)) * 2 >= len(_norm(line.strip("#*-|: "))):

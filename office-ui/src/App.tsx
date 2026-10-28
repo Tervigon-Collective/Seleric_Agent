@@ -129,9 +129,12 @@ export default function App() {
     writeRoute({
       workspace,
       threadId: selectedThreadId,
+      // Keep URL mission only while a real run is attached. "pending" leaves the
+      // previous param alone during submit handshake; idle/empty clears it so
+      // Debug does not reopen a prior mission on untitled chats.
       ...(isTraceableMissionId(missionId)
         ? { missionId }
-        : selectedThreadId
+        : missionId === "pending"
           ? {}
           : { missionId: null }),
     });

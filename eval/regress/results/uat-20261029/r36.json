@@ -1,0 +1,42 @@
+{
+ "n": 36,
+ "aspect": "uat_ads",
+ "q": "Which Meta campaigns should I scale and which should I kill this week?",
+ "thread": "thread_8572c13ed4a449028ab87b5c1245b348",
+ "mission": "MS3-f1fed5ac8c",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 71,
+ "elapsed_s": 69.279,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 19,
+  "measured": 19,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "audit_entities"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Verdict: Meta campaigns spent \u20b990,843 this week, generating \u20b990,599 in net sales from 33 orders. The portfolio's return on spend is 1.32x (net sales \u00f7 ad spend). However, 24.4% of the spend went to campaigns that recorded no orders.\n\nWhat is working:\n- **TH-474-SOFASEATCOVER-26OCT**: \u20b924,903 net sales on \u20b913,181 spend (1.89x return), 7 orders.\n- **TH-487-COMFYCLIMBSTAIRS-27OCT-PMF**: \u20b914,994 net sales on \u20b98,521 spend (1.76x return), 5 orders.\n- **TH-445-PROSUSPENDERBOOTS-26OCT**: \u20b914,378 net sales on \u20b911,875 spend (1.21x return), 6 orders.\n\nWhere money is leaking:\n- 18 campaigns recorded no orders, absorbing \u20b922,136 (24.4% of spend). Largest spenders with no orders: **DIWALI SALE-27OCT** (\u20b93,791), **TH-476-EMPRESSPLUSHBED-26OCT-CS** (\u20b93,604), and **FESTIVE FITS -28OCT-CTL** (\u20b91,257).\n\nWhy:\n- Campaigns with no orders may need review for targeting, creative, or audience fit. Early signals from campaigns with fewer than 5 orders suggest potential but need more data to confirm.\n\nWhat I would do:\n1. Scale **TH-474-SOFASEATCOVER-26OCT**, **TH-487-COMFYCLIMBSTAIRS-27OCT-PMF**, and **TH-445-PROSUSPENDERBOOTS-26OCT** based on their strong returns and order volumes.\n2. Pause campaigns with no orders, especially those with high spend like **DIWALI SALE-27OCT** and **TH-476-EMPRESSPLUSHBED-26OCT-CS**, unless there is a clear reason to continue.\n3. Monitor early signals from **TH-152-TANGLELEASH-23OCT**, **TH-468-PLAYPOPSCRATCHER-28OCT**, and **DOG-SHOES-CTL-7OCT** for further performance before scaling.\n\nPeriod: 2026-10-26 to 2026-10-29 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break down the no-orders campaigns by targeting and creative."
+}

@@ -1,0 +1,53 @@
+{
+ "n": 48,
+ "aspect": "bi_drill",
+ "q": "Walk me through September: how much did we sell, what did it cost us to get those sales, and what was left at the end?",
+ "thread": "thread_8ff1d58eafa5428d9ba40e52cfb78c52",
+ "mission": "MS3-be5b41eb47",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 27,
+ "elapsed_s": 22.605,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 8,
+  "measured": 8,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "catalogue_resolve_concept",
+  "break_down_metric"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "number 1574765.0 (live)"
+  },
+  {
+   "ok": true,
+   "what": "number 1193322.0 (live)"
+  },
+  {
+   "ok": true,
+   "what": "number -286297.0 (live)"
+  }
+ ],
+ "answer": "Net sales for September (by order date, P&L basis) were \u20b915,74,765. It cost us \u20b911,93,322 in ad spend and \u20b96,67,740 in product & operating costs (net COGS), leaving a net loss of \u20b92,86,297 for the month.\n\n- Sales: Net sales (P&L basis) = \u20b915,74,765. This is the revenue after P&L-level adjustments (cancels, returns, RTOs).\n- Cost of goods and operations: Net COGS = \u20b96,67,740 (product cost, shipping, packaging, payment fees, provisional ops, RTO & exchange costs).\n- Cost to acquire those sales: Ad spend (P&L basis) = \u20b911,93,322.\n- Bottom line: Net profit (order-date, P&L basis) = \u2212\u20b92,86,297 (a loss), because ad spend plus COGS and other deductions exceeded net sales.\n\nWorth checking: split the ad spend and attributed contribution by ad platform and by product to see which ads or products drove the losses versus the contribution margin.\n\nPeriod: 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29\nNext: Break this down by ad platform and product."
+}

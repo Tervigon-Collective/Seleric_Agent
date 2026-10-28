@@ -8,6 +8,8 @@
 * ``audit_entities`` computes the derived facts of a performance analysis (return on spend, spend with no orders, best/worst
   with enough orders) from fetched results, in code.
 * ``business_snapshot`` returns the latest hourly business-health snapshot as data, when it is fresh.
+* ``draft_mom_email`` / ``draft_ad_hoc_email`` / ``send_email`` (agent/email_tools.py): draft a session email for the
+  user's approval, then send only the version they approved.
 * ``escalate`` raises the reasoning effort for the rest of the turn.
 """
 
@@ -17,6 +19,7 @@ import functools
 import json
 import logging
 import time
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -24,6 +27,7 @@ from pydantic_ai import RunContext
 
 from seleric_swarm.agent import present
 from seleric_swarm.agent.dependencies import SelericDeps
+from seleric_swarm.agent.email_tools import build_email_tools
 from seleric_swarm.agent.grounding import answer_numbers
 from seleric_swarm.agent.mcp_toolset import TurnState
 from seleric_swarm.agent.model import LOOP_ESCALATED_EFFORT, LOOP_WRITEUP_EFFORT, set_loop_effort
@@ -125,7 +129,7 @@ def _offer_table(state: TurnState, result: Any) -> Any:
                                                 f"show_table(query_id={table_id!r}). Do not paste them into the text as well."})
 
 
-def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
+def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False, quotable: bool = True) -> Any:
     """Wrap a local tool: time it, record it in the turn's trace like an MCP call, keep its figures quotable."""
 
     @functools.wraps(fn)
@@ -145,7 +149,8 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
         state.steps.append(step)
         if failed:  # MCP failures are recorded by the toolset; a helper that returns ok:false must show up the same way
             state.errors.append(f"{fn.__name__}: {str(summary)[:300]}")
-        _remember_figures(state, result)
+        if quotable:  # an email draft's text must never become evidence for later answers
+            _remember_figures(state, result)
         result = _offer_table(state, result)
         if raises_effort and not failed:  # the engine did the causal reasoning; a refusal leaves real reasoning to do
             set_loop_effort(LOOP_WRITEUP_EFFORT)
@@ -155,7 +160,8 @@ def _tracked(state: TurnState, fn: Any, *, raises_effort: bool = False) -> Any:
     return wrapper
 
 
-def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[Any]:
+def build_local_tools(state: TurnState, *, snapshot_loader: Any = None, is_cancelled: Callable[[], bool] | None = None,
+                      figures: Callable[[], list[Any]] | None = None) -> list[Any]:
     """Tools bound to this turn's state."""
 
     async def run_python(
@@ -272,7 +278,8 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
 
     async def business_snapshot(ctx: RunContext[SelericDeps]) -> dict[str, Any]:
         """The latest hourly business-health snapshot (one day against the day before, plus 7-day averages and
-        anomaly flags). Use for broad "how are we doing" questions; query metrics for any other period."""
+        anomaly flags), ending at the last complete day. Use for broad "how are we doing" questions with no period named; for
+        today, right now or any other period query the metrics."""
         if snapshot_loader is None:
             return {"available": False, "reason": "no snapshot store is configured"}
         try:
@@ -297,4 +304,6 @@ def build_local_tools(state: TurnState, *, snapshot_loader: Any = None) -> list[
         exploration.explore_data,
     ]
     own = [run_python, show_chart, show_table, audit_entities, business_snapshot, escalate]
-    return [*(_tracked(state, fn, raises_effort=fn is diagnosis.diagnose_metric_change) for fn in [*helpers, *own])]
+    mail = build_email_tools(state, is_cancelled=is_cancelled or (lambda: False), figures=figures or (lambda: list(state.payloads)))
+    return [*(_tracked(state, fn, raises_effort=fn is diagnosis.diagnose_metric_change) for fn in [*helpers, *own]),
+            *(_tracked(state, fn, quotable=False) for fn in mail)]

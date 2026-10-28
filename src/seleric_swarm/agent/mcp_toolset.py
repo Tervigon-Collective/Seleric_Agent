@@ -154,8 +154,9 @@ def flag_partial(payload: Any, today: date) -> None:
         return
     parts = [p for p in payload.get("parts") or [] if isinstance(p, dict)]
     for source in [payload, *parts]:
-        end = _iso_day(((source.get("provenance") or {}).get("time_range") or {}).get("end"))
-        if end is not None and end >= today:
+        prov = source.get("provenance") or {}
+        end = _iso_day((prov.get("time_range") or {}).get("end"))
+        if end is not None and end >= today and not prov.get("compare_cutoff"):  # the server already cut the comparison at the same hour
             payload.setdefault("warnings", []).append(
                 f"Window ends {end}, which is not a complete day (today is {today}, data keeps arriving): treat it as partial; "
                 "do not compare it with a full period or call it a drop without the same cut-off on both sides.")

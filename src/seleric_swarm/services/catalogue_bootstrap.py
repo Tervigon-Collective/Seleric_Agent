@@ -103,6 +103,7 @@ class CatalogueSnapshot:
     dimension_families: tuple[tuple[str, str, int], ...] = ()
     dimension_values: tuple[tuple[str, tuple[str, ...]], ...] = ()
     scope_dimension_ids: tuple[str, ...] = ()
+    view_descriptions: tuple[tuple[str, str], ...] = ()
 
     def dimension_fact(self, dimension: str, key: str) -> int:
         """A numeric catalogue fact about a dimension (0 when not declared)."""
@@ -359,6 +360,7 @@ class CatalogueBootstrap:
         self._dimension_values: dict[str, tuple[str, ...]] = {}
         self._grain_defaults: dict[str, Any] = {}
         self._scope_dimension_ids: tuple[str, ...] = ()
+        self._view_descriptions: dict[str, str] = {}
         self._warmed_at: float | None = None
         self._registry: Any = None
         self._semantic_port: Any = None
@@ -437,7 +439,7 @@ class CatalogueBootstrap:
     def snapshot(self) -> CatalogueSnapshot:
         """Immutable copy of the whole catalogue for the agent's in-memory cache."""
         scope_ids = getattr(self, '_scope_dimension_ids', ())
-        return CatalogueSnapshot(metrics=tuple(self.entries()), dimensions=tuple(sorted(self.dimension_ids())), stable_keys=tuple(sorted(self._stable_keys.items())), time_dimensions=frozenset(self._time_dimensions), dimension_facts=tuple(((did, tuple(sorted(facts.items()))) for did, facts in sorted(self._dimension_facts.items()))), dimension_families=tuple(((did, fam, rank) for did, (fam, rank) in sorted(self._dimension_families.items()))), dimension_values=tuple(sorted(self._dimension_values.items())), scope_dimension_ids=tuple(scope_ids))
+        return CatalogueSnapshot(metrics=tuple(self.entries()), dimensions=tuple(sorted(self.dimension_ids())), stable_keys=tuple(sorted(self._stable_keys.items())), time_dimensions=frozenset(self._time_dimensions), dimension_facts=tuple(((did, tuple(sorted(facts.items()))) for did, facts in sorted(self._dimension_facts.items()))), dimension_families=tuple(((did, fam, rank) for did, (fam, rank) in sorted(self._dimension_families.items()))), dimension_values=tuple(sorted(self._dimension_values.items())), scope_dimension_ids=tuple(scope_ids), view_descriptions=tuple(sorted(self._view_descriptions.items())))
 
     def unresolvable(self, candidate_ids: list[str]) -> list[str]:
         """Return the subset of *candidate_ids* that are NOT in the live cache.
@@ -486,6 +488,8 @@ class CatalogueBootstrap:
                     self._dimension_families[did] = (str(dim['family']), int(dim.get('family_rank') or 0))
                 if dim.get('allowed_values'):
                     self._dimension_values[did] = tuple(str(v) for v in dim['allowed_values'])
+        views = payload.get('views')
+        self._view_descriptions = {str(k): str(v) for k, v in views.items() if v} if isinstance(views, dict) else {}
         defaults = payload.get('grain_defaults') or {}
         self._grain_defaults = dict(defaults) if isinstance(defaults, dict) else {}
         return len(self._cache)

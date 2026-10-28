@@ -63,11 +63,11 @@ export function TopBar({
 
       <span className="pill">{activeCount} active</span>
       <button className="btn" onClick={() => setFollow(cycleFollow(followMode))}>
-        cam: {followMode}
+        Camera: {followMode}
       </button>
-      <button className="btn" onClick={toggleTimeline}>timeline</button>
-      <button className="btn" onClick={toggleDebug}>debug</button>
-      <button className="btn" onClick={onToggleTheme}>{dark ? "light" : "dark"}</button>
+      <button className="btn" onClick={toggleTimeline}>Timeline</button>
+      <button className="btn" onClick={toggleDebug}>Debug</button>
+      <button className="btn" onClick={onToggleTheme}>{dark ? "Light" : "Dark"}</button>
 
       <span className={`pill ${conn}`}>
         <span className="dot" /> {CONN_LABEL[conn]}

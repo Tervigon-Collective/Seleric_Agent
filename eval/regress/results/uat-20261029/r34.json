@@ -1,0 +1,43 @@
+{
+ "n": 34,
+ "aspect": "uat_founder",
+ "q": "Which products are dragging that down?",
+ "thread": "thread_797cffcf8ce04fd8800f649c741dba02",
+ "mission": "MS3-d0f0830eab",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 154,
+ "elapsed_s": 151.791,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 4,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 26,
+  "measured": 26,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "metrics_query",
+  "catalogue_get_metrics",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "By product (order date), product-level net profit after modelled ad allocation shows a few clear drains: the largest is an unattributed row (net loss -\u20b94,40,739 with \u20b94,85,102 of allocated ad spend), then SnugSole Boots (-\u20b914,420, ad spend \u20b928,076, net sales \u20b945,020, 34 orders), WingBird Smart Flapping Toy (-\u20b911,042, ad spend \u20b966,015, net sales \u20b992,912, 94 orders) and Ave Walk Harness Set (-\u20b910,414, ad spend \u20b912,646, net sales \u20b917,023, 15 orders). This means we are buying sales on these lines but they still lose money after the modelled ad allocation.\n\n- Unattributed (no product title): loss -\u20b94,40,739 vs allocated ad spend \u20b94,85,102 \u2014 the single biggest drag; could be uncredited spend or allocation that didn\u2019t match sold lines.  \n- SnugSole Boots: loss -\u20b914,420 on \u20b928k ad spend and \u20b945k sales (34 orders) \u2014 ad spend appears to be buying low-margin or loss-making units.  \n- WingBird Smart Flapping Toy: loss -\u20b911,042 despite \u20b992,912 sales (94 orders) and high allocated spend (\u20b966,015) \u2014 conversion volume but not profitable after COGS/allocations.  \n- Ave Walk Harness Set: loss -\u20b910,414 on smaller sales (\u20b917,023, 15 orders) and modest ad spend (\u20b912,646) \u2014 low scale and negative unit economics.\n\nNumbers are product-level net profit after modelled ad allocation (order-date). Note: the result is composed from two views (ad allocation and product P&L); some products don\u2019t appear in both parts (missing = no data, not zero).\n\nWorth checking: investigate the unattributed allocation, and drill these products by ad platform \u2192 campaign \u2192 creative to find which ads are buying loss-making sales.\n\nPeriod: 2026-09-29 to 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break these products down by ad platform and campaign."
+}

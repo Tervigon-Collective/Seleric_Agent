@@ -1351,6 +1351,8 @@ def _answer_parts(final_response: str, raw: dict[str, Any]) -> list[MessagePart]
                 continue  # placed ahead of the text above
             elif ptype == "TABLE" and isinstance(content, dict):
                 parts.append(MessagePart(type=MessagePartType.TABLE, content=content))
+            elif ptype == "APPROVAL" and isinstance(content, dict) and content.get("approval_id"):  # the email preview card
+                parts.append(MessagePart(type=MessagePartType.APPROVAL, content=content))
             elif ptype == "CHART" and isinstance(content, dict) and not raw_charts:
                 # Prefer explicit charts list when present; otherwise accept assembler charts.
                 chart_type = str(content.get("chart_type") or "bar")
@@ -2135,6 +2137,7 @@ async def submit_message(
                         "metadata": {
                             **run.metadata,
                             "context_bundle": bundle_data,
+                            "context_composition": bundle_data.get("composition") or {},
                             "submission": {
                                 "query": query,
                                 "timezone": str(

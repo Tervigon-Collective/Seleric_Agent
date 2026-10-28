@@ -1,0 +1,41 @@
+{
+ "n": 53,
+ "aspect": "bi_decompose",
+ "q": "Which of those can we actually fix?",
+ "thread": "thread_bf086f0a21fc430ea6e3b0e0a4c8ed3b",
+ "mission": "MS3-05a045f0fb",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 34,
+ "elapsed_s": 28.342,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 2,
+ "grounding": {
+  "derived": [],
+  "numbers": 10,
+  "measured": 10,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "Most of the fall is fixable: the largest drivers you can act on are lower ad delivery (ad spend fell) and the orders drop; discounts rose but are also controllable. Together they explain the September vs August gap \u2014 AOV did not cause the decline.\n\nQuick reality check (2026-08-02..2026-08-31 \u2192 2026-09-01..2026-09-30)\n- Ad spend fell from \u20b973,463/day to \u20b939,777/day (\u221245.9%). Actionability: high \u2014 you can restore or reallocate budget, re-enable paused campaigns, or shift bids/campaigns; this is the fastest lever to stop order loss.  \n- Orders fell from 56.0/day to 31.0/day (\u221244.6%). Actionability: high \u2014 this is the outcome to fix (via ads, landing pages, offers, or conversion fixes). The orders drop is the dominant arithmetic driver of the net\u2011sales fall.  \n- Discounts rose from \u20b92,407/day to \u20b93,497/day (+45.3%). Actionability: medium \u2014 you can tighten promo rules, reduce blanket discounts or fix coupon misuse, but reducing discounts may lower conversion unless replaced with better targeting.  \n- Net AOV moved slightly (INR +1.9% per day) and did not cause the decline. Actionability: low priority \u2014 optimizing AOV helps margin but won\u2019t restore the lost topline quickly.  \n- Cost lines (shipping, gateway, product cost) also moved and are partially actionable (supply, logistics), but they explain margin/cogs more than the topline drop.\n\nWorth checking: which ad platforms and campaigns lost delivery (Meta and Google both dropped; platform-level spend and orders shifted sharply). Next: Break this down by ad platform and campaign\n\nPeriod: 2026-08-02..2026-08-31 vs 2026-09-01..2026-09-30 \u00b7 Currency: INR \u00b7 Data as of 2026-10-29"
+}

@@ -1,0 +1,45 @@
+{
+ "n": 37,
+ "aspect": "uat_ads",
+ "q": "The second one's cost per purchase jumped. Is that the creative getting tired, or are we just paying more to reach people?",
+ "thread": "thread_8572c13ed4a449028ab87b5c1245b348",
+ "mission": "MS3-3002c9a0fb",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 113,
+ "elapsed_s": 108.578,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 2,
+ "llm_calls": 4,
+ "grounding": {
+  "derived": [],
+  "numbers": 6,
+  "measured": 6,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "escalate",
+  "diagnose_metric_change"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  },
+  {
+   "ok": true,
+   "what": "any of ['CPM', 'CTR', 'frequency']"
+  }
+ ],
+ "answer": "Short answer: the data shows CPA fell, not rose \u2014 it averaged \u20b91,328 on 2026-10-26\u21922026-10-28 versus the campaign's usual \u20b91,659 (\u221220.0%). That means we are not seeing evidence the creative is \u201cgetting tired\u201d; but we can\u2019t confirm whether reach costs moved because the campaign-level CPC / impressions / CTR are not available in the current dataset for this campaign.\n\nWhy I say that\n- Measured change: cost per order (CPA) for TH-487 averaged \u20b91,328 over 2026-10-26..2026-10-28 vs a usual \u20b91,659 (\u221220.0%).\n- Historical range: the campaign-level historical CPA range for \"normal days\" is not available from the data the diagnosis could filter to for this campaign.\n- What I could not test: CPC, CTR, impressions, clicks and ad spend by campaign were not recorded for this campaign in the queried scope, so the diagnosis could not check whether we\u2019re paying more to reach people or whether creative engagement fell.\n- No supported cause found: the diagnosis engine did not identify any statistically supported cause among the available inputs; it reports the CPA movement but cannot attribute it to creative fatigue or rising auction costs without the ad-delivery metrics.\n\nWorth checking:\n- Pull campaign-level paid_media metrics (CPC, CTR, impressions, clicks, ad spend) and orders for TH-487 by day so we can see whether CPC or impressions rose (reach cost) or CTR/thruplays/hook rate fell (creative fatigue).\n\nPeriod: 2026-10-26 to 2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Show CPC, CTR, impressions, clicks, ad spend and orders for TH-487 by day (2026-10-23..2026-10-28) so we can tell whether delivery costs or creative performance moved."
+}

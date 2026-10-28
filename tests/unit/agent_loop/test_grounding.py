@@ -75,6 +75,9 @@ def test_partial_window_warning():
     q = {"provenance": {"time_range": {"start": "2026-10-01", "end": "2026-10-12"}}}
     flag_partial(q, today)
     assert not q.get("warnings"), q
+    c = {"provenance": {"time_range": {"start": "2026-10-13", "end": "2026-10-13"}, "compare_cutoff": {"to": "2026-10-12T17:30:00.000"}}}
+    flag_partial(c, today)
+    assert not c.get("warnings"), c  # the comparison was already cut at the same time of day
 
 
 def test_pair_scan_is_not_vacuous():
@@ -264,3 +267,11 @@ def test_series_listing_line_is_not_misbound():
            "₹66,876, ₹43,650, ₹42,043, ₹44,813).")
     assert not grounding(ans, [days])["misbound"]
     assert grounding("- 2026-10-22: ₹78,857", [days])["misbound"]
+
+
+def test_percent_follows_from_a_small_count_beside_it():
+    # live 2026-10-28: "orders 29 -> 42 (+44.8%)" was flagged because a count under 32 was not an operand
+    p = [{"query_id": "q1", "columns": ["orders"], "rows": [{"orders": "42"}], "compare_rows": [{"orders": "29"}],
+          "provenance": {"metric_ids": ["orders"]}}]
+    assert not grounding("Orders rose from 29 to 42 (+44.8%).", p)["unmatched"]
+    assert grounding("Orders rose from 29 to 42 (+50.0%).", p)["unmatched"] == ["50.0%"]

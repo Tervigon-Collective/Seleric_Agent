@@ -71,6 +71,7 @@ def _snapshot_context(snapshot: DomainStateSnapshot, units: dict[str, str] | Non
         "as_of": snapshot.as_of,
         "period": snapshot.as_of,
         "values_are": f"one day ({snapshot.as_of}); change_pct_vs_prior_day compares it with the day before",
+        "covers": f"the last complete day, {snapshot.as_of}: not today. For today, right now or any other period, call metrics_query instead.",
         "avg_7d_window": snapshot.window,
         "status": snapshot.status,
         "signals": snapshot.headline_signals,

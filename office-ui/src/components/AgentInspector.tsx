@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useOffice } from "../store";
 import { SPEC_BY_ID } from "../office/agents";
 import { STATUS_TOKEN } from "../office/stateMachine";
+import { XIcon } from "./icons";
 import type { OfficeAgent, SwarmUIEvent } from "../types";
 
 const TOKEN_VAR: Record<string, string> = {
@@ -32,7 +33,7 @@ export function AgentInspector() {
 
   return (
     <aside className="inspector" aria-label={`${agent.name} inspector`}>
-      <button className="btn close" onClick={() => select(null)}>✕</button>
+      <button className="btn close" aria-label="Close inspector" onClick={() => select(null)}><XIcon size={14} /></button>
       <h2>{spec?.glyph} {agent.name}</h2>
       <span className="status-tag" style={{ background: TOKEN_VAR[token] }}>{agent.status.replace(/_/g, " ")}</span>
 

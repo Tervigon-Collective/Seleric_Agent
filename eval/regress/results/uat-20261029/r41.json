@@ -1,0 +1,42 @@
+{
+ "n": 41,
+ "aspect": "uat_web",
+ "q": "Which product pages lose the most people?",
+ "thread": "thread_587ec9c858554bdc8106b18af5d610c9",
+ "mission": "MS3-a5c1df5b00",
+ "run_status": "COMPLETED",
+ "status": "completed",
+ "wall_s": 150,
+ "elapsed_s": 147.767,
+ "revisions": 0,
+ "retries": 0,
+ "tool_calls": 3,
+ "llm_calls": 3,
+ "grounding": {
+  "derived": [],
+  "numbers": 22,
+  "measured": 22,
+  "misbound": [],
+  "problems": [],
+  "unmatched": [],
+  "placeholders": [],
+  "sign_mismatch": []
+ },
+ "tools": [
+  "metrics_query",
+  "catalogue_list_dimensions",
+  "metrics_query"
+ ],
+ "failed_tools": [],
+ "checks": [
+  {
+   "ok": true,
+   "what": "not '{''"
+  },
+  {
+   "ok": true,
+   "what": "not 'traceback'"
+  }
+ ],
+ "answer": "The product pages that lose the most people are these ten with the lowest purchase rates (period totals, order-date basis): several get page views but no purchases and very low add-to-cart rates, so they\u2019re leaking attention before checkout.\n\n- Cuddle-den pet house \u2014 2 page views \u00b7 engaged 1 \u00b7 add-to-cart 0 \u00b7 purchases 0 \u00b7 purchase rate 0.0% \u00b7 add-to-cart rate 0.0%  \n- Denimdash boots \u2014 7 page views \u00b7 engaged 6 \u00b7 add-to-cart 0 \u00b7 purchases 0 \u00b7 purchase rate 0.0% \u00b7 add-to-cart rate 0.0%  \n- Shop Roselyn velvet bed \u2014 3 page views \u00b7 engaged 3 \u00b7 add-to-cart 1 \u00b7 purchases 0 \u00b7 purchase rate 0.0% \u00b7 add-to-cart rate 33.3%  \n- Dog kurta (clothes) \u2014 35 page views \u00b7 engaged 27 \u00b7 add-to-cart 3 \u00b7 purchases 0 \u00b7 purchase rate 0.0% \u00b7 add-to-cart rate 8.6%  \n- Kixie boots \u2014 32 page views \u00b7 engaged 26 \u00b7 add-to-cart 1 \u00b7 purchases 0 \u00b7 purchase rate 0.0% \u00b7 add-to-cart rate 3.1%  \n- Cool comfy eyewear \u2014 4 page views \u00b7 engaged 4 \u00b7 add-to-cart 0 \u00b7 purchases 0 \u00b7 purchase rate 0.0% \u00b7 add-to-cart rate 0.0%  \n- Mangomunch chew toy \u2014 2 page views \u00b7 engaged 2 \u00b7 add-to-cart 0 \u00b7 purchases 0 \u00b7 purchase rate 0.0% \u00b7 add-to-cart rate 0.0%  \n- Cherrydine bowl \u2014 3 page views \u00b7 engaged 3 \u00b7 add-to-cart 0 \u00b7 purchases 0 \u00b7 purchase rate 0.0% \u00b7 add-to-cart rate 0.0%  \n- Treatmaze feeder puzzle \u2014 6 page views \u00b7 engaged 5 \u00b7 add-to-cart 0 \u00b7 purchases 0 \u00b7 purchase rate 0.0% \u00b7 add-to-cart rate 0.0%  \n- Snout Guard muzzle \u2014 4 page views \u00b7 engaged 4 \u00b7 add-to-cart 0 \u00b7 purchases 0 \u00b7 purchase rate 0.0% \u00b7 add-to-cart rate 0.0%\n\nWhy this matters: pages with non-zero page views but zero purchases and low add-to-cart rates (Dog kurta, Kixie boots, Roselyn bed) are the clearest conversion leaks \u2014 either the product or the page experience isn\u2019t convincing or add-to-cart is hard to complete.\n\nWorth checking: compare these product handles\u2019 PDP layouts, pricing/availability, and PDP add-to-cart events by device (mobile vs desktop) for the same dates; and expand beyond the top-10 shown to see volume-weighted leaks (this result limited to 10 rows).\n\nPeriod: 2026-10-22..2026-10-28 \u00b7 Currency: INR \u00b7 Data as of 2026-10-28  \nNext: Break this down by device_type and template_key for these product handles."
+}

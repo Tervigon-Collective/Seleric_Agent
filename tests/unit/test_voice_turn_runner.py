@@ -81,7 +81,7 @@ class _Session:
     def __init__(self) -> None:
         self.said: list[str] = []
 
-    def say(self, text: str) -> None:
+    def say(self, text: str, **_: Any) -> None:  # returns no handle: the queue treats that as "played"
         self.said.append(text)
 
 
@@ -104,8 +104,7 @@ def _runner(client: _Client, monkeypatch: pytest.MonkeyPatch, **settings: Any) -
 
 
 async def _drain(runner: VoiceTurnRunner) -> None:
-    assert runner._task is not None
-    await asyncio.wait_for(runner._task, timeout=5)
+    await asyncio.wait_for(runner.wait_idle(), timeout=5)
 
 
 def test_narration_speaks_only_tool_starts_and_the_answer_handoff() -> None:
@@ -180,7 +179,10 @@ async def test_error_is_spoken_generically_never_as_the_exception_text(monkeypat
     assert session.said == [ERROR_LINE]
 
 
-async def test_new_question_cancels_the_in_flight_run(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_new_question_does_not_cancel_the_in_flight_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reversed on purpose (was: a new question cancelled the running one). The earlier run now keeps going in the
+    background while the new one starts; only "never mind" cancels (see test_voice_concurrency.py for the rest)."""
+
     class _Slow(_Client):
         def stream(self, method: str, url: str, **_: Any) -> Any:
             class _Hang(_Response):
@@ -193,19 +195,17 @@ async def test_new_question_cancels_the_in_flight_run(monkeypatch: pytest.Monkey
     client = _Slow([])
     runner, _ = _runner(client, monkeypatch)
 
-    runner.submit("first question")
+    assert runner.submit("first question") == "started"
     for _ in range(50):  # let the first run get its run_id
         await asyncio.sleep(0)
-        if runner._run_id:
+        if runner.run_ids():
             break
-    first_task = runner._task
-    runner.submit("second question")
+    assert runner.submit("second question") == "started"
     await asyncio.sleep(0.05)
 
-    assert first_task is not None and first_task.cancelled()
-    assert any(url.endswith("/v1/runs/run_1/cancel") for url in client.posts)
-    if runner._task is not None:
-        runner._task.cancel()
+    assert runner.active_count() == 2
+    assert not any(url.endswith("/cancel") for url in client.posts)
+    await runner.cancel_all()
 
 
 async def test_cancel_stops_the_run_and_reports_whether_anything_ran(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -225,7 +225,7 @@ async def test_cancel_stops_the_run_and_reports_whether_anything_ran(monkeypatch
     runner.submit("a question")
     for _ in range(50):
         await asyncio.sleep(0)
-        if runner._run_id:
+        if runner.run_ids():
             break
 
     assert runner.cancel() is True
@@ -302,7 +302,18 @@ async def test_missing_thread_tells_the_user_to_reconnect(monkeypatch: pytest.Mo
 
 async def test_idle_hold_lines_are_varied_and_capped(monkeypatch: pytest.MonkeyPatch) -> None:
     ticks = [": heartbeat", ""] * 12
-    runner, session = _runner(_Client(ticks), monkeypatch, voice_narration_idle_hold_s=0.0, voice_mission_timeout_s=1.0)
+
+    class _Spaced(_Client):  # real heartbeats are seconds apart: the previous line has been spoken before the next tick
+        def stream(self, method: str, url: str, **_: Any) -> _Response:
+            class _Slow(_Response):
+                async def aiter_lines(self):
+                    for line in ticks:
+                        await asyncio.sleep(0)
+                        yield line
+
+            return _Slow()
+
+    runner, session = _runner(_Spaced(ticks), monkeypatch, voice_narration_idle_hold_s=0.0, voice_mission_timeout_s=1.0)
 
     runner.submit("how are sales?")
     await _drain(runner)
@@ -391,3 +402,19 @@ async def test_timed_out_run_is_remembered_and_check_speaks_the_answer(monkeypat
 
     assert session.said[-1] == "Sales rose 12%."
     assert runner.check() == "Nothing to check."
+
+
+def test_voice_prompt_routes_email_requests_and_approvals_to_seleric() -> None:
+    text = worker.VOICE_INSTRUCTIONS
+
+    assert "email" in text.lower() and "confirm" in text.lower() and "ask_seleric" in text
+    # First "send"/"confirm" gets a spoken confirm; only the next affirm goes to Seleric to send.
+    assert "do not call ask_seleric yet" in text and "clearly affirm" in text
+    assert "cannot change or write any data by voice" not in text  # emailing a discussion is not a data write
+
+
+def test_voice_prompt_knows_several_questions_can_run_and_are_read_one_at_a_time() -> None:
+    text = worker.VOICE_INSTRUCTIONS
+
+    assert "more than one question" in text and "one at a time" in text
+    assert "every question" in text  # "stop" ends all of them

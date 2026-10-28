@@ -405,20 +405,17 @@ function ThreadContextBar() {
   const threadId = useConversationStore((s) => s.selectedThreadId);
   const thread = useConversationStore((s) => s.threads.find((item) => item.id === threadId));
   const count = useConversationStore((s) => (threadId ? s.messages[threadId]?.length ?? 0 : 0));
-  if (!threadId || !thread) return null;
-  // Compact context line: the question itself lives in the user bubble and the
-  // compact title in the header — no large duplicate heading here.
+  // Empty threads already show the welcome empty-state — don't echo "Untitled conversation".
+  if (!threadId || !thread || count === 0) return null;
   const exchanges = Math.ceil(count / 2);
   return (
     <div className="thread-context">
       <span className="thread-context-name" title={thread.title || "Untitled conversation"}>
         {thread.title || "Untitled conversation"}
       </span>
-      {count > 0 && (
-        <span className="thread-context-meta">
-          {exchanges} exchange{exchanges === 1 ? "" : "s"} · evidence stays attached below
-        </span>
-      )}
+      <span className="thread-context-meta">
+        {exchanges} exchange{exchanges === 1 ? "" : "s"} · evidence stays attached below
+      </span>
     </div>
   );
 }
