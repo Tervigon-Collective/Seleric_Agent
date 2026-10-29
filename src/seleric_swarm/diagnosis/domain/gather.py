@@ -44,6 +44,7 @@ class GatherPlan:
     subgraph: Subgraph | None = None  # what the reviewed graph says about this outcome (P3.1); None when it was not built
     drivers_from_graph: bool = False  # the driver list is the subgraph's candidates (P3.2), not the catalogue's lineage
     estimate_cap: int = 0  # graph-chosen drivers estimated at most this many, after their edges are confirmed (0: no cap)
+    funnel: tuple[str, ...] = ()  # a declared funnel's base, then each stage's share of it (business model 2b)
 
     @property
     def outcome_additive(self) -> bool:
@@ -56,6 +57,8 @@ class GatherPlan:
         if self.drivers_from_graph:
             out["drivers_from_graph"] = True
             out["estimate_cap"] = self.estimate_cap
+        if self.funnel:
+            out["funnel"] = list(self.funnel)
         return out
 
     def _core_dict(self) -> dict[str, Any]:
@@ -91,6 +94,7 @@ class GatherPlan:
             scope_tokens=frozenset(raw["scope_tokens"]), max_segment_rows=int(raw["max_segment_rows"]),
             subgraph=Subgraph.from_dict(raw["subgraph"]) if raw.get("subgraph") else None,
             drivers_from_graph=bool(raw.get("drivers_from_graph", False)), estimate_cap=int(raw.get("estimate_cap", 0)),
+            funnel=tuple(raw.get("funnel") or ()),
         )
 
 

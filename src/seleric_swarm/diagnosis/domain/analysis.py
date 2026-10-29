@@ -22,6 +22,7 @@ from seleric_swarm.diagnosis.domain.report import (
     DriverFinding,
     EdgeCheck,
     EventSummary,
+    FunnelStep,
     MeasurementFinding,
 )
 from seleric_swarm.diagnosis.domain.window import EventWindow
@@ -78,6 +79,7 @@ class WhatResult:
     chain_identity: str = ""
     chain: list[DecompositionTerm] = field(default_factory=list)
     chain_dimensions: list[DimensionFinding] = field(default_factory=list)
+    funnel: list[FunnelStep] = field(default_factory=list)
 
 
 @dataclass

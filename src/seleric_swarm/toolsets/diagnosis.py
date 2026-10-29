@@ -66,6 +66,7 @@ from seleric_swarm.diagnosis.adapters.legacy_trace import LegacyTrace, OperatorS
 from seleric_swarm.diagnosis.adapters.live_record import run_recorded, save_record
 from seleric_swarm.diagnosis.adapters.live_subgraph import (
     POOL_EXTRA,
+    declared_bridge_pool,
     graph_for,
     plan_subgraph,
     same_quantity_of_outcome,
@@ -76,6 +77,7 @@ from seleric_swarm.diagnosis.adapters.live_subgraph import (
 from seleric_swarm.diagnosis.adapters.runstore_artifacts import ArtifactRunStore
 from seleric_swarm.diagnosis.domain.gather import GatherPlan
 from seleric_swarm.diagnosis.domain.types import Scope, SeriesRequest, Window
+from seleric_swarm.diagnosis.graph.live import load_priors
 from seleric_swarm.diagnosis.operators.gather import gather
 from seleric_swarm.diagnosis.trace.active import report_failure
 from seleric_swarm.diagnosis.trace.run import RecordingSeriesPort
@@ -909,6 +911,18 @@ def _funnel_pool(ctx: RunContext[SelericDeps], metric_id: str, lineage: dict[str
     return list(dict.fromkeys(pool))
 
 
+def _declared_funnel(ctx: RunContext[SelericDeps], lineage: dict[str, engine.MetricMeta]) -> tuple[str, ...]:
+    """A funnel the business model declares (2b): its base, then each stage's share of the base, in order; empty when
+    the catalogue lacks one of them. A share of the base, never an event count per base unit: add-to-cart events per
+    session double-count a session that adds five times."""
+    for proc in (load_priors().get("business_model") or {}).get("processes", {}).values():
+        share = f"{proc.get('unit')}_share"
+        ids = (str(proc["base"]), *(str(s[share]) for s in proc.get("stages") or [] if s.get(share)))
+        if len(ids) > 2 and all(m in lineage and ctx.deps.catalogue.has_metric(m) and _supports_brand(ctx, m) for m in ids):
+            return ids
+    return ()
+
+
 def _funnel_ladder(
     outcome: str,
     ends: list[str],
@@ -1219,6 +1233,13 @@ async def _diagnose(
     # Candidate causes come from the reviewed graph (P3.2, D-51): the most upstream metrics that can move the outcome.
     # A metric the graph does not know falls back to the catalogue's lineage, and the answer says so.
     subgraph = plan_subgraph(loaded_graph, metric_id, lineage, identity_metrics, ctx.deps.catalogue.has_metric)
+    if subgraph is not None and not subgraph.candidates and (units := engine.unit_count_metric(metric_id, lineage)):
+        # No reviewed edge reaches the outcome itself (net sales): its causes are read through the count of the units
+        # it is recorded on (orders), the volume part of outcome = units × value per unit.
+        by_units = plan_subgraph(loaded_graph, units, lineage, [], ctx.deps.catalogue.has_metric)
+        if by_units is not None and by_units.candidates:
+            subgraph = by_units
+            notes.append(f"the reviewed graph records no cause of {metric_id} itself; its causes were read through {units}")
     planned = subgraph_drivers(subgraph, cap + POOL_EXTRA) if subgraph is not None else []
     from_graph = bool(planned)
     if not from_graph:
@@ -1248,22 +1269,26 @@ async def _diagnose(
     # only if it reproduces the outcome on every history day.
     bridge_pool: list[str] = []
     if out_meta.additive and out_meta.unit:
+        # The reviewed graph says which metrics add up to the outcome; without it, every additive metric in its unit.
+        proposed = declared_bridge_pool(loaded_graph, metric_id) if loaded_graph is not None else list(lineage)
         bridge_pool = [
-            m for m, meta in lineage.items()
-            if m != metric_id and meta.additive and meta.unit == out_meta.unit
+            m for m in proposed
+            if m != metric_id and (meta := lineage.get(m)) is not None and meta.additive and meta.unit == out_meta.unit
             and ctx.deps.catalogue.has_metric(m) and _supports_brand(ctx, m)
         ]
     named_parts = [d for n in named for d in lineage.get(n, engine.MetricMeta(n)).depends_on if d in lineage]
     # A ratio outcome is also read through the funnel between its denominator and numerator, and an outcome scoped to
     # particular entities through what the account edited on them (budget / status / bid edits).
     ladder_ends = _funnel_pool(ctx, metric_id, lineage)
+    # An additive outcome's rate chain (orders ≈ conversion × sessions) is read through the funnel stages before it.
+    funnel = _declared_funnel(ctx, lineage) if out_meta.additive else ()
     change_log = _change_log_metrics(ctx, lineage) if filters else []
     # The count of the outcome's own units, so a driver counting the same events is recognised as such.
     unit_count = engine.unit_count_metric(metric_id, lineage)
     unit_counts = [unit_count] if unit_count and ctx.deps.catalogue.has_metric(unit_count) else []
     series_ids = list(dict.fromkeys(
         [metric_id, *identity_metrics, *chain_metrics, *drivers, *path_metrics, *peer_metrics, *named, *named_parts, *bridge_pool,
-         *ladder_ends, *change_log, *unit_counts]
+         *ladder_ends, *change_log, *unit_counts, *funnel]
     ))
     marks.append(("plan", time.perf_counter()))
     env = engine.default_env()
@@ -1277,6 +1302,7 @@ async def _diagnose(
         drivers=tuple(drivers), dims=tuple(dims), chain_dims=chain_dims,
         scope_tokens=frozenset(t for d in _scope_dimensions(ctx) for t in d.lower().split("_") if t),
         max_segment_rows=_MAX_SEGMENT_ROWS, subgraph=subgraph, drivers_from_graph=from_graph, estimate_cap=cap if from_graph else 0,
+        funnel=funnel,
     )
     recording = RecordingSeriesPort(CubeSeriesAdapter(ctx, guarded=guarded, report_dropped_filters=True))
     gathered = await gather(
@@ -1327,7 +1353,7 @@ async def _diagnose(
     evidence_ids: list[str] = []
     per_metric_ids: dict[str, list[str]] = {}
     cited_metrics = [metric_id, *(t.metric for t in report.decomposition), *(t.metric for t in report.bridge),
-                     *(t.metric for t in report.chain),
+                     *(t.metric for t in report.chain), *(t.metric for t in report.funnel),
                      *(f.driver for f in report.drivers if f.status in ("implicated", "ruled_out") and f.driver in series)]
     for m in dict.fromkeys(cited_metrics):
         if m in series:

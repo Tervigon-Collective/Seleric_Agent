@@ -9,12 +9,18 @@ from collections.abc import Callable
 from seleric_swarm.diagnosis.domain.analysis import EventAnalysis, WhatResult
 from seleric_swarm.diagnosis.domain.config import DiagnosisConfig
 from seleric_swarm.diagnosis.domain.lineage import MetricMeta
-from seleric_swarm.diagnosis.domain.report import BridgeTerm, DecompositionTerm, DimensionFinding
+from seleric_swarm.diagnosis.domain.report import (
+    BridgeTerm,
+    DecompositionTerm,
+    DimensionFinding,
+    FunnelStep,
+)
 from seleric_swarm.diagnosis.operators.identities import discover_rate_chains
 from seleric_swarm.diagnosis.operators.what_terms import (
     _bridge,
     _chain_step,
     _decompose,
+    _funnel_steps,
     _own_window,
 )
 from seleric_swarm.diagnosis.operators.where_rate import _analyse_rate_dimension
@@ -32,6 +38,7 @@ def run_what(ana: EventAnalysis, *, cfg: DiagnosisConfig, clock: Callable[[], fl
     chain_identity = ""
     chain: list[DecompositionTerm] = []
     chain_dimensions: list[DimensionFinding] = []
+    funnel: list[FunnelStep] = []
     # ---- layer 2: decomposition ---------------------------------------------------
     if identity is not None:
         decomposition = _decompose(inp, window, identity, y_ev, y_rf, cfg=cfg)
@@ -61,6 +68,7 @@ def run_what(ana: EventAnalysis, *, cfg: DiagnosisConfig, clock: Callable[[], fl
             chain = _chain_step(inp, window, ident_c, t_ev, t_rf, cfg=cfg)
             rate_m, base_m = ident_c.factors[0][0], ident_c.factors[1][0]
             r_window = window if baseline else _own_window(inp.series[rate_m], history, event_days, additive=False, kind=ref_kind, cfg=cfg)[0]
+            funnel = _funnel_steps(inp, rate_m, base_m, r_window)
             for dim, seg in (inp.segments.get(rate_m) or {}).items():
                 if r_window is None or dim not in (inp.segments.get(base_m) or {}):
                     continue
@@ -71,5 +79,5 @@ def run_what(ana: EventAnalysis, *, cfg: DiagnosisConfig, clock: Callable[[], fl
     return WhatResult(
         decomposition=decomposition, bridge=bridge, bridge_identity=bridge_identity, bridge_residual=bridge_residual,
         bridge_residual_vs_previous=bridge_residual_vs_previous, chain_identity=chain_identity, chain=chain,
-        chain_dimensions=chain_dimensions,
+        chain_dimensions=chain_dimensions, funnel=funnel,
     )

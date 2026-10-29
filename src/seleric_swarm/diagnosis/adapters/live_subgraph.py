@@ -103,3 +103,32 @@ def same_quantity_of_outcome(subgraph: Subgraph | None, metrics: list[str]) -> l
         return metrics
     same = {p.peer for p in subgraph.peers}
     return [m for m in metrics if m not in same]
+
+
+def declared_bridge_pool(loaded: LoadedGraph, outcome: str) -> list[str]:
+    """The metrics an accounting bridge of ``outcome`` may use: the terms of its declared composition, every level down,
+    or, when it has none, those of a metric the reviewed pairs say measures the same quantity (net sales has no formula;
+    the P&L's net sales, its co-measure, has seven terms). The data still decide (the bridge must reproduce the outcome on
+    every history day). Allocated shares and the wholes built from the outcome are never terms: ad spend is not
+    'attributed contribution minus net profit' (live 2026-10-29). Empty when nothing declares how the outcome adds up."""
+    from seleric_swarm.diagnosis.domain.graph import EdgeKind
+
+    g = loaded.graph
+    parts: dict[str, list[str]] = {}
+    peers: list[str] = []
+    for e in g.edges:
+        if e.kind == EdgeKind.COMPOSITION:
+            parts.setdefault(e.target, []).append(e.source)
+        elif e.kind in (EdgeKind.CO_MEASURE, EdgeKind.TWIN) and outcome in (e.source, e.target):
+            peers.append(e.target if e.source == outcome else e.source)
+    roots = [outcome] if outcome in parts else [p for p in dict.fromkeys(peers) if p in parts]
+    pool: list[str] = []
+    todo = [t for r in roots for t in parts[r]]
+    while todo:
+        m = todo.pop(0)
+        node = g.nodes.get(m)
+        if m == outcome or m in pool or node is None or node.allocated:
+            continue
+        pool.append(m)
+        todo += parts.get(m, [])
+    return pool

@@ -46,6 +46,8 @@ class DiagnosisInput:
     estimate_cap: int = 0  # 0: no cap
     # (metric, peer, expected): pairs the reviewed graph says count the same events in two systems, both with a series.
     measurement_pairs: list[tuple[str, str, str]] = field(default_factory=list)
+    # A funnel declared in the business model (2b): its base, then each stage's share of the base, in order.
+    funnel: list[str] = field(default_factory=list)
 
 
 _NON_FINITE = {"nan": float("nan"), "inf": float("inf"), "-inf": float("-inf")}
@@ -92,6 +94,7 @@ def input_to_dict(inp: DiagnosisInput) -> dict[str, Any]:
         "driver_chains": {c: [list(e) for e in chain] for c, chain in sorted(inp.driver_chains.items())},
         "estimate_cap": inp.estimate_cap,
         "measurement_pairs": [list(p) for p in inp.measurement_pairs],
+        "funnel": list(inp.funnel),
     }
 
 
@@ -118,4 +121,5 @@ def input_from_dict(raw: Mapping[str, Any]) -> DiagnosisInput:
         driver_chains={c: [list(e) for e in chain] for c, chain in (raw.get("driver_chains") or {}).items()},
         estimate_cap=int(raw.get("estimate_cap", 0)),
         measurement_pairs=[(str(m), str(p), str(e)) for m, p, e in raw.get("measurement_pairs") or []],
+        funnel=[str(m) for m in raw.get("funnel") or []],
     )

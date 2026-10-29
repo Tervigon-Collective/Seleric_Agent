@@ -159,6 +159,22 @@ def _narrative(r: DiagnosisReport, lineage: dict[str, MetricMeta], *, cfg: Diagn
                 else f", so {_label(lead_c.metric, lineage)} carries about {_share(lead_c.share_of_change)} of it."
             )
         )
+    if r.funnel and r.chain and e.strength != "none":
+        base = _label(r.chain[-1].metric, lineage).lower()
+        lead_f = max(r.funnel, key=lambda t: abs(t.share_of_change or 0.0))
+        out.append(
+            f"FUNNEL STAGES (arithmetic, not a cause): {_label(r.funnel[-1].metric, lineage)} is the product of the steps "
+            f"of the funnel; each stage as a share of {base}, and in brackets the share of the stage before it that "
+            "reached it: "
+            + "; ".join(
+                f"{_label(t.metric, lineage)} {_val(t.reference, t.metric, lineage, fmt)} → {_val(t.event, t.metric, lineage, fmt)}"
+                + ("" if i == 0 else f" (step {t.step_reference:.1%} → {t.step_event:.1%}, {_chg(t.step_event, t.step_reference)})")
+                for i, t in enumerate(r.funnel)
+            )
+            + f". The largest move was at {_label(lead_f.metric, lineage).lower()}"
+            + (f" (about {_share(lead_f.share_of_change)} of the {_label(r.funnel[-1].metric, lineage).lower()} change)."
+               if not _offsetting([t.share_of_change for t in r.funnel]) else ".")
+        )
     period = e.reference_kind == _PERIOD_KIND
     where = next((d for d in r.chain_dimensions if _covers_whole(d, cfg=cfg) and (d.localised or d.simpsons_paradox)), None)
     where_metric = r.chain[0].metric if where is not None and r.chain else None

@@ -20,7 +20,7 @@ from seleric_swarm.diagnosis.domain.identity import Identity
 from seleric_swarm.diagnosis.domain.inputs import DiagnosisInput
 from seleric_swarm.diagnosis.domain.lineage import MetricMeta
 from seleric_swarm.diagnosis.domain.numeric import Series, _finite
-from seleric_swarm.diagnosis.domain.report import BridgeTerm, DecompositionTerm
+from seleric_swarm.diagnosis.domain.report import BridgeTerm, DecompositionTerm, FunnelStep
 from seleric_swarm.diagnosis.domain.window import EventWindow
 from seleric_swarm.diagnosis.operators.bridge_search import discover_bridge_tree, shapley
 
@@ -235,3 +235,27 @@ def _bridge(
         for node, parts in tree.items()
     ]
     return terms, described, residual, residual_prev
+
+
+def _funnel_steps(inp: DiagnosisInput, rate: str, base: str, window: EventWindow | None) -> list[FunnelStep]:
+    """A funnel rate (purchasing sessions ÷ sessions) through the stages declared before it (product view, add to
+    cart, checkout): each stage's share of the base divided by the previous stage's share is the step rate, and the
+    steps multiply back to the rate, so their log changes split its change exactly. Read over the rate's own window,
+    one set of days for every stage. Arithmetic, not a cause; only for a funnel declared on this base (2b)."""
+    f = inp.funnel
+    if window is None or len(f) < 3 or f[0] != base or rate not in f[2:]:
+        return []
+    vals: list[tuple[str, float, float]] = []
+    for s in f[1 : f.index(rate) + 1]:
+        ev, rf = _daily_window(inp.series.get(s, {}), window)
+        if ev is None or rf is None or ev <= 0 or rf <= 0:
+            return []
+        vals.append((s, ev, rf))
+    steps: list[tuple[str, float, float, float, float, float]] = []
+    prev_ev = prev_rf = 1.0
+    for s, ev, rf in vals:
+        se, sr = ev / prev_ev, rf / prev_rf
+        steps.append((s, ev, rf, se, sr, math.log(se / sr)))
+        prev_ev, prev_rf = ev, rf
+    total = sum(x[-1] for x in steps)
+    return [FunnelStep(s, ev, rf, se, sr, (lg / total) if abs(total) > 1e-12 else None) for s, ev, rf, se, sr, lg in steps]

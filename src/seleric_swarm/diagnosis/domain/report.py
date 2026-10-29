@@ -50,6 +50,19 @@ class DecompositionTerm:
 
 
 @dataclass
+class FunnelStep:
+    """One stage of a funnel rate (business model 2b): its share of the base, and the share of the stage before it
+    that reached it (the step). The steps multiply back to the rate, so their log changes split its change exactly."""
+
+    metric: str
+    event: float
+    reference: float
+    step_event: float
+    step_reference: float
+    share_of_change: float | None
+
+
+@dataclass
 class BridgeTerm:
     """One term of the exact additive bridge: ``parent = Σ sign × metric``."""
 
@@ -192,6 +205,8 @@ class DiagnosisReport:
     chain_identity: str = ""
     chain: list[DecompositionTerm] = field(default_factory=list)
     chain_dimensions: list[DimensionFinding] = field(default_factory=list)
+    # The chain's rate split into the funnel stages declared for its base (empty when none are declared).
+    funnel: list[FunnelStep] = field(default_factory=list)
     dimensions: list[DimensionFinding] = field(default_factory=list)
     drivers: list[DriverFinding] = field(default_factory=list)
     competing_hypotheses: list[dict[str, Any]] = field(default_factory=list)

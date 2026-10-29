@@ -195,6 +195,7 @@ async def gather(
         driver_paths=_driver_paths(plan, offered, series), candidates_from_graph=plan.drivers_from_graph,
         driver_chains=_driver_chains(plan, offered), estimate_cap=plan.estimate_cap,
         measurement_pairs=_measurement_pairs(plan, series),
+        funnel=list(plan.funnel) if all(m in series for m in plan.funnel) else [],
     )
     return gathered
 
