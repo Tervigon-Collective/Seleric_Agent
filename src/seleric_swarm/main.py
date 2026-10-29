@@ -23,6 +23,7 @@ from seleric_swarm.api.async_missions import (
 from seleric_swarm.api.business_state import router as business_state_router
 from seleric_swarm.api.conversations import router as conversations_router
 from seleric_swarm.api.emails import router as emails_router
+from seleric_swarm.api.entra_auth import make_entra_authenticator
 from seleric_swarm.api.mission_access import request_principal, require_mission_access
 from seleric_swarm.api.phase7 import router as phase7_router
 from seleric_swarm.api.ready import check_readiness
@@ -216,8 +217,19 @@ except Exception:  # office UI is optional — never block the core API on it
 
 # Starlette applies middleware in reverse add order: CORS outermost so
 # Swagger / Cursor-preview preflights never hit API-key or rate-limit 401s.
+_entra_tenant = getattr(_settings_boot, "oauth_entra_tenant_id", "").strip()
+_entra_audience = getattr(_settings_boot, "oauth_audience", "").strip()
 app.add_middleware(
     ApiSecurityMiddleware,
+    authenticator=(
+        make_entra_authenticator(
+            _entra_tenant,
+            _entra_audience,
+            workspace_id=getattr(_settings_boot, "default_workspace_id", "default"),
+        )
+        if _entra_tenant and _entra_audience
+        else None
+    ),
     api_key=getattr(_settings_boot, "api_key", "") or "",
     rate_limit_per_minute=int(getattr(_settings_boot, "rate_limit_per_minute", 60) or 60),
     rate_limit_enabled=bool(getattr(_settings_boot, "rate_limit_enabled", True)),

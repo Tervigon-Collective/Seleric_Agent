@@ -231,6 +231,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("api_key", "API_KEY", "SELERIC_API_KEY"),
     )
+    # Entra ID OAuth: bearer access tokens for this API are accepted when both are set.
+    # oauth_audience is comma-separated (e.g. the app's client id and api://<client id>).
+    oauth_entra_tenant_id: str = ""
+    oauth_audience: str = ""
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 60
     # Compatibility identity used until a first-class identity provider is configured.

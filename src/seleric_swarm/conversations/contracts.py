@@ -30,6 +30,7 @@ class PrincipalAuthMethod(StrEnum):
     ANONYMOUS = "ANONYMOUS"
     SHARED_API_KEY = "SHARED_API_KEY"
     SERVICE = "SERVICE"
+    OIDC = "OIDC"
 
 
 class Principal(ContractModel):
