@@ -42,6 +42,7 @@ from seleric_swarm.agent.answer_text import (
     round_long_decimals,
 )
 from seleric_swarm.agent.dependencies import SelericDeps
+from seleric_swarm.agent.data_question import names_a_metric
 from seleric_swarm.agent.grounding import (
     correction_message,
     grounding,
@@ -76,6 +77,9 @@ RETRY_NOTICE = ("Your previous reply was unusable. Write the final answer now fr
                 "call a tool only if something essential is still missing.")
 LENGTH_NOTICE = ("Your previous reply was cut off by the length limit. Write the final answer again, shorter: the finding "
                  "first, only the top rows in the text (show_table carries a long breakdown), no repetition.")
+NO_TOOL_NOTICE = ("That question is about this brand's own data, and you answered without calling a tool. Do not answer "
+                  "from memory: fetch what the answer needs with the tools (a definition from the catalogue, figures "
+                  "with metrics_query, freshness from the data-health tools), then answer from the results.")
 CUT_OFF_NOTE = "\n\n⚠ This answer was cut off at the length limit."
 DEGENERATE_ANSWER = ("I couldn't produce a reliable answer: the model returned unusable output twice. "
                      "Please retry.")
@@ -359,6 +363,21 @@ async def run_turn(
                   + (f" ({fetched} result{'s' if fetched != 1 else ''} fetched, none of them reported here)" if fetched else "")
                   + ". Please narrow the question (a shorter period, one metric or one channel) and ask again.")
         messages, limitations = history, ["EXECUTION_LIMIT_EXCEEDED"]
+
+    if (not state.tool_calls and not limitations and answer.strip() and not prior_payloads
+            and names_a_metric(question, deps.catalogue)):
+        # A data question answered with no tool call (any model, the fallback included): sent back once to use them.
+        stats["no_tool_revisions"] = 1
+        emit_progress(mission_id, "agent.revising", "Checking the answer against the data", {"reason": "no_tool"})
+        budget.forced = False
+        if answer_stream is not None:
+            answer_stream.discard()
+        try:
+            revised, messages = await run(NO_TOOL_NOTICE, messages)
+        except UsageLimitExceeded:
+            revised = ""
+        if revised and not degenerate(revised):
+            answer = revised
 
     quoted = quoted_figures(_conversation_texts(question, history))
 

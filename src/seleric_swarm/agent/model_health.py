@@ -77,6 +77,10 @@ class ModelHealth:
 
     def cool(self, key: str, seconds: float) -> None:
         self._until[key] = self._clock() + seconds
+        # The chain moves on to the next model until this ends: a switch the answer's quality can depend on (gpt-4o took
+        # 27 of 89 steps in the 2026-10-29 run), so it is logged where it happens.
+        _log.warning("llm_model_cooling", model=key, seconds=round(seconds, 1),
+                     fallback_ready=any(not self._cooling(k) for k in self._known if k != key))
 
     def recover(self, key: str) -> None:
         self._until.pop(key, None)

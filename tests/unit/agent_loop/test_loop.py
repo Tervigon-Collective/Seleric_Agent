@@ -359,3 +359,15 @@ async def test_figures_with_no_tool_call_are_checked_against_the_conversation_on
     assert result.issues  # nothing fetched, nothing in the question: the figure is unverified
     quoted, _, _ = await _turn(_scripted([TextPart("Net sales were ₹99,999.")]), question="net sales were 99,999, right?")
     assert not quoted.issues  # the user's own figure may be repeated
+
+
+def test_a_model_going_on_cooldown_is_logged_with_whether_a_fallback_is_ready():
+    from structlog.testing import capture_logs
+
+    from seleric_swarm.agent.model_health import ModelHealth
+
+    health = ModelHealth(clock=lambda: 0.0)
+    health.register("loop:gpt-5-mini"), health.register("loop:gpt-4o")
+    with capture_logs() as logs:
+        health.cool("loop:gpt-5-mini", 45.0)
+    assert logs == [{"event": "llm_model_cooling", "log_level": "warning", "model": "loop:gpt-5-mini", "seconds": 45.0, "fallback_ready": True}]
