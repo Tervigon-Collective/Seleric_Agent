@@ -1,3 +1,7 @@
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMonitoringStore } from "../../stores/monitoring";
 import type { DomainView } from "../../api/monitoring";
 import { useShellStore } from "../../stores/shell";
@@ -11,22 +15,22 @@ function DomainHeader({ domain }: { domain: DomainView }) {
   const refresh = useMonitoringStore((s) => s.refresh);
   const snap = domain.snapshot;
   return (
-    <header className="ops-domain-head">
+    <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
       <div>
-        <h3>{domain.title}</h3>
-        <p>{domain.description}</p>
+        <h3 className="m-0 text-base font-medium">{domain.title}</h3>
+        <p className="m-0 text-sm text-muted-foreground">{domain.description}</p>
       </div>
-      <div className="ops-domain-meta">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {snap && (
-          <span className={snap.stale ? "ops-stale" : ""}>
+          <span className={snap.stale ? "font-medium text-[var(--warning)]" : undefined}>
             Data to {snap.as_of} · checked {ago(snap.age_s)}{snap.stale ? " · out of date" : ""}
           </span>
         )}
-        {snap && snap.status !== "OK" && <span className="ops-pill status-watch">Some metrics could not be read</span>}
-        {domain.pending && <span className="ops-pill status-watch">Selection changed, waiting for numbers</span>}
-        <button className="btn" onClick={() => void refresh(domain.id)} disabled={!!busy || !domain.enabled}>
+        {snap && snap.status !== "OK" && <Badge variant="secondary">Some metrics could not be read</Badge>}
+        {domain.pending && <Badge variant="secondary">Selection changed, waiting for numbers</Badge>}
+        <Button variant="outline" size="sm" onClick={() => void refresh(domain.id)} disabled={!!busy || !domain.enabled}>
           {busy === "refreshing" ? "Refreshing…" : "Refresh"}
-        </button>
+        </Button>
       </div>
     </header>
   );
@@ -39,29 +43,34 @@ export function OpsDashboard() {
   const openOps = useShellStore((s) => s.openOps);
   const notice = useMonitoringStore((s) => s.notice);
   if (!state) {
-    return <div className="ops-empty">{error ? <p role="alert">{error}</p> : loading ? "Loading the latest numbers…" : "No data yet."}</div>;
+    if (loading && !error) return <div className="flex flex-col gap-3" role="status" aria-busy="true" aria-label="Loading the latest numbers">
+      <Skeleton className="h-28 w-full" />
+      <Skeleton className="h-16 w-full" />
+      <Skeleton className="h-16 w-full" />
+    </div>;
+    return <div className="py-8 text-muted-foreground">{error ? <p role="alert">{error}</p> : "No data yet."}</div>;
   }
   return (
-    <div className="ops-dashboard">
+    <div className="flex flex-col gap-6">
       <BusinessState domains={state.domains} />
       <AnomalyFeed domains={state.domains} />
       {state.domains.map((d) => (
-        <section key={d.id} id={`ops-${d.id}`} className="ops-domain" aria-label={d.title}>
+        <section key={d.id} id={`ops-${d.id}`} className="flex scroll-mt-3 flex-col gap-3" aria-label={d.title}>
           <DomainHeader domain={d} />
-          {notice[d.id]?.kind === "error" && <p className="ops-error" role="alert">{notice[d.id]?.text}</p>}
+          {notice[d.id]?.kind === "error" && <Alert variant="destructive" role="alert"><AlertDescription>{notice[d.id]?.text}</AlertDescription></Alert>}
           {!d.enabled ? (
-            <p className="ops-note">Monitoring for this domain is switched off. <button className="link-btn" onClick={() => openOps("monitoring")}>Change in Monitoring</button></p>
+            <p className="text-sm text-muted-foreground">Monitoring for this domain is switched off. <Button variant="link" size="sm" onClick={() => openOps("monitoring")}>Change in Monitoring</Button></p>
           ) : !d.snapshot ? (
-            <p className="ops-note">No numbers yet. They appear after the first scheduled run, or press Refresh.</p>
+            <p className="text-sm text-muted-foreground">No numbers yet. They appear after the first scheduled run, or press Refresh.</p>
           ) : (
             <>
               {d.snapshot.signals.length > 0 && (
-                <ul className="ops-signals">{d.snapshot.signals.map((s) => <li key={s}>{s}</li>)}</ul>
+                <ul className="m-0 grid list-none gap-1 p-0 text-sm text-destructive">{d.snapshot.signals.map((s) => <li key={s}>{s}</li>)}</ul>
               )}
-              <div className="ops-grid">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
                 {d.snapshot.metrics.map((m) => <MetricCard key={m.metric_id} metric={m} domainId={d.id} />)}
               </div>
-              {d.snapshot.metrics.length === 0 && <p className="ops-note">No metrics selected. Choose some in Monitoring.</p>}
+              {d.snapshot.metrics.length === 0 && <p className="text-sm text-muted-foreground">No metrics selected. Choose some in Monitoring.</p>}
             </>
           )}
         </section>

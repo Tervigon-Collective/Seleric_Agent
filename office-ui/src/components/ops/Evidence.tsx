@@ -23,11 +23,13 @@ export function Evidence({ metric }: { metric: MetricView }) {
     ["Source", `${metric.freshness.toLowerCase()}${metric.quality_flags.length ? ` · ${metric.quality_flags.join(", ")}` : ""}`],
   ];
   return (
-    <div className="ops-evidence">
-      <p className="ops-why">{j?.reason || "No verdict."}</p>
+    <div className="flex flex-col gap-3 border-t p-3">
+      <p className="m-0 text-sm">{j?.reason || "No verdict."}</p>
       <MetricChart metric={metric} height={96} />
-      <dl>{rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
-      <p className="ops-id" title="Stable reference for this metric">{metric.metric_id}</p>
+      <dl className="m-0 grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-x-5 gap-y-2">
+        {rows.map(([k, v]) => <div key={k}><dt className="text-xs tracking-wide text-muted-foreground uppercase">{k}</dt><dd className="m-0 text-sm tabular-nums break-words">{v}</dd></div>)}
+      </dl>
+      <p className="m-0 font-mono text-xs text-muted-foreground" title="Stable reference for this metric">{metric.metric_id}</p>
     </div>
   );
 }

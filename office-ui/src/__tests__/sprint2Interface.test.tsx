@@ -60,13 +60,15 @@ describe("eval thread separation", () => {
     const nav = container.querySelector('[aria-label="Conversation list"]');
     expect(nav?.textContent).toContain("Why did ROAS decline?");
     // The eval thread must not appear as a regular date-grouped row.
-    const dateGroups = [...container.querySelectorAll(".thread-group-label")].filter(
-      (el) => el.tagName === "DIV",
-    );
-    expect(dateGroups.some((el) => el.textContent?.includes("GOLDEN"))).toBe(false);
-    const evalGroup = container.querySelector(".thread-eval-group");
-    expect(evalGroup?.textContent).toContain("Evaluation runs (1)");
-    expect(evalGroup?.textContent).toContain("GOLDEN Q18");
+    const rows = [...container.querySelectorAll('[data-slot="thread-row"]')];
+    const regular = rows.filter((row) => !row.closest('[data-slot="collapsible-content"]'));
+    expect(regular.some((row) => row.textContent?.includes("GOLDEN"))).toBe(false);
+    // Evaluation runs sit in their own collapsed group, opened on demand.
+    const trigger = [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("Evaluation runs (1)")) as HTMLButtonElement;
+    expect(trigger).toBeTruthy();
+    act(() => trigger.click());
+    const evalRows = [...container.querySelectorAll('[data-slot="collapsible-content"] [data-slot="thread-row"]')];
+    expect(evalRows.map((row) => row.textContent).join(" ")).toContain("GOLDEN Q18");
   });
 });
 
@@ -114,7 +116,7 @@ describe("compact thread context", () => {
       },
     });
     act(() => root.render(<App />));
-    const context = container.querySelector(".thread-context");
+    const context = container.querySelector('[data-slot="thread-context"]');
     expect(context?.textContent).toContain("Why did ROAS decline?");
     expect(context?.querySelector("h2")).toBeNull();
   });
@@ -126,6 +128,6 @@ describe("compact thread context", () => {
       messages: { t1: [] },
     });
     act(() => root.render(<App />));
-    expect(container.querySelector(".thread-context")).toBeNull();
+    expect(container.querySelector('[data-slot="thread-context"]')).toBeNull();
   });
 });

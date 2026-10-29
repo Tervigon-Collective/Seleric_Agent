@@ -40,7 +40,7 @@ describe("answer feedback", () => {
 
   it("renders nothing for streaming drafts with transient ids", () => {
     act(() => root.render(<SelericFeedback {...feedbackProps({ ...data, final: false })} />));
-    expect(container.querySelector(".message-feedback")).toBeNull();
+    expect(container.querySelector('[data-slot="message-feedback"]')).toBeNull();
   });
 
   it("restores the saved vote and submits a new one", async () => {
@@ -81,8 +81,8 @@ describe("answer feedback", () => {
     // Highlight is applied without waiting for the pending request.
     const up = container.querySelector('[aria-label="Mark answer helpful"]') as HTMLButtonElement;
     expect(up.getAttribute("aria-pressed")).toBe("true");
-    expect(container.querySelector(".message-feedback")?.className).toContain("message-feedback");
-    const input = container.querySelector(".feedback-note input") as HTMLInputElement;
+    expect(container.querySelector('[data-slot="message-feedback"]')).toBeTruthy();
+    const input = container.querySelector('[data-slot="message-feedback"] form input') as HTMLInputElement;
     expect(input).toBeTruthy();
     await act(async () => {
       resolve({
@@ -108,14 +108,14 @@ describe("answer feedback", () => {
       '[aria-label="Report a problem with this answer"]',
     ) as HTMLButtonElement).click());
     expect(submit).toHaveBeenLastCalledWith("t1", "m1", { rating: "down", note: "", runId: "r1" });
-    const input = container.querySelector(".feedback-note input") as HTMLInputElement;
+    const input = container.querySelector('[data-slot="message-feedback"] form input') as HTMLInputElement;
     expect(input).toBeTruthy();
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
       setter?.call(input, "wrong metric");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    act(() => (container.querySelector(".feedback-note") as HTMLFormElement).requestSubmit());
+    act(() => (container.querySelector('[data-slot="message-feedback"] form') as HTMLFormElement).requestSubmit());
     expect(submit).toHaveBeenLastCalledWith(
       "t1", "m1", { rating: "down", note: "wrong metric", runId: "r1" },
     );
@@ -134,14 +134,14 @@ describe("answer feedback", () => {
     act(() => (container.querySelector(
       '[aria-label="Mark answer helpful"]',
     ) as HTMLButtonElement).click());
-    const input = container.querySelector(".feedback-note input") as HTMLInputElement;
+    const input = container.querySelector('[data-slot="message-feedback"] form input') as HTMLInputElement;
     expect(input).toBeTruthy();
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
       setter?.call(input, "clear breakdown");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    act(() => (container.querySelector(".feedback-note") as HTMLFormElement).requestSubmit());
+    act(() => (container.querySelector('[data-slot="message-feedback"] form') as HTMLFormElement).requestSubmit());
     expect(submit).toHaveBeenLastCalledWith(
       "t1", "m1", { rating: "up", note: "clear breakdown", runId: "r1" },
     );
@@ -186,9 +186,9 @@ describe("answer context footer", () => {
     const props = (text: string) =>
       ({ data: { text }, type: "data-seleric-context", name: "seleric-context" }) as unknown as DataMessagePartProps;
     act(() => root.render(<SelericContext {...props("Period: 2026-10-08 · Currency: INR")} />));
-    expect(container.querySelector(".message-context")?.textContent).toContain("Period:");
+    expect(container.querySelector('[data-slot="message-context"]')?.textContent).toContain("Period:");
     act(() => root.render(<SelericContext {...props("  ")} />));
-    expect(container.querySelector(".message-context")).toBeNull();
+    expect(container.querySelector('[data-slot="message-context"]')).toBeNull();
   });
 });
 

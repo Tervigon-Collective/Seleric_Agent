@@ -198,10 +198,15 @@ export const useOffice = create<OfficeState>((set, get) => ({
   ingestEvent: (ev) => {
     const s = get();
     if (s.seenSeq.has(ev.seq)) return; // idempotent: dedupe by seq
-    const seenSeq = new Set(s.seenSeq);
+    // Mutated in place: copying the whole set per event made a long mission O(n²).
+    // Readers only use .has/.size, and the set() below still notifies subscribers.
+    const seenSeq = s.seenSeq;
     seenSeq.add(ev.seq);
 
-    const timeline = [...s.timeline, ev].sort((a, b) => a.seq - b.seq);
+    // Events normally arrive in order; only pay for a sort when one doesn't.
+    const timeline = [...s.timeline, ev];
+    const tail = s.timeline[s.timeline.length - 1];
+    if (tail && ev.seq < tail.seq) timeline.sort((a, b) => a.seq - b.seq);
     const agents = applyEventToAgents(s.agents, ev);
 
     // leadership ring follows the freshest transfer

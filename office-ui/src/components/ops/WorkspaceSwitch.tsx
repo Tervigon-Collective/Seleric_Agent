@@ -1,3 +1,4 @@
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Workspace } from "../../stores/shell";
 
 const TABS: { id: Workspace; label: string }[] = [
@@ -8,16 +9,10 @@ const TABS: { id: Workspace; label: string }[] = [
 
 export function WorkspaceSwitch({ current, onChange }: { current: Workspace; onChange: (w: Workspace) => void }) {
   return (
-    <div className="workspace-switch" role="tablist" aria-label="Workspace">
-      {TABS.map((t) => (
-        <button
-          key={t.id}
-          role="tab"
-          aria-selected={current === t.id}
-          className={current === t.id ? "active" : ""}
-          onClick={() => onChange(t.id)}
-        >{t.label}</button>
-      ))}
-    </div>
+    <Tabs value={current} onValueChange={(value) => onChange(value as Workspace)}>
+      <TabsList aria-label="Workspace">
+        {TABS.map((t) => <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>)}
+      </TabsList>
+    </Tabs>
   );
 }

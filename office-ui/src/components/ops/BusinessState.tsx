@@ -1,6 +1,13 @@
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardContent } from "@/components/ui/card";
+import { Item, ItemDescription } from "@/components/ui/item";
+import { cn } from "cn";
 import type { DomainView } from "../../api/monitoring";
 import { headlineMetrics } from "./anomalies";
 import { ago, formatValue } from "./format";
+import { STATUS_ACCENT } from "./status";
+
+const DOT: Record<string, string> = { alert: "bg-destructive", watch: "bg-[var(--warning)]", ok: "bg-[var(--success)]" };
 
 /** The state the agent answers "how is the business doing" from: verdict totals, data day, headline metrics, and anything that makes the numbers unreliable. */
 export function BusinessState({ domains }: { domains: DomainView[] }) {
@@ -15,37 +22,43 @@ export function BusinessState({ domains }: { domains: DomainView[] }) {
   const headline = headlineMetrics(domains);
   const alerts = n("alert");
   return (
-    <section className="ops-state" aria-label="Business state">
-      <div className="ops-verdict">
-        <span className={`ops-dot ${alerts ? "status-alert" : n("watch") ? "status-watch" : "status-ok"}`} aria-hidden />
-        <div>
-          <h3>{alerts ? `${alerts} ${alerts === 1 ? "metric needs" : "metrics need"} attention` : "No metric needs attention"}</h3>
-          <p>
-            {n("watch")} watching · {n("good")} better than usual · {n("ok")} normal{noVerdict ? ` · ${noVerdict} without a verdict yet` : ""}
-            {" · "}{metrics.length} metrics in {live.length} {live.length === 1 ? "domain" : "domains"}
-          </p>
+    <Card data-slot="ops-state" aria-label="Business state">
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+          <span className={cn("mt-1.5 size-2.5 shrink-0 rounded-full", DOT[alerts ? "alert" : n("watch") ? "watch" : "ok"])} aria-hidden />
+          <div className="min-w-0 flex-[1_1_260px]">
+            <h3 className="m-0 text-base font-medium">{alerts ? `${alerts} ${alerts === 1 ? "metric needs" : "metrics need"} attention` : "No metric needs attention"}</h3>
+            <p className="m-0 text-sm text-muted-foreground">
+              {n("watch")} watching · {n("good")} better than usual · {n("ok")} normal{noVerdict ? ` · ${noVerdict} without a verdict yet` : ""}
+              {" · "}{metrics.length} metrics in {live.length} {live.length === 1 ? "domain" : "domains"}
+            </p>
+          </div>
+          {live.length > 0 && (
+            <span className="text-xs text-muted-foreground md:ml-auto">Data to {days.length === 1 ? days[0] : `${days[0]} – ${days[days.length - 1]}`} · oldest check {ago(oldest)}</span>
+          )}
         </div>
-        {live.length > 0 && (
-          <span className="ops-asof">Data to {days.length === 1 ? days[0] : `${days[0]} – ${days[days.length - 1]}`} · oldest check {ago(oldest)}</span>
+        {(stale.length > 0 || partial.length > 0) && (
+          <Alert>
+            <AlertDescription>
+              {stale.length > 0 && <p className="m-0">Out of date: {stale.map((d) => d.title).join(", ")}. Verdicts there may not reflect today.</p>}
+              {partial.length > 0 && <p className="m-0">Some metrics could not be read in: {partial.map((d) => d.title).join(", ")}.</p>}
+            </AlertDescription>
+          </Alert>
         )}
-      </div>
-      {(stale.length > 0 || partial.length > 0) && (
-        <ul className="ops-warnings">
-          {stale.length > 0 && <li>Out of date: {stale.map((d) => d.title).join(", ")}. Verdicts there may not reflect today.</li>}
-          {partial.length > 0 && <li>Some metrics could not be read in: {partial.map((d) => d.title).join(", ")}.</li>}
-        </ul>
-      )}
-      {headline.length > 0 && (
-        <div className="ops-headline" aria-label="Headline metrics">
-          {headline.map(({ id, domain, metric: m }) => (
-            <a key={id} href={`#${id}`} className={`ops-hl status-${m.status}`}>
-              <span>{m.label || m.name || m.metric_id}</span>
-              <b>{formatValue(m.value, m.unit, m.display)}</b>
-              <small>{domain.title}</small>
-            </a>
-          ))}
-        </div>
-      )}
-    </section>
+        {headline.length > 0 && (
+          <div data-slot="ops-headline" aria-label="Headline metrics" className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))]">
+            {headline.map(({ id, domain, metric: m }) => (
+              <a key={id} href={`#${id}`} className="min-w-0 text-inherit no-underline">
+                <Item variant="outline" size="sm" className={cn("h-full flex-col items-start gap-0.5", STATUS_ACCENT[m.status])}>
+                  <ItemDescription className="w-full truncate">{m.label || m.name || m.metric_id}</ItemDescription>
+                  <b className="text-lg font-semibold tabular-nums">{formatValue(m.value, m.unit, m.display)}</b>
+                  <small className="text-xs text-muted-foreground">{domain.title}</small>
+                </Item>
+              </a>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

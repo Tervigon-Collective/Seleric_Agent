@@ -101,10 +101,10 @@ describe("SafeContent markdown", () => {
         "| 2026-08-09..2026-09-07 (previous 30d) | ₹1,560,612.52 | 0.72 |",
       ].join("\n"),
     );
-    const th = [...el.querySelectorAll("thead th")].map((n) => n.className);
-    const firstRow = [...el.querySelectorAll("tbody tr:first-child td")].map((n) => n.className);
-    expect(th).toEqual(["", "num", "num"]);
-    expect(firstRow).toEqual(["", "num", "num"]);
+    // Stock table cells carry their own classes; the contract is only which columns are marked numeric.
+    const marked = (selector: string) => [...el.querySelectorAll(selector)].map((n) => n.classList.contains("num"));
+    expect(marked("thead th")).toEqual([false, true, true]);
+    expect(marked("tbody tr:first-child td")).toEqual([false, true, true]);
     expect(el.querySelector("td.num")?.textContent).toBe("₹845,847.12");
   });
 

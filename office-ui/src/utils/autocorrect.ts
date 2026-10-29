@@ -1,8 +1,11 @@
-import nspell from 'nspell';
-import aff from './dict/en.aff?raw';
-import dic from './dict/en.dic?raw';
+type SpellChecker = {
+  correct(word: string): boolean;
+  suggest(word: string): string[];
+  add(word: string): unknown;
+};
 
-let spellChecker: ReturnType<typeof nspell> | null = null;
+let spellChecker: SpellChecker | null = null;
+let loading: Promise<void> | null = null;
 
 const whitelist = new Set([
   'seleric', 'inr', 'sku', 'skus', 'api', 'p&l', 'ai', 'ui', 'ux', 'sdk',
@@ -12,11 +15,21 @@ const whitelist = new Set([
   'blended', 'laya', 'fastapi', 'ga4', 'sql', 'postgres', 'redis',
 ]);
 
-try {
-  spellChecker = nspell(aff, dic);
-  whitelist.forEach((word) => spellChecker?.add(word));
-} catch (err) {
-  console.error('Failed to load spellcheck dictionary:', err);
+/**
+ * Parsing the 550 KB dictionary blocks the main thread (~200 ms), so it is fetched and built
+ * on first use instead of at import time. Until it resolves the keydown handler is a no-op.
+ */
+export function loadSpellChecker(): Promise<void> {
+  loading ??= Promise.all([import('nspell'), import('./dict/en.aff?raw'), import('./dict/en.dic?raw')])
+    .then(([{ default: nspell }, aff, dic]) => {
+      const checker = nspell(aff.default, dic.default);
+      whitelist.forEach((word) => checker.add(word));
+      spellChecker = checker;
+    })
+    .catch((err) => {
+      console.error('Failed to load spellcheck dictionary:', err);
+    });
+  return loading;
 }
 
 export interface AutoCorrectItem {
@@ -53,6 +66,9 @@ export function attachAutoCorrect(
   inputElement: HTMLTextAreaElement,
   onCorrect?: (item: AutoCorrectItem) => void,
 ) {
+  // Idle time, so the one-off dictionary build never lands on a keystroke or first paint.
+  (window.requestIdleCallback ?? window.setTimeout)(() => void loadSpellChecker());
+
   const triggerKeys = new Set([
     'Tab', ' ', '.', ',', '!', '?', ';', ':', 'Enter',
   ]);

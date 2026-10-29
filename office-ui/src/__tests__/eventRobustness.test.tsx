@@ -132,7 +132,7 @@ describe("error boundaries contain panel crashes", () => {
         </PanelErrorBoundary>
       </div>,
     ));
-    expect(container.querySelector(".panel-crash")).toBeTruthy();
+    expect(container.querySelector('[data-slot="panel-crash"]')).toBeTruthy();
     expect(container.querySelector("svg line")).toBeTruthy();
   });
 
@@ -142,7 +142,7 @@ describe("error boundaries contain panel crashes", () => {
         <Boom />
       </AppErrorBoundary>,
     ));
-    expect(container.querySelector(".app-crash")).toBeTruthy();
+    expect(container.querySelector('[data-slot="app-crash"]')).toBeTruthy();
     expect(container.textContent).toContain("Reload Seleric");
   });
 });

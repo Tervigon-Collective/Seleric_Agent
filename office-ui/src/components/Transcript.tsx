@@ -1,3 +1,4 @@
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ActionBarPrimitive,
   AuiIf,
@@ -8,6 +9,16 @@ import {
   type DataMessagePartProps,
 } from "@assistant-ui/react";
 import { useRef, useEffect, useMemo, useState } from "react";
+import { GlobeIcon } from "lucide-react";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "cn";
+import { Message, MessageContent, MessageHeader } from "@/components/ui/message";
+import { Spinner } from "@/components/ui/spinner";
+import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 import type { MessagePart } from "../api/contracts";
 import { useOffice } from "../store";
 import { useConversationStore } from "../stores/conversation";
@@ -26,19 +37,26 @@ function SelericPart({ data }: DataMessagePartProps) {
 function SelericSources({ data }: DataMessagePartProps) {
   const sources = data as MessagePart[];
   return (
-    <details className="message-sources">
-      <summary>Sources ({sources.length})</summary>
-      <div className="message-sources-list">
-        {sources.map((part, index) => <MessagePartRenderer key={index} part={part} />)}
-      </div>
-    </details>
+    <Trace data-part="message-sources">
+      <TraceCollapsible>
+        <TraceCollapsibleTrigger>
+          <TraceLine>
+            <TraceIcon><GlobeIcon /></TraceIcon>
+            <TraceTitle>Used {sources.length} {sources.length === 1 ? "source" : "sources"}</TraceTitle>
+          </TraceLine>
+        </TraceCollapsibleTrigger>
+        <TraceCollapsibleContent>
+          {sources.map((part, index) => <MessagePartRenderer key={index} part={part} />)}
+        </TraceCollapsibleContent>
+      </TraceCollapsible>
+    </Trace>
   );
 }
 
 export function SelericContext({ data }: DataMessagePartProps) {
   const text = (data as { text?: unknown }).text;
   if (typeof text !== "string" || !text.trim()) return null;
-  return <p className="message-context">{text}</p>;
+  return <p data-slot="message-context" className="mt-2 text-xs tabular-nums text-muted-foreground">{text}</p>;
 }
 
 export function SelericNext({ data }: DataMessagePartProps) {
@@ -47,9 +65,9 @@ export function SelericNext({ data }: DataMessagePartProps) {
   const running = useAuiState((s) => s.thread.isRunning);
   if (typeof text !== "string" || !text.trim()) return null;
   return (
-    <button type="button" className="next-step" disabled={running} onClick={() => aui.thread().append(text)}>
+    <Button type="button" variant="outline" size="sm" className="h-auto whitespace-normal py-1.5 text-left" disabled={running} onClick={() => aui.thread().append(text)}>
       <span>{text}</span><ArrowRightIcon size={14} />
-    </button>
+    </Button>
   );
 }
 
@@ -61,7 +79,7 @@ export function formatResponseTime(ms: number): string {
 
 function SelericResponseTime({ data }: DataMessagePartProps) {
   const { elapsedMs } = data as { elapsedMs: number };
-  return <p className="message-response-time">Responded in {formatResponseTime(elapsedMs)}</p>;
+  return <p data-slot="message-response-time" className="mt-2 text-xs tabular-nums text-muted-foreground">Responded in {formatResponseTime(elapsedMs)}</p>;
 }
 
 type FeedbackData = { messageId: string; threadId: string; runId: string | null; final: boolean };
@@ -122,42 +140,44 @@ export function SelericFeedback({ data }: DataMessagePartProps) {
   const label = vote === "up" ? "What worked well?" : "What was wrong?";
 
   return (
-    <div className="message-feedback">
-      <span className="feedback-prompt">Was this helpful?</span>
-      <button
+    <div data-slot="message-feedback" className="mt-2 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+      <span className="mr-1">Was this helpful?</span>
+      <Button
         type="button"
-        className={vote === "up" ? "active" : ""}
+        variant={vote === "up" ? "secondary" : "ghost"}
+        size="icon-sm"
         aria-label="Mark answer helpful"
         aria-pressed={vote === "up"}
         onClick={() => (vote === "up" ? setNoteOpen((open) => !open) : cast("up"))}
-      ><ThumbUpIcon size={13} /></button>
-      <button
+      ><ThumbUpIcon /></Button>
+      <Button
         type="button"
-        className={vote === "down" ? "active" : ""}
+        variant={vote === "down" ? "secondary" : "ghost"}
+        size="icon-sm"
         aria-label="Report a problem with this answer"
         aria-pressed={vote === "down"}
         onClick={() => (vote === "down" ? setNoteOpen((open) => !open) : cast("down"))}
-      ><ThumbDownIcon size={13} /></button>
-      {failed && <span className="feedback-error" role="alert">Couldn’t save — retry.</span>}
-      {saved && !noteOpen && <span className="feedback-saved" role="status">Thanks — noted.</span>}
+      ><ThumbDownIcon /></Button>
+      {failed && <span className="text-destructive" role="alert">Couldn’t save — retry.</span>}
+      {saved && !noteOpen && <span role="status">Thanks — noted.</span>}
       {noteOpen && vote && (
         <form
-          className="feedback-note"
+          className="flex basis-full gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             setSaved(false);
             save(vote, note.trim());
           }}
         >
-          <label className="sr-only" htmlFor={`feedback-note-${messageId}`}>{label}</label>
-          <input
+          <Label className="sr-only" htmlFor={`feedback-note-${messageId}`}>{label}</Label>
+          <Input
             id={`feedback-note-${messageId}`}
             value={note}
             onChange={(event) => setNote(event.target.value)}
             placeholder={`${label} (optional)`}
             maxLength={2000}
           />
-          <button type="submit" disabled={saving}>Send</button>
+          <Button type="submit" size="sm" disabled={saving}>Send</Button>
         </form>
       )}
     </div>
@@ -209,16 +229,16 @@ async function writeToClipboard(text: string): Promise<boolean> {
 
 /** Answer-only text for Copy: prose + tables + code. Excludes Sources,
  *  report-metadata context, feedback row, response time and action labels. */
-function answerText(root: HTMLElement): string {
+export function answerText(root: HTMLElement): string {
   const chunks: string[] = [];
-  // Prose blocks (footer metadata already lives in .message-context, so it is
+  // Prose blocks (footer metadata already lives in the message-context line, so it is
   // excluded by construction).
   root.querySelectorAll(".safe-content").forEach((node) => {
     const text = (node as HTMLElement).innerText ?? node.textContent ?? "";
     if (text.trim()) chunks.push(text.trim());
   });
   // Analytical tables as tab-separated rows.
-  root.querySelectorAll(".part-table-wrap table, .md-table-wrap table").forEach((table) => {
+  root.querySelectorAll('[data-slot="table"], .md-table-wrap table').forEach((table) => {
     const rows: string[] = [];
     table.querySelectorAll("tr").forEach((tr) => {
       const cells = [...tr.querySelectorAll("th, td")].map((cell) =>
@@ -228,15 +248,15 @@ function answerText(root: HTMLElement): string {
     });
     if (rows.length) chunks.push(rows.join("\n"));
   });
-  root.querySelectorAll(".part-code").forEach((node) => {
+  root.querySelectorAll('[data-slot="part-code"]').forEach((node) => {
     const text = node.textContent ?? "";
     if (text.trim()) chunks.push(text.trim());
   });
   if (!chunks.length) {
     // Last resort: whole body minus known chrome rows.
-    const clone = root.querySelector(".message-body")?.cloneNode(true) as HTMLElement | undefined;
+    const clone = root.querySelector('[data-slot="message-content"]')?.cloneNode(true) as HTMLElement | undefined;
     clone?.querySelectorAll(
-      ".message-feedback, .message-sources, .message-context, .message-response-time, .message-actions, .thinking-bubble, .run-status",
+      '[data-slot="message-feedback"], [data-part="message-sources"], [data-slot="message-context"], [data-slot="message-response-time"], [data-slot="message-actions"], [data-part="thinking"], [data-slot="run-status"]',
     ).forEach((node) => node.remove());
     const fallback = clone?.innerText ?? clone?.textContent ?? "";
     if (fallback.trim()) chunks.push(fallback.trim());
@@ -256,41 +276,46 @@ function CopyButton() {
     timer.current = window.setTimeout(() => { setCopied(false); setFailed(false); }, 1600);
   };
   return (
-    <button
+    <Button
       type="button"
-      className={copied ? "copied" : failed ? "copy-failed" : ""}
+      variant="ghost"
+      size="sm"
+      className={failed ? "text-destructive" : undefined}
       aria-label={copied ? "Copied" : failed ? "Copy failed — select and copy manually" : "Copy response"}
       title="Copy response"
       onClick={(event) => {
-        const root = (event.currentTarget as HTMLElement).closest(".message") as HTMLElement | null;
+        const root = (event.currentTarget as HTMLElement).closest('[data-slot="chat-message"]') as HTMLElement | null;
         if (!root) return;
         const text = answerText(root);
         if (!text) return;
         void writeToClipboard(text).then(flash);
       }}
     >
-      {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+      {copied ? <CheckIcon /> : <CopyIcon />}
       {copied ? "Copied" : failed ? "Copy failed" : "Copy"}
-    </button>
+    </Button>
   );
 }
 
 function DetailsButton() {
   const openInspector = useShellStore((s) => s.openInspector);
   return (
-    <button type="button" aria-label="Open inspector" title="Debug, causal, and memory" onClick={() => openInspector("Debug")}>
+    <Button type="button" variant="ghost" size="sm" aria-label="Open inspector" title="Debug, causal, and memory" onClick={() => openInspector("Debug")}>
       Details
-    </button>
+    </Button>
   );
 }
 
 function UserMessage() {
   return (
-    <MessagePrimitive.Root className="message user" aria-label="user message">
-      <div className="message-body">
-        <div className="message-meta">You</div>
-        <MessagePrimitive.Parts components={parts} />
-      </div>
+    <MessagePrimitive.Root data-slot="chat-message" data-role="user" className="mb-5 min-w-0 last:mb-2" aria-label="user message">
+      <Message align="end">
+        <MessageContent>
+          <Bubble variant="muted">
+            <BubbleContent><MessagePrimitive.Parts components={parts} /></BubbleContent>
+          </Bubble>
+        </MessageContent>
+      </Message>
     </MessagePrimitive.Root>
   );
 }
@@ -302,27 +327,34 @@ function RunningLine() {
   const openInspector = useShellStore((state) => state.openInspector);
   const phases = useMemo(() => deriveRunPhases(timeline), [timeline]);
   return (
-    <div className="run-status" aria-live="polite">
-      <span className="spinner" aria-hidden="true" />
-      <div className="run-status-body">
-        <span>{progress ?? "Working on it…"}</span>
-        <ol className="run-phases" aria-label="Run progress">
-          {phases.map((phase) => (
-            <li
-              key={phase.key}
-              className={`run-phase ${phase.state}`}
-              aria-current={phase.state === "active" ? "step" : undefined}
-            >
-              <span className="run-phase-dot" aria-hidden="true" />
-              <span className="run-phase-label">{phase.label}</span>
-            </li>
-          ))}
-        </ol>
+    <div data-slot="run-status" className="flex flex-wrap items-start justify-between gap-2" aria-live="polite">
+      <Trace>
+        <TraceCollapsible defaultOpen>
+          <TraceCollapsibleTrigger>
+            <TraceLine status="running">
+              <TraceIcon><Spinner /></TraceIcon>
+              <TraceTitle>{progress ?? "Working on it…"}</TraceTitle>
+            </TraceLine>
+          </TraceCollapsibleTrigger>
+          <TraceCollapsibleContent>
+            <Trace aria-label="Run progress">
+              {phases.map((phase) => (
+                <TraceLine
+                  key={phase.key}
+                  status={phase.state === "active" ? "running" : phase.state === "pending" ? "pending" : undefined}
+                  aria-current={phase.state === "active" ? "step" : undefined}
+                >
+                  <TraceTitle>{phase.label}</TraceTitle>
+                </TraceLine>
+              ))}
+            </Trace>
+          </TraceCollapsibleContent>
+        </TraceCollapsible>
+      </Trace>
+      <div className="flex gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={() => openInspector("Debug")}>View debug</Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => void cancelRun()}>Stop</Button>
       </div>
-      <button type="button" className="view-activity" onClick={() => openInspector("Debug")}>
-        View debug
-      </button>
-      <button type="button" onClick={() => void cancelRun()}>Stop</button>
     </div>
   );
 }
@@ -332,6 +364,8 @@ function ThinkingBubble() {
   const thinkingText = useConversationStore((state) => state.thinkingText);
   const submitting = useConversationStore((state) => state.submitting);
   const bodyRef = useRef<HTMLPreElement>(null);
+  // Open while the model thinks and close when it finishes, unless the reader chose.
+  const [chosen, setChosen] = useState<boolean>();
 
   useEffect(() => {
     if (bodyRef.current) {
@@ -342,28 +376,34 @@ function ThinkingBubble() {
   if (!thinkingText) return null;
 
   return (
-    <details className="thinking-bubble" open={submitting} aria-label="Model thinking process">
-      <summary className="thinking-bubble-summary">
-        {submitting && <span className="pulse-dot" aria-hidden="true" />}
-        {submitting ? "Thinking…" : "Thought process"}
-      </summary>
-      <pre
-        ref={bodyRef}
-        className="thinking-bubble-body"
-        aria-live="polite"
-        aria-label="Streaming thinking text"
-      >
-        {thinkingText}
-      </pre>
-    </details>
+    <Trace data-part="thinking" aria-label="Model thinking process">
+      <TraceCollapsible open={chosen ?? submitting} onOpenChange={setChosen}>
+        <TraceCollapsibleTrigger>
+          <TraceLine status={submitting ? "running" : undefined}>
+            <TraceTitle>{submitting ? "Thinking" : "Thought process"}</TraceTitle>
+          </TraceLine>
+        </TraceCollapsibleTrigger>
+        <TraceCollapsibleContent>
+          <pre
+            ref={bodyRef}
+            className="m-0 max-h-56 overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-muted-foreground"
+            aria-live="polite"
+            aria-label="Streaming thinking text"
+          >
+            {thinkingText}
+          </pre>
+        </TraceCollapsibleContent>
+      </TraceCollapsible>
+    </Trace>
   );
 }
 
 function AssistantMessage() {
   return (
-    <MessagePrimitive.Root className="message assistant" aria-label="assistant message">
-      <div className="message-body">
-        <header className="assistant-head"><span className="assistant-mark" aria-hidden="true">S</span> Seleric</header>
+    <MessagePrimitive.Root data-slot="chat-message" data-role="assistant" className="mb-5 min-w-0 last:mb-2" aria-label="assistant message">
+      <Message>
+        <MessageContent>
+        <MessageHeader>Seleric</MessageHeader>
         <ThinkingBubble />
         <MessagePrimitive.Parts components={parts} />
         <AuiIf condition={(state) => state.thread.isRunning}>
@@ -372,21 +412,22 @@ function AssistantMessage() {
           </MessagePrimitive.If>
         </AuiIf>
         <AuiIf condition={(state) => !state.thread.isRunning}>
-          <ActionBarPrimitive.Root className="message-actions">
+          <ActionBarPrimitive.Root data-slot="message-actions" className="mt-2 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/message:opacity-100 max-lg:opacity-100">
             <CopyButton />
             <DetailsButton />
-            <ActionBarPrimitive.Reload aria-label="Retry response">Retry</ActionBarPrimitive.Reload>
+            <ActionBarPrimitive.Reload aria-label="Retry response" className={buttonVariants({ variant: "ghost", size: "sm" })}>Retry</ActionBarPrimitive.Reload>
           </ActionBarPrimitive.Root>
         </AuiIf>
-      </div>
+        </MessageContent>
+      </Message>
     </MessagePrimitive.Root>
   );
 }
 
 function SystemMessage() {
   return (
-    <MessagePrimitive.Root className="message system" aria-label="system message">
-      <div className="message-body"><MessagePrimitive.Parts components={parts} /></div>
+    <MessagePrimitive.Root data-slot="chat-message" data-role="system" className="mb-5 min-w-0 text-sm" aria-label="system message">
+      <div><MessagePrimitive.Parts components={parts} /></div>
     </MessagePrimitive.Root>
   );
 }
@@ -395,8 +436,12 @@ function VoicePendingMessage() {
   const text = useConversationStore((state) => state.voicePending);
   if (!text) return null;
   return (
-    <div className="message user pending" aria-label="user message (speaking)" aria-live="polite">
-      <div className="message-body"><div className="message-meta">You · voice</div><p style={{ margin: 0 }}>{text}</p></div>
+    <div data-slot="chat-message" data-role="user" data-pending className="mb-5 min-w-0 opacity-65" aria-label="user message (speaking)" aria-live="polite">
+      <Message align="end">
+        <MessageContent>
+          <Bubble variant="muted"><BubbleContent>{text}</BubbleContent></Bubble>
+        </MessageContent>
+      </Message>
     </div>
   );
 }
@@ -409,11 +454,11 @@ function ThreadContextBar() {
   if (!threadId || !thread || count === 0) return null;
   const exchanges = Math.ceil(count / 2);
   return (
-    <div className="thread-context">
-      <span className="thread-context-name" title={thread.title || "Untitled conversation"}>
+    <div data-slot="thread-context" className="mb-4 flex min-w-0 items-baseline gap-2">
+      <span className="min-w-0 truncate text-sm font-medium text-muted-foreground" title={thread.title || "Untitled conversation"}>
         {thread.title || "Untitled conversation"}
       </span>
-      <span className="thread-context-meta">
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
         {exchanges} exchange{exchanges === 1 ? "" : "s"} · evidence stays attached below
       </span>
     </div>
@@ -423,13 +468,14 @@ function ThreadContextBar() {
 function LoadingSkeleton() {
   return (
     <div aria-label="Loading conversation" role="status">
-      <div className="skeleton-block skeleton-title" />
-      <div className="skeleton-block skeleton-line" style={{ width: "38%" }} />
-      <div className="skeleton-block skeleton-user" />
-      <div className="skeleton-block skeleton-line" style={{ width: "92%" }} />
-      <div className="skeleton-block skeleton-line" style={{ width: "78%" }} />
-      <div className="skeleton-block skeleton-table" />
-      <div className="skeleton-block skeleton-line" style={{ width: "64%" }} />
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-6 w-1/3" />
+        <Skeleton className="h-10 w-2/5 self-end" />
+        <Skeleton className="h-4 w-11/12" />
+        <Skeleton className="h-4 w-4/5" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-4 w-2/3" />
+      </div>
     </div>
   );
 }
@@ -440,33 +486,37 @@ export function Transcript() {
   const cachedCount = useConversationStore((state) => (threadId ? state.messages[threadId]?.length ?? 0 : 0));
   const showSkeleton = loading && !!threadId && cachedCount === 0;
   return (
-    <ThreadPrimitive.Root className="thread-root">
-      <ThreadPrimitive.Viewport className="transcript" aria-label="Conversation transcript" aria-busy={loading}>
+    <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
+      <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-6 pt-7 pb-4 max-md:px-3.5 max-md:pt-5" aria-label="Conversation transcript" aria-busy={loading}>
         {/* Key re-triggers the view-enter fade so browsing conversations feels fluid. */}
-        <div className="transcript-inner view-enter" key={threadId ?? "empty"}>
+        <div className="mx-auto w-full max-w-[880px] pb-3 animate-in fade-in duration-200" key={threadId ?? "empty"}>
           {showSkeleton && <LoadingSkeleton />}
           {!threadId && (
-            <div className="empty-state">
-              <h1>Where should we begin?</h1>
-              <p>Ask about marketing, sales, products, or operations — Seleric investigates your metrics and shows its evidence.</p>
-              <PromptRegistry surface="front" />
-            </div>
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>Where should we begin?</EmptyTitle>
+                <EmptyDescription>Ask about marketing, sales, products, or operations — Seleric investigates your metrics and shows its evidence.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent className="max-w-xl"><PromptRegistry surface="front" /></EmptyContent>
+            </Empty>
           )}
           {threadId && (
             <ThreadPrimitive.Empty>
-              <div className="empty-state">
-                <h1>What should we investigate?</h1>
-                <p>Ask a question about your metrics and Seleric will investigate.</p>
-                <PromptRegistry surface="front" />
-              </div>
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>What should we investigate?</EmptyTitle>
+                  <EmptyDescription>Ask a question about your metrics and Seleric will investigate.</EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent className="max-w-xl"><PromptRegistry surface="front" /></EmptyContent>
+              </Empty>
             </ThreadPrimitive.Empty>
           )}
           {threadId && <ThreadContextBar />}
           <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage, SystemMessage }} />
           <VoicePendingMessage />
         </div>
-        <ThreadPrimitive.ScrollToBottom aria-label="Scroll to latest message" className="scroll-latest">
-          <ArrowDownIcon size={14} />
+        <ThreadPrimitive.ScrollToBottom aria-label="Scroll to latest message" className={cn(buttonVariants({ variant: "outline", size: "icon-sm" }), "absolute right-5 bottom-3 rounded-full")}>
+          <ArrowDownIcon />
         </ThreadPrimitive.ScrollToBottom>
       </ThreadPrimitive.Viewport>
     </ThreadPrimitive.Root>

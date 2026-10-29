@@ -94,14 +94,14 @@ describe("screens", () => {
   it("dashboard lists what needs attention and draws each metric with its status", () => {
     useMonitoringStore.setState({ state: stateWith(domain()) });
     act(() => root.render(<OpsDashboard />));
-    expect(container.querySelector(".ops-state")?.textContent).toContain("1 metric needs attention");
-    expect(container.querySelector(".ops-feed .ops-row.status-alert")?.textContent).toContain("Orders");
-    expect(container.querySelector(".ops-card.status-alert")).not.toBeNull();
+    expect(container.querySelector('[data-slot="ops-state"]')?.textContent).toContain("1 metric needs attention");
+    expect(container.querySelector('[data-slot="ops-feed"] [data-slot="ops-row"][data-status="alert"]')?.textContent).toContain("Orders");
+    expect(container.querySelector('[data-slot="ops-card"][data-status="alert"]')).not.toBeNull();
     // The feed row and the card share one stable anchor per metric, so a diagnosis step can link to either.
-    expect(container.querySelector("#ops-commerce-orders.ops-card")).not.toBeNull();
+    expect(container.querySelector('#ops-commerce-orders[data-slot="ops-card"]')).not.toBeNull();
     expect(container.querySelector("#feed-ops-commerce-orders")).not.toBeNull();
-    expect(container.querySelector(".ops-headline")?.textContent).toContain("Orders");
-    expect(container.querySelector("svg.ops-chart")).not.toBeNull();
+    expect(container.querySelector('[data-slot="ops-headline"]')?.textContent).toContain("Orders");
+    expect(container.querySelector('[role="img"][aria-label$="days"]')).not.toBeNull();
     expect(container.textContent).toContain("expected 100 for this weekday");
   });
 
@@ -111,9 +111,9 @@ describe("screens", () => {
     const d = domain({ metrics: [], snapshot: { ...domain().snapshot!, metrics: [worse, better, metric()] } });
     useMonitoringStore.setState({ state: stateWith(d) });
     act(() => root.render(<OpsDashboard />));
-    const names = () => [...container.querySelectorAll(".ops-row strong")].map((e) => e.textContent);
+    const names = () => [...container.querySelectorAll('[data-slot="ops-row"] strong')].map((e) => e.textContent);
     expect(names()).toEqual(["Orders", "CTR"]);
-    act(() => { (container.querySelectorAll(".ops-chip")[2] as HTMLButtonElement).click(); });
+    act(() => { (container.querySelectorAll('[data-slot="toggle-group-item"]')[2] as HTMLButtonElement).click(); });
     expect(names()).toEqual(["AOV"]);
   });
 
@@ -121,8 +121,8 @@ describe("screens", () => {
     const ok = metric({ status: "ok", judgement: { ...metric().judgement!, status: "ok", worse_by: -30 } });
     useMonitoringStore.setState({ state: stateWith(domain({ snapshot: { ...domain().snapshot!, metrics: [ok] } })) });
     act(() => root.render(<OpsDashboard />));
-    expect(container.querySelector(".ops-card")?.textContent).toContain("Within normal range");
-    expect(container.querySelector(".ops-card")?.textContent).not.toContain("better than expected");
+    expect(container.querySelector('[data-slot="ops-card"]')?.textContent).toContain("Within normal range");
+    expect(container.querySelector('[data-slot="ops-card"]')?.textContent).not.toContain("better than expected");
   });
 
   it("dashboard says plainly when a domain has no numbers yet or is switched off", () => {

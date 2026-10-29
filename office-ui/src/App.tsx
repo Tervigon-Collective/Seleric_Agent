@@ -1,19 +1,21 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Kbd } from "@/components/ui/kbd";
+import { cn } from "cn";
 import { Composer } from "./components/Composer";
 import { DetailPanel } from "./components/DetailPanel";
 import { PanelErrorBoundary } from "./components/ErrorBoundary";
-import { OfficeWorkspace } from "./components/OfficeWorkspace";
-import { OpsWorkspace } from "./components/ops/OpsWorkspace";
-import { WorkspaceSwitch } from "./components/ops/WorkspaceSwitch";
+import { ResponsivePanel } from "./components/ResponsivePanel";
+import { ShellHeader } from "./components/ShellHeader";
 import { ThreadSidebar } from "./components/ThreadSidebar";
 import { Transcript } from "./components/Transcript";
 import { VoiceOverlay } from "./components/VoiceOverlay";
 import { useWakeWord } from "./wakeWord";
-import { CommandSearch } from "./components/CommandSearch";
-import { AdminDiagnostics } from "./components/AdminDiagnostics";
-import { PromptRegistryModal } from "./components/PromptRegistryModal";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
-  CheckIcon, LinkIcon, MenuIcon, MoonIcon, MoreIcon, PanelRightIcon, PromptsIcon, SearchIcon, SlidersIcon, SunIcon,
+  CheckIcon, LinkIcon, MenuIcon, MoreIcon, PanelRightIcon, PromptsIcon, SearchIcon, SlidersIcon,
 } from "./components/icons";
 import { SelericAssistantRuntimeProvider } from "./providers/SelericAssistantRuntime";
 import { useConversationStore } from "./stores/conversation";
@@ -21,56 +23,68 @@ import { useShellStore } from "./stores/shell";
 import { isTraceableMissionId, useOffice } from "./store";
 import { readRoute, writeRoute } from "./routing";
 
+// Rarely-used surfaces load on demand: the canvas/ops workspaces on navigation, the dialogs on first open.
+const OfficeWorkspace = lazy(() => import("./components/OfficeWorkspace").then((m) => ({ default: m.OfficeWorkspace })));
+const OpsWorkspace = lazy(() => import("./components/ops/OpsWorkspace").then((m) => ({ default: m.OpsWorkspace })));
+const CommandSearch = lazy(() => import("./components/CommandSearch").then((m) => ({ default: m.CommandSearch })));
+const AdminDiagnostics = lazy(() => import("./components/AdminDiagnostics").then((m) => ({ default: m.AdminDiagnostics })));
+const PromptRegistryModal = lazy(() => import("./components/PromptRegistryModal").then((m) => ({ default: m.PromptRegistryModal })));
+
+const workspaceFallback = <Skeleton className="h-screen w-full rounded-none" role="status" aria-busy="true" aria-label="Loading workspace" />;
+
 /** Copy-link sharing: the URL already encodes the thread, so the link reopens it. */
-function ShareButton({ threadId, className = "", role }: { threadId: string | null; className?: string; role?: string }) {
+function useCopyLink() {
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  const copy = () => {
+    const url = location.href;
+    const done = () => {
+      setCopied(true);
+      if (timer.current) window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setCopied(false), 1600);
+    };
+    if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(url).then(done).catch(() => undefined);
+    else {
+      window.prompt("Copy this link:", url);
+      done();
+    }
+  };
+  return { copied, copy };
+}
+
+function ShareButton({ threadId, className }: { threadId: string | null; className?: string }) {
+  const { copied, copy } = useCopyLink();
   if (!threadId) return null;
   return (
-    <button
-      className={`search-trigger ${className}`.trim()}
-      role={role}
+    <Button
+      variant="outline"
+      size="sm"
+      className={className}
       aria-label={copied ? "Link copied" : "Copy link to this conversation"}
       title="Copy link to this conversation"
-      onClick={() => {
-        const url = location.href;
-        const done = () => {
-          setCopied(true);
-          if (timer.current) window.clearTimeout(timer.current);
-          timer.current = window.setTimeout(() => setCopied(false), 1600);
-        };
-        if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(url).then(done).catch(() => undefined);
-        else {
-          window.prompt("Copy this link:", url);
-          done();
-        }
-      }}
+      onClick={copy}
     >
-      {copied ? <CheckIcon size={14} /> : <LinkIcon size={14} />}
-      <span className="label">{copied ? "Copied" : "Share"}</span>
-    </button>
+      {copied ? <CheckIcon /> : <LinkIcon />}
+      <span>{copied ? "Copied" : "Share"}</span>
+    </Button>
   );
 }
 
-/** Narrow screens fold the secondary header actions into one menu (CSS shows it only there). */
-function HeaderMenu({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (event: Event) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
-    const esc = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
-    document.addEventListener("pointerdown", away);
-    document.addEventListener("keydown", esc);
-    return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", esc); };
-  }, [open]);
+/** Narrow screens fold the secondary header actions into one menu. */
+function HeaderMenu({ threadId, onPrompts, onDiagnostics }: { threadId: string | null; onPrompts: () => void; onDiagnostics: () => void }) {
+  const { copied, copy } = useCopyLink();
   return (
-    <div className="header-more" ref={root}>
-      <button className="icon-btn" aria-label="More actions" aria-haspopup="menu" aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}><MoreIcon /></button>
-      {open && <div className="header-menu" role="menu" onClick={() => setOpen(false)}>{children}</div>}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "md:hidden")} aria-label="More actions">
+        <MoreIcon />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={onPrompts}><PromptsIcon />Prompts</DropdownMenuItem>
+        {threadId && <DropdownMenuItem onSelect={copy}>{copied ? <CheckIcon /> : <LinkIcon />}{copied ? "Copied" : "Share"}</DropdownMenuItem>}
+        <DropdownMenuItem onSelect={onDiagnostics}><SlidersIcon />Diagnostics</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -92,7 +106,7 @@ export default function App() {
     localStorage.setItem("seleric.theme", dark ? "dark" : "light");
     document.querySelector('meta[name="theme-color"]')?.setAttribute(
       "content",
-      dark ? "#000000" : "#ffffff",
+      dark ? "#1b1b1e" : "#ffffff",
     );
   }, [dark]);
   const workspace = useShellStore((s) => s.workspace);
@@ -185,86 +199,87 @@ export default function App() {
   }, [clearSelection, selectThread, setWorkspace, searchOpen, promptsOpen, diagnosticsOpen]);
 
   if (workspace === "ops") {
-    return <OpsWorkspace dark={dark} onToggleTheme={() => setDark((value) => !value)} onSwitch={setWorkspace} />;
+    return (
+      <Suspense fallback={workspaceFallback}>
+        <OpsWorkspace dark={dark} onToggleTheme={() => setDark((value) => !value)} onSwitch={setWorkspace} />
+      </Suspense>
+    );
   }
 
   if (workspace === "office") {
     return (
-      <OfficeWorkspace
-        dark={dark}
-        onToggleTheme={() => setDark((value) => !value)}
-        onSwitch={setWorkspace}
-      />
+      <Suspense fallback={workspaceFallback}>
+        <OfficeWorkspace
+          dark={dark}
+          onToggleTheme={() => setDark((value) => !value)}
+          onSwitch={setWorkspace}
+        />
+      </Suspense>
     );
   }
 
-  const closePanels = () => {
-    if (sidebarOpen) toggleSidebar();
-    else if (detailsOpen) toggleDetails();
-  };
-
   return (
-    <div className="app-shell">
-      <header className="shell-header">
-        <button
-          className="icon-btn"
-          aria-label="Toggle conversations"
-          aria-expanded={sidebarOpen}
-          onClick={toggleSidebar}
-          title="Toggle conversations"
-        ><MenuIcon /></button>
-        <button className="brand-button" onClick={() => setWorkspace("conversation")} aria-label="Seleric home"><span className="brand-mark">S</span><strong>Seleric</strong></button>
-        <WorkspaceSwitch current={workspaceTab} onChange={setWorkspace} />
-        {currentTitle && <span className="thread-context-title" title={currentTitle}>{currentTitle}</span>}
-        <span className="header-spacer" />
-        <button className="search-trigger" onClick={() => setSearchOpen(true)}
+    <div className="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[52px_minmax(0,1fr)] bg-background">
+      <ShellHeader
+        workspace={workspaceTab}
+        onSwitch={setWorkspace}
+        dark={dark}
+        onToggleTheme={() => setDark((value) => !value)}
+        leading={
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Toggle conversations"
+            aria-expanded={sidebarOpen}
+            onClick={toggleSidebar}
+            title="Toggle conversations"
+          ><MenuIcon /></Button>
+        }
+      >
+        {currentTitle && <span className="min-w-0 flex-1 truncate text-center text-sm text-muted-foreground max-lg:hidden" title={currentTitle}>{currentTitle}</span>}
+        <span className="flex-1" />
+        <Button variant="outline" size="sm" onClick={() => setSearchOpen(true)}
           aria-keyshortcuts="Control+K Meta+K" aria-label="Search conversations">
-          <SearchIcon size={14} /><span className="label">Search</span><kbd>⌘K</kbd>
-        </button>
-        <ShareButton threadId={selectedThreadId} className="hide-sm" />
-        <button
-          className="icon-btn"
+          <SearchIcon /><span className="max-lg:hidden">Search</span><Kbd className="max-lg:hidden">⌘K</Kbd>
+        </Button>
+        <ShareButton threadId={selectedThreadId} className="max-md:hidden" />
+        <Button
+          variant="ghost"
+          size="icon"
           aria-label="Toggle conversation details"
           aria-expanded={detailsOpen}
           onClick={toggleDetails}
           title="Inspector (causal, debug, memory)"
-        ><PanelRightIcon /></button>
-        <button className="icon-btn hide-sm" onClick={() => setDiagnosticsOpen(true)}
-          aria-label="Open admin diagnostics" title="Diagnostics"><SlidersIcon /></button>
-        <button className="icon-btn hide-sm" onClick={() => setDark((value) => !value)} aria-label={`Use ${dark ? "light" : "dark"} theme`} title="Theme">
-          {dark ? <SunIcon /> : <MoonIcon />}
-        </button>
-        <HeaderMenu>
-          <button role="menuitem" onClick={() => setPromptsOpen(true)}><PromptsIcon size={15} />Prompts</button>
-          <ShareButton threadId={selectedThreadId} role="menuitem" />
-          <button role="menuitem" onClick={() => setDiagnosticsOpen(true)}><SlidersIcon size={15} />Diagnostics</button>
-          <button role="menuitem" onClick={() => setDark((value) => !value)}>
-            {dark ? <SunIcon size={15} /> : <MoonIcon size={15} />}{dark ? "Light theme" : "Dark theme"}
-          </button>
-        </HeaderMenu>
-      </header>
-      <main className="conversation-layout">
-        {(sidebarOpen || detailsOpen) && <button className="mobile-panel-backdrop" aria-label="Close open panel" onClick={closePanels} tabIndex={-1} />}
+        ><PanelRightIcon /></Button>
+        <Button variant="ghost" size="icon" className="max-md:hidden" onClick={() => setDiagnosticsOpen(true)}
+          aria-label="Open admin diagnostics" title="Diagnostics"><SlidersIcon /></Button>
+        <HeaderMenu threadId={selectedThreadId} onPrompts={() => setPromptsOpen(true)} onDiagnostics={() => setDiagnosticsOpen(true)} />
+      </ShellHeader>
+      <main className="flex min-h-0 items-stretch bg-background">
         <PanelErrorBoundary name="sidebar">
-          {sidebarOpen && <ThreadSidebar />}
+          <ResponsivePanel open={sidebarOpen} onOpenChange={(open) => open !== sidebarOpen && toggleSidebar()} side="left" label="Conversations">
+            <ThreadSidebar />
+          </ResponsivePanel>
         </PanelErrorBoundary>
-        <div className="conversation-main">
-          {error && <div className="error-banner" role="alert">{error}</div>}
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+          {error && <Alert variant="destructive" role="alert" className="rounded-none border-x-0 border-t-0"><AlertDescription>{error}</AlertDescription></Alert>}
           <PanelErrorBoundary name="transcript">
             <SelericAssistantRuntimeProvider>
               <Transcript />
               <Composer />
-              <PromptRegistryModal open={promptsOpen} onClose={() => setPromptsOpen(false)} />
+              {promptsOpen && <Suspense fallback={null}><PromptRegistryModal open onClose={() => setPromptsOpen(false)} /></Suspense>}
             </SelericAssistantRuntimeProvider>
           </PanelErrorBoundary>
         </div>
         <PanelErrorBoundary name="inspector">
-          {detailsOpen && <DetailPanel />}
+          <ResponsivePanel open={detailsOpen} onOpenChange={(open) => open !== detailsOpen && toggleDetails()} side="right" label="Conversation details">
+            <DetailPanel />
+          </ResponsivePanel>
         </PanelErrorBoundary>
       </main>
-      <CommandSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      {searchOpen && <Suspense fallback={null}><CommandSearch open onClose={() => setSearchOpen(false)} /></Suspense>}
       <VoiceOverlay />
-      <AdminDiagnostics open={diagnosticsOpen} onClose={() => setDiagnosticsOpen(false)} />
+      {diagnosticsOpen && <Suspense fallback={null}><AdminDiagnostics open onClose={() => setDiagnosticsOpen(false)} /></Suspense>}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEffect, useState } from "react";
 import { approveEmail, getEmail, type EmailState, type EmailStatus } from "../api/emails";
 import { ApiError } from "../api/http";
@@ -45,24 +47,32 @@ export function EmailPreviewCard({ value }: { value: Record<string, unknown> }) 
       .finally(() => setBusy(false));
   };
 
-  return <aside className="part-card approval" aria-labelledby={`email-${id}`}>
-    <strong id={`email-${id}`}>Email ready for your approval</strong>
-    <small>From {String(value.sender ?? "")} · To {list(value.to).join(", ")}
-      {list(value.cc).length > 0 && ` · Cc ${list(value.cc).join(", ")}`}</small>
-    <span><b>{String(value.subject ?? "")}</b></span>
-    <div className="email-body"><SafeContent text={String(value.body ?? "")} /></div>
-    {attachments.map((a) => <small key={a.name}>Attachment: {a.name} ({kb(a.size_bytes)})</small>)}
-    {attachments.filter((a) => a.partial).map((a) =>
-      <small key={`${a.name}-partial`} role="alert">{a.note || "This attachment is partial."}</small>)}
-    {newer && <small>A newer version of this email exists. Approve that one instead.</small>}
-    {expired && <small>This draft has expired. Ask Seleric to draft it again.</small>}
-    <div className="approval-actions" role="group" aria-label="Email approval">
-      <button disabled={!canApprove} onClick={approve}>Approve &amp; send</button>
-      <span role="status" aria-live="polite">{status}</span>
-    </div>
-    {status === "submitted" && <small>Submitted to the mail system. That means it was accepted for sending, not proof of delivery.</small>}
-    {status === "unknown" && <small role="alert">The outcome is unknown: it may or may not have been sent. Check with the recipient before sending again.</small>}
-    {status === "failed" && live?.error && <small className="approval-error" role="alert">Not sent: {live.error}</small>}
-    {error && <small className="approval-error" role="alert">{error}</small>}
-  </aside>;
+  return (
+    <Card size="sm" role="group" aria-labelledby={`email-${id}`}>
+      <CardHeader>
+        <CardTitle id={`email-${id}`}>Email ready for your approval</CardTitle>
+        <CardDescription>
+          From {String(value.sender ?? "")} · To {list(value.to).join(", ")}
+          {list(value.cc).length > 0 && ` · Cc ${list(value.cc).join(", ")}`}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        <b className="text-sm">{String(value.subject ?? "")}</b>
+        <div data-slot="email-body" className="text-sm"><SafeContent text={String(value.body ?? "")} /></div>
+        {attachments.map((a) => <small key={a.name} className="text-xs text-muted-foreground">Attachment: {a.name} ({kb(a.size_bytes)})</small>)}
+        {attachments.filter((a) => a.partial).map((a) =>
+          <small key={`${a.name}-partial`} role="alert" className="text-xs text-destructive">{a.note || "This attachment is partial."}</small>)}
+        {newer && <small className="text-xs text-muted-foreground">A newer version of this email exists. Approve that one instead.</small>}
+        {expired && <small className="text-xs text-muted-foreground">This draft has expired. Ask Seleric to draft it again.</small>}
+        {status === "submitted" && <small className="text-xs text-muted-foreground">Submitted to the mail system. That means it was accepted for sending, not proof of delivery.</small>}
+        {status === "unknown" && <small role="alert" className="text-xs text-destructive">The outcome is unknown: it may or may not have been sent. Check with the recipient before sending again.</small>}
+        {status === "failed" && live?.error && <small role="alert" className="text-xs text-destructive">Not sent: {live.error}</small>}
+        {error && <small role="alert" className="text-xs text-destructive">{error}</small>}
+      </CardContent>
+      <CardFooter role="group" aria-label="Email approval" className="flex items-center gap-2">
+        <Button disabled={!canApprove} onClick={approve}>Approve &amp; send</Button>
+        <span role="status" aria-live="polite" className="text-sm text-muted-foreground">{status}</span>
+      </CardFooter>
+    </Card>
+  );
 }

@@ -1,3 +1,5 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useMemo } from "react";
 import { useOffice } from "../store";
 import { SPEC_BY_ID } from "../office/agents";
@@ -32,14 +34,14 @@ export function AgentInspector() {
   const proc = processFor(agent, timeline, artifacts);
 
   return (
-    <aside className="inspector" aria-label={`${agent.name} inspector`}>
-      <button className="btn close" aria-label="Close inspector" onClick={() => select(null)}><XIcon size={14} /></button>
-      <h2>{spec?.glyph} {agent.name}</h2>
-      <span className="status-tag" style={{ background: TOKEN_VAR[token] }}>{agent.status.replace(/_/g, " ")}</span>
+    <aside data-slot="inspector" className="absolute inset-y-0 right-0 z-[12] w-[380px] overflow-y-auto border-l bg-card p-4 shadow-lg max-lg:w-full" aria-label={`${agent.name} inspector`}>
+      <Button variant="ghost" size="icon-sm" className="absolute top-3 right-3" aria-label="Close inspector" onClick={() => select(null)}><XIcon /></Button>
+      <h2 className="m-0 text-[15px] font-medium">{spec?.glyph} {agent.name}</h2>
+      <Badge className="text-[var(--on-accent)]" style={{ background: TOKEN_VAR[token] }}>{agent.status.replace(/_/g, " ")}</Badge>
 
-      <section>
-        <h3>Overview</h3>
-        <div className="kv">
+      <section className="mt-4">
+        <h3 className="mb-1.5 text-xs tracking-wide text-muted-foreground uppercase">Overview</h3>
+        <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm [&>span]:text-muted-foreground">
           <span>Role</span><div>{agent.role}{agent.domain ? ` · ${agent.domain}` : ""}</div>
           <span>Mission lead</span><div>{agent.missionLead ? "yes" : "no"}</div>
           {agent.lastEventAt && (<><span>Last event</span><div>{new Date(agent.lastEventAt).toLocaleTimeString()}</div></>)}
@@ -47,31 +49,31 @@ export function AgentInspector() {
         </div>
       </section>
 
-      <section>
-        <h3>Current task</h3>
-        <div className="kv">
+      <section className="mt-4">
+        <h3 className="mb-1.5 text-xs tracking-wide text-muted-foreground uppercase">Current task</h3>
+        <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm [&>span]:text-muted-foreground">
           {agent.subquestion && (<><span>Sub-question</span><div>{agent.subquestion}</div></>)}
           {agent.task && (<><span>Task</span><div>{agent.task}</div></>)}
           {agent.currentAction && (<><span>Action</span><div>{agent.currentAction}</div></>)}
           {agent.currentTool && (<><span>Tool</span><div>{agent.currentTool}</div></>)}
           {agent.currentHypothesis && (<><span>Hypothesis</span><div>{agent.currentHypothesis}</div></>)}
           {agent.progress && (<><span>Progress</span><div>{agent.progress.current}/{agent.progress.total} {agent.progress.label}</div></>)}
-          {!agent.currentAction && !agent.task && !agent.subquestion && <div style={{ color: "var(--text-dim)" }}>Idle at home desk.</div>}
+          {!agent.currentAction && !agent.task && !agent.subquestion && <div className="text-muted-foreground">Idle at home desk.</div>}
         </div>
         {parallel.length > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 4 }}>Parallel helpers</div>
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            <div className="w-full text-xs text-muted-foreground">Parallel helpers</div>
             {parallel.map((t, i) => (
-              <span key={`${t.label}-${i}`} className="chip">{t.label} · {t.status}</span>
+              <Badge key={`${t.label}-${i}`} variant="outline">{t.label} · {t.status}</Badge>
             ))}
           </div>
         )}
       </section>
 
-      <section>
-        <h3>Process</h3>
+      <section className="mt-4">
+        <h3 className="mb-1.5 text-xs tracking-wide text-muted-foreground uppercase">Process</h3>
         {proc.map((p) => (
-          <div className="process-step" key={p.label}>
+          <div className="flex items-baseline gap-2 py-0.5 text-sm" key={p.label}>
             <span style={{ color: p.state === "done" ? "var(--st-done)" : p.state === "active" ? "var(--st-working)" : "var(--text-dim)" }}>
               {p.state === "done" ? "✓" : p.state === "active" ? "●" : "○"}
             </span>
@@ -81,11 +83,11 @@ export function AgentInspector() {
       </section>
 
       {(handoffs.length > 0 || agent.agentId === "coordinator") && agent.role === "coordinator" && (
-        <section>
-          <h3>Leadership / dependencies</h3>
-          {handoffs.length === 0 && <div style={{ color: "var(--text-dim)", fontSize: 12 }}>No handoffs yet.</div>}
+        <section className="mt-4">
+          <h3 className="mb-1.5 text-xs tracking-wide text-muted-foreground uppercase">Leadership / dependencies</h3>
+          {handoffs.length === 0 && <div className="text-xs text-muted-foreground">No handoffs yet.</div>}
           {handoffs.map((h, i) => (
-            <div key={i} className="process-step">
+            <div key={i} className="flex items-baseline gap-2 py-0.5 text-sm">
               <span>↦</span>
               <span>{lbl(h.from)} → <b>{lbl(h.to)}</b>{h.reason ? ` — ${h.reason}` : ""}</span>
             </div>
@@ -93,32 +95,32 @@ export function AgentInspector() {
         </section>
       )}
 
-      <section>
-        <h3>Activity ({mine.length})</h3>
-        <div style={{ maxHeight: 220, overflowY: "auto" }}>
+      <section className="mt-4">
+        <h3 className="mb-1.5 text-xs tracking-wide text-muted-foreground uppercase">Activity ({mine.length})</h3>
+        <div className="max-h-56 overflow-y-auto">
           {mine.map((e) => (
-            <div key={e.eventId} className="process-step">
-              <span className="tl-time" style={{ color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>
+            <div key={e.eventId} className="flex items-baseline gap-2 py-0.5 text-sm">
+              <span className="tabular-nums text-muted-foreground">
                 {new Date(e.timestamp).toLocaleTimeString().slice(0, 8)}
               </span>
-              <span><span className="ev-type" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{e.eventType}</span> {e.summary}</span>
+              <span><span className="font-mono text-[11px]">{e.eventType}</span> {e.summary}</span>
             </div>
           ))}
-          {mine.length === 0 && <div style={{ color: "var(--text-dim)", fontSize: 12 }}>No events for this agent yet.</div>}
+          {mine.length === 0 && <div className="text-xs text-muted-foreground">No events for this agent yet.</div>}
         </div>
       </section>
 
       {(agent.agentId === "coordinator" || agent.agentId === "seleric_agent") && finalResponse && (
-        <section>
-          <h3>Final answer</h3>
-          <div className="final-answer">{finalResponse}</div>
+        <section className="mt-4">
+          <h3 className="mb-1.5 text-xs tracking-wide text-muted-foreground uppercase">Final answer</h3>
+          <div className="rounded-md border bg-muted p-3 text-sm whitespace-pre-wrap">{finalResponse}</div>
         </section>
       )}
 
       {debug && (
-        <section>
-          <h3>Debug — raw agent view-model</h3>
-          <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, fontFamily: "var(--mono)" }}>
+        <section className="mt-4">
+          <h3 className="mb-1.5 text-xs tracking-wide text-muted-foreground uppercase">Debug — raw agent view-model</h3>
+          <pre className="m-0 font-mono text-[11px] whitespace-pre-wrap">
             {JSON.stringify(agent, null, 2)}
           </pre>
         </section>

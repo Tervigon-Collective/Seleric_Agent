@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { ExpandIcon, ShrinkIcon, MicIcon, MicOffIcon, StopIcon, XIcon } from "./icons";
 import { useConversationStore } from "../stores/conversation";
@@ -107,22 +108,22 @@ export function VoiceDock() {
 
   return (
     <div ref={root} className={`voice-dock ${phase}`} role="region" aria-label="Voice conversation">
-      {captions.user && <p className="voice-dock-user" title={captions.user}>{captions.user}</p>}
-      <div ref={reading} className="voice-dock-text" aria-live="polite">
+      {captions.user && <p className="m-0 truncate px-3 pt-3 text-xs text-muted-foreground" title={captions.user}>{captions.user}</p>}
+      <div ref={reading} className="max-h-32 overflow-y-auto px-3 pt-2 text-sm" aria-live="polite">
         {captions.assistant
-          ? <p className="cap-assistant">{captions.assistant}</p>
-          : !captions.user && <p className="cap-empty">Just talk — interrupt any time</p>}
+          ? <p className="m-0">{captions.assistant}</p>
+          : !captions.user && <p className="m-0 text-muted-foreground">Just talk — interrupt any time</p>}
       </div>
-      <div className="voice-dock-bar">
+      <div className="flex items-center gap-2 p-3">
         <Orb state={orb} />
-        <span className="voice-dock-phase" role="status" aria-live="polite">{label}</span>
-        <button type="button" className={`voice-dock-btn${muted ? " on" : ""}`} aria-pressed={muted}
+        <span className="flex-1 text-sm text-muted-foreground" role="status" aria-live="polite">{label}</span>
+        <Button type="button" variant={muted ? "secondary" : "ghost"} size="icon-sm" aria-pressed={muted}
           aria-label={muted ? "Unmute microphone" : "Mute microphone"} title={muted ? "Unmute" : "Mute"}
-          onClick={() => void toggleMute()}>{muted ? <MicOffIcon size={16} /> : <MicIcon size={16} />}</button>
-        <button type="button" className="voice-dock-btn" aria-label="Expand to full screen" title="Full screen"
-          onClick={() => setExpanded(true)}><ExpandIcon size={16} /></button>
-        <button type="button" className="voice-dock-end" aria-label="End voice conversation"
-          onClick={() => void stop()}><StopIcon size={12} /><span>End</span></button>
+          onClick={() => void toggleMute()}>{muted ? <MicOffIcon /> : <MicIcon />}</Button>
+        <Button type="button" variant="ghost" size="icon-sm" aria-label="Expand to full screen" title="Full screen"
+          onClick={() => setExpanded(true)}><ExpandIcon /></Button>
+        <Button type="button" variant="destructive" size="sm" aria-label="End voice conversation"
+          onClick={() => void stop()}><StopIcon /><span>End</span></Button>
       </div>
     </div>
   );
@@ -146,31 +147,32 @@ export function VoiceOverlay() {
 
   return (
     <div ref={screen} className={`voice-screen ${phase}`} role="dialog" aria-modal="true" aria-label="Voice conversation">
-      <div className="voice-top">
-        <button type="button" className="voice-close" aria-label="Collapse to bar" title="Collapse" onClick={() => setExpanded(false)}><ShrinkIcon size={16} /></button>
-        <button type="button" className="voice-close" aria-label="End voice conversation" onClick={() => void stop()}><XIcon size={16} /></button>
+      <div className="flex items-stretch justify-between self-stretch">
+        <Button type="button" variant="ghost" size="icon" aria-label="Collapse to bar" title="Collapse" onClick={() => setExpanded(false)}><ShrinkIcon /></Button>
+        <Button type="button" variant="ghost" size="icon" aria-label="End voice conversation" onClick={() => void stop()}><XIcon /></Button>
       </div>
       <div className="voice-stage">
         <Orb state={orb} />
-        <p className="voice-phase" role="status" aria-live="polite">{label}</p>
-        <div className="voice-captions" aria-live="polite">
-          <p className="cap-user">{captions.user}</p>
-          <p className="cap-assistant">{captions.assistant}</p>
+        <p className="m-0 text-lg" role="status" aria-live="polite">{label}</p>
+        <div className="flex flex-col gap-2 text-center" aria-live="polite">
+          <p className="m-0 text-sm text-muted-foreground">{captions.user}</p>
+          <p className="m-0 text-base">{captions.assistant}</p>
         </div>
       </div>
-      <div className="voice-actions">
-        <button
+      <div className="flex gap-7">
+        <Button
           type="button"
-          className={`voice-action ${muted ? "on" : ""}`}
+          variant={muted ? "default" : "outline"}
+          className="size-16 flex-col gap-1 rounded-full text-[11px]"
           aria-pressed={muted}
           aria-label={muted ? "Unmute microphone" : "Mute microphone"}
           onClick={() => void toggleMute()}
-        >{muted ? <MicOffIcon size={22} /> : <MicIcon size={22} />}<span>{muted ? "Unmute" : "Mute"}</span></button>
-        <button type="button" className="voice-action end" aria-label="End voice conversation" onClick={() => void stop()}>
+        >{muted ? <MicOffIcon size={22} /> : <MicIcon size={22} />}<span>{muted ? "Unmute" : "Mute"}</span></Button>
+        <Button type="button" variant="destructive" className="size-16 flex-col gap-1 rounded-full text-[11px]" aria-label="End voice conversation" onClick={() => void stop()}>
           <StopIcon size={20} /><span>End</span>
-        </button>
+        </Button>
       </div>
-      <small className="voice-hint">Just talk, interrupt any time · Esc to end</small>
+      <small className="text-xs text-muted-foreground">Just talk, interrupt any time · Esc to end</small>
     </div>
   );
 }

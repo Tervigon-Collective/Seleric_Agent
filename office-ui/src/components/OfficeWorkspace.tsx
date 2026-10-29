@@ -81,9 +81,9 @@ export function OfficeWorkspace({
   }, []);
 
   return (
-    <div className="office-workspace">
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[52px_minmax(0,1fr)_auto]">
       <TopBar missions={missions} missionId={missionId} onPickMission={setMissionId} dark={dark} onToggleTheme={onToggleTheme} onSwitch={onSwitch} />
-      <div className="stage" onMouseMove={(event) => setPointer({ x: event.clientX, y: event.clientY })}>
+      <div data-slot="stage" className="relative overflow-hidden bg-[#12181e]" onMouseMove={(event) => setPointer({ x: event.clientX, y: event.clientY })}>
         <OfficeCanvas dark={dark} /><MissionHeader /><MissionBoard />
         <AgentHoverCard x={pointer.x} y={pointer.y} /><AgentInspector />
         <MissionMinimap missions={missions} missionId={missionId} onPick={setMissionId} /><DebugPanel />

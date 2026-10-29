@@ -2,6 +2,11 @@ import { useMemo } from "react";
 import type { Thread } from "../api/contracts";
 import { useConversationStore } from "../stores/conversation";
 import { useShellStore } from "../stores/shell";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "cn";
 import { ArchiveIcon, PencilIcon, PlusIcon, XIcon } from "./icons";
 
 function groupLabel(date: Date, now: Date): string {
@@ -37,20 +42,23 @@ function ThreadRow({ thread, selected, onChoose, onRename, onArchive }: {
   onRename: (thread: Thread) => void;
   onArchive: (id: string) => void;
 }) {
+  const title = thread.title || "Untitled conversation";
   return (
-    <div className={`thread-row ${selected ? "selected" : ""}`}>
-      <button
-        className="thread-select"
+    <div data-slot="thread-row" className={cn("group flex items-center gap-1 rounded-md", selected && "bg-accent")}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-auto min-w-0 flex-1 justify-between gap-2 py-1.5 font-normal"
         onClick={() => onChoose(thread.id)}
         aria-current={selected ? "page" : undefined}
-        title={thread.title || "Untitled conversation"}
+        title={title}
       >
-        <span>{thread.title || "Untitled conversation"}</span>
-        <small>{shortDate(thread.updated_at)}</small>
-      </button>
-      <div className="thread-actions">
-        <button className="icon-btn rename" aria-label={`Rename ${thread.title || "conversation"}`} title="Rename" onClick={() => onRename(thread)}><PencilIcon size={13} /></button>
-        <button className="icon-btn archive" aria-label={`Archive ${thread.title || "conversation"}`} title="Archive" onClick={() => onArchive(thread.id)}><ArchiveIcon size={13} /></button>
+        <span className="truncate">{title}</span>
+        <small className="shrink-0 text-xs text-muted-foreground">{shortDate(thread.updated_at)}</small>
+      </Button>
+      <div className="flex shrink-0 opacity-0 focus-within:opacity-100 group-hover:opacity-100 max-lg:opacity-100">
+        <Button variant="ghost" size="icon-sm" aria-label={`Rename ${thread.title || "conversation"}`} title="Rename" onClick={() => onRename(thread)}><PencilIcon /></Button>
+        <Button variant="ghost" size="icon-sm" aria-label={`Archive ${thread.title || "conversation"}`} title="Archive" onClick={() => onArchive(thread.id)}><ArchiveIcon /></Button>
       </div>
     </div>
   );
@@ -106,54 +114,55 @@ export function ThreadSidebar() {
   };
 
   return (
-    <aside className="thread-sidebar" aria-label="Conversations">
-      <div className="sidebar-head">
-        <strong>Conversations</strong>
-        <span style={{ display: "flex", gap: 4 }}>
-          <button className="icon-btn mobile-panel-close" aria-label="Close conversations" onClick={toggleSidebar}><XIcon size={15} /></button>
-          <button className="primary-btn" onClick={() => void createThread()}><PlusIcon size={14} /> New</button>
-        </span>
+    <aside aria-label="Conversations" className="flex h-full min-h-0 w-full flex-col gap-3 border-r bg-sidebar p-3 lg:w-60 lg:shrink-0">
+      <div className="flex items-center justify-between gap-2">
+        <strong className="text-sm font-medium text-muted-foreground">Conversations</strong>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Close conversations" onClick={toggleSidebar}><XIcon /></Button>
+          <Button size="sm" onClick={() => void createThread()}><PlusIcon /> New</Button>
+        </div>
       </div>
-      <label className="search-field">
-        <span className="sr-only">Search conversations</span>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations" type="search" />
-      </label>
-      <nav aria-label="Conversation list">
-        {groups.map((group) => (
-          <div key={group.label}>
-            <div className="thread-group-label" aria-hidden="true">{group.label}</div>
-            {group.items.map((thread) => (
-              <ThreadRow
-                key={thread.id}
-                thread={thread}
-                selected={selected === thread.id}
-                onChoose={choose}
-                onRename={handleRename}
-                onArchive={handleArchive}
-              />
-            ))}
-          </div>
-        ))}
-        {!userThreads.length && !evalThreads.length && <p className="empty-note">{search ? "No matching conversations." : "No conversations yet. Start a new analysis."}</p>}
-        {evalThreads.length > 0 && (
-          <details className="thread-eval-group">
-            <summary className="thread-group-label">
-              Evaluation runs ({evalThreads.length})
-            </summary>
-            {evalThreads.map((thread) => (
-              <ThreadRow
-                key={thread.id}
-                thread={thread}
-                selected={selected === thread.id}
-                onChoose={choose}
-                onRename={handleRename}
-                onArchive={handleArchive}
-              />
-            ))}
-          </details>
-        )}
-      </nav>
-      <div className="sidebar-foot">Ask about sales, marketing, products, or operations. Evidence stays with every answer.</div>
+      <Input type="search" aria-label="Search conversations" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations" />
+      <ScrollArea className="min-h-0 flex-1">
+        <nav aria-label="Conversation list" className="flex flex-col gap-1">
+          {groups.map((group) => (
+            <div key={group.label} className="flex flex-col gap-0.5">
+              <div className="px-2 pt-2 text-xs font-medium text-muted-foreground" aria-hidden="true">{group.label}</div>
+              {group.items.map((thread) => (
+                <ThreadRow
+                  key={thread.id}
+                  thread={thread}
+                  selected={selected === thread.id}
+                  onChoose={choose}
+                  onRename={handleRename}
+                  onArchive={handleArchive}
+                />
+              ))}
+            </div>
+          ))}
+          {!userThreads.length && !evalThreads.length && <p className="px-2 text-sm text-muted-foreground">{search ? "No matching conversations." : "No conversations yet. Start a new analysis."}</p>}
+          {evalThreads.length > 0 && (
+            <Collapsible>
+              <CollapsibleTrigger className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-start text-muted-foreground")}>
+                Evaluation runs ({evalThreads.length})
+              </CollapsibleTrigger>
+              <CollapsibleContent className="flex flex-col gap-0.5">
+                {evalThreads.map((thread) => (
+                  <ThreadRow
+                    key={thread.id}
+                    thread={thread}
+                    selected={selected === thread.id}
+                    onChoose={choose}
+                    onRename={handleRename}
+                    onArchive={handleArchive}
+                  />
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+        </nav>
+      </ScrollArea>
+      <p className="text-xs text-muted-foreground">Ask about sales, marketing, products, or operations. Evidence stays with every answer.</p>
     </aside>
   );
 }

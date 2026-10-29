@@ -57,7 +57,7 @@ const renderConversation = () => {
 describe("assistant-ui Seleric adapter", () => {
   it("renders assistant-ui thread/message primitives with Seleric typed parts", () => {
     renderConversation();
-    expect(container.querySelector(".thread-root")).toBeTruthy();
+    expect(container.querySelector('[aria-label="Conversation transcript"]')).toBeTruthy();
     expect(container.querySelector('[data-message-id="message-1"]')).toBeTruthy();
     expect(container.querySelector("table")?.textContent).toContain("CAC42");
     expect(container.querySelector('textarea[name="input"]')).toBeTruthy();
@@ -111,7 +111,7 @@ describe("assistant-ui Seleric adapter", () => {
     });
     renderConversation();
 
-    expect(container.querySelectorAll(".message.assistant")).toHaveLength(1);
+    expect(container.querySelectorAll('[data-slot="chat-message"][data-role="assistant"]')).toHaveLength(1);
     expect(container.textContent).toContain("Working on it");
     expect(container.querySelector('[aria-label="Retry response"]')).toBeNull();
   });

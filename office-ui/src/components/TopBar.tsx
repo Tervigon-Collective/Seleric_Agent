@@ -1,7 +1,10 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useOffice, type ConnState } from "../store";
 import type { MissionRef } from "../types";
 import type { Workspace } from "../stores/shell";
-import { WorkspaceSwitch } from "./ops/WorkspaceSwitch";
+import { ShellHeader } from "./ShellHeader";
 
 const CONN_LABEL: Record<ConnState, string> = {
   idle: "Idle",
@@ -40,39 +43,35 @@ export function TopBar({
   ).length;
 
   return (
-    <header className="shell-header topbar">
-      <button className="brand-button" onClick={() => onSwitch("conversation")} aria-label="Seleric home"><span className="brand-mark">S</span><strong>Seleric</strong></button>
-      <WorkspaceSwitch current="office" onChange={onSwitch} />
+    <ShellHeader workspace="office" onSwitch={onSwitch} dark={dark} onToggleTheme={onToggleTheme} className="overflow-x-auto">
 
-      <select
+      <NativeSelect
+        className="max-w-64"
+        aria-label="Mission"
         value={missionId ?? ""}
         onChange={(e) => onPickMission(e.target.value)}
         disabled={missions.length === 0}
-        style={{ maxWidth: 260 }}
       >
-        {missions.length === 0 && <option value="">No missions</option>}
+        {missions.length === 0 && <NativeSelectOption value="">No missions</NativeSelectOption>}
         {missions.map((m) => (
-          <option key={m.missionId} value={m.missionId}>
+          <NativeSelectOption key={m.missionId} value={m.missionId}>
             {m.missionId} — {truncate(m.query, 40)}
-          </option>
+          </NativeSelectOption>
         ))}
-      </select>
+      </NativeSelect>
 
-      <span className="mission-title" title={query}>{query}</span>
-      <span className="spacer" />
+      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground max-lg:hidden" title={query}>{query}</span>
+      <span className="flex-1 lg:hidden" />
 
-      <span className="pill">{activeCount} active</span>
-      <button className="btn" onClick={() => setFollow(cycleFollow(followMode))}>
+      <Badge variant="secondary">{activeCount} active</Badge>
+      <Button variant="outline" size="sm" onClick={() => setFollow(cycleFollow(followMode))}>
         Camera: {followMode}
-      </button>
-      <button className="btn" onClick={toggleTimeline}>Timeline</button>
-      <button className="btn" onClick={toggleDebug}>Debug</button>
-      <button className="btn" onClick={onToggleTheme}>{dark ? "Light" : "Dark"}</button>
+      </Button>
+      <Button variant="outline" size="sm" onClick={toggleTimeline}>Timeline</Button>
+      <Button variant="outline" size="sm" onClick={toggleDebug}>Debug</Button>
 
-      <span className={`pill ${conn}`}>
-        <span className="dot" /> {CONN_LABEL[conn]}
-      </span>
-    </header>
+      <Badge variant={conn === "live" ? "secondary" : "outline"}>{CONN_LABEL[conn]}</Badge>
+    </ShellHeader>
   );
 }
 

@@ -1,37 +1,26 @@
+import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowUpRightIcon, GlobeIcon, WrenchIcon } from "lucide-react";
+import { Trace, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { useMemo, useState } from "react";
 import type { MessagePart } from "../api/contracts";
 import { useShellStore } from "../stores/shell";
 import { useConversationStore } from "../stores/conversation";
+import { DataTable } from "./DataTable";
 import { SafeContent } from "./SafeContent";
 import { ApprovalCard } from "./ApprovalCard";
 import { EmailPreviewCard } from "./EmailPreviewCard";
 import { ChartRenderer, SelectionInsight } from "./charts/ChartRenderer";
 import { useChartVocabularyDrift } from "../api/chartContract";
 import { buildFollowUp, buildPointContext } from "../api/drillContext";
-import { DownloadIcon } from "./icons";
 import { KpiGrid } from "./report/KpiGrid";
 
 const text = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
-/** Numeric-looking cells (digits, currency, %, separators) right-align. Values are never reformatted. */
-const NUMERIC = /^[+\-−]?[$€£¥₹]?\s*\d[\d\s,._]*\s?[%‰]?$/;
-/** A cell with no data (the backend writes a dash): never read as zero, never decides a column's type. */
-const BLANK = "—";
-
-function isNumericColumn(values: string[]): boolean {
-  const sample = values.filter((v) => v.trim() !== "" && v.trim() !== BLANK).slice(0, 20);
-  if (sample.length < 2) return false;
-  return sample.every((v) => NUMERIC.test(v.trim()));
-}
-
-function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
-  const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-  return [columns.map(escape).join(","), ...rows.map((row) => columns.map((c) => escape(row[c])).join(","))].join("\n");
-}
-
-function Table({ content }: { content: unknown }) {
+function ResultTable({ content }: { content: unknown }) {
   const rows = Array.isArray(content) ? content : (record(content).rows as unknown[] ?? []);
   const safeRows = useMemo(
     () => rows.filter((row) => row && typeof row === "object").map(record),
@@ -44,10 +33,6 @@ function Table({ content }: { content: unknown }) {
     const present = new Set(safeRows.flatMap((row) => Object.keys(row)));
     return [...given.filter((c) => present.has(c)), ...[...present].filter((c) => !given.includes(c))];
   }, [content, safeRows]);
-  // The order the rows arrive in is the ranking the query asked for; show it as the active sort.
-  const initialSort = record(record(content).sort);
-  const [sortKey, setSortKey] = useState<string | null>(typeof initialSort.column === "string" ? initialSort.column : null);
-  const [sortDir, setSortDir] = useState<1 | -1>(initialSort.direction === "asc" ? 1 : -1);
   const [selected, setSelected] = useState<number | null>(null);
   const submit = useConversationStore((s) => s.submit);
 
@@ -57,124 +42,56 @@ function Table({ content }: { content: unknown }) {
     if (question) void submit(question);
   };
 
-  const numericCols = useMemo(() => {
-    const map = new Map<string, boolean>();
-    for (const col of columns) {
-      map.set(col, isNumericColumn(safeRows.map((row) => text(row[col]))));
-    }
-    return map;
-  }, [columns, safeRows]);
-
-  const visible = useMemo(() => {
-    if (!sortKey) return safeRows;
-    return [...safeRows].sort((a, b) => {
-      const left = text(a[sortKey]);
-      const right = text(b[sortKey]);
-      if ((left === BLANK) !== (right === BLANK)) return left === BLANK ? 1 : -1;  // no data sorts last either way
-      const numLeft = Number(left.replace(/[^0-9.\-+eE]/g, ""));
-      const numRight = Number(right.replace(/[^0-9.\-+eE]/g, ""));
-      if (Number.isFinite(numLeft) && Number.isFinite(numRight) && left.trim() !== "" && right.trim() !== "") {
-        return (numLeft - numRight) * sortDir;
-      }
-      return left.localeCompare(right) * sortDir;
-    });
-  }, [safeRows, sortKey, sortDir]);
-
   const state = String(record(content).state || "");
   if (state === "loading") {
-    return <p className="empty-note" aria-busy="true">Loading table…</p>;
+    return <Skeleton className="h-40 w-full" role="status" aria-busy="true" aria-label="Loading table" />;
   }
   if (state === "error") {
-    return <aside className="part-card warning" role="alert">Table could not be loaded from certified evidence.</aside>;
+    return <Alert role="alert"><AlertDescription>Table could not be loaded from certified evidence.</AlertDescription></Alert>;
   }
   if (!columns.length) {
-    return <p className="empty-note" role="status">No rows returned from certified evidence.</p>;
+    return <p className="text-sm text-muted-foreground" role="status">No rows returned from certified evidence.</p>;
   }
 
-  const download = () => {
-    const blob = new Blob([toCsv(columns, visible)], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "seleric_table.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  const caption = typeof record(content).caption === "string" ? String(record(content).caption) : "";
+  const selectedRow = selected !== null ? safeRows[selected] : null;
   return (
-    <figure style={{ margin: 0 }}>
-      <div className="table-toolbar">
-        <span>{visible.length} row{visible.length === 1 ? "" : "s"}</span>
-        {visible.length > 20 && <span className="table-scroll-hint">scroll for more</span>}
-        <span className="spacer" />
-        <button type="button" onClick={download} aria-label="Download table as CSV">
-          <DownloadIcon size={12} /> CSV
-        </button>
-      </div>
-      <div className={visible.length > 20 ? "part-table-wrap tall" : "part-table-wrap"}>
-        <table aria-label="Analytical results table">
-          <thead>
-            <tr>
-              {columns.map((key) => (
-                <th key={key} scope="col" className={numericCols.get(key) ? "num" : ""} aria-sort={sortKey === key ? (sortDir === 1 ? "ascending" : "descending") : "none"}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (sortKey !== key) { setSortKey(key); setSortDir(1); }
-                      else if (sortDir === 1) setSortDir(-1);
-                      else setSortKey(null);
-                    }}
-                    title={`Sort by ${key}`}
-                    style={{ all: "unset", cursor: "pointer", display: "inline-flex", gap: 4, alignItems: "center" }}
-                  >
-                    {key}
-                    <span aria-hidden="true" style={{ color: "var(--text-faint)", fontSize: 10 }}>
-                      {sortKey === key ? (sortDir === 1 ? "▲" : "▼") : ""}
-                    </span>
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((row, index) => (
-              <tr
-                key={index}
-                className={selected === index ? "selected-row" : ""}
-                aria-selected={selected === index}
-                tabIndex={0}
-                onClick={() => setSelected((current) => (current === index ? null : index))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setSelected((current) => (current === index ? null : index));
-                  }
-                }}
-              >
-                {columns.map((key) => (
-                  <td key={key} className={numericCols.get(key) ? "num" : ""}>{text(row[key])}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {caption && <figcaption className="chart-hint">{caption}</figcaption>}
-      {selected !== null && visible[selected] && (
+    <div className="flex flex-col gap-2">
+      <DataTable
+        columns={columns}
+        rows={safeRows}
+        initialSort={record(record(content).sort)}
+        caption={typeof record(content).caption === "string" ? String(record(content).caption) : undefined}
+        selectedIndex={selected}
+        onSelectedIndexChange={setSelected}
+      />
+      {selectedRow && (
         <SelectionInsight
           columns={columns}
-          row={visible[selected]}
+          row={selectedRow}
           onClose={() => setSelected(null)}
           drill={{
-            onAsk: () => askAbout("ask", visible[selected]),
-            onCompare: () => askAbout("compare", visible[selected]),
+            onAsk: () => askAbout("ask", selectedRow),
+            onCompare: () => askAbout("compare", selectedRow),
           }}
         />
       )}
-    </figure>
+    </div>
+  );
+}
+
+/** Tool pattern: one Trace line, status in the title as well as the colour. */
+function ToolLine({ tool, status }: { tool: string; status: string }) {
+  const s = status.toLowerCase();
+  const failed = /fail|error|denied/.test(s);
+  const done = /complet|done|success|ok|finish/.test(s);
+  const title = failed ? `Failed to run ${tool}` : done ? `Ran ${tool}` : `Running ${tool}`;
+  return (
+    <Trace>
+      <TraceLine status={failed ? "error" : done ? undefined : "running"}>
+        <TraceIcon><WrenchIcon /></TraceIcon>
+        <TraceTitle>{title}</TraceTitle>
+      </TraceLine>
+    </Trace>
   );
 }
 
@@ -184,37 +101,42 @@ export function MessagePartRenderer({ part }: { part: MessagePart }) {
   const value = record(part.content);
   switch (part.type) {
     case "TEXT": return <SafeContent text={text(part.content)} />;
-    case "TABLE": return <Table content={part.content} />;
-    case "CODE": return <pre className="part-code"><code>{text(part.content)}</code></pre>;
+    case "TABLE": return <ResultTable content={part.content} />;
+    case "CODE": return <pre data-slot="part-code" className="m-0 overflow-x-auto rounded-md border bg-muted p-3 font-mono text-xs"><code>{text(part.content)}</code></pre>;
     case "SOURCE": {
       const url = typeof value.url === "string" && /^https?:\/\//.test(value.url) ? value.url : null;
       const excerpt = typeof value.excerpt === "string" && value.excerpt.trim() ? value.excerpt : null;
-      return <aside className="part-card source" title={excerpt ?? undefined}>
-        <strong>Source</strong>
-        {url
-          ? <a href={url} target="_blank" rel="noreferrer">{text(value.title ?? url)}</a>
-          : <span>{text(value.title ?? value.evidence_id ?? "Evidence")}</span>}
-        {excerpt && <span className="source-excerpt">{excerpt}</span>}
-      </aside>;
+      const line = (
+        <TraceLine>
+          <TraceIcon><GlobeIcon /></TraceIcon>
+          <TraceTitle>
+            {text(value.title ?? url ?? value.evidence_id ?? "Evidence")}
+            {url && <span className="sr-only"> (opens in a new tab)</span>}
+          </TraceTitle>
+          {url && <TraceIcon><ArrowUpRightIcon /></TraceIcon>}
+        </TraceLine>
+      );
+      return <Trace title={excerpt ?? undefined}>{url ? <a href={url} target="_blank" rel="noreferrer">{line}</a> : line}</Trace>;
     }
-    case "TOOL_CALL": return <aside className="part-card tool"><strong>Tool</strong><code>{text(value.tool)}</code><span>{text(value.status ?? "")}</span></aside>;
-    case "ARTIFACT": return <button className="part-card artifact" onClick={() => showArtifact({ ...value, ...record(value.provenance) })}><strong>Artifact</strong><span>{text(value.title ?? value.artifact_id)}</span></button>;
+    case "TOOL_CALL": return <ToolLine tool={text(value.tool)} status={text(value.status ?? "")} />;
+    case "ARTIFACT": return <Button type="button" variant="outline" size="sm" className="justify-start" onClick={() => showArtifact({ ...value, ...record(value.provenance) })}><strong>Artifact</strong><span>{text(value.title ?? value.artifact_id)}</span></Button>;
     case "CHART": {
       const spec = value.data ?? value;
+      if (value.state === "loading") return <Skeleton className="h-72 w-full" role="status" aria-busy="true" aria-label="Loading chart" />;
       if (!spec || (typeof spec === "object" && !(spec as any).data && !(spec as any).chart_type && !(spec as any).series)) {
-        return <aside className="part-card warning" role="alert">Chart is still loading or has no certified data.</aside>;
+        return <Alert role="alert"><AlertDescription>Chart is still loading or has no certified data.</AlertDescription></Alert>;
       }
       try {
         return <ChartRenderer spec={spec as any} />;
       } catch {
-        return <aside className="part-card warning" role="alert">Chart could not be rendered from certified evidence.</aside>;
+        return <Alert role="alert"><AlertDescription>Chart could not be rendered from certified evidence.</AlertDescription></Alert>;
       }
     }
     case "KPI_GRID":
       return <KpiGrid content={value} />;
-    case "AGENT_STATUS": return <p className="part-status" aria-live="polite">{text(part.content)}</p>;
+    case "AGENT_STATUS": return <p className="m-0 text-sm text-muted-foreground" aria-live="polite">{text(part.content)}</p>;
     case "APPROVAL": return value.action === "send_email" ? <EmailPreviewCard value={value} /> : <ApprovalCard value={value} />;
-    case "WARNING": return <aside className="part-card warning" role="alert">{text(part.content)}</aside>;
+    case "WARNING": return <Alert role="alert"><AlertDescription>{text(part.content)}</AlertDescription></Alert>;
     default: return null;
   }
 }

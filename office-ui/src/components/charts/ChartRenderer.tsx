@@ -1,215 +1,45 @@
-import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import ReactECharts from 'echarts-for-react';
-import { useShellStore } from '../../stores/shell';
-import { useConversationStore } from '../../stores/conversation';
-import { CheckIcon, CopyIcon, DownloadIcon, ExpandIcon, ShrinkIcon, ResetZoomIcon, ImageIcon } from '../icons';
+import { Skeleton } from "@/components/ui/skeleton";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { CheckIcon, CopyIcon, DownloadIcon, MaximizeIcon } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CHART_TYPES } from "../../api/chartContract";
+import { buildFollowUp, buildPointContext } from "../../api/drillContext";
+import { useConversationStore } from "../../stores/conversation";
+import { useShellStore } from "../../stores/shell";
+import { DataTable } from "../DataTable";
+import { ShadcnChart } from "./LazyShadcnChart";
 import {
-  CHART_TYPES,
-  normalizeChartType,
-  type ChartType,
-} from '../../api/chartContract';
-import { buildFollowUp, buildPointContext } from '../../api/drillContext';
+  MARK_SWITCHABLE, chartHeightPx, chartPlan, type CartesianMark, type ChartSpec,
+} from "./chartPlan";
 
-export interface ChartSeries {
-  key: string;
-  name?: string;
-  /** Metric id the series was drawn from (the backend keeps it so axes are assigned by metric, not by label). */
-  metric?: string;
-  type?: string;
-  stack?: string;
-  yAxisIndex?: number;
-  areaStyle?: Record<string, unknown>;
-  radius?: unknown[];
-  values_key?: string;
-}
-
-export interface CausalGraphNode {
-  id: string;
-  name?: string;
-  role?: "outcome" | "driver" | "confounder" | string;
-  classification?: string | null;
-  status?: string | null;
-  share_of_change?: number | null;
-}
-
-export interface CausalGraphLink {
-  source: string;
-  target: string;
-  kind?: "treatment" | "adjustment" | string;
-  classification?: string | null;
-}
-
-/** Series of a different kind or size drawn in their own panel (own axis, shared x) instead of on twin axes. */
-export interface ChartPanel {
-  title: string;
-  unit?: string;
-  series: string[];
-  mark?: 'bar' | 'line';
-}
-
-export interface ChartSpec {
-  chart_type: string;
-  panels?: ChartPanel[];
-  title?: string;
-  metrics: string[];
-  dimensions: string[];
-  series: ChartSeries[];
-  xAxis?: Record<string, unknown> & { key?: string; type?: string; data?: string[] };
-  yAxis?: Array<Record<string, unknown>>;
-  radar?: { indicator: Array<{ name: string; max: number }> };
-  data: Record<string, any>[];
-  /** DoWhy DAG nodes/links when ``chart_type`` is ``causal_graph``. */
-  nodes?: CausalGraphNode[];
-  links?: CausalGraphLink[];
-  warnings?: string[];
-  downloadable_csv_url?: string;
-}
+export {
+  chartHeightPx, formatAxisTick, formatChartValue, mixedUnitAxes, mustUnstack, MARK_SWITCHABLE,
+  type CartesianMark, type CausalGraphLink, type CausalGraphNode, type ChartPanel, type ChartSeries, type ChartSpec,
+} from "./chartPlan";
 
 interface ChartRendererProps {
   spec: ChartSpec;
 }
 
-/** Restrained analytical palette led by Apple system colors (HIG Color). */
-const PALETTE = [
-  '#0A84FF', '#30D158', '#FF9F0A', '#FF453A',
-  '#BF5AF2', '#64D2FF', '#8E8E93',
-];
-
-/** Forms drawn as flat bars rather than as a continuous line. */
-const FLAT_MARK_FORMS = new Set(['bar', 'horizontal_bar', 'stacked_bar', 'grouped_bar', 'combo']);
-
-export interface ChartThemeColors {
-  text: string;
-  dim: string;
-  faint: string;
-  line: string;
-  lineStrong: string;
-  panel: string;
-  sidebar: string;
-  accent: string;
-}
-
-const LIGHT_CHART_THEME: ChartThemeColors = {
-  text: '#000000',
-  dim: '#3c3c43', // secondaryLabel light (60% over white ≈ solid for canvas)
-  faint: '#8e8e93', // systemGray
-  line: '#e5e5ea', // systemGray5 light
-  lineStrong: '#c6c6c8', // opaqueSeparator light
-  panel: '#ffffff',
-  sidebar: '#f2f2f7',
-  accent: '#007aff', // systemBlue light
-};
-
-const DARK_CHART_THEME: ChartThemeColors = {
-  text: '#ffffff', // label dark
-  dim: '#98989f', // secondaryLabel dark ≈ #EBEBF5 @60% on black, solid for canvas
-  faint: '#636366', // systemGray2 dark
-  line: '#38383a', // opaqueSeparator dark
-  lineStrong: '#48484a', // systemGray3 dark
-  panel: '#1c1c1e', // secondarySystemBackground dark
-  sidebar: '#000000',
-  accent: '#0a84ff', // systemBlue dark
-};
-
-function readCssVar(name: string, fallback: string): string {
-  try {
-    if (typeof document === 'undefined') return fallback;
-    const value = getComputedStyle(document.documentElement).getPropertyValue(name)?.trim();
-    return value || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-/**
- * Resolve the CSS design tokens to concrete colors.
- *
- * ECharts renders on canvas and cannot resolve `var(--...)` references, so
- * passing them through leaves axis labels, grid lines and tooltips near-black
- * in the dark theme. Always resolve to a real color here.
- */
-export function getChartThemeColors(): ChartThemeColors {
-  const isDark =
-    typeof document !== 'undefined' && document.documentElement?.dataset?.theme === 'dark';
-  const fb = isDark ? DARK_CHART_THEME : LIGHT_CHART_THEME;
-  if (typeof document === 'undefined') return fb;
-  return {
-    text: readCssVar('--text', fb.text),
-    dim: readCssVar('--text-dim', fb.dim),
-    faint: readCssVar('--text-faint', fb.faint),
-    line: readCssVar('--line', fb.line),
-    lineStrong: readCssVar('--line-strong', fb.lineStrong),
-    panel: readCssVar('--panel', fb.panel),
-    sidebar: readCssVar('--sidebar', fb.sidebar),
-    accent: readCssVar('--accent', fb.accent),
-  };
-}
-
-/** Live theme colors; re-resolves when `[data-theme]` flips. */
-export function useChartThemeColors(): ChartThemeColors {
-  const [colors, setColors] = useState<ChartThemeColors>(() => getChartThemeColors());
-  useEffect(() => {
-    const refresh = () => setColors(getChartThemeColors());
-    refresh();
-    const observer = new MutationObserver(refresh);
-    try {
-      observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['data-theme', 'class', 'style'],
-      });
-    } catch {
-      /* non-DOM test env */
-    }
-    window.addEventListener('storage', refresh);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('storage', refresh);
-    };
-  }, []);
-  return colors;
-}
-
-/** Compact, human-readable numbers: 2,539.83 instead of 2539.831111111111. */
-export function formatChartValue(value: unknown): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return String(value ?? '');
-  const abs = Math.abs(value);
-  const fractionDigits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
-  // Trim trailing zeros (389.50 -> 389.5) without ever showing float noise.
-  // Indian grouping (22,53,608), as the answer text writes it.
-  const text = value.toLocaleString('en-IN', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: fractionDigits,
-  });
-  return text;
-}
-
-function formatAxisTick(value: unknown): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return String(value ?? '');
-  const abs = Math.abs(value);
-  const trimmed = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 1 });
-  if (abs >= 10_000_000) return `${trimmed(value / 10_000_000)}Cr`;
-  if (abs >= 100_000) return `${trimmed(value / 100_000)}L`;
-  if (abs >= 1_000) return `${trimmed(value / 1_000)}k`;
-  return formatChartValue(value);
-}
-
 function exportToCsv(data: any[], filename: string) {
   if (!data || data.length === 0) return;
   const headers = Array.from(new Set(data.flatMap(Object.keys)));
-  const rows = data.map(row =>
-    headers.map(header => {
+  const rows = data.map((row) =>
+    headers.map((header) => {
       const val = row[header];
       if (val === null || val === undefined) return '""';
-      const escaped = String(val).replace(/"/g, '""');
-      return `"${escaped}"`;
-    }).join(',')
+      return `"${String(val).replace(/"/g, '""')}"`;
+    }).join(","),
   );
-  const csvContent = [headers.join(','), ...rows].join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob([[headers.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', `${filename.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.csv`);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", `${filename.toLowerCase().replace(/[^a-z0-9]+/g, "_")}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -239,761 +69,53 @@ export function SelectionInsight({ columns, row, onClose, drill }: {
     }).catch(() => undefined);
   };
   return (
-    <div className="insight-panel" role="status" aria-label="Selected data point">
-      <dl>
-        {entries.map(([col, val]) => (
-          <React.Fragment key={col}>
-            <dt>{col}</dt>
-            <dd>{String(val ?? "—")}</dd>
-          </React.Fragment>
-        ))}
-      </dl>
-      <div className="insight-actions">
+    <Card size="sm" role="status" aria-label="Selected data point">
+      <CardContent>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          {entries.map(([col, val]) => (
+            <React.Fragment key={col}>
+              <dt className="text-muted-foreground">{col}</dt>
+              <dd className="m-0 break-words">{String(val ?? "—")}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+      </CardContent>
+      <CardFooter className="flex flex-wrap gap-2">
         {drill?.onShowData && (
-          <button type="button" onClick={drill.onShowData} aria-label="Show underlying data">
-            Data
-          </button>
+          <Button type="button" variant="outline" size="sm" onClick={drill.onShowData} aria-label="Show underlying data">Data</Button>
         )}
         {drill && (
           <>
-            <button type="button" onClick={drill.onAsk} aria-label="Ask Seleric about this point">
-              Ask about this
-            </button>
-            <button type="button" onClick={drill.onCompare} aria-label="Compare this point with the previous period">
-              Compare previous
-            </button>
+            <Button type="button" variant="outline" size="sm" onClick={drill.onAsk} aria-label="Ask Seleric about this point">Ask about this</Button>
+            <Button type="button" variant="outline" size="sm" onClick={drill.onCompare} aria-label="Compare this point with the previous period">Compare previous</Button>
           </>
         )}
-        <button type="button" onClick={copy} aria-label="Copy selected values">
-          {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+        <Button type="button" variant="outline" size="sm" onClick={copy} aria-label="Copy selected values">
+          {copied ? <CheckIcon /> : <CopyIcon />}
           {copied ? "Copied" : "Copy"}
-        </button>
-        <button type="button" onClick={() => openInspector("Debug")}>Debug</button>
-        <button type="button" onClick={onClose} aria-label="Clear selection">Clear</button>
-      </div>
-    </div>
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => openInspector("Debug")}>Debug</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Clear selection">Clear</Button>
+      </CardFooter>
+    </Card>
   );
 }
-
-// --------------------------------------------------------------------------
-// Renderers. One per chart form, all driven by the generic spec the backend
-// emits. An unknown form returns null so the caller fails loudly.
-// --------------------------------------------------------------------------
-
-type ChartOption = Record<string, unknown>;
-
-export type CartesianMark = 'bar' | 'line';
-
-interface RenderOpts {
-  expanded?: boolean;
-  /** Client-side mark override for cartesian forms; stacks are dropped for lines. */
-  mark?: CartesianMark;
-}
-
-function baseOption(
-  spec: ChartSpec,
-  theme: ChartThemeColors,
-  opts: RenderOpts = {},
-): ChartOption {
-  const expanded = opts.expanded === true;
-  return {
-    color: PALETTE,
-    textStyle: { fontFamily: 'inherit', color: theme.text },
-    title: {
-      text: spec.title || 'Chart',
-      left: 'left',
-      textStyle: { color: theme.text, fontSize: expanded ? 14 : 13, fontWeight: 600, fontFamily: 'inherit' },
-    },
-    tooltip: {
-      trigger: 'axis',
-      confine: true,
-      backgroundColor: theme.panel,
-      borderColor: theme.lineStrong,
-      borderWidth: 1,
-      padding: [8, 12],
-      textStyle: { color: theme.text, fontSize: 12, fontFamily: 'inherit' },
-      axisPointer: { type: 'shadow', shadowStyle: { color: theme.line, opacity: 0.35 } },
-      valueFormatter: (value: unknown) => formatChartValue(
-        Array.isArray(value) ? value[value.length - 1] : value,
-      ),
-    },
-    legend: {
-      bottom: expanded ? 34 : 0,
-      type: 'scroll',
-      pageIconColor: theme.text,
-      pageIconInactiveColor: theme.faint,
-      pageTextStyle: { color: theme.dim },
-      pageButtonItemGap: 6,
-      textStyle: { color: theme.dim, fontSize: 11, overflow: 'truncate', width: 140, fontFamily: 'inherit' },
-      icon: 'circle',
-    },
-    toolbox: expanded
-      ? {
-          show: true,
-          top: 0,
-          right: 0,
-          itemSize: 15,
-          itemGap: 10,
-          iconStyle: { borderColor: theme.dim },
-          emphasis: { iconStyle: { borderColor: theme.text } },
-          feature: {
-            saveAsImage: { show: true, title: 'Save as PNG', backgroundColor: theme.panel, name: (spec.title || 'chart').toLowerCase().replace(/[^a-z0-9]+/g, '_') },
-            dataView: { show: true, title: 'Data view', readOnly: true, lang: [(spec.title || 'Data'), 'Close', 'Refresh'] },
-            dataZoom: { show: true, title: { zoom: 'Zoom', back: 'Reset zoom' }, iconStyle: { borderColor: theme.dim } },
-            restore: { show: true, title: 'Restore' },
-          },
-        }
-      : undefined,
-    backgroundColor: 'transparent',
-    animationDuration: 300,
-    animationEasing: 'cubicOut',
-  };
-}
-
-/** Shared axes for every cartesian form. */
-function withCartesianAxes(
-  option: ChartOption,
-  spec: ChartSpec,
-  theme: ChartThemeColors,
-  opts: RenderOpts = {},
-): ChartOption {
-  const expanded = opts.expanded === true;
-  const xAxis = spec.xAxis ?? { type: 'category' };
-  const yAxis = spec.yAxis && spec.yAxis.length > 0 ? spec.yAxis : [{ type: 'value' }];
-  const rowCount = Array.isArray(spec.data) ? spec.data.length : 0;
-  const crowded = rowCount > 12;
-  option.xAxis = xAxis;
-  option.yAxis = yAxis;
-  if ((xAxis as Record<string, unknown>).type !== 'value') {
-    option.xAxis = {
-      ...xAxis,
-      axisLine: { lineStyle: { color: theme.lineStrong } },
-      axisTick: { show: false },
-      axisLabel: {
-        color: theme.dim,
-        fontSize: 11,
-        fontFamily: 'inherit',
-        hideOverlap: true,
-        rotate: expanded ? 0 : crowded ? 32 : 0,
-        interval: 'auto',
-      },
-      axisPointer: { label: { backgroundColor: theme.sidebar, color: theme.text } },
-    };
-  } else {
-    option.xAxis = {
-      ...xAxis,
-      axisLabel: {
-        color: theme.dim,
-        fontSize: 11,
-        fontFamily: 'inherit',
-        formatter: (v: unknown) => formatAxisTick(v),
-      },
-      splitLine: { lineStyle: { color: theme.line, type: 'dashed' } },
-    };
-  }
-  (yAxis as Array<Record<string, unknown>>).forEach((axis) => {
-    axis.splitLine = { lineStyle: { color: theme.line, type: 'dashed' } };
-    axis.axisLabel = {
-      ...(typeof axis.axisLabel === 'object' && axis.axisLabel !== null ? (axis.axisLabel as Record<string, unknown>) : {}),
-      color: theme.dim,
-      fontSize: 11,
-      fontFamily: 'inherit',
-      formatter: (v: unknown) => formatAxisTick(v),
-    };
-    if (axis.name && !axis.nameTextStyle) {
-      axis.nameTextStyle = { color: theme.faint, fontSize: 11, fontFamily: 'inherit' };
-    }
-  });
-  option.grid = {
-    left: '3%',
-    right: '4%',
-    top: expanded ? '12%' : '15%',
-    bottom: expanded ? '24%' : crowded ? '20%' : '14%',
-    containLabel: true,
-  };
-  // Wheel / pinch zoom inline; slider + inside controls in the expanded modal.
-  if (rowCount > 8) {
-    option.dataZoom = expanded
-      ? [
-          {
-            type: 'slider',
-            show: true,
-            bottom: 2,
-            height: 26,
-            borderColor: theme.line,
-            backgroundColor: theme.sidebar,
-            fillerColor: theme.accent,
-            handleStyle: { color: theme.panel, borderColor: theme.lineStrong },
-            moveHandleStyle: { color: theme.lineStrong },
-            selectedDataBackground: { lineStyle: { color: theme.accent }, areaStyle: { color: theme.accent, opacity: 0.12 } },
-            textStyle: { color: theme.faint, fontSize: 10, fontFamily: 'inherit' },
-          },
-          { type: 'inside', filterMode: 'filter' },
-        ]
-      : [{ type: 'inside', filterMode: 'filter' }];
-  }
-  return option;
-}
-
-/** Distinct unit names across the spec's y axes (empty when single-unit). */
-export function mixedUnitAxes(spec: ChartSpec): string[] {
-  const names = (spec.yAxis ?? [])
-    .map((a) => String((a as Record<string, unknown>).name ?? '').trim().toLowerCase())
-    .filter(Boolean);
-  return [...new Set(names)];
-}
-
-/** A stacked form over multiple units is misleading — render it unstacked. */
-export function mustUnstack(spec: ChartSpec): boolean {
-  if (spec.chart_type !== 'stacked_bar') return false;
-  if (!Array.isArray(spec.series) || spec.series.length < 2) return false;
-  return mixedUnitAxes(spec).length > 1;
-}
-
-/** Series drawn from a dataset: bar, line/area, stacked and grouped all land here. */
-function cartesianSeries(spec: ChartSpec, mark?: CartesianMark): Array<Record<string, unknown>> {
-  const flatMarks = mark ? mark === 'bar' : FLAT_MARK_FORMS.has(spec.chart_type);
-  const unstack = mustUnstack(spec);
-  return (spec.series ?? []).map((s) => ({
-    ...s,
-    type: mark ?? s.type ?? 'bar',
-    name: s.name ?? s.key,
-    encode: { x: spec.xAxis?.key, y: s.key },
-    itemStyle: {
-      borderRadius: flatMarks ? [3, 3, 0, 0] : 0,
-      borderColor: flatMarks ? 'transparent' : undefined,
-    },
-    // The backend already emits `stack: "total"` for stacked forms; never restack.
-    // Defense in depth: a stacked spec over mixed units (e.g. ₹ + counts from
-    // an older backend) renders unstacked so values compare side-by-side.
-    // A user line override never stacks: summed lines mislead like mixed bars do.
-    // Keep stack when the series already carries areaStyle (forecast P10–P90 fan band).
-    stack: mark === 'line' && !s.areaStyle ? undefined : unstack ? undefined : s.stack,
-    areaStyle: spec.chart_type === 'area' ? { opacity: 0.12 } : s.areaStyle,
-    lineStyle: flatMarks ? undefined : { width: 2 },
-    symbolSize: 5,
-    smooth: !flatMarks,
-    connectNulls: !flatMarks,
-  }));
-}
-
-function renderCartesian(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
-  if ((spec.panels?.length ?? 0) > 1) return renderPanels(spec, theme, opts);
-  const option = baseOption(spec, theme, opts);
-  withCartesianAxes(option, spec, theme, opts);
-  option.dataset = {
-    dimensions: spec.xAxis?.key ? [spec.xAxis.key, ...(spec.series ?? []).map((s) => s.key)] : undefined,
-    source: spec.data,
-  };
-  option.series = cartesianSeries(spec, opts.mark);
-  return option;
-}
-
-const PANEL_BLOCK_PX = 128;
-const PANEL_TOP_PX = 30;
-const PANEL_BOTTOM_PX = 56;
-
-/** Pixel height a spec wants: panels and long rankings grow with their content, the rest use the default. */
-export function chartHeightPx(spec: ChartSpec): number {
-  const panels = spec.panels?.length ?? 0;
-  if (panels > 1) return PANEL_TOP_PX + panels * PANEL_BLOCK_PX + PANEL_BOTTOM_PX;
-  if (normalizeChartType(spec.chart_type) === 'horizontal_bar') {
-    return Math.min(620, Math.max(260, 96 + (Array.isArray(spec.data) ? spec.data.length : 0) * 28));
-  }
-  if (normalizeChartType(spec.chart_type) === 'waterfall') return (Array.isArray(spec.data) ? spec.data.length : 0) > 6 ? 380 : 320;
-  return 300;
-}
-
-function axisLabelStyle(theme: ChartThemeColors, extra: Record<string, unknown> = {}) {
-  return { color: theme.dim, fontSize: 11, fontFamily: 'inherit', ...extra };
-}
-
-/** One small chart per panel, stacked, sharing the x axis: a count is never read against a rupee scale. */
-function renderPanels(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
-  const panels = spec.panels ?? [];
-  const option = baseOption(spec, theme, opts);
-  const xKey = spec.xAxis?.key ?? 'name';
-  const single = panels.every((p) => p.series.length <= 1);
-  option.title = [
-    option.title as Record<string, unknown>,
-    ...panels.map((panel, i) => ({
-      text: panel.unit && panel.unit !== 'val' ? `${panel.title} (${panel.unit})` : panel.title,
-      left: 56,
-      top: PANEL_TOP_PX + i * PANEL_BLOCK_PX + 2,
-      textStyle: { color: theme.dim, fontSize: 11, fontWeight: 600, fontFamily: 'inherit' },
-    })),
-  ];
-  option.legend = single ? { show: false } : { ...(option.legend as Record<string, unknown>), bottom: 0 };
-  option.grid = panels.map((_, i) => ({
-    left: 56, right: 24, top: PANEL_TOP_PX + i * PANEL_BLOCK_PX + 22, height: PANEL_BLOCK_PX - 40,
-  }));
-  option.xAxis = panels.map((_, i) => ({
-    type: 'category', gridIndex: i,
-    axisLine: { lineStyle: { color: theme.lineStrong } },
-    axisTick: { show: false },
-    axisLabel: i === panels.length - 1 ? axisLabelStyle(theme, { hideOverlap: true }) : { show: false },
-    axisPointer: { show: true },
-  }));
-  option.yAxis = panels.map((_, i) => ({
-    type: 'value', gridIndex: i, splitNumber: 2, scale: false,
-    splitLine: { lineStyle: { color: theme.line, type: 'dashed' } },
-    axisLabel: axisLabelStyle(theme, { formatter: (v: unknown) => formatAxisTick(v) }),
-  }));
-  option.dataset = { dimensions: [xKey, ...(spec.series ?? []).map((s) => s.key)], source: spec.data };
-  option.axisPointer = { link: [{ xAxisIndex: 'all' }] };
-  option.series = panels.flatMap((panel, i) =>
-    (spec.series ?? []).filter((s) => panel.series.includes(s.key)).map((s) => {
-      const mark = opts.mark ?? panel.mark ?? 'line';
-      const palette = (spec.series ?? []).findIndex((x) => x.key === s.key);
-      return {
-        type: mark, name: s.name ?? s.key, xAxisIndex: i, yAxisIndex: i,
-        encode: { x: xKey, y: s.key },
-        itemStyle: { color: PALETTE[palette % PALETTE.length], borderRadius: mark === 'bar' ? [3, 3, 0, 0] : 0 },
-        lineStyle: mark === 'line' ? { width: 2 } : undefined,
-        areaStyle: spec.chart_type === 'area' ? { opacity: 0.12 } : undefined,
-        barMaxWidth: 28, symbolSize: 5, smooth: false, connectNulls: false,
-      };
-    }),
-  );
-  if ((spec.data?.length ?? 0) > 8) option.dataZoom = [{ type: 'inside', xAxisIndex: 'all', filterMode: 'filter' }];
-  return option;
-}
-
-/** A ranking: names on the y axis (never rotated or clipped), largest first, value labels at the bar ends. */
-function renderHorizontalBar(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
-  const option = baseOption(spec, theme, opts);
-  const series = spec.series ?? [];
-  option.legend = series.length > 1 ? option.legend : { show: false };
-  option.grid = { left: 12, right: 56, top: 40, bottom: series.length > 1 ? 34 : 12, containLabel: true };
-  option.xAxis = {
-    type: 'value',
-    splitLine: { lineStyle: { color: theme.line, type: 'dashed' } },
-    axisLabel: axisLabelStyle(theme, { formatter: (v: unknown) => formatAxisTick(v) }),
-  };
-  option.yAxis = {
-    type: 'category', inverse: true,
-    axisLine: { lineStyle: { color: theme.lineStrong } },
-    axisTick: { show: false },
-    axisLabel: axisLabelStyle(theme, { width: 250, overflow: 'truncate', interval: 0 }),
-  };
-  option.dataset = { dimensions: ['name', ...series.map((s) => s.key)], source: spec.data };
-  option.series = series.map((s) => ({
-    type: 'bar', name: s.name ?? s.key, encode: { x: s.key, y: 'name' },
-    itemStyle: { borderRadius: [0, 3, 3, 0] }, barMaxWidth: 22,
-    label: {
-      show: series.length === 1, position: 'right', color: theme.dim, fontSize: 11, fontFamily: 'inherit',
-      formatter: (p: { value?: Record<string, unknown> }) => formatChartValue(p.value?.[s.key]),
-    },
-  }));
-  option.tooltip = { ...(option.tooltip as Record<string, unknown>), trigger: 'axis' };
-  return option;
-}
-
-/** Bars for the volume and a line for the rate, each axis tinted like its series. */
-function renderCombo(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
-  const option = renderCartesian(spec, theme, { ...opts, mark: undefined });
-  const series = spec.series ?? [];
-  option.series = series.map((s, i) => ({
-    type: s.type === 'line' ? 'line' : 'bar', name: s.name ?? s.key, yAxisIndex: s.yAxisIndex ?? 0,
-    encode: { x: spec.xAxis?.key, y: s.key },
-    itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: s.type === 'line' ? 0 : [3, 3, 0, 0] },
-    lineStyle: { width: 2.5 }, symbolSize: 6, smooth: false, connectNulls: false, barMaxWidth: 36,
-    z: s.type === 'line' ? 3 : 2,
-  }));
-  const axes = option.yAxis as Array<Record<string, unknown>>;
-  axes.forEach((axis, index) => {
-    const owner = series.findIndex((s) => (s.yAxisIndex ?? 0) === index);
-    const color = PALETTE[Math.max(owner, 0) % PALETTE.length];
-    axis.axisLabel = { ...(axis.axisLabel as Record<string, unknown>), color };
-    axis.nameTextStyle = { color, fontSize: 11, fontFamily: 'inherit' };
-    if (index > 0) axis.splitLine = { show: false };
-  });
-  return option;
-}
-
-const WATERFALL_UP = '#30D158';
-const WATERFALL_DOWN = '#FF453A';
-
-/** Signed steps from zero to a closing total (or from a start total to an end total for a bridge). */
-function renderWaterfall(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
-  const option = baseOption(spec, theme, opts);
-  const rows = Array.isArray(spec.data) ? spec.data : [];
-  let running = 0;
-  const bars = rows.map((row, i) => {
-    const value = Number(row.value) || 0;
-    const kind = String(row.kind ?? 'delta');
-    const from = kind === 'delta' ? running : 0;
-    const to = kind === 'delta' ? running + value : value;
-    if (kind !== 'total') running = kind === 'delta' ? to : value;
-    const color = kind === 'delta' ? (value >= 0 ? WATERFALL_UP : WATERFALL_DOWN) : theme.accent;
-    return { value: [i, Math.min(from, to), Math.max(from, to), value, kind], itemStyle: { color } };
-  });
-  option.legend = { show: false };
-  const crowded = rows.length > 6;  // many steps: tilt the names instead of letting them run into each other
-  option.grid = { left: '3%', right: '4%', top: 44, bottom: crowded ? 24 : 40, containLabel: true };
-  option.xAxis = {
-    type: 'category', data: rows.map((r) => String(r.name ?? '')),
-    axisLine: { lineStyle: { color: theme.lineStrong } }, axisTick: { show: false },
-    axisLabel: axisLabelStyle(theme, crowded
-      ? { hideOverlap: false, interval: 0, rotate: 30, width: 140, overflow: 'truncate' }
-      : { hideOverlap: false, interval: 0, width: 110, overflow: 'break' }),
-  };
-  option.yAxis = {
-    type: 'value', name: spec.yAxis?.[0]?.name as string | undefined,
-    nameTextStyle: { color: theme.faint, fontSize: 11, fontFamily: 'inherit' },
-    splitLine: { lineStyle: { color: theme.line, type: 'dashed' } },
-    axisLabel: axisLabelStyle(theme, { formatter: (v: unknown) => formatAxisTick(v) }),
-  };
-  option.tooltip = {
-    ...(option.tooltip as Record<string, unknown>), trigger: 'item',
-    formatter: (p: { name?: string; value?: unknown[] }) =>
-      `${p.name ?? ''}<br/><b>${formatChartValue(Array.isArray(p.value) ? p.value[3] : '')}</b>`,
-  };
-  option.series = [{
-    type: 'custom', name: spec.series?.[0]?.name ?? 'Value', data: bars,
-    encode: { x: 0, y: [1, 2] },
-    renderItem: (_params: unknown, api: Record<string, (...a: any[]) => any>) => {
-      const x = api.value(0), low = api.value(1), high = api.value(2), signed = api.value(3);
-      const top = api.coord([x, high]), bottom = api.coord([x, low]);
-      const width = Math.min(56, api.size([1, 0])[0] * 0.6);
-      const label = formatChartValue(signed);
-      return {
-        type: 'group',
-        children: [
-          { type: 'rect', shape: { x: top[0] - width / 2, y: top[1], width, height: Math.max(bottom[1] - top[1], 1) }, style: api.style() },
-          { type: 'text', style: { text: label, x: top[0], y: top[1] - 6, textAlign: 'center', textVerticalAlign: 'bottom', fill: theme.dim, fontSize: 11, fontFamily: 'inherit' } },
-        ],
-      };
-    },
-  }];
-  return option;
-}
-
-/** Many shares of a whole: area proportional to value (a pie past a handful of slices stops being readable). */
-function renderTreemap(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
-  const option = baseOption(spec, theme, opts);
-  (option.tooltip as Record<string, unknown>).trigger = 'item';
-  (option.tooltip as Record<string, unknown>).valueFormatter = (value: unknown) => formatChartValue(value);
-  option.legend = { show: false };
-  option.series = [{
-    type: 'treemap', name: spec.series?.[0]?.name ?? 'Value', roam: false, nodeClick: false, breadcrumb: { show: false },
-    top: 36, left: 0, right: 0, bottom: 4,
-    data: (spec.data ?? []).map((row, i) => ({ name: row.name, value: row.value, itemStyle: { color: PALETTE[i % PALETTE.length] } })),
-    label: { show: true, color: '#ffffff', fontSize: 11, fontFamily: 'inherit', overflow: 'truncate', formatter: (p: { name?: string; value?: unknown }) => `${p.name ?? ''}\n${formatChartValue(p.value)}` },
-    itemStyle: { borderColor: theme.panel, borderWidth: 2, gapWidth: 2 },
-  }];
-  return option;
-}
-
-function renderScatter(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
-  const option = baseOption(spec, theme, opts);
-  withCartesianAxes(option, spec, theme, opts);
-  // Scatter carries explicit [x, y] pairs, so a dataset is not used.
-  option.series = (spec.series ?? []).map((s) => ({
-    ...s,
-    type: 'scatter',
-    name: s.name ?? s.key,
-    data: (spec.data ?? []).map((row) => [row.x, row.y]),
-    symbolSize: 8,
-    itemStyle: { opacity: 0.8 },
-  }));
-  return option;
-}
-
-function renderSlices(spec: ChartSpec, chartType: ChartType, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
-  const option = baseOption(spec, theme, opts);
-  (option.tooltip as Record<string, unknown>).trigger = 'item';
-  (option.tooltip as Record<string, unknown>).valueFormatter = (value: unknown) => formatChartValue(value);
-  option.series = (spec.series ?? []).map((s) => ({
-    ...s,
-    type: chartType === 'donut' ? 'pie' : chartType,
-    name: s.name ?? s.key,
-    data: (spec.data ?? []).map((row) => ({ name: row.name, value: row.value })),
-    label: { color: theme.dim, fontSize: 11, fontFamily: 'inherit', formatter: '{b}: {d}%' },
-    labelLine: { lineStyle: { color: theme.lineStrong } },
-    itemStyle: { borderRadius: 3, borderColor: theme.panel, borderWidth: 2 },
-  }));
-  const series = option.series as Array<Record<string, unknown>>;
-  const main = series[0];
-  if (main) {
-    if (chartType === 'pie') {
-      main.radius = ['0%', '70%'];
-      main.center = ['50%', '48%'];
-      main.label = { show: false };
-      main.itemStyle = { borderRadius: 3, borderColor: theme.panel, borderWidth: 2 };
-    }
-    if (chartType === 'donut') {
-      main.radius = seriesRadius(spec);
-      main.center = ['50%', '48%'];
-      main.label = { show: false };
-      main.itemStyle = { borderRadius: 3, borderColor: theme.panel, borderWidth: 2 };
-    }
-    if (chartType === 'funnel') {
-      main.left = '10%';
-      main.width = '80%';
-      main.label = { show: true, color: theme.dim, fontSize: 11, fontFamily: 'inherit' };
-      main.gap = 4;
-    }
-  }
-  return option;
-}
-
-/** The backend may publish a radius on the series for a hollow form. */
-function seriesRadius(spec: ChartSpec): [string, string] {
-  const radius = spec.series?.[0]?.radius;
-  if (Array.isArray(radius) && radius.length === 2) return radius as [string, string];
-  return ['40%', '70%'];
-}
-
-function renderRadar(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
-  const option = baseOption(spec, theme, opts);
-  const indicators = spec.radar?.indicator ?? [];
-  option.radar = {
-    indicator: indicators,
-    axisName: { color: theme.dim, fontSize: 11, fontFamily: 'inherit' },
-    axisLine: { lineStyle: { color: theme.lineStrong } },
-    splitLine: { lineStyle: { color: theme.line } },
-    splitArea: { show: false },
-    radius: '68%',
-    center: ['50%', '52%'],
-  };
-  option.series = (spec.series ?? []).map((s) => ({
-    ...s,
-    type: 'radar',
-    name: s.name ?? s.key,
-    data: [{ name: s.name ?? s.key, value: indicators.map((ind) => valueFor(spec, ind.name, s.key)) }],
-    symbolSize: 4,
-    lineStyle: { width: 2 },
-  }));
-  option.tooltip = { ...(option.tooltip as Record<string, unknown>), trigger: 'item', valueFormatter: (v: unknown) => formatChartValue(v) };
-  return option;
-}
-
-function valueFor(spec: ChartSpec, indicator: string, key: string): number {
-  const row = (spec.data ?? []).find((r) => r.indicator === indicator);
-  const value = row?.[key];
-  return typeof value === 'number' ? value : 0;
-}
-
-function renderHeatmap(spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts = {}): ChartOption {
-  const expanded = opts.expanded === true;
-  const option = baseOption(spec, theme, opts);
-  const xAxis = { ...(spec.xAxis ?? { type: 'category', data: [] }) };
-  const yAxis = { ...(spec.yAxis?.[0] ?? { type: 'category', data: [] }) };
-  option.xAxis = {
-    ...xAxis,
-    axisLabel: { color: theme.dim, fontSize: 11, fontFamily: 'inherit', hideOverlap: true },
-    axisLine: { lineStyle: { color: theme.lineStrong } },
-  };
-  option.yAxis = {
-    ...yAxis,
-    axisLabel: { color: theme.dim, fontSize: 11, fontFamily: 'inherit' },
-    axisLine: { lineStyle: { color: theme.lineStrong } },
-  };
-  option.tooltip = {
-    ...(option.tooltip as Record<string, unknown>),
-    position: 'top',
-    valueFormatter: (v: unknown) => formatChartValue(v),
-  };
-  option.visualMap = {
-    min: Math.min(...(spec.data ?? []).map((r) => Number(r.value) || 0), 0),
-    max: Math.max(...(spec.data ?? []).map((r) => Number(r.value) || 0), 1),
-    calculable: true,
-    orient: 'horizontal',
-    left: 'center',
-    bottom: expanded ? 34 : 0,
-    inRange: { color: ['#f2f3fa', '#737CE7', '#3b3fb0'] },
-    textStyle: { color: theme.dim, fontSize: 10, fontFamily: 'inherit' },
-    handleStyle: { borderColor: theme.lineStrong, color: theme.panel },
-  };
-  option.grid = { left: '3%', right: '4%', top: '8%', bottom: expanded ? '28%' : '20%', containLabel: true };
-  // Heatmap data is [xIndex, yIndex, value] triples against the axis categories.
-  const xData = (xAxis.data as string[]) ?? [];
-  const yData = (yAxis.data as string[]) ?? [];
-  const xIndex = new Map(xData.map((d, i) => [d, i]));
-  const yIndex = new Map(yData.map((d, i) => [d, i]));
-  option.series = [{
-    type: 'heatmap',
-    name: spec.series?.[0]?.name ?? 'Value',
-    data: (spec.data ?? []).map((row) => [
-      xIndex.get(row.x) ?? 0,
-      yIndex.get(row.y) ?? 0,
-      Number(row.value) || 0,
-    ]),
-    label: { show: true, fontSize: 10, color: theme.text, fontFamily: 'inherit', formatter: (p: { value?: unknown[] }) => formatChartValue(Array.isArray(p.value) ? p.value[2] : p.value) },
-    itemStyle: { borderColor: theme.panel, borderWidth: 1 },
-    emphasis: { itemStyle: { borderColor: theme.lineStrong, borderWidth: 2 } },
-  }];
-  return option;
-}
-
-function renderCausalGraph(spec: ChartSpec, theme: ChartThemeColors, _opts: RenderOpts = {}): ChartOption {
-  const nodes = (spec.nodes ?? []).map((node) => ({
-    id: node.id,
-    name: node.name || node.id,
-    category: node.role === "outcome" ? 0 : node.role === "driver" ? 1 : 2,
-    symbolSize: node.role === "outcome" ? 40 : node.role === "driver" ? 30 : 22,
-    itemStyle: {
-      color: node.role === "outcome"
-        ? theme.accent
-        : node.status === "ruled_out"
-          ? theme.faint
-          : node.classification === "supported_cause"
-            ? "#30D158"
-            : node.role === "driver" ? "#FF9F0A" : theme.dim,
-    },
-    label: { show: true, color: theme.text, fontSize: 11 },
-  }));
-  const links = (spec.links ?? []).map((link) => ({
-    source: link.source,
-    target: link.target,
-    lineStyle: {
-      color: link.kind === "treatment" ? theme.accent : theme.lineStrong,
-      width: link.kind === "treatment" ? 2.2 : 1.2,
-      type: link.kind === "treatment" ? "solid" : "dashed",
-      curveness: 0.1,
-    },
-  }));
-  // Fallback sample nodes so vocabulary smoke tests with an empty bar-like fixture still build.
-  const data = nodes.length ? nodes : [{ id: "outcome", name: "outcome", category: 0, symbolSize: 28, label: { show: true } }];
-  return {
-    backgroundColor: "transparent",
-    series: [{
-      type: "graph",
-      layout: "force",
-      roam: true,
-      categories: [{ name: "Outcome" }, { name: "Driver" }, { name: "Confounder" }],
-      data,
-      links,
-      edgeSymbol: ["none", "arrow"],
-      force: { repulsion: 200, edgeLength: 80 },
-    }],
-  };
-}
-
-type Renderer = (spec: ChartSpec, theme: ChartThemeColors, opts: RenderOpts) => ChartOption | null;
-
-/** Explicit form -> renderer table. Adding a form means adding it here. */
-const RENDERERS: Record<ChartType, Renderer> = {
-  line: renderCartesian,
-  area: renderCartesian,
-  bar: renderCartesian,
-  horizontal_bar: renderHorizontalBar,
-  stacked_bar: renderCartesian,
-  grouped_bar: renderCartesian,
-  combo: renderCombo,
-  waterfall: renderWaterfall,
-  treemap: renderTreemap,
-  scatter: renderScatter,
-  pie: (spec, theme, opts) => renderSlices(spec, 'pie', theme, opts),
-  donut: (spec, theme, opts) => renderSlices(spec, 'donut', theme, opts),
-  funnel: (spec, theme, opts) => renderSlices(spec, 'funnel', theme, opts),
-  radar: renderRadar,
-  heatmap: renderHeatmap,
-  causal_graph: renderCausalGraph,
-};
-
-export function renderChartOption(
-  spec: ChartSpec,
-  theme?: ChartThemeColors,
-  opts?: RenderOpts,
-): ChartOption | null {
-  const chartType = normalizeChartType(spec?.chart_type);
-  if (!chartType) return null;
-  const resolved = theme ?? getChartThemeColors();
-  if (mustUnstack(spec) && !(spec.warnings ?? []).some((w) => w.includes('matching units'))) {
-    spec = {
-      ...spec,
-      warnings: [
-        ...(spec.warnings ?? []),
-        `These series use different units (${mixedUnitAxes(spec).join(' + ')}), ` +
-          `so they are shown side-by-side instead of stacked.`,
-      ],
-    };
-  }
-  return RENDERERS[chartType](spec, resolved, opts ?? {});
-}
-
-type EChartsInstance = {
-  dispatchAction: (a: unknown) => void;
-  getDataURL?: (opts?: Record<string, unknown>) => string;
-  setOption?: (opt: Record<string, unknown>, notMerge?: boolean) => void;
-};
-
-function ChartModal({ title, onClose, children, actions }: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  actions?: React.ReactNode;
-}) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
-  return (
-    <div
-      className="chart-modal-backdrop"
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        className="chart-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="chart-modal-head">
-          <strong className="chart-modal-title">{title}</strong>
-          <div className="chart-modal-actions">
-            {actions}
-            <button
-              ref={closeRef}
-              type="button"
-              className="chart-icon-btn"
-              onClick={onClose}
-              aria-label="Close expanded chart"
-              title="Close (Esc)"
-            >
-              <ShrinkIcon size={14} />
-              Close
-            </button>
-          </div>
-        </div>
-        <div className="chart-modal-body">{children}</div>
-        <p className="chart-modal-hint">
-          Scroll to zoom · drag to pan · use the toolbox (top right) to zoom, view data, or save as PNG.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/** Cartesian forms whose mark the viewer may switch without a new query. */
-export const MARK_SWITCHABLE: ReadonlySet<string> = new Set(['line', 'bar', 'stacked_bar', 'grouped_bar']);
 
 export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
-  const [view, setView] = useState<'chart' | 'table'>('chart');
+  const [view, setView] = useState<"chart" | "table">("chart");
   const [selected, setSelected] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const [mark, setMark] = useState<'auto' | CartesianMark>('auto');
-  const chartRef = useRef<EChartsInstance | null>(null);
-  const modalChartRef = useRef<EChartsInstance | null>(null);
-  const theme = useChartThemeColors();
+  const [mark, setMark] = useState<"auto" | CartesianMark>("auto");
   const submit = useConversationStore((s) => s.submit);
+  // Recharts draws nothing until it has measured its container; show a skeleton for that first frame.
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setDrawn(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   const rows = useMemo(
-    () => (Array.isArray(spec.data) ? spec.data.filter((r) => r && typeof r === 'object') : []),
+    () => (Array.isArray(spec.data) ? spec.data.filter((r) => r && typeof r === "object") : []),
     [spec.data],
   );
   // Stored rows lose key order: lead with the x axis, then the series in the order the spec lists them.
@@ -1004,20 +126,11 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
   }, [rows, spec.xAxis?.key, spec.series]);
   const dimensionCol = spec.xAxis?.key && dataColumns.includes(spec.xAxis.key) ? spec.xAxis.key : dataColumns[0];
 
-  const chartType = useMemo(() => normalizeChartType(spec?.chart_type), [spec?.chart_type]);
-  const markOverride = mark === 'auto' ? undefined : mark;
-  const canSwitchMark = chartType !== null && MARK_SWITCHABLE.has(chartType);
-  const options = useMemo(
-    () => (chartType ? renderChartOption(spec, theme, { mark: markOverride }) : null),
-    [spec, chartType, theme, markOverride],
-  );
-  const expandedOptions = useMemo(
-    () => (chartType ? renderChartOption(spec, theme, { expanded: true, mark: markOverride }) : null),
-    [spec, chartType, theme, markOverride],
-  );
+  const plan = useMemo(() => chartPlan(spec, { mark: mark === "auto" ? undefined : mark }), [spec, mark]);
+  const canSwitchMark = plan?.kind === "cartesian" && MARK_SWITCHABLE.has(String(spec.chart_type));
 
   // Follow-ups pinned to the selected point's exact values.
-  const askAbout = useCallback((kind: 'ask' | 'compare', row: Record<string, unknown>) => {
+  const askAbout = useCallback((kind: "ask" | "compare", row: Record<string, unknown>) => {
     const ctx = buildPointContext({
       chartTitle: spec.title,
       dimensionKey: dimensionCol,
@@ -1029,240 +142,117 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ spec }) => {
     if (question) void submit(question);
   }, [spec.title, spec.series, dimensionCol, dataColumns, submit]);
 
-  // Keep the chart highlight in sync with the shared selection.
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-    try {
-      chart.dispatchAction({ type: 'downplay', seriesIndex: 0 });
-      if (selected !== null) {
-        chart.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: selected });
-      }
-    } catch { /* highlight is decorative; selection state is authoritative */ }
-  }, [selected, view]);
-
   const handleDownloadCsv = useCallback(() => {
     if (spec.downloadable_csv_url) {
-      window.open(spec.downloadable_csv_url, '_blank');
+      window.open(spec.downloadable_csv_url, "_blank");
       return;
     }
-    exportToCsv(spec.data || [], spec.title || 'chart_data');
+    exportToCsv(spec.data || [], spec.title || "chart_data");
   }, [spec]);
 
-  const handleDownloadPng = useCallback((modal: boolean) => {
-    const chart = modal ? modalChartRef.current : chartRef.current;
-    try {
-      const url = chart?.getDataURL?.({ type: 'png', pixelRatio: 2, backgroundColor: theme.panel });
-      if (!url) return;
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${(spec.title || 'chart').toLowerCase().replace(/[^a-z0-9]+/g, '_')}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch {
-      /* export is best-effort */
-    }
-  }, [spec.title, theme.panel]);
+  const toggleSelected = useCallback((index: number) => setSelected((current) => (current === index ? null : index)), []);
 
-  const handleResetZoom = useCallback((modal: boolean) => {
-    const chart = modal ? modalChartRef.current : chartRef.current;
-    try {
-      chart?.dispatchAction({ type: 'restore' });
-      chart?.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
-    } catch {
-      /* decorative */
-    }
-  }, []);
-
-  const onChartClick = useCallback((params: { dataIndex?: number }) => {
-    if (typeof params.dataIndex !== 'number') return;
-    setSelected((current) => (current === params.dataIndex ? null : (params.dataIndex as number)));
-  }, []);
-
-  if (!spec || !spec.chart_type || !chartType) {
+  if (!spec || !spec.chart_type || !plan) {
     // Fail loudly: a form this UI cannot render must be visible, not blank.
-    const unsupported = typeof spec?.chart_type === 'string' ? spec.chart_type : '';
+    const unsupported = typeof spec?.chart_type === "string" ? spec.chart_type : "";
     return (
-      <p className="empty-note" role="alert">
-        This chart uses an unsupported form{unsupported ? ` (${unsupported})` : ''}.
-        Supported forms: {CHART_TYPES.join(', ')}.
-      </p>
+      <Alert variant="destructive" role="alert">
+        <AlertDescription>
+          This chart uses an unsupported form{unsupported ? ` (${unsupported})` : ""}. Supported forms: {CHART_TYPES.join(", ")}.
+        </AlertDescription>
+      </Alert>
     );
   }
 
   const selectedRow = selected !== null ? (rows[selected] as Record<string, unknown> | undefined) : undefined;
+  const pickable = plan.kind === "cartesian" || plan.kind === "waterfall" || plan.kind === "slices";
+  const height = chartHeightPx(spec);
+  const title = spec.title || "Visualization";
+  const csvButton = (
+    <Button onClick={handleDownloadCsv} type="button" variant="outline" size="sm" aria-label="Download chart data as CSV">
+      <DownloadIcon /> CSV
+    </Button>
+  );
 
   return (
-    <div className="chart-card-container" role="region" aria-label={spec.title || 'Data visualization'}>
-      <div className="chart-head">
-        <div className="chart-title">
-          <div className="segmented" role="tablist" aria-label="Visualization or data view">
-            <button
-              role="tab" aria-selected={view === 'chart'}
-              className={view === 'chart' ? 'active' : ''}
-              onClick={() => setView('chart')}
-            >Chart</button>
-            <button
-              role="tab" aria-selected={view === 'table'}
-              className={view === 'table' ? 'active' : ''}
-              onClick={() => setView('table')}
-            >Table</button>
-          </div>
-          <span className="chart-name">{spec.title || 'Visualization'}</span>
-          {canSwitchMark && view === 'chart' && (
-            <div className="segmented" role="tablist" aria-label="Chart mark">
-              {(['auto', 'bar', 'line'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  role="tab"
-                  aria-selected={mark === mode}
-                  className={mark === mode ? 'active' : ''}
-                  title={mode === 'auto' ? 'Backend-chosen form' : `Show as ${mode} chart`}
-                  onClick={() => setMark(mode)}
-                >{mode === 'auto' ? 'Auto' : mode === 'bar' ? 'Bars' : 'Lines'}</button>
-              ))}
-            </div>
+    <Card role="region" aria-label={spec.title || "Data visualization"}>
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-center gap-2">
+          {rows.length > 0 && (
+            <Tabs value={view} onValueChange={(value) => setView(value as "chart" | "table")}>
+              <TabsList aria-label="Visualization or data view">
+                <TabsTrigger value="chart">Chart</TabsTrigger>
+                <TabsTrigger value="table">Table</TabsTrigger>
+              </TabsList>
+            </Tabs>
           )}
-        </div>
-        <div className="chart-head-actions">
-          <button
-            onClick={() => handleResetZoom(false)}
-            type="button"
-            aria-label="Reset zoom"
-            title="Reset zoom"
-            className="chart-download"
-          >
-            <ResetZoomIcon size={12} />
-            <span className="chart-btn-label">Reset</span>
-          </button>
-          <button
-            onClick={() => setExpanded(true)}
-            type="button"
-            aria-label="Expand chart"
-            title="Expand — zoom, inspect, export"
-            className="chart-download"
-          >
-            <ExpandIcon size={12} />
-            Expand
-          </button>
-          <button onClick={handleDownloadCsv} type="button" aria-label="Download chart data as CSV" className="chart-download">
-            <DownloadIcon size={12} />
-            CSV
-          </button>
-        </div>
-      </div>
-      {(spec.warnings ?? []).length > 0 && (
-        <p className="chart-hint" role="status">{(spec.warnings ?? []).join(' ')}</p>
-      )}
-      {view === 'chart' ? (
-        <div style={{ width: '100%', height: `${chartHeightPx(spec)}px` }}>
-          <ReactECharts
-            option={options ?? {}}
-            style={{ height: '100%', width: '100%' }}
-            opts={{ renderer: 'canvas' }}
-            onChartReady={(chart) => { chartRef.current = chart as unknown as EChartsInstance; }}
-            onEvents={{ click: onChartClick }}
-          />
-        </div>
-      ) : (
-        <>
-          <div className={rows.length > 20 ? "md-table-wrap tall" : "md-table-wrap"} style={{ marginTop: 4 }}>
-            <table aria-label={`${spec.title || 'Chart'} data table`}>
-              <thead><tr>{dataColumns.map((col) => <th key={col} scope="col">{col}</th>)}</tr></thead>
-              <tbody>
-                {rows.map((row, i) => (
-                  <tr
-                    key={i}
-                    className={selected === i ? 'selected-row' : ''}
-                    aria-selected={selected === i}
-                    tabIndex={0}
-                    onClick={() => setSelected((current) => (current === i ? null : i))}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setSelected((current) => (current === i ? null : i));
-                      }
-                    }}
-                  >
-                    {dataColumns.map((col) => <td key={col}>{String(row?.[col] ?? "")}</td>)}
-                  </tr>
+          <span>{title}</span>
+          {canSwitchMark && view === "chart" && (
+            <Tabs value={mark} onValueChange={(value) => setMark(value as "auto" | CartesianMark)}>
+              <TabsList aria-label="Chart mark">
+                {(["auto", "bar", "line"] as const).map((mode) => (
+                  <TabsTrigger key={mode} value={mode} title={mode === "auto" ? "Backend-chosen form" : `Show as ${mode} chart`}>
+                    {mode === "auto" ? "Auto" : mode === "bar" ? "Bars" : "Lines"}
+                  </TabsTrigger>
                 ))}
-              </tbody>
-            </table>
-          </div>
-          {rows.length > 20 && (
-            <p className="chart-hint">{rows.length} rows — scroll the table to see all.</p>
+              </TabsList>
+            </Tabs>
           )}
-        </>
-      )}
-      {selectedRow && (
-        <SelectionInsight
-          columns={dataColumns}
-          row={selectedRow}
-          onClose={() => setSelected(null)}
-          drill={{
-            onShowData: view === 'chart' ? () => setView('table') : undefined,
-            onAsk: () => askAbout('ask', selectedRow),
-            onCompare: () => askAbout('compare', selectedRow),
-          }}
-        />
-      )}
-      {!selectedRow && dimensionCol && (
-        <p className="chart-hint">
-          Select a {chartType === 'pie' || chartType === 'donut' || chartType === 'funnel' ? 'segment' : 'row'} to inspect its exact values.
-        </p>
-      )}
-      {expanded && (
-        <ChartModal
-          title={spec.title || 'Visualization'}
-          onClose={() => setExpanded(false)}
-          actions={
-            <>
-              <button
-                type="button"
-                className="chart-icon-btn"
-                onClick={() => handleResetZoom(true)}
-                aria-label="Reset zoom in expanded chart"
-                title="Reset zoom"
-              >
-                <ResetZoomIcon size={14} />
-                Reset zoom
-              </button>
-              <button
-                type="button"
-                className="chart-icon-btn"
-                onClick={() => handleDownloadPng(true)}
-                aria-label="Download expanded chart as PNG"
-                title="Download PNG"
-              >
-                <ImageIcon size={14} />
-                PNG
-              </button>
-              <button
-                type="button"
-                className="chart-icon-btn"
-                onClick={handleDownloadCsv}
-                aria-label="Download chart data as CSV"
-                title="Download CSV"
-              >
-                <DownloadIcon size={14} />
-                CSV
-              </button>
-            </>
-          }
-        >
-          <div style={{ width: '100%', height: chartHeightPx(spec) > 300 ? `${chartHeightPx(spec)}px` : '56vh', minHeight: 320 }}>
-            <ReactECharts
-              option={expandedOptions ?? {}}
-              style={{ height: '100%', width: '100%' }}
-              opts={{ renderer: 'canvas' }}
-              onChartReady={(chart) => { modalChartRef.current = chart as unknown as EChartsInstance; }}
-              onEvents={{ click: onChartClick }}
-            />
-          </div>
-        </ChartModal>
-      )}
-    </div>
+        </CardTitle>
+        <CardAction className="flex gap-2">
+          {pickable && (
+            <Button onClick={() => setExpanded(true)} type="button" variant="outline" size="sm" aria-label="Expand chart" title="Expand">
+              <MaximizeIcon /> Expand
+            </Button>
+          )}
+          {csvButton}
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {(spec.warnings ?? []).length > 0 && (
+          <p className="text-xs text-muted-foreground" role="status">{(spec.warnings ?? []).join(" ")}</p>
+        )}
+        {view === "chart" && !drawn ? (
+          <Skeleton className="w-full" style={{ height }} role="status" aria-busy="true" aria-label="Loading chart" />
+        ) : view === "chart" ? (
+          <ShadcnChart plan={plan} spec={spec} selected={selected} onSelect={toggleSelected} height={height} />
+        ) : (
+          <DataTable
+            columns={dataColumns}
+            rows={rows}
+            ariaLabel={`${spec.title || "Chart"} data table`}
+            selectedIndex={selected}
+            onSelectedIndexChange={setSelected}
+          />
+        )}
+        {selectedRow && (
+          <SelectionInsight
+            columns={dataColumns}
+            row={selectedRow}
+            onClose={() => setSelected(null)}
+            drill={{
+              onShowData: view === "chart" ? () => setView("table") : undefined,
+              onAsk: () => askAbout("ask", selectedRow),
+              onCompare: () => askAbout("compare", selectedRow),
+            }}
+          />
+        )}
+        {!selectedRow && pickable && dimensionCol && (
+          <p className="text-xs text-muted-foreground">
+            Select a {plan.kind === "slices" ? "segment" : "row"} to inspect its exact values.
+          </p>
+        )}
+      </CardContent>
+      <Dialog open={expanded} onOpenChange={setExpanded}>
+        <DialogContent className="sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription className="sr-only">Expanded chart</DialogDescription>
+          </DialogHeader>
+          <ShadcnChart plan={plan} spec={spec} selected={selected} onSelect={toggleSelected} height={height > 300 ? height : "56vh"} />
+          <div className="flex justify-end">{csvButton}</div>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 };

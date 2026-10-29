@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { Room, RoomEvent, Track } from "livekit-client";
+import type { Room } from "livekit-client";
 import { mintVoiceToken } from "../api/voice";
 import { useConversationStore } from "./conversation";
 
@@ -59,7 +59,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       if (!conversation.selectedThreadId) await conversation.createThread();
       const threadId = useConversationStore.getState().selectedThreadId;
       if (!threadId) throw new Error("Unable to start a conversation for voice");
-      const { url, token } = await mintVoiceToken(threadId);
+      // livekit is large and only needed once voice starts; fetch it alongside the token.
+      const [{ url, token }, { Room, RoomEvent, Track }] = await Promise.all([
+        mintVoiceToken(threadId),
+        import("livekit-client"),
+      ]);
       if (generation !== attempt) return;
 
       const next = new Room({ adaptiveStream: true, dynacast: true });

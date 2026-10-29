@@ -1,10 +1,14 @@
 import { useState } from "react";
-import type { MetricStatus } from "../../api/monitoring";
+import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "cn";
+import type { DomainView, MetricStatus } from "../../api/monitoring";
 import { collectAnomalies, type Anomaly } from "./anomalies";
 import { Evidence } from "./Evidence";
 import { MetricChart } from "./MetricChart";
 import { formatMove, formatValue } from "./format";
-import type { DomainView } from "../../api/monitoring";
+import { STATUS_ACCENT } from "./status";
 
 const TABS: { status: MetricStatus; label: string; empty: string }[] = [
   { status: "alert", label: "Needs attention", empty: "Nothing is outside its normal range the wrong way." },
@@ -17,21 +21,21 @@ function Row({ a }: { a: Anomaly }) {
   const j = m.judgement;
   const title = m.label || m.name || m.metric_id;
   return (
-    <details className={`ops-row status-${m.status}`} id={`feed-${a.id}`}>
-      <summary>
-        <span className="ops-row-main">
-          <strong>{title}</strong>
-          <span className="ops-tag">{domain.title}</span>
+    <Collapsible id={`feed-${a.id}`} data-slot="ops-row" data-status={m.status} className={cn("scroll-mt-3 rounded-md border bg-card", STATUS_ACCENT[m.status])}>
+      <CollapsibleTrigger className="grid w-full cursor-pointer grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.4fr)_120px] items-center gap-x-4 gap-y-1 rounded-md p-3 text-left hover:bg-accent max-md:grid-cols-[minmax(0,1fr)_auto]">
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
+          <strong className="text-sm font-medium break-words">{title}</strong>
+          <Badge variant="outline">{domain.title}</Badge>
         </span>
-        <span className="ops-row-nums">
-          <span className="ops-value-sm">{formatValue(m.value, m.unit, m.display)}</span>
-          <span className="ops-expected">expected {formatValue(j?.expected, m.unit, m.display)}</span>
+        <span className="grid text-right md:text-left">
+          <span className="text-sm font-semibold tabular-nums">{formatValue(m.value, m.unit, m.display)}</span>
+          <span className="text-xs text-muted-foreground">expected {formatValue(j?.expected, m.unit, m.display)}</span>
         </span>
-        <span className="ops-row-move">{formatMove(j?.worse_by, j?.unit, m.display) || j?.reason}</span>
-        <span className="ops-row-chart"><MetricChart metric={m} height={32} /></span>
-      </summary>
-      <Evidence metric={m} />
-    </details>
+        <span className="text-sm text-muted-foreground max-md:col-span-full">{formatMove(j?.worse_by, j?.unit, m.display) || j?.reason}</span>
+        <span className="max-md:col-span-full"><MetricChart metric={m} height={32} /></span>
+      </CollapsibleTrigger>
+      <CollapsibleContent><Evidence metric={m} /></CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -43,19 +47,19 @@ export function AnomalyFeed({ domains }: { domains: DomainView[] }) {
   const current = TABS.find((t) => t.status === tab) ?? TABS[0];
   const rows = all.filter((a) => a.metric.status === tab);
   return (
-    <section className="ops-feed" aria-label="Anomalies">
-      <div className="ops-feed-head">
-        <h3>Anomalies</h3>
-        <div className="ops-chips" role="group" aria-label="Show">
+    <section data-slot="ops-feed" aria-label="Anomalies" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="m-0 text-base font-medium">Anomalies</h3>
+        <ToggleGroup type="single" variant="outline" size="sm" className="flex-wrap" aria-label="Show" value={tab} onValueChange={(value) => value && setTab(value as MetricStatus)}>
           {TABS.map((t) => (
-            <button key={t.status} className={`ops-chip ${tab === t.status ? "active" : ""}`} aria-pressed={tab === t.status} onClick={() => setTab(t.status)}>
-              {t.label} <span>{count(t.status)}</span>
-            </button>
+            <ToggleGroupItem key={t.status} value={t.status}>
+              {t.label} <span className="tabular-nums text-muted-foreground">{count(t.status)}</span>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
       </div>
-      {rows.length === 0 ? <p className="ops-note">{current.empty}</p> : <div className="ops-rows">{rows.map((a) => <Row key={a.id} a={a} />)}</div>}
-      <p className="ops-note ops-foot">How verdicts are made: each metric is compared with the median of its same weekday over the last 4 weeks, normal range is 3 spreads either side.</p>
+      {rows.length === 0 ? <p className="text-sm text-muted-foreground">{current.empty}</p> : <div className="flex flex-col gap-2">{rows.map((a) => <Row key={a.id} a={a} />)}</div>}
+      <p className="text-xs text-muted-foreground">How verdicts are made: each metric is compared with the median of its same weekday over the last 4 weeks, normal range is 3 spreads either side.</p>
     </section>
   );
 }

@@ -1,3 +1,7 @@
+import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Item, ItemDescription } from "@/components/ui/item";
+import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceLine, TraceTitle } from "@/components/ui/trace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityEvent, Message } from "../api/contracts";
 import { conversationsApi } from "../api/conversations";
@@ -328,40 +332,41 @@ function SingleRunDebug({
 
   // Mid-run can briefly lack a mission id — still show live counters from the timeline.
   if (!missionId && !live && !timeline.length) {
-    return <p className="empty-note">Run a question to see loop timing, tokens, tools and grounding.</p>;
+    return <p className="text-sm text-muted-foreground">Run a question to see loop timing, tokens, tools and grounding.</p>;
   }
 
   return (
-    <div className="loop-debug">
-      <div className="loop-debug-stats" aria-label="Loop metrics">
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-2" aria-label="Loop metrics" role="group">
         {cells.map(([label, value]) => (
-          <div className="loop-debug-stat" key={label}>
-            <span>{label}</span>
-            <b>{String(value)}</b>
-          </div>
+          <Item key={label} variant="outline" size="sm" className="flex-col items-start gap-0">
+            <ItemDescription>{label}</ItemDescription>
+            <b className="text-sm tabular-nums">{String(value)}</b>
+          </Item>
         ))}
       </div>
       {(loading || error) && (
-        <p className="empty-note" role={error ? "alert" : "status"}>
+        <p className={error ? "text-sm text-destructive" : "text-sm text-muted-foreground"} role={error ? "alert" : "status"}>
           {error ?? "Loading trace…"}
         </p>
       )}
-      <div className="loop-debug-events" ref={eventsRef} aria-label="Loop event log">
-        {entries.map((entry) => (
-          <div className="loop-debug-ev" key={entry.key}>
-            <div className="h">
-              <b className={entry.cls || undefined}>{entry.head}</b>
-            </div>
-            {entry.body && (
-              <details>
-                <summary>details</summary>
-                <pre>{entry.body}</pre>
-              </details>
-            )}
-          </div>
-        ))}
+      <div className="max-h-80 overflow-y-auto" ref={eventsRef} aria-label="Loop event log" role="log">
+        <Trace>
+          {entries.map((entry) => entry.body ? (
+            <TraceCollapsible key={entry.key}>
+              <TraceCollapsibleTrigger>
+                <TraceLine status={entry.cls === "bad" ? "error" : undefined}><TraceTitle>{entry.head}</TraceTitle></TraceLine>
+              </TraceCollapsibleTrigger>
+              <TraceCollapsibleContent>
+                <pre className="m-0 max-h-48 overflow-auto font-mono text-xs whitespace-pre-wrap">{entry.body}</pre>
+              </TraceCollapsibleContent>
+            </TraceCollapsible>
+          ) : (
+            <TraceLine key={entry.key} status={entry.cls === "bad" ? "error" : undefined}><TraceTitle>{entry.head}</TraceTitle></TraceLine>
+          ))}
+        </Trace>
         {!entries.length && !loading && (
-          <p className="empty-note">Events appear here as tools and LLM steps run.</p>
+          <p className="text-sm text-muted-foreground">Events appear here as tools and LLM steps run.</p>
         )}
       </div>
     </div>
@@ -401,27 +406,25 @@ function RunAccordion({
 }) {
   const n = total - index;
   return (
-    <details
-      className={`session-debug-run ${live ? "live" : ""} status-${run.status}`}
-      open={open}
-      onToggle={(event) => onOpenChange((event.currentTarget as HTMLDetailsElement).open)}
-    >
-      <summary>
-        <span className="session-debug-run-index">Run {n}</span>
-        <span className="session-debug-run-query" title={run.query}>{truncateQuery(run.query)}</span>
-        <span className={`session-debug-run-status ${run.status}`}>{statusLabel(run.status)}</span>
-      </summary>
-      <SingleRunDebug
-        missionId={run.missionId}
-        timeline={live ? timeline : []}
-        stats={live ? stats : null}
-        grounding={live ? grounding : null}
-        steps={live ? steps : null}
-        live={live}
-        persistToStore={live || index === 0}
-        active={open}
-      />
-    </details>
+    <Collapsible open={open} onOpenChange={onOpenChange} className="rounded-md border">
+      <CollapsibleTrigger className="flex w-full items-center gap-2 p-2 text-left text-sm hover:bg-accent">
+        <span className="font-medium">Run {n}</span>
+        <span className="min-w-0 flex-1 truncate" title={run.query}>{truncateQuery(run.query)}</span>
+        <Badge variant={run.status === "failed" ? "destructive" : live ? "secondary" : "outline"}>{statusLabel(run.status)}</Badge>
+      </CollapsibleTrigger>
+      <CollapsibleContent forceMount className="border-t p-2">
+        <SingleRunDebug
+          missionId={run.missionId}
+          timeline={live ? timeline : []}
+          stats={live ? stats : null}
+          grounding={live ? grounding : null}
+          steps={live ? steps : null}
+          live={live}
+          persistToStore={live || index === 0}
+          active={open}
+        />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -503,7 +506,7 @@ export function LoopDebugConsole({
   }, [currentRunId, live]);
 
   if (!threadId) {
-    return <p className="empty-note">Run a question to see loop timing, tokens, tools and grounding.</p>;
+    return <p className="text-sm text-muted-foreground">Run a question to see loop timing, tokens, tools and grounding.</p>;
   }
   if (!runs.length) {
     return (
@@ -519,8 +522,8 @@ export function LoopDebugConsole({
   }
 
   return (
-    <div className="session-debug" aria-label="Session runs">
-      <p className="session-debug-hint">
+    <div className="flex flex-col gap-2" aria-label="Session runs" role="group">
+      <p className="text-xs text-muted-foreground">
         {runs.length} run{runs.length === 1 ? "" : "s"} in this conversation — expand any to inspect.
       </p>
       {runs.map((run, index) => {

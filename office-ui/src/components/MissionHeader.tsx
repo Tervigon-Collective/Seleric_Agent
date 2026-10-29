@@ -1,3 +1,4 @@
+import { Card, CardContent } from "@/components/ui/card";
 import { useEffect, useState } from "react";
 import { useOffice } from "../store";
 import { SPEC_BY_ID } from "../office/agents";
@@ -20,15 +21,15 @@ export function MissionHeader() {
   if (!query) return null;
 
   return (
-    <div className="mission-header">
-      <div className="meta">
-        <span><b>{status.toUpperCase()}</b></span>
+    <Card size="sm" data-slot="mission-header" className="absolute top-2 left-2 z-[4]">
+      <CardContent className="flex gap-2 text-xs whitespace-nowrap text-muted-foreground">
+        <span><b className="font-bold text-foreground">{status.toUpperCase()}</b></span>
         <span>{stage}</span>
         <span>{leadName}{epoch ? ` · e${epoch}` : ""}</span>
         <span>{activeCount} active</span>
         <span>{elapsed}</span>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 

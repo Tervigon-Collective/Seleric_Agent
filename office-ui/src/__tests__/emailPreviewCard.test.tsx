@@ -54,8 +54,8 @@ describe("EmailPreviewCard", () => {
     expect(container.querySelector("table")).not.toBeNull();
     expect([...container.querySelectorAll("th")].map((th) => th.textContent)).toEqual(["Channel", "Net sales (INR)"]);
     expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
-    expect(container.querySelector(".email-body strong")?.textContent).toBe("10.8%");
-    expect(container.querySelector(".email-body h2, .email-body h3, .email-body h4")?.textContent).toBe("What happened");
+    expect(container.querySelector('[data-slot="email-body"] strong')?.textContent).toBe("10.8%");
+    expect(container.querySelector('[data-slot="email-body"] h2, [data-slot="email-body"] h3, [data-slot="email-body"] h4')?.textContent).toBe("What happened");
   });
 
   it("warns that a partial attachment is partial", async () => {

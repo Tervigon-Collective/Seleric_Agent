@@ -1,3 +1,6 @@
+import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "cn";
 import { useMemo, useState } from "react";
 import { useOffice } from "../store";
 import { SPEC_BY_ID } from "../office/agents";
@@ -29,40 +32,33 @@ export function MissionTimeline() {
   }, [timeline, filter]);
 
   return (
-    <div className={`timeline ${open ? "" : "collapsed"}`}>
-      <div className="tl-head">
-        <button className="btn" onClick={toggle}>{open ? "▾" : "▸"} Mission timeline</button>
-        <span style={{ color: "var(--text-dim)" }}>{timeline.length} events</span>
-        <span className="spacer" style={{ flex: 1 }} />
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            className="btn"
-            style={{ borderColor: filter === f ? "var(--st-working)" : undefined }}
-            onClick={() => setFilter(f)}
-          >
-            {f}
-          </button>
-        ))}
+    <div data-slot="timeline" className={cn("z-[6] flex flex-col border-t bg-card", open ? "max-h-40" : "max-h-10")}>
+      <div className="flex flex-none items-center gap-2.5 overflow-x-auto border-b px-3 py-1.5 text-xs">
+        <Button variant="ghost" size="sm" onClick={toggle}>{open ? "▾" : "▸"} Mission timeline</Button>
+        <span className="text-muted-foreground">{timeline.length} events</span>
+        <span className="flex-1" />
+        <ToggleGroup type="single" variant="outline" size="sm" aria-label="Event filter" value={filter} onValueChange={(value) => value && setFilter(value as Filter)}>
+          {FILTERS.map((f) => <ToggleGroupItem key={f} value={f}>{f}</ToggleGroupItem>)}
+        </ToggleGroup>
       </div>
-      <div className="tl-body">
+      <div className="overflow-y-auto py-1">
         {rows.map((e) => (
           <div
-            className="tl-row"
+            data-slot="tl-row"
+            className={cn("grid grid-cols-[52px_1fr] items-baseline gap-x-2.5 px-3 py-1 text-xs hover:bg-accent md:grid-cols-[64px_130px_1fr]", e.agentId && "cursor-pointer")}
             key={e.eventId}
             onClick={() => e.agentId && select(e.agentId)}
-            style={{ cursor: e.agentId ? "pointer" : "default" }}
           >
-            <span className="t">{new Date(e.timestamp).toLocaleTimeString().slice(0, 8)}</span>
-            <span className="who">
+            <span className="tabular-nums text-muted-foreground">{new Date(e.timestamp).toLocaleTimeString().slice(0, 8)}</span>
+            <span className="font-semibold">
               {e.agentId ? SPEC_BY_ID[e.agentId]?.name ?? e.agentId : "—"}{" "}
-              <span className="ev-type">{e.eventType}</span>
+              <span className="font-mono text-[11px] font-normal text-muted-foreground">{e.eventType}</span>
             </span>
-            <span>{e.summary}</span>
+            <span className="col-start-2 md:col-start-auto">{e.summary}</span>
           </div>
         ))}
         {rows.length === 0 && (
-          <div className="tl-row"><span /><span /><span style={{ color: "var(--text-dim)" }}>No events.</span></div>
+          <div data-slot="tl-row" className="px-3 py-1 text-xs text-muted-foreground">No events.</div>
         )}
       </div>
     </div>

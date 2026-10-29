@@ -5,6 +5,9 @@ import {
   useAui,
   useAuiState,
 } from "@assistant-ui/react";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "cn";
 import { useVoiceStore, type VoiceStatus } from "../stores/voice";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { enhanceQuery } from "../api/queryEnhance";
@@ -57,17 +60,18 @@ function EnhanceButton({ text }: { text: string }) {
   const label = busy ? "Enhancing…" : empty ? "Type a question to enhance" : "Enhance query";
   return (
     <>
-      {error && <span className="voice-status" role="alert">{error}</span>}
-      <button
+      {error && <span className="max-w-48 truncate text-xs text-destructive" role="alert">{error}</span>}
+      <Button
         type="button"
-        className={`voice-btn enhance-btn${busy ? " busy" : ""}`}
+        variant="ghost"
+        size="icon-sm"
         aria-label={label}
         title={label}
         disabled={empty || busy}
         onClick={() => void onEnhance()}
       >
-        <SparklesIcon size={15} />
-      </button>
+        {busy ? <Spinner /> : <SparklesIcon />}
+      </Button>
     </>
   );
 }
@@ -78,17 +82,18 @@ function VoiceControls({ text }: { text: string }) {
   const start = useVoiceStore((s) => s.start);
   const live = status === "listening" || status === "speaking";
   return (
-    <div className="voice-controls">
-      {status === "error" && error && <span className="voice-status" role="alert">{error}</span>}
+    <div className="flex items-center gap-1">
+      {status === "error" && error && <span className="max-w-48 truncate text-xs text-destructive" role="alert">{error}</span>}
       <EnhanceButton text={text} />
-      <button
+      <Button
         type="button"
-        className={`voice-btn ${status}`}
+        variant="ghost"
+        size="icon-sm"
         aria-label={VOICE_LABEL[status]}
         title={VOICE_LABEL[status]}
         disabled={status === "connecting" || live}
         onClick={() => void start()}
-      ><MicIcon size={15} /></button>
+      ><MicIcon /></Button>
     </div>
   );
 }
@@ -118,7 +123,7 @@ function renderBackdrop(text: string, corrections: AutoCorrectItem[]) {
     nodes.push(
       <mark
         key={`correct-${item.id || idx}`}
-        className="autocorrect-highlight"
+        className="autocorrect-highlight rounded-sm bg-accent text-transparent"
         data-original={item.original}
         title={`Auto-corrected from "${item.original}"`}
       >
@@ -142,6 +147,9 @@ function renderBackdrop(text: string, corrections: AutoCorrectItem[]) {
 
   return nodes;
 }
+
+/** Shared by the textarea and its autocorrect overlay so the highlights line up with the text. */
+const FIELD = "w-full px-1 py-1 font-[inherit] text-base leading-6 md:text-sm";
 
 export function Composer() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -203,25 +211,13 @@ export function Composer() {
   }, [corrections, text]);
 
   return (
-    <div className="composer-wrap">
+    <div className="shrink-0 bg-background px-6 pb-4 max-md:px-3 max-md:pb-[max(12px,env(safe-area-inset-bottom))]">
       <VoiceDock />
       {/* Hidden, not unmounted: keeps the draft and the autocorrect listeners alive. */}
-      <div className="composer-inner" hidden={voiceLive}>
-        <ComposerPrimitive.Root className="composer" aria-label="Message composer">
-          <button
-            type="button"
-            className="attach-btn prompts-btn"
-            aria-label="Open prompt registry"
-            title="Prompts"
-            onClick={() => window.dispatchEvent(new Event("seleric:open-prompts"))}
-          >
-            <PromptsIcon size={16} />
-          </button>
-          <ComposerPrimitive.AddAttachment className="attach-btn" aria-label="Choose attachments" title="Attach a file">
-            <PaperclipIcon size={16} />
-          </ComposerPrimitive.AddAttachment>
-          <div className="composer-input-wrapper">
-            <div className="composer-backdrop" aria-hidden="true" ref={backdropRef}>
+      <div className="mx-auto max-w-[800px]" hidden={voiceLive}>
+        <ComposerPrimitive.Root aria-label="Message composer" className="flex flex-col gap-1 rounded-xl border bg-background p-2 transition-shadow focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+          <div className="relative">
+            <div className={cn(FIELD, "pointer-events-none absolute inset-0 overflow-hidden break-words whitespace-pre-wrap text-transparent")} aria-hidden="true" ref={backdropRef}>
               {renderBackdrop(text, activeCorrections)}
             </div>
             <ComposerPrimitive.Input
@@ -229,31 +225,48 @@ export function Composer() {
               placeholder="Ask about sales, marketing, products…"
               aria-label="Message"
               rows={2}
+              className={cn(FIELD, "relative block max-h-36 min-h-11 resize-none border-0 bg-transparent outline-none placeholder:text-muted-foreground")}
             />
           </div>
-          <AuiIf condition={(state) => !state.thread.isRunning}>
-            <ComposerPrimitive.Send className="send-btn" aria-label="Send message" title="Send (Enter)">
-              <SendIcon size={15} />
-            </ComposerPrimitive.Send>
-          </AuiIf>
-          <AuiIf condition={(state) => state.thread.isRunning}>
-            <ComposerPrimitive.Cancel className="send-btn cancel-btn" aria-label="Cancel run" title="Stop generating">
-              <StopIcon size={13} />
-            </ComposerPrimitive.Cancel>
-          </AuiIf>
-          <div className="upload-list" aria-live="polite">
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Open prompt registry"
+              title="Prompts"
+              onClick={() => window.dispatchEvent(new Event("seleric:open-prompts"))}
+            >
+              <PromptsIcon />
+            </Button>
+            <ComposerPrimitive.AddAttachment className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label="Choose attachments" title="Attach a file">
+              <PaperclipIcon />
+            </ComposerPrimitive.AddAttachment>
+            <small className="ml-1 min-w-0 truncate text-xs text-muted-foreground max-md:hidden">Enter to send · Shift+Enter for a new line</small>
+            <span className="flex-1" />
+            <VoiceControls text={text} />
+            <AuiIf condition={(state) => !state.thread.isRunning}>
+              <ComposerPrimitive.Send className={buttonVariants({ size: "icon-sm" })} aria-label="Send message" title="Send (Enter)">
+                <SendIcon />
+              </ComposerPrimitive.Send>
+            </AuiIf>
+            <AuiIf condition={(state) => state.thread.isRunning}>
+              <ComposerPrimitive.Cancel className={buttonVariants({ variant: "destructive", size: "icon-sm" })} aria-label="Cancel run" title="Stop generating">
+                <StopIcon />
+              </ComposerPrimitive.Cancel>
+            </AuiIf>
+          </div>
+          <div className="flex flex-wrap gap-1 empty:hidden" aria-live="polite">
             <ComposerPrimitive.Attachments>
               {({ attachment }) => (
-                <AttachmentPrimitive.Root>
+                <AttachmentPrimitive.Root className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs">
                   <AttachmentPrimitive.Name />
                   <span> · {attachment.status.type}</span>
-                  <AttachmentPrimitive.Remove aria-label={`Remove ${attachment.name}`}>×</AttachmentPrimitive.Remove>
+                  <AttachmentPrimitive.Remove className={buttonVariants({ variant: "ghost", size: "icon-xs" })} aria-label={`Remove ${attachment.name}`}>×</AttachmentPrimitive.Remove>
                 </AttachmentPrimitive.Root>
               )}
             </ComposerPrimitive.Attachments>
           </div>
-          <VoiceControls text={text} />
-          <small className="hint">Enter to send · Shift+Enter for a new line</small>
         </ComposerPrimitive.Root>
       </div>
     </div>
